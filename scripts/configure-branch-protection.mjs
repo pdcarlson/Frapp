@@ -211,7 +211,25 @@ function buildProtectionPayload(branch) {
     block_creations: false,
     required_conversation_resolution: false,
     lock_branch: false,
-    allow_fork_syncing: true,
+    // Declared `false` to match live rather than to an aspiration (#1580): this
+    // roster is the repo's declaration of intent, and declaring `true` while
+    // `main` reports `false` made every hand comparison — which is what a
+    // branch-protection audit is — stop and re-derive why the difference did not
+    // matter. That cost two sessions. See LOCK_DEPENDENT_FLAGS below for why the
+    // flag is inert here and excluded from the `--verify` diff.
+    //
+    // "Inert" holds only while `lock_branch` is false, which is the state today
+    // and the only state this repo has ever been in. It is not a no-op in every
+    // world: if a release freeze ever sets `lock_branch: true`, an apply now
+    // writes `false` and fork syncing is DISABLED for contributors, where the
+    // pre-#1580 roster would have written `true` and allowed it. That reversal is
+    // deliberate — a declaration should say what the branch actually does, and
+    // nothing recorded a rationale for the original `true`, which reads as an
+    // unexamined default rather than intent. Anyone turning `lock_branch` on
+    // should decide this flag on its merits at that point rather than inherit
+    // this line, because at that moment it stops being a declaration and starts
+    // being a setting.
+    allow_fork_syncing: false,
   };
 }
 
@@ -253,11 +271,14 @@ const PROTECTION_FLAGS = [
 
 // `allow_fork_syncing` governs whether users may pull upstream changes WHILE THE
 // BRANCH IS LOCKED. With `lock_branch: false` it describes a situation that
-// cannot arise, and GitHub accepts the written value without persisting it —
-// this payload has sent `true` since 2026-08-27 (f7d03b1) and a read of `main`
-// on 2026-09-01 still returned `false`, with `migration-order` (added to the
-// roster 2026-08-30) present live in between — which points to an apply having
-// run, though an admin UI edit would look the same from here.
+// cannot arise, and GitHub accepts the written value without persisting it. This
+// payload sent `true` from 2026-08-27 (f7d03b1) until #1580, and reads of `main`
+// on 2026-09-01, 2026-09-02 and 2026-09-04 all returned `false` — with
+// `migration-order` (added to the roster 2026-08-30) present live in between,
+// which points to an apply having run without the written value sticking, though
+// an admin UI edit would look the same from here. The roster now declares
+// `false` to match live (#1580), so the exemption below is what keeps a LOCKED
+// branch honest rather than what hides a standing divergence.
 //
 // Comparing it on an unlocked branch therefore reports drift that no run can
 // ever resolve, which would make `--verify` exit non-zero forever and turn an
@@ -580,7 +601,9 @@ async function main() {
     if (driftedBranches.length > 0) {
       throw new Error(
         `Live branch protection does not match this roster for: ${driftedBranches.join(", ")}. ` +
-          "Run `npm run configure:branch-protection` to apply it.",
+          "Applying is a human step with an admin PAT: ask for `npm run configure:branch-protection` " +
+          "to be run. Do not run it from an agent session — with no flags it is a live PUT of the " +
+          "whole payload, and `--dry-run` without the `--` separator is swallowed by npm and applies.",
       );
     }
     console.log("Verify complete. Live branch protection matches this roster.");
