@@ -458,8 +458,14 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
       src.match(/Live branch protection does not match this roster([\s\S]*?)\n\s*\);/) ?? [];
     assert.ok(drift, "the drift error moved or was reworded — re-point this test");
 
-    assert.ok(
-      carriesGuard(`// ${drift}`) || /human step with an admin PAT/.test(drift),
+    // Asserted directly rather than through `carriesGuard`: that helper also
+    // requires the text to name `:verify`, which the drift error deliberately
+    // does not — the reader just ran it. Routing this through `carriesGuard`
+    // would make the first half of an `||` dead and quietly reduce this to the
+    // phrase check below, which is how a test starts lying about its own rule.
+    assert.match(
+      drift,
+      /human step with an admin PAT/,
       "the drift error must say applying is a human step with an admin PAT",
     );
     assert.match(
@@ -479,9 +485,14 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
   // who runs it. Stated this way it covers all nine ROLLOUT notes and any note
   // added later, instead of the one wrapping that existed when it was written.
   it("no comment names the bare apply without saying who runs it", () => {
-    const offenders = commentRuns(read("../lib/required-checks.mjs")).filter(
-      (run) => namesBareApply(run) && !carriesGuard(run),
+    const runs = commentRuns(read("../lib/required-checks.mjs"));
+    // Without this the filter below is satisfied by an empty list, so a parser
+    // regression (or a file that stopped being scanned) would read as "clean".
+    assert.ok(
+      runs.filter((r) => r.includes("ROLLOUT")).length >= 10,
+      "expected the roster's ROLLOUT notes to be found — the comment scan broke",
     );
+    const offenders = runs.filter((run) => namesBareApply(run) && !carriesGuard(run));
     assert.deepEqual(
       offenders,
       [],
