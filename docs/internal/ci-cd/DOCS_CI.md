@@ -128,12 +128,13 @@ happened, which is references rotting for months with nothing watching.
 
 ### Rosters (`check-doc-tables.mjs`)
 
-Several docs restate one roster by hand. `GITHUB_BRANCH_PROTECTION_RUNBOOK.md` documents the
-fanout as procedure — *"if CI job names change, update: the script, this runbook, `CONTRIBUTING.md`,
-`spec/environments/README.md`"* — which is four hand-kept copies of one array, and they had all
-drifted at once: `@repo/theme` (#1153) and `@repo/formatting` were missing from every
-`lint-and-typecheck` suite list, and `packages/chat-integrations` (#1114) from two `web-tests`
-lists. This check asserts those copies against their source.
+One doc restates the roster by hand, and only one. `GITHUB_BRANCH_PROTECTION_RUNBOOK.md` used to
+document the fanout as procedure — *"if CI job names change, update: the script, this runbook,
+`CONTRIBUTING.md`, `spec/environments/README.md`"* — which was four hand-kept copies of one array,
+and they had all drifted at once: `@repo/theme` (#1153) and `@repo/formatting` were missing from
+every `lint-and-typecheck` suite list, and `packages/chat-integrations` (#1114) from two `web-tests`
+lists. `CONTRIBUTING.md` and `spec/environments/README.md` now hold pointers instead, so
+`DOC_TABLES` names only the runbook; this check asserts that surviving copy against its source.
 
 - **Sources:** the `CI_CHECKS` / `DOCS_CHECKS` arrays in
   [`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs), and the

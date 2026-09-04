@@ -286,11 +286,7 @@ The `InviteService.redeem` flow performs deterministic validation checks (invite
 
 ### Authorization Flow
 
-1. Client sends request with `Authorization: Bearer <supabase_jwt>` and `x-chapter-id: <uuid>`.
-2. `SupabaseAuthGuard` validates the JWT and extracts the user identity.
-3. `ChapterGuard` verifies the user is a member of the requested chapter.
-4. `PermissionsGuard` checks required permissions for the endpoint against the user's flattened permission set (freshly resolved per request).
-5. Request proceeds to the controller.
+Owned by [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../docs/internal/security/AUTHORIZATION_MODEL.md) § "1. The model in short": the `SupabaseAuthGuard` → `ChapterGuard` → `PermissionsGuard` chain and what each guard proves; that the active chapter comes from the JWT `active_chapter_id` claim, with `x-chapter-id` a legacy fallback that never overrides it (a disagreement is a hard `403 chapter.context.mismatch`); and the four tenancy-proof idioms every route uses. `ChapterGuard`'s subscription and module write-gating: [`docs/guides/api-architecture.md`](../../docs/guides/api-architecture.md) § "Subscription enforcement (ChapterGuard)".
 
 ---
 

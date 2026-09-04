@@ -4,24 +4,11 @@ This guide defines how we work on Frapp: branch workflow, commit messages, and s
 
 ## 1. Branching model
 
-One long-lived branch, two environments:
-
-- `main` — the integration branch (every merge deploys to Render staging infrastructure; the
-  **Vercel half ended 2026-09-02** — `frapp-landing` was unlinked from Git 2026-09-01 and
-  `frapp-web` 2026-09-02, so no merge deploys web or landing and both hosts serve frozen builds.
-  Canonical record: ADR-21 in [`spec/architecture/README.md`](../../spec/architecture/README.md))
-- `feature/*` — short-lived branches for individual features and fixes
-
-Production is not a branch. It is deployed from a **named commit on `main`** by the
-**Deploy production** workflow, which refuses any commit that is not an ancestor of `main`
-with green CI. The `production` branch was retired in #1340.
-
-Typical flow:
-
-1. Branch from `main` into `feature/*`.
-2. Open a PR from `feature/*` to `main`.
-3. Validate behavior in staging/preview environments.
-4. To release, dispatch the **Deploy production** workflow with the commit SHA you want live.
+The branch model — `main` as the only long-lived branch and what a merge to it deploys,
+`feature/*` and `hotfix/*` off it, the `production` branch retired in #1340, and the flow
+from feature PR to a named-commit production deploy — lives in
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md) § Branch Model. The gates that deploy passes
+through: [`docs/internal/ops/DEPLOYMENT.md`](../internal/ops/DEPLOYMENT.md) § How Deployments Are Gated.
 
 Example feature branch names:
 

@@ -149,15 +149,12 @@ sweep or scan; see rule 4 of the
 [ownership boundary](#shared-ownership-boundary-all-routines).
 
 > **No MCP read path returns a body faithfully — never source a body rewrite from one.**
-> `issue_read`, `list_issues` **and** `search_issues` all strip HTML comments (the `fp=` dedup and
-> `pr-followups-state` markers), strip tags including JSX inside ` ```tsx ` fences, and
-> entity-escape `'` `"` `&` `>`. `search_issues` was the lossless exception until it regressed on
-> all three vectors — confirmed 2026-08-20 against #357, #697 and #1086. Rewriting a body from any
-> of them deletes content without any error, and because markers are how the routines recognise
-> their own issues across runs, the damage surfaces a run later as a duplicate filing or a reset
-> watermark. **The damage is read-only: stored bodies are intact and nothing needs back-filling.**
-> So: **append a comment instead of rewriting**, or author the replacement body yourself; a rewrite
-> sourced from a read needs the narrow escape hatch in
+> `issue_read`, `list_issues` **and** `search_issues` all corrupt the body they return. Rewriting a
+> body from any of them deletes content without any error, and because markers are how the routines
+> recognise their own issues across runs, the damage surfaces a run later as a duplicate filing or a
+> reset watermark. **The damage is read-only: stored bodies are intact and nothing needs
+> back-filling.** So: **append a comment instead of rewriting**, or author the replacement body
+> yourself; the corruption vectors, the fidelity table, the probe, and the narrow escape hatch are in
 > [`GITHUB_PM.md` → Reading a body you intend to rewrite](GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity),
 > which is the canonical statement of this rule. Two consequences worth stating here: the `fp=`
 > marker is now a **visible line, not an HTML comment**, and the `fp=` **lookup is healthy** —
