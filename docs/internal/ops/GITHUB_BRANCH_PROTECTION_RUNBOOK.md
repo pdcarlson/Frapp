@@ -245,7 +245,7 @@ approval, not the merge.
 | Check name       | What it validates                                                     |
 | ---------------- | --------------------------------------------------------------------- |
 | `doc-paths`      | Backticked repo-path citations resolve to real files (`check-doc-paths.mjs`, whole-tree) |
-| `doc-tables`     | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
+| `doc-tables`     | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml`; the placement map and the six index READMEs match `DIRECTORIES` (`check-doc-tables.mjs`) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
 | `docs-structure` | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule (`check-docs-structure.mjs` against `scripts/ci/lib/docs-structure.mjs`, whole-tree) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
 | `doc-refs`       | Bare `docs/`/`spec/` references in files *outside* the docs corpus — source, workflows, migrations, shell — resolve to real files (`check-doc-refs.mjs`, whole-tree) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
 

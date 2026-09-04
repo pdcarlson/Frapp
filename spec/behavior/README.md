@@ -8,6 +8,12 @@ Each topic lives in its own file. Cross-cutting concerns (visual themeing, error
 
 ## Topics
 
+**This file is machine-checked.** Every declared child of `spec/behavior/` needs a row in a table
+here, and a row may not name a child that is not declared — `npm run check:doc-tables`, against
+`DIRECTORIES` in [`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs). Add or retire a directory in
+the manifest and here in the same commit; the rule itself is described in
+[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) § Rosters.
+
 | Topic                                                | File                                       |
 | ---------------------------------------------------- | ------------------------------------------ |
 | Multi-tenancy invariants                             | [`multi-tenancy.md`](multi-tenancy.md)     |
