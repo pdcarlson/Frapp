@@ -59,12 +59,12 @@ What *is* enforced is narrow, and **neither check blocks a merge.** `Links`
 (lychee, `--offline`) checks that markdown links and heading anchors resolve in
 `docs/`, `spec/`, `.claude/`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`,
 `apps/web/AGENTS.md` and `.github/pull_request_template.md`.
-`env-slugs` checks that every Infisical environment slug names one that exists,
-across exactly the roots `SCAN_ROOTS` in
-[`scripts/check-env-slugs.mjs`](scripts/check-env-slugs.mjs) lists —
-`package.json`, `.infisical.json`, `ci/environments.json`, `.github/workflows`,
-`.github/actions`, `docs/` and `spec/`; a slug named in `.claude/`, in
-`scripts/`, or in a root-level README is not scanned. Neither job — `link-check`
+`env-slugs` checks Infisical environment slugs, but only where it looks and only
+in the syntaxes it matches — `SCAN_ROOTS` and the patterns in
+[`scripts/check-env-slugs.mjs`](scripts/check-env-slugs.mjs), read there rather
+than restated here. A slug in `.claude/`, in `scripts/`, or in a root-level
+README is outside its roots; a slug carried by a syntax it does not match is
+invisible to it even inside one. Neither job — `link-check`
 nor `env-slugs` — appears in any roster in
 [`scripts/ci/lib/required-checks.mjs`](scripts/ci/lib/required-checks.mjs), so
 neither blocks a merge: a broken link or anchor turns a check red and the PR

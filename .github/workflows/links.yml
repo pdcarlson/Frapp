@@ -50,9 +50,11 @@ jobs:
       # apps/web/AGENTS.md and .github/pull_request_template.md are named
       # explicitly because the walked roots below (docs, spec, .claude) do not
       # reach them and the repo-root file list covers only the root AGENTS.md.
-      # Both were read by the four docs gates deleted in this change; this
-      # restores the link/anchor half of that coverage only — nothing checks
-      # their backticked paths any more (see docs/internal/ci-cd/DOCS_CI.md).
+      # Both were read by the four docs gates deleted in this change. Listing
+      # them here does not restore that: neither carries a markdown link today,
+      # so lychee finds nothing to check. It is scope for the links they may
+      # grow. What those files actually lost is the backticked-path check, and
+      # nothing replaces it (see docs/internal/ci-cd/DOCS_CI.md).
       - name: Check internal markdown links
         uses: lycheeverse/lychee-action@v2
         with:

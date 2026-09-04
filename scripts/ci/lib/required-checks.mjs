@@ -51,11 +51,12 @@ export const CI_CHECKS = [
   // ESLint + TypeScript (all workspaces); `npm run build -w apps/api`
   // (`nest build`, Render parity); landing plus `@repo/validation`,
   // `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`
-  // and `@repo/api-sdk` unit tests.
+  // and `@repo/api-sdk` unit tests; plus `npm run check:brand-assets`.
   "lint-and-typecheck",
   // `docker build -f apps/api/Dockerfile .` — the API image compile path.
   "api-docker-build",
-  // API Jest unit tests.
+  // API Jest suites: `test`, `test:e2e` and `test:ai-evals`, all three
+  // unconditional (`.github/workflows/ci.yml`). Not unit tests alone.
   "api-tests",
   // openapi.json + api-sdk freshness.
   "api-contract-check",
@@ -231,8 +232,9 @@ export const DOCS_CHECKS = [
   //
   // This array is EMPTY, and that is the current state rather than a gap
   // waiting to be filled. `doc-paths` was here — promoted 2026-08-21 after a
-  // year of reporting only, and the only docs check this repo ever made
-  // required. It was retired along with the three advisory docs gates
+  // year of reporting only, and the only one of the four docs gates ever made
+  // required — `docs-spec-sync` above was required too, which is the case
+  // against re-adding one. It was retired along with the three advisory docs gates
   // (structure, references, rosters) when the repo chose to state the
   // documentation standard once and review a diff against it, rather than run
   // four whole-tree scanners over the corpus. What that trade gives up is

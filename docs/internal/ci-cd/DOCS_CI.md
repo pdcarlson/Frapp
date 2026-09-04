@@ -23,9 +23,14 @@ Asserts that every Infisical environment slug named in the files it scans is one
 `staging`, `prod`. It reads the tree, not the diff — a reference and the slug list it must match sit
 in different files.
 
-**It scans a fixed list, not the repo.** `SCAN_ROOTS` in the script is `package.json`,
-`.infisical.json`, `ci/environments.json`, `.github/workflows`, `.github/actions`, `docs` and
-`spec`. Configs and workflows are in scope alongside prose because a wrong slug in a script is the
+**It scans a fixed list, not the repo, and matches fixed syntaxes rather than any mention of a
+slug.** `SCAN_ROOTS` is `package.json`, `.infisical.json`, `ci/environments.json`,
+`.github/workflows`, `.github/actions`, `docs`, `spec`, and `ENV_REFERENCE.md` itself — which is
+listed separately so its absence is caught, not just its content. Within those it reads
+`infisical run --env=`, `.infisical.json`'s `defaultEnvironment` and branch mapping, `env-slug:` in
+workflows and actions, `--env=` in `docs`/`spec` code samples, and `infisicalEnvSlug` in the
+environments config. A slug carried by any other syntax — an `infisical-environment:` input, an
+`INFISICAL_ENV` variable — is not seen even inside a scanned file. Configs and workflows are in scope alongside prose because a wrong slug in a script is the
 same defect as one in a doc — which is also why this is **not** a documentation gate and has its own
 job: a failure should name what it is. Everything outside that list is unscanned, `.claude/`,
 `scripts/`, `apps/` and the root `README.md` included. Read `SCAN_ROOTS` rather than this sentence
@@ -56,6 +61,11 @@ The worked example of that class: the spec split in
 [#432](https://github.com/pdcarlson/Frapp/issues/432) left dead pointers nothing caught for months —
 `apps/api/README.md` named three files that no longer existed, and `supabase/seed.sql` still pointed
 at the pre-split behavior spec. Both were found by hand.
+
+**How big the unchecked surface is.** When the reference gate was added it reported roughly 770 path
+references and 470 filename references across 530 files (2026-09-02) — the last measurement taken
+before it was deleted, and the size of what is now unwatched. It moves with the tree, so treat it as
+an order of magnitude rather than a current count.
 
 **A file can be inside one checker and outside the rest.** lychee walks every file listed above, so
 a broken markdown link or heading anchor is caught wherever it lives. Nothing checks a **backticked

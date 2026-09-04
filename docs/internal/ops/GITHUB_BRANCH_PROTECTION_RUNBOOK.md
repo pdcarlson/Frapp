@@ -257,7 +257,7 @@ approval, not the merge.
 
 | Check name   | Workflow                      | What it validates                                                     |
 | ------------ | ----------------------------- | --------------------------------------------------------------------- |
-| `env-slugs`  | `.github/workflows/docs.yml`  | Every Infisical environment slug named in the files [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) scans is one that exists. Not a documentation gate — [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
+| `env-slugs`  | `.github/workflows/docs.yml`  | An Infisical environment slug is one that exists, wherever [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) looks and in the syntaxes it matches. Not a documentation gate — [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
 | `link-check` | `.github/workflows/links.yml` | lychee, offline: markdown links and heading anchors resolve across the paths that workflow passes it. External URLs are never fetched |
 
 > **Do not promote either of these, and do not re-add a deleted one.** `DOCS_CHECKS` in

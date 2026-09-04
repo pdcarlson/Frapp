@@ -11,7 +11,9 @@ Which subfolder of `docs/internal/` owns which kind of change is stated once, in
 [`DOCUMENTATION_CONVENTIONS.md` § Where things go](DOCUMENTATION_CONVENTIONS.md#where-things-go).
 This index does not restate it; it only routes: [`ops/`](ops/), [`ci-cd/`](ci-cd/),
 [`mobile/`](mobile/), [`quality/`](quality/), [`environment/`](environment/README.md),
-[`security/`](security/README.md), [`services/`](services/).
+[`security/`](security/README.md), and `services/` — which has no index of its own, so its two files
+are named here: [`chapter-service-perf.md`](services/chapter-service-perf.md) and
+[`report-service-perf.md`](services/report-service-perf.md).
 
 Design-system guidance moved to [`spec/ui/design-system/`](../../spec/ui/design-system/README.md) (Signet restructure).
 

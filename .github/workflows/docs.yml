@@ -30,9 +30,9 @@ concurrency:
 
 jobs:
   # The Infisical environment-slug gate. It is NOT a documentation gate — it
-  # asserts that an Infisical environment named inside the roots it scans names
-  # one that exists, in `package.json` scripts and workflows as much as in
-  # prose. It used to run as the second step of a docs job and would have died
+  # asserts that an Infisical environment slug it matches inside the roots it
+  # scans is one that exists, in `package.json` scripts and workflows as much as
+  # in prose. It matches fixed syntaxes, not any mention of a slug. It used to run as the second step of a docs job and would have died
   # with it; it has its own job so that a failure names what it is.
   #
   # Its reach is exactly `SCAN_ROOTS` in `scripts/check-env-slugs.mjs`:
