@@ -213,7 +213,7 @@ approval, not the merge.
 | `api-contract-check` | openapi.json + api-sdk freshness                                                                |
 | `migration-safety`   | Migration filename + docs validation                                                            |
 | `mobile-validate`    | Mobile lint + typecheck + Vitest unit tests                                                     |
-| `ci-scripts-tests`   | `node --test` unit tests for deploy-gate scripts under `scripts/ci/`                            |
+| `ci-scripts-tests`   | `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`), covering the gate and deploy scripts under both `scripts/` and `scripts/ci/` |
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                     |
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`) |
 | `dependency-audit`   | npm audit gate: any high/critical advisory not allowlisted in `scripts/npm-audit-allowlist.json` fails (issue #618) |
@@ -230,7 +230,7 @@ approval, not the merge.
 
 > **`web-visual-regression` is gone — don't re-add it to any roster.** It ran Playwright **snapshots** and was advisory, because baselines pinned to CI's Chromium build drift with it. Until #1152 the 375px floor gate ran inside it and inherited that posture by sharing a directory, so a breached floor was a red mark a PR could merge past; #1152 split the floor into its own **required** `web-responsive-floor` job, and the snapshot job has since been deleted outright along with its spec and baselines ([`QUALITY_GATES.md`](../ci-cd/QUALITY_GATES.md)). If a stale live branch-protection config still lists it, a `npm run configure:branch-protection` run clears it — the script's arrays are the intent. **That run is a live `PUT` and a human step with an admin PAT; from an agent session run `npm run configure:branch-protection:verify` and nothing else** (see **Prerequisites**).
 
-> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified **2026-08-27**: `main` carried all **19** intended contexts with nothing extra — script and live agreed, `web-responsive-floor` and `migration-drift` included. #1374 then raised the intent to **21** by adding `web-production-build`, and the migration-correctness pass swapped `migration-drift` out for `migration-order` — still **21**, but two entries different. This paragraph used to say no run had happened since, so live still lacked both new checks; a read on **2026-09-01** found the opposite — all 21 roster contexts present, `migration-drift` absent — so an apply evidently happened in between. **Do not trust either dated observation as current state.** That is the whole point of this section: the count here is a snapshot, the arrays are the intent, and only a re-run makes intent live. Read it rather than infer it — `npm run configure:branch-protection:verify` exits non-zero on any difference (a later read, **2026-09-02**, still found all 21 and exit 0; see the `--verify` section above), or use the `gh api` call below from a laptop or Actions.
+> **Script vs live drift — check before you assume.** The arrays in the script are the *intended* state; the live config is whatever the last manual run applied, and the two drift apart silently because only a human re-run closes the gap. It has happened before: `main` sat at 12 contexts against 17 intended until a run on **2026-08-21** closed the gap. Verified **2026-08-27**: `main` carried all **19** intended contexts with nothing extra — script and live agreed, `web-responsive-floor` and `migration-drift` included. #1374 then added `web-production-build`, and the migration-correctness pass swapped `migration-drift` out for `migration-order`. This paragraph used to say no run had happened since, so live still lacked both new checks; a read on **2026-09-01** found the opposite — every roster context present, `migration-drift` absent — so an apply evidently happened in between. **Do not trust either dated observation as current state.** That is the whole point of this section: the count here is a snapshot, the arrays are the intent, and only a re-run makes intent live. Read it rather than infer it — `npm run configure:branch-protection:verify` exits non-zero on any difference (a later read, **2026-09-02**, exited 0; see the `--verify` section above), or use the `gh api` call below from a laptop or Actions.
 >
 > **"Not applied yet" does NOT mean "not enforced anywhere".** `scripts/ci/validate-deploy-sha.mjs` imports `ALL_REQUIRED_CHECKS` from [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) rather than reading GitHub's live config (until #1383 it imported the same roster from `configure-branch-protection.mjs`, which put a module that writes governance on the deploy path), so a check is **blocking on the production deploy path from the moment it is added to the array** — before any `configure:branch-protection` run, and whether or not branch protection has ever heard of it. The asymmetry is deliberate (a `workflow_dispatch` has no PR and therefore no required checks, so the deploy gate has to ask the checks API against some list) but it is easy to be surprised by: a PR can merge with `migration-order` red and then be undeployable. Read the array as the deploy gate's live config and branch protection's *intended* one. Any count written here is a dated observation, not a source of truth — the arrays are the intent, and only a re-run makes it live. Read live state from the API:
 >
@@ -246,6 +246,8 @@ approval, not the merge.
 | ---------------- | --------------------------------------------------------------------- |
 | `doc-paths`      | Backticked repo-path citations resolve to real files (`check-doc-paths.mjs`, whole-tree) |
 | `doc-tables`     | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
+| `docs-structure` | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule (`check-docs-structure.mjs` against `scripts/ci/lib/docs-structure.mjs`, whole-tree) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
+| `doc-refs`       | Bare `docs/`/`spec/` references in files *outside* the docs corpus — source, workflows, migrations, shell — resolve to real files (`check-doc-refs.mjs`, whole-tree) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
 
 **Migration checks (from `.github/workflows/migration-drift-gate.yml`):**
 
@@ -389,20 +391,20 @@ If you need to merge urgently and a check is broken:
 
 If CI job names change (e.g., renaming a workflow job), update:
 
-1. `scripts/ci/lib/required-checks.mjs` — `CI_CHECKS`, `DOCS_CHECKS` arrays (moved out of
-   `configure-branch-protection.mjs` in #1383)
-2. This runbook — required checks tables
-3. `CONTRIBUTING.md` — required checks section
-4. `spec/environments/README.md` — CI job matrix
-5. `docs/internal/ci-cd/DOCS_CI.md` — the docs-gate table and its **Required?** column
-6. Re-run `npm run configure:branch-protection` to apply the new names — **human step, admin PAT**;
-   the bare command is a live `PUT`, so an agent making the roster change in steps 1–5 opens the PR
+1. `scripts/ci/lib/required-checks.mjs` — `CI_CHECKS`, `DOCS_CHECKS`, `DRIFT_CHECKS` arrays (moved
+   out of `configure-branch-protection.mjs` in #1383)
+2. This runbook — the tables in **Required Status Checks** above, now the only hand-kept copy
+3. `docs/internal/ci-cd/DOCS_CI.md` — the docs-gate table and its **Required?** column
+4. Re-run `npm run configure:branch-protection` to apply the new names — **human step, admin PAT**;
+   the bare command is a live `PUT`, so an agent making the roster change in steps 1–3 opens the PR
    and stops here
-7. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was
+5. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was
    missed, writes nothing, and is the one invocation an agent session may run
 
-This list is the drift engine, not a safety net — one source and four hand-kept copies is why
-`@repo/theme` and `packages/chat-integrations` went missing from every table at once. Steps 2–4 are
-now asserted by `npm run check:doc-tables`; step 5 is not, and is the copy to watch. Prefer
-deleting a copy and linking to the script over adding a seventh step, and state posture as *intended*
-(what the arrays say) rather than *live* (what an admin last applied), which no doc can keep true.
+This list used to carry two more steps, and that is why it was the drift engine rather than a safety
+net: `CONTRIBUTING.md` and `spec/environments/README.md` each restated the whole roster by hand, and
+`@repo/theme` and `packages/chat-integrations` went missing from every table at once. Both now hold a
+pointer to this section instead, and `DOC_TABLES` in `scripts/check-doc-tables.mjs` names only this
+file. Step 2 is asserted by `npm run check:doc-tables`; step 3 is not, and is the copy to watch. Keep
+preferring deletion-plus-a-pointer over a sixth step, and state posture as *intended* (what the
+arrays say) rather than *live* (what an admin last applied), which no doc can keep true.

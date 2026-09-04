@@ -33,13 +33,10 @@ fallback.** The label roster and shared routine config live in
 [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
 > **Never source a body edit from an MCP read — `search_issues` included.** All three read paths
-> (`issue_read`, `list_issues`, `search_issues`) corrupt the body they return, three independent
-> ways: HTML comments deleted (a legacy `<!-- agent-suggestion: v1 fp=… -->` dedup marker),
-> unrecognised tags deleted (including JSX inside ` ```tsx ` fences), and `'`/`"`/`&`/`>`
-> entity-escaped. `search_issues` was the lossless exception until it regressed on all three —
-> confirmed 2026-08-20. Rewriting from that text silently destroys content — a dropped marker makes
-> the curator re-file the issue as a duplicate, and a dropped code snippet is **unrecoverable**.
-> Full table, the probe, and the narrow escape hatch:
+> (`issue_read`, `list_issues`, `search_issues`) corrupt the body they return. Rewriting from that
+> text silently destroys content — a dropped marker makes the curator re-file the issue as a
+> duplicate, and a dropped code snippet is **unrecoverable**. The corruption vectors, the fidelity
+> table, the probe, and the narrow escape hatch:
 > [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 > The same hazard applies to every routine that re-bodies an issue.
 >

@@ -76,7 +76,7 @@ summary before running anything from this family.
 
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing, `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks`, `packages/chat-core`, and `packages/chat-integrations` suites; `api-docker-build` runs `apps/api/Dockerfile`; `web-production-build` builds `apps/web` and `apps/landing` on a `npm ci --omit=dev` tree, the Vercel production install shape) |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs. Per-job suite lists are **not restated here**: they live in [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) § Required Status Checks, which `check:doc-tables` asserts against `ci.yml`. This copy was unasserted and had already lost `@repo/theme` — the same package whose disappearance (#1153) the gate exists to catch |
 | Composite actions   | `.github/actions/<name>/action.yml` — shared step sequences called as `uses: ./.github/actions/<name>`. Requires an `actions/checkout` earlier in the job. Currently one: **`turbo-packages-build`**, the ADR-15 Lever A turbo cache restore + `packages/*` build, used by all 8 jobs that need prebuilt packages. Its cache key is single-sourced there and **no workflow may spell it out again** — `scripts/ci/__tests__/turbo-packages-build-action.test.mjs` enforces that, and also that `clean-checkout-typecheck` and `web-production-build` never acquire the action. Add `.github/actions/**` to any `dorny/paths-filter` list that gates a job using one, or a PR touching only the action skips that job. |
 | API deploy (staging) | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`) on `main`. Staging only since #1340. |
 | Production deploy   | `.github/workflows/deploy-production.yml` — `workflow_dispatch` ONLY, takes a `sha`. Validates the commit is an ancestor of `main` with green CI (`scripts/ci/validate-deploy-sha.mjs`) — the required-check roster intersected with the jobs that commit's own workflows define, so a check it predates reads *not applicable* instead of making an older commit undeployable (see the **Deploying an OLDER commit** callout in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`) — preflights the provider guardrails, replays the migration against production's live applied state, applies, deploys that commit to Render by `commitId` and to Vercel with `target: production`, then calls `release.yml`. One job under `environment: production`, so one approval click. A `scope: migrations-only` input applies the migrations and stops — no Render deploy, no Vercel build, no tag — which is what the deleted `Migrate production` workflow used to do, minus that workflow's habit of skipping every gate in this sentence. |
@@ -152,14 +152,8 @@ Deeper deploy architecture: [`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md).
 
 ## Infisical sync map
 
-| #   | Infisical env | Destination                         |
-| --- | ------------- | ----------------------------------- |
-| 1   | staging       | Render → frapp-api-staging          |
-| 2   | production    | Render → frapp-api-prod             |
-| 3   | staging       | Vercel → frapp-web (Preview)        |
-| 4   | production    | Vercel → frapp-web (Production)     |
-| 5   | staging       | Vercel → frapp-landing (Preview)    |
-| 6   | production    | Vercel → frapp-landing (Production) |
+The six live syncs — source environment, secret path, destination scope, git branch filter, and the
+date the dashboard was last read — are inventoried in exactly one place: [`SECRETS_MANAGEMENT.md` §5 "Configure Secret Syncs"](../environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs). GitHub Actions is not one of them; `deploy-api.yml` pulls at job time. Do not restate the table here.
 
 Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) and root `.infisical.json`.
 

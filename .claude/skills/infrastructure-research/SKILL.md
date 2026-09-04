@@ -381,27 +381,29 @@ done
 2. Cross-reference with `supabase/migrations/` on `main` — there is no separate
    production branch since #1340 (`GET /repos/pdcarlson/Frapp/branches/production` reads 404);
    production is deployed from a named commit on `main` by
-   `.github/workflows/deploy-production.yml`. As of 2026-09-02 that workflow's guardrail preflight
-   is failing on the retired Vercel Git integration, so nothing new can land in production until
-   that is repaired — see the Vercel note above
+   `.github/workflows/deploy-production.yml`. That workflow's guardrail preflight briefly blocked
+   production deploys on 2026-09-02 — it read the retired Vercel Git link as a violation — but
+   #1579 inverted the assertion the same day, so it passes against the unlinked state and
+   production deploys are **not** blocked; a *present* Git link is now the violation. Gate list:
+   [`docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md) § How Deployments Are Gated
 3. Check [`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md) for promotion status
 
 ### "Are secrets in sync?"
 
 1. List secret keys in each Infisical environment (see above)
 2. Compare against [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)
-3. Verify Infisical syncs are active for each destination (Render, Vercel, GitHub)
+3. Verify Infisical syncs are active for each destination (Render, Vercel — there is no GitHub sync; `deploy-api.yml` pulls at job time with `Infisical/secrets-action`, universal auth, not OIDC)
 
 ---
 
 ## Infisical sync map
 
-The canonical sync map (which Infisical environment feeds which Render/Vercel destination — GitHub Actions is not a sync, it pulls at job time) lives in [`docs/internal/ci-cd/AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md) under "Infisical sync map" — check it there rather than relying on a copy here.
+The canonical sync map (which Infisical environment feeds which Render/Vercel destination — GitHub Actions is not a sync, it pulls at job time) lives in [`docs/internal/environment/SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEMENT.md) under "5. Configure Secret Syncs" — check it there rather than relying on a copy here. It is a dated convenience copy of live dashboard state, so treat a disagreement with the Infisical dashboard as the doc being wrong, and re-stamp its date when you correct it.
 
 ---
 
 ## Updating this skill
 
 - Add research patterns for new provider integrations (e.g., Sentry API, Expo EAS).
-- If the Infisical sync map changes, update [`docs/internal/ci-cd/AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md); if credentials change, update [`docs/internal/environment/AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md) — this skill only points at them.
+- If the Infisical sync map changes, update [`docs/internal/environment/SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEMENT.md) §5 — and only there; if credentials change, update [`docs/internal/environment/AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md) — this skill only points at them.
 - For Infisical `workspaceId` in curl examples: set **`INFISICAL_PROJECT_ID`** to the project ID from Infisical (same value as GitHub secret `INFISICAL_PROJECT_ID` in [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)), or keep **`.infisical.json`** `workspaceId` in sync and `export INFISICAL_PROJECT_ID=…` before running the snippets.
