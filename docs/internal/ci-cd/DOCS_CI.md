@@ -8,16 +8,19 @@ asserts one thing, and each fails with a different fix.
 
 | Check | Script | Asserts | Scope | Job | Required? |
 |---|---|---|---|---|---|
-| Sync | [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A PR touching non-doc files also touches `docs/` or `spec/` | PR diff | `docs-spec-sync` | **Yes** |
+| Sync | [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A PR touching non-doc files also touches `docs/` or `spec/` | PR diff | `docs-spec-sync` | Being retired (#1597) |
 | Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule, per [`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) | Whole tree | `docs-structure` | Not yet — see rollout below |
 | Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** — in `DOCS_CHECKS` |
 | References | [`check-doc-refs.mjs`](../../../scripts/check-doc-refs.mjs) | In files OUTSIDE the docs corpus (source, workflows, migrations, shell): bare `docs/`/`spec/` paths resolve, and bare markdown filenames still name a tracked file | Whole tree | `doc-refs` | Not yet — see rollout below |
 | Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` | Whole tree | `doc-tables` | Not yet — see rollout below |
 | Env slugs | [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) | Every Infisical environment named anywhere is one that exists | Whole tree | `doc-tables` (same job) | Not yet — inherits `doc-tables` |
 
-`docs-spec-sync` is a required check under `enforce_admins: true`, registered via the `DOCS_CHECKS`
-array in [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs)
-— a **separate array** from `CI_CHECKS` in the same file, which is easy to miss when grepping.
+`docs-spec-sync` is **being retired** (#1597) and is no longer in the `DOCS_CHECKS` array in
+[`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) — note that is a
+**separate array** from `CI_CHECKS` in the same file, which is easy to miss when grepping. The job
+still runs and reports. Whether it still blocks a merge is live branch-protection state, which no
+doc can answer: read it per
+[`../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 The arrays moved out of `configure-branch-protection.mjs` in #1383 so the production deploy path
 could read them without importing a module that writes live branch protection.
 
@@ -32,9 +35,10 @@ Pure helpers (`classifyChanges`, `NON_CODE_PREFIXES`) are exported for
 
 ### Exemptions
 
-`docs-spec-sync` is **required** under `enforce_admins: true`, so a category of PR that can never
-satisfy it is not merely red — it is permanently unmergeable, with no override. All three exemptions
-exist for that reason.
+These exemptions exist because `docs-spec-sync` was required under `enforce_admins: true`: a
+category of PR that could never satisfy it was not merely red, it was permanently unmergeable with
+no override. That is also the argument that retired the gate (#1597) — a check nobody can satisfy
+honestly gets satisfied dishonestly.
 
 The label is the one you are most likely to need, and reaching for it is **not** a failure of
 discipline — see below.
@@ -43,7 +47,7 @@ discipline — see below.
 |---|---|---|
 | Dependabot PRs | Workflow condition on the *step*, in [`docs.yml`](../../../.github/workflows/docs.yml) | A bump touches `package.json` / `package-lock.json` and nothing else. Skipping the **step**, never the job, keeps the required check reporting — a skipped job never reports, leaving the PR blocked on a check that never arrives. |
 | `.buildpad/**` | `NON_CODE_PREFIXES` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | The canvas export is neither code nor documentation, so it has no docs impact to sync. Every periodic sync would otherwise land as "N non-doc files changed, no docs updated". |
-| PRs labelled `no-doc-change-needed` | `EXEMPT_LABEL` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A change with genuinely no docs impact — a pure-code consolidation, a lint fix, a formatting-only sweep — cannot satisfy the gate, and the gate is required, so it would be unmergeable rather than merely red. **This is the expected answer for a mechanical PR, not a last resort.** |
+| PRs labelled `no-doc-change-needed` | `EXEMPT_LABEL` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A change with genuinely no docs impact — a pure-code consolidation, a lint fix, a formatting-only sweep — cannot satisfy the gate, and while the gate blocked merges that made such a PR unmergeable rather than merely red. **This is the expected answer for a mechanical PR, not a last resort.** |
 
 #### The `no-doc-change-needed` waiver
 

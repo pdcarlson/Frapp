@@ -244,7 +244,7 @@ approval, not the merge.
 
 | Check name       | What it validates                                                     |
 | ---------------- | --------------------------------------------------------------------- |
-| `docs-spec-sync` | Docs/spec sync **and** structure on PRs (`check-docs-impact.mjs` + `check-docs-structure.mjs`) |
+| `docs-spec-sync` | Docs/spec sync on the PR diff (`check-docs-impact.mjs`). Structure is the separate `docs-structure` job. Removed from `DOCS_CHECKS` in #1597 and being retired; read live protection for whether it still blocks |
 | `doc-paths`      | Backticked repo-path citations resolve to real files (`check-doc-paths.mjs`, whole-tree) |
 | `doc-tables`     | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
 

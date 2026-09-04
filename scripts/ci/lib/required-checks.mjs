@@ -173,7 +173,51 @@ export const CI_CHECKS = [
 ];
 
 export const DOCS_CHECKS = [
-  "docs-spec-sync",
+  // NOT here, and it was: `docs-spec-sync`. It is the one COERCIVE gate in this
+  // repository — it does not check a fact, it requires a WRITE under `docs/` or
+  // `spec/` on any PR that touches anything else. A gate that cannot tell truth
+  // from filler is cheapest to satisfy with filler, so it manufactures exactly
+  // the debt it was built to prevent: `docs/guides/README.md` is a 21-line
+  // router whose last line is an unowned prose chain of ~22 unrelated facts,
+  // accreted across seven PRs by authors who needed somewhere to write.
+  //
+  // The `no-doc-change-needed` label does not rescue it. Applying a label is
+  // visible and reviewable; appending a paragraph is neither — so an author
+  // optimising for green picks the paragraph. Measured at 0cf0a650, with the
+  // command so it stays checkable: `git rev-list --count <ref> -- docs/ spec/`
+  // over `git rev-list --count <ref>` gives 579 of 835 commits on `main`
+  // touching `docs/` or `spec/` (561 of 784 excluding merges), while only 28 of
+  // 619 merged PRs carried the waiver label — and the waiver did not exist for
+  // the gate's first 174 days.
+  //
+  // Removing it from this array is step one of three, and the ORDER is
+  // load-bearing under `enforce_admins: true`: (1) drop it here — the job keeps
+  // running and reporting, so no open PR changes, though note this array is also
+  // the BACKWARD-looking deploy assertion in validate-deploy-sha.mjs, so a
+  // production deploy stops requiring this check the moment step 1 merges;
+  // (2) a human reviews
+  // `npm run configure:branch-protection -- --dry-run` and then applies it with
+  // an admin PAT, which is what actually stops it blocking; (3) only then delete
+  // the job, the script, and the rows describing them. Delete the job first and
+  // every PR blocks forever on a required check that never reports.
+  //
+  // Two traps in those steps. Step 2 PUTs the WHOLE payload built from these
+  // arrays, not just the one context being dropped, so any live setting that has
+  // drifted from the roster is silently reconciled at the same time — read the
+  // dry-run diff before applying. Step 3 must delete the doc rows in the same
+  // change: `check-doc-tables.mjs` accepts a row only because the job id is
+  // still in `docs.yml`, so removing the job turns every surviving row into a
+  // finding — the same way `branch-policy` did in #1340.
+  //
+  // Step 3 must also delete the INSTRUCTIONS this gate produced, which outlive
+  // it and no gate can see: `docs/internal/ci-cd/ROUTINES.md` and
+  // `.claude/skills/docs-upkeep/SKILL.md` both tell agents a `.claude/`-only PR
+  // cannot merge and must be paired with a `docs/` file, and
+  // `docs/internal/ci-cd/AGENT_INFRA.md` calls this a required status check.
+  // All three are true only while the gate is live; left behind, they keep
+  // manufacturing the filler paragraphs that are the whole reason it is going.
+  // Tracked in #1597.
+
   // Doc path citations: fails when a doc cites a repo path that resolves
   // nowhere, covering the gap the `Links` gate leaves (lychee validates
   // markdown links and heading anchors, never `` `inline/code.ts` `` paths).
