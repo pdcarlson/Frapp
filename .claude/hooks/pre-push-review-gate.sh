@@ -20,26 +20,21 @@
 # findings; this hook allows the push only when that marker exists for the current HEAD.
 # Retrying a denied push does NOT satisfy it.
 #
-# This replaced a deny-once-then-allow sentinel, which guaranteed nothing once the review
-# became agent-invocable: two consecutive pushes cleared it with no review in between.
-# That was survivable only while the required skill was human-only, because the human
-# keystroke was the real enforcement.
+# Never key this gate on ATTEMPTS (the deny-once-then-allow sentinel it replaced): once the
+# review is agent-invocable, two consecutive pushes clear it with no review in between.
 #
-# Livelock guard: a hook must never wedge a session permanently, so after 4 blocked
-# attempts for the same HEAD the push is allowed through with a loud stderr warning that
-# the diff is UNREVIEWED. FRAPP_SKIP_REVIEW_GATE=1 is the documented deliberate bypass
-# (also the path after a human runs /code-review, which does not write the marker).
+# Livelock guard: a hook must never wedge a session permanently, so past the threshold at the
+# counter below a push is released with a loud stderr warning that the diff is UNREVIEWED.
+# FRAPP_SKIP_REVIEW_GATE=1 is the documented deliberate bypass (also the path after a human
+# runs /code-review, which does not write the marker).
 #
 # A new HEAD (e.g. after committing fixes) invalidates the marker, so the review always
 # covers the code being pushed. When the marker is present the hook steps aside silently
 # (exit 0) and the normal permission flow applies — it does not force-approve the push.
 #
-# The `git push` match is a word-boundary heuristic (a free-form shell command can only be
-# matched heuristically): it skips `git pushdeploy`, and it exempts a push that publishes no
-# objects — a dry run, or a ref deletion in its FLAG form (`--delete` / `-d`). The colon refspec
-# (`git push origin :br`) publishes nothing either and is still gated on purpose; the exemption
-# block below says why. An exotic command that merely quotes "git push" may still trip it once.
-# That's acceptable for a local convenience gate — the worst case is one extra review prompt.
+# Matching `git push` in a free-form shell command is necessarily heuristic. The matcher, the
+# misses it accepts, and the no-op exemptions (dry run; ref deletion in its FLAG form, while the
+# colon refspec stays gated) are each stated once, at push_re and the exemption block below.
 #
 # This is a Claude Code tool-level hook and is INDEPENDENT of git's own hooks: it does
 # not run git mutations, does not touch `--no-verify`, and does not interfere with the
@@ -60,10 +55,9 @@ json_escape() {
   printf '""'
 }
 
-# Parse must FAIL CLOSED. This previously ended in `|| printf '\t'`, so an unparseable payload —
-# or simply a machine without python3 — yielded an empty command, matched no push, and exited 0.
-# That silently disabled the only pre-PR review gate for the entire session with no diagnostic:
-# the one failure mode a gate must not have.
+# Parse must FAIL CLOSED: a parse failure must never yield an empty command (e.g. a trailing
+# `|| printf '\t'`), which matches no push and exits 0 — silently disabling the only pre-PR
+# review gate for the session with no diagnostic: the one failure mode a gate must not have.
 #
 # Two interpreters are tried before giving up. node is the meaningful one: this is a Node
 # monorepo, so a machine that can run the project can parse the payload. Falling back to the
@@ -104,9 +98,8 @@ if fields="$(parse_payload)"; then
 else
   # No interpreter and/or a malformed payload. Deny, but ONLY for payloads that plausibly
   # concern a push, and — critically — fall through into the normal marker / bypass / livelock
-  # machinery below rather than exiting here. An earlier revision of this branch returned
-  # immediately, which meant a machine without python3 denied every push forever with no
-  # working escape: a permanent session wedge, which this hook's contract forbids outright.
+  # machinery below rather than exiting here: a deny with no path to the livelock release
+  # wedges the session permanently, which this hook's contract forbids outright.
   # Only grep exit status 1 means a clean "no match". `! grep -q` would also swallow status 2
   # (I/O or regex error) and 127 (grep absent), silently allowing a real push in exactly the
   # broken-tooling environment this branch exists to handle — the same fail-open shape as the
@@ -169,17 +162,14 @@ fi
 # carries it when the session exports it; but an agent told to "set FRAPP_SKIP_REVIEW_GATE=1 on
 # the push" naturally writes it as a command prefix, which the hook does NOT inherit — it only
 # ever sees the command text. Checking both is what makes the documented escape actually work.
-# Previously only the env form was read, and `FRAPP_SKIP_REVIEW_GATE=1 git push` appeared to
-# work solely because push_re declines to match an env-prefixed command — the sanctioned bypass
-# depending on a documented matcher gap, while `export FRAPP_SKIP_REVIEW_GATE=1 && git push`
-# was denied.
+# Never let the prefix form appear to work only because push_re declines to match an
+# env-prefixed command: that is a matcher gap, not a bypass, and it leaves
+# `export FRAPP_SKIP_REVIEW_GATE=1 && git push` denied.
 # The assignment must be in COMMAND POSITION (start of string, or after a shell separator),
-# optionally behind `export`. A bare substring test was strictly worse than the bug it replaced:
-# this repo documents the flag by name in CONTRIBUTING.md and the runbook, so
-#   git commit -m "docs: explain FRAPP_SKIP_REVIEW_GATE=1 escape hatch" && git push
-#   grep -rn FRAPP_SKIP_REVIEW_GATE=1 docs/ && git push
-#   git push origin main   # FRAPP_SKIP_REVIEW_GATE=1 would skip review
-# each silently disabled the only pre-PR review gate — with no warning, unlike a livelock release.
+# optionally behind `export`. An unanchored substring test disables the gate silently:
+# this repo documents the flag by name in CONTRIBUTING.md and the runbook, so ordinary work
+# that merely names it (`grep -rn FRAPP_SKIP_REVIEW_GATE=1 docs/ && git push`) would silently
+# disable the only pre-PR review gate — with no warning, unlike a livelock release.
 # NB: the pattern lives in a variable — an unquoted `;` / `&` / `|` inside [[ =~ ]] is a syntax
 # error, same reason push_re below is a variable.
 skip_re='(^|[;&|(){}][[:space:]]*)[[:space:]]*(export[[:space:]]+)?FRAPP_SKIP_REVIEW_GATE=[^[:space:];&|]+'
@@ -190,16 +180,15 @@ fi
 
 # Gate only real `git push` invocations. Three things matter here:
 #   1. `git` must be in COMMAND POSITION — start of the string, or right after a shell
-#      separator. Matching a bare word boundary meant any command merely *mentioning* the
-#      phrase (`grep "git push" f`, `bash test.sh` echoing it) was gated. That was tolerable
-#      when the gate burned a one-shot sentinel; now that a denial is a hard block, a false
-#      positive stops unrelated read-only work.
+#      separator. A bare word boundary gates any command merely *mentioning* the phrase
+#      (`grep "git push" f`), and because a denial is a hard block, such a false positive
+#      stops unrelated read-only work.
 #   2. Only git's own GLOBAL OPTIONS may sit between `git` and the subcommand — `-C <dir>`
-#      above all, the idiom this very hook uses at the rev-parse below. An earlier version
-#      allowed arbitrary text here, which matched any git command containing a later
-#      `push` token: `git commit -m "wire up push notifications"` was blocked, and every
-#      such false positive burned the livelock budget until a real unreviewed push was
-#      auto-allowed. Options only, so a subcommand that isn't `push` can never match.
+#      above all, the idiom this very hook uses at the rev-parse below. Allowing arbitrary
+#      text here matches any git command containing a later `push` token (`git commit -m
+#      "wire up push notifications"`), and every such false positive burns the livelock
+#      budget until a real unreviewed push is auto-allowed. Options only, so a subcommand
+#      that isn't `push` can never match.
 #   3. Word boundary after `push`, so `git pushdeploy` / `git push-all` don't match.
 # Newlines were normalised to ";" above, so multi-line commands are separated, not merged.
 # Tradeoff: an env-prefixed invocation (`env FOO=1 git push`) is not matched, and neither is a
@@ -220,17 +209,13 @@ fi
 # another, and the published one still has a diff to review.
 #
 # The exemption is decided on the command's TOKENS, never by searching the string, and that is
-# the load-bearing part. Asking whether a no-op flag appears somewhere in $command released real
-# pushes, because the flag need not belong to the push at all. Each of these published for real:
-#   git push origin main # -d                         the flag sits in a comment
-#   git push origin main & git push -d origin tmp     two commands; the first one is real
-#   git push --repo -d origin main                    git consumed -d as --repo's value
-#   git push -o "ci.skip -d " origin main             the flag sits inside a quoted value
-#   git push origin "release-$(date -d +1day +%F)"    the flag belongs to date(1)
-# and the older substring arm released this one the same way:
-#   git push origin fix--dry-run-branch               the flag text is part of a ref name
-# Each exited 0 ahead of the marker check, the bypass check AND the livelock counter, leaving no
-# sentinel and no stderr — quieter than a livelock release, which at least warns UNREVIEWED.
+# the load-bearing part: a no-op flag found anywhere in $command need not belong to the push at
+# all — it can sit in a comment, inside a quoted option value, in a ref name, in another
+# program's arguments, or in a second command on the same line (`git push origin main & git
+# push -d origin tmp` publishes for real). A wrong exemption exits 0 ahead of the marker check,
+# the bypass check AND the livelock counter, leaving no sentinel and no stderr — quieter than a
+# livelock release, which at least warns UNREVIEWED. The catalogue of real releases is asserted
+# in scripts/ci/__tests__/review-gate.test.mjs.
 #
 # So the command must FIRST be one plain git invocation of inert tokens: no quote, `$`, backtick,
 # `#`, or shell operator anywhere. That leaves nowhere for a second command, a comment, or a
@@ -272,11 +257,11 @@ fi
 # why. FRAPP_SKIP_REVIEW_GATE remains the escape.
 no_head=0
 if ! head_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" || [ -z "$head_sha" ]; then
-  # Deny, but fall through to the livelock counter rather than returning here. Returning was a
-  # permanent wedge — the same shape removed from the parse-failure branch above — and with no
-  # interpreter json_escape degrades to `""`, so the deny carried an empty reason: no diagnostic
-  # and no discoverable escape. `nohead` is a counter key ONLY; the marker check is skipped
-  # entirely below, so unlike a constant *marker* key it can never satisfy the gate.
+  # Deny, but fall through to the livelock counter rather than returning here: returning is a
+  # permanent wedge, and with no interpreter json_escape degrades to `""`, so the deny would
+  # carry an empty reason — no diagnostic and no discoverable escape.
+  # `nohead` is a counter key ONLY; the marker check is skipped entirely below, so unlike a
+  # constant *marker* key it can never satisfy the gate.
   no_head=1
   head_sha="nohead"
 fi
@@ -306,8 +291,8 @@ sentinel_file="${sentinel_dir}/${head_sha}"
 # Livelock guard. The gate wants real evidence of review, but a hook must never wedge a
 # session permanently: if the review genuinely cannot run (skill missing, tooling broken),
 # the Nth attempt is allowed through with a loud warning rather than denying forever.
-# Deliberately higher than 2 so a reflexive immediate retry — the old behaviour, which
-# satisfied this gate with zero review — no longer gets through.
+# The threshold is 4 blocked attempts for the same HEAD, deliberately well above 2: a reflexive
+# immediate retry must not satisfy this gate with zero review.
 attempts=0
 [ -f "$sentinel_file" ] && attempts="$(cat "$sentinel_file" 2>/dev/null || echo 0)"
 case "$attempts" in ''|*[!0-9]*) attempts=0 ;; esac
