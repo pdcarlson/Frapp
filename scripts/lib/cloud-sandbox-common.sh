@@ -125,7 +125,7 @@ cs_supabase() {
 
 # Is the node toolchain the repo's own gates run through actually usable?
 #
-# Two signals, deliberately NOT equivalent — see cs_ensure_node_deps for why they are
+# Two signals, deliberately NOT equivalent — see cs_verify_node_deps for why they are
 # reported at different severities:
 #
 #   turbo runnable      Definitional. `check-types`, `lint` and every workspace test are
@@ -444,7 +444,7 @@ cs_failure_hint() {
       # Distinct from `toolchain`, which is specifically the pinned Supabase CLI. This one is
       # node_modules, and it is the class most likely to be read as something else: the symptom
       # an agent actually sees is `turbo: not found`, which names neither npm nor this script.
-      printf 'node_modules is missing or incomplete, so every gate that runs through turbo (check-types, lint, test) cannot start — they fail with "turbo: not found", which does not name dependencies. Bringup already tried to repair it with `npm ci` and that failed too; read its output in %s. If npm itself cannot reach the registry this is a network-policy problem, not a repo one — and because the setup script installs deps into a filesystem cached ~7 days, a NEW session will inherit the same broken tree until that is fixed.' "$where"
+      printf 'node_modules/.bin/turbo does not run, so every gate that goes through turbo (check-types, lint, test) cannot start — they fail with "turbo: not found", which does not name dependencies. FIX IT IN THIS SESSION: run `npm ci` in the repo root. Unlike every other class here this one is NOT environment config and does NOT need a new session — bringup deliberately does not install for you, because it runs in the background alongside your own commands. The rest of the stack is already up: Supabase, the migrations and both .env.local files landed before this check ran. Only if `npm ci` cannot reach the registry is this a network-policy problem — and then it needs reporting, because the setup script installs into a filesystem cached ~7 days, so a NEW session inherits the same broken tree until that is fixed.'
       ;;
     *)
       printf 'the failure did not match any known pattern — read the full output in %s.' "$where"

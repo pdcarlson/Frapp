@@ -250,19 +250,29 @@ fi
 # days before this landed.
 #
 # WHY LAST, when the obvious place is first. It is purely local, so failing early would save
-# ~90s of Docker work — and that is the wrong trade. npm and Docker are independent failures,
-# and gating the stack on npm means a blocked npm registry costs the DATABASE. That is a real
-# configuration, not a hypothetical: this repo's own `policy` remedy tells the user to allow
-# `public.ecr.aws` + `*.cloudfront.net`, which does not include `registry.npmjs.org`. Running
-# last, everything above has already succeeded and stays up; the session gets a working
-# Postgres AND an honest sentinel naming the one thing that is broken. The check costs ~2.5s
-# (`npm ls --depth=0`), which is ~3% of bringup and is not on the interactive path.
+# ~90s of Docker work — and that is the wrong trade. npm and Docker are independent failure
+# domains, and running first makes the DATABASE conditional on npm: any reason `node_modules`
+# is unusable would also cost Postgres, the migrations, both .env.local files and the ACL
+# repair, none of which npm has anything to do with. The observed fault (#1631, three
+# consecutive days) was a setup-time install failure with the registry perfectly reachable, so
+# it is not even an exotic case. Running last, everything above has already succeeded and
+# stays up: the session gets a working Postgres AND an honest sentinel naming the one thing
+# that is broken. The check costs ~2.5s (`npm ls --depth=0`), ~3% of bringup, off the
+# interactive path.
 #
 # Only the fatal signal reaches here — cs_verify_node_deps warns and returns 0 for a merely
 # incomplete tree, so this message describes the one condition that produces it.
 cs_log "Verifying the node toolchain..."
 cs_verify_node_deps "$ROOT" \
-  || fail "node_modules/.bin/turbo does not run (dependencies) — $(cs_failure_hint dependencies '/tmp/cloud-sandbox-up.log')"
+  || fail "node_modules/.bin/turbo does not run (dependencies) — $(cs_failure_hint dependencies)"
 
+# The soft signal rides in the .done BODY, not only in the log. Callers are told to wait for
+# this sentinel, not to read /tmp/cloud-sandbox-up.log — so a warning that exists only in the
+# log is a warning the session never sees, which is precisely the failure #1631 is about. It
+# would be an odd fix that reproduced its own bug one file over.
 printf '%s\n' "$(date -u +%FT%TZ)" >"$DONE_SENTINEL"
+if [ "${CS_NODE_DEPS_WHY:-}" = "incomplete" ]; then
+  printf 'WARN: npm ls --depth=0 reports a missing declared dependency; run `npm ci` if a workspace hits "Cannot find module".\n' \
+    >>"$DONE_SENTINEL"
+fi
 cs_log "Cloud sandbox ready. Boot the API with: npm run start:dev -w apps/api"

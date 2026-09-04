@@ -294,7 +294,18 @@ test("every class carries a non-empty, actionable hint", () => {
     /Network = Full|public\.ecr\.aws/,
   );
   assert.match(bash("cs_failure_hint ratelimit").stdout, /DOCKERHUB_TOKEN/);
-  assert.match(bash("cs_failure_hint dependencies").stdout, /npm ci/);
+  // `dependencies` gets a second, negative assertion. A bare /npm ci/ match was satisfied by an
+  // earlier draft that read "Bringup already tried to repair it with `npm ci` and that failed
+  // too" — left over from when the check installed. That sentence would tell a sentinel-only
+  // reader the one real remedy had been exhausted, so it would escalate to the human instead of
+  // running the command. A hint that describes work bringup does not do is worse than no hint.
+  const deps = bash("cs_failure_hint dependencies").stdout;
+  assert.match(deps, /npm ci/);
+  assert.doesNotMatch(
+    deps,
+    /already tried|tried to repair|repair(ed)? it/i,
+    "the dependencies hint must not claim bringup attempted an install — it never does",
+  );
   // The class name must survive verbatim from the call site into the hint lookup.
   const up = readFileSync(
     fileURLToPath(new URL("../../cloud-sandbox-up.sh", import.meta.url)),
@@ -693,6 +704,50 @@ test("the two signals get different severities, and the softer one does not fail
   }
 });
 
+// Strips full-line comments and every quoted string, so a grep for a COMMAND is not satisfied
+// by prose. These files deliberately mention `npm ci` in comments, in cs_log lines and in the
+// printf that writes the .done warning — telling the reader to run it is the point — and an
+// assertion that matches the remedy text can never fail. Quoted spans go wholesale rather than
+// per-helper because the message text is spread across cs_log, printf and fail(); an npm
+// invocation, meanwhile, is never itself inside quotes, so nothing real is lost.
+function withoutComments(src) {
+  return src
+    .split("\n")
+    .filter((l) => !/^\s*#/.test(l))
+    .join("\n");
+}
+
+function shellCommandsOnly(src) {
+  return withoutComments(src).replace(/'[^']*'|"[^"]*"/g, "<str>");
+}
+
+// Any npm invocation that writes to a tree. Deliberately wider than `npm ci|install`: `npm i`
+// is the same command and mutates node_modules identically, and `npm --prefix X ci` puts flags
+// between the two words. A mutation test proved the narrow form let both through.
+const NPM_WRITES =
+  /\bnpm\b[^\n]*\b(ci|i|install|add|update|link|prune|dedupe)\b/;
+
+test("the command-only filter does not over-strip", () => {
+  // Positive control for the two doesNotMatch assertions below. Without it, an over-eager
+  // filter would make them pass vacuously with no signal — the failure mode that makes a
+  // negative assertion worse than none.
+  // A real invocation survives, including one whose arguments are quoted.
+  assert.match(shellCommandsOnly('npm ci\ncs_log "run npm ci"'), NPM_WRITES);
+  assert.match(shellCommandsOnly('(cd "$root" && npm ci) || true'), NPM_WRITES);
+  // Every way these files legitimately MENTION the command is stripped.
+  assert.doesNotMatch(
+    shellCommandsOnly(
+      [
+        "# run npm ci to fix it",
+        'cs_log "run npm ci yourself"',
+        "printf 'WARN: run `npm ci` if a workspace breaks'",
+        'fail "... $(cs_failure_hint dependencies)"',
+      ].join("\n"),
+    ),
+    NPM_WRITES,
+  );
+});
+
 test("bringup never writes to node_modules, and checks it only after the stack is up", () => {
   // Two properties that are one-line regressions with no local symptom, so pin both.
   //
@@ -700,26 +755,21 @@ test("bringup never writes to node_modules, and checks it only after the stack i
   //    working, so an `npm ci` here races the session over one node_modules with no lock — and
   //    `npm ci` DELETES the tree first, which turns a merely incomplete tree into a destroyed
   //    one whenever the install then fails.
-  // 2. The check runs LAST. npm and Docker fail independently; gating the stack on npm means a
-  //    blocked npm registry costs the database, and this repo's own `policy` remedy allowlists
-  //    ECR and CloudFront without registry.npmjs.org, so that configuration is reachable.
-  // Strip comment lines and cs_log strings before matching. Both deliberately MENTION `npm ci`
-  // — the whole point is telling the reader to run it — so a naive grep for the words matches
-  // the remedy text and can never fail, which is a test that only looks like one.
-  const executable = (src) =>
-    src
-      .split("\n")
-      .filter((l) => !/^\s*#/.test(l))
-      .map((l) => l.replace(/cs_log\s+"[^"]*"/g, "cs_log <msg>"))
-      .join("\n");
-
+  // 2. The check runs LAST. npm and Docker are independent failure domains, so running first
+  //    would make Postgres, the migrations and both .env.local files conditional on npm.
+  //
+  // BOTH assertions cover cs_node_deps_ok as well as cs_verify_node_deps. An earlier version
+  // scoped them to the wrapper alone, and a mutation test showed the exact documented
+  // catastrophe survived it: an `npm ci` added to cs_node_deps_ok — the function that actually
+  // runs, one line above — passed the whole suite, as did an early hard gate written against
+  // cs_node_deps_ok while the late cs_verify_node_deps call stayed put.
   const up = readFileSync(
     fileURLToPath(new URL("../../cloud-sandbox-up.sh", import.meta.url)),
     "utf8",
   );
   assert.doesNotMatch(
-    executable(up),
-    /\bnpm (ci|install)\b/,
+    shellCommandsOnly(up),
+    NPM_WRITES,
     "bringup must not install dependencies — the session owns its node_modules",
   );
 
@@ -729,20 +779,43 @@ test("bringup never writes to node_modules, and checks it only after the stack i
     ),
     "utf8",
   );
-  const verifyBody = lib.slice(lib.indexOf("cs_verify_node_deps()"));
+  // Both node-deps helpers, sliced as one region: they sit together, and the next function
+  // (cs_ensure_docker_daemon) bounds them.
+  const start = lib.indexOf("cs_node_deps_ok()");
+  const end = lib.indexOf("cs_ensure_docker_daemon()");
+  assert.ok(
+    start > 0 && end > start,
+    "could not locate the node-deps helpers in the lib",
+  );
   assert.doesNotMatch(
-    executable(verifyBody.slice(0, verifyBody.indexOf("\n}\n"))),
-    /\bnpm (ci|install)\b/,
-    "cs_verify_node_deps must detect only",
+    shellCommandsOnly(lib.slice(start, end)),
+    NPM_WRITES,
+    "the node-deps helpers must detect only, never install",
   );
 
+  // Ordering, over commands rather than raw text: an `indexOf` on the whole file matches the
+  // header comment block too, so a comment-only edit naming the function would fail this while
+  // changing nothing — the brittleness the start-args test at the end of this file documents.
+  // Comment-stripped but quote-PRESERVING: the `>"$DONE_SENTINEL"` anchor is a quoted
+  // expansion, so the command-only view would erase the very thing being located.
+  const upCmds = withoutComments(up);
+  const firstCheck = Math.min(
+    ...["cs_verify_node_deps", "cs_node_deps_ok"]
+      .map((fn) => upCmds.indexOf(fn))
+      .filter((i) => i !== -1),
+  );
+  const docker = upCmds.indexOf("cs_ensure_docker_daemon");
+  const sentinel = upCmds.search(/>\s*"\$DONE_SENTINEL"/);
   assert.ok(
-    up.indexOf("cs_verify_node_deps") >
-      up.indexOf("frapp_load_chapter_directory"),
-    "the toolchain check must run after the stack is up, so a broken npm never costs the database",
+    docker !== -1 && sentinel !== -1,
+    "could not locate the bringup anchors",
   );
   assert.ok(
-    up.indexOf("cs_verify_node_deps") < up.indexOf('>"$DONE_SENTINEL"'),
-    "...but before the success sentinel, so .done never lies about the toolchain",
+    firstCheck > docker,
+    "no toolchain check may gate the Docker/Supabase work — a broken npm must never cost the database",
+  );
+  assert.ok(
+    firstCheck < sentinel,
+    "...but it must precede the success sentinel, so .done never lies about the toolchain",
   );
 });
