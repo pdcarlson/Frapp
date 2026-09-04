@@ -63,6 +63,26 @@ fail() {
 cs_log "Probing deployed-environment egress..."
 bash "$ROOT/scripts/cloud-sandbox-egress-probe.sh" >/dev/null || true
 
+# Toolchain precondition — BEFORE the Docker work, and fatal, which is the whole point.
+#
+# cloud-sandbox-setup.sh installs node deps non-fatally by design, and its warning lands in
+# the web UI's environment setup log where no agent session can read it. This script used to
+# never re-check, so `.cloud-sandbox-up.done` asserted nothing whatsoever about dependencies
+# and a session could reach a green sentinel with an EMPTY node_modules. Every turbo-run gate
+# then died with `turbo: not found` — an error naming neither dependencies nor either script,
+# while the plain-node gates kept passing, which made the breakage look selective (#1631).
+# Because setup's filesystem is cached ~7 days, one bad install was re-served for three
+# consecutive days before this landed.
+#
+# Placed here, ahead of `cs_ensure_docker_daemon`, for two reasons: it is purely local so it
+# owes Docker nothing, and when it does fail it fails in seconds instead of after ~90s of
+# image work that is about to be thrown away. It sits after the egress probe only because the
+# probe must stay first (see its own comment) — a session whose bringup dies still needs its
+# capability manifest, and this step can now be the thing that kills bringup.
+cs_log "Verifying the node toolchain..."
+cs_ensure_node_deps "$ROOT" \
+  || fail "node dependencies missing or incomplete (dependencies) — $(cs_failure_hint dependencies '/tmp/cloud-sandbox-up.log')"
+
 # Write apps/api/.env.local and apps/web/.env.local from the live local Supabase status
 # (plus Stripe env vars for the API). Real Stripe test keys are used when present;
 # otherwise clearly-marked placeholders that satisfy the non-empty check in

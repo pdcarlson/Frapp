@@ -123,6 +123,95 @@ cs_supabase() {
   "$bin" "$@"
 }
 
+# Is the node toolchain the repo's own gates run through actually usable?
+#
+# Two signals, deliberately NOT equivalent — see cs_ensure_node_deps for why they are
+# reported at different severities:
+#
+#   turbo runnable      Definitional. `check-types`, `lint` and every workspace test are
+#                       `turbo run ...`, so without this they cannot start at all. The
+#                       error they print is `turbo: not found`, which names neither
+#                       dependencies nor the setup script, so an agent reads it as a repo
+#                       defect and starts debugging turbo.json.
+#   npm ls --depth=0    The HALF-populated case. A `-d node_modules` test passes on a tree
+#                       the harness killed mid-`npm ci`, which is the failure mode that
+#                       fails latest and reads strangest; npm is the only thing here that
+#                       knows what was declared and can therefore see what is absent.
+#
+# Runs turbo rather than only stat-ing it. `-x` alone already covers the absent and dangling
+# cases (it follows the symlink), but not a target that exists and does not work — measured:
+# with `node_modules/turbo/bin/turbo` replaced by executable garbage, `-x` still reports the
+# bin PRESENT and only the `--version` run catches it. `npm ls` does not cover this either;
+# it reads the tree's metadata, not whether anything in it can execute.
+#
+# `--depth=0` on the npm side is deliberate, and its conservatism is the point: it fires on a
+# missing TOP-LEVEL declared dependency (measured against a removed root devDependency) and
+# stays quiet about a missing transitive one. A deeper walk would turn ordinary hoisting and
+# optional-dependency variation into a bringup-time verdict, which is exactly the kind of
+# false positive that must not be able to gate session start.
+cs_node_deps_ok() {
+  local root="${1:-$PWD}" why=""
+  [ -x "$root/node_modules/.bin/turbo" ] \
+    && "$root/node_modules/.bin/turbo" --version >/dev/null 2>&1 \
+    || why="turbo"
+  if [ -z "$why" ] && ! (cd "$root" && npm ls --depth=0 >/dev/null 2>&1); then
+    why="incomplete"
+  fi
+  CS_NODE_DEPS_WHY="$why"
+  [ -z "$why" ]
+}
+
+# Verify the node toolchain, repairing it once if it is broken.
+#
+# WHY THIS LIVES IN BRINGUP AND NOT IN SETUP. cloud-sandbox-setup.sh installs deps
+# non-fatally on purpose (its header says so twice) and its WARN goes to the environment
+# setup log in the web UI, which the agent session cannot read. Worse, setup's FILESYSTEM
+# is cached ~7 days, so one failed `npm ci` during a cache build is re-served to every
+# later session — measured at three consecutive days (#1631). So setup stays non-fatal and
+# bringup stops trusting it silently.
+#
+# ASSERT *AND* REPAIR, not one or the other. The brief framed these as competing on
+# wall-clock, but only `npm ci` is expensive; the check is a stat plus a `--version`. So
+# the fast path costs nothing per session and the repair is paid once per broken cache
+# generation.
+cs_ensure_node_deps() {
+  local root="${1:-$PWD}"
+
+  if cs_node_deps_ok "$root"; then
+    cs_log "Node dependencies OK."
+    return 0
+  fi
+
+  cs_log "WARN: node dependencies are ${CS_NODE_DEPS_WHY:-broken} — repairing with 'npm ci'..."
+  # Output goes to the caller's log (bringup redirects the whole script there), because a
+  # repair that fails needs its reason visible: `npm ci` naming a blocked registry is the
+  # difference between "run npm ci" and "change the network policy", and those have
+  # opposite remedies.
+  (cd "$root" && npm ci) || (cd "$root" && npm install) || true
+
+  if cs_node_deps_ok "$root"; then
+    cs_log "Node dependencies repaired."
+    return 0
+  fi
+
+  # THE TWO SIGNALS PART COMPANY HERE, and the asymmetry is deliberate.
+  #
+  # A precondition that can block session start for every agent in the environment is more
+  # dangerous than the bug it guards against, so only the signal that is *definitionally*
+  # fatal gets to be fatal. No turbo means no `check-types`, no `lint`, no workspace test —
+  # there is no reading of that where the session is fine, so it fails and the sentinel says
+  # so. `npm ls` disagreeing while turbo runs is npm's stricter opinion about a tree that may
+  # well work; that warns and lets bringup continue, because being wrong in that direction
+  # costs one confusing session and being wrong in the other costs all of them.
+  if [ "${CS_NODE_DEPS_WHY:-}" = "incomplete" ]; then
+    cs_log "WARN: 'npm ls' still reports a missing declared dependency after the repair."
+    cs_log "      turbo runs, so the gates can start; a workspace-specific failure may still"
+    cs_log "      trace back to this. Re-run 'npm ci' and read its output if one does."
+    return 0
+  fi
+  return 1
+}
+
 # Start the Docker daemon if it is not already responsive, then wait for it.
 # Uses sudo only when we are not already root (web-UI setup runs as root; the
 # per-session agent shell may not). Returns non-zero if the daemon never comes up.
@@ -294,8 +383,14 @@ cs_classify_failure() {
   elif grep -Eqi 'error setting rlimit|port is already allocated|address already in use|cannot connect to the docker daemon|database files are incompatible' <<<"$body"; then
     # Deterministic and local: the sandbox denies an ulimit, a port is taken, dockerd is gone, or
     # a half-initialised data volume survived. Retrying re-runs a ~90s start to reach the same
-    # error. Every one of these already has a row in CLOUD_SANDBOX.md's symptom table, so the
-    # useful move is to send the reader there rather than to burn the budget.
+    # error, so the useful move is to send the reader to CLOUD_SANDBOX.md's symptom table rather
+    # than to burn the budget.
+    #
+    # KEEP THAT TABLE IN STEP WITH THIS LINE. Every pattern below must have a row, because the
+    # hint for this class gives exactly one instruction and it is "go read that table" — a
+    # pattern with no row leaves the reader at a dangling pointer at the moment they are already
+    # blocked. This comment previously asserted the rows existed; four of the five had none
+    # (#1632), so the assertion is now a rule for whoever edits the pattern, not a claim.
     printf 'deterministic'
   elif grep -Eqi 'service unavailable|bad gateway|gateway time-?out|(status|code|http)[^0-9]{0,8}50[234]|i/o timeout|tls handshake timeout|connection reset|unexpected eof|broken pipe|context deadline exceeded' <<<"$body"; then
     printf 'transient'
@@ -333,6 +428,12 @@ cs_failure_hint() {
       ;;
     toolchain)
       printf 'the pinned Supabase CLI could not be installed or run — see .cache/supabase-cli/install.log. Delete .cache/supabase-cli/ to force a clean reinstall.'
+      ;;
+    dependencies)
+      # Distinct from `toolchain`, which is specifically the pinned Supabase CLI. This one is
+      # node_modules, and it is the class most likely to be read as something else: the symptom
+      # an agent actually sees is `turbo: not found`, which names neither npm nor this script.
+      printf 'node_modules is missing or incomplete, so every gate that runs through turbo (check-types, lint, test) cannot start — they fail with "turbo: not found", which does not name dependencies. Bringup already tried to repair it with `npm ci` and that failed too; read its output in %s. If npm itself cannot reach the registry this is a network-policy problem, not a repo one — and because the setup script installs deps into a filesystem cached ~7 days, a NEW session will inherit the same broken tree until that is fixed.' "$where"
       ;;
     *)
       printf 'the failure did not match any known pattern — read the full output in %s.' "$where"
