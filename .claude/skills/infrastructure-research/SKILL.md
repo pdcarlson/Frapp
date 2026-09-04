@@ -151,9 +151,11 @@ Both read through node's global `fetch` (`ghRequest` in `scripts/ci/lib/github.m
 the direct route: **`:verify` exits 0 from a cloud sandbox**, confirmed 2026-09-02. That is a real
 ground-truth check on live `main` rather than a check of declared intent, but only over the fields
 `buildProtectionPayload` manages on `main`: `allow_fork_syncing` is excluded while `lock_branch` is
-false (GitHub honours it only on a locked branch, so comparing it would fail forever) and live `main`
-is in fact `false` against a desired `true`; rulesets and environments are not covered at all. A
-green `:verify` is therefore not proof that live protection matches the roster in every field.
+false (GitHub honours it only on a locked branch, so comparing it would fail forever); rulesets and
+environments are not covered at all. A green `:verify` is therefore not proof that live protection
+matches the roster in every field. The roster declared `true` against a live `false` until
+2026-09-04, when [#1580](https://github.com/pdcarlson/Frapp/issues/1580) set the declaration to
+`false` to match live — the exclusion stays, so a future divergence there would still be invisible.
 
 Applying — the bare `npm run configure:branch-protection` — remains a human step with an admin PAT
 by policy; the script reads `GITHUB_PAT` first, with `GITHUB_TOKEN` / `GH_PAT` / `GH_TOKEN`

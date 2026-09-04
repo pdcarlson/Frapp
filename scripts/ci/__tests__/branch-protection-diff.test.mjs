@@ -59,9 +59,13 @@ describe("normalizeProtection", () => {
   });
 
   it("reads the PUT payload shape identically, so both sides compare like-for-like", () => {
-    // Every field but the one GitHub declines to persist on an unlocked branch.
+    // Every field, with no override on either side. This used to need
+    // `forkSyncing: true` to paper over the roster declaring a value `main` did
+    // not hold; #1580 set the roster to `false` to match live, so the payload and
+    // the real GET shape now agree on their own — which is what this test was
+    // always trying to assert.
     const fromPut = normalizeProtection(buildProtectionPayload("main"));
-    const fromGet = normalizeProtection(liveResponse({ forkSyncing: true }));
+    const fromGet = normalizeProtection(liveResponse());
     assert.deepEqual(fromPut, fromGet);
   });
 
@@ -238,15 +242,21 @@ describe("one roster, two consumers (#1383 scope item 1)", () => {
 describe("allow_fork_syncing is only compared where it means something", () => {
   // Regression tests for the bug that would have made `--verify` exit non-zero
   // on a correctly-configured repo forever. GitHub only honours fork-syncing on
-  // a LOCKED branch; this payload sends `allow_fork_syncing: true` alongside
-  // `lock_branch: false`, and live has reported `false` since 2026-08-27
-  // through at least one intervening apply. Comparing it on an unlocked branch
-  // produces drift no run can resolve.
+  // a LOCKED branch, so comparing it on an unlocked branch produces drift no run
+  // can resolve.
+  //
+  // Both tests set `allow_fork_syncing: true` on `desired` EXPLICITLY rather
+  // than leaning on the roster's value. #1580 set the roster to `false` to match
+  // live, which would otherwise have left the first test passing vacuously (no
+  // divergence left for the exemption to suppress) and broken the second
+  // outright (nothing to report as changed). The exemption's behaviour is what
+  // is under test here, not the roster's current value — so the divergence is
+  // manufactured locally and these stay honest however the roster is set.
 
   it("ignores the flag on an unlocked branch, where GitHub will not persist it", () => {
     const diff = diffProtection({
       current: liveResponse({ forkSyncing: false }), // what `main` really returns
-      desired: buildProtectionPayload("main"), // which asks for true
+      desired: { ...buildProtectionPayload("main"), allow_fork_syncing: true },
     });
     assert.equal(
       hasProtectionDrift(diff),
@@ -260,7 +270,11 @@ describe("allow_fork_syncing is only compared where it means something", () => {
     // lock_branch is ever set, this is a real setting again and must be diffed.
     const diff = diffProtection({
       current: liveResponse({ forkSyncing: false, lockBranch: true }),
-      desired: { ...buildProtectionPayload("main"), lock_branch: true },
+      desired: {
+        ...buildProtectionPayload("main"),
+        lock_branch: true,
+        allow_fork_syncing: true,
+      },
     });
     assert.ok(
       diff.changes.some((c) => c.field === "allow_fork_syncing"),
@@ -381,6 +395,52 @@ describe("assertKnownArgs", () => {
     assert.throws(
       () => assertKnownArgs(["--verfiy", "--nope"]),
       /--verfiy, --nope/,
+    );
+  });
+});
+
+describe("the apply instruction is guarded wherever a script prints one (#1585)", () => {
+  const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
+
+  // `--verify` is the ONE branch-protection command an agent session is allowed
+  // to run, so its own failure output is the worst possible place to print an
+  // unqualified "run the apply". Every prose site in the repo carries a guard;
+  // this one is in a script, was missed by the docs-only sweep that added the
+  // rest, and no test asserted it — so it could regress silently while every
+  // doc still claimed the programme was complete.
+  it("the --verify drift error names the apply as a human step, not a next command", () => {
+    const src = read("../../configure-branch-protection.mjs");
+    const [, drift] =
+      src.match(/Live branch protection does not match this roster([\s\S]{0,600})/) ?? [];
+    assert.ok(drift, "the drift error moved or was reworded — re-point this test");
+
+    assert.match(drift, /human step/, "must say applying is a human step");
+    assert.match(drift, /admin PAT/, "must name the credential the human needs");
+    assert.match(
+      drift,
+      /separator/,
+      "must warn that `--dry-run` without the `--` separator applies",
+    );
+    assert.doesNotMatch(
+      drift,
+      /Run `npm run configure:branch-protection` to apply it/,
+      "the bare, unqualified apply instruction is exactly what #1585 removed",
+    );
+  });
+
+  // Promoting a ROLLOUT entry means applying branch protection. The other seven
+  // notes delegate to secret-scan's ("same caveat as secret-scan"), so the guard
+  // lives on the two that actually carry the instruction and is inherited by
+  // reference — rather than pasted nine times, which would be the duplication
+  // defect this file's own doc-tables gate exists to catch.
+  it("the ROLLOUT notes that instruct an apply route agents to :verify", () => {
+    const src = read("../lib/required-checks.mjs");
+    assert.match(src, /human step with an admin PAT/);
+    assert.match(src, /configure:branch-protection:verify`, which writes nothing/);
+    assert.doesNotMatch(
+      src,
+      /Run\s+\/\/?\s*`?npm run configure:branch-protection`? AFTER/,
+      "no ROLLOUT note should instruct the bare apply without the guard clause",
     );
   });
 });

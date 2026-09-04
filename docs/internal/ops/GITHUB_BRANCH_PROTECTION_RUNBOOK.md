@@ -153,13 +153,21 @@ code and a printed delta rather than a checkmark.
 > **Verified 2026-09-02 from a cloud sandbox: exit 0.** Live `main` matched the roster on all 21
 > contexts — `migration-order` and `web-production-build` required, the demoted `migration-drift`
 > absent — with `strict`, `enforce_admins` and `required_linear_history` all `true` and
-> `required_pull_request_reviews` `null`. The single divergence is `allow_fork_syncing`
-> ([#1580](https://github.com/pdcarlson/Frapp/issues/1580)): the roster says `true`, live is
-> `false`. The diff deliberately skips it — GitHub honours fork-syncing only
-> on a locked branch and this payload pairs it with `lock_branch: false`, so `LOCK_DEPENDENT_FLAGS`
-> in [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs)
-> excludes it unless the branch is locked on either side. Like every count in this runbook, that is
-> a dated observation, not current state; re-run the command rather than citing this paragraph.
+> `required_pull_request_reviews` `null`. The one divergence was `allow_fork_syncing`: the roster
+> said `true`, live was `false`.
+>
+> **That divergence is closed as of 2026-09-04** ([#1580](https://github.com/pdcarlson/Frapp/issues/1580)).
+> The roster now declares `allow_fork_syncing: false`, matching live, so a hand comparison of the
+> two — which is what a branch-protection audit is — finds no difference on any flag and no longer
+> has to re-derive the lock-dependence reasoning to conclude it did not matter. It was closed by
+> changing the *declared* value, not by applying: GitHub honours fork-syncing only on a locked
+> branch and this payload pairs it with `lock_branch: false`, so applying would have written a
+> value GitHub ignores and would have needed a human with an admin PAT. `LOCK_DEPENDENT_FLAGS` in
+> [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs)
+> stays in place — it is still the right guard if `lock_branch` is ever turned on. Live `main` was
+> re-read on 2026-09-04 (`allow_fork_syncing: false`, `lock_branch: false`) to confirm the value
+> the roster now matches. Like every count in this runbook, that is a dated observation, not
+> current state; re-run the command rather than citing this paragraph.
 
 ## Step 2: Apply
 
