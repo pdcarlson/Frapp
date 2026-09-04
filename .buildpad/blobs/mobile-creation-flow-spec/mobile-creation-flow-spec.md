@@ -1,3 +1,0 @@
-# Mobile creation-flow spec
-
-Not everything needs a modal. Bottom sheet (@gorhom/bottom-sheet v5) for task creation, service-hours logging (tall/near-full detent, keyboard-controller needed), and document/backwork upload. Event RSVP and poll vote stay inline one-tap actions, no sheet. Destructive confirmations use native Alert.alert, not a custom sheet. Admin event creation (9-field form) stays web-only or, if built, a full-screen Expo Router modal route, never a sheet. Note: sheet chrome should use typed StyleSheet tokens, not NativeWind className (reported friction on BottomSheetView) \u2014 relevant to the still-open NativeWind adoption decision.

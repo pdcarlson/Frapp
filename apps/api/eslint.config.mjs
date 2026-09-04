@@ -46,9 +46,11 @@ export default tseslint.config(
   //
   // ROLLOUT: deliberately "warn", not "error", and it must stay that way until
   // the route-DTO backfill lands. The rule fires once per undecorated controller
-  // method and there are **142** of them today (measured, not estimated — the
-  // planning docs guessed ~30, which is out by ~5x and is exactly the number
-  // someone would use to decide the backlog was finished). ESLint has no native
+  // method, and there are far more of them than the planning docs' ~30 guess —
+  // that estimate was out by roughly 5x, and is exactly the number someone
+  // would use to decide the backlog was finished. Count them before trusting
+  // any figure: `npm run lint:api 2>&1 | grep -c api-method-should-specify`.
+  // A number written here would go stale and be believed. ESLint has no native
   // baseline mechanism the way dependency-cruiser does, so "error" today would
   // simply turn `lint`, a required check, red on every PR until every one of
   // those routes is done. Warn now, backfill, then flip to "error" and delete
@@ -57,10 +59,6 @@ export default tseslint.config(
   // Only the plugin's `nestjs-typed/api-method-should-specify-api-response` rule
   // is enabled. The bundled `flatRecommended` preset turns on 20+ rules at once,
   // which is a different and much larger decision.
-  //
-  // `.buildpad/` needs no exclusion here: the lint script globs
-  // `{src,apps,libs,test}/**/*.ts` relative to apps/api and there is no
-  // repo-root ESLint config, so the canvas is unreachable from any lint run.
   {
     files: ['src/**/*.controller.ts'],
     plugins: { 'nestjs-typed': nestjsTyped.plugin },

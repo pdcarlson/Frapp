@@ -89,10 +89,6 @@ const NOT_SOURCE = [
   "(^|/)\\.turbo/",
   "(^|/)test-results/",
   "(^|/)playwright-report/",
-  // The Buildpad planning canvas: research notes and markdown, synced
-  // periodically. It holds no code, so cruising it could only ever produce
-  // noise — and a canvas sync must never fail a required gate.
-  "(^|/)\\.buildpad(/|$)",
   // Generated from the OpenAPI contract by openapi-typescript; its shape is the
   // generator's business, not something a boundary rule should have an opinion on.
   "(^|/)api-sdk/src/types\\.ts$",

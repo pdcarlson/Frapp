@@ -13,7 +13,7 @@
     "lint:api": "npm run lint -w apps/api",
     "lint:api:fix": "npm run lint:fix -w apps/api",
     "ci:local-gate": "node scripts/run-local-ci-gate.mjs",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "format": "prettier --write \"**/*.{ts,tsx}\"",
     "check-types": "turbo run check-types",
     "test:cov": "turbo run test:cov",
     "check:dep-cruiser": "node scripts/check-dep-cruiser.mjs",

@@ -28,10 +28,6 @@ Frapp is a Turborepo + npm workspaces monorepo (**4 apps, 13 shared packages**).
 
 - **Documentation map:** [`docs/README.md`](docs/README.md). **Conventions:** [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 
-## Planning canvas (`.buildpad/`)
-
-`.buildpad/` (`blobs/`, `documents/`, `notes/`) is a periodically-synced export of the Buildpad research/planning archive. It is **not** a spec, **not** authoritative, and **may contain stale or superseded ideas**. Read the relevant file when a task points at it; do not treat its contents as current product decisions unless they match `spec/` and the code. Never hand-edit it — the next sync overwrites it. Rules: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md#buildpad-is-background-not-documentation).
-
 ## Branch model
 
 `main` is the only long-lived branch and deploys to staging on every merge. Feature branches from `main` → PR to `main`; `main` is the only legal PR base. Direct pushes to `main` are blocked. Production is deployed by dispatching the **Deploy production** workflow with a commit SHA — it refuses any commit that is not an ancestor of `main` with green CI. There is no `production` branch (retired #1340). Details: `CONTRIBUTING.md`.
@@ -81,7 +77,7 @@ This repo is **mid-rebuild (Frapp → Signet)**. Treat existing code as *possibl
 
 **Before extending existing code, confirm it has real consumers.** A definition or `index.ts` re-export is not evidence of a caller. Building on an orphan doubles the debt.
 
-**Never silently work around orphaned, superseded, or contradictory code.** Flag it in the response and the PR body, and file a GitHub issue per [`file-follow-up`](.claude/skills/file-follow-up/SKILL.md) — or fix it inline when it's small and in scope.
+**Never silently work around orphaned, superseded, or contradictory code.** Flag it in the response and the PR body, and file a GitHub issue per [`file-follow-up`](.claude/skills/file-follow-up/SKILL.md) — or fix it inline when it falls inside your change's blast radius. **"Out of scope" is not a verdict on a defect**, and neither is "pre-existing": what decides is blast radius, not diff radius. Standard: [`spec/engineering.md`](spec/engineering.md#changing-existing-code) § Changing existing code.
 
 **The tracker is the only debt list.** Do not start a running debt file (`TECH-DEBT.md` or similar). GitHub Issues already have status, ownership, priority, and close-on-merge.
 

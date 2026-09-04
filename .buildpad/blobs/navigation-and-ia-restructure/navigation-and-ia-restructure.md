@@ -1,3 +1,0 @@
-# Navigation and IA restructure
-
-Current 7-section/16-item sidebar is over-chunked and organized by org-chart, not member mental model. Recommended: collapse to Chat anchor + 3 member sections (Chapter: events/tasks/points/study/service hours; Resources: documents/backwork; Directory: members+alumni; Finance: dues) + a role-gated Admin group (roles, study zones, reports, settings). Move Profile out of top nav to an account menu. Mobile tab bar: Home, Chat, Events, Tasks, More (drop Profile and standalone Points tabs). Global search + the AI "Ask" pill both live in a persistent top bar (Cmd/Ctrl+K), never a mobile tab slot. Recommends a quick card sort with real chapter members to validate section labels before locking.

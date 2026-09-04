@@ -95,8 +95,7 @@ machine-enforced so the restructure's move would be self-checking; for renames i
 closes that.
 
 - **Scope:** every tracked file *outside* the Citations scope.
-- **Excluded, each for a reason:** `.buildpad/` (a synced export, never hand-edited);
-  `.gitleaks-baseline.json` (entries pin a path *and* a SHA, so they describe the tree as it was);
+- **Excluded, each for a reason:** `.gitleaks-baseline.json` (entries pin a path *and* a SHA, so they describe the tree as it was);
   **both** allowlists — `scripts/doc-paths-allowlist.json` and this gate's own
   `scripts/doc-refs-allowlist.json` (their job is naming references that do not resolve, so scanning
   them would make every excuse its own violation); and any `__tests__/` directory (assertion fixtures

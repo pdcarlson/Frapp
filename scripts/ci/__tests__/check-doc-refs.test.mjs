@@ -63,8 +63,7 @@ test("nested package READMEs are in scope — check-doc-paths only takes the roo
 
 // ── Exclusions ──────────────────────────────────────────────────────────────
 
-test("the buildpad export, the gitleaks baseline and the sibling allowlist are excluded", () => {
-  assert.equal(isExcluded(".buildpad/blobs/x/y.md"), true);
+test("the gitleaks baseline and the sibling allowlist are excluded", () => {
   assert.equal(isExcluded(".gitleaks-baseline.json"), true);
   assert.equal(isExcluded("scripts/doc-paths-allowlist.json"), true);
   assert.equal(isExcluded("apps/api/src/main.ts"), false);
@@ -98,7 +97,6 @@ test("the exclusion lists are non-empty and anchored", () => {
   assert.ok(EXCLUDED.length > 0);
   assert.deepEqual(EXCLUDED_SEGMENTS, ["__tests__/"]);
   // A prefix match must be anchored at the repo root.
-  assert.equal(isExcluded("apps/web/.buildpad/x.md"), false);
 });
 
 // ── Extraction ──────────────────────────────────────────────────────────────
@@ -248,7 +246,7 @@ test("a bare filename inside a URL is not a repo reference", () => {
 });
 
 test("the trailing boundary keeps a longer extension from reading as `.md`", () => {
-  // No .mdx or .mdc lives outside the excluded buildpad export today, so this
+  // No .mdx or .mdc lives anywhere in the tree today, so this
   // anchor looks decorative. It is not: without it, every reference.mdx in a
   // future Docusaurus or Cursor-rules directory reports as a dead markdown file.
   for (const name of ["reference.mdx", "guide.mdc", "notes.mdown", "sum.md5"]) {
