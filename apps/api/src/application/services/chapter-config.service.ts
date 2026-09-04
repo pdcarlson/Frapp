@@ -156,10 +156,23 @@ export class ChapterConfigService {
     // archetype catalog. Label/units always come from the seed (the catalog is
     // the source of truth for presentation); enabled/threshold come from the
     // chapter row when one exists, else the seed default.
-    const { data: workflowRows } = await this.supabase
+    //
+    // Fails *closed* on a read error, for the reason spelled out at the points
+    // read below: `patchConfig` merges a PATCH onto whatever this returns, so a
+    // swallowed error would substitute the archetype seed for the chapter's
+    // real overrides. `data` is null on both "no rows" and "read failed", so
+    // discarding `error` makes those two indistinguishable.
+    const { data: workflowRows, error: workflowError } = await this.supabase
       .from('chapter_workflows')
       .select('key, enabled, threshold')
       .eq('chapter_id', chapterId);
+    if (workflowError) {
+      this.logger.error(
+        `chapter_workflows read failed for chapter ${chapterId}; refusing to ` +
+          `report or write against a fabricated prior state: ${workflowError.message}`,
+      );
+      throw workflowError;
+    }
     const workflowOverrides = new Map(
       (
         (workflowRows ?? []) as Array<{
@@ -185,11 +198,22 @@ export class ChapterConfigService {
 
     // Dues are a singleton row (chapter_dues_config, PK = chapter_id). An
     // unconfigured chapter has no row yet, so fall back to the table defaults.
-    const { data: duesRow } = await this.supabase
+    // A read error is NOT an unconfigured chapter, and must not be treated as
+    // one: `patchConfig` merges onto this value and upserts the whole row, so
+    // defaulting here lets an officer editing `cadence` write every amount back
+    // to 0 and record a `from` the chapter never held.
+    const { data: duesRow, error: duesReadError } = await this.supabase
       .from('chapter_dues_config')
       .select(DUES_SELECT)
       .eq('chapter_id', chapterId)
       .maybeSingle();
+    if (duesReadError) {
+      this.logger.error(
+        `chapter_dues_config read failed for chapter ${chapterId}; refusing to ` +
+          `report or write against a fabricated prior state: ${duesReadError.message}`,
+      );
+      throw duesReadError;
+    }
     const dues: DuesConfig = {
       ...DUES_DEFAULTS,
       ...((duesRow as Partial<DuesConfig> | null) ?? {}),
@@ -197,11 +221,21 @@ export class ChapterConfigService {
 
     // Service-hours policy is the same singleton shape (chapter_service_config,
     // PK = chapter_id); an unconfigured chapter falls back to the table default.
-    const { data: serviceRow } = await this.supabase
+    // Same fail-closed rule as dues: resetting `minutes_per_point` to the
+    // default silently changes how many points every subsequently-approved
+    // service entry awards.
+    const { data: serviceRow, error: serviceReadError } = await this.supabase
       .from('chapter_service_config')
       .select(SERVICE_CONFIG_SELECT)
       .eq('chapter_id', chapterId)
       .maybeSingle();
+    if (serviceReadError) {
+      this.logger.error(
+        `chapter_service_config read failed for chapter ${chapterId}; refusing to ` +
+          `report or write against a fabricated prior state: ${serviceReadError.message}`,
+      );
+      throw serviceReadError;
+    }
     const service: ServiceConfig = {
       ...SERVICE_CONFIG_DEFAULTS,
       ...((serviceRow as Partial<ServiceConfig> | null) ?? {}),
