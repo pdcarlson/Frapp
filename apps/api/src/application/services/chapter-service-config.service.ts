@@ -58,9 +58,18 @@ export class ChapterServiceConfigService {
       .maybeSingle();
 
     if (error) {
-      // Fall back to the default rate, matching the config endpoint's read
-      // posture — but say so: for a chapter that configured a different rate,
-      // this awards points at the wrong rate until reads recover.
+      // Fall back to the default rate — but say so: for a chapter that
+      // configured a different rate, this awards points at the wrong rate
+      // until reads recover.
+      //
+      // This deliberately DIVERGES from the config endpoint, which fails
+      // *closed* on the same table (#1626): `ChapterConfigService.getConfig`
+      // feeds `patchConfig`'s prior state and is upserted back as a whole row,
+      // so defaulting there resets `minutes_per_point` permanently. This read
+      // writes nothing — it prices one service entry — so failing open degrades
+      // that entry rather than 500ing approval during a transient blip.
+      // `ChapterPointsConfigService` models the same split explicitly as
+      // `getConfig` / `getConfigOrThrow`. Do not make either side match the other.
       this.logger.warn(
         `chapter_service_config read failed for chapter ${chapterId}; applying default rate (${SERVICE_CONFIG_DEFAULTS.minutes_per_point} min/point): ${error.message}`,
       );
