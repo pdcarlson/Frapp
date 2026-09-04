@@ -97,7 +97,8 @@ curl -sS --noproxy '*' -H "Authorization: Bearer $GITHUB_PAT" \
 
 What that route returned on 2026-09-02 (full record in
 [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md)): `branches/main/protection` **200**
-with 21 required contexts, `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
+with 21 required contexts (the roster as it then stood; **20** since #1637 dropped `docs-spec-sync`
+on 2026-09-03), `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
 `required_pull_request_reviews: null`; `environments` **200** listing nine; `environments/production`
 **200** with `protection_rules: ["required_reviewers"]` — the required-reviewer gate is now read off
 the API rather than inferred from approval timing; `rulesets` **200** with one; the repo **200** with
@@ -151,9 +152,13 @@ Both read through node's global `fetch` (`ghRequest` in `scripts/ci/lib/github.m
 the direct route: **`:verify` exits 0 from a cloud sandbox**, confirmed 2026-09-02. That is a real
 ground-truth check on live `main` rather than a check of declared intent, but only over the fields
 `buildProtectionPayload` manages on `main`: `allow_fork_syncing` is excluded while `lock_branch` is
-false (GitHub honours it only on a locked branch, so comparing it would fail forever) and live `main`
-is in fact `false` against a desired `true`; rulesets and environments are not covered at all. A
-green `:verify` is therefore not proof that live protection matches the roster in every field.
+false (GitHub honours it only on a locked branch, so comparing it would fail forever); rulesets and
+environments are not covered at all. A green `:verify` is therefore not proof that live protection
+matches the roster in every field — a divergence on that excluded key stays invisible
+([#1580](https://github.com/pdcarlson/Frapp/issues/1580) closed the one that existed). Canonical
+state, including the current context count, lives in
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) —
+read it rather than the counts quoted above, which are dated observations.
 
 Applying — the bare `npm run configure:branch-protection` — remains a human step with an admin PAT
 by policy; the script reads `GITHUB_PAT` first, with `GITHUB_TOKEN` / `GH_PAT` / `GH_TOKEN`

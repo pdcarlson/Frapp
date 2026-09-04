@@ -53,6 +53,20 @@ export const CI_CHECKS = [
   // Secret scanning (gitleaks; ADR-13 push-protection replacement). ROLLOUT: this is
   // required only once the secret-scan job exists on the target branch and has run
   // green — otherwise every PR blocks on a missing required check.
+  //
+  // Every other ROLLOUT note below says "same caveat as secret-scan" and inherits
+  // this clause with it: promoting a roster entry means APPLYING branch protection,
+  // which is a human step with an admin PAT. An agent session runs
+  // `npm run configure:branch-protection:verify`, which writes nothing. The bare
+  // `npm run configure:branch-protection` is a live PUT of the whole payload, and
+  // `--dry-run` without the `--` separator is swallowed by npm and applies anyway.
+  //
+  // Inheritance covers the notes that only point here. A note that NAMES the bare
+  // command spells the guard out itself, because a reader who stops at that note
+  // never reaches this one — `branch-protection-diff.test.mjs` enforces exactly
+  // that rule, so deleting this paragraph fails the suite rather than silently
+  // orphaning the nine notes that delegate to it. (Eleven ROLLOUT notes in all:
+  // this one and web-production-build carry the guard; the other nine delegate.)
   "secret-scan",
   // Clean-checkout guard: runs `npm ci && npm run check-types && npm run lint` with
   // no prebuilt shared packages, so a regression in turbo.json's `^build` dependency
@@ -162,9 +176,13 @@ export const CI_CHECKS = [
   // unrecorded until the production deploy failed on it.
   //
   // ROLLOUT: same caveat as secret-scan — required only once the
-  // web-production-build job exists on the target branch and has run green. Run
-  // `npm run configure:branch-protection` AFTER the PR adding the job merges, not
-  // before, or every open PR blocks on a check that does not exist yet.
+  // web-production-build job exists on the target branch and has run green. The
+  // apply must happen AFTER the PR adding the job merges, not before, or every
+  // open PR blocks on a check that does not exist yet. Applying is a human step
+  // with an admin PAT — ask for `npm run configure:branch-protection` to be run;
+  // an agent session runs `npm run configure:branch-protection:verify`, which
+  // writes nothing. See the secret-scan note above for why the bare command and
+  // the missing-`--` form are both hazards.
   "web-production-build",
   // NOT here on purpose: `duplicate-detection` (jscpd). jscpd has no clone-level
   // baseline, so the only lever is a repo-wide duplication percentage — too coarse
