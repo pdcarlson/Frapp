@@ -78,7 +78,12 @@ test("the local binary uses the repo's tooling-cache convention, and is gitignor
   // install-gitleaks.sh and install-oasdiff.sh both cache under .cache/<tool>/;
   // a second convention would be one more place to look for the same kind of thing.
   assert.match(LOCAL_BINARY, /[\\/]\.cache[\\/]lychee[\\/]lychee$/);
-  assert.match(readFileSync(".gitignore", "utf8"), /^\.cache\/lychee\/$/m);
+  // The ignore is asserted as the whole-directory `.cache/` rather than a
+  // per-tool `.cache/lychee/` line. The five per-tool entries were collapsed
+  // because `.cache` itself was not ignored, so the next tool to cache there
+  // showed up untracked — which is how that list reached five. The property
+  // this test cares about is unchanged: the cached binary is never committable.
+  assert.match(readFileSync(".gitignore", "utf8"), /^\.cache\/$/m);
 });
 
 test("paths resolve from the repo root, not the cwd", () => {
