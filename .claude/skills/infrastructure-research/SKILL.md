@@ -236,8 +236,11 @@ curl -s https://api.frapp.live/health           # Production
 > the per-job failure boundaries in `verify-deployments.yml`, what else is broken, and what is only
 > presumed broken. **#1579 landed 2026-09-02**: the guardrail now asserts the *absence* of a Git
 > link (`assertVercelNoGitLink`) and `verify-deployments.yml`'s two Vercel jobs were removed, so a
-> red daily guardrails run once again means real drift. **#1578** (the replacement CI-driven
-> deploys) is still designed, not built — nothing runs them today.
+> red daily guardrails run once again means real drift. **#1578 landed 2026-09-04**: the
+> replacement CI-driven deploys are built — `deploy-vercel-staging.yml` after green CI on `main`,
+> and `deploy-production.yml` on a dispatched SHA, both through `scripts/ci/deploy-vercel.mjs`. A
+> Vercel deployment with no `meta.githubCommitSha` is now the anomaly worth reporting, since every
+> deployment CI creates is stamped with the commit it built.
 
 ### List deployments
 
