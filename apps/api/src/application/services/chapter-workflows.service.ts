@@ -71,9 +71,18 @@ export class ChapterWorkflowsService {
       .eq('key', key)
       .maybeSingle();
     if (error) {
-      // Fall back to the seed default, matching the config endpoint's read
-      // posture — but say so: for a chapter whose explicit setting differs
-      // from the seed, this substitutes the wrong policy until reads recover.
+      // Fall back to the seed default — but say so: for a chapter whose
+      // explicit setting differs from the seed, this substitutes the wrong
+      // policy until reads recover.
+      //
+      // This deliberately DIVERGES from the config endpoint, which fails
+      // *closed* on the same table (#1626): `ChapterConfigService.getConfig`
+      // feeds `patchConfig`'s prior state and is upserted back as a whole row,
+      // so defaulting there destroys the chapter's real config. Nothing is
+      // written here — this is enforcement reading a policy — so failing open
+      // degrades one decision rather than 500ing it. `ChapterPointsConfigService`
+      // models the same split explicitly as `getConfig` / `getConfigOrThrow`.
+      // Do not "restore consistency" by making either side match the other.
       this.logger.warn(
         `chapter_workflows read failed for chapter ${chapterId} key ${key}; applying seed default (enabled=${seed?.enabled ?? false}): ${error.message}`,
       );
