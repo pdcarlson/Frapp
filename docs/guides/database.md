@@ -150,7 +150,7 @@ npx supabase db push --local
 ```
 
    Use `npx supabase db reset` only when you want the full rebuild described in
-   §1 — it drops the reference data with it.
+   § 2 Schema location — it drops the reference data with it.
 
 4. Update:
 

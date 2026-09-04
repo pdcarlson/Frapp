@@ -188,7 +188,7 @@
 
 - Chapters upload a logo (displayed in app header, directory, PDF reports, onboarding).
 - Chapters set a custom accent color (hex) for buttons, links, and highlights.
-- Default accent: two different "defaults" are in play — the value a chapter *holds* until an accent is chosen (the `chapters.accent_color` column default) and the value a client *paints* when the stored one is absent or illegible. They are not interchangeable; [`spec/behavior/branding.md`](../behavior/branding.md) owns both and this file does not restate either.
+- Default accent: several distinct "defaults" are in play and they are **not** interchangeable — the value a chapter *holds* until an accent is chosen (the `chapters.accent_color` column default), the value a client *paints* when the stored one is absent or illegible, and the seed a no-accent chapter's palette is generated from. [`spec/behavior/branding.md`](../behavior/branding.md) owns the first two and [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md) owns the seed; this file restates none of them.
 - Chapter branding applies only within the chapter context; Frapp branding is unaffected.
 
 ---

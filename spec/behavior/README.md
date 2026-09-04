@@ -101,6 +101,6 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | Every signed-upload-URL route — `POST /v1/documents/upload-url`, `/v1/backwork/upload-url`, `/v1/channels/:id/upload-url`, `/v1/chapters/current/logo-url`, `/v1/service-entries/proof-upload-url`, `/v1/users/me/avatar-url` | 10/min | Mints signed object-storage URLs. The rule is per-mechanism, not per-module: a new upload route inherits this limit. |
 | `GET /v1/search` | 20/min | Four full-text (`websearch_to_tsquery`) scans per call. |
 
-`POST /v1/points/adjust` is deliberately absent: its abuse control is the per-chapter adjustments-per-hour anti-fraud rule in the points service (see [`points.md`](points.md) § Anti-Fraud), not the throttler. `POST /v1/channels/:id/messages` also fans out push notifications but keeps the 30/min default — it is the chat send path, and a lower ceiling would degrade normal use.
+`POST /v1/points/adjust` is deliberately absent: its abuse control is the per-admin adjustments-per-hour anti-fraud rule in the points service — the ceiling is chapter-configured, but it is counted per admin (see [`points.md`](points.md) § Anti-Fraud) — not the throttler. `POST /v1/channels/:id/messages` also fans out push notifications but keeps the 30/min default — it is the chat send path, and a lower ceiling would degrade normal use.
 - Passwords are never stored by Frapp. Authentication is delegated entirely to Supabase Auth.
 - All secrets (Supabase keys, Stripe keys) are injected via environment variables. Never committed to version control. Never logged.
