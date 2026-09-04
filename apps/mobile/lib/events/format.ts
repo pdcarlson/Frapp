@@ -132,8 +132,15 @@ export function resolveCheckInWindow(
   return { state: "open", closesAt, opensAt: start };
 }
 
-/** "closes 6:15" / "opens 5:45" — the trailing clause drawn on the s07 card. */
-export function formatClock(date: Date | null): string {
+/**
+ * "closes 6:15" / "opens 5:45" — the trailing clause drawn on the s07 card.
+ *
+ * Deliberately NOT `formatClock`: `@repo/formatting` exports a `formatClock`
+ * that renders `"Mar 5, 6:15 PM"` — date included — and this file already
+ * imports from that package, so two different renderings sat one identifier
+ * apart. Importing the wrong one produced plausible, silently wrong copy.
+ */
+export function formatEventClock(date: Date | null): string {
   return date ? clock(date) : "";
 }
 
