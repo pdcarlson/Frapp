@@ -237,11 +237,11 @@ All three run in `.github/workflows/docs.yml`. **Required?** below is the *inten
 | `doc-tables`     | GitHub Actions | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`, whole-tree) | Not yet — reports only, pending the same promotion step |
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
-`.claude/hooks/pre-push-review-gate.sh` hook blocks the first `git push` of each branch HEAD and requires
-one review pass on the diff before the branch is pushed — **`/diff-review`**, which any agent can always
-invoke, or the richer bundled `/code-review`, which is model-invocable only when the turn's prompt carries
-`/code-review` whitespace-delimited on both sides (backticks and trailing punctuation defeat it) and
-does not write the gate marker. Review sub-agents inherit the
+`.claude/hooks/pre-push-review-gate.sh` hook gates `git push` on *evidence* that a review ran for the
+current HEAD — evidence, not an attempt, so retrying a denied push does not satisfy it. A push that
+publishes no objects (a dry run, or a `--delete` ref deletion) is exempt, having no diff to review.
+Which review to run, how the evidence is recorded, and the livelock release are the runbook's to
+state, not this roster's. Review sub-agents inherit the
 session model (Opus). There is no `claude-review-gate` required check, no `claude-review.yml` workflow, and no
 `CLAUDE_CODE_OAUTH_TOKEN` secret.
 
