@@ -952,9 +952,9 @@ this compares against a design, not against something that ran.) What makes it s
   issue. **That read is available to a session**, contrary to what this bullet used to say: it called the read "session-dependent" and
   therefore treated the whole layer as not-verifiable-from-a-session, which the route rule under
   Work status corrects — `GET /repos/pdcarlson/Frapp/branches/main/protection` returns 200 direct
-  (21 required contexts as the roster then stood — it has been **20** since #1637 dropped
-  `docs-spec-sync` on 2026-09-03 — plus `strict: true`, `enforce_admins: true`,
-  `required_linear_history: true`,
+  (21 required contexts as the roster stood at that read, since reduced by #1637 and by the
+  docs-gate retirement; read `ALL_REQUIRED_CHECKS` rather than any count quoted here. Plus
+  `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
   `required_pull_request_reviews: null`, measured 2026-09-02) and the verify script exits 0 from
   this sandbox, printing "No changes — live protection already matches this roster." So live `main`
   matches every field that diff compares as of 2026-09-02 — the drift

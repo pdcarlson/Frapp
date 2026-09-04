@@ -156,10 +156,14 @@ code and a printed delta rather than a checkmark.
 > `required_pull_request_reviews` `null`. The one divergence was `allow_fork_syncing`: the roster
 > said `true`, live was `false`.
 >
-> **The roster is 20 contexts, not 21, as of 2026-09-03** — [#1637](https://github.com/pdcarlson/Frapp/issues/1637)
-> (`bab7200`) dropped `docs-spec-sync` from the required roster. The 21 above is what the
-> 2026-09-02 read saw and is left as that record; a `:verify` run on 2026-09-04 printed
-> `Required checks (20)`. Do not hunt for a 21st context.
+>
+> **The 21 above is the 2026-09-02 read and is left as that record.** The roster has shrunk twice
+> since: [#1637](https://github.com/pdcarlson/Frapp/issues/1637) (`bab7200`) dropped
+> `docs-spec-sync`, and the docs-gate retirement dropped `doc-paths`. Do not hunt for a context the
+> record names but `:verify` does not print, and do not re-add one to make the count match a number
+> written here — the roster is `ALL_REQUIRED_CHECKS` in
+> [`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs), and
+> `npm run configure:branch-protection:verify` prints what is live.
 >
 > **The `allow_fork_syncing` divergence is closed as of 2026-09-04** ([#1580](https://github.com/pdcarlson/Frapp/issues/1580)).
 > The roster now declares `allow_fork_syncing: false`, matching live, so a hand comparison of the
