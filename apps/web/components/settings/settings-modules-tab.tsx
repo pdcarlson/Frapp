@@ -185,7 +185,7 @@ function ModuleRow({
               drew in `--primary` (accent-9). #1215 fixed that in the primitive
               — it now draws in `--ring` (accent-8), which clears all 19 — so
               there is no residual left here. See `components/ui/focus.ts` and
-              its `focus-contrast.test.ts` guard.
+              its `focus-contrast.spec.ts` guard.
             */
             className={cn(
               "mt-0.5 rounded-xs text-muted-foreground transition-colors hover:text-foreground",
@@ -240,7 +240,7 @@ function ModuleRow({
 
       {open && hasSubFeatures ? (
         /*
-          No fill. `--secondary` aliases `--card` (`elevation-contrast.test.ts`
+          No fill. `--secondary` aliases `--card` (`elevation-contrast.spec.ts`
           pins it), so `bg-secondary/30` inside this card composited to
           1.000:1 — the strip it was meant to draw was never there. The
           hairline above it is the load-bearing edge (§2), and it already

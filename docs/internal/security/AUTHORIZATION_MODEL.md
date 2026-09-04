@@ -359,7 +359,7 @@ changed row, so it gets real replication plus the row-level policy #867 pre-auth
 dashboard subscriptions consume nothing but the fact of a change, so they get a contentless private
 broadcast and their tables stay API-enforced. The topic strings are a cross-substrate contract
 between that migration and `apps/web/lib/realtime/change-topics.ts`, pinned by
-`change-topics.test.ts` precisely because drift between them is silent.
+`change-topics.spec.ts` precisely because drift between them is silent.
 
 Each of the three ping triggers wraps its `realtime.send` call in `exception when others then null`
 — deliberate, since an AFTER trigger fires inside the writing transaction and an unguarded send

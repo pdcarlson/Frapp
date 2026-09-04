@@ -150,7 +150,7 @@ vi.mock("./channel-list", () => ({
 // the channel), not merely re-renders with a new `channelId`/`channelName`
 // prop. `useEffect` with no deps fires once per mount, never on a prop-only
 // re-render, so counting it is how this suite tells the two apart without a
-// real ProseMirror view (jsdom can't render one; see composer.test.tsx).
+// real ProseMirror view (jsdom can't render one; see composer.spec.tsx).
 // Keyed off `channelId` rather than `channelName` because this file's
 // `directChannelDisplayName` stub always returns `""`.
 vi.mock("./composer", () => ({
@@ -173,7 +173,7 @@ vi.mock("./pins-popover", () => ({
 }));
 // Stubbed down to a single button that fires `onJump` with whatever hit the
 // test set, so these cases exercise the *shell's* jump wiring rather than the
-// popover's own search behaviour (which chat-search-popover.test.tsx owns).
+// popover's own search behaviour (which chat-search-popover.spec.tsx owns).
 vi.mock("./chat-search-popover", () => ({
   ChatSearchPopover: ({
     onJump,
@@ -187,7 +187,7 @@ vi.mock("./chat-search-popover", () => ({
 }));
 // Exposes `onJump` as a button so the cross-channel jump (#462) can be driven
 // without opening a real Radix popover. The panel's own rendering is covered in
-// `bookmarks-popover.test.tsx`; what belongs here is the shell wiring.
+// `bookmarks-popover.spec.tsx`; what belongs here is the shell wiring.
 vi.mock("./bookmarks-popover", () => ({
   BookmarksPopover: ({
     onJump,

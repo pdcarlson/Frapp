@@ -22,7 +22,7 @@ import { FOCUS_RING, FOCUS_RING_OFFSET } from "./focus";
  * The guard measures **the token the recipe actually ships**, parsed out of the
  * exported class string, rather than a hard-coded role name. A guard that
  * restated the token would go green against a constant that no longer ships —
- * which is the whole failure mode `shared/elevation-contrast.test.ts` was
+ * which is the whole failure mode `shared/elevation-contrast.spec.ts` was
  * written against.
  */
 

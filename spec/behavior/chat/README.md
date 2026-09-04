@@ -205,7 +205,7 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 | `chat:channel:<channelId>` | Who has *this channel* open | The push worker, via service role, to suppress pushes to members already looking (ADR-10) |
 | `presence:chapter:<chapterId>` | Who is present in the *chapter* at all | The web Directory |
 
-The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.test.ts`. Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
+The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.spec.ts`. Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
 
 Both are **public** Realtime channels, so presence is advisory and must never be an input to an authorization decision — it can be both read and forged by anyone holding the anon key. Why they are public, and what that exposes, is [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../../docs/internal/security/AUTHORIZATION_MODEL.md) § "The policies that do exist".
 

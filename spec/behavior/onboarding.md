@@ -49,7 +49,7 @@ When a new member joins a chapter (via invite token), they see a guided walkthro
 7. **Profile Setup** — Set display name and write a short bio. Photo upload is **mobile-only** today; the web half is tracked separately and the web slide does not promise it.
 8. **Done** — CTA into chat, the landing surface on both web (`/chat`) and mobile. There is no web home screen; see [`chat/README.md`](chat/README.md).
 
-This list said **seven** and omitted Points until the #920 Profile & pre-auth slice. The code has carried eight slides since `STEPS` was written, so the doc was stale rather than the implementation — behavior spec wins on what the product does, and here the shipped product *is* what it does. `apps/web/components/onboarding/onboarding-tutorial.test.tsx` now asserts the eight titles in order, so the two cannot drift apart again.
+This list said **seven** and omitted Points until the #920 Profile & pre-auth slice. The code has carried eight slides since `STEPS` was written, so the doc was stale rather than the implementation — behavior spec wins on what the product does, and here the shipped product *is* what it does. `apps/web/components/onboarding/onboarding-tutorial.spec.tsx` now asserts the eight titles in order, so the two cannot drift apart again.
 
 ### Behavior
 

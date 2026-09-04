@@ -805,7 +805,7 @@ describe("retry / discard", () => {
 
 describe("react()/unreact() failure surfacing (#999)", () => {
   // `reactAction`/`unreactAction` are mocked, so chat-core's own `onError` call
-  // is not exercised here (that lives in chat-client.test.ts) — this proves the
+  // is not exercised here (that lives in chat-client.spec.ts) — this proves the
   // hook wires a working `onError` into the ctx it hands chat-core, and that
   // invoking it lands in `reactionError`, which is the half only this hook owns.
   function captureOnErrorAt(mock: { mock: { calls: unknown[][] } }, index: number) {

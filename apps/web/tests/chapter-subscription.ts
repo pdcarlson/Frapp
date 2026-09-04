@@ -6,8 +6,8 @@ import type { Mock } from "vitest";
  *
  * `vi.mock` and `vi.hoisted` are per-file and cannot be shared, so each test file
  * still declares its own mock. What is shared is the *shape* of the chapter
- * payload — which is the part that was drifting: `invoice-admin-card.test.tsx`
- * and `subscription-checkout-card.test.tsx` each grew their own incompatible
+ * payload — which is the part that was drifting: `invoice-admin-card.spec.tsx`
+ * and `subscription-checkout-card.spec.tsx` each grew their own incompatible
  * version, and eleven more copies would guarantee that some surface is tested
  * against a payload the wire never sends.
  *

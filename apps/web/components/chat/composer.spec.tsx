@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 
 // Tiptap's ProseMirror view does not render document content into jsdom's
-// contenteditable node in this repo's test environment (see chat-shell.test.tsx's
+// contenteditable node in this repo's test environment (see chat-shell.spec.tsx's
 // note on the same gap), so there is no DOM text/attribute this suite can read
 // back to prove what the *rendered* placeholder says. `composerPlaceholder`
 // below is tested directly and needs none of this; only the "fresh mount"

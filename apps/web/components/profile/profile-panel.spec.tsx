@@ -339,7 +339,7 @@ describe("ProfilePanel — offline, then loading, then error, then the screen", 
   it("keeps a cached profile on screen while a paused refetch waits", () => {
     /*
      * The half a later "simplification" silently breaks, which is why it is
-     * pinned rather than left implicit — `components/shared/can-fallback.test.tsx`
+     * pinned rather than left implicit — `components/shared/can-fallback.spec.tsx`
      * pins the same one for the permission query. A paused *refetch* still has
      * `data`, so the member keeps their screen and their drafts; only a pause
      * with nothing cached is a state worth rendering.

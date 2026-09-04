@@ -212,7 +212,7 @@ function OnboardingTutorialDialog({
           new place. §10's rule is that a state which cannot rise above its
           container drops its fill and lets the hairline carry the edge, and
           over `--popover` that hairline separates better (1.275:1) than the
-          card's own ever did. Pinned in `profile-contrast.test.ts`.
+          card's own ever did. Pinned in `profile-contrast.spec.ts`.
         */}
         <StepDots
           current={stepIndex}

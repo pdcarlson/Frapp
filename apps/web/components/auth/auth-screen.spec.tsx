@@ -26,7 +26,7 @@ import NoAccessPage from "@/app/no-access/page";
  * `/` is a server component (it awaits `getSession()`), and `/join` mounts
  * `useRedeemInvite` plus a real session check, so both are covered by
  * `tests/visual/pre-auth-floor.spec.ts` and by
- * `components/profile/family-call-sites.test.ts` instead.
+ * `components/profile/family-call-sites.spec.ts` instead.
  */
 const SCREENS = [
   { name: "/sign-in", render: () => render(<SignInPage />) },
