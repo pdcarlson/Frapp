@@ -952,16 +952,20 @@ this compares against a design, not against something that ran.) What makes it s
   issue. **That read is available to a session**, contrary to what this bullet used to say: it called the read "session-dependent" and
   therefore treated the whole layer as not-verifiable-from-a-session, which the route rule under
   Work status corrects — `GET /repos/pdcarlson/Frapp/branches/main/protection` returns 200 direct
-  (21 required contexts, `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
+  (21 required contexts as the roster then stood — it has been **20** since #1637 dropped
+  `docs-spec-sync` on 2026-09-03 — plus `strict: true`, `enforce_admins: true`,
+  `required_linear_history: true`,
   `required_pull_request_reviews: null`, measured 2026-09-02) and the verify script exits 0 from
   this sandbox, printing "No changes — live protection already matches this roster." So live `main`
   matches every field that diff compares as of 2026-09-02 — the drift
   `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` records (12 contexts against 17 intended)
-  was closed by a run on 2026-08-21. Exit 0 is not "live matches the roster in full", though: the
-  roster declares `allow_fork_syncing: true` and live `main` is `false`, and `LOCK_DEPENDENT_FLAGS`
-  excludes that key from the diff because GitHub honours fork-syncing only on a locked branch and
-  `lock_branch` is `false` — so the flag is inert either way
-  ([#1580](https://github.com/pdcarlson/Frapp/issues/1580)). What survives is
+  was closed by a run on 2026-08-21. Exit 0 is still not "live matches the roster in full":
+  `LOCK_DEPENDENT_FLAGS` excludes `allow_fork_syncing` from the diff while `lock_branch` is
+  `false`, so a divergence on that one key stays invisible to a green `:verify`
+  ([#1580](https://github.com/pdcarlson/Frapp/issues/1580) closed the divergence that existed;
+  the exclusion remains). Canonical state, including the roster's current context count:
+  [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) § Step 1 —
+  read it rather than the dated counts above, and do not add new ones here. What survives is
   that a read is a **dated snapshot**, not a standing guarantee: nothing stops `main` drifting again
   between applies, so re-run the verify rather than trusting this date; (b) `restrictions: null` means the push-restriction
   allowlist is **disabled**, which is not the same as "nothing can bypass"; and (c) `bypass_actors`
