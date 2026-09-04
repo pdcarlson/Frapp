@@ -29,18 +29,20 @@ For the full operator runbook (DNS, provider setup, and detailed checklists), us
   production deploys** until **#1579** inverted the assertion on 2026-09-02 to require the absence
   of a Git link instead.
   Unchanged as policy: since #1340 production is only ever deployed from a **named commit** by
-  `deploy-production.yml` through the Vercel API with `target: production`, so nothing
-  auto-promotes — though that workflow's Vercel step passes a `gitSource` the integration used to
-  supply and is therefore **presumed broken** (not observed failing). **ADR-21** in
+  `deploy-production.yml`, so nothing auto-promotes. Since **#1578** that workflow builds the commit
+  on the runner and uploads it (`vercel build --prod` then `vercel deploy --prebuilt --prod`),
+  replacing the `gitSource` call the retired integration used to serve; the same path deploys
+  staging from `deploy-vercel-staging.yml` after CI passes. **ADR-21** in
   [`spec/architecture/README.md`](../../spec/architecture/README.md) is the canonical record of the
   unlink — the per-project dates, the freeze points and every live breakage. **#1579** repaired the
   guardrail and `verify-deployments.yml`'s Vercel jobs on 2026-09-02: the assertion was
   **inverted** so a *present* Git link is the violation, rather than deleted, and the two Vercel
-  verify jobs were removed. What remains is
-  **#1578** (CI-driven `vercel build` + `vercel deploy --prebuilt --prod`, CI/CD stage 7 under the
-  #1381 epic — designed, not built). The `git` block and the `ignoreCommand: "exit 1"` pin in each
-  app's `vercel.json` govern nothing while the projects stay unlinked, but **must not be deleted**
-  — they are the versioned form of settings that are otherwise dashboard-only.
+  verify jobs were removed. **#1578** (2026-09-04) then built the replacement: CI-driven
+  `vercel build` + `vercel deploy --prebuilt`, for staging (`deploy-vercel-staging.yml`, after
+  green CI on `main`) and production (`deploy-production.yml`, on a dispatched SHA). The `git`
+  block and the `ignoreCommand: "exit 1"` pin in each app's `vercel.json` govern nothing while the
+  projects stay unlinked, but **must not be deleted** — they are the versioned form of settings
+  that are otherwise dashboard-only.
 - **Last verified: 2026-08-27** (Render API: `frapp-api-staging` auto-deploys `main` and was live at the latest `main` commit) — **staging** API deployment (Render) is **automated**. Note the verified caveat in `docs/internal/ops/DEPLOYMENT.md` § Current rollout status: Render-side auto-deploy currently triggers on **commit**, so a push to `main` deploys staging without waiting for CI; `.github/workflows/deploy-api.yml`'s green-CI gate governs its own deploy hook and the staging migrations it applies on every **green** `main` run. The **production** service is deployed by `commitId` through the Render API by `deploy-production.yml`, which requires its auto-deploy to be **off** — a dashboard-only setting asserted by `scripts/ci/production-guardrails.mjs`. Production **migrations** run inside that same workflow, after a replay against production's live applied state — see `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
 - **Last verified: 2026-03-22** (unverified since — no EAS access from agent sessions) — Mobile App Store / Play Store deployment is still being finalized (EAS); treat store releases as manual until the release runbook is complete.
 

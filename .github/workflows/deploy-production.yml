@@ -348,6 +348,35 @@ jobs:
       - name: Stop the disposable Supabase stack
         run: supabase stop --no-backup
 
+      # ── Installed BEFORE anything is applied, deliberately ───────────────
+      # `vercel build` runs each app's own build, which needs the workspace's
+      # dependencies present: this is a monorepo and both apps import from
+      # `packages/`. Nothing else in this job needs `node_modules` — the
+      # migration half runs through the Supabase CLI and `node scripts/…`.
+      #
+      # So the natural place for these was next to the Vercel step at the end of
+      # the job. That is the wrong place. Both steps can fail for reasons that
+      # have nothing to do with this commit — a registry 5xx, a lockfile/registry
+      # mismatch, a full disk — and down there a failure lands AFTER the
+      # production migration has applied and the Render API has shipped, leaving
+      # a migrated database and a half-updated production with no tag naming
+      # what is live. Up here the same failure costs nothing: nothing has been
+      # applied yet.
+      #
+      # Placed after the rehearsal's disposable stack has been torn down, so the
+      # install never competes with it for disk or CPU, and skipped entirely on
+      # the paths that never reach a Vercel build.
+      - name: Install dependencies for the Vercel build
+        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
+        run: npm ci
+
+      # Pinned, exactly like the Supabase CLI above. An unpinned `@latest` would
+      # make the only path to production depend on whatever Vercel published
+      # this morning.
+      - name: Install Vercel CLI
+        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
+        run: npm install --global vercel@59.11.7
+
       # Always runs, including when this is not a dry run: the log then records
       # what WAS pending immediately before the apply, so a failure in the next
       # step is readable without guessing at the prior state.
@@ -438,10 +467,17 @@ jobs:
           echo "::error::Production health check failed after 6 attempts (2 min)."
           exit 1
 
-      # A fresh production BUILD of this commit, not a promotion of its main
-      # preview: NEXT_PUBLIC_* are inlined at build time, so promoting a preview
+      # A fresh production BUILD of this commit, not a promotion of its staging
+      # build: NEXT_PUBLIC_* are inlined at build time, so promoting a preview
       # would put the production dashboard on the staging API and staging
-      # Supabase keys. See the header of deploy-vercel-production.mjs.
+      # Supabase keys. See the header of deploy-vercel.mjs.
+      #
+      # Since ADR-21 the build happens HERE, on this runner, rather than on
+      # Vercel from a git source — the Git integration that made `gitSource`
+      # mean anything is gone (#1578). `vercel pull --environment=production`
+      # fetches the Production environment variables so the bundle is compiled
+      # against them, and the script asserts the resulting deployment's `target`
+      # is `production` before calling it a release.
       - name: Deploy the commit to Vercel production (web + landing)
         if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
         env:
@@ -449,9 +485,9 @@ jobs:
           VERCEL_WEB_PROJECT_ID: ${{ env.VERCEL_WEB_PROJECT_ID }}
           VERCEL_LANDING_PROJECT_ID: ${{ env.VERCEL_LANDING_PROJECT_ID }}
           VERCEL_TEAM_ID: ${{ env.VERCEL_TEAM_ID }}
-          GITHUB_REPO_ID: ${{ github.event.repository.id }}
+          DEPLOY_TARGET: production
           DEPLOY_SHA: ${{ inputs.sha }}
-        run: node scripts/ci/deploy-vercel-production.mjs
+        run: node scripts/ci/deploy-vercel.mjs
 
   # Tagging is a separate job only because `workflow_call` cannot be a step. It
   # carries no `environment:`, so it costs no second approval click.
