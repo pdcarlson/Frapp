@@ -28,7 +28,7 @@
 import { Svg, detail, fillProps, stroke } from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 
-export { PointsGlyph, SearchGlyph } from "@/components/layout/nav-glyphs";
+export { SearchGlyph } from "@/components/layout/nav-glyphs";
 
 export type PointsGlyphProps = DuotoneGlyphProps;
 
