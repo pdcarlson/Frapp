@@ -149,6 +149,16 @@ acted on findings, and the hook allows the push only when that marker exists for
   `git push --dry-run … && git push …` all do. The accepted gap is an env-prefixed invocation
   (`env FOO=1 git push`): a missed push costs one unreviewed branch, whereas over-matching burns the
   livelock budget and then auto-allows a real one, which is strictly worse.
+- **Exempt: pushes that publish nothing.** A dry run (`--dry-run` / `-n`) and a ref deletion
+  (`--delete` / `-d`) upload no objects, so there is no diff for `/diff-review` — which reviews
+  **HEAD** — to have any bearing on. Gating them is not just a wasted prompt, it is misleading, and
+  four denials later the livelock guard releases the push labelled `UNREVIEWED` regardless.
+  Destructiveness is not this gate's job; branch protection is what refuses a deletion that matters.
+  Two limits are deliberate: only the **flag** form of a deletion is exempt (`--delete` makes every
+  refspec in the invocation a deletion), never the colon refspec — `git push origin :old main`
+  deletes one ref and publishes another, and the published one still needs review — and a **compound**
+  command is never exempt, so a deletion chained onto a real push does not carry the real push
+  through.
 
 The hook is a tool-level Claude Code hook and is **independent of git's own hooks**: it does not run git,
 does not touch `--no-verify`, and does not interfere with the git-level
@@ -180,10 +190,11 @@ does not touch `--no-verify`, and does not interfere with the git-level
 
 ## Testing the gate
 
-`npm run test:ci-scripts` (or `node --test scripts/ci/__tests__/review-gate.test.mjs`) — 25 cases
-covering command-position matching, the `--dry-run` compound case, marker present / absent / stale,
-both forms of `FRAPP_SKIP_REVIEW_GATE`, the livelock release, and the fail-closed paths for a
-malformed payload, a missing interpreter, and a broken `grep`. Needs no network and no running stack.
+`npm run test:ci-scripts` (or `node --test scripts/ci/__tests__/review-gate.test.mjs`, which prints
+the case count) covers command-position matching, the `--dry-run` compound case, the ref-deletion
+exemption and the colon-refspec form it excludes, marker present / absent / stale, both forms of
+`FRAPP_SKIP_REVIEW_GATE`, the livelock release, and the fail-closed paths for a malformed payload, a
+missing interpreter, and a broken `grep`. Needs no network and no running stack.
 
 It lives under `scripts/ci/__tests__/` **so that something actually runs it** — the `test:ci-scripts`
 glob picks it up and the `ci-scripts-tests` CI job runs it on every PR. An earlier revision shipped

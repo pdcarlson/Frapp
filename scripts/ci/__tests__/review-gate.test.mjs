@@ -346,6 +346,56 @@ test("--no-verify is not mistaken for the -n dry-run flag", () => {
   assertDeny(runHook("git push --no-verify"), "--no-verify");
 });
 
+// ── Ref deletions publish no objects, so there is nothing to review ─────────
+//
+// `--delete` makes EVERY refspec in the invocation a deletion, so the whole command uploads
+// nothing. Gating it does not just waste a prompt: the review it demands (/diff-review, which
+// reviews HEAD) has no bearing on which remote refs are removed, and four denials later the
+// livelock guard releases the push labelled UNREVIEWED anyway.
+
+for (const cmd of [
+  "git push origin --delete br",
+  "git push --delete origin br",
+  "git push -d origin br",
+  "git push --no-verify -d origin br",
+  "git push origin --delete a b c",
+]) {
+  test(`ref deletion is exempt: ${JSON.stringify(cmd)}`, () => {
+    clearMarker();
+    assertAllow(runHook(cmd), cmd);
+  });
+}
+
+// The colon refspec is git's other deletion form, and it must NOT be exempt: unlike the flag it
+// COMPOSES, so one command can delete a ref and publish another. Exempting it would release the
+// published half completely ungated — the same fail-open shape as the old unanchored --dry-run
+// match. Without this case the flag-only restriction is untested and a later "simplification"
+// to a substring match on "delete" would pass the suite.
+for (const cmd of ["git push origin :br", "git push origin :old main"]) {
+  test(`colon-refspec deletion is still gated: ${JSON.stringify(cmd)}`, () => {
+    clearMarker();
+    assertDeny(runHook(cmd), cmd);
+  });
+}
+
+test("a deletion chained onto a real push does not exempt the real push", () => {
+  clearMarker();
+  assertDeny(runHook("git push origin --delete br && git push origin main"), "compound delete");
+});
+
+// The exemption matches `--delete` as a FLAG, not as a substring. A ref whose name merely
+// contains the text is an ordinary push and must still be gated — otherwise naming a branch
+// after this very fix would silently open the gate.
+test("a ref name containing the flag text does not exempt a real push", () => {
+  clearMarker();
+  assertDeny(runHook("git push origin fix--delete-exemption"), "ref name containing --delete");
+});
+
+test("-d is matched as a flag, not inside a longer token", () => {
+  clearMarker();
+  assertDeny(runHook("git push origin feature-d"), "trailing -d in a ref name");
+});
+
 // ── Unresolvable HEAD: deny, with a real reason, and never wedge ────────────
 
 test("an empty repository denies with a diagnostic and still releases via livelock", () => {

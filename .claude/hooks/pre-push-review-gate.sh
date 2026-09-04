@@ -35,9 +35,10 @@
 # (exit 0) and the normal permission flow applies — it does not force-approve the push.
 #
 # The `git push` match is a word-boundary heuristic (a free-form shell command can only be
-# matched heuristically): it skips `git pushdeploy` and `--dry-run`, but an exotic command
-# that merely quotes "git push" may still trip it once. That's acceptable for a local
-# convenience gate — the worst case is one extra review prompt.
+# matched heuristically): it skips `git pushdeploy`, and it exempts the two invocations that
+# publish no objects and so have no diff to review — a dry run, and a ref deletion (`--delete`
+# / `-d`). An exotic command that merely quotes "git push" may still trip it once. That's
+# acceptable for a local convenience gate — the worst case is one extra review prompt.
 #
 # This is a Claude Code tool-level hook and is INDEPENDENT of git's own hooks: it does
 # not run git mutations, does not touch `--no-verify`, and does not interfere with the
@@ -209,17 +210,33 @@ push_re='(^|[;&|(){}][[:space:]]*)[[:space:]]*git([[:space:]]+-[^[:space:];&|]*(
 if ! [[ "$command" =~ $push_re ]]; then
   exit 0
 fi
-# A dry-run publishes nothing and must not consume the gate — but only exempt a command
-# that is *just* a dry run. An unanchored substring match previously let a compound
-# command (`git push --dry-run … && git push …`) exempt its real push too, and that path
-# exits without recording anything, so the real push went completely ungated.
+# A push that publishes nothing must not consume the gate — but only exempt a command whose
+# every push is a no-op. An unanchored substring match previously let a compound command (a
+# dry run chained onto a real push) exempt its real push too, and that path exits without
+# recording anything, so the real push went completely ungated.
 # Any shell operator means we cannot reason about what else runs: gate it.
+#
+# A ref DELETION is the second such form, and the reason the last arm exists: it uploads no
+# objects, so there is no diff, and the review the deny demands (/diff-review, which reviews
+# HEAD) has no bearing on which remote refs are removed. Gating it is not merely useless, it
+# is misleading — and the livelock guard releases the push after four denials anyway, so
+# denying buys noise and nothing else. Destructiveness is not this gate's job: it reviews
+# code, and branch protection is what refuses a deletion that matters.
+# Only the explicit FLAG is exempt, because `--delete` makes EVERY refspec in the invocation
+# a deletion. The colon refspec form is NOT, because it composes: a single command can
+# delete one ref and publish another, and the published one still has a diff to review.
+# Matched as a flag (whitespace before; whitespace or end after) so a ref name that merely
+# contains the text cannot exempt a real push.
+delete_re='[[:space:]](--delete|-d)([[:space:]]|$)'
 case "$command" in
   *'&&'* | *';'* | *'|'*) : ;;      # compound — never exempt
   # `-n` is git's documented short form of --dry-run. Matching it too keeps a no-op command from
   # burning livelock budget, which would otherwise count toward auto-allowing a real push.
   # Matched as a whole word so `--no-verify` (space, dash, dash) cannot trip it.
   *--dry-run* | *' -n '* | *' -n') exit 0 ;;
+  # `if`, not a `[[ … ]] &&` list: under `set -e` a failing list becomes the case statement's
+  # status, which would abort the hook with exit 1 on every ordinary push.
+  *) if [[ "$command" =~ $delete_re ]]; then exit 0; fi ;;
 esac
 
 # ── Content key = branch HEAD SHA, so a new HEAD re-gates ────────────────────────────
