@@ -22,6 +22,9 @@ import { parseCheckArray } from "../../check-doc-tables.mjs";
 // evidence table records both on the same day). Everything below is a pure
 // function over a plain object for that reason.
 
+/** Source text of a sibling script, for the assertions that read code as data. */
+const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
+
 // The real GET shape, trimmed. Note every boolean arrives WRAPPED as
 // `{enabled}`, which the PUT payload does not do — that asymmetry is the trap
 // `normalizeProtection` exists to absorb.
@@ -159,8 +162,6 @@ describe("diffProtection", () => {
 });
 
 describe("one roster, two consumers (#1383 scope item 1)", () => {
-  const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
-
   it("the deploy gate imports the roster from the data module, not from the writer", () => {
     // The coupling this issue removed: `validate-deploy-sha.mjs` runs on every
     // production deploy, and used to import a module whose import once PUT live
@@ -217,10 +218,7 @@ describe("one roster, two consumers (#1383 scope item 1)", () => {
     // regex to `^const` (a natural hardening) would silently stop the roster
     // gate parsing anything. That failure lands only on the non-required
     // doc-tables job, so nothing would block a merge on it.
-    const src = readFileSync(
-      new URL("../lib/required-checks.mjs", import.meta.url),
-      "utf8",
-    );
+    const src = read("../lib/required-checks.mjs");
     for (const name of ["CI_CHECKS", "DOCS_CHECKS", "DRIFT_CHECKS"]) {
       assert.ok(
         parseCheckArray(src, name)?.length > 0,
@@ -400,7 +398,50 @@ describe("assertKnownArgs", () => {
 });
 
 describe("the apply instruction is guarded wherever a script prints one (#1585)", () => {
-  const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
+  // Every assertion below runs over text with `//` stripped and whitespace
+  // collapsed, and states the RULE rather than a phrase's position. The first
+  // version of these tests regexed raw source, which pinned them to one exact
+  // line-wrap: four of five ways of rewrapping the same bare instruction slipped
+  // past the negative guard, while a harmless reflow of the guarded note would
+  // have turned a required check red. Neither is a property of the rule, so
+  // neither belongs in the test.
+  const flatten = (lines) =>
+    lines
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("//"))
+      .map((l) => l.replace(/^\/\/\s?/, ""))
+      .join(" ")
+      .replace(/\s+/g, " ");
+
+  // `:verify` is not the apply, so naming it must not trip the requirement.
+  const namesBareApply = (text) =>
+    /npm run configure:branch-protection(?!:verify)/.test(text);
+  const carriesGuard = (text) =>
+    /human step with an admin PAT/.test(text) &&
+    /configure:branch-protection:verify/.test(text);
+
+  /** Maximal runs of consecutive comment lines, each flattened to one string. */
+  const commentRuns = (src) => {
+    const runs = [];
+    let current = null;
+    for (const line of src.split("\n")) {
+      if (line.trim().startsWith("//")) (current ??= runs[runs.push([]) - 1]).push(line);
+      else current = null;
+    }
+    return runs.map(flatten);
+  };
+
+  /** The comment run immediately above a roster entry, flattened. */
+  const noteFor = (src, entry) => {
+    const at = src.indexOf(`\n  "${entry}",`);
+    assert.ok(at > 0, `roster entry "${entry}" not found — re-point this test`);
+    const before = src.slice(0, at).split("\n");
+    const run = [];
+    for (let i = before.length - 1; i >= 0 && before[i].trim().startsWith("//"); i--) {
+      run.unshift(before[i]);
+    }
+    return flatten(run);
+  };
 
   // `--verify` is the ONE branch-protection command an agent session is allowed
   // to run, so its own failure output is the worst possible place to print an
@@ -410,17 +451,23 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
   // doc still claimed the programme was complete.
   it("the --verify drift error names the apply as a human step, not a next command", () => {
     const src = read("../../configure-branch-protection.mjs");
+    // Bounded to the throw itself. An open-ended window would let an assertion
+    // be satisfied by adjacent source — including the `unconfirmedBranches`
+    // throw below it, which is the other place this script discusses applying.
     const [, drift] =
-      src.match(/Live branch protection does not match this roster([\s\S]{0,600})/) ?? [];
+      src.match(/Live branch protection does not match this roster([\s\S]*?)\n\s*\);/) ?? [];
     assert.ok(drift, "the drift error moved or was reworded — re-point this test");
 
-    assert.match(drift, /human step/, "must say applying is a human step");
-    assert.match(drift, /admin PAT/, "must name the credential the human needs");
+    assert.ok(
+      carriesGuard(`// ${drift}`) || /human step with an admin PAT/.test(drift),
+      "the drift error must say applying is a human step with an admin PAT",
+    );
     assert.match(
       drift,
       /separator/,
       "must warn that `--dry-run` without the `--` separator applies",
     );
+    assert.match(drift, /configure:branch-protection:verify|Do not run it/);
     assert.doesNotMatch(
       drift,
       /Run `npm run configure:branch-protection` to apply it/,
@@ -428,19 +475,32 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
     );
   });
 
-  // Promoting a ROLLOUT entry means applying branch protection. The other seven
-  // notes delegate to secret-scan's ("same caveat as secret-scan"), so the guard
-  // lives on the two that actually carry the instruction and is inherited by
-  // reference — rather than pasted nine times, which would be the duplication
-  // defect this file's own doc-tables gate exists to catch.
-  it("the ROLLOUT notes that instruct an apply route agents to :verify", () => {
-    const src = read("../lib/required-checks.mjs");
-    assert.match(src, /human step with an admin PAT/);
-    assert.match(src, /configure:branch-protection:verify`, which writes nothing/);
-    assert.doesNotMatch(
-      src,
-      /Run\s+\/\/?\s*`?npm run configure:branch-protection`? AFTER/,
-      "no ROLLOUT note should instruct the bare apply without the guard clause",
+  // The rule, not a phrase: any comment naming the apply command must also say
+  // who runs it. Stated this way it covers all nine ROLLOUT notes and any note
+  // added later, instead of the one wrapping that existed when it was written.
+  it("no comment names the bare apply without saying who runs it", () => {
+    const offenders = commentRuns(read("../lib/required-checks.mjs")).filter(
+      (run) => namesBareApply(run) && !carriesGuard(run),
     );
+    assert.deepEqual(
+      offenders,
+      [],
+      "a ROLLOUT note instructs the apply with no human-step guard",
+    );
+  });
+
+  // Pinned by entry name so that deleting the canonical guard is caught. The
+  // other seven notes delegate to secret-scan's by "same caveat as secret-scan",
+  // so if that paragraph goes, seven inherit a clause that no longer exists —
+  // which a file-wide phrase match cannot see, because the other guarded note
+  // would satisfy it.
+  it("the two notes that carry the instruction each hold the guard themselves", () => {
+    const src = read("../lib/required-checks.mjs");
+    for (const entry of ["secret-scan", "web-production-build"]) {
+      assert.ok(
+        carriesGuard(noteFor(src, entry)),
+        `the ${entry} ROLLOUT note lost its human-step / :verify guard`,
+      );
+    }
   });
 });

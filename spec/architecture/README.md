@@ -1239,6 +1239,21 @@ the ones a later reader would otherwise re-litigate.
   `required_pull_request_reviews: null`, and `allow_fork_syncing` live `false` against the roster's
   `true` (**#1580**) — a dated observation, not a standing claim.
 
+- **Amendment (2026-09-04, #1580) — the `allow_fork_syncing` divergence is closed, and the roster
+  half of both readings above is now stale.** The two paragraphs above record `allow_fork_syncing`
+  live `false` "against the roster's `true`". The *live* half still holds (re-read 2026-09-04:
+  `allow_fork_syncing: false`, `lock_branch: false`); the *roster* half does not. The roster now
+  declares `false`, in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
+  It was closed by changing the **declaration**, not by applying: GitHub honours fork-syncing only
+  on a locked branch, so an apply would have written a value GitHub does not persist, and applying
+  is a human step with an admin PAT by policy. `LOCK_DEPENDENT_FLAGS` still excludes the key from
+  the `--verify` diff while `lock_branch` is `false`, so **a future divergence on that key would
+  still be invisible to a green `:verify`** — the exclusion is the guard for a locked branch, not a
+  claim that the flag is checked. The point of closing it was the hand comparison: an audit that
+  diffs roster against live now finds no difference on any flag and no longer has to re-derive the
+  lock-dependence reasoning to conclude the difference did not matter. Canonical page for the
+  current state: [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an
 agent session, which would retire the write-only rollout step.

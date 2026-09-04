@@ -211,15 +211,12 @@ function buildProtectionPayload(branch) {
     block_creations: false,
     required_conversation_resolution: false,
     lock_branch: false,
-    // Inert while `lock_branch` is false: GitHub honours fork-syncing only on a
-    // LOCKED branch and does not persist the value otherwise, which is why
-    // LOCK_DEPENDENT_FLAGS (below) leaves it out of the `--verify` diff. Set to
-    // match live rather than to an aspiration (#1580): this roster is the repo's
-    // declaration of intent, and declaring `true` while `main` reports `false`
-    // made every hand comparison — which is what a branch-protection audit is —
-    // stop to re-derive the lock-dependence reasoning before concluding it did
-    // not matter. That cost two sessions. Applying instead would be worse: it
-    // writes a value GitHub ignores, and needs a human with an admin PAT.
+    // Declared `false` to match live rather than to an aspiration (#1580): this
+    // roster is the repo's declaration of intent, and declaring `true` while
+    // `main` reports `false` made every hand comparison — which is what a
+    // branch-protection audit is — stop and re-derive why the difference did not
+    // matter. That cost two sessions. See LOCK_DEPENDENT_FLAGS below for why the
+    // flag is inert here and excluded from the `--verify` diff.
     allow_fork_syncing: false,
   };
 }
