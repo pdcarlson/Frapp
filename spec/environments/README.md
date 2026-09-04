@@ -392,7 +392,7 @@ Three secrets live directly in GitHub — these bootstrap the Infisical connecti
 
 | Secret                          | Purpose                                           |
 | ------------------------------- | ------------------------------------------------- |
-| `INFISICAL_MACHINE_IDENTITY_ID` | OIDC auth to Infisical                            |
+| `INFISICAL_MACHINE_IDENTITY_ID` | Universal-auth machine identity for Infisical      |
 | `INFISICAL_CLIENT_SECRET`       | Client Secret for Infisical machine identity auth |
 | `INFISICAL_PROJECT_ID`          | Project identifier                                |
 

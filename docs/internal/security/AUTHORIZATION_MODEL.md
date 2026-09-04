@@ -134,10 +134,11 @@ The residual items in §5 are contract/robustness concerns, not data leaks.
 which under Postgres means *default deny* — no `anon` or `authenticated` client can read or write
 them at all. The API reaches them with the **service-role key, which bypasses RLS**.
 
-Exact counts are deliberately not restated here — they move with every migration, and the numbers
-this paragraph used to give had drifted by eight tables. Measure them:
-`grep -rhoi 'enable row level security' supabase/migrations/*.sql | wc -l` and
-`grep -rhoc 'create policy' supabase/migrations/*.sql | paste -sd+ | bc`.
+Exact counts are not restated in this paragraph — they move with every migration, and the numbers
+it used to give had drifted by eight tables. The inventory in § "Enforcing layer per table" is the
+table count; the policy count and its counting convention belong to § "The policies that do exist",
+which is reconciled against `pg_policies`. Do not substitute a grep over `supabase/migrations/` for
+either: it counts *history*, so a `drop policy` / `create policy` pair reads as two live policies.
 
 That is deliberate, not an oversight, and the design is stated in
 `supabase/migrations/20260803150000_chat_message_actions_membership_rls.sql:14-17`:
@@ -154,11 +155,12 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 41 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_message_attachments`, `chat_message_bookmarks`, `discord_connections`, `discord_import_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 48 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
-| **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences` | 1 |
+| **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences`, `chapter_audit_log`‡ | 2 |
 
 \* carries a non-widening policy — see the notes below.
+‡ `audit_log_no_update` / `audit_log_no_delete` are deny-only (`using (false)`), making the log append-only for any non-service role.
 
 † emits a **contentless change ping** over private Realtime broadcast (`notif:<user_id>`,
 `events:<chapter_id>`, `attendance:<event_id>`) so the web dashboard can invalidate its caches.

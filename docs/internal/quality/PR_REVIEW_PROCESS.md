@@ -42,10 +42,14 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
      see `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`).
 3. **Human review pass** — a convention, **not a merge gate**. Branch protection sets
    `required_pull_request_reviews: null` and `required_conversation_resolution: false`
-   (`scripts/configure-branch-protection.mjs`), so GitHub blocks neither an unapproved merge nor one
-   with open threads. Seek an approval and resolve your threads because the work is better for it;
-   do not rely on the platform to stop you. The enforced pre-merge review is the local gate in
-   step 2.
+   (`scripts/configure-branch-protection.mjs`, applied to `main` only), so GitHub blocks neither an
+   unapproved merge nor one with open threads. That script is *intent*; confirm live state with
+   `npm run configure:branch-protection -- --verify`.
+   Seek an approval and resolve your threads because the work is better for it — nothing downstream
+   will stop you. Step 2's local gate is **not** a backstop for this: it is a Claude Code
+   `PreToolUse` hook, so it sees agent tool calls only and never a plain terminal `git push`, it
+   releases the push after 4 blocked attempts with a stderr warning, and `FRAPP_SKIP_REVIEW_GATE=1`
+   bypasses it. A diff can reach `main` with no review pass of any kind.
 4. **Merge**
    - Feature work: squash merge into `main`.
    - Production: no PR. Dispatch **Deploy production** with the SHA you want live (#1340).
