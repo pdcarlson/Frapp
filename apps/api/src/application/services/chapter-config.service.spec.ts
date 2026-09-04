@@ -51,8 +51,10 @@ jest.mock('@repo/chapter-theme', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ChapterConfigService } from './chapter-config.service';
+import { SERVICE_CONFIG_DEFAULTS } from './chapter-service-config.service';
+import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ActivationService } from './activation.service';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
@@ -80,8 +82,31 @@ function makeSupabase(
   options: {
     defaultInviteRoleId?: string | null;
     roleLookupRow?: { id: string } | null;
+    // #1626: inject a transient read failure on any of getConfig's reads. The harness pinned `error: null` on all of them,
+    // which is why nothing caught that a swallowed error was substituting
+    // defaults for the chapter's real config and then writing them back.
+    readErrors?: {
+      workflows?: { message: string } | null;
+      dues?: { message: string } | null;
+      service?: { message: string } | null;
+      // `points` is here even though ChapterConfigService does not read that
+      // table directly: it routes through ChapterPointsConfigService's
+      // getConfigOrThrow, the fail-closed precedent the other three now follow.
+      // Without this key, rewriting that call as `.catch(() => DEFAULTS)` —
+      // the exact #1626 bug, on the read whose whole reason for existing is to
+      // fail closed — left all 46 tests green.
+      points?: { message: string } | null;
+      // The `chapters` read. Its bug was the same shape but reported through a
+      // different door: `error || !chapter` answered 404, and a 404 emits no
+      // error log, no security event and no Sentry capture.
+      chapters?: { message: string } | null;
+    };
+    // Model a chapter id that resolves to no row at all — the legitimate 404,
+    // which must stay distinguishable from a failed read.
+    chapterRowOverride?: null;
   } = {},
 ) {
+  const readErrors = options.readErrors ?? {};
   const chapterRow = {
     id: CHAPTER_ID,
     org_archetype: 'ifc',
@@ -112,9 +137,13 @@ function makeSupabase(
       // `eq` is the terminal for updates (awaited) and a passthrough for selects.
       builder.eq = jest.fn().mockReturnValue(
         Object.assign(Promise.resolve({ error: null }), {
-          maybeSingle: jest
-            .fn()
-            .mockResolvedValue({ data: chapterRow, error: null }),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data:
+              readErrors.chapters || options.chapterRowOverride === null
+                ? null
+                : chapterRow,
+            error: readErrors.chapters ?? null,
+          }),
         }),
       );
       return builder;
@@ -122,9 +151,10 @@ function makeSupabase(
     if (table === 'chapter_workflows') {
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn().mockReturnValue(builder);
-      builder.eq = jest
-        .fn()
-        .mockResolvedValue({ data: workflowRows, error: null });
+      builder.eq = jest.fn().mockResolvedValue({
+        data: readErrors.workflows ? null : workflowRows,
+        error: readErrors.workflows ?? null,
+      });
       builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
         workflowUpsert(rows, opts),
       );
@@ -134,9 +164,10 @@ function makeSupabase(
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn().mockReturnValue(builder);
       builder.eq = jest.fn().mockReturnValue({
-        maybeSingle: jest
-          .fn()
-          .mockResolvedValue({ data: duesRow, error: null }),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: readErrors.dues ? null : duesRow,
+          error: readErrors.dues ?? null,
+        }),
       });
       builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
         duesUpsert(rows, opts),
@@ -147,9 +178,10 @@ function makeSupabase(
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn().mockReturnValue(builder);
       builder.eq = jest.fn().mockReturnValue({
-        maybeSingle: jest
-          .fn()
-          .mockResolvedValue({ data: serviceRow, error: null }),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: readErrors.service ? null : serviceRow,
+          error: readErrors.service ?? null,
+        }),
       });
       builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
         serviceUpsert(rows, opts),
@@ -160,9 +192,10 @@ function makeSupabase(
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn().mockReturnValue(builder);
       builder.eq = jest.fn().mockReturnValue({
-        maybeSingle: jest
-          .fn()
-          .mockResolvedValue({ data: pointsRow, error: null }),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: readErrors.points ? null : pointsRow,
+          error: readErrors.points ?? null,
+        }),
       });
       builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
         pointsUpsert(rows, opts),
@@ -963,5 +996,214 @@ describe('ChapterConfigService default invite role (#422)', () => {
     });
 
     expect(supabase.chapterUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// ── Read errors must not become defaults (#1626) ─────────────────────────────
+//
+// getConfig reads four things. The `chapters` read throws; the other three
+// destructured only `data` and discarded `error`. Because `data` is null on
+// both "no row yet" and "read failed", a transient PostgREST/network failure
+// was indistinguishable from an unconfigured chapter and returned defaults
+// with a 200.
+//
+// That alone would be a display bug. `patchConfig` uses getConfig's result as
+// the prior state it merges a PATCH onto and then upserts the WHOLE row, which
+// is what turns it into data loss. Measured against the pre-fix code, a
+// swallowed dues read plus a cadence-only PATCH wrote:
+//   {cadence:'monthly', active_amount_cents:0, new_member_amount_cents:0,
+//    alumni_amount_cents:0, late_fee_cents:0, scholarship_pool_cents:0}
+// over a chapter configured at 75000/90000/5000/2500/10000, and recorded an
+// audit `from` of all zeros — a prior state the chapter never held, so the
+// audit log could not be used to reconstruct what was lost.
+//
+// The points read three lines below getConfig's dues read already failed
+// closed for exactly this reason; dues, service and workflows did not.
+
+describe('ChapterConfigService — a failed read is never a default (#1626)', () => {
+  const READ_ERROR = { message: 'connection terminated unexpectedly' };
+
+  const CONFIGURED_DUES = {
+    cadence: 'semester',
+    active_amount_cents: 75000,
+    new_member_amount_cents: 90000,
+    alumni_amount_cents: 5000,
+    late_fee_cents: 2500,
+    scholarship_pool_cents: 10000,
+    installment_count: 2,
+  };
+
+  describe('getConfig', () => {
+    it.each([
+      ['workflows', { workflows: READ_ERROR }],
+      ['dues', { dues: READ_ERROR }],
+      ['service', { service: READ_ERROR }],
+    ])('throws when the %s read fails', async (_label, readErrors) => {
+      const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+        readErrors,
+      });
+      const service = await buildService(supabase);
+
+      await expect(service.getConfig(CHAPTER_ID)).rejects.toMatchObject({
+        message: READ_ERROR.message,
+      });
+    });
+
+    it('still returns the real defaults when the chapter simply has no rows', async () => {
+      // The other half of the contract, and why this cannot be `if (!data)
+      // throw`: an unconfigured chapter is a legitimate success-with-defaults.
+      //
+      // Asserted against the real default objects, not `toBeDefined()` — a
+      // presence check passes for any non-throwing implementation, which is
+      // what the first draft of this test did. The per-field defaults are
+      // covered more strictly by the dues/service/points/workflows suites
+      // above (they compare against literals, which is what actually catches
+      // drift from the migration). Dues is deliberately not re-asserted here —
+      // its literal test is the drift detector, and a second copy would just be
+      // another thing to update. What this adds is that service, points and
+      // workflows all survive the SAME call rather than each in isolation.
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      const config = await service.getConfig(CHAPTER_ID);
+
+      expect(config.service).toMatchObject(SERVICE_CONFIG_DEFAULTS);
+      expect(config.points).toMatchObject(POINTS_CONFIG_DEFAULTS);
+      expect(config.workflows.length).toBeGreaterThan(0);
+    });
+
+    it('reports a failed chapters read as an error, not as a missing chapter', async () => {
+      // `error || !chapter` answered 404 for both. That is the same
+      // error-is-absence bug, through the quietest door in the filter: a <500
+      // goes to recordSecurityEvent, which only knows 401/403/429, so a
+      // PostgREST schema-cache reload would have turned every config read into
+      // a silent 404 on a live chapter with nothing in Sentry.
+      const supabase = makeSupabase([], null, {}, null, null, {
+        readErrors: { chapters: READ_ERROR },
+      });
+      const service = await buildService(supabase);
+
+      const err: unknown = await service.getConfig(CHAPTER_ID).catch((e) => e);
+      expect(err).toMatchObject({ message: READ_ERROR.message });
+      expect(err).not.toBeInstanceOf(NotFoundException);
+    });
+
+    it('still reports a genuinely missing chapter as 404', async () => {
+      const supabase = makeSupabase([], null, {}, null, null, {
+        chapterRowOverride: null,
+      });
+      const service = await buildService(supabase);
+
+      await expect(service.getConfig(CHAPTER_ID)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    });
+
+    it('recomputeAndPersistPalette reports a failed chapters read as an error too', async () => {
+      // Same controller, same `chapter_config:manage`, same collapse. Fixing
+      // only getConfig would have left Save-accent with the identical
+      // invisible 404 the comment above declares a bug.
+      const supabase = makeSupabase([], null, {}, null, null, {
+        readErrors: { chapters: READ_ERROR },
+      });
+      const service = await buildService(supabase);
+
+      const err: unknown = await service
+        .recomputeAndPersistPalette(CHAPTER_ID)
+        .catch((e) => e);
+      expect(err).toMatchObject({ message: READ_ERROR.message });
+      expect(err).not.toBeInstanceOf(NotFoundException);
+    });
+
+    it('recomputeAndPersistPalette still reports a genuinely missing chapter as 404', async () => {
+      // The palette twin of the 404 branch. Without this, deleting its
+      // NotFoundException leaves the method dying on the `branding` read as a
+      // 500 instead — a worse status with no test to notice.
+      const supabase = makeSupabase([], null, {}, null, null, {
+        chapterRowOverride: null,
+      });
+      const service = await buildService(supabase);
+
+      await expect(
+        service.recomputeAndPersistPalette(CHAPTER_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('throws when the points read fails, via getConfigOrThrow', async () => {
+      // The precedent read. It is not one of the three this issue names, but it
+      // is the one the fix is modelled on, and nothing pinned it.
+      const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+        readErrors: { points: READ_ERROR },
+      });
+      const service = await buildService(supabase);
+
+      await expect(service.getConfig(CHAPTER_ID)).rejects.toMatchObject({
+        message: READ_ERROR.message,
+      });
+    });
+  });
+
+  describe('patchConfig', () => {
+    it('cannot zero a configured chapter through a swallowed dues read error', async () => {
+      const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+        readErrors: { dues: READ_ERROR },
+      });
+      const service = await buildService(supabase);
+
+      await expect(
+        service.patchConfig(CHAPTER_ID, 'user-1', {
+          dues: { cadence: 'monthly' },
+        }),
+      ).rejects.toMatchObject({ message: READ_ERROR.message });
+
+      // The point of the test: nothing was written, so nothing was lost, and
+      // no audit row claims a `from` the chapter never held.
+      expect(supabase.duesUpsert).not.toHaveBeenCalled();
+      expect(supabase.auditInsert).not.toHaveBeenCalled();
+    });
+
+    it('cannot reset minutes_per_point through a swallowed service read error', async () => {
+      const supabase = makeSupabase(
+        [],
+        CONFIGURED_DUES,
+        {},
+        { minutes_per_point: 45 },
+        null,
+        { readErrors: { service: READ_ERROR } },
+      );
+      const service = await buildService(supabase);
+
+      await expect(
+        service.patchConfig(CHAPTER_ID, 'user-1', {
+          service: { minutes_per_point: 30 },
+        }),
+      ).rejects.toMatchObject({ message: READ_ERROR.message });
+
+      expect(supabase.serviceUpsert).not.toHaveBeenCalled();
+      expect(supabase.auditInsert).not.toHaveBeenCalled();
+    });
+
+    it('still applies a partial dues PATCH when the read succeeds', async () => {
+      // Non-vacuity guard: proves the two tests above fail for the read error,
+      // not because this harness cannot write at all.
+      const supabase = makeSupabase([], CONFIGURED_DUES);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        dues: { cadence: 'monthly' },
+      });
+
+      expect(supabase.duesUpsert).toHaveBeenCalledTimes(1);
+      const [row] = supabase.duesUpsert.mock.calls[0];
+      // The five amounts survive; only cadence changed.
+      expect(row).toMatchObject({
+        cadence: 'monthly',
+        active_amount_cents: 75000,
+        new_member_amount_cents: 90000,
+        alumni_amount_cents: 5000,
+        late_fee_cents: 2500,
+        scholarship_pool_cents: 10000,
+      });
+    });
   });
 });
