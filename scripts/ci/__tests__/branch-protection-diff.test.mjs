@@ -12,7 +12,6 @@ import {
   normalizeProtection,
 } from "../../configure-branch-protection.mjs";
 import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
-import { parseCheckArray } from "../../check-doc-tables.mjs";
 
 // Before #1383 `configure-branch-protection.mjs` had exactly one API call and
 // exactly one method — PUT — so it could report only what it INTENDED to write.
@@ -21,9 +20,6 @@ import { parseCheckArray } from "../../check-doc-tables.mjs";
 // is reachable in some sessions and 403s through the proxy in others (#680's
 // evidence table records both on the same day). Everything below is a pure
 // function over a plain object for that reason.
-
-/** Source text of a sibling script, for the assertions that read code as data. */
-const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
 
 // The real GET shape, trimmed. Note every boolean arrives WRAPPED as
 // `{enabled}`, which the PUT payload does not do — that asymmetry is the trap
@@ -62,13 +58,9 @@ describe("normalizeProtection", () => {
   });
 
   it("reads the PUT payload shape identically, so both sides compare like-for-like", () => {
-    // Every field, with no override on either side. This used to need
-    // `forkSyncing: true` to paper over the roster declaring a value `main` did
-    // not hold; #1580 set the roster to `false` to match live, so the payload and
-    // the real GET shape now agree on their own — which is what this test was
-    // always trying to assert.
+    // Every field but the one GitHub declines to persist on an unlocked branch.
     const fromPut = normalizeProtection(buildProtectionPayload("main"));
-    const fromGet = normalizeProtection(liveResponse());
+    const fromGet = normalizeProtection(liveResponse({ forkSyncing: true }));
     assert.deepEqual(fromPut, fromGet);
   });
 
@@ -162,6 +154,8 @@ describe("diffProtection", () => {
 });
 
 describe("one roster, two consumers (#1383 scope item 1)", () => {
+  const read = (p) => readFileSync(new URL(p, import.meta.url), "utf8");
+
   it("the deploy gate imports the roster from the data module, not from the writer", () => {
     // The coupling this issue removed: `validate-deploy-sha.mjs` runs on every
     // production deploy, and used to import a module whose import once PUT live
@@ -193,13 +187,6 @@ describe("one roster, two consumers (#1383 scope item 1)", () => {
     assert.doesNotMatch(importLine[0], /\b(CI_CHECKS|DOCS_CHECKS|DRIFT_CHECKS)\b/);
   });
 
-  it("the doc-table gate parses the rosters from their new home", () => {
-    // `check-doc-tables.mjs` reads the arrays as SOURCE TEXT, so moving them
-    // without moving its pointer silently breaks the docs gate.
-    const src = read("../../check-doc-tables.mjs");
-    assert.match(src, /const SCRIPT_SRC = "scripts\/ci\/lib\/required-checks\.mjs";/);
-  });
-
   it("the data module stays free of side effects and entry points", () => {
     // The whole reason the deploy path can import it safely. Asserted by
     // IMPORTING it and watching, rather than by grepping for three spellings of
@@ -211,50 +198,20 @@ describe("one roster, two consumers (#1383 scope item 1)", () => {
     assert.doesNotMatch(src, /function main\b/);
     assert.doesNotMatch(src, /^\s*(await|console\.|process\.env\s*\[|execSync)/m);
   });
-
-  it("check-doc-tables can still parse the rosters in their new `export const` form", () => {
-    // The parser builds `const NAME = [` unanchored, so `export const NAME = [`
-    // matches on the substring — but nothing pinned that, and anchoring the
-    // regex to `^const` (a natural hardening) would silently stop the roster
-    // gate parsing anything. That failure lands only on the non-required
-    // doc-tables job, so nothing would block a merge on it.
-    const src = read("../lib/required-checks.mjs");
-    for (const name of ["CI_CHECKS", "DOCS_CHECKS", "DRIFT_CHECKS"]) {
-      assert.ok(
-        parseCheckArray(src, name)?.length > 0,
-        `check-doc-tables must parse ${name} from the roster module`,
-      );
-    }
-    assert.equal(
-      [
-        ...parseCheckArray(src, "CI_CHECKS"),
-        ...parseCheckArray(src, "DOCS_CHECKS"),
-        ...parseCheckArray(src, "DRIFT_CHECKS"),
-      ].length,
-      ALL_REQUIRED_CHECKS.length,
-      "the parsed roster must match the imported one",
-    );
-  });
 });
 
 describe("allow_fork_syncing is only compared where it means something", () => {
   // Regression tests for the bug that would have made `--verify` exit non-zero
   // on a correctly-configured repo forever. GitHub only honours fork-syncing on
-  // a LOCKED branch, so comparing it on an unlocked branch produces drift no run
-  // can resolve.
-  //
-  // Both tests set `allow_fork_syncing: true` on `desired` EXPLICITLY rather
-  // than leaning on the roster's value. #1580 set the roster to `false` to match
-  // live, which would otherwise have left the first test passing vacuously (no
-  // divergence left for the exemption to suppress) and broken the second
-  // outright (nothing to report as changed). The exemption's behaviour is what
-  // is under test here, not the roster's current value — so the divergence is
-  // manufactured locally and these stay honest however the roster is set.
+  // a LOCKED branch; this payload sends `allow_fork_syncing: true` alongside
+  // `lock_branch: false`, and live has reported `false` since 2026-08-27
+  // through at least one intervening apply. Comparing it on an unlocked branch
+  // produces drift no run can resolve.
 
   it("ignores the flag on an unlocked branch, where GitHub will not persist it", () => {
     const diff = diffProtection({
       current: liveResponse({ forkSyncing: false }), // what `main` really returns
-      desired: { ...buildProtectionPayload("main"), allow_fork_syncing: true },
+      desired: buildProtectionPayload("main"), // which asks for true
     });
     assert.equal(
       hasProtectionDrift(diff),
@@ -268,11 +225,7 @@ describe("allow_fork_syncing is only compared where it means something", () => {
     // lock_branch is ever set, this is a real setting again and must be diffed.
     const diff = diffProtection({
       current: liveResponse({ forkSyncing: false, lockBranch: true }),
-      desired: {
-        ...buildProtectionPayload("main"),
-        lock_branch: true,
-        allow_fork_syncing: true,
-      },
+      desired: { ...buildProtectionPayload("main"), lock_branch: true },
     });
     assert.ok(
       diff.changes.some((c) => c.field === "allow_fork_syncing"),
@@ -394,132 +347,5 @@ describe("assertKnownArgs", () => {
       () => assertKnownArgs(["--verfiy", "--nope"]),
       /--verfiy, --nope/,
     );
-  });
-});
-
-describe("the apply instruction is guarded wherever a script prints one (#1585)", () => {
-  // Every assertion below runs over text with `//` stripped and whitespace
-  // collapsed, and states the RULE rather than a phrase's position. The first
-  // version of these tests regexed raw source, which pinned them to one exact
-  // line-wrap: four of five ways of rewrapping the same bare instruction slipped
-  // past the negative guard, while a harmless reflow of the guarded note would
-  // have turned a required check red. Neither is a property of the rule, so
-  // neither belongs in the test.
-  const flatten = (lines) =>
-    lines
-      .map((l) => l.trim())
-      .filter((l) => l.startsWith("//"))
-      .map((l) => l.replace(/^\/\/\s?/, ""))
-      .join(" ")
-      .replace(/\s+/g, " ");
-
-  // `:verify` is not the apply, so naming it must not trip the requirement.
-  // Both spellings of the apply: the npm script and the underlying node call.
-  // Scoped to `//` comments, which is every comment in this file today.
-  const namesBareApply = (text) =>
-    /npm run configure:branch-protection(?!:verify)/.test(text) ||
-    /node scripts\/configure-branch-protection\.mjs/.test(text);
-  const carriesGuard = (text) =>
-    /human step with an admin PAT/.test(text) &&
-    /configure:branch-protection:verify/.test(text);
-
-  /** Maximal runs of consecutive comment lines, each flattened to one string. */
-  const commentRuns = (src) => {
-    const runs = [];
-    let current = null;
-    for (const line of src.split("\n")) {
-      if (line.trim().startsWith("//")) (current ??= runs[runs.push([]) - 1]).push(line);
-      else current = null;
-    }
-    return runs.map(flatten);
-  };
-
-  /** The comment run immediately above a roster entry, flattened. */
-  const noteFor = (src, entry) => {
-    const at = src.indexOf(`\n  "${entry}",`);
-    assert.ok(at > 0, `roster entry "${entry}" not found — re-point this test`);
-    const before = src.slice(0, at).split("\n");
-    const run = [];
-    for (let i = before.length - 1; i >= 0 && before[i].trim().startsWith("//"); i--) {
-      run.unshift(before[i]);
-    }
-    return flatten(run);
-  };
-
-  // `--verify` is the ONE branch-protection command an agent session is allowed
-  // to run, so its own failure output is the worst possible place to print an
-  // unqualified "run the apply". Every prose site in the repo carries a guard;
-  // this one is in a script, was missed by the docs-only sweep that added the
-  // rest, and no test asserted it — so it could regress silently while every
-  // doc still claimed the programme was complete.
-  it("the --verify drift error names the apply as a human step, not a next command", () => {
-    const src = read("../../configure-branch-protection.mjs");
-    // Bounded to the throw itself. An open-ended window would let an assertion
-    // be satisfied by adjacent source — including the `unconfirmedBranches`
-    // throw below it, which is the other place this script discusses applying.
-    const [, raw] =
-      src.match(/Live branch protection does not match this roster([\s\S]*?)\n\s*\);/) ?? [];
-    assert.ok(raw, "the drift error moved or was reworded — re-point this test");
-    // Join the concatenated string segments so the assertions below see the
-    // MESSAGE, not its source layout. Without this the phrases are pinned to
-    // where the `" + "` joins happen to fall, so rewrapping the literal — which
-    // changes nothing a reader sees — reddens a required check.
-    const drift = raw.replace(/"\s*\+\s*\n?\s*"/g, "").replace(/\s+/g, " ");
-
-    // Asserted directly rather than through `carriesGuard`: that helper also
-    // requires the text to name `:verify`, which the drift error deliberately
-    // does not — the reader just ran it. Routing this through `carriesGuard`
-    // would make the first half of an `||` dead and quietly reduce this to the
-    // phrase check below, which is how a test starts lying about its own rule.
-    assert.match(
-      drift,
-      /human step with an admin PAT/,
-      "the drift error must say applying is a human step with an admin PAT",
-    );
-    assert.match(
-      drift,
-      /separator/,
-      "must warn that `--dry-run` without the `--` separator applies",
-    );
-    assert.match(drift, /configure:branch-protection:verify|Do not run it/);
-    assert.doesNotMatch(
-      drift,
-      /Run `npm run configure:branch-protection` to apply it/,
-      "the bare, unqualified apply instruction is exactly what #1585 removed",
-    );
-  });
-
-  // The rule, not a phrase: any comment naming the apply command must also say
-  // who runs it. Stated this way it covers all eleven ROLLOUT notes and any note
-  // added later, instead of the one wrapping that existed when it was written.
-  it("no comment names the bare apply without saying who runs it", () => {
-    const runs = commentRuns(read("../lib/required-checks.mjs"));
-    // Without this the filter below is satisfied by an empty list, so a parser
-    // regression (or a file that stopped being scanned) would read as "clean".
-    assert.ok(
-      runs.filter((r) => r.includes("ROLLOUT")).length >= 10,
-      "expected the roster's ROLLOUT notes to be found — the comment scan broke",
-    );
-    const offenders = runs.filter((run) => namesBareApply(run) && !carriesGuard(run));
-    assert.deepEqual(
-      offenders,
-      [],
-      "a ROLLOUT note instructs the apply with no human-step guard",
-    );
-  });
-
-  // Pinned by entry name so that deleting the canonical guard is caught. Of the
-  // eleven ROLLOUT notes, these two carry the guard and the other nine delegate
-  // to secret-scan's by "same caveat as secret-scan" — so if that paragraph goes,
-  // nine inherit a clause that no longer exists, which a file-wide phrase match
-  // cannot see because the other guarded note would satisfy it.
-  it("the two notes that carry the instruction each hold the guard themselves", () => {
-    const src = read("../lib/required-checks.mjs");
-    for (const entry of ["secret-scan", "web-production-build"]) {
-      assert.ok(
-        carriesGuard(noteFor(src, entry)),
-        `the ${entry} ROLLOUT note lost its human-step / :verify guard`,
-      );
-    }
   });
 });

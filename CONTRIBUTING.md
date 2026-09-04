@@ -55,13 +55,12 @@ it deployed, after Render and Vercel report healthy — see [Version Tagging](#v
 Every PR must pass the required status checks before merging. Branch protection enforces this for all users, including admins.
 
 **The roster lives in one place and is not restated here.** Every check name, what it validates,
-which jobs are advisory rather than merge-blocking, why `migration-drift` was demoted, and the
-whole-tree rollout the docs gates go through are in
+which jobs are advisory rather than merge-blocking, and why `migration-drift` was demoted are in
 [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
 **§ Required Status Checks**. Its source of truth is the `CI_CHECKS` / `DOCS_CHECKS` /
 `DRIFT_CHECKS` arrays in
 [`scripts/ci/lib/required-checks.mjs`](scripts/ci/lib/required-checks.mjs); the runbook's tables are
-the only hand-kept copy left, asserted against those arrays by `npm run check:doc-tables`. Live
+the only hand-kept copy left, and nothing asserts them against those arrays — read both. Live
 branch protection is whatever an admin last applied and can lag the arrays, so **no doc claims
 per-check whether a gate is live today** — read live state per the runbook. New gates land
 report-only and are promoted by adding them to an array and re-running
@@ -130,7 +129,7 @@ type(scope): description
 ### 3. Open a PR targeting `main`
 
 - Run the local gate first: `npm run ci:local-gate`
-  - This runs the gitleaks scan and the docs-structure check, then the CI parity checks (lint, type-check, API tests, contract freshness, migration safety, npm audit). There is no docs build or docs lint step.
+  - This runs the gitleaks scan, then the CI parity checks (lint, type-check, API tests, contract freshness, migration safety, npm audit). It previews what CI will run and nothing more — never add a local-only check to it.
 - If a check needs a different base branch, use: `npm run ci:local-gate -- --base-ref <ref>`
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).

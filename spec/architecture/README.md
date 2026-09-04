@@ -887,7 +887,7 @@ an agent cannot observe permission prompts. Decision record, probe table, and mi
 #### ADR-16 amendment 6 — a fourth Routine, and the first that fixes instead of files (2026-08-21)
 
 **Context:** amendment 5 carried over *three* Routines, all of which file GitHub issues and none of
-which edit docs. Documentation drift was left to [`check-our-docs`](../../.claude/skills/check-our-docs/SKILL.md),
+which edit docs. Documentation drift was left to `check-our-docs`,
 a mid-task habit with the coverage of whatever a session happened to read, so the low-traffic
 runbooks a cold session most needs were never swept. Routing that debt to the tracker instead did
 not work: well over half of all `area:docs` issues ever filed were still open, roughly a third of
@@ -902,7 +902,7 @@ a machine can settle, and **fixes them in a docs-only PR**. It is explicitly for
 **What this changes and what it does not.** It widens the *scope* of the self-maintenance docs-only
 PR from a routine's own skill files to `docs/`, `spec/` and the root guides. It does **not** relax
 the product-code ban, the never-self-merge rule, the one-PR-per-run cap, or the pre-push review
-gate. It inverts [`check-our-docs`](../../.claude/skills/check-our-docs/SKILL.md) §"Inside a
+gate. It inverts `check-our-docs` §"Inside a
 scheduled routine" and [`audit`](../../.claude/skills/audit/SKILL.md)'s read-only posture **for
 this routine only**; the other three still file rather than fix. ADRs stay append-only — the
 routine may not rewrite one to match today's code.

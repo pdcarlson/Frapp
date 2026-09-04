@@ -31,24 +31,41 @@
  * hand-synced rosters drift" — and #1378 instead fixed the backward-looking
  * problem structurally, by intersecting the expected set with the job ids the
  * deployed commit's own workflows define (`jobIdsAtRef`, with a narrowing
- * floor). One roster, read two ways, is the shape that survives.
+ * floor). One roster, read two ways, is the shape that survives. (The
+ * doc-table checker that quote names was itself deleted later, for the reason
+ * in the next paragraph. The argument against a second roster is unaffected —
+ * it is the same argument, applied once more.)
  *
- * `scripts/check-doc-tables.mjs` parses this file as SOURCE TEXT to police the
- * doc tables that document these checks. Keep the three arrays as top-level
- * `export const NAME = [` declarations with one quoted string per line.
+ * This file is the ONE home for these names and for what each check validates.
+ * A prose table restating them is a second home, and the two drift: keep the
+ * one-line description beside its array entry, where it lands in the diff of
+ * any change that edits the entry, and point docs here instead of copying.
  */
 
 // ── Required status checks ──────────────────────────────────────────────────
 // These must match check-run names exactly as reported on PRs.
 
 export const CI_CHECKS = [
+  // Shared packages compile.
   "packages-build",
+  // ESLint + TypeScript (all workspaces); `npm run build -w apps/api`
+  // (`nest build`, Render parity); landing plus `@repo/validation`,
+  // `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`
+  // and `@repo/api-sdk` unit tests.
   "lint-and-typecheck",
+  // `docker build -f apps/api/Dockerfile .` — the API image compile path.
   "api-docker-build",
+  // API Jest unit tests.
   "api-tests",
+  // openapi.json + api-sdk freshness.
   "api-contract-check",
+  // Migration filename + promotion/rollback doc validation.
   "migration-safety",
+  // Mobile lint + typecheck + Vitest unit tests.
   "mobile-validate",
+  // `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`),
+  // covering the gate and deploy scripts under both `scripts/` and
+  // `scripts/ci/`.
   "ci-scripts-tests",
   // Secret scanning (gitleaks; ADR-13 push-protection replacement). ROLLOUT: this is
   // required only once the secret-scan job exists on the target branch and has run
@@ -208,25 +225,23 @@ export const DOCS_CHECKS = [
   // 619 merged PRs carried the waiver label — and the waiver did not exist for
   // the gate's first 174 days.
   //
-  // The gate, its script and its label are gone as of #1597. What replaced it
-  // is not another gate: the surviving docs checks are ASSERTIVE — they check
-  // that a pointer resolves or a roster matches, cost nothing when you are
-  // right, and cannot be satisfied by noise. Do not add a mandatory-write gate
-  // back. If a fact needs one home, give it one home; a check that a doc was
-  // *touched* can never tell you it was the right doc.
-
-  // Doc path citations: fails when a doc cites a repo path that resolves
-  // nowhere, covering the gap the `Links` gate leaves (lychee validates
-  // markdown links and heading anchors, never `` `inline/code.ts` `` paths).
-  // ROLLOUT: same caveat as secret-scan — required only once the doc-paths job
-  // exists on the target branch and has run green. Deliberately its own job:
-  // this check is whole-tree, so as a required check it can block a PR over a
-  // citation in a doc that PR never touched. Keep it
-  // reporting-only until that trade is accepted knowingly. Promoted 2026-08-21:
-  // the trade is accepted — a stale citation blocking an unrelated PR is the
-  // cheaper failure, since the alternative is citations rotting silently, which
-  // is what the 40-entry allowlist and the drift this gate found both attest to.
-  "doc-paths",
+  // The gate, its script and its label went in #1597. Do not add a
+  // mandatory-write gate back. If a fact needs one home, give it one home; a
+  // check that a doc was *touched* can never tell you it was the right doc.
+  //
+  // This array is EMPTY, and that is the current state rather than a gap
+  // waiting to be filled. `doc-paths` was here — promoted 2026-08-21 after a
+  // year of reporting only, and the only docs check this repo ever made
+  // required. It was retired along with the three advisory docs gates
+  // (structure, references, rosters) when the repo chose to state the
+  // documentation standard once and review a diff against it, rather than run
+  // four whole-tree scanners over the corpus. What that trade gives up is
+  // named where the standard lives, not hidden here: a whole-tree scanner sees
+  // a reference in a file the diff never touches, and a reviewer does not.
+  //
+  // Keep the array exported and keep this comment on it. An empty array still
+  // feeds `ALL_REQUIRED_CHECKS`, and this is the exact site where the
+  // temptation to add a coercive check gets acted on.
 ];
 
 // Checks emitted by .github/workflows/migration-drift-gate.yml.

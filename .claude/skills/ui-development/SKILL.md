@@ -118,7 +118,7 @@ along with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917,
 
 **`packages/theme` is the shared token package for every surface, not a web-only one.** It already
 serves `apps/web` and `apps/landing` (Tailwind preset + CSS variables) and `apps/mobile` (typed
-Signet tokens via **`@repo/theme/signet`** — 58 files, plus `@repo/theme/accent` at one call site;
+Signet tokens via **`@repo/theme/signet`** across most of its screens, plus `@repo/theme/accent`;
 mobile does not import `@repo/theme/tokens` at all, and nothing outside `packages/theme` does), and
 the Signet tokens live there too (`src/signet.css`, `src/signet.ts`) — as an **additive
 entrypoint**, leaving the legacy exports that landing still consumes untouched. Two things are

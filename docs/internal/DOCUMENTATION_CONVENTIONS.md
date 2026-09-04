@@ -1,56 +1,21 @@
-# Documentation conventions — placement map
+# Documentation conventions
 
-The **authoritative** guide to where docs/spec changes go. Read this before adding or moving any doc.
-The goal: keep `docs/` and `spec/` clean and navigable, and stop the structure from drifting when
-agents satisfy the docs-sync CI gate.
+Where a fact lives, what a doc owes a reader, and what to do when a doc turns out to be wrong. These docs are read by agents mid-task: optimise for retrieval, not for reading.
 
-**This map is machine-checked.** The table below is checked against
-[`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs) — the same map as data —
-in both directions by `check-doc-tables.mjs`, so the two cannot drift apart. That manifest is what
-[`scripts/check-docs-structure.mjs`](../../scripts/check-docs-structure.mjs) validates the **whole
-tree** against on every PR. Until 2026-09 it read only the paths a PR *added*, which is how
-`docs/hooks/` and `docs/performance/` came to exist without a row here.
+## Where a fact lives
 
-The structure gate reports on its own `docs-structure` job and is **not merge-blocking yet** — it
-became its own job when it stopped being diff-scoped, and takes the same
-reporting-only rollout `doc-paths` had ([`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md)). So a violation reds
-a check without blocking a merge: treat this map as binding anyway, because the whole point of the
-rollout is to reach the day it blocks.
-
-## Hard rules
-
-1. **Never create a new top-level file** in `docs/` or `spec/`, and never invent a new top-level
-   folder. Put the change in the **relevant existing** doc/spec (see the map below).
-2. **When a change does alter a documented fact, edit the doc that owns it — never a stray new file,
-   and never a section appended to a doc whose subject it does not match.** Most changes alter no
-   documented fact and need no doc edit at all; that is the normal case. Nothing forces a write, and
-   nothing should: the gate that used to (`docs-spec-sync`) could only see that *some* file moved,
-   never whether it was the right one, so it was cheapest to satisfy with an unowned paragraph parked
-   in the nearest canonical doc. It was deleted in #1597 for producing exactly the duplication these
-   rules exist to prevent. An unowned claim in a canonical doc is worse than no claim, because the
-   next reader believes it.
-3. **Do not generate one-off narrative markdown** (audits, PR-consolidation writeups, "NOTES",
-   "STATUS", thread-resolution maps, migration plans). That kind of file is what this restructure
-   removed. Durable facts go in the canonical doc; ephemeral work goes into **GitHub Issues** (file a `triage`-labeled issue).
-   This does not forbid *doing* a restructure — it forbids narrating one into a file. A planned
-   change to the layout is an `[Epic]` with sub-issues (rule 4) plus an edit to the manifest, which
-   is executable and therefore cannot go stale the way a plan document does.
-4. **Work status is not a doc.** It lives in **GitHub Issues**, reached via the GitHub MCP — see
-   [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md). A new initiative → an `[Epic]` parent issue with
-   sub-issues. Don't track status in `docs/` or `spec/`.
-5. **One canonical place per fact.** Elsewhere, link to it (path + heading). If two docs must
-   summarize, one paragraph max, then link out. The gates enforce *where a fact lives* and *that a
-   pointer resolves* — never that two prose statements of the same fact agree. Duplicating a fact is
-   still how a wrong one spreads: in #1586 a single wrong timestamp reached five files in one commit
-   because the list had been copied six times.
+- **A fact belongs where the thing that would falsify it lives.** If a change to a guard, a schema, a workflow or a provider setting would make the sentence false, the sentence belongs in the doc that owns that thing. Everywhere else, link to it — path plus heading anchor, never a restatement. Most changes falsify nothing and need no doc edit; the question is never "did I touch a doc" but "which doc owns this fact". A paragraph parked in a canonical doc to look diligent is worse than none, because the next reader believes it.
+- **Two homes for one fact is a structure defect to merge, not a tie-break rule to write down.** Delete one copy and link to the other; never add a case-specific exception here to arbitrate a seam. The test is not whether text is repeated but whether one real-world change would require editing two docs — and two copies that are both correct today are still a defect, because they diverge.
+- **Never create a new top-level file, and never invent a top-level folder.** Put the change in the relevant existing doc; a new topic folder under `spec/` owes a `README.md` that routes to its files. Three homes are retired and must not come back: `docs/archive/` (git history is the archive), `docs/backlog/` (work tracking lives in **GitHub Issues** — see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md)), and `spec/**/chunks/` (merge canon into the real spec and track delivery as issues).
+- **Work status is not a doc, and a restructure is not a document.** Status, plans and one-off narrative markdown — audits, "NOTES", "STATUS", consolidation writeups, migration plans — go to GitHub Issues, as an `[Epic]` with sub-issues when the work is large. Narrating a restructure into a file is forbidden; doing one is not.
 
 ## Where things go
 
 | Kind of change | Canonical home |
 | -------------- | -------------- |
-| Product behavior, rules, flows, invariants | `spec/behavior/<topic>.md` (or `<topic>/README.md` if it has 2+ files) |
-| Chat behavior (a topic with 2+ files) | `spec/behavior/chat/` |
-| Settings behavior (a topic with 2+ files) | `spec/behavior/settings/` |
+| Product behavior, rules, flows, invariants | `spec/behavior/` |
+| Chat behavior | `spec/behavior/chat/` |
+| Settings behavior | `spec/behavior/settings/` |
 | Product features, surfaces, positioning, module catalog | `spec/product/` |
 | Architecture, data model, API patterns, ADRs | `spec/architecture/README.md` — ADRs are append-only (amend or supersede, never rewrite) |
 | Engineering principles | `spec/engineering.md` |
@@ -59,60 +24,41 @@ rollout is to reach the day it blocks.
 | Web-dashboard UI requirements | `spec/ui/web-dashboard/` |
 | Mobile UI requirements | `spec/ui/mobile/` |
 | Landing-site UI requirements | `spec/ui/landing/` |
+| Design-system (tokens, typography, icons, microcopy, accent engine) | `spec/ui/design-system/` |
+| Visual design reference (committed design exports) | `spec/ui/design-system/reference/` |
 | How to run locally / test / contribute | `docs/guides/` |
-| Ops runbooks (DB, incidents, branch protection, deploy) | `docs/internal/ops/` |
 | Documentation conventions and internal reference that is not a runbook | `docs/internal/` |
 | CI / agent infra / automations | `docs/internal/ci-cd/` |
-| Design-system (tokens, typography, icons, microcopy, accent engine) | `spec/ui/design-system/` |
-| Mobile testing / smoke | `docs/internal/mobile/` |
-| Accessibility / PR-review process | `docs/internal/quality/` |
+| Ops runbooks (DB, incidents, branch protection, deploy) | `docs/internal/ops/` |
 | Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |
 | Security implementation notes / fixes log | `docs/internal/security/` |
-| Visual design reference (committed design exports) | `spec/ui/design-system/reference/` |
+| Accessibility / PR-review process | `docs/internal/quality/` |
+| Mobile testing / smoke | `docs/internal/mobile/` |
 | Per-service performance notes | `docs/internal/services/` |
 | Per-optimization performance notes (one file per optimization) | `docs/performance/` |
 | Data-layer hook conventions (query keys, chapter scope, optimistic mutations) | `docs/hooks/` |
 | Work status / planning | **GitHub Issues** — not a doc; see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) |
 
-## Formatting
+## What a doc owes a reader
 
-**Markdown is not machine-formatted.** `npm run format` covers `ts`/`tsx` only, and no CI check or
-hook runs prettier over prose. Diffs here stay hand-authored, so a reviewer reading one sees the
-change and not a reflow.
+- **A hand-maintained number is a future contradiction.** A total typed into prose has no mechanism to stay true, and two hand-kept copies of one total will eventually disagree. Delete it; restate one only where it is load-bearing, and then name the command that produces it.
+- **A copy of live state must say whether it states intent or observation.** The doc owns intent — what the system is supposed to do. An observation is what something was doing when someone looked, so it is only borrowed: it carries a dated stamp naming *how* it was checked (the command, the API call, the run), and the claim is refreshed whenever the date is. A bare date is decoration — it ages while nobody knows what to re-run.
+- **Do not verify intent against code.** `spec/` states intended behavior, code states current behavior, and a rationale is the record rather than a claim about the world that code can settle. When the code moves on, amend with a dated note; never rewrite the record to match today's code.
+- **Provenance is evidence, not narration, and a rule is never widened past what was verified.** A dated record naming the run or command that tested something is the only proof it works, so compressing it away deletes the proof; and a narrow claim that was checked beats a general one that was not. Both rules in full: [`spec/engineering.md` § Changing existing code](../../spec/engineering.md#changing-existing-code).
+- **Say what a doc does not cover, beside what it does.** Coverage a reader assumes and does not have is how a confident wrong conclusion ships. A doc that hedges about its own accuracy is instructing you to verify before acting — so remove the reason for the hedge rather than leaving it standing with nothing to check against.
 
-Do not "fix" that by running prettier over the corpus: 112 of 149 tracked markdown files differ from
-its defaults today, so a single `--write` produces a ~114-file, ~3,600-line diff that buries whatever
-it was carrying. There is no `.prettierignore` to stop you. The `ts`/`tsx` half of the same command
-has its own unresolved problem, tracked in issue #1650.
+## When a doc turns out to be wrong
 
-## Naming
+- **Verify before you act, cheapest first, and read the named source whole.** A path is settled by the repo in seconds; behavior, a guard or a schema by reading the file rather than a summary; an inventory by whatever generates it; provider state only by the provider. A grep proves your pattern matched, not that the fact is there — one topic is routinely declared twice a few lines apart, so the first hit can be the wrong half and still read as confirmation. Conclude from the whole declaration, then act on what you verified rather than on what the doc said.
+- **Fix it in this order.** (1) Correct the claim in its canonical home. (2) Delete the duplicate and link to that home — the strongest fix available and the only one that prevents recurrence, so prefer it over syncing two copies. (3) Delete the claim if nothing needs to assert it. (4) File an issue, only when the fix is genuinely out of scope, saying what you verified and how so the next reader does not redo it.
+- **A deletion or rename is not finished until every doc naming the old thing is edited in the same change.** Grep for the **name**, not just the path: the bare token, the slash form and the prose title all cite it, and source code cites docs too. Naming a removed thing on purpose is content — a removals table or an amendment needs the dead name — but a step someone will try to follow that points at something absent is a defect. When you cannot tell which you are reading, treat it as a live instruction.
 
-**kebab-case `.md`, or `README.md`.** Enforced whole-tree by
-[`scripts/check-docs-structure.mjs`](../../scripts/check-docs-structure.mjs).
+## Naming and formatting
 
-There was no naming rule before 2026-09, and the corpus split along one seam: every
-`SCREAMING_SNAKE_CASE` file lives under `docs/internal/`, while `docs/guides/`, `docs/performance/`
-and every part of `spec/` were already kebab. Those remaining are grandfathered in the manifest's
-`LEGACY_NAMES`, which is a **ratchet, not an amnesty**: an entry that no longer matches a tracked
-file fails the gate, so a rename must delete its entry in the same commit and the list can only
-shrink. Nothing new may be added to it.
-
-`.dc.html` design exports under `spec/ui/design-system/reference/` are exempt — they are artifacts of
-a design tool, not prose, and keep that tool's naming.
-
-Renaming a doc is never just a rename: `check-doc-paths.mjs` and `check-doc-refs.mjs` are both
-whole-tree and will fail on every citation the old name left behind, including citations in source
-code that no other gate can see.
-
-## Which doc a change belongs in
-
-Most changes alter no documented fact and need no doc edit. When one does, the
-question is never "did I touch a doc" but "which doc owns this fact" — the
-placement map above answers it. Editing the wrong doc to look diligent is the
-failure mode these conventions exist to prevent, not a lesser form of compliance.
+- **kebab-case `.md`, or `README.md`.** Files that predate the rule are grandfathered, not precedent: rename one when you are already touching it, and never add a new file in the old style. Committed `.dc.html` design exports are exempt — they are artifacts of a design tool, not prose, and keep that tool's naming.
+- **Markdown is deliberately not machine-formatted.** `npm run format` covers `ts`/`tsx` only, so diffs here stay hand-authored and a reviewer reading one sees the change and not a reflow. Never run prettier over prose: most of the corpus differs from its defaults, so one `--write` buries whatever the diff was carrying, and there is no `.prettierignore` to stop you.
 
 ## See also
 
-- Folder map: [`docs/README.md`](../README.md)
-- Docs gate behavior: [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md)
-- Work tracking (GitHub Issues): [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) · ADR-16 in [`../../spec/architecture/README.md`](../../spec/architecture/README.md)
+- Folder maps: [`docs/README.md`](../README.md) · [`spec/README.md`](../../spec/README.md)
+- Work tracking: [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) · ADR-16 in [`spec/architecture/README.md`](../../spec/architecture/README.md)

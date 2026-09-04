@@ -15,7 +15,7 @@ the manifest and here in the same commit; the rule itself is described in
 | Area | Folder | Contents |
 | ---- | ------ | -------- |
 | Ops / runbooks | [`ops/`](ops/) | DB promotion/rollback, incident response, branch protection, alert routing, deploy |
-| CI / agent infra | [`ci-cd/`](ci-cd/) | docs-sync CI, agent infra, Claude Code routines, AI code review |
+| CI / agent infra | [`ci-cd/`](ci-cd/) | agent infra, quality gates, docs/spec CI checks, secret scanning, Claude Code routines, AI code review, GitHub project management |
 | Mobile | [`mobile/`](mobile/) | mobile testing + smoke checklist |
 | Quality | [`quality/`](quality/) | accessibility protocol, PR review process |
 | Environment | [`environment/`](environment/) | **Claude Code cloud sandbox (primary dev env)**, local dev, env reference, secrets management, agent credentials |

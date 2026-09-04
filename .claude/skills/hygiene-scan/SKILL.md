@@ -105,9 +105,10 @@ In this order, and actually read them — the run's findings are only as good as
    the slice touches `packages/chat-core` or a realtime subscription.
 5. [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md) — which gate is required,
    which is advisory, and why posture is not yours to change.
-6. [`check-our-docs`](../check-our-docs/SKILL.md) — the habit for the moment a doc you are relying
-   on turns out to be wrong. Fix the doc in the same PR when it is small and in scope; report it
-   otherwise. A stale doc is never a licence to skip the check it describes.
+6. [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) — the
+   standard for the moment a doc you are relying on turns out to be wrong. Fix the doc in the same
+   PR when it is small and in scope; report it otherwise. A stale doc is never a licence to skip
+   the check it describes.
 
 ### 0.2 Name today's slice — deterministically, carrying no state
 
@@ -268,8 +269,8 @@ thing is the tree-walking ledger spec, so extend one rather than inventing a new
 
 **L7 · The gates themselves.** A stale baseline entry (the file moved and the violation is gone —
 #1539 left two); a jscpd threshold that can drop after a consolidation; an allowlist entry in
-`scripts/doc-paths-allowlist.json` or `scripts/npm-audit-allowlist.json` past its stated expiry.
-Ratchets only move one way, and moving them is in scope.
+`scripts/npm-audit-allowlist.json` past its stated expiry. Ratchets only move one way, and moving
+them is in scope.
 
 ### What a finding looks like
 
@@ -331,16 +332,16 @@ decision" and says why is a pass; a run that manufactures a change to show work 
    percentage did not rise; lower the `.jscpd.json` threshold to just above the new number when a
    consolidation moved it, never below it); `npm run check:api-contract` when any file under
    `apps/api/src` changed (a changed artifact means the contract changed — back the fix out);
-   `npm run test:ci-scripts` when `scripts/` changed; `npm run check:doc-paths` when anything a
-   doc cites moved. `npm run ci:local-gate` runs lint, types, API tests, the contract check, the
-   docs-structure and secret scans, migration safety and the audit gate in one go and is the parity
-   run to do last.
+   `npm run test:ci-scripts` when `scripts/` changed; `npm run check:links` when a heading or a
+   linked file moved. `npm run ci:local-gate` runs lint, types, API tests, the contract check, the
+   secret scan, migration safety and the audit gate in one go and is the parity run to do last.
 3. **A check you could not run is reported as not run**, never as passed — the same honesty rule
    every routine carries. If the sandbox cannot run a suite, say so in the PR body and the report.
-4. **Docs.** A moved or renamed file that a doc cites gets the doc fixed in the same PR
-   (`check:doc-paths` is whole-tree and required). Otherwise a mechanical PR changes no doc at all —
+4. **Docs.** A moved or renamed file that a doc cites gets the doc fixed in the same PR. Only a
+   markdown link is caught for you, by `check:links`; a path in backticks is caught by nothing, so
+   grep the old name yourself before you move it. Otherwise a mechanical PR changes no doc at all —
    nothing requires one, and a filler line in an unrelated doc is a review finding
-   ([`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)).
+   ([`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md)).
 5. End with the **"debt spotted"** note `AGENTS.md` requires — one line per item you saw and did
    not take, with its issue or ledger reference.
 

@@ -16,7 +16,7 @@ Hosted agent sessions may carry provider/research credentials and cloud-sandbox 
 
 ## Spec vs code
 
-**`spec/` is the source of truth for intended behavior. Code is the source of truth for current behavior.** Disagreement between them is a tracked bug — file it, do not silently pick whichever loaded first. Fix the stale side in the same PR when it's in scope. Do not "correct" a spec to match a bug, and do not "correct" working code to match a superseded spec, without an explicit decision. Mid-task habit: [`.claude/skills/check-our-docs/SKILL.md`](.claude/skills/check-our-docs/SKILL.md).
+**`spec/` is the source of truth for intended behavior. Code is the source of truth for current behavior.** Disagreement between them is a tracked bug — file it, do not silently pick whichever loaded first. Fix the stale side in the same PR when it's in scope. Do not "correct" a spec to match a bug, and do not "correct" working code to match a superseded spec, without an explicit decision. Mid-task habit: before you act on what a doc told you, verify the claim against whatever owns it, and fix the doc in the same pass. How: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 
 ## ADR discipline
 
@@ -55,13 +55,11 @@ What replaces it is a judgement you make, not a check you satisfy:
   match, to make a change look documented.** An unowned claim in a canonical
   doc is worse than no claim: the next reader believes it.
 
-What *is* enforced: cited paths resolve (`doc-paths`, required), files sit in a
-declared home with the naming rule (`docs-structure`), references from outside
-the corpus resolve (`doc-refs`), hand-copied check rosters and Infisical env
-slugs match their source (`doc-tables`), and links and anchors resolve (`Links`).
-Every one of them checks a fact and costs nothing when you are right. The full
-contract is [`DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md) — read it there rather
-than trusting this list to stay complete.
+What *is* enforced is narrow: markdown links and heading anchors resolve
+(`Links`), and every Infisical environment slug named anywhere is one that
+exists (`env-slugs`). Beyond that slug case nothing checks whether a doc's claims
+are true, or whether a path it cites still exists. Contract:
+[`DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md).
 
 ## Work tracking
 
@@ -122,10 +120,6 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 | API compile  | `npm run build -w apps/api` (matches Render `Dockerfile` builder) |
 | API image    | `docker build -f apps/api/Dockerfile .` (also runs in CI as `api-docker-build`) |
 | API contract | `npm run check:api-contract`        |
-| Doc citations | `npm run check:doc-paths` — backticked repo paths in docs resolve; **required**, whole-tree |
-| Doc rosters  | `npm run check:doc-tables` — hand-copied required-check tables vs `CI_CHECKS`/`ci.yml`, and the placement map plus the six index READMEs vs `DIRECTORIES`; advisory |
-| Doc references | `npm run check:doc-refs` — `docs/`/`spec/` references in SOURCE, workflows, migrations and shell resolve; advisory, whole-tree |
-| Doc structure | `npm run check:docs-structure` — every doc sits in a declared home and matches the naming rule ([`scripts/ci/lib/docs-structure.mjs`](scripts/ci/lib/docs-structure.mjs)); advisory, whole-tree |
 | Doc links    | `npm run check:links` — markdown links and heading anchors; needs `npm run install:lychee` first |
 | Migrations   | `npm run check:migration-safety`    |
 | Boundaries   | `npm run check:dep-cruiser` — required gate; existing violations grandfathered in `.dependency-cruiser-known-violations.json`, which exists to shrink |
@@ -147,7 +141,6 @@ All skills live under [`.claude/skills/`](.claude/skills/) and are invocable by 
 | [`/realtime-resilience`](.claude/skills/realtime-resilience/SKILL.md) | Chat realtime, connection state, topic teardown, message delivery. |
 | [`/testing`](.claude/skills/testing/SKILL.md) | Tests, verification, CI parity. |
 | [`/audit`](.claude/skills/audit/SKILL.md) | Audits / quality reviews (RLS coverage, deps, contract, CI). |
-| [`/check-our-docs`](.claude/skills/check-our-docs/SKILL.md) | Verify a doc claim before acting on it; fix the doc in the same pass. |
 | [`/file-follow-up`](.claude/skills/file-follow-up/SKILL.md) | File out-of-scope work and proven human-only blockers as GitHub issues. |
 | [`/infrastructure-research`](.claude/skills/infrastructure-research/SKILL.md) | Deploy / CI / provider runtime-truth gathering. |
 | [`/live-verification`](.claude/skills/live-verification/SKILL.md) | Verifying against **deployed staging** (live Realtime, RLS-as-GoTrue, deployed UI). Staging only, never prod. |
