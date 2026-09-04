@@ -123,7 +123,7 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 | API image    | `docker build -f apps/api/Dockerfile .` (also runs in CI as `api-docker-build`) |
 | API contract | `npm run check:api-contract`        |
 | Doc citations | `npm run check:doc-paths` — backticked repo paths in docs resolve; **required**, whole-tree |
-| Doc rosters  | `npm run check:doc-tables` — hand-copied required-check tables vs `CI_CHECKS`/`ci.yml`, and the placement map plus the three index READMEs vs `DIRECTORIES`; advisory |
+| Doc rosters  | `npm run check:doc-tables` — hand-copied required-check tables vs `CI_CHECKS`/`ci.yml`, and the placement map plus the six index READMEs vs `DIRECTORIES`; advisory |
 | Doc references | `npm run check:doc-refs` — `docs/`/`spec/` references in SOURCE, workflows, migrations and shell resolve; advisory, whole-tree |
 | Doc structure | `npm run check:docs-structure` — every doc sits in a declared home and matches the naming rule ([`scripts/ci/lib/docs-structure.mjs`](scripts/ci/lib/docs-structure.mjs)); advisory, whole-tree |
 | Doc links    | `npm run check:links` — markdown links and heading anchors; needs `npm run install:lychee` first |

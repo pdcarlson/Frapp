@@ -8,6 +8,11 @@ Each topic lives in its own file. Cross-cutting concerns (visual themeing, error
 
 ## Topics
 
+**The topics table below is machine-checked** against `DIRECTORIES` in
+[`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs) by
+`npm run check:doc-tables` — it must name every declared child of `spec/behavior/` (today `chat/`
+and `settings/`), and may not name a child that is not declared.
+
 | Topic                                                | File                                       |
 | ---------------------------------------------------- | ------------------------------------------ |
 | Multi-tenancy invariants                             | [`multi-tenancy.md`](multi-tenancy.md)     |

@@ -6,8 +6,8 @@ Developer guides and operator runbooks. Product and architecture truth lives in 
 
 **Both tables below are machine-checked** against `DIRECTORIES` in
 [`scripts/ci/lib/docs-structure.mjs`](../scripts/ci/lib/docs-structure.mjs) by `npm run check:doc-tables`:
-§ Folders must name every declared child of `docs/`, and § Internal subfolders every declared child
-of `docs/internal/`. Add or retire a directory in the manifest and here in the same commit.
+between them they must name every declared child of `docs/` and of `docs/internal/`, and may not name
+a child that is not declared. Add or retire a directory in the manifest and here in the same commit.
 
 | Area | Path | Use for |
 | ---- | ---- | ------- |

@@ -370,9 +370,10 @@ the tables above it. `EXPO_PUBLIC_WEB_SECURE_STORE` was absent from this file en
 [`demo-data.md`](../../guides/demo-data.md); it is the reason the count moved by four rather than the three
 #1167 estimated. Worth stating plainly, because the set's whole
 value is being exhaustive: **nothing checks this list.** `check:doc-tables` compares hand-copied tables
-against their in-repo source — required-check rosters in `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, and the
-directory structure in the placement map and the three index READMEs — but it has no source of truth for
-env vars, so it never opens this file. Adding a prefixed variable without adding it here fails no CI job, which is how the previous
+against an in-repo source (see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) § Rosters for what it covers), and
+there is no source of truth for env vars for it to compare against — so no gate asserts the set below.
+Note the `doc-tables` **job** does run `check-env-slugs.mjs` over this file, but that only checks that
+every Infisical environment slug named here exists; it says nothing about which variables are listed. Adding a prefixed variable without adding it here fails no CI job, which is how the previous
 three survived.
 
 `SUPABASE_AUTH_BYPASS` is the one **unprefixed** entry in the `apps/web` table: it is read in

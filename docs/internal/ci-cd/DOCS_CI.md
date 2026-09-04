@@ -16,7 +16,7 @@ because a gate that cannot tell truth from filler gets filler.
 | Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule, per [`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) | Whole tree | `docs-structure` | Not yet — see rollout below |
 | Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** — in `DOCS_CHECKS` |
 | References | [`check-doc-refs.mjs`](../../../scripts/check-doc-refs.mjs) | In files OUTSIDE the docs corpus (source, workflows, migrations, shell): bare `docs/`/`spec/` paths resolve, and bare markdown filenames still name a tracked file | Whole tree | `doc-refs` | Not yet — see rollout below |
-| Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml`; the placement map and the two index READMEs match `DIRECTORIES` | Whole tree | `doc-tables` | Not yet — see rollout below |
+| Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml`; the placement map and the six index READMEs match `DIRECTORIES` | Whole tree | `doc-tables` | Not yet — see rollout below |
 | Env slugs | [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) | Every Infisical environment named anywhere is one that exists | Whole tree | `doc-tables` (same job) | Not yet — inherits `doc-tables` |
 
 ### Citations (`check-doc-paths.mjs`)
@@ -150,43 +150,53 @@ lists. `CONTRIBUTING.md` and `spec/environments/README.md` now hold pointers ins
 It states *intended* required checks, never live branch protection — read live state from the API,
 per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
-#### The directory structure, four times over
+#### The directory structure, seven times over
 
-The same script also polices the directory structure, which the corpus restates in four places
+The same script also polices the directory structure, which the corpus restates in seven places
 against one manifest — `DIRECTORIES` in
 [`docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs).
 
 | Restatement | Constant | Checked against |
 | ----------- | -------- | --------------- |
 | [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) § Where things go | `PLACEMENT_DOC` | All of `DIRECTORIES` |
-| [`docs/README.md`](../../README.md) § Folders + § Internal subfolders | `INDEX_DOCS` | Declared children of `docs` and `docs/internal` |
+| [`docs/README.md`](../../README.md) | `INDEX_DOCS` | Declared children of `docs` and `docs/internal` |
 | [`docs/internal/README.md`](../README.md) | `INDEX_DOCS` | Declared children of `docs/internal` |
-| [`spec/README.md`](../../../spec/README.md) § Core + § UI | `INDEX_DOCS` | Declared children of `spec` |
+| [`spec/README.md`](../../../spec/README.md) | `INDEX_DOCS` | Declared children of `spec` |
+| [`spec/behavior/README.md`](../../../spec/behavior/README.md) | `INDEX_DOCS` | Declared children of `spec/behavior` |
+| [`spec/ui/README.md`](../../../spec/ui/README.md) | `INDEX_DOCS` | Declared children of `spec/ui` |
+| [`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md) | `INDEX_DOCS` | Declared children of `spec/ui/design-system` |
 
 Every row is exact in **both** directions: a declared directory with no row fails, and a row naming
-an undeclared child fails.
+an undeclared child of that scope fails.
 
+- **Coverage is itself checked.** `parentScopes()` derives every directory that *has* declared
+  children, and a test asserts `INDEX_DOCS` covers exactly that set — so declaring a nested
+  directory fails until the index that should list it is added. #1619 originally shipped covering
+  three of these six indexes, which is the same "one fact, several copies, the gate watches one"
+  shape this epic exists to close, reproduced inside its own fix.
 - **Exact, never prefix coverage.** A `spec/ui/` row must not speak for `spec/ui/mobile`. Coverage
   matching was the first design and it disarmed the check: five declared directories had no row and
   the gate stayed green.
 - **The index READMEs are scoped, not weaker.** Each of their tables is exactly one directory's
   *immediate children*, so the same both-directions rule applies once the comparison is made per
-  scope — no coverage is left unchecked. A scope with no declared children is a hard error (exit 2),
-  because an empty expected set would silently assert nothing.
+  scope. A scope with no declared children is a hard error (exit 2), because an empty expected set
+  would silently assert nothing.
 - **Only paths that are children of a scope are judged.** An index legitimately links to a sibling
   tree or to a file in its own root; those are not claims about the child set, so they are ignored
-  rather than reported as undeclared.
+  rather than reported as undeclared. A *nested* path under a scope (`ops/widgets/`) is likewise
+  not judged — the check enforces the child set, not "nothing else".
 - **Their paths are relative to the doc**, so they go through `resolveIndexHome`, not
   `normalizeHome`. `normalizeHome` rejects any token not starting with `docs/` or `spec/`, which is
-  right for the placement map and would silently match *nothing* in any index (#1619).
-- **Both the backticked label and the link target are read.** The label is the half a reader sees,
-  so a row displaying `ops/` while linking to `runbooks/` is drift; and rows carrying no
-  parenthesised target (a titled link, a reference link, a plain unlinked path) would otherwise
-  parse as nothing and be reported as *missing*.
+  right for the placement map and would silently match *nothing* in any index. Rootedness is decided
+  before the trailing slash is stripped, or a `[`spec/`](../spec/README.md)` row resolves to the
+  phantom `docs/spec`.
+- **Link targets anywhere in a row; backticked labels only from a cell that carries a link.** The
+  label is the half a reader sees, so a row displaying `ops/` while linking to `runbooks/` is drift.
+  A description cell is prose: `docs/README.md`'s Hooks row says "tests for `packages/hooks`", and
+  reading that reparents it under the doc's own folder.
 
-`spec/ui/README.md` and `spec/behavior/README.md` are **not** covered — `spec/ui/design-system/reference`
-is a *grandchild* of `spec/ui`, so they need a different rule (#1665). `tableBlocks` also has no table
-identity and reads fenced code blocks as live rows (#1666).
+`tableBlocks` has no table identity and reads fenced code blocks as live rows — shared with the
+placement map, tracked in #1666.
 
 This is what makes a rename or a flatten safe: `check-doc-paths` and lychee catch a broken *link*,
 but only this catches a table that still describes the *old directory set*.

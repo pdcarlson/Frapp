@@ -25,6 +25,11 @@ Visual truth and precedence (references beat docs, Canvas beats the system panel
 
 ### The family
 
+**The table below is machine-checked** against `DIRECTORIES` in
+[`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) by
+`npm run check:doc-tables` — it must name every declared child of `spec/ui/design-system/`
+(today `reference/`), and may not name a child that is not declared.
+
 | Doc | Owns |
 | --- | --- |
 | [`foundations.md`](foundations.md) | Neutral ladder, semantic colors, type scale, radius map, spacing grid |

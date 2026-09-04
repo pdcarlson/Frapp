@@ -21,6 +21,11 @@ Naming: spec prose says **Signet**. Code identifiers, package names, domains, an
 
 ## Per-surface rules
 
+**The per-surface table below is machine-checked** against `DIRECTORIES` in
+[`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs) by
+`npm run check:doc-tables` — it must name every declared child of `spec/ui/`, and may not name a
+child that is not declared. Add or retire a directory in the manifest and here in the same commit.
+
 | Spec | Governs | Status |
 | ---- | ------- | ------ |
 | [`design-system/`](design-system/README.md) | Tokens and rules shared by every Signet surface: foundations (color, type, radius, spacing), components, iconography, writing, chapter accent engine | Active |

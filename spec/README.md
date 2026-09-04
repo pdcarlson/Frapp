@@ -11,8 +11,8 @@ workflows and runbooks live under **`docs/`** — start at [`docs/README.md`](..
 
 **The § Core and § UI tables are machine-checked** against `DIRECTORIES` in
 [`scripts/ci/lib/docs-structure.mjs`](../scripts/ci/lib/docs-structure.mjs) by
-`npm run check:doc-tables` — between them they must name every declared child of `spec/`. Add or
-retire a directory in the manifest and here in the same commit.
+`npm run check:doc-tables` — between them they must name every declared child of `spec/`, and may not
+name a child that is not declared. Add or retire a directory in the manifest and here in the same commit.
 
 ## Core
 

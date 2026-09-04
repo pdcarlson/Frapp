@@ -8,6 +8,8 @@ import { readFileSync } from "node:fs";
 import {
   INDEX_DOCS,
   childrenOf,
+  collectIndexFindings,
+  parentScopes,
   compareIndexDocs,
   comparePlacementMap,
   compareRoster,
@@ -487,15 +489,38 @@ test("parseIndexHomes reads both the backticked label and the link target", () =
 });
 
 test("a row whose target markdown cannot be parsed is still read via its label", () => {
-  // Titled, reference-style and unlinked rows all produced "no row in this
-  // index" about a row sitting in the table.
-  for (const cell of ["[`ops/`](ops/ \"Ops runbooks\")", "[`ops/`][opsref]", "`ops/`"]) {
+  // Titled and reference-style rows produced "no row in this index" about a row
+  // sitting in the table, because neither yields a `](path)` target.
+  for (const cell of ["[`ops/`](ops/ \"Ops runbooks\")", "[`ops/`][opsref]"]) {
     assert.deepEqual(
       [...parseIndexHomes(`| Ops | ${cell} | notes |`, "docs/internal")],
       ["docs/internal/ops"],
       cell,
     );
   }
+});
+
+test("a backticked path in a description cell is prose, not a location claim", () => {
+  // The live example is docs/README.md's Hooks row: "Conventions and tests for
+  // `packages/hooks`". Reading it reparented the token under the doc's own
+  // folder as `docs/packages/hooks`. `scripts/x.mjs` and `packages/` are the
+  // same shape one and two segments shorter, and those DO land on an immediate
+  // child (`docs/scripts`, `docs/packages`), so they were reported as
+  // undeclared directories with no remedy that exists.
+  const row =
+    "| **Guides** | [`guides/`](guides/README.md) | tests for `packages/hooks`, `scripts/x.mjs`, `packages/` |";
+  assert.deepEqual([...parseIndexHomes(row, "docs")], ["docs/guides"]);
+});
+
+test("a repo-root path in a link cell is not reparented under the doc", () => {
+  // `spec/` stripped to `spec` no longer matched the `spec/` prefix test, so it
+  // read as relative and resolved to `docs/spec` — a phantom child of the doc's
+  // own folder. docs/README.md already writes this exact cross-reference in
+  // prose, so promoting it into a table was an ordinary edit that broke CI.
+  const row = "| **Spec** | [`spec/`](../spec/README.md) | Product and architecture truth |";
+  assert.deepEqual([...parseIndexHomes(row, "docs")], []);
+  assert.equal(resolveIndexHome("spec/", "docs"), null);
+  assert.equal(resolveIndexHome("docs/", "docs/internal"), null);
 });
 
 test("parseIndexHomes reads only table rows", () => {
@@ -612,4 +637,91 @@ test("every INDEX_DOCS entry holds against the real repo, and asserts something"
     const fromDir = file.slice(0, file.lastIndexOf("/"));
     assert.ok(parseIndexHomes(text, fromDir).size > 0, `${file}: parsed no homes`);
   }
+});
+
+test("INDEX_DOCS names the docs that restate the structure, and their scopes", () => {
+  // Pinned by value because narrowing the config is invisible otherwise: the
+  // real-repo test iterates INDEX_DOCS, so emptying it, dropping an entry, or
+  // reducing docs/README.md to one scope leaves every test green while the gate
+  // silently stops checking what it says it checks.
+  assert.deepEqual(
+    INDEX_DOCS.map(({ file, scopes }) => [file, scopes]),
+    [
+      ["docs/README.md", ["docs", "docs/internal"]],
+      ["docs/internal/README.md", ["docs/internal"]],
+      ["spec/README.md", ["spec"]],
+      ["spec/behavior/README.md", ["spec/behavior"]],
+      ["spec/ui/README.md", ["spec/ui"]],
+      ["spec/ui/design-system/README.md", ["spec/ui/design-system"]],
+    ],
+  );
+});
+
+test("every directory with declared children has an index that must list them", () => {
+  // The completeness ratchet. #1619 shipped covering three of six scopes, and
+  // nothing would have caught the other three — the same "one fact, several
+  // copies, the gate covers one" shape the epic exists to close, reproduced
+  // inside its own fix. Declaring a nested directory now fails here until the
+  // index that should list it is added to INDEX_DOCS.
+  assert.deepEqual(
+    [...new Set(INDEX_DOCS.flatMap((e) => e.scopes))].sort(),
+    parentScopes(),
+  );
+});
+
+test("parentScopes returns each directory that has declared children", () => {
+  assert.deepEqual(parentScopes(INDEX_DIRS), ["docs", "docs/internal", "spec"]);
+  // A leaf contributes its parent, never itself.
+  assert.equal(parentScopes(INDEX_DIRS).includes("docs/internal/ops"), false);
+});
+
+test("collectIndexFindings surfaces a scope with no declared children as an error", () => {
+  // An empty `expected` set disarms the missing-row direction while the gate
+  // still prints a green count. Reachable by a trailing slash, and by a flatten
+  // collapsing a scope's children.
+  const readDoc = () => "| Area | Folder |\n| ---- | ------ |\n| Ops | [`ops/`](ops/) |";
+  for (const scope of ["docs/", "docs/internal/ops"]) {
+    const r = collectIndexFindings({
+      indexDocs: [{ file: "docs/internal/README.md", scopes: [scope] }],
+      directories: INDEX_DIRS,
+      readDoc,
+    });
+    assert.match(r.error ?? "", /no children in DIRECTORIES/, scope);
+    assert.equal(r.findings, undefined);
+  }
+});
+
+test("collectIndexFindings reports an unreadable doc rather than skipping it", () => {
+  const r = collectIndexFindings({
+    indexDocs: [{ file: "docs/internal/README.md", scopes: ["docs/internal"] }],
+    directories: INDEX_DIRS,
+    readDoc: () => null,
+  });
+  assert.match(r.error ?? "", /is INDEX_DOCS stale/);
+});
+
+test("collectIndexFindings returns each doc's findings, not a discarded list", () => {
+  // Covers the loop, which previously lived inside the unexported main() and so
+  // had no coverage at all. One line is still outside it: main()'s own
+  // `findings.push(...indexResult.findings)`. Dropping THAT still passes every
+  // test — main() is not exported and the real repo is green, so there is
+  // nothing to observe. Recorded rather than papered over.
+  const r = collectIndexFindings({
+    indexDocs: [{ file: "docs/internal/README.md", scopes: ["docs/internal"] }],
+    directories: INDEX_DIRS,
+    readDoc: () => "| Area | Folder |\n| ---- | ------ |\n| Ops | [`ops/`](ops/) |",
+  });
+  assert.equal(r.error, undefined);
+  assert.deepEqual(
+    r.findings.map((f) => f.id),
+    ["docs/internal/ci-cd"],
+  );
+});
+
+test("collectIndexFindings holds against the real repo with the real config", () => {
+  const r = collectIndexFindings({
+    readDoc: (file) => readFileSync(new URL(`../../../${file}`, import.meta.url), "utf8"),
+  });
+  assert.equal(r.error, undefined);
+  assert.deepEqual(r.findings, []);
 });

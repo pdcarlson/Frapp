@@ -8,7 +8,9 @@ Operations, infrastructure, and agent/CI reference. Grouped by area.
 
 **This table is machine-checked** against `DIRECTORIES` in
 [`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs) by
-`npm run check:doc-tables` — it must name every declared child of `docs/internal/`, and nothing else.
+`npm run check:doc-tables` — every declared child of `docs/internal/` needs a row here, and a row
+may not name a child that is not declared. Add or retire a directory in the manifest and here in
+the same commit.
 
 | Area | Folder | Contents |
 | ---- | ------ | -------- |
