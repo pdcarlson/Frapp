@@ -4,6 +4,12 @@ Developer guides and operator runbooks. Product and architecture truth lives in 
 
 ## Folders
 
+**This file is machine-checked.** Every declared child of `docs/` and `docs/internal/` needs a row in a table
+here, and a row may not name a child that is not declared — `npm run check:doc-tables`, against
+`DIRECTORIES` in [`scripts/ci/lib/docs-structure.mjs`](../scripts/ci/lib/docs-structure.mjs). Add or retire a directory in
+the manifest and here in the same commit; the rule itself is described in
+[`DOCS_CI.md`](internal/ci-cd/DOCS_CI.md) § Rosters.
+
 | Area | Path | Use for |
 | ---- | ---- | ------- |
 | **Guides** | [`guides/`](guides/README.md) | Contributor docs: getting started, testing, API/database overview, env config, Docker, deployment |
