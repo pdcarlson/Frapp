@@ -6,11 +6,11 @@ Operations, infrastructure, and agent/CI reference. Grouped by area.
   placement map for where docs/spec changes go (read before adding any doc).
 - **Admin:** [`ADMIN_DASHBOARD.md`](ADMIN_DASHBOARD.md)
 
-**This table is machine-checked** against `DIRECTORIES` in
-[`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs) by
-`npm run check:doc-tables` — every declared child of `docs/internal/` needs a row here, and a row
-may not name a child that is not declared. Add or retire a directory in the manifest and here in
-the same commit.
+**This file is machine-checked.** Every declared child of `docs/internal/` needs a row in a table
+here, and a row may not name a child that is not declared — `npm run check:doc-tables`, against
+`DIRECTORIES` in [`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs). Add or retire a directory in
+the manifest and here in the same commit; the rule itself is described in
+[`DOCS_CI.md`](ci-cd/DOCS_CI.md) § Rosters.
 
 | Area | Folder | Contents |
 | ---- | ------ | -------- |

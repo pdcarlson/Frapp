@@ -177,10 +177,11 @@ an undeclared child of that scope fails.
 - **Exact, never prefix coverage.** A `spec/ui/` row must not speak for `spec/ui/mobile`. Coverage
   matching was the first design and it disarmed the check: five declared directories had no row and
   the gate stayed green.
-- **The index READMEs are scoped, not weaker.** Each of their tables is exactly one directory's
-  *immediate children*, so the same both-directions rule applies once the comparison is made per
-  scope. A scope with no declared children is a hard error (exit 2), because an empty expected set
-  would silently assert nothing.
+- **The index READMEs are scoped, not weaker.** Each names the declared children of one directory,
+  so the same both-directions rule applies once the comparison is made per scope. Their tables also
+  list **files** — `spec/behavior/README.md` is 28 file rows and 2 directory rows — and those are
+  not claims about the child set, so they are simply not judged. A scope with no declared children
+  is a hard error (exit 2), because an empty expected set would silently assert nothing.
 - **Only paths that are children of a scope are judged.** An index legitimately links to a sibling
   tree or to a file in its own root; those are not claims about the child set, so they are ignored
   rather than reported as undeclared. A *nested* path under a scope (`ops/widgets/`) is likewise
@@ -188,12 +189,14 @@ an undeclared child of that scope fails.
 - **Their paths are relative to the doc**, so they go through `resolveIndexHome`, not
   `normalizeHome`. `normalizeHome` rejects any token not starting with `docs/` or `spec/`, which is
   right for the placement map and would silently match *nothing* in any index. Rootedness is decided
-  before the trailing slash is stripped, or a `[`spec/`](../spec/README.md)` row resolves to the
-  phantom `docs/spec`.
-- **Link targets anywhere in a row; backticked labels only from a cell that carries a link.** The
-  label is the half a reader sees, so a row displaying `ops/` while linking to `runbooks/` is drift.
-  A description cell is prose: `docs/README.md`'s Hooks row says "tests for `packages/hooks`", and
-  reading that reparents it under the doc's own folder.
+  before the trailing slash is stripped: testing the *stripped* `spec` against a `spec/` prefix said
+  it was not rooted, so a `[`spec/`](../spec/README.md)` row resolved to the phantom `docs/spec`.
+- **Link targets only, never the backticked display label.** Reading the label as an independent
+  path claim was tried and is unsound — a label is written for a reader and its style varies by
+  design. `[`engineering`](engineering.md)` invents `spec/engineering`; `[`ops/`](internal/ops/DEPLOYMENT.md)`
+  invents `docs/ops`; a backticked identifier beside a link (`` [`main`](…/ci.yml) ``) invents
+  `docs/internal/main`. In each the row's own target proves what it means. Whether the visible label
+  agrees with its target is a separate check needing a different rule (#1667).
 
 `tableBlocks` has no table identity and reads fenced code blocks as live rows — shared with the
 placement map, tracked in #1666.

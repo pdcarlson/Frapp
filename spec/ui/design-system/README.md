@@ -25,10 +25,11 @@ Visual truth and precedence (references beat docs, Canvas beats the system panel
 
 ### The family
 
-**The table below is machine-checked** against `DIRECTORIES` in
-[`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) by
-`npm run check:doc-tables` — it must name every declared child of `spec/ui/design-system/`
-(today `reference/`), and may not name a child that is not declared.
+**This file is machine-checked.** Every declared child of `spec/ui/design-system/` needs a row in a table
+here, and a row may not name a child that is not declared — `npm run check:doc-tables`, against
+`DIRECTORIES` in [`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs). Add or retire a directory in
+the manifest and here in the same commit; the rule itself is described in
+[`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md) § Rosters.
 
 | Doc | Owns |
 | --- | --- |

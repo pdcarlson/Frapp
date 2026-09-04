@@ -9,10 +9,11 @@ tracking and delivery sequencing live in **GitHub Issues** (see
 workflows and runbooks live under **`docs/`** — start at [`docs/README.md`](../docs/README.md) and
 [`docs/guides/README.md`](../docs/guides/README.md).
 
-**The § Core and § UI tables are machine-checked** against `DIRECTORIES` in
-[`scripts/ci/lib/docs-structure.mjs`](../scripts/ci/lib/docs-structure.mjs) by
-`npm run check:doc-tables` — between them they must name every declared child of `spec/`, and may not
-name a child that is not declared. Add or retire a directory in the manifest and here in the same commit.
+**This file is machine-checked.** Every declared child of `spec/` needs a row in a table
+here, and a row may not name a child that is not declared — `npm run check:doc-tables`, against
+`DIRECTORIES` in [`scripts/ci/lib/docs-structure.mjs`](../scripts/ci/lib/docs-structure.mjs). Add or retire a directory in
+the manifest and here in the same commit; the rule itself is described in
+[`DOCS_CI.md`](../docs/internal/ci-cd/DOCS_CI.md) § Rosters.
 
 ## Core
 

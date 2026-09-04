@@ -4,10 +4,11 @@ Developer guides and operator runbooks. Product and architecture truth lives in 
 
 ## Folders
 
-**Both tables below are machine-checked** against `DIRECTORIES` in
-[`scripts/ci/lib/docs-structure.mjs`](../scripts/ci/lib/docs-structure.mjs) by `npm run check:doc-tables`:
-between them they must name every declared child of `docs/` and of `docs/internal/`, and may not name
-a child that is not declared. Add or retire a directory in the manifest and here in the same commit.
+**This file is machine-checked.** Every declared child of `docs/` and `docs/internal/` needs a row in a table
+here, and a row may not name a child that is not declared — `npm run check:doc-tables`, against
+`DIRECTORIES` in [`scripts/ci/lib/docs-structure.mjs`](../scripts/ci/lib/docs-structure.mjs). Add or retire a directory in
+the manifest and here in the same commit; the rule itself is described in
+[`DOCS_CI.md`](internal/ci-cd/DOCS_CI.md) § Rosters.
 
 | Area | Path | Use for |
 | ---- | ---- | ------- |

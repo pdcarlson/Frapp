@@ -34,9 +34,10 @@ export const PLACEMENT_DOC = "docs/internal/DOCUMENTATION_CONVENTIONS.md";
 
 // The index READMEs, which restate the directory tree six more times.
 //
-// `DOCUMENTATION_CONVENTIONS.md` names all 23 homes; these six name only the
-// immediate children of one directory each, which is why they cannot go through
-// comparePlacementMap. They are not a weaker copy, though — each table is
+// `DOCUMENTATION_CONVENTIONS.md` names all 23 homes; each of these names the
+// declared children of one directory, which is why they cannot go through
+// comparePlacementMap. Their tables also list FILES, which this check ignores —
+// only paths that are children of a scope are judged. They are not a weaker copy, though — each table is
 // exactly one scope's children, so the same exact-both-directions rule applies
 // once the comparison is made per scope. `scopes` is that scope list.
 //
@@ -71,8 +72,11 @@ export const INDEX_DOCS = [
 export function parentScopes(directories = DIRECTORIES) {
   const parents = new Set();
   for (const { dir } of directories) {
-    const parent = dir.slice(0, dir.lastIndexOf("/"));
-    if (parent) parents.add(parent);
+    const cut = dir.lastIndexOf("/");
+    // A slash-less entry has no parent. `slice(0, -1)` would drop its last
+    // character instead and yield a scope like `spe`, which the `if (parent)`
+    // guard was written to prevent and did not.
+    if (cut > 0) parents.add(dir.slice(0, cut));
   }
   return [...parents].sort();
 }
@@ -369,47 +373,46 @@ export function resolveIndexHome(token, fromDir) {
 }
 
 /**
- * Every directory an index README's TABLE ROWS name.
+ * Every directory an index README's TABLE ROWS link to.
  *
- * Three narrowings, each closing a false positive that a real row produced:
+ * Two narrowings, each closing a false positive a real row produced:
  *
- * 1. Table rows only, as parsePlacementHomes does. Both files carry prose links
- *    to neighbouring trees (`../spec/ui/design-system/`, `../guides/`) that are
- *    cross-references, not claims about what this directory holds.
+ * 1. Table rows only, as parsePlacementHomes does. Both trees' index READMEs
+ *    carry prose links to neighbouring trees (`../spec/ui/design-system/`,
+ *    `../guides/`) that are cross-references, not claims about what this
+ *    directory holds. #1666 tracks the remaining gap here: nothing ties a row
+ *    to the index table itself, so any table in the file counts.
  *
- * 2. LINK TARGETS are read from anywhere in the row — they are unambiguous
- *    paths — but BACKTICKED LABELS only from a cell that carries a link. A
- *    description cell is prose: `docs/README.md`'s Hooks row says "tests for
- *    `packages/hooks`", and reading that reparented it as `docs/packages/hooks`.
- *    The same shape fires for a cell citing `scripts/foo.mjs` or `packages/`,
- *    which resolve to `docs/scripts` and `docs/packages` — phantom children of
- *    the doc's own folder, reported as undeclared with no remedy that exists.
+ * 2. LINK TARGETS only — never the backticked display label. Reading the label
+ *    as an independent path claim was tried and is unsound, because a label is
+ *    written for a reader and its style varies by design:
+ *      - `[`engineering`](engineering.md)` — an extensionless label invents the
+ *        directory `spec/engineering`; ~35 rows across three of the six index
+ *        docs are file rows whose labels could legitimately be written this way.
+ *      - `[`ops/`](internal/ops/DEPLOYMENT.md)` — a leaf-only label invents
+ *        `docs/ops`, though docs/internal/README.md uses exactly that style.
+ *      - `docs-sync CI on [`main`](../../.github/workflows/ci.yml)` — a
+ *        backticked identifier beside a link invents `docs/internal/main`. A
+ *        corpus scan found 90 such tokens in link-bearing table cells.
+ *    In every case the row's own target proves what it means, and the finding's
+ *    remedy ("declare the directory") is wrong. The target is also the half a
+ *    rename must update and that lychee and check-doc-paths already validate,
+ *    so it is the half worth pinning.
  *
- * 3. Both halves of a link are read, not just the target. The label is the half
- *    a reader sees, so a row displaying `ops/` while linking to `runbooks/` is
- *    drift; and a row whose target markdown does not parse — a titled link, a
- *    reference link — would otherwise contribute nothing and be reported as a
- *    MISSING row while sitting in the table.
- *
- * A row must therefore carry a link to be counted. Every row in all three index
- * docs does, and a bare backticked path in a description column is far more
- * common than an unlinked index row — so this is the safer default. #1666
- * tracks the remaining gap: nothing ties a row to the index table itself.
+ * A row must therefore carry a parseable `](target)`. Titled links
+ * (`](ops/ "Ops")`) work — the capture stops at whitespace. A reference-style
+ * row (`][ops]`) has no target and would be reported as a missing row; none
+ * exists in the six index docs, and the failure is loud rather than silent.
+ * Whether the visible label agrees with its target is a separate check that
+ * needs a different rule (#1667), not this one.
  */
 export function parseIndexHomes(docText, fromDir) {
   const homes = new Set();
-  const add = (token) => {
-    const dir = resolveIndexHome(token, fromDir);
-    if (dir) homes.add(dir);
-  };
   for (const block of tableBlocks(docText)) {
     for (const line of block) {
-      for (const m of line.matchAll(/\]\(\s*([^)\s]+)/g)) add(m[1]);
-      for (const cell of line.split("|")) {
-        // `](` is an inline link, `][` a reference link; either makes this the
-        // cell that states a location rather than one that describes it.
-        if (!/\]\(|\]\[/.test(cell)) continue;
-        for (const m of cell.matchAll(/`([^`\n]+)`/g)) add(m[1]);
+      for (const m of line.matchAll(/\]\(\s*([^)\s]+)/g)) {
+        const dir = resolveIndexHome(m[1], fromDir);
+        if (dir) homes.add(dir);
       }
     }
   }
@@ -438,9 +441,14 @@ function isChildOfAny(dir, scopes) {
  * length: coverage-style matching disarms itself the moment one broad row
  * speaks for several directories. #1619 expected this check to have to be
  * weaker than the placement map's — one-directional, "leaving coverage
- * unchecked" — because the three tables sit at different granularities. They
- * do, but not raggedly: each table is precisely one directory's immediate
- * children, so scoping the comparison recovers full strength.
+ * unchecked" — because the tables sit at different granularities. They do, but
+ * not raggedly: each index names the declared children of one directory, so
+ * scoping the comparison per directory recovers full strength.
+ *
+ * The tables also list FILES — `spec/behavior/README.md` is 28 file rows and 2
+ * directory rows — and those are not claims about the child set. Only paths
+ * that are children of a scope are judged, so a file row is simply invisible
+ * here rather than something the table must stop doing.
  *
  * The reverse direction judges ONLY paths that are immediate children of a
  * scope. An index legitimately links out of its own scope — to a sibling tree,

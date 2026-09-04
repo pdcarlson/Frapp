@@ -475,29 +475,39 @@ test("childrenOf returns immediate children only, and no sibling prefixes", () =
   assert.deepEqual(childrenOf("docs/", INDEX_DIRS), []);
 });
 
-test("parseIndexHomes reads both the backticked label and the link target", () => {
-  // Reading only the target was wrong twice: the label is the half a reader
-  // sees, and rows with no parenthesised target parsed as nothing.
-  assert.deepEqual([...parseIndexHomes("| x | [`ops/`](ops/) |", "docs/internal")], [
-    "docs/internal/ops",
-  ]);
-  // Disagreement between the two surfaces as an extra directory, not silence.
-  assert.deepEqual(
-    [...parseIndexHomes("| x | [`ops/`](runbooks/) |", "docs/internal")].sort(),
-    ["docs/internal/ops", "docs/internal/runbooks"],
-  );
+test("parseIndexHomes reads link targets, never the display label", () => {
+  // Reading the label as an independent path claim is unsound: its style is
+  // written for a reader and varies by design. Each row below carries a label
+  // that would invent a directory the row never claimed.
+  const rows = [
+    ["extensionless label", "| Eng | [`engineering`](engineering.md) |", "spec", []],
+    ["leaf-only label", "| Ops | [`ops/`](internal/ops/DEPLOYMENT.md) |", "docs", ["docs/internal/ops"]],
+    [
+      "identifier beside a link",
+      "| CI | [`ci-cd/`](ci-cd/) | CI on [`main`](../../.github/workflows/ci.yml) |",
+      "docs/internal",
+      ["docs/internal/ci-cd"],
+    ],
+    [
+      "prose token",
+      "| Guides | [`guides/`](guides/README.md) | tests for `packages/hooks` |",
+      "docs",
+      ["docs/guides"],
+    ],
+  ];
+  for (const [label, row, fromDir, expected] of rows) {
+    assert.deepEqual([...parseIndexHomes(row, fromDir)].sort(), expected, label);
+  }
 });
 
-test("a row whose target markdown cannot be parsed is still read via its label", () => {
-  // Titled and reference-style rows produced "no row in this index" about a row
-  // sitting in the table, because neither yields a `](path)` target.
-  for (const cell of ["[`ops/`](ops/ \"Ops runbooks\")", "[`ops/`][opsref]"]) {
-    assert.deepEqual(
-      [...parseIndexHomes(`| Ops | ${cell} | notes |`, "docs/internal")],
-      ["docs/internal/ops"],
-      cell,
-    );
-  }
+test("a titled link still yields its target; a reference link has none", () => {
+  // The target capture stops at whitespace, so `](ops/ "Ops")` works. A
+  // reference-style row carries no target and is reported as a missing row —
+  // loud rather than silent, and none exists in the six index docs.
+  assert.deepEqual([...parseIndexHomes('| Ops | [`ops/`](ops/ "Ops runbooks") |', "docs/internal")], [
+    "docs/internal/ops",
+  ]);
+  assert.deepEqual([...parseIndexHomes("| Ops | [`ops/`][opsref] |", "docs/internal")], []);
 });
 
 test("a backticked path in a description cell is prose, not a location claim", () => {
@@ -578,21 +588,6 @@ test("a row naming an undeclared CHILD of a scope is drift the other way", () =>
   assert.equal(f.length, 1);
   assert.equal(f[0].id, "docs/internal/retired");
   assert.match(f[0].detail, /not declared in DIRECTORIES/);
-});
-
-test("a label and target naming different children both count, so drift shows", () => {
-  // The row displays `ops/` but links to `runbooks/`. Reading only the target
-  // let the table tell every reader the wrong location while the gate passed.
-  const text = [
-    "| Area | Folder |",
-    "| ---- | ------ |",
-    "| Ops | [`ops/`](runbooks/) |",
-    "| CI | [`ci-cd/`](ci-cd/) |",
-  ].join("\n");
-  assert.deepEqual(
-    internalIndex(text).map((x) => x.id),
-    ["docs/internal/runbooks"],
-  );
 });
 
 test("a table path that is not a child of any scope is not judged at all", () => {
@@ -724,4 +719,12 @@ test("collectIndexFindings holds against the real repo with the real config", ()
   });
   assert.equal(r.error, undefined);
   assert.deepEqual(r.findings, []);
+});
+
+test("parentScopes yields no parent for a slash-less entry", () => {
+  // `slice(0, lastIndexOf("/"))` on a slash-less dir drops its last character
+  // instead of yielding "", so a bare `docs` entry produced the scope `doc` —
+  // exactly what the `if (parent)` guard was written to prevent.
+  assert.deepEqual(parentScopes([{ dir: "docs", purpose: "x", index: true }]), []);
+  assert.deepEqual(parentScopes([{ dir: "spec", purpose: "x", index: true }]), []);
 });
