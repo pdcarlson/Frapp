@@ -83,12 +83,10 @@ comment at the end:
 If the issue or marker is missing, bootstrap: window = PRs updated in the last 8 days,
 `backfill-oldest` = the oldest PR in that window.
 
-> **No MCP read returns this issue's body faithfully — `search_issues` included.** All three read
-> paths corrupt what they return three ways — HTML comments deleted, unrecognised tags deleted
-> (including inside code fences), and `'`/`"`/`&`/`>` entity-escaped — so a `pr-followups-state`
-> marker written as an **HTML comment** is invisible in every one of them, even when it is there.
-> `search_issues` was the lossless exception until it regressed on all three vectors, confirmed
-> 2026-08-20. Republishing the tracking issue from that text deletes the marker, and because a
+> **No MCP read returns this issue's body faithfully — `search_issues` included.** Of the ways all
+> three read paths corrupt what they return, the one that bites here is that **HTML comments are
+> deleted** — a `pr-followups-state` marker written as a comment is invisible in every one of them,
+> even when it is there. Republishing the tracking issue from that text deletes the marker, and because a
 > missing marker is the bootstrap trigger, the next run silently resets to an 8-day window and
 > re-crawls history it had already audited, rather than failing loudly. Full table, probe, and the
 > narrow escape hatch:

@@ -6,17 +6,11 @@ For the full operator runbook (DNS, provider setup, and detailed checklists), us
 
 ## Branch and environment model
 
-Frapp has one long-lived branch:
-
-- `main` → pre-production/staging environments
-
-Feature branches (`feature/*`) merge into `main`. Production is deployed from a **named
-commit on `main`** by the **Deploy production** workflow (`workflow_dispatch`, typed
-confirmation, and an approval on the `production` GitHub Environment). It refuses any
-commit that is not an ancestor of `main` with green CI.
-
-> **Note:** neither `develop` nor `production` is part of the active workflow. `main` is
-> the integration branch for staging; the `production` branch was retired in #1340.
+- **The branch model** — one long-lived branch, no `develop`, no `production` (retired
+  #1340), and what each merge does deploy: [`CONTRIBUTING.md`](../../CONTRIBUTING.md) § Branch Model.
+- **How a production deploy is gated** — dispatch with a SHA, typed confirmation,
+  ancestor-of-`main` with green CI, `production` environment approval:
+  [`docs/internal/ops/DEPLOYMENT.md`](../internal/ops/DEPLOYMENT.md) § How Deployments Are Gated.
 
 ## Current rollout state
 

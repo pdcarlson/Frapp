@@ -317,8 +317,12 @@ npm run configure:branch-protection:verify
 
 (`configure-branch-protection` reads `GITHUB_PAT` first, with aliases tolerated (`GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`) — export it per [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
 
-`:verify` exits non-zero on any divergence and names it, so compare its output against the roster in
-`CONTRIBUTING.md` rather than eyeballing a dry run.
+`:verify` exits non-zero on any divergence and names it, so read that output rather than eyeballing a
+dry run. It diffs against `CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS` in
+[`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs), which is the
+comparand; the human-readable roster is
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
+§ Required Status Checks.
 
 ---
 

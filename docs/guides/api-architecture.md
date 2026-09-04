@@ -77,7 +77,7 @@ Lookups that take a chapter and a second `string` (name, code, hash) are **chapt
 Every protected endpoint runs through a consistent guard chain:
 
 1. **SupabaseAuthGuard** — validates the JWT from Supabase Auth.
-2. **ChapterGuard** — verifies the `x-chapter-id` header and membership in that chapter.
+2. **ChapterGuard** — resolves the active chapter from the JWT `active_chapter_id` claim (`x-chapter-id` is a legacy fallback and never overrides the claim; a disagreement is a hard `403 chapter.context.mismatch`), then verifies membership in it. Full chain, the header/claim precedence rules, and the four tenancy-proof idioms: [`docs/internal/security/AUTHORIZATION_MODEL.md`](../internal/security/AUTHORIZATION_MODEL.md) § "1. The model in short".
 3. **PermissionsGuard** — checks permission metadata against the user's roles. When both the controller class and the route handler declare `@RequirePermissions(...)`, the guard **merges** them: the union of both lists must be satisfied (AND semantics across every listed permission). `@RequireAnyOfPermissions` on handler and class is evaluated as **two separate OR-groups** when both are present (the caller must match at least one permission in each group).
 
 ### Subscription enforcement (ChapterGuard)
