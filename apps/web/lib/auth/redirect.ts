@@ -8,7 +8,3 @@ export function resolveRedirectPath(value: string | null | undefined): string {
   }
   return value;
 }
-
-export function createDashboardRedirectPath(pathname = DEFAULT_DASHBOARD_PATH) {
-  return pathname.startsWith("/") ? pathname : DEFAULT_DASHBOARD_PATH;
-}

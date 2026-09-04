@@ -49,4 +49,9 @@ Feed items are pulled from existing data (events, point_transactions, backwork_r
   invented placeholder — the same "empty means unresolved" convention `MemberRosterEntry` uses
   elsewhere.
 
-**Leaderboard name resolution** (retained rule; no web surface currently renders it — `apps/web/lib/activity-feed-leaderboard.ts` has no importer but its own test since the home screen was removed): leaderboard lines in the activity feed resolve member display names by trying every id shape the API may send (`user_id`, `member_id`, and generic `id`) against the chapter member list, so mismatched field names between points totals and `MemberProfileDto` do not silently fall back to a generic label.
+**Leaderboard name resolution** (retained rule; no web surface currently renders it — the helper that
+implemented it was deleted as dead code once the home screen it served was removed, so this rule is
+specified here and **unimplemented on every surface** — the API feed has no leaderboard domain either.
+The case the deleted helper's regression test pinned, and the one a re-implementation has to keep
+passing, is a member whose points total is keyed by `user_id` while the roster entry is keyed by
+membership `id`: trying only one shape resolves them to a generic label): leaderboard lines in the activity feed resolve member display names by trying every id shape the API may send (`user_id`, `member_id`, and generic `id`) against the chapter member list, so mismatched field names between points totals and `MemberProfileDto` do not silently fall back to a generic label.
