@@ -17,6 +17,7 @@ the targets resolve — so add the row in the same change that adds the topic fi
 | Multi-tenancy invariants                             | [`multi-tenancy.md`](multi-tenancy.md)     |
 | RBAC, roles, presidency transfer                     | [`rbac.md`](rbac.md)                       |
 | Backwork (academic library)                          | [`backwork.md`](backwork.md)               |
+| Rush / recruitment / intake                          | [`rush.md`](rush.md)                       |
 | Points ledger — security, audit, atomicity           | [`points.md`](points.md)                   |
 | Chapter billing (Stripe), grace periods, dues        | [`billing.md`](billing.md)                 |
 | Chat (channels, DMs, messages, slash commands)       | [`chat/`](chat/README.md)                  |

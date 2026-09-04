@@ -4,6 +4,11 @@ Where a fact lives, what a doc owes a reader, and what to do when a doc turns ou
 
 **What this document does not do is enforce itself.** Placement, naming and whether a cited path still exists used to be machine-checked; the four gates that did it were deleted, and no check replaced them — in CI those questions are now nobody's. So everything below is a convention this document states and a reviewer applies ([`.claude/skills/diff-review/SKILL.md`](../../.claude/skills/diff-review/SKILL.md)), not a rule a check will fail you on. A misplaced doc reds nothing; the cost lands later, on the reader who cannot find the fact or who trusts the stale copy of it. What CI does still check, and what it does not: [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md).
 
+**Cite a rule here by its section, never by a number.** These rules are named, not numbered, so a
+citation survives one being added or reordered. Records that cite "hard rule N" predate that and
+point at the section whose wording matches; an append-only record keeps its original words, so the
+number stays and the section is where to read it.
+
 ## Where a fact lives
 
 - **A fact belongs where the thing that would falsify it lives.** If a change to a guard, a schema, a workflow or a provider setting would make the sentence false, the sentence belongs in the doc that owns that thing. Everywhere else, link to it — path plus heading anchor, never a restatement. Most changes falsify nothing and need no doc edit; the question is never "did I touch a doc" but "which doc owns this fact". A paragraph parked in a canonical doc to look diligent is worse than none, because the next reader believes it.
