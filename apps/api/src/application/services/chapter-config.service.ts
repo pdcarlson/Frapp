@@ -692,7 +692,7 @@ export class ChapterConfigService {
       .maybeSingle();
 
     // Split for the same reason as getConfig's chapters read: this route sits
-    // on the same controller behind the same `chapter_config:manage`, so
+    // on the same controller behind the same `chapter-config:manage`, so
     // collapsing a failed read into 404 gives Save-accent the identical
     // invisible failure — no error log, no security event, no Sentry capture.
     if (error) {

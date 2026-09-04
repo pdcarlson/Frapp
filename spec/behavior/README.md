@@ -85,7 +85,7 @@ All API errors follow a consistent shape:
 - All API endpoints (except `/health` and webhooks) require authentication.
 - All data access is scoped by `chapter_id`. No cross-chapter data access is possible through any endpoint.
 - Webhook endpoints (Stripe) verify signatures before processing. Invalid signatures return 401 and are logged as security events.
-- File uploads are scanned for allowed MIME types and extensions via `@repo/validation` (kinds `image` / `proof` / `document`). Disallowed types are rejected before a signed URL is issued; storage buckets enforce the same MIME list and a 25 MB size cap on the upload itself.
+- File uploads are scanned for allowed MIME types and extensions via `@repo/validation` (kinds `image` / `proof` / `document` / `archive`). Disallowed types are rejected before a signed URL is issued; storage buckets enforce the same MIME list and a 25 MB size cap on the upload itself.
 - Rate limiting is applied per user per endpoint to prevent abuse. Default: 100 requests/minute for read endpoints, 30 requests/minute for write endpoints. Every handler holds its own counter per caller, so these are per-endpoint ceilings rather than one shared pool. Selected routes carry stricter static limits (table below); the limits are **not** chapter-configurable — no product surface exposes them. Exception: `POST /v1/webhooks/stripe` is exempt from rate limiting — Stripe delivers bursts from a small shared IP pool and the route is unauthenticated, so IP-keyed throttling would 429 real billing events; signature verification (invalid → 401) is the abuse control on that route.
 
 ### Per-route rate limits
