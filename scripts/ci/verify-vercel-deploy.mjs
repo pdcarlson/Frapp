@@ -96,12 +96,14 @@ export function wasSupersededByLaterDeployment(deployments, candidate) {
   return deployments.some((deployment) => {
     if (deployment === candidate) return false;
     if (branch && deployment?.meta?.githubCommitRef !== branch) return false;
-    // Same channel only. `deploy-vercel-production.mjs` creates production
-    // deployments with `gitSource.ref = "main"`, so a release of some OTHER
-    // commit lands on this project with `githubCommitRef: "main"` and a later
-    // timestamp. It verifies nothing about the preview that was cancelled, and
-    // without this filter a dispatched production deploy would silently excuse
-    // an unrelated cancelled staging build.
+    // Same channel only. `deploy-vercel.mjs` stamps every deployment it
+    // creates with `--meta githubCommitRef=main` (it was `gitSource.ref` before
+    // ADR-21 removed the Git integration; same field, same reason), so a
+    // release of some OTHER commit lands on this project with
+    // `githubCommitRef: "main"` and a later timestamp. It verifies nothing
+    // about the preview that was cancelled, and without this filter a
+    // dispatched production deploy would silently excuse an unrelated
+    // cancelled staging build.
     if ((deployment?.target ?? null) !== candidateTarget) return false;
     // A retry of the SAME commit is not a superseding push.
     if (candidateSha && deployment?.meta?.githubCommitSha === candidateSha) return false;
