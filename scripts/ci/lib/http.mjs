@@ -53,13 +53,18 @@ export function isRetriableStatus(status) {
 /**
  * Methods a failed request may be re-sent for.
  *
- * This is the sharpest edge in this module. `deploy-render-production.mjs` and
- * `deploy-vercel-production.mjs` both POST to *create a deployment*, and a
- * create is not idempotent: if the first POST reached the provider and only its
- * response was lost — a gateway 502, or our own timeout firing on a slow but
- * successful call — then retrying it starts a SECOND production deploy. A retry
- * helper that made the production path less safe than it found it would defeat
- * the point of adding one.
+ * This is the sharpest edge in this module. `deploy-render-production.mjs`
+ * POSTs to *create a deployment*, and a create is not idempotent: if the first
+ * POST reached the provider and only its response was lost — a gateway 502, or
+ * our own timeout firing on a slow but successful call — then retrying it
+ * starts a SECOND production deploy. A retry helper that made the production
+ * path less safe than it found it would defeat the point of adding one.
+ *
+ * `deploy-vercel.mjs` used to be the second example here, back when it created
+ * a deployment by POSTing a `gitSource`. Since #1578 it creates deployments
+ * through the Vercel CLI and this module only ever sees its GETs — the lookup
+ * and the poll. That removes an instance of the hazard; it does not soften the
+ * rule, because Render still has it and any future create would inherit it.
  *
  * So retry is scoped to the methods where re-sending cannot duplicate an
  * effect. Everything else still gets the timeout, which is pure benefit: it
