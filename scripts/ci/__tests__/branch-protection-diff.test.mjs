@@ -414,8 +414,11 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
       .replace(/\s+/g, " ");
 
   // `:verify` is not the apply, so naming it must not trip the requirement.
+  // Both spellings of the apply: the npm script and the underlying node call.
+  // Scoped to `//` comments, which is every comment in this file today.
   const namesBareApply = (text) =>
-    /npm run configure:branch-protection(?!:verify)/.test(text);
+    /npm run configure:branch-protection(?!:verify)/.test(text) ||
+    /node scripts\/configure-branch-protection\.mjs/.test(text);
   const carriesGuard = (text) =>
     /human step with an admin PAT/.test(text) &&
     /configure:branch-protection:verify/.test(text);
@@ -454,9 +457,14 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
     // Bounded to the throw itself. An open-ended window would let an assertion
     // be satisfied by adjacent source — including the `unconfirmedBranches`
     // throw below it, which is the other place this script discusses applying.
-    const [, drift] =
+    const [, raw] =
       src.match(/Live branch protection does not match this roster([\s\S]*?)\n\s*\);/) ?? [];
-    assert.ok(drift, "the drift error moved or was reworded — re-point this test");
+    assert.ok(raw, "the drift error moved or was reworded — re-point this test");
+    // Join the concatenated string segments so the assertions below see the
+    // MESSAGE, not its source layout. Without this the phrases are pinned to
+    // where the `" + "` joins happen to fall, so rewrapping the literal — which
+    // changes nothing a reader sees — reddens a required check.
+    const drift = raw.replace(/"\s*\+\s*\n?\s*"/g, "").replace(/\s+/g, " ");
 
     // Asserted directly rather than through `carriesGuard`: that helper also
     // requires the text to name `:verify`, which the drift error deliberately
@@ -482,7 +490,7 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
   });
 
   // The rule, not a phrase: any comment naming the apply command must also say
-  // who runs it. Stated this way it covers all nine ROLLOUT notes and any note
+  // who runs it. Stated this way it covers all eleven ROLLOUT notes and any note
   // added later, instead of the one wrapping that existed when it was written.
   it("no comment names the bare apply without saying who runs it", () => {
     const runs = commentRuns(read("../lib/required-checks.mjs"));

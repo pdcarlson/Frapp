@@ -97,7 +97,8 @@ curl -sS --noproxy '*' -H "Authorization: Bearer $GITHUB_PAT" \
 
 What that route returned on 2026-09-02 (full record in
 [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md)): `branches/main/protection` **200**
-with 21 required contexts, `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
+with 21 required contexts (the roster as it then stood; **20** since #1637 dropped `docs-spec-sync`
+on 2026-09-03), `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
 `required_pull_request_reviews: null`; `environments` **200** listing nine; `environments/production`
 **200** with `protection_rules: ["required_reviewers"]` — the required-reviewer gate is now read off
 the API rather than inferred from approval timing; `rulesets` **200** with one; the repo **200** with

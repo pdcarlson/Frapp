@@ -1240,7 +1240,9 @@ the ones a later reader would otherwise re-litigate.
   `true` (**#1580**) — a dated observation, not a standing claim.
 
 - **Amendment (2026-09-04, #1580) — the `allow_fork_syncing` divergence is closed, and the roster
-  half of both readings above is now stale.** The two paragraphs above record `allow_fork_syncing`
+  half of both readings above is now stale.** Both paragraphs also say 21 roster contexts, which
+  was true when read: it has been **20** since #1637 (`bab7200`) dropped `docs-spec-sync` on
+  2026-09-03. They record `allow_fork_syncing`
   live `false` "against the roster's `true`". The *live* half still holds (re-read 2026-09-04:
   `allow_fork_syncing: false`, `lock_branch: false`); the *roster* half does not. The roster now
   declares `false`, in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
