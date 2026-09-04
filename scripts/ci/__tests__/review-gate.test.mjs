@@ -9,8 +9,7 @@ import { fileURLToPath } from "node:url";
 // Tests for .claude/hooks/pre-push-review-gate.sh — a shell hook, not a JS module, so this
 // drives it as a subprocess. It lives here (rather than beside the hook) so the existing
 // `test:ci-scripts` glob (scripts/ci/__tests__/*.test.mjs) and the ci-scripts-tests CI job pick
-// it up; a standalone script next to the hook is never run by anything and rots, which is how
-// the fail-open parse bug below survived unnoticed in the first place.
+// it up; a standalone script next to the hook is never run by anything and rots.
 const HOOK = fileURLToPath(new URL("../../../.claude/hooks/pre-push-review-gate.sh", import.meta.url));
 
 // Every case runs against a THROWAWAY git repo. Pointing the hook at the real working tree
@@ -55,7 +54,7 @@ after(() => {
 function runHook(command, { env = {}, pathOverride, transcriptPath = "", cwd = "", raw = false } = {}) {
   // `raw` sends the argument to the hook verbatim, for the malformed-payload cases. Without it
   // a "malformed" string would just be JSON-wrapped into a perfectly valid payload and the case
-  // would assert nothing — which is exactly what an earlier revision of this file did.
+  // would assert nothing.
   const payload = raw
     ? command
     : JSON.stringify({
@@ -168,8 +167,8 @@ test("worktree: a marker at the worktree root for the worktree HEAD allows the p
 });
 
 test("worktree: a stale main-worktree marker does not satisfy a worktree push", () => {
-  // The pre-fix failure inverted: the main root holds a perfectly valid marker for the MAIN
-  // HEAD, but the push is happening in the worktree, whose HEAD has no marker anywhere.
+  // The main root holds a perfectly valid marker for the MAIN HEAD, but the push happens in the
+  // worktree, whose HEAD has no marker anywhere: keying to CLAUDE_PROJECT_DIR would allow it.
   writeMarker();
   assertDeny(runHook("git push", { cwd: worktree }), "stale main marker, worktree push");
   clearMarker();
@@ -193,9 +192,8 @@ test("worktree: the node parser extracts cwd when python3 is absent", () => {
 });
 
 // ── `git -C <dir> push`: the gate keys to the -C target, not the cwd ────────
-// push_re deliberately matches the -C form, so ROOT must follow it: keying to the cwd
-// instead would let a stale marker in the cwd's repo wave through an unreviewed push of a
-// DIFFERENT worktree (fail-open), and would deny a genuinely reviewed -C push.
+// These catch an implementation that keys ROOT to the cwd: it would deny the genuinely
+// reviewed -C push in the first case, and fail open on the unreviewed target in the second.
 
 test("-C push: a marker at the -C target satisfies the gate regardless of cwd", () => {
   clearMarker();
@@ -237,9 +235,9 @@ test("bypass via the hook's own environment", () => {
   assertAllow(runHook("git push", { env: { FRAPP_SKIP_REVIEW_GATE: "1" } }), "env bypass");
 });
 
-// These previously failed: the hook read only its own environment, so the documented
-// "set FRAPP_SKIP_REVIEW_GATE=1 on the push" form was denied, and the prefix form appeared to
-// work only because push_re declines to match an env-prefixed command at all.
+// These catch a hook that reads only its own environment: the `export … && git push` forms are
+// then denied, and the bare-prefix form passes only vacuously, because push_re declines to
+// match an env-prefixed command at all.
 for (const cmd of [
   "FRAPP_SKIP_REVIEW_GATE=1 git push",
   "export FRAPP_SKIP_REVIEW_GATE=1 && git push",
@@ -316,9 +314,9 @@ test("node parses the payload when python3 is absent", () => {
 });
 
 // ── Bypass must not fire on a mere mention of the flag ──────────────────────
-// This repo documents FRAPP_SKIP_REVIEW_GATE by name in CONTRIBUTING.md and the runbook, so an
-// unanchored substring test let ordinary work silently skip the gate — with no warning, unlike a
-// livelock release. Strictly worse than the fail-open it was introduced alongside.
+// These go red if the bypass check is ever loosened to an unanchored substring test: this repo
+// documents FRAPP_SKIP_REVIEW_GATE by name in CONTRIBUTING.md and the runbook, so ordinary work
+// naming it would then skip the gate silently — with no warning, unlike a livelock release.
 for (const cmd of [
   'git commit -m "docs: explain FRAPP_SKIP_REVIEW_GATE=1 escape hatch" && git push',
   "grep -rn FRAPP_SKIP_REVIEW_GATE=1 docs/ && git push",
@@ -348,10 +346,9 @@ test("--no-verify is not mistaken for the -n dry-run flag", () => {
 
 // ── Ref deletions publish no objects, so there is nothing to review ─────────
 //
-// `--delete` makes EVERY refspec in the invocation a deletion, so the whole command uploads
-// nothing. Gating it does not just waste a prompt: the review it demands (/diff-review, which
-// reviews HEAD) has no bearing on which remote refs are removed, and four denials later the
-// livelock guard releases the push labelled UNREVIEWED anyway.
+// These go red if the flag-form exemption is dropped. `--delete` makes EVERY refspec in the
+// invocation a deletion: the command publishes no objects, so /diff-review (which reviews HEAD)
+// has nothing to say about it, and the livelock guard would release it UNREVIEWED regardless.
 
 for (const cmd of [
   "git push origin --delete br",
@@ -403,8 +400,7 @@ for (const [cmd, why] of [
 
 // A flag is matched as a WHOLE token, at both ends. `feature-d` and `fix--delete-exemption` only
 // exercise the leading boundary; `-deploy` and `--delete-merged` are what fail if the trailing
-// anchor is ever dropped. `--dry-run` needs the same coverage as `--delete` — it was the arm that
-// actually shipped as an unanchored substring.
+// anchor is ever dropped. `--dry-run` needs the same coverage as `--delete`.
 for (const cmd of [
   "git push origin fix--delete-exemption",
   "git push origin feature-d",
@@ -489,8 +485,8 @@ test("a malformed payload mentioning a push is denied, not silently allowed", ()
   assertAllow(runHook("not json at all: ls -la", { raw: true }), "malformed, no push");
 });
 
-// The regression this suite exists for: `! grep -q` cannot tell "no match" (status 1) from
-// "grep is broken/absent" (2 or 127), so a broken environment used to allow a real push.
+// `! grep -q` cannot tell "no match" (status 1) from "grep is broken/absent" (2 or 127), so
+// writing the fallback that way allows a real push in exactly the broken environment it handles.
 test("a broken grep fails closed rather than allowing the push", () => {
   clearMarker();
   const stub = makeStub(STUB_BINS.filter((b) => b !== "python3" && b !== "node" && b !== "grep"));
