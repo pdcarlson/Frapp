@@ -180,21 +180,7 @@ jobs:
       - name: Brand assets (icon sync)
         run: npm run check:brand-assets
 
-      # The docs/spec sync gate used to run here too, a second copy of the same
-      # script `docs.yml` runs for the required `docs-spec-sync` check. It was
-      # removed rather than kept in sync.
-      #
-      # Two copies of one rule across two required checks means every exemption
-      # has to be duplicated exactly, and the copies had already drifted once:
-      # only `docs.yml` carried the Dependabot exemption, so this step failed
-      # every Dependabot PR while `docs-spec-sync` went green. The
-      # `no-doc-change-needed` waiver made the duplication actively expensive —
-      # honouring it here would mean re-running this entire workflow, Docker
-      # build included, on every label mutation on every PR.
-      #
-      # The gate now has exactly one home: `docs.yml`.
-
-  # ── Clean-checkout guard (fresh-install path) ───────────────────────────
+      # ── Clean-checkout guard (fresh-install path) ───────────────────────────
   # Reproduces a bare `npm install && npm run check-types` on a cold machine.
   # Deliberately has NO `needs: packages-build` and NO
   # `./.github/actions/turbo-packages-build` step (which is what restores the
@@ -703,8 +689,7 @@ jobs:
       # Deliberately bare (no --base/--head) on push: the promotion-docs half
       # of this check is a PR-time review gate, not a merge-time one — by the
       # time a commit reaches `main` via merge, the PR run above (line 738)
-      # already enforced it. This mirrors docs-spec-sync's own "(PR only)"
-      # steps in docs.yml for the same category of gate. Filename/version
+      # already enforced it. Filename/version
       # validation (validateMigrationFiles) still runs unconditionally either
       # way, so a malformed migration filename is still caught on push (#980).
       - name: Check migration safety (push)

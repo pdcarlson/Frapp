@@ -19,10 +19,9 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
      - `CONTRIBUTING.md`
 4. **No required workflow-level `paths` filters**
    - Required checks must always report a result on protected-branch PRs.
-5. **Docs/spec delta is mandatory for every non-doc change**
-   - Any PR that changes files outside `docs/` or `spec/` must also touch at least one path under those prefixes in the same PR (usually **`docs/`** — e.g. [`docs/guides/`](../../guides/README.md) — and/or **`spec/`**).
-   - This is enforced by `scripts/check-docs-impact.mjs` in the Docs workflow and local CI gate. Rationale: [`DOCS_CI.md`](../ci-cd/DOCS_CI.md).
-   - No local bypass is allowed for this check.
+5. **A changed documented fact is updated where it lives**
+   - No check requires a doc edit; the one that did was deleted in #1597 for producing filler. Most PRs alter no documented fact and need no doc change.
+   - When one does, it goes in the doc that owns the fact — usually **`docs/`** (e.g. [`docs/guides/`](../../guides/README.md)) and/or **`spec/`** — never a stray file or an unrelated doc. Rationale: [`DOCS_CI.md`](../ci-cd/DOCS_CI.md).
 
 ## Reviewer workflow
 
@@ -59,7 +58,6 @@ Use this order so each PR has a single failure domain:
    - `.github/workflows/ci.yml`
 3. **PR C — Docs workflow/check behavior only**
    - `.github/workflows/docs.yml`
-   - `scripts/check-docs-impact.mjs` (if needed)
 4. **PR D — Deploy workflow only**
    - `.github/workflows/deploy-api.yml`
 5. **PR E — Release workflow only**

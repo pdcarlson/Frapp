@@ -1,159 +1,23 @@
-# Docs/spec CI gate
+# Docs/spec CI checks
 
 ## What runs
 
 On pull requests to `main`, `.github/workflows/docs.yml` (workflow display name
-**Docs spec sync**) runs **five jobs** covering **six** checks. They are separate on purpose: each
+**Docs checks**) runs **four jobs** covering **five** checks. They are separate on purpose: each
 asserts one thing, and each fails with a different fix.
+
+Every one of them is ASSERTIVE: it checks a fact, costs nothing when you are right, and cannot be
+satisfied by noise. That is deliberate. The one COERCIVE check this workflow used to carry —
+`docs-spec-sync`, which required a doc *write* rather than checking anything — was deleted in #1597
+because a gate that cannot tell truth from filler gets filler.
 
 | Check | Script | Asserts | Scope | Job | Required? |
 |---|---|---|---|---|---|
-| Sync | [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A PR touching non-doc files also touches `docs/` or `spec/` | PR diff | `docs-spec-sync` | Being retired (#1597) |
 | Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule, per [`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) | Whole tree | `docs-structure` | Not yet — see rollout below |
 | Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** — in `DOCS_CHECKS` |
 | References | [`check-doc-refs.mjs`](../../../scripts/check-doc-refs.mjs) | In files OUTSIDE the docs corpus (source, workflows, migrations, shell): bare `docs/`/`spec/` paths resolve, and bare markdown filenames still name a tracked file | Whole tree | `doc-refs` | Not yet — see rollout below |
 | Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` | Whole tree | `doc-tables` | Not yet — see rollout below |
 | Env slugs | [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) | Every Infisical environment named anywhere is one that exists | Whole tree | `doc-tables` (same job) | Not yet — inherits `doc-tables` |
-
-`docs-spec-sync` is **being retired** (#1597) and is no longer in the `DOCS_CHECKS` array in
-[`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) — note that is a
-**separate array** from `CI_CHECKS` in the same file, which is easy to miss when grepping. The job
-still runs and reports. Whether it still blocks a merge is live branch-protection state, which no
-doc can answer: read it per
-[`../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
-The arrays moved out of `configure-branch-protection.mjs` in #1383 so the production deploy path
-could read them without importing a module that writes live branch protection.
-
-**Sync** is intentionally simple: if the PR modifies **any** path **not** under `docs/` or `spec/`,
-it must **also** modify **at least one** path under **either** prefix. So a single edit under
-`docs/guides/`, `docs/internal/`, or `spec/` satisfies it for a product-code change. It does **not**
-require a specific subtree (e.g. it does not yet require `spec/` for API-only changes). Two narrow
-exemptions cut through that, below.
-
-Pure helpers (`classifyChanges`, `NON_CODE_PREFIXES`) are exported for
-`scripts/ci/__tests__/check-docs-impact.test.mjs`, run by the `ci-scripts-tests` job.
-
-### Exemptions
-
-These exemptions exist because `docs-spec-sync` was required under `enforce_admins: true`: a
-category of PR that could never satisfy it was not merely red, it was permanently unmergeable with
-no override. That is also the argument that retired the gate (#1597) — a check nobody can satisfy
-honestly gets satisfied dishonestly.
-
-The label is the one you are most likely to need, and reaching for it is **not** a failure of
-discipline — see below.
-
-| Exempt | Where | Why |
-|---|---|---|
-| Dependabot PRs | Workflow condition on the *step*, in [`docs.yml`](../../../.github/workflows/docs.yml) | A bump touches `package.json` / `package-lock.json` and nothing else. Skipping the **step**, never the job, keeps the required check reporting — a skipped job never reports, leaving the PR blocked on a check that never arrives. |
-| `.buildpad/**` | `NON_CODE_PREFIXES` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | The canvas export is neither code nor documentation, so it has no docs impact to sync. Every periodic sync would otherwise land as "N non-doc files changed, no docs updated". |
-| PRs labelled `no-doc-change-needed` | `EXEMPT_LABEL` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | A change with genuinely no docs impact — a pure-code consolidation, a lint fix, a formatting-only sweep — cannot satisfy the gate, and while the gate blocked merges that made such a PR unmergeable rather than merely red. **This is the expected answer for a mechanical PR, not a last resort.** |
-
-#### The `no-doc-change-needed` waiver
-
-**Reach for this whenever your change genuinely has no docs impact.** The gate cannot tell a
-relevant doc edit from an irrelevant one — it only checks that *some* path under `docs/` or `spec/`
-moved (`const DOCS_OR_SPEC = ["docs/", "spec/"]`). So when a PR has nothing real to sync, there are
-exactly two ways through, and they are not equally good:
-
-- **Label it.** One reviewable act, visible in the timeline, annotated in the run summary.
-- **Append something to a doc so the check goes green.** This passes, and it is worse than the
-  failure it avoids. It puts a sentence nobody owns into a doc's canonical home, where the next
-  reader has no way to tell it from a maintained claim, and it grows a corpus that already has no
-  mechanism for retiring anything.
-
-That second path is not hypothetical, and until this change **this file** carried the proof: a
-`## Maintenance Log` sat at the bottom of it, holding three bullets about React Query hook tests
-and `package-lock` peer metadata — notes that were perfectly true and had nothing to do with the
-docs gate this document describes. It has been deleted.
-[`diff-review`](../../../.claude/skills/diff-review/SKILL.md) now names that shape as a review
-finding.
-
-So: **if the honest answer is "this PR changes nothing a doc describes", the honest action is the
-label.** A waived run is a better artifact than a green one bought with filler.
-
-Applying it needs **write access**, so it is not a self-serve bypass for an outside contributor, and it
-lands in the PR timeline as a named, reviewable act rather than a silent skip. The gate still **runs**
-and still **prints the paths it would have required a doc for**, so what was waived is auditable from
-the check's log, not just from the label.
-
-Two mechanics make it work, and both are easy to get wrong:
-
-- **The trigger.** `docs.yml` listens for `labeled`/`unlabeled` on top of the default
-  `opened`/`synchronize`/`reopened`. Without them the label would be applied, nothing would re-run, the
-  stale red conclusion would stand, and the PR would still be blocked. A waiver has to be able to
-  re-run the check it waives.
-- **The single home.** The same script used to run a second time as a step inside `ci.yml`'s
-  `lint-and-typecheck` — itself a required check — so honouring the label would have meant giving
-  `ci.yml` the same `labeled` trigger and re-running the entire suite, Docker build included, on every
-  label mutation on every PR. The duplicate was removed instead. **The sync gate now has exactly one
-  home: `docs.yml`.** The copies had already drifted once (only `docs.yml` carried the Dependabot
-  exemption), which is the other half of the argument for keeping one.
-
-Labels reach the script through `env:` (`PR_LABELS_JSON`, as `toJSON(...)`), never interpolated into
-the `run:` string — a label is free-form text and would otherwise be shell-executable. An absent or
-malformed value is treated as *no labels*, so a parse failure leaves the gate enforced rather than
-silently waived.
-
-A waived run also emits a `::warning::` annotation, so it shows up in the run summary and the Checks
-UI rather than rendering as an ordinary green check — the label alone is easy to miss among the
-routine `area:*` / `P2` / `in-review` labels every PR carries.
-
-The label does not exist in the repo's label set until it is first applied; create it under
-**Issues → Labels**, or type the name when applying it to a PR.
-
-**Locally**, `npm run ci:local-gate` runs the same script and inherits the environment, so the waiver
-works there too:
-
-```sh
-PR_LABELS_JSON='["no-doc-change-needed"]' npm run ci:local-gate
-```
-
-This matters more than it looks: the docs check runs **first** in that gate and a failure aborts the
-whole run, so without the waiver a pure-code PR never reaches lint, type-check, the API tests, the
-npm-audit gate, or the gitleaks scan. The failure output names this command.
-
-The `.buildpad/` exemption **ignores** those paths; it does not treat them as documentation. A PR that
-edits code *and* `.buildpad/` still owes a `docs/` or `spec/` edit, and the failure output names only
-the real code changes. What the directory is, and why it is not a doc home:
-[`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md#buildpad-is-background-not-documentation).
-
-`.claude/` is **not** exempt — a `SKILL.md`-only PR still fails the gate. Pair it with the `docs/`
-file that states the same rule (usually the right move anyway), or label it `no-doc-change-needed`
-when there genuinely is none. [#810](https://github.com/pdcarlson/Frapp/issues/810) tracks teaching the gate about it;
-[`ROUTINES.md`](ROUTINES.md#maintenance) records the workaround until then.
-
-**Structure** validates the **whole tree** against
-[`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) — the placement map
-as data. It stops the sync gate from being satisfied by dropping a stray file, and it stops the
-layout drifting generally: a file in an undeclared directory, a stray file at a tree root, a name
-that breaks the convention, a banned prefix returning, a declared directory that holds nothing, or a
-directory that owes a `README.md` and lacks one.
-
-It used to look only at paths a PR *added* or renamed, which meant a file already in the wrong place
-was invisible forever, and its `spec/` rule matched only root-level paths — so a newly invented
-`spec/` subfolder passed. `docs/hooks/` and `docs/performance/` reached `main` that way, absent from
-the placement map this gate points at.
-
-The naming rule is kebab-case `.md`, or `README.md`. The `SCREAMING_SNAKE_CASE` files that predate
-it — all under `docs/internal/` — are grandfathered in `LEGACY_NAMES`, which is a **ratchet**: an
-entry that no longer matches a tracked file fails the gate, so a rename must delete its entry in the
-same commit and the list can only shrink. `.dc.html` design exports are exempt from naming.
-
-`--base`/`--head` are still accepted but no longer scope the check; they only label which violations
-the change introduced.
-
-**Rollout.** It moved out of the required `docs-spec-sync` job when it stopped being diff-scoped, and
-reports on its own `docs-structure` job until the trade is accepted — the same path `doc-paths` took.
-[`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) states the rule next to
-`doc-paths`: a whole-tree check inside a required job "can block a PR over a citation in a doc that
-PR never touched". While it was ADD-only that placement was safe; whole-tree, one stale
-`LEGACY_NAMES` entry would red every open PR at once. Promote by adding `"docs-structure"` to
-`DOCS_CHECKS` once it has run green on `main`.
-
-Placement rules live in
-[`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md), and `doc-tables` checks that
-document's table against the manifest in both directions, so the two cannot drift.
 
 ### Citations (`check-doc-paths.mjs`)
 
@@ -324,34 +188,25 @@ the single place to fix.
 
 ### What none of these check
 
-Whether a doc's **claims** are still true — with the one narrow exception of env slugs above.
-The rest are structural: they check that files exist,
-that edits happened, and that two lists match, not that a sentence is accurate. A doc can pass every gate here and still
-be confidently wrong, or be accurate and still mislead (two correct tables on one topic, far apart,
-with no cross-reference). That judgement half is the
-[`check-our-docs`](../../../.claude/skills/check-our-docs/SKILL.md) skill, invoked while coding —
+Whether a doc's **claims** are still true — with the one narrow exception of env slugs above. The
+rest are structural: they check that files exist, that pointers resolve, and that two lists match,
+not that a sentence is accurate. A doc can pass every gate here and still be confidently wrong, or
+be accurate and still mislead (two correct tables on one topic, far apart, with no cross-reference).
+
+That gap is not one a gate can close. `docs-spec-sync` tried, by demanding a doc edit from every
+non-doc PR, and produced filler instead: a check that demands an edit from every PR gets one from
+every PR, including the PRs with nothing to say. It was deleted in #1597.
+
+What closes it is the discipline in
+[`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) — one canonical place per fact,
+edit the doc that owns it — and the
+[`check-our-docs`](../../../.claude/skills/check-our-docs/SKILL.md) skill, invoked while coding,
 before you act on what a doc told you.
 
-## Why keep it broad
+- **Ambiguity is the real cost.** Contributors should default to
+  [`docs/guides/`](../../guides/README.md) and `spec/` for product-code PRs;
+  there is no `apps/docs` workspace. Where things go:
+  [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md).
 
-- Cheap to implement and explain; hard to game with accidental omissions of entire prefixes.
-- Forces an explicit doc/spec touch for almost every non-doc change, which was an early goal when doc discipline was weak.
-
-That last point is also the gate's failure mode, and it is worth stating plainly: a check that
-demands a doc edit from *every* PR will get one from every PR, including the PRs with nothing to
-say. Breadth buys coverage and pays for it in filler. The label is what keeps the bill down, which
-is why it is documented above as the expected path rather than an escape hatch.
-
-## Trade-offs
-
-- **Noise:** Mechanical edits (e.g. `AGENTS.md` at repo root) still need a `docs/` or `spec/` touch unless the PR is docs-only in a sense the script does not recognize (root-level `.md` files are _not_ exempt). When there is no real doc to sync, label the PR `no-doc-change-needed` rather than inventing one.
-- **Ambiguity:** Contributors should default to [`docs/guides/`](../../guides/README.md) and `spec/` for product-code PRs; there is no `apps/docs` workspace. Where to put updates: [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md).
-
-## Optional future tightening (not implemented)
-
-If the team wants less noise or stricter mapping:
-
-- **Path-based rules:** e.g. changes under `apps/api/**` must touch `spec/` or `docs/**` matching an allowlist. Considered as the alternative to the label waiver and rejected for that purpose: a pure-code consolidation moves code *inside* `apps/*/src/**` and `packages/*/src/**`, the very paths any sane allowlist includes, so path-scoping never unblocks the case the waiver exists for. Still worth doing on its own merits, as noise reduction.
-- **Changelog:** allow a single audited file to count as the doc touch (still easy to make meaningless updates).
-
-Any change to the script should update this file, `AGENTS.md`, and the PR template so agents and humans share one story.
+Any change to these scripts should update this file, `AGENTS.md`, and the PR
+template so agents and humans share one story.

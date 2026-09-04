@@ -36,16 +36,36 @@ Frapp is a Turborepo + npm workspaces monorepo (**4 apps, 13 shared packages**).
 
 `main` is the only long-lived branch and deploys to staging on every merge. Feature branches from `main` → PR to `main`; `main` is the only legal PR base. Direct pushes to `main` are blocked. Production is deployed by dispatching the **Deploy production** workflow with a commit SHA — it refuses any commit that is not an ancestor of `main` with green CI. There is no `production` branch (retired #1340). Details: `CONTRIBUTING.md`.
 
-## Documentation sync mandate (non-optional)
+## Documentation discipline
 
-For **every** non-doc code change (tests, refactors, tooling, CI, config), update at least one related file under **`docs/`** or **`spec/`** in the same PR. Satisfy the gate by updating the **relevant** existing doc/spec per the placement map in [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md) — never by dropping a new stray file. **Canonical developer guides** live under [`docs/guides/`](docs/guides/README.md).
+There is no gate that requires you to touch a doc. There used to be, and it is
+gone (#1597): it could only see that *some* file under `docs/` or `spec/` moved,
+never whether it was the right one, so the cheapest way to satisfy it was an
+unowned paragraph parked in whatever doc was nearest. That is where most of this
+corpus's duplication came from.
 
-- Run or reason against `scripts/check-docs-impact.mjs` before finishing.
-- **If the change genuinely has no docs impact, label the PR `no-doc-change-needed`.** That is the
-  expected path for a mechanical PR, not a last resort. Never append a note to an unrelated doc to
-  turn the check green — the gate only sees that *some* doc moved, so filler passes, and what it
-  leaves behind is an unowned claim in a doc's canonical home. Worked example and mechanics:
-  [`DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md#the-no-doc-change-needed-waiver).
+What replaces it is a judgement you make, not a check you satisfy:
+
+- **Change a documented fact, and update it where it lives** — the placement map
+  in [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md)
+  says where that is. **Canonical developer guides** live under
+  [`docs/guides/`](docs/guides/README.md).
+- **One canonical place per fact.** Everywhere else links to it. If two docs must
+  both mention it, one paragraph then a link — never a second statement that can
+  drift from the first.
+- **Most changes touch no documented fact, and need no doc edit.** That is the
+  normal case, not an exception to excuse.
+- **Never add a stray file, or a section to a doc whose subject it does not
+  match, to make a change look documented.** An unowned claim in a canonical
+  doc is worse than no claim: the next reader believes it.
+
+What *is* enforced: cited paths resolve (`doc-paths`, required), files sit in a
+declared home with the naming rule (`docs-structure`), references from outside
+the corpus resolve (`doc-refs`), hand-copied check rosters and Infisical env
+slugs match their source (`doc-tables`), and links and anchors resolve (`Links`).
+Every one of them checks a fact and costs nothing when you are right. The full
+contract is [`DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md) — read it there rather
+than trusting this list to stay complete.
 
 ## Work tracking
 

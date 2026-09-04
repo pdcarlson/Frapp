@@ -333,15 +333,14 @@ decision" and says why is a pass; a run that manufactures a change to show work 
    `apps/api/src` changed (a changed artifact means the contract changed — back the fix out);
    `npm run test:ci-scripts` when `scripts/` changed; `npm run check:doc-paths` when anything a
    doc cites moved. `npm run ci:local-gate` runs lint, types, API tests, the contract check, the
-   docs-sync and secret scans, migration safety and the audit gate in one go and is the parity
+   docs-structure and secret scans, migration safety and the audit gate in one go and is the parity
    run to do last.
 3. **A check you could not run is reported as not run**, never as passed — the same honesty rule
    every routine carries. If the sandbox cannot run a suite, say so in the PR body and the report.
-4. **Doc-sync.** A moved or renamed file that a doc cites gets the doc fixed in the same PR
-   (`check:doc-paths` is whole-tree and required). Otherwise a mechanical PR carries the
-   `no-doc-change-needed` label — never a filler line in an unrelated doc
-   ([`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)). Confirm with
-   `node scripts/check-docs-impact.mjs --base "$(git merge-base origin/main HEAD)" --head HEAD`.
+4. **Docs.** A moved or renamed file that a doc cites gets the doc fixed in the same PR
+   (`check:doc-paths` is whole-tree and required). Otherwise a mechanical PR changes no doc at all —
+   nothing requires one, and a filler line in an unrelated doc is a review finding
+   ([`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)).
 5. End with the **"debt spotted"** note `AGENTS.md` requires — one line per item you saw and did
    not take, with its issue or ledger reference.
 
@@ -360,7 +359,7 @@ decision" and says why is a pass; a run that manufactures a change to show work 
    template. The body must carry, per fix: **the rule restored** (cited), **the consumers
    checked**, and **the verification that ran** (commands and outcomes, including what could not
    run). Any behaviour change sits under its own heading. Close tracked work with `Fixes #N`. Label
-   `release:patch` (and `no-doc-change-needed` when that is honest). If the GitHub MCP is
+   `release:patch`. If the GitHub MCP is
    unavailable, push the branch, report its name, and stop — there is no sanctioned fallback.
 3. **Fix your own CI, then stop — do not subscribe.** `AGENTS.md` § Autonomous PR lifecycle
    (`doneMeansMerged`, subscribe, babysit) is written for interactive sessions and does not apply

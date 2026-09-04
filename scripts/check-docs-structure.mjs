@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Structure lint for docs/ and spec/. Runs alongside check-docs-impact.mjs.
+// Structure lint for docs/ and spec/. Runs alongside check-doc-paths.mjs.
 //
 // WHOLE-TREE, not diff-scoped. The previous version looked only at paths a PR
 // ADDED or renamed (`--diff-filter=AR`), which meant it could never notice a

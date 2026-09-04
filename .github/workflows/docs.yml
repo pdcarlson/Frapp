@@ -1,20 +1,13 @@
-name: Docs spec sync
+name: Docs checks
 
 on:
   pull_request:
     branches: [main]
-    # `labeled`/`unlabeled` are load-bearing, not tidiness. `no-doc-change-needed`
-    # waives the sync gate, and the default trigger set (opened/synchronize/
-    # reopened) does not fire on a label change — so without these the label
-    # would be applied, nothing would re-run, the stale red conclusion would
-    # stand, and the PR would still be blocked on a REQUIRED check. The waiver
-    # has to be able to re-run the check it waives.
-    #
-    # Affordable here precisely because this workflow is three small jobs. The
-    # same trigger on ci.yml would re-run the whole suite (Docker build
-    # included) on every label mutation, which is why the duplicate copy of
-    # this gate was removed from ci.yml rather than given the same trigger.
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    # `labeled`/`unlabeled` were here while a label could waive a required check:
+    # the default trigger set does not fire on a label change, so the waiver had
+    # to be able to re-run the check it waived. That gate is gone (#1597), and no
+    # job left in this workflow reads a label, so re-running all four on every
+    # label mutation bought nothing.
   push:
     branches: [main]
 
@@ -30,55 +23,16 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  docs-spec-sync:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      # Dependabot PRs are exempt: they change package.json / package-lock.json
-      # and nothing else, so check-docs-impact.mjs would fail every one of them
-      # (non-docs files touched, no docs touched) — and `docs-spec-sync` is a
-      # REQUIRED check under `enforce_admins: true`, so those PRs would be
-      # permanently unmergeable rather than merely red.
-      #
-      # This skips the STEP, never the job. A skipped job never reports its
-      # check run, which would leave the PR blocked on a required check that
-      # never arrives — strictly worse than the failure it replaces. Skipping
-      # the step keeps the job, and therefore `docs-spec-sync`, green.
-      #
-      # Keyed on the PR author rather than `github.actor` so a human re-running
-      # the workflow doesn't flip the exemption off mid-PR.
-      # Labels reach the script through `env:` rather than the `run:` string:
-      # a label is free-form text set by anyone with write access, and
-      # interpolating it directly into the shell command would make it
-      # executable. JSON (not a comma-joined list) because label names may
-      # legitimately contain commas.
-      - name: Enforce docs/spec sync (PR only)
-        if: >-
-          github.event_name == 'pull_request'
-          && github.event.pull_request.user.login != 'dependabot[bot]'
-        env:
-          PR_LABELS_JSON: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-        run: node scripts/check-docs-impact.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
-
-  # Structure — a SEPARATE job, for the reason required-checks.mjs states next to
-  # doc-paths: "Deliberately NOT a step inside docs-spec-sync: this check is
-  # whole-tree, so as a required check it can block a PR over a citation in a doc
-  # that PR never touched."
+  # Structure — whole-tree, and its own job, for the reason required-checks.mjs
+  # states next to doc-paths: a whole-tree check as a REQUIRED check can block a
+  # PR over a citation in a doc that PR never touched. One stale LEGACY_NAMES
+  # entry — or a directory whose last file was deleted — would turn every open
+  # PR red with no admin override, which is the merge-freeze shape #1373
+  # documents for migration-drift.
   #
-  # That applied to this gate the moment it stopped being diff-scoped. It used to
-  # read only the paths a PR ADDED, which is why living inside the required
-  # docs-spec-sync job was safe; whole-tree, the same placement would mean one
-  # stale LEGACY_NAMES entry — or a directory whose last file was deleted —
-  # turning EVERY open PR red on a required check with no admin override. That is
-  # the merge-freeze shape #1373 documents for migration-drift.
-  #
-  # So it gets its own job and the usual reporting-only rollout, and it no longer
-  # needs the `pull_request` guard: whole-tree means a push to main proves it
-  # green before any PR discovers a problem, which is the point of running it.
+  # Whole-tree is also why it needs no `pull_request` guard: a push to main
+  # proves it green before any PR discovers a problem, which is the point of
+  # running it.
   docs-structure:
     runs-on: ubuntu-latest
     steps:
@@ -92,16 +46,16 @@ jobs:
 
   # Citation lint — a SEPARATE job, on purpose, for two reasons.
   #
-  # 1. Blast radius. `docs-spec-sync` is a REQUIRED check under
-  #    `enforce_admins: true`. This check is whole-tree rather than diff-scoped
-  #    (a citation breaks when the file it names moves — a change on the *other*
+  # 1. Blast radius. `doc-paths` is a REQUIRED check under
+  #    `enforce_admins: true`, and it is whole-tree rather than diff-scoped (a
+  #    citation breaks when the file it names moves — a change on the *other*
   #    side of the reference — so diffing would miss the case it exists to
   #    catch). Whole-tree + required + no override means a PR renaming a source
   #    file can be blocked by a citation in a doc it never touched. It reported
   #    only until 2026-08-21, following the rollout every other gate here used
   #    (secret-scan, clean-checkout-typecheck, dependency-audit,
-  #    chapter-directory-seed), and is now listed in DOCS_CHECKS. Keeping it a
-  #    separate job still matters: see reason 2.
+  #    chapter-directory-seed). Keeping it a separate job still matters: see
+  #    reason 2.
   # 2. A failure should say *citations*, not *docs sync*. Two different fixes.
   doc-paths:
     runs-on: ubuntu-latest

@@ -705,7 +705,7 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - The three caches share the repo's ~10 GB Actions cache (LRU). `.turbo` is tiny and Playwright ~0.3 GB; the Docker `mode=max` cache (~1–3 GB) is the only real consumer — downgrade to `mode=min` if eviction is observed.
 - First run after merge is a cold miss everywhere (expected, one-time). Turbo's own input hashing remains the correctness arbiter, so a stale `.turbo` never replays wrong output — a miss simply rebuilds as before. No correctness risk.
 - `web-tests`, `web-visual-regression`, and `pglite-migrations` now **skip on out-of-scope PRs**; because they are not required checks, a skip cannot block merge, and every push to `main`/`production` still runs them in full. Filters are deliberately broad (`packages/**`, lockfile, `turbo.json`) to avoid missing a transitive dependency. *(Superseded for `web-tests` by the 2026-08-19 amendment: it is now required, and path-gating turned out never to have been in tension with that.)*
-- The required checks (the eight CI jobs + `docs-spec-sync`, and `branch-policy` on production) are never path-gated and keep reporting on every PR; branch protection is untouched. *(ADR-14's `claude-review-gate` was removed in the 2026-06-04 amendment. The "never path-gated" half no longer holds — see the 2026-08-19 amendment.)*
+- The required checks are never path-gated and keep reporting on every PR; branch protection is untouched. *(ADR-14's `claude-review-gate` was removed in the 2026-06-04 amendment. The "never path-gated" half no longer holds — see the 2026-08-19 amendment.)*
 - Fork PRs get read-only tokens, so the Docker `cache-to` export is a no-op there (the build still passes).
 
 **Trigger to revisit:**

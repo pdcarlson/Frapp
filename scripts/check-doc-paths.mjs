@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-// Citation lint for docs/ and spec/. Runs alongside check-docs-impact.mjs and
-// check-docs-structure.mjs, and covers the blind spot in the `Links` gate:
+// Citation lint for docs/ and spec/. Runs alongside check-docs-structure.mjs,
+// and covers the blind spot in the `Links` gate:
 // lychee validates markdown links and heading anchors, but the docs here
 // overwhelmingly cite files as inline code — `apps/api/src/main.ts` — which
 // lychee never sees. Those citations rot silently when a file moves.

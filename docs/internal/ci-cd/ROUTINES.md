@@ -390,7 +390,7 @@ the PR link (or "no PR" and why) and the "Needs you" list.
   week number) and opens **at most one** docs-only PR, touching only the corpus its skill defines
   — `docs/`, `spec/`, `.claude/skills/**/*.md`, any `AGENTS.md`, root `CONTRIBUTING.md` /
   `README.md`. Confirm it opens **no** `area:docs` issue, leaves product code untouched, and that
-  the PR passes `doc-paths`, `docs-spec-sync` and `link-check`. **A clean slice means no PR at
+  the PR passes `doc-paths` and `link-check`. **A clean slice means no PR at
   all** — a report saying so is a pass, not a failure. Run it again the same week → the **same**
   slice (the rotation is derived from `date -u +%V` and the corpus, not random).
 - **Hygiene Scan:** run it once manually. Confirm the run report opens with the **grounding**
@@ -427,20 +427,13 @@ For routines 1–3 this is their **only** permitted repo write. Routine 4 also h
 routine 5 its fix PR, per rule 3 of the [ownership boundary](#shared-ownership-boundary-all-routines);
 both fold self-maintenance into that PR rather than opening a second one.
 
-> **A `.claude/`-only self-maintenance PR cannot merge — always pair it with this file.**
-> `docs-spec-sync` is a **required** check under `enforce_admins: true`, and
-> `scripts/check-docs-impact.mjs` classifies a path as documentation only when it starts with
-> `docs/` or `spec/` (`const DOCS_OR_SPEC = ["docs/", "spec/"]`). `.claude/` matches neither, so a PR
-> touching only a `SKILL.md` reads to the gate as "code changed, no docs updated" and fails it.
-> Dependabot is the only *authorship*-keyed exemption; the `no-doc-change-needed` label applies here
-> too, though for self-maintenance the pairing below is usually the better answer. Every
-> `.claude/skills/` change merged to date has carried a
-> `docs/` file alongside it (#1075 is the pattern: skill + `GITHUB_PM.md` + `AGENTS.md`). Since this
-> file is both inside the allowed path set and under `docs/`, updating it alongside the skill
-> satisfies the gate — and usually should anyway, because a rule worth changing in a skill is
-> normally a rule this contract or [`GITHUB_PM.md`](GITHUB_PM.md) also states. Verified 2026-08-19
-> against `.github/workflows/docs.yml` and `.github/workflows/ci.yml`; #810 tracks teaching the gate
-> about `.claude/` so this workaround stops being necessary.
+> **A `.claude/`-only self-maintenance PR merges on its own.** It used to be unable to:
+> `docs-spec-sync` was a required check that classified a path as documentation only when it started
+> with `docs/` or `spec/`, so a PR touching only a `SKILL.md` read to it as "code changed, no docs
+> updated". Every `.claude/skills/` change merged before #1597 carried a `docs/` file alongside it
+> for that reason alone. The gate is gone, and so is the pairing requirement — update this file
+> alongside a skill when the rule genuinely lives in both, not to get a check green. (#810, which
+> tracked teaching that gate about `.claude/`, is moot.)
 
 ## Maintenance
 

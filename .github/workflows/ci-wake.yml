@@ -22,7 +22,7 @@ name: CI wake
 
 on:
   workflow_run:
-    workflows: [CI, "Docs spec sync", Links]
+    workflows: [CI, "Docs checks", Links]
     types: [completed]
 
 permissions:

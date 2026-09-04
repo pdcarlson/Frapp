@@ -29,7 +29,7 @@ The design system (tokens, components, iconography, microcopy, accent engine) li
 
 What to update in a PR, and where docs vs. spec belong: **[`docs/internal/DOCUMENTATION_CONVENTIONS.md`](internal/DOCUMENTATION_CONVENTIONS.md)**.
 
-The docs/spec CI gate (a change outside `docs/` or `spec/` must also touch one of them) is described in [`internal/ci-cd/DOCS_CI.md`](internal/ci-cd/DOCS_CI.md).
+The docs CI checks — what they do and do not enforce — are described in [`internal/ci-cd/DOCS_CI.md`](internal/ci-cd/DOCS_CI.md). None of them require a PR to touch a doc.
 
 The other quality gates — dependency-cruiser boundaries, oasdiff breaking-change detection, the
 `nestjs-typed` response-schema rule, jscpd duplication, and coverage — are in
