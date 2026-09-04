@@ -1405,6 +1405,42 @@ This amendment also supersedes the future-tense repair language left in ADR-19's
 amendment and in the *Consequences* and closing paragraphs above ("#1579's fix is to invert…",
 "Repairing them is CI work, tracked separately in #1579"): that work has landed. #1578 has not.
 
+**Amendment (2026-09-04) — the remaining two breakages are repaired (#1578).** The replacement this
+ADR called *designed, not built* is built. All four *Consequences* bullets are now historical.
+
+- **Staging deploys exist again.** `.github/workflows/deploy-vercel-staging.yml` runs after CI
+  succeeds on `main` and deploys web and then landing: `vercel pull --environment=preview`,
+  `vercel build`, `vercel deploy --prebuilt`, then `ensure-vercel-staging-alias.mjs` to point
+  `app.staging.frapp.live` and `staging.frapp.live` at the new deployments. It is gated on
+  `workflow_run` rather than `push` for the reason `deploy-api.yml`'s header gives — a push-triggered
+  deploy ships a commit whose CI has not finished — which is also why #1578's acceptance criterion
+  naming `verify-deployments.yml` was met **in this workflow instead**: it holds the deployment id it
+  created, so it verifies by id rather than searching for a deployment by SHA, and
+  `verify-deployments.yml` stays the push-triggered Render observer.
+- **`gitSource` is gone.** `scripts/ci/deploy-vercel-production.mjs` was **replaced** by
+  `scripts/ci/deploy-vercel.mjs`, parameterised by target rather than production-only: after this ADR
+  both channels are CI's job, and carrying the difference in one argument keeps them from drifting
+  into two implementations. It never measured the old `gitSource` call — the call was removed rather
+  than exercised, since ADR-21 already establishes it cannot work without the integration.
+
+Two consequences this ADR's own requirements produce, recorded here because this is where they are decided rather than merely implemented:
+
+- **Every CI-created deployment is stamped `--meta githubCommitSha` (and `githubCommitRef`).** A
+  `--prebuilt` upload carries no git metadata at all, and three things read it back: ADR-19's
+  named-commit guarantee, `ensure-vercel-staging-alias.mjs`'s lookup, and
+  `verify-vercel-deploy.mjs`'s per-branch supersession test. Without the flag the alias step would
+  silently find nothing and skip.
+- **`git.deploymentEnabled` and `ignoreCommand: "exit 1"` remain in both `vercel.json` files and are
+  now inert**, exactly as this ADR requires. The CLI path does not consult either: `ignoreCommand` is
+  the Git integration's Ignored Build Step, and `--prebuilt` has already built. They stay because
+  they are the versioned form of dashboard-only settings. #1376's premise is unchanged by this.
+
+**Not done, and not doable by CI:** the Definition of Done's final clause — one production deploy
+dispatched successfully through the new path — needs the `production` environment's required-reviewer
+approval. The CLI deploy has unit coverage but has **never run against the live projects**, so the
+first `full` dispatch is its first real exercise. `deploy-production.yml`'s `dry_run_only` stops
+before the Vercel step and so does not cover it either.
+
 **Trigger to revisit:** CI-driven deploys prove unworkable and re-linking Git is considered. That
 supersedes this ADR rather than amending it — and re-linking restores both Vercel settings, the
 Production Branch and auto-deploy from push, along with the integration.

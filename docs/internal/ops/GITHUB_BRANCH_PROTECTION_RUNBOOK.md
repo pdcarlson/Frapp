@@ -288,8 +288,9 @@ commit.
 
 > **Dated note, 2026-09-02: the Vercel Git integration was retired (a deliberate owner decision),
 > so the paragraph above describes a model that no longer holds.** Both projects report
-> `link: null`; with no integration left, `git.deploymentEnabled` limits nothing and the API path
-> above is **presumed broken, not observed failing** — but **keep the `git` block and the
+> `link: null`; with no integration left, `git.deploymentEnabled` limits nothing and the `gitSource`
+> API path above was replaced by CI-driven `vercel build` + `vercel deploy --prebuilt` in #1578
+> (2026-09-04) — but **keep the `git` block and the
 > `ignoreCommand` pin in both `vercel.json` files**, they are the versioned form of settings that
 > are otherwise dashboard-only and would fall back to unversioned dashboard state if Git is
 > re-linked. The canonical record of the unlink, its per-project dates and every live breakage is
