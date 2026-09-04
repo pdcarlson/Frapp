@@ -83,21 +83,15 @@ makes it so. Otherwise mark **`stale`** and leave it open. When in doubt, do not
 the union of the existing labels plus your change, never just the addition.
 
 **Reading a body you intend to rewrite.** **No MCP read path returns a body faithfully — not
-`issue_read`, not `list_issues`, and no longer `search_issues`.** All three corrupt a body three
-ways on read: HTML comments deleted (a legacy `fp=` marker), unrecognised tags deleted (including
-JSX inside ` ```tsx ` fences), and `'`/`"`/`&`/`>` entity-escaped. `search_issues` was the lossless
-exception until it regressed on all three vectors, confirmed 2026-08-20. Refreshing or splitting
-from that text silently destroys content — a dropped code snippet is **unrecoverable**, unlike a
-marker you could rebuild from `fp=<area>/<slug>`.
+`issue_read`, not `list_issues`, and no longer `search_issues`.** Refreshing or splitting from that
+text silently destroys content — a dropped code snippet is **unrecoverable**, unlike a marker you
+could rebuild from `fp=<area>/<slug>`. The corruption vectors, the fidelity table, the probe, and the
+narrow escape hatch (a direct REST read of the raw `body` — a verification read, not a tracker path):
+[`GITHUB_PM.md` → Reading a body you intend to rewrite (MCP read fidelity)](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 
 **So: prefer a comment over a rewrite.** Anything additive — a note, a finding, an Agent brief —
 goes in `add_issue_comment`, which is lossless. Rewrite only when you author the replacement body
-yourself, or under the narrow escape hatch — confirm the body has no HTML comment and no tags via a
-**direct REST read of the raw `body`** (`GET /repos/pdcarlson/Frapp/issues/<n>` on the direct route,
-node's built-in `fetch` with `GITHUB_PAT`), then un-escape entities. `WebFetch` cannot satisfy it: it
-reads rendered HTML, so it can never prove a comment's *absence*. That read is a verification read of
-an issue's raw text, not a tracker path — the procedure and its limits are in
-[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+yourself, or under that escape hatch.
 
 Whenever you *do* write a body, **confirm the `fp=` marker is present in what you sent** — it is a
 visible line now, so it reads back, and a missing one makes the next run re-file the issue as

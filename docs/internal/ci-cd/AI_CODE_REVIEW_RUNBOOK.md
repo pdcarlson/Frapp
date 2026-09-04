@@ -99,8 +99,12 @@ knowledge of.
 **Prefer `/code-review` when it is available.** If the turn's prompt carries the token, run it instead
 — it ships per-model-tuned effort cells and, at `high`/`xhigh`/`max` with dynamic workflows enabled
 (including under the **Ultracode** session setting, which pins xhigh), a workflow-backed path with an
-independent verifier per distinct `file:line`. It does **not** write the gate marker, so follow it
-with `FRAPP_SKIP_REVIEW_GATE=1` on the push, or write the marker by hand.
+independent verifier per distinct `file:line`. It does **not** write the gate marker, so once you
+have acted on its findings, record the evidence by hand:
+`mkdir -p "$(git rev-parse --show-toplevel)/.cache/diff-review" && touch "$(git rev-parse --show-toplevel)/.cache/diff-review/$(git rev-parse HEAD)"`.
+Do **not** reach for `FRAPP_SKIP_REVIEW_GATE=1` instead: that leaves a push you *did* review
+indistinguishable from one that skipped review entirely, and it is for emergencies only. The hook's
+own deny message says exactly this.
 
 `/diff-review` reproduces the bundled workflow (scope → parallel finder subagents per angle → one
 independent verifier subagent per candidate → a single `ReportFindings` call) and additionally encodes
@@ -138,8 +142,9 @@ acted on findings, and the hook allows the push only when that marker exists for
   same HEAD (counter under the transcript directory, `${TMPDIR:-/tmp}` fallback), the push is allowed
   through with a loud `WARNING … This diff is UNREVIEWED` on stderr. Four, not two, so a reflexive
   immediate retry — the old passing behaviour — no longer gets through.
-- **Deliberate bypass:** `FRAPP_SKIP_REVIEW_GATE=1`. This is also the path after a human runs
-  `/code-review`, which does not write the marker.
+- **Deliberate bypass:** `FRAPP_SKIP_REVIEW_GATE=1` — **emergencies only.** It is *not* the path
+  after `/code-review`: that review really happened, so write the marker by hand (the command is in
+  § The `/code-review` invocation rule above) rather than labelling a reviewed push unreviewed.
 - The `git push` match is a heuristic over a free-form shell string, but a deliberately narrow one:
   `git` must be in **command position** (start of string, or after `;` `&&` `||` `|` or a newline —
   newlines are normalised to `;` before matching), and only git's own **global options**

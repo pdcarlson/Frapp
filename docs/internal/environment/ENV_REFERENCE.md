@@ -370,7 +370,7 @@ the tables above it. `EXPO_PUBLIC_WEB_SECURE_STORE` was absent from this file en
 [`demo-data.md`](../../guides/demo-data.md); it is the reason the count moved by four rather than the three
 #1167 estimated. Worth stating plainly, because the set's whole
 value is being exhaustive: **nothing checks this list.** `check:doc-tables` is a required-check-roster gate
-over `CONTRIBUTING.md`, `spec/environments/README.md` and `GITHUB_BRANCH_PROTECTION_RUNBOOK.md` — it never
+over `GITHUB_BRANCH_PROTECTION_RUNBOOK.md` — it never
 opens this file. Adding a prefixed variable without adding it here fails no CI job, which is how the previous
 three survived.
 
