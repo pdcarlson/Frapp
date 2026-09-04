@@ -130,9 +130,14 @@ The residual items in §5 are contract/robustness concerns, not data leaks.
 
 ## 4. RLS truth table
 
-**Every one of the 44 tables has `enable row level security`.** 42 of them carry **zero policies**,
+**Every base table has `enable row level security`.** All but a handful carry **zero policies**,
 which under Postgres means *default deny* — no `anon` or `authenticated` client can read or write
 them at all. The API reaches them with the **service-role key, which bypasses RLS**.
+
+Exact counts are deliberately not restated here — they move with every migration, and the numbers
+this paragraph used to give had drifted by eight tables. Measure them:
+`grep -rhoi 'enable row level security' supabase/migrations/*.sql | wc -l` and
+`grep -rhoc 'create policy' supabase/migrations/*.sql | paste -sd+ | bc`.
 
 That is deliberate, not an oversight, and the design is stated in
 `supabase/migrations/20260803150000_chat_message_actions_membership_rls.sql:14-17`:

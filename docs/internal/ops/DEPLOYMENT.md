@@ -872,7 +872,7 @@ All secrets are centrally managed in [Infisical](https://infisical.com) (free ti
 - **No environment suffixes** — `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment.
 - **No `.env.local` files needed** — local dev defaults to `npm run dev:stack` (Infisical CLI injects `dev` secrets). See [`docs/internal/environment/LOCAL_DEV.md`](../environment/LOCAL_DEV.md).
 
-### Sync Map (7 of 10 free-tier integrations; docs Vercel project retired)
+### Sync Map (6 of 10 free-tier integrations; docs Vercel project retired)
 
 | #   | Infisical env | Destination                               |
 | --- | ------------- | ----------------------------------------- |
@@ -882,7 +882,6 @@ All secrets are centrally managed in [Infisical](https://infisical.com) (free ti
 | 4   | production    | Vercel → frapp-landing (Production scope) |
 | 5   | staging       | Render → frapp-api-staging                |
 | 6   | production    | Render → frapp-api-prod                   |
-| 7   | per-env       | GitHub Actions (OIDC)                     |
 
 See `docs/internal/environment/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/internal/environment/ENV_REFERENCE.md` for the complete variable list.
 

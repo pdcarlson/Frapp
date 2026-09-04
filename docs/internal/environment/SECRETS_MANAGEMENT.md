@@ -34,8 +34,8 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 │    NEXT_PUBLIC_API_URL = ${API_URL}                               │
 │    ...                                                            │
 │                                                                   │
-│  3 environments: local, staging, production                       │
-│  7 syncs: Vercel ×4, Render ×2, GitHub Actions ×1                │
+│  3 environments: dev, staging, prod                               │
+│  6 syncs: Vercel ×4, Render ×2                                    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -45,7 +45,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | ------------ | ----- | ------------------------------ |
 | Identities   | 5     | 1 (admin)                      |
 | Projects     | 3     | 1 (Frapp)                      |
-| Environments | 3     | 3 (local, staging, production) |
+| Environments | 3     | 3 (dev, staging, prod)         |
 | Integrations | 10    | 6 secret syncs — see §5        |
 
 The integration count is derived from the sync inventory in §5, not tracked independently — this row
@@ -374,7 +374,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 ## Audit
 
 - Infisical dashboard → Audit Log for all secret access
-- Verify sync health periodically for all 7 integrations
+- Verify sync health periodically for all six syncs (§5 — GitHub Actions is not one of them)
 - Review no unexpected access patterns
 
 ## Provider API token sanity checks (operations)

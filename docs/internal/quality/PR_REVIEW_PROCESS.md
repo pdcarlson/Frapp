@@ -40,9 +40,12 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
      There is no CI Claude
      review or `claude-review-gate` check (removed 2026-06-04;
      see `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`).
-3. **Human review pass**
-   - At least one approval from a write-access reviewer.
-   - All review threads resolved.
+3. **Human review pass** — a convention, **not a merge gate**. Branch protection sets
+   `required_pull_request_reviews: null` and `required_conversation_resolution: false`
+   (`scripts/configure-branch-protection.mjs`), so GitHub blocks neither an unapproved merge nor one
+   with open threads. Seek an approval and resolve your threads because the work is better for it;
+   do not rely on the platform to stop you. The enforced pre-merge review is the local gate in
+   step 2.
 4. **Merge**
    - Feature work: squash merge into `main`.
    - Production: no PR. Dispatch **Deploy production** with the SHA you want live (#1340).
