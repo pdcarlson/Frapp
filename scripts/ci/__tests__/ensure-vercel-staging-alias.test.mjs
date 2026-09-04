@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { ensureVercelStagingAlias } from "../ensure-vercel-staging-alias.mjs";
+import { assignStagingAlias, ensureVercelStagingAlias } from "../ensure-vercel-staging-alias.mjs";
 
 const API_KEY = "key";
 const PROJECT_ID = "prj_x";
@@ -233,5 +233,85 @@ describe("ensureVercelStagingAlias", () => {
 
     assert.equal(result.status, "skipped");
     assert.match(result.message, /CANCELED/);
+  });
+});
+
+// ── The id path (#1578) ────────────────────────────────────────────────────
+//
+// The search path above answers "no deployment for this SHA" by exiting 0. That
+// was safe only while `verify-vercel-deploy.mjs` ran first in
+// `verify-deployments.yml` and failed that case — those jobs were removed in
+// #1579. A caller that CREATED the deployment passes its id instead, and none
+// of the search runs.
+describe("ensureVercelStagingAlias with a known deployment id", () => {
+  it("assigns the alias without ever listing deployments", async () => {
+    const seen = [];
+    const fetchImpl = async (url, options) => {
+      seen.push(url);
+      if (url.includes("/v6/deployments") || url.includes("projectId=")) {
+        assert.fail(`must not search by SHA when an id is known: ${url}`);
+      }
+      if (!options?.method) return okJson({ aliases: [] });
+      return okJson({});
+    };
+
+    const result = await ensureVercelStagingAlias({
+      apiKey: API_KEY,
+      stagingAlias: STAGING,
+      deploymentId: "dpl_known",
+      fetchImpl,
+    });
+
+    assert.equal(result.status, "success");
+    assert.match(result.message, /dpl_known/);
+    assert.ok(seen.every((url) => url.includes("dpl_known")));
+  });
+
+  it("is a no-op when the alias already points at that deployment", async () => {
+    const fetchImpl = async () => okJson({ aliases: [{ alias: STAGING }] });
+    const result = await ensureVercelStagingAlias({
+      apiKey: API_KEY,
+      stagingAlias: STAGING,
+      deploymentId: "dpl_known",
+      fetchImpl,
+    });
+    assert.equal(result.status, "success");
+    assert.match(result.message, /already points/);
+  });
+
+  // The whole point of the id path: there is no "nothing to alias, skipping"
+  // outcome, because the caller knows the deployment exists.
+  it("reports a failed assignment as a failure, never a skip", async () => {
+    let call = 0;
+    const fetchImpl = async () => {
+      call += 1;
+      if (call === 1) return okJson({ aliases: [] });
+      return { ok: false, status: 500, json: async () => ({}), text: async () => "" };
+    };
+    const result = await ensureVercelStagingAlias({
+      apiKey: API_KEY,
+      stagingAlias: STAGING,
+      deploymentId: "dpl_known",
+      fetchImpl,
+    });
+    assert.equal(result.status, "failure");
+  });
+});
+
+describe("assignStagingAlias", () => {
+  it("treats a 409 as success — the alias is already where we want it", async () => {
+    let call = 0;
+    const fetchImpl = async () => {
+      call += 1;
+      if (call === 1) return okJson({ aliases: [] });
+      return { ok: false, status: 409, json: async () => ({}), text: async () => "" };
+    };
+    const result = await assignStagingAlias({
+      apiKey: API_KEY,
+      deploymentId: "dpl_known",
+      stagingAlias: STAGING,
+      fetchImpl,
+    });
+    assert.equal(result.status, "success");
   });
 });
