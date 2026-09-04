@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // check-doc-tables.mjs is a general-purpose script under scripts/ (a peer of the
 // other check-*.mjs gates); its test lives here so the existing `test:ci-scripts`
 // glob (scripts/ci/__tests__/*.test.mjs) runs it — hence the ../../ reach up.
 import {
+  INDEX_DOCS,
   childrenOf,
   compareIndexDocs,
   comparePlacementMap,
@@ -376,8 +378,8 @@ test("a sibling prefix does not count as coverage", () => {
 // A third and fourth restatement of the same fact, and until #1619 neither was
 // checked. They differ from the placement map in one way that drives the whole
 // design: their paths are written RELATIVE to the doc, so normalizeHome rejects
-// every one of them. A check built on normalizeHome would read both files and
-// assert nothing while reporting green.
+// every one of them. A check built on normalizeHome would read all three files
+// and assert nothing while reporting green.
 
 const INDEX_DIRS = [
   { dir: "docs/guides", purpose: "guides", index: true },
@@ -387,24 +389,47 @@ const INDEX_DIRS = [
   { dir: "spec/ui", purpose: "ui", index: true },
 ];
 
+const internalIndex = (text) =>
+  compareIndexDocs({
+    file: "docs/internal/README.md",
+    text,
+    scopes: ["docs/internal"],
+    directories: INDEX_DIRS,
+  });
+
 test("resolveIndexHome resolves relative targets against the doc's own directory", () => {
   assert.equal(resolveIndexHome("ops/", "docs/internal"), "docs/internal/ops");
   assert.equal(resolveIndexHome("internal/ops/DEPLOYMENT.md", "docs"), "docs/internal/ops");
   assert.equal(resolveIndexHome("guides/README.md", "docs"), "docs/guides");
   assert.equal(resolveIndexHome("../spec/ui/", "docs"), "spec/ui");
-  // Already rooted at a tree: read as a repo path, so both spellings work.
+  // Rooted spellings — at a tree, or at the repo root with a leading slash.
   assert.equal(resolveIndexHome("docs/internal/ops/", "docs"), "docs/internal/ops");
+  assert.equal(resolveIndexHome("/docs/internal/ops/DEPLOYMENT.md", "docs"), "docs/internal/ops");
 });
 
-test("resolveIndexHome is why normalizeHome could not be reused", () => {
-  // The exact tokens the two index READMEs carry. normalizeHome returns null
-  // for every one of them — an existing test above pins that for
-  // `ci-cd/DOCS_CI.md`, and it is correct there. Reusing it here would have
-  // produced a gate that passes because it parsed nothing.
-  for (const token of ["ops/", "internal/ci-cd/DOCS_CI.md", "guides/README.md"]) {
-    assert.equal(normalizeHome(token), null, token);
+test("resolveIndexHome strips fragments, queries and angle-bracket destinations", () => {
+  // A fragment kept its own segment, so the gate emitted a phantom directory
+  // AND a spurious "missing row" for the real one — two wrong findings, not none.
+  assert.equal(resolveIndexHome("ops/#runbooks", "docs/internal"), "docs/internal/ops");
+  assert.equal(resolveIndexHome("ops/?v=2", "docs/internal"), "docs/internal/ops");
+  assert.equal(resolveIndexHome("<ops/>", "docs/internal"), "docs/internal/ops");
+});
+
+test("resolveIndexHome resolves what normalizeHome must reject", () => {
+  // The exact tokens the index READMEs carry. normalizeHome returns null for
+  // every one — correct for the placement map, where homes are repo-root
+  // relative — so reusing it here would have produced a gate that passes
+  // because it parsed nothing. Both halves are asserted by value, not by
+  // notEqual(null), so a regression to an unresolved or un-popped path fails.
+  const tokens = [
+    ["ops/", "docs/internal", "docs/internal/ops"],
+    ["internal/ci-cd/DOCS_CI.md", "docs", "docs/internal/ci-cd"],
+    ["guides/README.md", "docs", "docs/guides"],
+  ];
+  for (const [token, fromDir, expected] of tokens) {
+    assert.equal(normalizeHome(token), null, `normalizeHome(${token})`);
+    assert.equal(resolveIndexHome(token, fromDir), expected, `resolveIndexHome(${token})`);
   }
-  assert.notEqual(resolveIndexHome("ops/", "docs/internal"), null);
 });
 
 test("resolveIndexHome ignores anything that is not a docs/spec directory", () => {
@@ -415,7 +440,16 @@ test("resolveIndexHome ignores anything that is not a docs/spec directory", () =
   assert.equal(resolveIndexHome("#anchor", "docs"), null);
   // A tree root is not a directory entry.
   assert.equal(resolveIndexHome("../spec/README.md", "docs"), null);
-  // Climbing above the repo root is a malformed link, not a claim.
+});
+
+test("a link that climbs out of the repo and back in does not resolve", () => {
+  // The case that matters: a token that escapes the repo root and re-enters a
+  // tree by name. If it resolved, a broken link would count as a satisfied row
+  // and green the missing-row half of the check. `path.posix.normalize` keeps
+  // the leading `..`, so the `docs/`/`spec/` prefix rule rejects it — this
+  // pins that behaviour, not a particular implementation of it.
+  assert.equal(resolveIndexHome("../../../docs/guides", "docs"), null);
+  assert.equal(resolveIndexHome("../../spec/ui", "docs"), null);
   assert.equal(resolveIndexHome("../../../etc", "docs"), null);
 });
 
@@ -425,7 +459,7 @@ test("childrenOf returns immediate children only, and no sibling prefixes", () =
     "docs/internal/ops",
     "docs/internal/ci-cd",
   ]);
-  // `docs/internal` is not its own child, and `docs/guides` is not under it.
+  // `docs/internal` is not its own child.
   assert.equal(childrenOf("docs/internal", INDEX_DIRS).includes("docs/internal"), false);
   assert.deepEqual(
     childrenOf("spec/ui", [
@@ -434,20 +468,45 @@ test("childrenOf returns immediate children only, and no sibling prefixes", () =
     ]),
     [],
   );
+  // A trailing slash matches nothing — main() rejects such a scope rather than
+  // letting it empty `expected` and silently disarm the check.
+  assert.deepEqual(childrenOf("docs/", INDEX_DIRS), []);
 });
 
-test("parseIndexHomes reads link targets in table rows, not bare prose tokens", () => {
-  // The Hooks row's "tests for `packages/hooks`" is a mention, not a claim —
-  // it resolved to `docs/packages/hooks` and failed this gate on its first run.
+test("parseIndexHomes reads both the backticked label and the link target", () => {
+  // Reading only the target was wrong twice: the label is the half a reader
+  // sees, and rows with no parenthesised target parsed as nothing.
+  assert.deepEqual([...parseIndexHomes("| x | [`ops/`](ops/) |", "docs/internal")], [
+    "docs/internal/ops",
+  ]);
+  // Disagreement between the two surfaces as an extra directory, not silence.
+  assert.deepEqual(
+    [...parseIndexHomes("| x | [`ops/`](runbooks/) |", "docs/internal")].sort(),
+    ["docs/internal/ops", "docs/internal/runbooks"],
+  );
+});
+
+test("a row whose target markdown cannot be parsed is still read via its label", () => {
+  // Titled, reference-style and unlinked rows all produced "no row in this
+  // index" about a row sitting in the table.
+  for (const cell of ["[`ops/`](ops/ \"Ops runbooks\")", "[`ops/`][opsref]", "`ops/`"]) {
+    assert.deepEqual(
+      [...parseIndexHomes(`| Ops | ${cell} | notes |`, "docs/internal")],
+      ["docs/internal/ops"],
+      cell,
+    );
+  }
+});
+
+test("parseIndexHomes reads only table rows", () => {
   const text = [
     "Prose linking [`../spec/ui/`](../spec/ui/README.md) outside a table.",
     "",
-    "| Area | Path | Use for |",
-    "| ---- | ---- | ------- |",
-    "| Guides | [`guides/`](guides/README.md) | tests for `packages/hooks` |",
+    "| Area | Path |",
+    "| ---- | ---- |",
+    "| Ops | [`ops/`](ops/) |",
   ].join("\n");
-  const homes = parseIndexHomes(text, "docs");
-  assert.deepEqual([...homes], ["docs/guides"]);
+  assert.deepEqual([...parseIndexHomes(text, "docs/internal")], ["docs/internal/ops"]);
 });
 
 test("an index whose rows are exactly its scopes' declared children passes", () => {
@@ -474,21 +533,15 @@ test("an index whose rows are exactly its scopes' declared children passes", () 
 });
 
 test("a declared child with no row in the index is drift", () => {
-  // What the stage-3 flatten (#1598) would otherwise have done silently in
-  // reverse: change the directory set, leave the table describing the old one.
-  const text = "| Area | Folder |\n| ---- | ------ |\n| Ops | [`ops/`](ops/) |";
-  const f = compareIndexDocs({
-    file: "docs/internal/README.md",
-    text,
-    scopes: ["docs/internal"],
-    directories: INDEX_DIRS,
-  });
+  // What the stage-3 flatten (#1598) would otherwise have done in reverse:
+  // change the directory set, leave the table describing the old one.
+  const f = internalIndex("| Area | Folder |\n| ---- | ------ |\n| Ops | [`ops/`](ops/) |");
   assert.equal(f.length, 1);
   assert.equal(f[0].id, "docs/internal/ci-cd");
   assert.match(f[0].detail, /no row in this index/);
 });
 
-test("a row naming a directory that is not a declared child is drift the other way", () => {
+test("a row naming an undeclared CHILD of a scope is drift the other way", () => {
   const text = [
     "| Area | Folder |",
     "| ---- | ------ |",
@@ -496,35 +549,67 @@ test("a row naming a directory that is not a declared child is drift the other w
     "| CI | [`ci-cd/`](ci-cd/) |",
     "| Gone | [`retired/`](retired/) |",
   ].join("\n");
-  const f = compareIndexDocs({
-    file: "docs/internal/README.md",
-    text,
-    scopes: ["docs/internal"],
-    directories: INDEX_DIRS,
-  });
+  const f = internalIndex(text);
   assert.equal(f.length, 1);
   assert.equal(f[0].id, "docs/internal/retired");
-  assert.match(f[0].detail, /not a declared child/);
+  assert.match(f[0].detail, /not declared in DIRECTORIES/);
 });
 
-test("a row pointing outside the index's scopes is drift, even when declared", () => {
-  // `spec/ui` is a real declared directory, but it is not a child of
-  // docs/internal, so docs/internal/README.md has no business indexing it.
+test("a label and target naming different children both count, so drift shows", () => {
+  // The row displays `ops/` but links to `runbooks/`. Reading only the target
+  // let the table tell every reader the wrong location while the gate passed.
   const text = [
     "| Area | Folder |",
     "| ---- | ------ |",
-    "| Ops | [`ops/`](ops/) |",
+    "| Ops | [`ops/`](runbooks/) |",
     "| CI | [`ci-cd/`](ci-cd/) |",
-    "| UI | [`spec/ui/`](../../spec/ui/README.md) |",
   ].join("\n");
-  const f = compareIndexDocs({
-    file: "docs/internal/README.md",
-    text,
-    scopes: ["docs/internal"],
-    directories: INDEX_DIRS,
-  });
   assert.deepEqual(
-    f.map((x) => x.id),
-    ["spec/ui"],
+    internalIndex(text).map((x) => x.id),
+    ["docs/internal/runbooks"],
   );
+});
+
+test("a table path that is not a child of any scope is not judged at all", () => {
+  // An index legitimately links out of its own scope. The first design rejected
+  // every such path with "fix the row, or declare the directory" naming a
+  // directory that WAS declared — no remedy applied, and the only way to green
+  // was deleting a correct row. Each cell below is an ordinary edit.
+  const rows = [
+    ["a sibling tree", "| UI | [`spec/ui/`](../../spec/ui/README.md) |"],
+    ["a file in the scope's own root", "| Conventions | [`CONV.md`](CONV.md) |"],
+    ["an image", "| Brand | ![mark](../../spec/ui/assets/mark.svg) |"],
+    ["a deeper path", "| Hooks | tests for `../../packages/hooks` |"],
+  ];
+  for (const [label, row] of rows) {
+    const text = [
+      "| Area | Folder |",
+      "| ---- | ------ |",
+      "| Ops | [`ops/`](ops/) |",
+      "| CI | [`ci-cd/`](ci-cd/) |",
+      row,
+    ].join("\n");
+    assert.deepEqual(internalIndex(text), [], label);
+  }
+});
+
+test("every INDEX_DOCS entry holds against the real repo, and asserts something", () => {
+  // The only test that exercises the real config against the real files, which
+  // is what main() does. Without it a wiring break — a dropped findings.push, a
+  // stale INDEX_DOCS path, a scope whose children a rename collapsed — leaves
+  // every other test green while the gate checks nothing and still prints a
+  // count. Reading the files here is the point, not an integration shortcut.
+  for (const { file, scopes } of INDEX_DOCS) {
+    const text = readFileSync(new URL(`../../../${file}`, import.meta.url), "utf8");
+    assert.deepEqual(compareIndexDocs({ file, text, scopes }), [], file);
+    for (const scope of scopes) {
+      assert.ok(
+        childrenOf(scope).length > 0,
+        `${file}: scope ${scope} has no declared children, so the check asserts nothing`,
+      );
+    }
+    // Non-vacuity: the entry must actually claim directories, not parse to nothing.
+    const fromDir = file.slice(0, file.lastIndexOf("/"));
+    assert.ok(parseIndexHomes(text, fromDir).size > 0, `${file}: parsed no homes`);
+  }
 });

@@ -150,29 +150,43 @@ lists. `CONTRIBUTING.md` and `spec/environments/README.md` now hold pointers ins
 It states *intended* required checks, never live branch protection — read live state from the API,
 per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
-#### The directory structure, three times over
+#### The directory structure, four times over
 
-The same script also polices the directory structure, which the corpus restates in three places
+The same script also polices the directory structure, which the corpus restates in four places
 against one manifest — `DIRECTORIES` in
 [`docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs).
 
-| Restatement | Constant | Rule |
-| ----------- | -------- | ---- |
-| [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) § Where things go | `PLACEMENT_DOC` | Exact both directions against all of `DIRECTORIES` |
-| [`docs/README.md`](../../README.md) § Folders + § Internal subfolders | `INDEX_DOCS` | Exact both directions against the declared children of `docs` and `docs/internal` |
-| [`docs/internal/README.md`](../README.md) | `INDEX_DOCS` | Exact both directions against the declared children of `docs/internal` |
+| Restatement | Constant | Checked against |
+| ----------- | -------- | --------------- |
+| [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) § Where things go | `PLACEMENT_DOC` | All of `DIRECTORIES` |
+| [`docs/README.md`](../../README.md) § Folders + § Internal subfolders | `INDEX_DOCS` | Declared children of `docs` and `docs/internal` |
+| [`docs/internal/README.md`](../README.md) | `INDEX_DOCS` | Declared children of `docs/internal` |
+| [`spec/README.md`](../../../spec/README.md) § Core + § UI | `INDEX_DOCS` | Declared children of `spec` |
+
+Every row is exact in **both** directions: a declared directory with no row fails, and a row naming
+an undeclared child fails.
 
 - **Exact, never prefix coverage.** A `spec/ui/` row must not speak for `spec/ui/mobile`. Coverage
   matching was the first design and it disarmed the check: five declared directories had no row and
   the gate stayed green.
 - **The index READMEs are scoped, not weaker.** Each of their tables is exactly one directory's
   *immediate children*, so the same both-directions rule applies once the comparison is made per
-  scope — no coverage is left unchecked.
+  scope — no coverage is left unchecked. A scope with no declared children is a hard error (exit 2),
+  because an empty expected set would silently assert nothing.
+- **Only paths that are children of a scope are judged.** An index legitimately links to a sibling
+  tree or to a file in its own root; those are not claims about the child set, so they are ignored
+  rather than reported as undeclared.
 - **Their paths are relative to the doc**, so they go through `resolveIndexHome`, not
   `normalizeHome`. `normalizeHome` rejects any token not starting with `docs/` or `spec/`, which is
-  right for the placement map and would silently match *nothing* in either index (#1619).
-- **Link targets only, not every backticked token.** `docs/README.md`'s Hooks row says "tests for
-  `packages/hooks`" — a mention, not a claim about where docs live.
+  right for the placement map and would silently match *nothing* in any index (#1619).
+- **Both the backticked label and the link target are read.** The label is the half a reader sees,
+  so a row displaying `ops/` while linking to `runbooks/` is drift; and rows carrying no
+  parenthesised target (a titled link, a reference link, a plain unlinked path) would otherwise
+  parse as nothing and be reported as *missing*.
+
+`spec/ui/README.md` and `spec/behavior/README.md` are **not** covered — `spec/ui/design-system/reference`
+is a *grandchild* of `spec/ui`, so they need a different rule (#1665). `tableBlocks` also has no table
+identity and reads fenced code blocks as live rows (#1666).
 
 This is what makes a rename or a flatten safe: `check-doc-paths` and lychee catch a broken *link*,
 but only this catches a table that still describes the *old directory set*.

@@ -4,6 +4,11 @@ Developer guides and operator runbooks. Product and architecture truth lives in 
 
 ## Folders
 
+**Both tables below are machine-checked** against `DIRECTORIES` in
+[`scripts/ci/lib/docs-structure.mjs`](../scripts/ci/lib/docs-structure.mjs) by `npm run check:doc-tables`:
+§ Folders must name every declared child of `docs/`, and § Internal subfolders every declared child
+of `docs/internal/`. Add or retire a directory in the manifest and here in the same commit.
+
 | Area | Path | Use for |
 | ---- | ---- | ------- |
 | **Guides** | [`guides/`](guides/README.md) | Contributor docs: getting started, testing, API/database overview, env config, Docker, deployment |

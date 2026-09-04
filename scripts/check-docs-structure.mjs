@@ -88,7 +88,7 @@ export function classifyPath(p, opts = {}) {
   const known = directories.some((d) => d.dir === dir);
   if (!known) {
     violations.push(
-      `${p} — '${dir}/' is not a declared documentation home; add it to DIRECTORIES in scripts/ci/lib/docs-structure.mjs and to the placement map, or move the file (hard rule 1)`,
+      `${p} — '${dir}/' is not a declared documentation home; add it to DIRECTORIES in scripts/ci/lib/docs-structure.mjs, to the placement map, and to the index README of its parent (see INDEX_DOCS in scripts/check-doc-tables.mjs), or move the file (hard rule 1)`,
     );
     // Naming is still worth reporting, so fall through rather than returning.
   }
@@ -140,7 +140,7 @@ export function checkDirectories(trackedPaths, directories = DIRECTORIES) {
     if (!holdsSomething(d.dir)) {
       missing.push(
         `${d.dir}/ — declared in DIRECTORIES but holds no tracked file; ` +
-          `if this change removed its last file, drop the entry from scripts/ci/lib/docs-structure.mjs and the placement map`,
+          `if this change removed its last file, drop the entry from scripts/ci/lib/docs-structure.mjs, the placement map, and its parent's index README (see INDEX_DOCS in scripts/check-doc-tables.mjs)`,
       );
       continue;
     }

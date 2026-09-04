@@ -369,9 +369,10 @@ Six names were missing from this enumeration until #1167 — the five Sentry one
 the tables above it. `EXPO_PUBLIC_WEB_SECURE_STORE` was absent from this file entirely, documented only in
 [`demo-data.md`](../../guides/demo-data.md); it is the reason the count moved by four rather than the three
 #1167 estimated. Worth stating plainly, because the set's whole
-value is being exhaustive: **nothing checks this list.** `check:doc-tables` is a required-check-roster gate
-over `GITHUB_BRANCH_PROTECTION_RUNBOOK.md` — it never
-opens this file. Adding a prefixed variable without adding it here fails no CI job, which is how the previous
+value is being exhaustive: **nothing checks this list.** `check:doc-tables` compares hand-copied tables
+against their in-repo source — required-check rosters in `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, and the
+directory structure in the placement map and the three index READMEs — but it has no source of truth for
+env vars, so it never opens this file. Adding a prefixed variable without adding it here fails no CI job, which is how the previous
 three survived.
 
 `SUPABASE_AUTH_BYPASS` is the one **unprefixed** entry in the `apps/web` table: it is read in

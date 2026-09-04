@@ -6,6 +6,10 @@ Operations, infrastructure, and agent/CI reference. Grouped by area.
   placement map for where docs/spec changes go (read before adding any doc).
 - **Admin:** [`ADMIN_DASHBOARD.md`](ADMIN_DASHBOARD.md)
 
+**This table is machine-checked** against `DIRECTORIES` in
+[`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs) by
+`npm run check:doc-tables` — it must name every declared child of `docs/internal/`, and nothing else.
+
 | Area | Folder | Contents |
 | ---- | ------ | -------- |
 | Ops / runbooks | [`ops/`](ops/) | DB promotion/rollback, incident response, branch protection, alert routing, deploy |
