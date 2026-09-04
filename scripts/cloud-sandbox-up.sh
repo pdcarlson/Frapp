@@ -9,6 +9,8 @@
 #      (+ Stripe env vars for the API)
 #   5. repair the local Postgres default ACLs (the image ships them without DML grants)
 #   6. load the chapter directory seed (non-fatal)
+#   7. verify node_modules is usable — LAST, so a broken npm never costs the database
+#      (see the comment above the call for why this is not the first step)
 #
 # Steps 4 and 5 are in that order deliberately, and this list had them backwards until
 # #1156 — see the comment above the ACL repair for why the env write has to come first.
@@ -236,5 +238,41 @@ if ! frapp_load_chapter_directory "$ROOT" cs_supabase; then
   cs_log "      The stack is otherwise fine. Re-run: node scripts/load-chapter-directory.mjs"
 fi
 
+# Toolchain check — LAST, immediately before the success sentinel, and deliberately so.
+#
+# cloud-sandbox-setup.sh installs node deps non-fatally by design, and its warning lands in the
+# web UI's environment setup log where no agent session can read it. This script never
+# re-checked, so `.cloud-sandbox-up.done` asserted nothing whatsoever about dependencies and a
+# session could reach a green sentinel with an EMPTY node_modules. Every turbo-run gate then
+# died with `turbo: not found` — an error naming neither dependencies nor either script, while
+# the plain-node gates kept passing, which made the breakage look selective (#1631). Because
+# setup's filesystem is cached ~7 days, one bad install was re-served for three consecutive
+# days before this landed.
+#
+# WHY LAST, when the obvious place is first. It is purely local, so failing early would save
+# ~90s of Docker work — and that is the wrong trade. npm and Docker are independent failure
+# domains, and running first makes the DATABASE conditional on npm: any reason `node_modules`
+# is unusable would also cost Postgres, the migrations, both .env.local files and the ACL
+# repair, none of which npm has anything to do with. The observed fault (#1631, three
+# consecutive days) was a setup-time install failure with the registry perfectly reachable, so
+# it is not even an exotic case. Running last, everything above has already succeeded and
+# stays up: the session gets a working Postgres AND an honest sentinel naming the one thing
+# that is broken. The check costs ~2.5s (`npm ls --depth=0`), ~3% of bringup, off the
+# interactive path.
+#
+# Only the fatal signal reaches here — cs_verify_node_deps warns and returns 0 for a merely
+# incomplete tree, so this message describes the one condition that produces it.
+cs_log "Verifying the node toolchain..."
+cs_verify_node_deps "$ROOT" \
+  || fail "node_modules/.bin/turbo does not run (dependencies) — $(cs_failure_hint dependencies)"
+
+# The soft signal rides in the .done BODY, not only in the log. Callers are told to wait for
+# this sentinel, not to read /tmp/cloud-sandbox-up.log — so a warning that exists only in the
+# log is a warning the session never sees, which is precisely the failure #1631 is about. It
+# would be an odd fix that reproduced its own bug one file over.
 printf '%s\n' "$(date -u +%FT%TZ)" >"$DONE_SENTINEL"
+if [ "${CS_NODE_DEPS_WHY:-}" = "incomplete" ]; then
+  printf 'WARN: npm ls --depth=0 reports a missing declared dependency; run `npm ci` if a workspace hits "Cannot find module".\n' \
+    >>"$DONE_SENTINEL"
+fi
 cs_log "Cloud sandbox ready. Boot the API with: npm run start:dev -w apps/api"
