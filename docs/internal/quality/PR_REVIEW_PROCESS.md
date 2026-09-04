@@ -16,7 +16,8 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
      - `scripts/ci/lib/required-checks.mjs` (the rosters; the applying script is
        `scripts/configure-branch-protection.mjs`)
      - `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Required Status Checks — the one
-       doc that restates the roster, and the only one `check:doc-tables` asserts
+       doc that restates the roster, and the only roster copy `check:doc-tables` asserts (that
+       gate also asserts the directory structure against `DIRECTORIES`, which is a separate fact)
      - `docs/internal/ci-cd/DOCS_CI.md`, which describes the docs-gate posture but is not asserted
    - Do not add a fourth place. A roster copy no gate watches is the one that drifts.
 4. **No required workflow-level `paths` filters**
