@@ -16,7 +16,7 @@ because a gate that cannot tell truth from filler gets filler.
 | Structure | [`check-docs-structure.mjs`](../../../scripts/check-docs-structure.mjs) | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule, per [`scripts/ci/lib/docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs) | Whole tree | `docs-structure` | Not yet — see rollout below |
 | Citations | [`check-doc-paths.mjs`](../../../scripts/check-doc-paths.mjs) | Backticked repo-path citations resolve to real files | Whole tree | `doc-paths` | **Yes** — in `DOCS_CHECKS` |
 | References | [`check-doc-refs.mjs`](../../../scripts/check-doc-refs.mjs) | In files OUTSIDE the docs corpus (source, workflows, migrations, shell): bare `docs/`/`spec/` paths resolve, and bare markdown filenames still name a tracked file | Whole tree | `doc-refs` | Not yet — see rollout below |
-| Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` | Whole tree | `doc-tables` | Not yet — see rollout below |
+| Rosters | [`check-doc-tables.mjs`](../../../scripts/check-doc-tables.mjs) | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml`; the placement map and the two index READMEs match `DIRECTORIES` | Whole tree | `doc-tables` | Not yet — see rollout below |
 | Env slugs | [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) | Every Infisical environment named anywhere is one that exists | Whole tree | `doc-tables` (same job) | Not yet — inherits `doc-tables` |
 
 ### Citations (`check-doc-paths.mjs`)
@@ -149,6 +149,33 @@ lists. `CONTRIBUTING.md` and `spec/environments/README.md` now hold pointers ins
 
 It states *intended* required checks, never live branch protection — read live state from the API,
 per [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
+
+#### The directory structure, three times over
+
+The same script also polices the directory structure, which the corpus restates in three places
+against one manifest — `DIRECTORIES` in
+[`docs-structure.mjs`](../../../scripts/ci/lib/docs-structure.mjs).
+
+| Restatement | Constant | Rule |
+| ----------- | -------- | ---- |
+| [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) § Where things go | `PLACEMENT_DOC` | Exact both directions against all of `DIRECTORIES` |
+| [`docs/README.md`](../../README.md) § Folders + § Internal subfolders | `INDEX_DOCS` | Exact both directions against the declared children of `docs` and `docs/internal` |
+| [`docs/internal/README.md`](../README.md) | `INDEX_DOCS` | Exact both directions against the declared children of `docs/internal` |
+
+- **Exact, never prefix coverage.** A `spec/ui/` row must not speak for `spec/ui/mobile`. Coverage
+  matching was the first design and it disarmed the check: five declared directories had no row and
+  the gate stayed green.
+- **The index READMEs are scoped, not weaker.** Each of their tables is exactly one directory's
+  *immediate children*, so the same both-directions rule applies once the comparison is made per
+  scope — no coverage is left unchecked.
+- **Their paths are relative to the doc**, so they go through `resolveIndexHome`, not
+  `normalizeHome`. `normalizeHome` rejects any token not starting with `docs/` or `spec/`, which is
+  right for the placement map and would silently match *nothing* in either index (#1619).
+- **Link targets only, not every backticked token.** `docs/README.md`'s Hooks row says "tests for
+  `packages/hooks`" — a mention, not a claim about where docs live.
+
+This is what makes a rename or a flatten safe: `check-doc-paths` and lychee catch a broken *link*,
+but only this catches a table that still describes the *old directory set*.
 
 Run locally: `npm run check:doc-tables`. Unit tests:
 `scripts/ci/__tests__/check-doc-tables.test.mjs`, covered by `ci-scripts-tests`.

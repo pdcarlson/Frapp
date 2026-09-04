@@ -31,6 +31,26 @@ export const PLACEMENT_DOC = "docs/internal/DOCUMENTATION_CONVENTIONS.md";
 // (GitHub Issues, or a named file such as `ci-cd/DOCS_CI.md`) need no
 // list: they are not `docs/`- or `spec/`-prefixed, so normalizeHome returns null.
 
+// The index READMEs, which restate the directory tree a THIRD and FOURTH time.
+//
+// `DOCUMENTATION_CONVENTIONS.md` names all 23 homes; these two name only the
+// immediate children of one directory each, which is why they cannot go through
+// comparePlacementMap. They are not a weaker copy, though — each table is
+// exactly one scope's children, so the same exact-both-directions rule applies
+// once the comparison is made per scope. `scopes` is that scope list.
+//
+// Why they need a gate at all: `docs/README.md` deep-links into specific files
+// (`internal/ops/DEPLOYMENT.md`, `internal/ci-cd/DOCS_CI.md`,
+// `internal/environment/ENV_REFERENCE.md`), three of which are in LEGACY_NAMES.
+// check-doc-paths and lychee catch a broken LINK, so a rename is never silent —
+// but nothing checked that the table still described the real directory SET.
+// The stage-3 flatten (#1598) collapses directories, and both tables would have
+// had to be corrected by hand with nothing verifying the result (#1619).
+export const INDEX_DOCS = [
+  { file: "docs/README.md", scopes: ["docs", "docs/internal"] },
+  { file: "docs/internal/README.md", scopes: ["docs/internal"] },
+];
+
 // The one doc that restates the roster, checked against the source above.
 export const DOC_TABLES = ["docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md"];
 
@@ -257,6 +277,134 @@ export function comparePlacementMap({ text, directories = DIRECTORIES }) {
   return findings;
 }
 
+/**
+ * An index README's link target into the directory it names, or null.
+ *
+ * Deliberately NOT normalizeHome. That function's first act is to reject any
+ * token not starting with `docs/` or `spec/`, and a test pins
+ * `normalizeHome("ci-cd/DOCS_CI.md") === null` — correct for the placement map,
+ * where homes are written repo-root-relative and a bare filename is genuinely
+ * not a directory claim. The index READMEs write the same facts RELATIVE to
+ * themselves (`internal/ops/` in docs/README.md, bare `ops/` in
+ * docs/internal/README.md), so every one of their tokens normalises to null.
+ * Pointing PLACEMENT_DOC at them without this would assert nothing about either
+ * file while still reporting green — the quiet disarm this file's header warns
+ * about, rather than the check the gate advertises.
+ *
+ * A token already rooted at `docs/` or `spec/` is read as a repo path so both
+ * spellings work; anything else is resolved against `fromDir`. `..` is honoured,
+ * so `../spec/ui/` in docs/README.md resolves to `spec/ui`. A token that climbs
+ * out of both trees returns null rather than a path with `..` left in it.
+ */
+export function resolveIndexHome(token, fromDir) {
+  const raw = token.trim().replace(/\/+$/, "");
+  if (!raw || raw.startsWith("#") || /^[a-z]+:/i.test(raw)) return null;
+
+  const rooted = raw.startsWith("docs/") || raw.startsWith("spec/");
+  const segments = [];
+  for (const segment of (rooted ? raw : `${fromDir}/${raw}`).split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      // A climb above the repo root is a malformed link, not a directory claim.
+      if (!segments.length) return null;
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  // Drop a filename or a `<placeholder>.md`; keep a bare folder name. Same rule
+  // as normalizeHome — the folder half is the claim, the file half illustrates.
+  const last = segments[segments.length - 1];
+  if (segments.length > 1 && last && (last.includes(".") || last.includes("<"))) segments.pop();
+
+  const dir = segments.join("/");
+  if (dir !== "docs" && dir !== "spec" && !dir.startsWith("docs/") && !dir.startsWith("spec/")) {
+    return null;
+  }
+  // A tree root is not a directory entry — root files are governed separately.
+  return dir === "docs" || dir === "spec" ? null : dir;
+}
+
+/**
+ * Every directory an index README's TABLE ROWS link to.
+ *
+ * Two narrowings, each of which a real row in these files requires:
+ *
+ * 1. Table rows only, exactly as parsePlacementHomes does. Both files carry
+ *    prose links to neighbouring trees (`../spec/ui/design-system/`,
+ *    `../guides/`) that are cross-references, not claims about what this
+ *    directory holds. Reading them would fail the doc for naming a sibling.
+ *
+ * 2. Markdown LINK TARGETS, not every backticked token. An index's claim about
+ *    a directory is a navigation link; a backticked word in the prose column is
+ *    a mention. `docs/README.md`'s Hooks row says "Conventions and tests for
+ *    `packages/hooks`", which resolves to `docs/packages/hooks` and failed this
+ *    gate on its first run — a false positive that would have been "fixed" by
+ *    mangling correct prose. The target is also the half that must stay valid
+ *    through a rename, so it is the half worth pinning.
+ */
+export function parseIndexHomes(docText, fromDir) {
+  const homes = new Set();
+  for (const block of tableBlocks(docText)) {
+    for (const line of block) {
+      for (const m of line.matchAll(/\[[^\]\n]*\]\(([^)\s]+)\)/g)) {
+        const dir = resolveIndexHome(m[1], fromDir);
+        if (dir) homes.add(dir);
+      }
+    }
+  }
+  return homes;
+}
+
+/** The declared directories sitting immediately inside `scope`. */
+export function childrenOf(scope, directories = DIRECTORIES) {
+  return directories
+    .map((d) => d.dir)
+    .filter((dir) => dir.startsWith(`${scope}/`) && !dir.slice(scope.length + 1).includes("/"));
+}
+
+/**
+ * Both directions between an index README's tables and the manifest.
+ *
+ * EXACT match per scope, for the reason comparePlacementMap spells out at
+ * length: coverage-style matching disarms itself the moment one broad row
+ * speaks for several directories. #1619 expected this check to have to be
+ * weaker than the placement map's — one-directional, "leaving coverage
+ * unchecked" — because the three tables sit at different granularities. They
+ * do, but not raggedly: each table is precisely one directory's immediate
+ * children, so scoping the comparison recovers full strength instead of
+ * trading it away.
+ */
+export function compareIndexDocs({ file, text, scopes, directories = DIRECTORIES }) {
+  const findings = [];
+  const fromDir = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : ".";
+  const homes = parseIndexHomes(text, fromDir);
+  const expected = new Set(scopes.flatMap((scope) => childrenOf(scope, directories)));
+
+  for (const home of homes) {
+    if (expected.has(home)) continue;
+    findings.push({
+      file,
+      id: home,
+      detail:
+        `is named in a table here but is not a declared child of ${scopes.map((s) => `\`${s}\``).join(" or ")} ` +
+        `(DIRECTORIES in scripts/ci/lib/docs-structure.mjs) — fix the row, or declare the directory`,
+    });
+  }
+
+  for (const dir of expected) {
+    if (homes.has(dir)) continue;
+    findings.push({
+      file,
+      id: dir,
+      detail: `is a declared documentation home with no row in this index — add one naming it, or retire the directory`,
+    });
+  }
+
+  return findings;
+}
+
 function read(file) {
   try {
     return readFileSync(file, "utf8");
@@ -323,6 +471,15 @@ function main() {
   }
   findings.push(...comparePlacementMap({ text: placementText }));
 
+  for (const { file, scopes } of INDEX_DOCS) {
+    const text = read(file);
+    if (text === null) {
+      console.error(`check-doc-tables: could not read ${file} — is INDEX_DOCS stale?`);
+      return 2;
+    }
+    findings.push(...compareIndexDocs({ file, text, scopes }));
+  }
+
   for (const jobId of SUITE_JOBS) {
     const actual = parseJobSuites(ciYml, jobId);
     if (actual === null) {
@@ -359,7 +516,8 @@ function main() {
   console.log(
     `Doc table check passed (${required.length} required checks across ${DOC_TABLES.length} docs; ` +
       `suite lists for ${SUITE_JOBS.join(", ")}; ` +
-      `${DIRECTORIES.length} documentation homes against the placement map).`,
+      `${DIRECTORIES.length} documentation homes against the placement map; ` +
+      `${INDEX_DOCS.length} index READMEs against their scopes' declared children).`,
   );
   return 0;
 }
