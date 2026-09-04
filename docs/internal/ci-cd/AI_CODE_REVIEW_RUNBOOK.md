@@ -149,16 +149,17 @@ acted on findings, and the hook allows the push only when that marker exists for
   `git push --dry-run … && git push …` all do. The accepted gap is an env-prefixed invocation
   (`env FOO=1 git push`): a missed push costs one unreviewed branch, whereas over-matching burns the
   livelock budget and then auto-allows a real one, which is strictly worse.
-- **Exempt: pushes that publish nothing.** A dry run (`--dry-run` / `-n`) and a ref deletion
-  (`--delete` / `-d`) upload no objects, so there is no diff for `/diff-review` — which reviews
-  **HEAD** — to have any bearing on. Gating them is not just a wasted prompt, it is misleading, and
-  four denials later the livelock guard releases the push labelled `UNREVIEWED` regardless.
-  Destructiveness is not this gate's job; branch protection is what refuses a deletion that matters.
-  Two limits are deliberate: only the **flag** form of a deletion is exempt (`--delete` makes every
-  refspec in the invocation a deletion), never the colon refspec — `git push origin :old main`
-  deletes one ref and publishes another, and the published one still needs review — and a **compound**
-  command is never exempt, so a deletion chained onto a real push does not carry the real push
-  through.
+- **Exempt: pushes that publish nothing.** A dry run (`--dry-run` / `-n`) and a ref deletion in its
+  **flag** form (`--delete` / `-d`) upload no objects, so there is no diff to review. Both are decided
+  on the command's *tokens*, never by searching the string: the whole command must be one plain `git`
+  invocation of inert tokens, so a comment, a quote, a command substitution, a second chained command,
+  or the flag text inside a ref name each keep the gate on. The colon refspec is **not** exempt —
+  `git push origin :old main` deletes one ref while publishing another. The attacks these rules defeat
+  are enumerated in the hook itself; do not restate them here.
+- **The gate is not deletion protection.** It reviews code, and it is the *only* thing in the path of a
+  ref deletion: branch protection sets `allow_deletions: false` for **`main` alone**
+  ([runbook](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#main)), so every other branch and tag can be
+  deleted with nothing server-side refusing it.
 
 The hook is a tool-level Claude Code hook and is **independent of git's own hooks**: it does not run git,
 does not touch `--no-verify`, and does not interfere with the git-level

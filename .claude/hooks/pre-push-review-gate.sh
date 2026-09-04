@@ -35,10 +35,11 @@
 # (exit 0) and the normal permission flow applies — it does not force-approve the push.
 #
 # The `git push` match is a word-boundary heuristic (a free-form shell command can only be
-# matched heuristically): it skips `git pushdeploy`, and it exempts the two invocations that
-# publish no objects and so have no diff to review — a dry run, and a ref deletion (`--delete`
-# / `-d`). An exotic command that merely quotes "git push" may still trip it once. That's
-# acceptable for a local convenience gate — the worst case is one extra review prompt.
+# matched heuristically): it skips `git pushdeploy`, and it exempts a push that publishes no
+# objects — a dry run, or a ref deletion in its FLAG form (`--delete` / `-d`). The colon refspec
+# (`git push origin :br`) publishes nothing either and is still gated on purpose; the exemption
+# block below says why. An exotic command that merely quotes "git push" may still trip it once.
+# That's acceptable for a local convenience gate — the worst case is one extra review prompt.
 #
 # This is a Claude Code tool-level hook and is INDEPENDENT of git's own hooks: it does
 # not run git mutations, does not touch `--no-verify`, and does not interfere with the
@@ -210,34 +211,59 @@ push_re='(^|[;&|(){}][[:space:]]*)[[:space:]]*git([[:space:]]+-[^[:space:];&|]*(
 if ! [[ "$command" =~ $push_re ]]; then
   exit 0
 fi
-# A push that publishes nothing must not consume the gate — but only exempt a command whose
-# every push is a no-op. An unanchored substring match previously let a compound command (a
-# dry run chained onto a real push) exempt its real push too, and that path exits without
-# recording anything, so the real push went completely ungated.
-# Any shell operator means we cannot reason about what else runs: gate it.
+# A push that publishes nothing must not consume the gate. Two forms qualify: a dry run
+# (`--dry-run` / `-n`), and a ref deletion (`--delete` / `-d`), which uploads no objects and only
+# removes remote refs. Neither has a diff, so the review a deny demands cannot say anything about
+# it, and the livelock guard releases the push after four denials regardless — gating them buys
+# noise, not safety. The colon refspec publishes nothing either but is deliberately NOT exempt:
+# unlike the flag it COMPOSES, so `git push origin :old main` deletes one ref AND publishes
+# another, and the published one still has a diff to review.
 #
-# A ref DELETION is the second such form, and the reason the last arm exists: it uploads no
-# objects, so there is no diff, and the review the deny demands (/diff-review, which reviews
-# HEAD) has no bearing on which remote refs are removed. Gating it is not merely useless, it
-# is misleading — and the livelock guard releases the push after four denials anyway, so
-# denying buys noise and nothing else. Destructiveness is not this gate's job: it reviews
-# code, and branch protection is what refuses a deletion that matters.
-# Only the explicit FLAG is exempt, because `--delete` makes EVERY refspec in the invocation
-# a deletion. The colon refspec form is NOT, because it composes: a single command can
-# delete one ref and publish another, and the published one still has a diff to review.
-# Matched as a flag (whitespace before; whitespace or end after) so a ref name that merely
-# contains the text cannot exempt a real push.
-delete_re='[[:space:]](--delete|-d)([[:space:]]|$)'
-case "$command" in
-  *'&&'* | *';'* | *'|'*) : ;;      # compound — never exempt
-  # `-n` is git's documented short form of --dry-run. Matching it too keeps a no-op command from
-  # burning livelock budget, which would otherwise count toward auto-allowing a real push.
-  # Matched as a whole word so `--no-verify` (space, dash, dash) cannot trip it.
-  *--dry-run* | *' -n '* | *' -n') exit 0 ;;
-  # `if`, not a `[[ … ]] &&` list: under `set -e` a failing list becomes the case statement's
-  # status, which would abort the hook with exit 1 on every ordinary push.
-  *) if [[ "$command" =~ $delete_re ]]; then exit 0; fi ;;
-esac
+# The exemption is decided on the command's TOKENS, never by searching the string, and that is
+# the load-bearing part. Asking whether a no-op flag appears somewhere in $command released real
+# pushes, because the flag need not belong to the push at all. Each of these published for real:
+#   git push origin main # -d                         the flag sits in a comment
+#   git push origin main & git push -d origin tmp     two commands; the first one is real
+#   git push --repo -d origin main                    git consumed -d as --repo's value
+#   git push -o "ci.skip -d " origin main             the flag sits inside a quoted value
+#   git push origin "release-$(date -d +1day +%F)"    the flag belongs to date(1)
+# and the older substring arm released this one the same way:
+#   git push origin fix--dry-run-branch               the flag text is part of a ref name
+# Each exited 0 ahead of the marker check, the bypass check AND the livelock counter, leaving no
+# sentinel and no stderr — quieter than a livelock release, which at least warns UNREVIEWED.
+#
+# So the command must FIRST be one plain git invocation of inert tokens: no quote, `$`, backtick,
+# `#`, or shell operator anywhere. That leaves nowhere for a second command, a comment, or a
+# substitution to hide, and it is what makes the word split below equal git's own argv. A
+# compound command is therefore never exempt even when every statement in it is a deletion —
+# fail-closed, and worth one wasted prompt.
+inert_git_cmd_re='^[[:space:]]*git([[:space:]]+[A-Za-z0-9._/@=:+_-]+)+[[:space:]]*$'
+if [[ "$command" =~ $inert_git_cmd_re ]]; then
+  # Safe to word-split: the pattern above proved there is no quoting, globbing or substitution,
+  # so these tokens are exactly the argv git itself would see.
+  read -ra push_argv <<<"$command"
+  seen_push=0
+  skip_value=0
+  noop_push=0
+  for tok in "${push_argv[@]}"; do
+    if [ "$skip_value" -eq 1 ]; then skip_value=0; continue; fi
+    case "$tok" in
+      # Options taking a SEPARATE argument — git's own global ones first, then push's. git
+      # consumes the next token as their value, so a no-op flag sitting there belongs to them
+      # and not to the push: `git push --repo -d origin main` is an ordinary publishing push.
+      -C | -c | --git-dir | --work-tree | --namespace | --exec-path | --super-prefix) skip_value=1 ;;
+      --repo | --exec | --receive-pack | --upload-pack | -o | --push-option) skip_value=1 ;;
+      push) seen_push=1 ;;
+      # Whole tokens only, and only after `push`, so `--no-verify` and refs named
+      # `fix--delete-exemption` or `feature-d` stay ordinary pushes.
+      --dry-run | -n | --delete | -d) if [ "$seen_push" -eq 1 ]; then noop_push=1; fi ;;
+      *) : ;;
+    esac
+  done
+  if [ "$noop_push" -eq 1 ]; then
+    exit 0
+  fi
+fi
 
 # ── Content key = branch HEAD SHA, so a new HEAD re-gates ────────────────────────────
 # No `|| echo nohead` fallback: a constant key would collapse every branch and commit onto
