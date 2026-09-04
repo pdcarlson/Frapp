@@ -16,6 +16,7 @@
 // See docs/internal/ci-cd/DOCS_CI.md for the contract.
 
 import { readFileSync } from "node:fs";
+import { posix } from "node:path";
 
 import { DIRECTORIES } from "./ci/lib/docs-structure.mjs";
 
@@ -30,6 +31,55 @@ export const PLACEMENT_DOC = "docs/internal/DOCUMENTATION_CONVENTIONS.md";
 // Homes in that table that are deliberately not directories under docs/ or spec/
 // (GitHub Issues, or a named file such as `ci-cd/DOCS_CI.md`) need no
 // list: they are not `docs/`- or `spec/`-prefixed, so normalizeHome returns null.
+
+// The index READMEs, which restate the directory tree six more times.
+//
+// `DOCUMENTATION_CONVENTIONS.md` names all 23 homes; each of these names the
+// declared children of one directory, which is why they cannot go through
+// comparePlacementMap. Their tables also list FILES, which this check ignores —
+// only paths that are children of a scope are judged. They are not a weaker copy, though — each table is
+// exactly one scope's children, so the same exact-both-directions rule applies
+// once the comparison is made per scope. `scopes` is that scope list.
+//
+// Why they need a gate at all: `docs/README.md` deep-links into specific files
+// (`internal/ops/DEPLOYMENT.md`, `internal/ci-cd/DOCS_CI.md`,
+// `internal/environment/ENV_REFERENCE.md`), three of which are in LEGACY_NAMES.
+// check-doc-paths and lychee catch a broken LINK, so a rename is never silent —
+// but nothing checked that the table still described the real directory SET.
+// The stage-3 flatten (#1598) collapses directories, and both tables would have
+// had to be corrected by hand with nothing verifying the result (#1619).
+// Every directory that HAS declared children owns an index entry, and a test
+// pins that completeness — so declaring a nested directory forces the index
+// that should list it to be updated in the same commit. `parentScopes()` is the
+// expected set; keep the two in step rather than adding a scope here alone.
+export const INDEX_DOCS = [
+  { file: "docs/README.md", scopes: ["docs", "docs/internal"] },
+  { file: "docs/internal/README.md", scopes: ["docs/internal"] },
+  { file: "spec/README.md", scopes: ["spec"] },
+  { file: "spec/behavior/README.md", scopes: ["spec/behavior"] },
+  { file: "spec/ui/README.md", scopes: ["spec/ui"] },
+  { file: "spec/ui/design-system/README.md", scopes: ["spec/ui/design-system"] },
+];
+
+/**
+ * Every directory that has declared children — i.e. every scope an index README
+ * owes a table for.
+ *
+ * This is what makes INDEX_DOCS' coverage checkable instead of a hand-kept list
+ * that silently falls behind: #1619 shipped covering three of these six, and
+ * nothing would have noticed the other three.
+ */
+export function parentScopes(directories = DIRECTORIES) {
+  const parents = new Set();
+  for (const { dir } of directories) {
+    const cut = dir.lastIndexOf("/");
+    // A slash-less entry has no parent. `slice(0, -1)` would drop its last
+    // character instead and yield a scope like `spe`, which the `if (parent)`
+    // guard was written to prevent and did not.
+    if (cut > 0) parents.add(dir.slice(0, cut));
+  }
+  return [...parents].sort();
+}
 
 // The one doc that restates the roster, checked against the source above.
 export const DOC_TABLES = ["docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md"];
@@ -192,14 +242,12 @@ export function tableBlocks(text) {
  * filename half is illustrative, the folder half is the actual claim.
  */
 export function normalizeHome(token) {
-  let t = token.trim().replace(/^\.\//, "").replace(/\/+$/, "");
+  const t = token.trim().replace(/^\.\//, "").replace(/\/+$/, "");
   if (!t.startsWith("docs/") && !t.startsWith("spec/")) return null;
-  const segments = t.split("/");
-  const last = segments[segments.length - 1];
-  // Drop a filename or a `<placeholder>.md`; keep a bare folder name.
-  if (segments.length > 1 && (last.includes(".") || last.includes("<"))) segments.pop();
-  const dir = segments.join("/");
-  return dir === "docs" || dir === "spec" ? null : dir;
+  // homeFromSegments is shared with resolveIndexHome so the placement map and
+  // the index READMEs cannot disagree about what a token means. It returns null
+  // for a bare `docs`/`spec`, which is how a tree root stays out of the map.
+  return homeFromSegments(t.split("/"));
 }
 
 /** Every directory the placement-map table points at. */
@@ -255,6 +303,226 @@ export function comparePlacementMap({ text, directories = DIRECTORIES }) {
   }
 
   return findings;
+}
+
+/**
+ * The directory a resolved path segment list claims, or null.
+ *
+ * Shared by normalizeHome and resolveIndexHome so the placement map and the
+ * index READMEs cannot disagree about what a token means. Splitting the rule in
+ * two was how `<topic>` handling would have drifted: one copy accepting a
+ * spelling the other rejects lets the same path pass one gate and fail the next.
+ */
+function homeFromSegments(segments) {
+  const parts = [...segments];
+  // Drop a filename or a `<placeholder>.md`; keep a bare folder name. The folder
+  // half is the claim, the file half only illustrates it.
+  const last = parts[parts.length - 1];
+  if (parts.length > 1 && (last.includes(".") || last.includes("<"))) parts.pop();
+  const dir = parts.join("/");
+  if (!dir.startsWith("docs/") && !dir.startsWith("spec/")) return null;
+  return dir;
+}
+
+/**
+ * An index README's table path into the directory it names, or null.
+ *
+ * Deliberately NOT normalizeHome. That function's first act is to reject any
+ * token not starting with `docs/` or `spec/`, and a test pins
+ * `normalizeHome("ci-cd/DOCS_CI.md") === null` — correct for the placement map,
+ * where homes are written repo-root-relative and a bare filename is genuinely
+ * not a directory claim. The index READMEs write the same facts RELATIVE to
+ * themselves (`internal/ops/` in docs/README.md, bare `ops/` in
+ * docs/internal/README.md), so every one of their tokens normalises to null.
+ * Pointing PLACEMENT_DOC at them without this would assert nothing about either
+ * file while still reporting green — the quiet disarm this file's header warns
+ * about, rather than the check the gate advertises.
+ *
+ * Resolution uses `path.posix`, matching `makeResolver` in check-doc-paths.mjs
+ * so the two gates read a relative link in the same doc the same way. A token
+ * rooted at `/`, `docs/` or `spec/` is a repo path; anything else resolves
+ * against `fromDir`. A token that climbs out of the repo returns null rather
+ * than a path with `..` left in it — `..` re-entering the tree
+ * (`../../../docs/guides` from `docs/`) must not resolve, or a broken link
+ * would count as a satisfied row.
+ */
+export function resolveIndexHome(token, fromDir) {
+  // Strip a markdown angle-bracket destination, then any fragment or query. A
+  // fragment left on kept its own segment and produced a phantom directory AND
+  // a spurious "missing row" for the real one — two wrong findings, not none.
+  const cleaned = token.trim().replace(/^<|>$/g, "").split(/[#?]/)[0];
+  if (!cleaned || /^[a-z][a-z0-9+.-]*:/i.test(cleaned)) return null;
+
+  // Rootedness is decided BEFORE the trailing slash is stripped. Testing the
+  // stripped `spec` against a `spec/` prefix said it was not rooted, so a link
+  // target written `spec/` (or `docs/`) was joined onto the doc's own folder and
+  // became `docs/spec` — a phantom child reported as undeclared, with no
+  // declarable remedy. A test pins the two tokens that reach this branch.
+  const rooted = cleaned.startsWith("/") || /^(docs|spec)(\/|$)/.test(cleaned);
+  const raw = cleaned.replace(/\/+$/, "");
+  if (!raw) return null;
+
+  // `normalize` keeps a leading `..` as a literal segment, so a link climbing
+  // out of the repo (`../../../docs/guides` from `docs/`) resolves to
+  // `../../docs/guides` and fails homeFromSegments' `docs/`/`spec/` prefix rule.
+  // No separate escape guard, and no tree-root guard here either: both were
+  // unreachable once homeFromSegments owned the prefix rule, and an unreachable
+  // guard reads as protection the next editor may rely on.
+  const resolved = posix.normalize(rooted ? raw.replace(/^\//, "") : posix.join(fromDir, raw));
+  return homeFromSegments(resolved.split("/").filter((seg) => seg && seg !== "."));
+}
+
+/**
+ * Every directory an index README's TABLE ROWS link to.
+ *
+ * Two narrowings, each closing a false positive a real row produced:
+ *
+ * 1. Table rows only, as parsePlacementHomes does. Both trees' index READMEs
+ *    carry prose links to neighbouring trees (`../spec/ui/design-system/`,
+ *    `../guides/`) that are cross-references, not claims about what this
+ *    directory holds. #1666 tracks the remaining gap here: nothing ties a row
+ *    to the index table itself, so any table in the file counts.
+ *
+ * 2. LINK TARGETS only — never the backticked display label. Reading the label
+ *    as an independent path claim was tried and is unsound, because a label is
+ *    written for a reader and its style varies by design:
+ *      - `[`engineering`](engineering.md)` — an extensionless label invents the
+ *        directory `spec/engineering`; ~35 rows across three of the six index
+ *        docs are file rows whose labels could legitimately be written this way.
+ *      - `[`ops/`](internal/ops/DEPLOYMENT.md)` — a leaf-only label invents
+ *        `docs/ops`, though docs/internal/README.md uses exactly that style.
+ *      - `docs-sync CI on [`main`](../../.github/workflows/ci.yml)` — a
+ *        backticked identifier beside a link invents `docs/internal/main`. A
+ *        corpus scan found 90 such tokens in link-bearing table cells.
+ *    In every case the row's own target proves what it means, and the finding's
+ *    remedy ("declare the directory") is wrong. The target is also the half a
+ *    rename must update and that lychee and check-doc-paths already validate,
+ *    so it is the half worth pinning.
+ *
+ * A row must therefore carry a parseable `](target)`. Titled links
+ * (`](ops/ "Ops")`) work — the capture stops at whitespace. A reference-style
+ * row (`][ops]`) has no target and would be reported as a missing row; none
+ * exists in the six index docs, and the failure is loud rather than silent.
+ * Whether the visible label agrees with its target is a separate check that
+ * needs a different rule (#1667), not this one.
+ */
+export function parseIndexHomes(docText, fromDir) {
+  const homes = new Set();
+  for (const block of tableBlocks(docText)) {
+    for (const line of block) {
+      for (const m of line.matchAll(/\]\(\s*([^)\s]+)/g)) {
+        const dir = resolveIndexHome(m[1], fromDir);
+        if (dir) homes.add(dir);
+      }
+    }
+  }
+  return homes;
+}
+
+/** The declared directories sitting immediately inside `scope`. */
+export function childrenOf(scope, directories = DIRECTORIES) {
+  return directories
+    .map((d) => d.dir)
+    .filter((dir) => dir.startsWith(`${scope}/`) && !dir.slice(scope.length + 1).includes("/"));
+}
+
+/** True when `dir` sits immediately inside any of `scopes`. */
+function isChildOfAny(dir, scopes) {
+  return scopes.some((scope) => {
+    if (!dir.startsWith(`${scope}/`)) return false;
+    return !dir.slice(scope.length + 1).includes("/");
+  });
+}
+
+/**
+ * Both directions between an index README's tables and the manifest.
+ *
+ * EXACT match per scope, for the reason comparePlacementMap spells out at
+ * length: coverage-style matching disarms itself the moment one broad row
+ * speaks for several directories. #1619 expected this check to have to be
+ * weaker than the placement map's — one-directional, "leaving coverage
+ * unchecked" — because the tables sit at different granularities. They do, but
+ * not raggedly: each index names the declared children of one directory, so
+ * scoping the comparison per directory recovers full strength.
+ *
+ * The tables also list FILES — `spec/behavior/README.md` is 28 file rows and 2
+ * directory rows — and those are not claims about the child set. Only paths
+ * that are children of a scope are judged, so a file row is simply invisible
+ * here rather than something the table must stop doing.
+ *
+ * The reverse direction judges ONLY paths that are immediate children of a
+ * scope. An index legitimately links out of its own scope — to a sibling tree,
+ * or to a file sitting in its own root — and the first design rejected every
+ * such path with "fix the row, or declare the directory" naming a directory
+ * that WAS declared, so neither remedy applied and the only way to green was
+ * deleting a correct row. What this check is about is the child SET; a link
+ * that is not a child claim is not evidence about it either way.
+ */
+export function compareIndexDocs({ file, text, scopes, directories = DIRECTORIES }) {
+  const findings = [];
+  const fromDir = file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : ".";
+  const homes = parseIndexHomes(text, fromDir);
+  const expected = new Set(scopes.flatMap((scope) => childrenOf(scope, directories)));
+
+  for (const home of homes) {
+    if (expected.has(home) || !isChildOfAny(home, scopes)) continue;
+    findings.push({
+      file,
+      id: home,
+      detail:
+        `is named in a table here but is not declared in DIRECTORIES ` +
+        `(scripts/ci/lib/docs-structure.mjs) — fix the row, or declare the directory`,
+    });
+  }
+
+  for (const dir of expected) {
+    if (homes.has(dir)) continue;
+    findings.push({
+      file,
+      id: dir,
+      detail: `is a declared documentation home with no row in this index — add one naming it, or retire the directory`,
+    });
+  }
+
+  return findings;
+}
+
+/**
+ * Every index README checked, or the first hard error.
+ *
+ * Exported so the wiring itself is testable. main() is not exported, so before
+ * this existed a dropped `findings.push` — or a stale INDEX_DOCS path — left all
+ * tests green while the gate computed every finding and discarded it, still
+ * printing its count. `readDoc` is injected for the same reason.
+ */
+export function collectIndexFindings({
+  indexDocs = INDEX_DOCS,
+  directories = DIRECTORIES,
+  readDoc,
+} = {}) {
+  const findings = [];
+  for (const { file, scopes } of indexDocs) {
+    const text = readDoc(file);
+    if (text === null) {
+      return { error: `check-doc-tables: could not read ${file} — is INDEX_DOCS stale?` };
+    }
+    // A scope with no declared children makes `expected` empty, which disarms
+    // the missing-row direction entirely while the summary still prints a green
+    // count. Same class as the empty-array check in main(), and reachable two
+    // ways: a trailing slash (`"docs/"` matches nothing), and a scope whose
+    // children a flatten has collapsed. Fail loudly rather than assert nothing.
+    const empty = scopes.filter((scope) => childrenOf(scope, directories).length === 0);
+    if (empty.length) {
+      return {
+        error:
+          `check-doc-tables: ${file} declares scope(s) ${empty.map((x) => `\`${x}\``).join(", ")} ` +
+          `with no children in DIRECTORIES — the check would assert nothing. ` +
+          `Fix the scope spelling (no trailing slash), or drop the entry from INDEX_DOCS.`,
+      };
+    }
+    findings.push(...compareIndexDocs({ file, text, scopes, directories }));
+  }
+  return { findings };
 }
 
 function read(file) {
@@ -323,6 +591,13 @@ function main() {
   }
   findings.push(...comparePlacementMap({ text: placementText }));
 
+  const indexResult = collectIndexFindings({ readDoc: read });
+  if (indexResult.error) {
+    console.error(indexResult.error);
+    return 2;
+  }
+  findings.push(...indexResult.findings);
+
   for (const jobId of SUITE_JOBS) {
     const actual = parseJobSuites(ciYml, jobId);
     if (actual === null) {
@@ -359,7 +634,8 @@ function main() {
   console.log(
     `Doc table check passed (${required.length} required checks across ${DOC_TABLES.length} docs; ` +
       `suite lists for ${SUITE_JOBS.join(", ")}; ` +
-      `${DIRECTORIES.length} documentation homes against the placement map).`,
+      `${DIRECTORIES.length} documentation homes against the placement map; ` +
+      `${INDEX_DOCS.length} index READMEs against their scopes' declared children).`,
   );
   return 0;
 }
