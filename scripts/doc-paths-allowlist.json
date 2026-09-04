@@ -238,6 +238,21 @@
       "reason": "ADR text recording the state at the time it was written, when `migrate-production.yml` still existed. ADRs are immutable (AGENTS.md § ADR discipline), so the deletion is recorded as an appended `Correction (2026-08-29)` sub-bullet under the same consequence rather than by rewriting it — the form the 2026-08-28 correction at ADR-13 already set."
     },
     {
+      "file": "spec/architecture/README.md",
+      "path": "scripts/ci/deploy-vercel-production.mjs",
+      "reason": "ADR-21 history: the script that POSTed a `gitSource`, replaced by scripts/ci/deploy-vercel.mjs in #1578. ADRs are immutable (AGENTS.md § ADR discipline), so the Consequences bullets that name it stand as written and the 2026-09-04 amendment records the replacement — the same form as the migrate-production.yml entry above."
+    },
+    {
+      "file": "spec/architecture/README.md",
+      "path": "deploy-vercel-production.mjs",
+      "reason": "ADR-21 history — same replaced script, cited by basename."
+    },
+    {
+      "file": "docs/internal/ops/DEPLOYMENT.md",
+      "path": "deploy-vercel-production.mjs",
+      "reason": "Rename note: §4's current-state block says deploy-vercel.mjs 'replaced deploy-vercel-production.mjs and its gitSource call' (#1578). Naming the old file is what makes the note findable by someone searching for it."
+    },
+    {
       "file": "docs/internal/security/SECURITY_FIXES.md",
       "path": "apps/api/src/domain/utils/subscription.ts",
       "reason": "Names the module deleted as dead code by the 2026-09-03 hygiene scan. The citing sentence is the historical record of the subscription read/write-lock fix, and the Superseded note directly below it records the removal."
