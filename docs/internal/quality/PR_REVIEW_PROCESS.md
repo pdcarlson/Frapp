@@ -15,8 +15,10 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - If workflow/job names change, update:
      - `scripts/ci/lib/required-checks.mjs` (the rosters; the applying script is
        `scripts/configure-branch-protection.mjs`)
-     - `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
-     - `CONTRIBUTING.md`
+     - `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Required Status Checks — the one
+       doc that restates the roster, and the only one `check:doc-tables` asserts
+     - `docs/internal/ci-cd/DOCS_CI.md`, which describes the docs-gate posture but is not asserted
+   - Do not add a fourth place. A roster copy no gate watches is the one that drifts.
 4. **No required workflow-level `paths` filters**
    - Required checks must always report a result on protected-branch PRs.
 5. **A changed documented fact is updated where it lives**

@@ -135,8 +135,11 @@ type(scope): description
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
-- Code review runs **locally before you push** (the pre-push review-gate hook requires a
-  `/diff-review` pass — or `/code-review` plus `FRAPP_SKIP_REVIEW_GATE=1`), not on the PR — see [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+- Code review runs **locally before you push**, not on the PR: the pre-push review-gate hook requires a
+  `/diff-review` pass, which writes the evidence marker itself. `FRAPP_SKIP_REVIEW_GATE=1` is for
+  emergencies only — never as the routine path after a review you did run, because it leaves that push
+  indistinguishable from one that skipped review. Procedure:
+  [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md) § How the gate enforces.
 
 ### 4. Address feedback
 

@@ -166,7 +166,7 @@ or only reports are in
 
 The runbook's roster states the *intended* set — every entry in it is a line in `CI_CHECKS` /
 `DOCS_CHECKS` / `DRIFT_CHECKS` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs),
-with no exceptions — `buildProtectionPayload` appends nothing to the roster, it PUTs the arrays as
+with no exceptions in that direction — `buildProtectionPayload` appends nothing to the roster, it PUTs the arrays as
 they stand. (`branch-policy` was the exception this paragraph used to name. It was deleted with the
 `production` branch in #1340.)
 Live branch protection is whatever an admin last applied and can lag the script, so no doc claims

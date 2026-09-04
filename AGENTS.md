@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** the skills under [`.claude/skills/`](.claude/skills/) — see [Skills](#skills-read-the-matching-one-before-deep-work).
+Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) (CI, deploys, PAT policy). **Task playbooks:** the skills under [`.claude/skills/`](.claude/skills/) — see [Skills](#skills-read-the-matching-one-before-deep-work).
 
 ## Optional agent credentials (automation / cloud sessions)
 

@@ -136,7 +136,7 @@ export function compareSuites({ jobId, actual, docs }) {
 /**
  * Roster comparison, both directions: every required check needs a row, and every
  * check-shaped row must name a real check. One-directional would leave a removed check's
- * row standing in all three docs, which is the same drift in the other direction.
+ * row standing in the doc, which is the same drift in the other direction.
  */
 export function compareRoster({ file, text, required, known }) {
   const findings = [];

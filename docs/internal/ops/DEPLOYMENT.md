@@ -451,7 +451,7 @@ and [`../environment/ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) for the
 The full per-environment grid — every variable the API reads, with its `dev` / `staging` / `prod` value — is
 [`ENV_REFERENCE.md` § "Canonical Variables — The Complete Grid"](../environment/ENV_REFERENCE.md#canonical-variables--the-complete-grid),
 plus its § "API-Only Settings" and § "CD Secrets (Deploy Workflows Only)" subsections. Do not restate it here:
-each sync reads path `/` and pushes the **whole** source environment (§11), so any short list understates what the service holds.
+each sync reads path `/` and pushes the **whole** source environment ([`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs) § 5), so any short list understates what the service holds.
 
 ### 5.3 Custom Domains
 
@@ -872,7 +872,7 @@ The six live syncs — which Infisical environment feeds which Render/Vercel des
 sync's secret path, destination scope, git branch filter, and the date the dashboard was last read —
 are inventoried in exactly one place: [`SECRETS_MANAGEMENT.md` §5 "Configure Secret Syncs"](../environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs). They occupy 6 of the 10 free-tier
 integration slots; that row is derived from the same inventory, in [`SECRETS_MANAGEMENT.md` § Free Tier Limits](../environment/SECRETS_MANAGEMENT.md#free-tier-limits). The retired `frapp-docs` project and its
-integration row are covered in § 4.6 above. Complete variable list: [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md).
+integration row are covered in § Retired: `frapp-docs` and docs.frapp.live above. Complete variable list: [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md).
 
 ---
 
