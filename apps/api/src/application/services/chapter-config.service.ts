@@ -112,10 +112,7 @@ const DUES_SELECT = DUES_FIELDS.join(', ');
  * table's column defaults (migration 20260530193000): an unconfigured chapter
  * reports zero amounts on a per-semester cadence with no installment plan.
  */
-// Exported for the spec, so a test asserting "an unconfigured chapter gets the
-// defaults" pins THESE values rather than a hand-copied duplicate that can
-// drift from them silently.
-export const DUES_DEFAULTS: DuesConfig = {
+const DUES_DEFAULTS: DuesConfig = {
   cadence: 'per_semester',
   active_amount_cents: 0,
   new_member_amount_cents: 0,
@@ -694,7 +691,19 @@ export class ChapterConfigService {
       .eq('id', chapterId)
       .maybeSingle();
 
-    if (error || !chapter) {
+    // Split for the same reason as getConfig's chapters read: this route sits
+    // on the same controller behind the same `chapter_config:manage`, so
+    // collapsing a failed read into 404 gives Save-accent the identical
+    // invisible failure — no error log, no security event, no Sentry capture.
+    if (error) {
+      this.logger.error(
+        `chapters read failed for chapter ${chapterId} during palette ` +
+          `recompute; refusing to report a read failure as a missing ` +
+          `chapter: ${error.message}`,
+      );
+      throw error;
+    }
+    if (!chapter) {
       throw new NotFoundException('Chapter not found');
     }
 

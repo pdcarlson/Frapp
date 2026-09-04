@@ -52,7 +52,7 @@ jest.mock('@repo/chapter-theme', () => ({
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { ChapterConfigService, DUES_DEFAULTS } from './chapter-config.service';
+import { ChapterConfigService } from './chapter-config.service';
 import { SERVICE_CONFIG_DEFAULTS } from './chapter-service-config.service';
 import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -82,8 +82,7 @@ function makeSupabase(
   options: {
     defaultInviteRoleId?: string | null;
     roleLookupRow?: { id: string } | null;
-    // #1626: inject a transient read failure on one of getConfig's three
-    // non-`chapters` reads. The harness pinned `error: null` on all of them,
+    // #1626: inject a transient read failure on any of getConfig's reads. The harness pinned `error: null` on all of them,
     // which is why nothing caught that a swallowed error was substituting
     // defaults for the chapter's real config and then writing them back.
     readErrors?: {
@@ -1054,16 +1053,18 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       // The other half of the contract, and why this cannot be `if (!data)
       // throw`: an unconfigured chapter is a legitimate success-with-defaults.
       //
-      // Asserted against the actual default objects, not `toBeDefined()` — a
-      // presence check passes for any non-throwing implementation, and dropping
-      // the `...SERVICE_CONFIG_DEFAULTS` spread (so an unconfigured chapter
-      // reports `service: {}`) slipped straight through the earlier version.
+      // Asserted against the real default objects, not `toBeDefined()` — a
+      // presence check passes for any non-throwing implementation, which is
+      // what the first draft of this test did. The per-field defaults are
+      // covered more strictly by the dues/service/points/workflows suites
+      // above (they compare against literals, which is what actually catches
+      // drift from the migration); this asserts the one thing they do not,
+      // that all four survive the SAME call rather than each in isolation.
       const supabase = makeSupabase([]);
       const service = await buildService(supabase);
 
       const config = await service.getConfig(CHAPTER_ID);
 
-      expect(config.dues).toMatchObject(DUES_DEFAULTS);
       expect(config.service).toMatchObject(SERVICE_CONFIG_DEFAULTS);
       expect(config.points).toMatchObject(POINTS_CONFIG_DEFAULTS);
       expect(config.workflows.length).toBeGreaterThan(0);
@@ -1094,6 +1095,22 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       await expect(service.getConfig(CHAPTER_ID)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+
+    it('recomputeAndPersistPalette reports a failed chapters read as an error too', async () => {
+      // Same controller, same `chapter_config:manage`, same collapse. Fixing
+      // only getConfig would have left Save-accent with the identical
+      // invisible 404 the comment above declares a bug.
+      const supabase = makeSupabase([], null, {}, null, null, {
+        readErrors: { chapters: READ_ERROR },
+      });
+      const service = await buildService(supabase);
+
+      const err: unknown = await service
+        .recomputeAndPersistPalette(CHAPTER_ID)
+        .catch((e) => e);
+      expect(err).toMatchObject({ message: READ_ERROR.message });
+      expect(err).not.toBeInstanceOf(NotFoundException);
     });
 
     it('throws when the points read fails, via getConfigOrThrow', async () => {
