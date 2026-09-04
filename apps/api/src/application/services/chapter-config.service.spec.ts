@@ -1058,8 +1058,10 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       // what the first draft of this test did. The per-field defaults are
       // covered more strictly by the dues/service/points/workflows suites
       // above (they compare against literals, which is what actually catches
-      // drift from the migration); this asserts the one thing they do not,
-      // that all four survive the SAME call rather than each in isolation.
+      // drift from the migration). Dues is deliberately not re-asserted here —
+      // its literal test is the drift detector, and a second copy would just be
+      // another thing to update. What this adds is that service, points and
+      // workflows all survive the SAME call rather than each in isolation.
       const supabase = makeSupabase([]);
       const service = await buildService(supabase);
 
@@ -1111,6 +1113,20 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
         .catch((e) => e);
       expect(err).toMatchObject({ message: READ_ERROR.message });
       expect(err).not.toBeInstanceOf(NotFoundException);
+    });
+
+    it('recomputeAndPersistPalette still reports a genuinely missing chapter as 404', async () => {
+      // The palette twin of the 404 branch. Without this, deleting its
+      // NotFoundException leaves the method dying on the `branding` read as a
+      // 500 instead — a worse status with no test to notice.
+      const supabase = makeSupabase([], null, {}, null, null, {
+        chapterRowOverride: null,
+      });
+      const service = await buildService(supabase);
+
+      await expect(
+        service.recomputeAndPersistPalette(CHAPTER_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('throws when the points read fails, via getConfigOrThrow', async () => {
