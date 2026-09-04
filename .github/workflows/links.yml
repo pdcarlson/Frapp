@@ -36,8 +36,15 @@ jobs:
       # still checked. Today the exclusion is belt-and-braces (lychee's walk
       # does not extract `<script src>`, and it only reaches these files when
       # the directory is passed explicitly) — it guards against that changing.
+      # `.claude` is in the input list because 19 agent-authored markdown files
+      # (18 SKILL.md plus commands/next.md, ~5.2k lines) carry ~200 relative
+      # links that no checker read until #1597 — check-doc-refs.mjs excludes
+      # .claude/skills/ and nothing else validated heading anchors there. It
+      # found zero broken links on the day it was added, so this is coverage,
+      # not a fix. NOT --exclude-path: that flag takes exactly one value, which
+      # spec/ui/design-system/reference already occupies.
       - name: Check internal markdown links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference docs spec AGENTS.md README.md CONTRIBUTING.md"
+          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference docs spec .claude AGENTS.md README.md CONTRIBUTING.md"
           fail: true
