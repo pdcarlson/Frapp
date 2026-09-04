@@ -1107,7 +1107,7 @@ After any rollback event:
   ALTER TABLE chapters DROP COLUMN IF EXISTS default_invite_role_id;
   ```
 * **Note**: Additive nullable FK to `roles(id)`; dropping it loses only each chapter's chosen default invite role. No invite data is affected — `invites.role` stores the resolved role **name**, so tokens already issued keep the role they were created with. Drop the index first: `on delete set null` uses it on role deletes.
-* **⚠ Roll the API back first.** `ChapterConfigService.getConfig` names the column in its `select` and maps any error to `NotFoundException`, so dropping the column under a deployed API turns `GET /v1/chapters/:id/config` into a 404 for **every** chapter — taking the whole web dashboard's settings surface with it, and masking the real `42703` (undefined column). Deploy an API build that predates this change before running the DDL, or run both together in a maintenance window.
+* **⚠ Roll the API back first.** `ChapterConfigService.getConfig` names the column in its `select`, so dropping it under a deployed API breaks `GET /v1/chapters/:id/config` for **every** chapter, taking the whole web dashboard's settings surface with it. Since [#1626](https://github.com/pdcarlson/Frapp/issues/1626) that surfaces as a **500** carrying the real `42703` (undefined column), with an error log and a Sentry capture — before that fix it was a 404 that masked the cause, so on-call notes predating this may tell you to watch for the wrong status. Deploy an API build that predates this change before running the DDL, or run both together in a maintenance window.
 * **Invites are not affected by the drop.** `InviteService.resolveInviteRole` reads the chapter through `IChapterRepository.findById`, which is `select('*')` and never names the column, so after the drop `default_invite_role_id` simply reads `undefined → null` and invites fall back to the seeded Member role — the pre-#422 behavior. Only the config route breaks, which is why the rollback is a settings-surface outage rather than an invite outage.
 
 ## Rollback `confirm_task_completion` RPC
@@ -1355,12 +1355,25 @@ DROP TABLE IF EXISTS chapter_service_config;
 ```
 
 **Order matters for the function and the table**: drop them only alongside (or
-after) deploying an API build without #273. `ServiceEntryService.approve` reads
-`chapter_service_config` on every approval and
-`GET /v1/service-entries/leaderboard` calls the function, so dropping either
-while the current build is serving turns those into 500s. The read path
-tolerates a *failed* read (it falls back to the default rate and logs a
-warning), but not a missing relation on the leaderboard route.
+after) deploying an API build without #273. `GET /v1/service-entries/leaderboard`
+calls the function and does not tolerate a missing relation, so dropping the
+function while the current build is serving turns that route into a 500.
+
+The **table** is read by two paths, and they do not degrade the same way — the
+same split the points-config rollback above spells out:
+
+* `ServiceEntryService.approve` reads through `ChapterServiceConfigService.getConfig`,
+  which **fails open** — it logs a warning and applies the default 60 min/point.
+  Approvals keep working through the drop, at the wrong rate.
+* `GET /chapters/:id/config` reads `chapter_service_config` inline and **fails
+  closed** since [#1626](https://github.com/pdcarlson/Frapp/issues/1626) (it is
+  also the baseline a config PATCH merges onto, so it must not invent a prior
+  state). A dropped table is a read error, so that endpoint returns **500** —
+  and it backs the whole web Settings page, not just service hours.
+
+So dropping the table under a running *post*-migration API leaves approvals
+working (at the wrong rate) and Settings broken. **Redeploy the API first**, to
+a build from before the migration, exactly as for `chapter_points_config`.
 
 **Data caveat — rolling back silently changes point awards.** Any chapter that
 configured a non-default rate loses it: approvals revert to 60 minutes per
