@@ -78,7 +78,7 @@ test("parseArgs reads --env, --dry-run and --include-all", () => {
 // ── The fence ───────────────────────────────────────────────────────────────
 
 test("THE fence: a staging label pointed at production is refused", () => {
-  // The single most important assertion in this file. Before ci/environments.json
+  // The single most important assertion in this file. Before .github/environments.json
   // existed, `--env` was validated, printed, and then dropped — `main()` used
   // only SUPABASE_PROJECT_REF, so this invocation applied migrations to
   // PRODUCTION while every log line said "staging".

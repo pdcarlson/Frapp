@@ -204,7 +204,7 @@ There was a third advisory job, `web-visual-regression`, and it has been **delet
 ### Environment identity
 
 Each environment's Supabase project ref is recorded in
-[`ci/environments.json`](../../ci/environments.json), read through
+[`.github/environments.json`](../../.github/environments.json), read through
 `scripts/ci/lib/environments.mjs`. Refs are **not secrets** — they are already published in
 [`DB_ROLLBACK_PLAYBOOK.md`](../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md) and
 [`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md), and one grants nothing without
@@ -216,7 +216,7 @@ would have applied migrations to production while every log line said staging.
 
 Two consequences worth holding together:
 
-- **Rotating a project is a four-place change** — Infisical, `ci/environments.json`, and the two doc tables
+- **Rotating a project is a four-place change** — Infisical, `.github/environments.json`, and the two doc tables
   above. Missing the file blocks every production migration and fails `migration-order` on every
   migration-bearing PR. The playbook's ref table says so where the tables live.
 - **`check-migration-drift.yml` deliberately still reads its refs from Infisical.** Pointing it at the

@@ -58,7 +58,7 @@ jobs:
           node-version: 20
 
       # Refs come from Infisical here, and this workflow keeps reading them that
-      # way ON PURPOSE. `ci/environments.json` now also records the ref each
+      # way ON PURPOSE. `.github/environments.json` now also records the ref each
       # environment must have, and `run-migration.mjs` fails closed when the two
       # disagree — so a divergence has to be observable from BOTH sides to be
       # caught at all. If this workflow switched to the committed file, the pair

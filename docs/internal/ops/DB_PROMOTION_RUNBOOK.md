@@ -235,7 +235,7 @@ The script now says so rather than letting you debug it mid-incident.
 Two other refusals, both deliberate:
 
 - **Wrong project.** If `SUPABASE_PROJECT_REF` does not match the ref
-  `ci/environments.json` records for `--env`, the script exits before `link` or
+  `.github/environments.json` records for `--env`, the script exits before `link` or
   `push`. A production ref cannot be applied under a staging label, or the
   reverse.
 - **Wrong directory.** `supabase/migrations/` is resolved from the working

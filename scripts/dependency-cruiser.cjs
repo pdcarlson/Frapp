@@ -37,7 +37,7 @@
  * ## Rollout
  *
  * Hard gate from day one, made survivable by a committed baseline:
- * `.dependency-cruiser-known-violations.json` grandfathers every violation that
+ * `scripts/dependency-cruiser-known-violations.json` grandfathers every violation that
  * existed when the gate landed, and any NEW violation fails.
  * See `docs/internal/ci-cd/QUALITY_GATES.md`.
  *

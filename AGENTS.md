@@ -136,7 +136,7 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 | Doc structure | `npm run check:docs-structure` — every doc sits in a declared home and matches the naming rule ([`scripts/ci/lib/docs-structure.mjs`](scripts/ci/lib/docs-structure.mjs)); advisory, whole-tree |
 | Doc links    | `npm run check:links` — markdown links and heading anchors; needs `npm run install:lychee` first |
 | Migrations   | `npm run check:migration-safety`    |
-| Boundaries   | `npm run check:dep-cruiser` — required gate; existing violations grandfathered in `.dependency-cruiser-known-violations.json`, which exists to shrink |
+| Boundaries   | `npm run check:dep-cruiser` — required gate; existing violations grandfathered in `scripts/dependency-cruiser-known-violations.json`, which exists to shrink |
 | Duplication  | `npm run check:duplication` — advisory; repo-wide threshold that only ratchets down |
 | API breaking changes | `npm run check:api-breaking -- --base origin/main` — advisory; needs `bash scripts/install-oasdiff.sh` first |
 | Coverage     | `npm run test:cov` — no threshold; a measurement, not a gate |
