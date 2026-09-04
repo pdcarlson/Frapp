@@ -9,6 +9,8 @@
 #      (+ Stripe env vars for the API)
 #   5. repair the local Postgres default ACLs (the image ships them without DML grants)
 #   6. load the chapter directory seed (non-fatal)
+#   7. verify node_modules is usable — LAST, so a broken npm never costs the database
+#      (see the comment above the call for why this is not the first step)
 #
 # Steps 4 and 5 are in that order deliberately, and this list had them backwards until
 # #1156 — see the comment above the ACL repair for why the env write has to come first.
@@ -62,26 +64,6 @@ fail() {
 # staging.
 cs_log "Probing deployed-environment egress..."
 bash "$ROOT/scripts/cloud-sandbox-egress-probe.sh" >/dev/null || true
-
-# Toolchain precondition — BEFORE the Docker work, and fatal, which is the whole point.
-#
-# cloud-sandbox-setup.sh installs node deps non-fatally by design, and its warning lands in
-# the web UI's environment setup log where no agent session can read it. This script used to
-# never re-check, so `.cloud-sandbox-up.done` asserted nothing whatsoever about dependencies
-# and a session could reach a green sentinel with an EMPTY node_modules. Every turbo-run gate
-# then died with `turbo: not found` — an error naming neither dependencies nor either script,
-# while the plain-node gates kept passing, which made the breakage look selective (#1631).
-# Because setup's filesystem is cached ~7 days, one bad install was re-served for three
-# consecutive days before this landed.
-#
-# Placed here, ahead of `cs_ensure_docker_daemon`, for two reasons: it is purely local so it
-# owes Docker nothing, and when it does fail it fails in seconds instead of after ~90s of
-# image work that is about to be thrown away. It sits after the egress probe only because the
-# probe must stay first (see its own comment) — a session whose bringup dies still needs its
-# capability manifest, and this step can now be the thing that kills bringup.
-cs_log "Verifying the node toolchain..."
-cs_ensure_node_deps "$ROOT" \
-  || fail "node dependencies missing or incomplete (dependencies) — $(cs_failure_hint dependencies '/tmp/cloud-sandbox-up.log')"
 
 # Write apps/api/.env.local and apps/web/.env.local from the live local Supabase status
 # (plus Stripe env vars for the API). Real Stripe test keys are used when present;
@@ -255,6 +237,32 @@ if ! frapp_load_chapter_directory "$ROOT" cs_supabase; then
   cs_log "WARN: chapter directory seed did not load; onboarding autofill will match nothing."
   cs_log "      The stack is otherwise fine. Re-run: node scripts/load-chapter-directory.mjs"
 fi
+
+# Toolchain check — LAST, immediately before the success sentinel, and deliberately so.
+#
+# cloud-sandbox-setup.sh installs node deps non-fatally by design, and its warning lands in the
+# web UI's environment setup log where no agent session can read it. This script never
+# re-checked, so `.cloud-sandbox-up.done` asserted nothing whatsoever about dependencies and a
+# session could reach a green sentinel with an EMPTY node_modules. Every turbo-run gate then
+# died with `turbo: not found` — an error naming neither dependencies nor either script, while
+# the plain-node gates kept passing, which made the breakage look selective (#1631). Because
+# setup's filesystem is cached ~7 days, one bad install was re-served for three consecutive
+# days before this landed.
+#
+# WHY LAST, when the obvious place is first. It is purely local, so failing early would save
+# ~90s of Docker work — and that is the wrong trade. npm and Docker are independent failures,
+# and gating the stack on npm means a blocked npm registry costs the DATABASE. That is a real
+# configuration, not a hypothetical: this repo's own `policy` remedy tells the user to allow
+# `public.ecr.aws` + `*.cloudfront.net`, which does not include `registry.npmjs.org`. Running
+# last, everything above has already succeeded and stays up; the session gets a working
+# Postgres AND an honest sentinel naming the one thing that is broken. The check costs ~2.5s
+# (`npm ls --depth=0`), which is ~3% of bringup and is not on the interactive path.
+#
+# Only the fatal signal reaches here — cs_verify_node_deps warns and returns 0 for a merely
+# incomplete tree, so this message describes the one condition that produces it.
+cs_log "Verifying the node toolchain..."
+cs_verify_node_deps "$ROOT" \
+  || fail "node_modules/.bin/turbo does not run (dependencies) — $(cs_failure_hint dependencies '/tmp/cloud-sandbox-up.log')"
 
 printf '%s\n' "$(date -u +%FT%TZ)" >"$DONE_SENTINEL"
 cs_log "Cloud sandbox ready. Boot the API with: npm run start:dev -w apps/api"

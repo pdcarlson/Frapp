@@ -144,11 +144,21 @@ cs_supabase() {
 # bin PRESENT and only the `--version` run catches it. `npm ls` does not cover this either;
 # it reads the tree's metadata, not whether anything in it can execute.
 #
-# `--depth=0` on the npm side is deliberate, and its conservatism is the point: it fires on a
-# missing TOP-LEVEL declared dependency (measured against a removed root devDependency) and
-# stays quiet about a missing transitive one. A deeper walk would turn ordinary hoisting and
-# optional-dependency variation into a bringup-time verdict, which is exactly the kind of
-# false positive that must not be able to gate session start.
+# `--depth=0` on the npm side is deliberate, and so is its narrowness. Measured on npm 10.9
+# against this repo, it catches LESS than "the tree is complete" — know the boundary before
+# trusting it:
+#
+#   root-declared dep missing        exit 1   (removed `prettier` -> caught)
+#   workspace-declared dep missing   exit 0   (removed `zod`, declared by packages/validation,
+#                                              hoisted to the root -> NOT caught)
+#   extraneous packages present      exit 0   (this tree carries 6; they do not flip it)
+#
+# So it is a real signal for the fully-empty and root-level-gap cases and a partial one for a
+# half-populated tree — not a completeness proof. That narrowness is wanted here: this runs on
+# every bringup, and a deeper walk would turn ordinary hoisting and optional-dependency
+# variation into a verdict, which is the false-positive class that must never gate a session.
+# Anything it does miss surfaces later as a plain `Cannot find module`, which is legible in a
+# way `turbo: not found` is not — and that legibility is what this whole check is for.
 cs_node_deps_ok() {
   local root="${1:-$PWD}" why=""
   [ -x "$root/node_modules/.bin/turbo" ] \
@@ -161,7 +171,7 @@ cs_node_deps_ok() {
   [ -z "$why" ]
 }
 
-# Verify the node toolchain, repairing it once if it is broken.
+# Report on the node toolchain. DETECT ONLY — this deliberately never writes to node_modules.
 #
 # WHY THIS LIVES IN BRINGUP AND NOT IN SETUP. cloud-sandbox-setup.sh installs deps
 # non-fatally on purpose (its header says so twice) and its WARN goes to the environment
@@ -170,11 +180,24 @@ cs_node_deps_ok() {
 # later session — measured at three consecutive days (#1631). So setup stays non-fatal and
 # bringup stops trusting it silently.
 #
-# ASSERT *AND* REPAIR, not one or the other. The brief framed these as competing on
-# wall-clock, but only `npm ci` is expensive; the check is a stat plus a `--version`. So
-# the fast path costs nothing per session and the repair is paid once per broken cache
-# generation.
-cs_ensure_node_deps() {
+# WHY IT DOES NOT REPAIR. An earlier draft ran `npm ci` here. That was wrong three ways:
+#
+#   1. `npm ci` DELETES node_modules before installing. A failed repair therefore turned the
+#      deliberately-non-fatal `incomplete` case (turbo runs, one declared dep missing) into
+#      the fatal `turbo` case, destroying a working tree on the way — so the severity split
+#      below was unreachable in exactly the case it was written for.
+#   2. Bringup runs in the BACKGROUND (.claude/hooks/session-start.sh launches it with
+#      `nohup ... &`) and the agent is told it only needs to wait before using the DB or API.
+#      Gates and `npm install` are sanctioned to run immediately, so a repair here races the
+#      live session over one node_modules with no cross-process lock.
+#   3. The `|| npm install` fallback rewrites the tracked package-lock.json in the session's
+#      checked-out branch. setup.sh gets away with the same pair only because it runs at
+#      environment-build time against a throwaway root filesystem.
+#
+# The session owns its node_modules; bringup only reports on it. #1631's acceptance criterion
+# is met either way — "either repairs the install or writes .cloud-sandbox-up.failed" — and
+# the sentinel names `npm ci`, so the agent runs it deliberately, in the foreground, once.
+cs_verify_node_deps() {
   local root="${1:-$PWD}"
 
   if cs_node_deps_ok "$root"; then
@@ -182,31 +205,19 @@ cs_ensure_node_deps() {
     return 0
   fi
 
-  cs_log "WARN: node dependencies are ${CS_NODE_DEPS_WHY:-broken} — repairing with 'npm ci'..."
-  # Output goes to the caller's log (bringup redirects the whole script there), because a
-  # repair that fails needs its reason visible: `npm ci` naming a blocked registry is the
-  # difference between "run npm ci" and "change the network policy", and those have
-  # opposite remedies.
-  (cd "$root" && npm ci) || (cd "$root" && npm install) || true
-
-  if cs_node_deps_ok "$root"; then
-    cs_log "Node dependencies repaired."
-    return 0
-  fi
-
   # THE TWO SIGNALS PART COMPANY HERE, and the asymmetry is deliberate.
   #
-  # A precondition that can block session start for every agent in the environment is more
+  # A precondition that can fail a session for every agent in the environment is more
   # dangerous than the bug it guards against, so only the signal that is *definitionally*
   # fatal gets to be fatal. No turbo means no `check-types`, no `lint`, no workspace test —
   # there is no reading of that where the session is fine, so it fails and the sentinel says
   # so. `npm ls` disagreeing while turbo runs is npm's stricter opinion about a tree that may
-  # well work; that warns and lets bringup continue, because being wrong in that direction
+  # well work; that warns and lets bringup finish, because being wrong in that direction
   # costs one confusing session and being wrong in the other costs all of them.
   if [ "${CS_NODE_DEPS_WHY:-}" = "incomplete" ]; then
-    cs_log "WARN: 'npm ls' still reports a missing declared dependency after the repair."
-    cs_log "      turbo runs, so the gates can start; a workspace-specific failure may still"
-    cs_log "      trace back to this. Re-run 'npm ci' and read its output if one does."
+    cs_log "WARN: 'npm ls --depth=0' reports a missing declared dependency."
+    cs_log "      turbo runs, so the gates can start; a workspace-specific 'Cannot find"
+    cs_log "      module' may still trace back to this. Run 'npm ci' if one does."
     return 0
   fi
   return 1
