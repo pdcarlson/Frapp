@@ -6,8 +6,9 @@ Two workflows, one job each.
 
 - **Docs checks** (`.github/workflows/docs.yml`) — the `env-slugs` job, below.
 - **Links** (`.github/workflows/links.yml`) — lychee, offline, over `docs/`, `spec/`, `.claude/`,
-  `AGENTS.md`, `README.md` and `CONTRIBUTING.md`: markdown links and heading anchors resolve.
-  External URLs are never fetched.
+  `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `apps/web/AGENTS.md` and
+  `.github/pull_request_template.md`: markdown links and heading anchors resolve. External URLs are
+  never fetched.
 
 Both are ASSERTIVE: each checks a fact, costs nothing when you are right, and cannot be satisfied by
 noise. Keep it that way. A COERCIVE check — one that requires a doc *write* rather than checking
@@ -56,12 +57,12 @@ The worked example of that class: the spec split in
 `apps/api/README.md` named three files that no longer existed, and `supabase/seed.sql` still pointed
 at the pre-split behavior spec. Both were found by hand.
 
-**Whole files sit outside every checker, not just whole classes of claim.** lychee is pointed at
-`docs`, `spec`, `.claude`, `AGENTS.md`, `README.md` and `CONTRIBUTING.md` — that `AGENTS.md` is the
-root one only, not the per-workspace ones — and the env-slug gate reads the `SCAN_ROOTS` listed
-above. So `apps/web/AGENTS.md` and `.github/pull_request_template.md` are read by **no** checker at
-all: both are agent-facing, both are edited routinely, and a broken link or a dead path in either
-survives indefinitely. If you change something they cite, nothing but you will notice.
+**A file can be inside one checker and outside the rest.** lychee walks every file listed above, so
+a broken markdown link or heading anchor is caught wherever it lives. Nothing checks a **backticked
+path citation** anywhere any more — that was `doc-paths`, and it is gone — so a doc naming a file
+that has moved reads exactly as it did before, in every file in the corpus. The env-slug gate is
+narrower still: it reads only the `SCAN_ROOTS` listed above, so a wrong Infisical slug outside them
+is caught by nothing.
 
 What closes that is [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) — one
 canonical place per fact, and verify a claim against whatever owns it before you act on it — read

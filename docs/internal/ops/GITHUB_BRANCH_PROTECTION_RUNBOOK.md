@@ -426,8 +426,8 @@ If CI job names change (e.g., renaming a workflow job), update:
 
 That is the whole list, and it is short on purpose. It used to carry three more steps, which is why
 it was the drift engine rather than a safety net: `CONTRIBUTING.md` and `spec/environments/README.md`
-each restated the whole roster by hand, and `@repo/theme` and `packages/chat-integrations` went
-missing from every table at once. Both now hold a pointer to this section instead, and a step
+each restated the whole roster by hand, and `@repo/theme` (#1153) and `packages/chat-integrations`
+(#1114) went missing from every table at once. Both now hold a pointer to this section instead, and a step
 pointing at a docs-gate roster table in [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) went when that table did.
 
 **Step 2 is now asserted by nothing.** The gate that used to compare this file's tables against

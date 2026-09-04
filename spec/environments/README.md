@@ -222,8 +222,9 @@ array; the comment on that array in
 [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs) records the trade,
 and what replaced them is the standard in
 [`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the docs
-angle in `.claude/skills/diff-review/SKILL.md`. Nothing scans the docs corpus in CI now except the
-link checker.
+angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus for documentation
+defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
+`.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
 `.claude/hooks/pre-push-review-gate.sh` hook gates `git push` on *evidence* that a review ran for the

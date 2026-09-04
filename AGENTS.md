@@ -57,7 +57,8 @@ What replaces it is a judgement you make, not a check you satisfy:
 
 What *is* enforced is narrow, and **neither check blocks a merge.** `Links`
 (lychee, `--offline`) checks that markdown links and heading anchors resolve in
-`docs/`, `spec/`, `.claude/`, `AGENTS.md`, `README.md` and `CONTRIBUTING.md`.
+`docs/`, `spec/`, `.claude/`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`,
+`apps/web/AGENTS.md` and `.github/pull_request_template.md`.
 `env-slugs` checks that every Infisical environment slug names one that exists,
 across exactly the roots `SCAN_ROOTS` in
 [`scripts/check-env-slugs.mjs`](scripts/check-env-slugs.mjs) lists —

@@ -2,8 +2,9 @@
 
 Operations, infrastructure, and agent/CI reference. Grouped by area.
 
-- **Conventions:** [`DOCUMENTATION_CONVENTIONS.md`](DOCUMENTATION_CONVENTIONS.md) — the authoritative
-  placement map for where docs/spec changes go (read before adding any doc).
+- **Conventions:** [`DOCUMENTATION_CONVENTIONS.md`](DOCUMENTATION_CONVENTIONS.md) — the placement map
+  and the documentation standard (read before adding any doc). It is a convention the docs angle in
+  `diff-review` reviews, not a rule CI enforces.
 - **Admin:** [`ADMIN_DASHBOARD.md`](ADMIN_DASHBOARD.md)
 
 Which subfolder of `docs/internal/` owns which kind of change is stated once, in

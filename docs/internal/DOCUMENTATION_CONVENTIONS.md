@@ -64,5 +64,6 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 
 ## See also
 
-- Folder maps: [`docs/README.md`](../README.md) · [`spec/README.md`](../../spec/README.md)
+- Tree indexes: [`docs/README.md`](../README.md) · [`spec/README.md`](../../spec/README.md) — they
+  route to files; the directory map is the table above, and they point back here for it
 - Work tracking: [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) · ADR-16 in [`spec/architecture/README.md`](../../spec/architecture/README.md)
