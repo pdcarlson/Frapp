@@ -12,7 +12,7 @@ tree** against on every PR. Until 2026-09 it read only the paths a PR *added*, w
 `docs/hooks/` and `docs/performance/` came to exist without a row here.
 
 The structure gate reports on its own `docs-structure` job and is **not merge-blocking yet** — it
-moved out of the required `docs-spec-sync` job when it stopped being diff-scoped, and takes the same
+became its own job when it stopped being diff-scoped, and takes the same
 reporting-only rollout `doc-paths` had ([`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md)). So a violation reds
 a check without blocking a merge: treat this map as binding anyway, because the whole point of the
 rollout is to reach the day it blocks.
@@ -21,12 +21,14 @@ rollout is to reach the day it blocks.
 
 1. **Never create a new top-level file** in `docs/` or `spec/`, and never invent a new top-level
    folder. Put the change in the **relevant existing** doc/spec (see the map below).
-2. **Satisfy the docs-sync gate by updating the relevant doc — never by dropping a stray file, and
-   never by appending a stray section to an unrelated one.** `scripts/check-docs-impact.mjs` only
-   checks that *some* doc/spec changed; it is on you to edit the *right* one. When the honest answer
-   is that nothing needs syncing, label the PR `no-doc-change-needed`
-   ([`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md#the-no-doc-change-needed-waiver)) — that is the expected
-   path for a mechanical change, and it beats parking an unowned paragraph in a canonical doc.
+2. **When a change does alter a documented fact, edit the doc that owns it — never a stray new file,
+   and never a section appended to a doc whose subject it does not match.** Most changes alter no
+   documented fact and need no doc edit at all; that is the normal case. Nothing forces a write, and
+   nothing should: the gate that used to (`docs-spec-sync`) could only see that *some* file moved,
+   never whether it was the right one, so it was cheapest to satisfy with an unowned paragraph parked
+   in the nearest canonical doc. It was deleted in #1597 for producing exactly the duplication these
+   rules exist to prevent. An unowned claim in a canonical doc is worse than no claim, because the
+   next reader believes it.
 3. **Do not generate one-off narrative markdown** (audits, PR-consolidation writeups, "NOTES",
    "STATUS", thread-resolution maps, migration plans). That kind of file is what this restructure
    removed. Durable facts go in the canonical doc; ephemeral work goes into **GitHub Issues** (file a `triage`-labeled issue).
@@ -93,23 +95,12 @@ Renaming a doc is never just a rename: `check-doc-paths.mjs` and `check-doc-refs
 whole-tree and will fail on every citation the old name left behind, including citations in source
 code that no other gate can see.
 
-## Satisfying the docs-sync gate (`scripts/check-docs-impact.mjs`)
+## Which doc a change belongs in
 
-It fails when a PR changes a path outside `docs/`/`spec/` without also changing at least one path under
-them. Pick the **relevant** canonical home above:
-
-- **API / domain:** `spec/architecture/README.md` and/or the topic under `spec/behavior/`; add a
-  contributor note in `docs/guides/api-architecture.md` or `database.md` only if needed.
-- **UI:** the relevant file under `spec/ui/` (design-system rules live in `spec/ui/design-system/`).
-- **Infra / CI:** `spec/environments/README.md` and/or `docs/internal/ci-cd/`, or a focused ops runbook.
-- **Mechanical / non-user-visible:** usually there is nothing to sync. Label the PR
-  `no-doc-change-needed` (hard rule 2) rather than writing a note. Only add prose if the change
-  really does alter something an existing doc asserts — and then it goes in *that* doc, not the
-  nearest one.
-
-Root-level files like `AGENTS.md` / `CONTRIBUTING.md` count as outside `docs/`/`spec/` and still need a
-`docs/` or `spec/` change in the same PR when edited. The one prefix the script ignores outright is
-`.buildpad/` — see the next section.
+Most changes alter no documented fact and need no doc edit. When one does, the
+question is never "did I touch a doc" but "which doc owns this fact" — the
+placement map above answers it. Editing the wrong doc to look diligent is the
+failure mode these conventions exist to prevent, not a lesser form of compliance.
 
 ## `.buildpad/` is background, not documentation
 
@@ -126,10 +117,8 @@ Treat it as a running brainstorm, not a source of truth:
    Where it disagrees with `spec/`, `spec/` is the contract.
 2. **Never hand-edit it in a PR.** The next canvas sync overwrites it. A conclusion worth keeping gets
    promoted into its canonical `spec/` or `docs/` home from the map above.
-3. **It cannot satisfy the docs-sync gate**, and cannot fail it either: `check-docs-impact.mjs` ignores
-   the prefix entirely, so a canvas-sync PR passes on its own while a PR that edits code *and*
-   `.buildpad/` still owes a `docs/` or `spec/` edit. Mechanics:
-   [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md#exemptions).
+3. **It is not documentation and cannot stand in for it.** A conclusion that matters gets promoted
+   into its canonical `docs/` or `spec/` home; leaving it in the canvas leaves it stale by design.
 4. **Source tooling skips it.** It holds no code, so the `Links`, `doc-paths` and docs-structure gates
    never walk it, and [`.prettierignore`](../../.prettierignore) keeps `npm run format` from rewriting
    the whole export into a diff the next sync would just undo.
@@ -154,10 +143,8 @@ The same rules as `.buildpad/` otherwise apply, with one difference that matters
 
 1. **`spec/` still wins.** A plan file records what the code looks like today and what an agent should
    do next. It is not a behavior contract.
-2. **They are not exempt from the docs-sync gate.** Unlike `.buildpad/`, root-level paths are not in
-   `NON_CODE_PREFIXES`, so a PR that edits either file still owes a `docs/` or `spec/` change —
-   editing them cannot satisfy the gate either. That is deliberate: they are short-lived, and
-   exempting a root path would weaken a gate required under `enforce_admins: true`.
+2. **They are not documentation.** Editing one never stands in for updating the doc that owns a fact;
+   they are short-lived scratch, and are deleted when the project wraps.
 3. **A conclusion worth keeping gets promoted** into its canonical `spec/` or `docs/` home from the map
    above before the files are deleted.
 4. **Delete this section and the placement-map row in the same PR that deletes the files.** Both are

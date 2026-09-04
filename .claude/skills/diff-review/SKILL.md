@@ -95,16 +95,18 @@ failure mode, not a hypothetical.
 - **Migration safety.** Migrations must pass `npm run check:migration-safety` and replay under
   PGlite (`npm run check:pglite-migrations`). Flag anything that breaks the PGlite path — a
   `create extension` is the known trap. Flag destructive DDL without a stated backfill or rollback.
-- **Doc-sync mandate.** Every non-doc change needs a matching update under `docs/` or `spec/`, in
-  that content's canonical home per `docs/internal/DOCUMENTATION_CONVENTIONS.md`. Two shapes of
-  gate-satisfying filler are themselves findings, and the second is the common one:
-  - A new **stray file** added just to satisfy the gate.
+- **Doc placement and duplication.** No check requires a doc edit — the gate that did was deleted in
+  #1597 for producing filler — so do **not** flag a PR for lacking one. Flag the opposite. Two shapes
+  of filler are findings, and the second is the common one:
+  - A new **stray file** added so the change looks documented.
   - A new **stray section or bullet appended to an existing doc** whose subject does not match the
     doc it landed in — a "Maintenance Log", a "Notes" list, a changelog entry in a reference doc.
     Test it by asking what the doc is *for*: would a reader who came for that topic want this
-    paragraph? If not, the honest move is the `no-doc-change-needed` label
-    ([`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md#the-no-doc-change-needed-waiver)), not
-    a green check bought with an unowned claim.
+    paragraph? If not, it is an unowned claim in someone's canonical doc, and the next reader will
+    believe it.
+  - A fact **restated** in a second doc rather than linked. One canonical place per fact
+    (`docs/internal/DOCUMENTATION_CONVENTIONS.md` hard rule 5); a duplicate is how a wrong one
+    spreads. If the PR states something a doc already says, that is a finding.
 - **Tracker rule.** Issues are opened on GitHub with the `triage` label. Shared boundary:
   [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
   Flag any code, script, or workflow that writes to a retired tracker.

@@ -12,9 +12,8 @@ The tracker routines keep the **tracker** honest. This one keeps the **docs** ho
 the first routine that fixes what it finds instead of filing it — [`hygiene-scan`](../hygiene-scan/SKILL.md)
 (routine 5) now does the same for code.
 
-It exists because the repo's docs gates are all structural. `check-docs-impact.mjs` asserts that
-*some* doc changed, `check-docs-structure.mjs` that every doc sits in a declared home, and
-`check-doc-paths.mjs` that cited paths resolve. [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)
+It exists because the repo's docs gates are all structural. `check-docs-structure.mjs` asserts that
+every doc sits in a declared home, and `check-doc-paths.mjs` that cited paths resolve. [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)
 says the quiet part itself: none of them check *whether a doc's claims are still true*. The
 [`check-our-docs`](../check-our-docs/SKILL.md) skill covers that, but only for whatever a session
 happened to read — so debt pools in exactly the low-traffic runbooks a cold session needs most.
@@ -185,14 +184,10 @@ true corpus is.
 
 Otherwise, in order:
 
-1. **Verify.** `npm run check:doc-paths`, and the two diff-scoped gates with real arguments —
-   `node scripts/check-docs-impact.mjs --base "$(git merge-base origin/main HEAD)" --head HEAD` and
-   the same for `check-docs-structure.mjs`, which since 2026-09 is **whole-tree**: it accepts
-   `--base`/`--head` but no longer needs them, and a rename of a `LEGACY_NAMES` file — this
-   routine's literal job — fails until that entry is deleted too. Its **exit 2 now means the gate
-   did not run** (wrong working directory), so never wave it through. `check-docs-impact.mjs` exits 2
-   with no `--base`/`--head`, which reads
-   like a failure and is not. `npm run ci:local-gate` runs the set but also lint, typecheck and API
+1. **Verify.** `npm run check:doc-paths` and `npm run check:docs-structure`, which since 2026-09 is
+   **whole-tree**: a rename of a `LEGACY_NAMES` file — this routine's literal job — fails until that
+   entry is deleted too. Its **exit 2 means the gate did not run** (wrong working directory), so
+   never wave it through. `npm run ci:local-gate` runs the set but also lint, typecheck and API
    tests — heavier than a docs run needs.
    `check-doc-paths` is **whole-tree**: deleting a doc or renaming a heading can turn it red on a
    file this run never opened. Read its output past the slice.
@@ -212,12 +207,10 @@ Otherwise, in order:
    finding, not a reason to keep pushing. Never widen the PR to chase a red check outside the
    allowlist.
 
-> **A PR touching only `.claude/` cannot merge.** `check-docs-impact.mjs` counts `docs/` and `spec/`
-> only, and `docs-spec-sync` is required under `enforce_admins: true`. So a run whose only changes
-> are to a `SKILL.md` — including this one, via self-maintenance below — must pair them with a
-> `docs/` or `spec/` file. `ROUTINES.md` is inside the allowlist and is usually the right pair.
-> Sweeps that touch `docs/`/`spec/` anyway are unaffected. Same trap, same fix, as
-> [`ROUTINES.md` § Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract).
+> **A PR touching only `.claude/` merges on its own.** It could not before #1597, when
+> `docs-spec-sync` was required and counted `docs/` and `spec/` only — which is why every skill
+> change up to then was paired with a `docs/` file. Pair with `ROUTINES.md` when the rule genuinely
+> lives in both, not to get a check green.
 
 ---
 

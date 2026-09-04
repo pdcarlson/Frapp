@@ -25,11 +25,9 @@ carries a **Scope fence** (hard: files outside it are off-limits even when they 
 4. Scoped tests pass before and after: `npm run test -w apps/api` for API-side changes, the relevant
    workspace's `vitest run` otherwise.
 5. `npm run check:dep-cruiser` passes (required gate).
-6. The PR updates the **named** files in your section's "Docs/spec to update". The docs-sync gate is
-   required under `enforce_admins: true`, and `scripts/check-docs-impact.mjs:11` only counts paths
-   under `docs/` or `spec/` — root files like `CONTRIBUTING.md`, `AGENTS.md`, and this plan do **not**
-   satisfy it. Do not reach for the `no-doc-change-needed` label: every item here has a real doc to
-   update, so waiving would be the wrong act.
+6. The PR updates the **named** files in your section's "Docs/spec to update". Every item here has a
+   real doc to update, so update it — not because a check demands one (none does since #1597), but
+   because the fact genuinely moved.
 7. **Follow-ups go to GitHub Issues, never into this file or `REFACTOR-PROGRESS.md`.** Anything you
    find that is out of scope gets a `triage`-labeled GitHub issue via the GitHub MCP, per
    [`.claude/skills/file-follow-up/SKILL.md`](.claude/skills/file-follow-up/SKILL.md), and you record

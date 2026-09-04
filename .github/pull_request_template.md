@@ -9,8 +9,8 @@
 ## Docs / Spec impact
 
 - **Docs impact**: (None / Updated / Follow-up) — prefer `docs/` (e.g. `docs/guides/`) or internal runbooks.
-  - Answering **None** is fine and common. Label the PR `no-doc-change-needed` and move on — do not
-    append a note to an unrelated doc to turn `docs-spec-sync` green.
+  - Answering **None** is fine and common — most changes alter no documented fact, and nothing
+    requires a doc edit. Never append a note to an unrelated doc to make a change look documented.
 - **Spec impact**: (None / Updated / Follow-up)
 - **Links**:
   - Doc path(s) (`docs/…`, `spec/…`):
@@ -28,7 +28,7 @@
 ## Checklist
 
 - [ ] This PR keeps intended behavior (`spec/`) and current behavior (code) aligned — disagreement is a tracked bug, not silent discretion (see `AGENTS.md` § Spec vs code).
-- [ ] If this PR changes non-doc files, it also updates the **relevant** files in `docs/` and/or `spec/` — or, if it genuinely has no docs impact, it carries the `no-doc-change-needed` label (`.buildpad/` canvas-sync paths are exempt). An unrelated doc edited only to satisfy `check-docs-impact.mjs` is a review finding, not a pass — see `docs/internal/ci-cd/DOCS_CI.md`.
+- [ ] If this PR changes a fact a doc asserts, it updates **that** doc — not the nearest one, and not a new stray file. An unrelated doc edited to make the change look documented is a review finding. See `docs/internal/ci-cd/DOCS_CI.md`.
 - [ ] If I changed API/domain/workflows, I updated `docs/` and/or `spec/` in the same change set.
 - [ ] If I changed API source, I regenerated `openapi.json` and `packages/api-sdk/src/types.ts`.
 - [ ] If I moved or deleted a file docs cite, `npm run check:doc-paths` and `npm run check:doc-refs` still pass (both are whole-tree, so they can fail on a file this PR never touched; `doc-refs` covers references from source, workflows, migrations and shell).

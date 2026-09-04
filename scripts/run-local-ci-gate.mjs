@@ -24,7 +24,7 @@ function getMergeBase(baseRef) {
   return execSync(`git merge-base ${baseRef} HEAD`, { encoding: "utf8" }).trim();
 }
 
-function resolveDocsSyncBase(baseRef) {
+function resolveDiffBase(baseRef) {
   try {
     runCommand(`git fetch origin ${baseRef.replace("origin/", "")}`, "Fetch base branch");
   } catch {
@@ -41,13 +41,6 @@ function resolveDocsSyncBase(baseRef) {
   }
 }
 
-function runDocsSyncCheck(baseSha, headSha) {
-  runCommand(
-    `node scripts/check-docs-impact.mjs --base "${baseSha}" --head "${headSha}"`,
-    "Run docs/spec sync check",
-  );
-}
-
 function runDocsStructureCheck(baseSha, headSha) {
   // Whole-tree, so it can fail on a file this branch never touched — the same
   // property the required doc-paths gate has. Passing the range only labels
@@ -55,10 +48,7 @@ function runDocsStructureCheck(baseSha, headSha) {
   //
   // Ordered AFTER the secret scan on purpose. runCommand throws on a nonzero
   // exit and runLocalGate exits on it, so putting a whole-tree check earlier
-  // would let an inherited structure violation stop gitleaks from ever running
-  // — and `PR_LABELS_JSON='["no-doc-change-needed"]'` does not waive this one
-  // (only check-docs-impact.mjs reads that variable), so the documented waiver
-  // would not get the developer past it either.
+  // would let an inherited structure violation stop gitleaks from ever running.
   runCommand(
     `node scripts/check-docs-structure.mjs --base "${baseSha}" --head "${headSha}"`,
     "Run docs/spec structure check",
@@ -81,9 +71,8 @@ function runLocalGate() {
   console.log("Running local CI gate...");
   console.log(`Base ref: ${baseRef}`);
 
-  const baseSha = resolveDocsSyncBase(baseRef);
+  const baseSha = resolveDiffBase(baseRef);
   const headSha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
-  runDocsSyncCheck(baseSha, headSha);
   runSecretScan(baseSha, headSha);
   runDocsStructureCheck(baseSha, headSha);
 
@@ -92,7 +81,7 @@ function runLocalGate() {
     ["npm run check-types", "Run monorepo type-check"],
     ["npm run test -w apps/api", "Run API unit tests"],
     ["npm run check:api-contract", "Run API contract freshness check"],
-    // Thread the SHAs, as the docs-sync and secret-scan calls above already do.
+    // Thread the SHAs, as the secret-scan and structure calls above already do.
     // Bare, `getChangedFiles` sees no range and returns `[]`, so
     // `validatePromotionDocs` early-returns and the "a migration needs a
     // promotion/rollback doc" half of the check never runs — the local gate goes

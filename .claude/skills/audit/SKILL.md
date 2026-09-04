@@ -277,7 +277,7 @@ For each migration:
 | Deploy (production) | `.github/workflows/deploy-production.yml` | SHA validation (ancestor of `main` + CI green), the replay/apply fence, provider guardrail preflight (currently red — see next row), deploy-by-commit, strict CANCELED handling |
 | Production guardrails | `.github/workflows/production-guardrails.yml` | Render auto-deploy off and tracking `main` — dashboard-only and fails open; the Vercel half is red as of 2026-09-02 and is to be **inverted, not dropped** — see below |
 | Release | `.github/workflows/release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
-| Docs | `.github/workflows/docs.yml` (`docs-spec-sync` job) | Spec sync enforcement |
+| Docs | `.github/workflows/docs.yml` | Structure, citations, references, rosters |
 
 Both Vercel projects were unlinked from Git (landing 2026-09-01, web 2026-09-02). The old
 `assertVercelProductionBranch` read an absent `project.link.productionBranch` and treated it as a

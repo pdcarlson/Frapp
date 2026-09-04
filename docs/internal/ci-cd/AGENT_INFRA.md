@@ -86,8 +86,8 @@ summary before running anything from this family.
 | Migration drift     | `.github/workflows/check-migration-drift.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Compares each deployed database's `schema_migrations` against `supabase/migrations/` and upserts one `routine-state` alert issue, closing it when every environment is back in sync. Job-scoped `issues: write`; workflow-level grant stays `contents: read`. Logic in `scripts/ci/check-migration-drift.mjs` (tests: `scripts/ci/__tests__/check-migration-drift.test.mjs`). **Not** a required check. See "Schema drift detection" below. |
 | Staging conformance | `.github/workflows/staging-conformance.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, and an end-to-end sign-in whose JWT carries `active_chapter_id`. **Migration parity is deliberately NOT checked here** — `check-migration-drift.yml` above owns it end to end; see "Scheduled conformance" below. Upserts its own `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. |
 | Release tags        | `.github/workflows/release.yml` — `workflow_call` from `deploy-production.yml` (plus `workflow_dispatch` for retry). Tags the deployed commit AFTER Render and Vercel report healthy, so a `v*` tag names something live. Bump is the highest `release:*` label across every PR merged since the last tag (`scripts/ci/resolve-release-bump.mjs`), overridable by a dispatch input. |
-| Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
-| CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), and upserts one PR wake comment **only for an outcome the PR-activity webhook does not already carry** — a cancelled or timed-out run, or an infra failure the re-queue could not absorb. Success and real failures clear the stale wake and say nothing. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
+| Docs                | `.github/workflows/docs.yml` — structure, citations, references and roster checks                                                                     |
+| CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs checks / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), and upserts one PR wake comment **only for an outcome the PR-activity webhook does not already carry** — a cancelled or timed-out run, or an infra failure the re-queue could not absorb. Success and real failures clear the stale wake and say nothing. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
 | PR base sync        | `.github/workflows/pr-base-sync.yml` — `push` to `main`: sweeps open PRs targeting it (cap 20, logged); behind + clean PRs are auto-updated via the update-branch API **only when the base-sync GitHub App token mints** (default-token pushes trigger no CI). Conflicts and per-PR update failures upsert one `<!-- frapp-base-sync -->` wake comment telling the watching agent to merge `main` itself; a missing or rejected token is repo-wide, so it raises **one** `routine-state` alert issue instead of the same comment on every PR. Logic in `scripts/ci/pr-base-sync.mjs` (tests: `scripts/ci/__tests__/pr-base-sync.test.mjs`). **Not** a required check. See "Base-branch sync" below. |
 | PR base guard       | `.github/workflows/pr-base-guard.yml` — the **only** workflow with no `on.pull_request.branches` filter, so it runs on every PR whatever the base. Fails when the base is not `main`, which is the one check a stacked PR would otherwise never get. No checkout, no npm, no third-party action; reads `pull_request.base.ref` off the event payload. Fires on `edited` too, so retargeting a base cannot leave a stale green. **Not** yet a required check — see "CI branch filters" below. |
 | PR CI branch filter | `ci.yml` / `docs.yml` / `links.yml` set `on.pull_request.branches: [main]`. GitHub matches that list against the PR **base**. A PR whose base is anything else skips every required check. See "CI branch filters" under PR babysitting. |
@@ -314,44 +314,17 @@ invisible to it, so they neither get bumped nor get cleaned up as the direct dep
 them in move on. Reviewing that block is a manual job; `npm run check:npm-audit` is what tells you an
 override is no longer doing its work.
 
-### Dependabot PRs are exempt from the docs/spec sync gate
+### Dependabot PRs need no docs exemption
 
-`check-docs-impact.mjs` runs from **one** workflow — `.github/workflows/docs.yml` (the required
-`docs-spec-sync` check) — and skips when the PR author is `dependabot[bot]`.
+They used to. `docs-spec-sync` was a required check under `enforce_admins: true` that failed any PR
+touching non-`docs/` files without touching `docs/` — and a Dependabot PR changes `package.json` /
+`package-lock.json` and nothing else, so without a step-level exemption keyed on the PR author every
+one of them was permanently unmergeable, not merely red. The gate was deleted in #1597 and the
+exemption went with it.
 
-Without that exemption Dependabot would be unusable here, not merely noisy: its PRs change
-`package.json` / `package-lock.json` and nothing else, `check-docs-impact.mjs` fails any PR that
-touches non-`docs/` files without touching `docs/`, and **`docs-spec-sync` is a required status check**
-(`scripts/ci/lib/required-checks.mjs`) under `enforce_admins: true`. Every Dependabot PR would
-therefore have been permanently unmergeable — blocked, with no admin override.
-
-Two things to preserve if you ever edit that condition:
-
-- **Skip the step, never the job.** A skipped job never reports its check run, so the PR would block
-  forever on a required check that never arrives — worse than the failure being replaced. The
-  step-level `if` keeps the job, and therefore `docs-spec-sync`, green.
-- **Key on `github.event.pull_request.user.login`, not `github.actor`.** The actor changes when a
-  human re-runs the workflow, which would silently flip the exemption off mid-PR.
-
-`check-docs-structure.mjs` needs no exemption, but not for the reason this line used to give. It is
-no longer a step in `docs-spec-sync` at all: since 2026-09 it reads the **whole tree** rather than
-newly added paths, so it moved to its own reporting-only `docs-structure` job
-([`DOCS_CI.md`](DOCS_CI.md)). A dependency bump passes it because the tree is clean, not because the
-diff is — and being non-required, it could not make a Dependabot PR unmergeable even if it failed.
-
-**There used to be a second copy, and keeping two in sync is exactly what failed.** `ci.yml` ran the
-same script as the last step of `lint-and-typecheck`, unguarded, so every Dependabot PR went green on
-`docs-spec-sync` and red on `lint-and-typecheck` for the identical reason the exemption exists — the
-exemption was real but inert, and the PRs were just as unmergeable. It was given the same condition
-(#1011) and then **removed entirely** when the `no-doc-change-needed` waiver landed: honouring a label
-in `ci.yml` would have meant re-running the whole suite, Docker build included, on every label
-mutation on every PR. **The gate now has exactly one home. Do not add a second** — the drift above is
-what a second copy buys you. Full contract: [`DOCS_CI.md`](DOCS_CI.md).
-
-One caller outside CI: [`scripts/run-local-ci-gate.mjs`](../../../scripts/run-local-ci-gate.mjs) runs
-the script locally. It needs no Dependabot exemption (a human runs it), and it inherits
-`PR_LABELS_JSON` from the shell, so the waiver works there too — see
-[`DOCS_CI.md`](DOCS_CI.md#the-no-doc-change-needed-waiver).
+The lesson worth keeping is why the exemption existed at all: a required check that a whole category
+of legitimate PR **cannot** satisfy is not a gate, it is a block. That was the argument for deleting
+the gate, and it is the test to apply before adding any check to `DOCS_CHECKS`.
 
 ### `colorjs.io` is ignored: it is a vendored-generator pin, not a dependency
 
@@ -752,7 +725,7 @@ three; they never prompt.**
 > red wake outliving the failure it described.
 
 The webhook's success coverage is the reason the watchdog stopped commenting on green runs. Before
-that, every push put three fresh comments on the PR (CI, Docs spec sync, Links) restating what the
+that, every push put three fresh comments on the PR (CI, Docs checks, Links) restating what the
 checks UI and the webhook had both already said, and the delete-then-create cadence re-notified on
 each one — so the wake that *was* worth reading arrived indistinguishable from two that were not.
 A watchdog whose output gets skimmed is not a watchdog. Silence is now the signal that nothing
@@ -785,7 +758,7 @@ Two earlier claims about this tool are corrected: on this surface the call does 
 `-32003`, and approval is **not** converted to a denial — the owner approved and the call succeeded,
 returning a live trigger id. It simply *asks*, and asking is what disqualifies it from unattended
 runs — not failing. Owner's standing preference (2026-08-08): don't call it. The other three layers
-carried PR #743 unaided — three `CI wake` comments (CI, Docs spec sync, Links) plus the merge
+carried PR #743 unaided — three `CI wake` comments (CI, Docs checks, Links) plus the merge
 notification, none of which prompted. Anything genuinely needing a schedule is a real Routine
 created in the UI, which works fine. If a session does call it and it prompts, say so once, never
 re-arm, and never ship a settings change to "fix" it — that would be the fourth attempt at a fix

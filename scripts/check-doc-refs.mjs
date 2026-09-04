@@ -94,7 +94,7 @@ export function blankFencedBlocks(text) {
 // Files whose doc references are deliberately not live pointers.
 export const EXCLUDED = [
   // A periodically-synced export of the Buildpad canvas, never hand-edited
-  // (AGENTS.md § Planning canvas). check-docs-impact.mjs exempts it too.
+  // (AGENTS.md § Planning canvas).
   ".buildpad/",
   // A gitleaks finding baseline: each entry pins a path AND a commit SHA, so it
   // describes the tree as it was, on purpose.

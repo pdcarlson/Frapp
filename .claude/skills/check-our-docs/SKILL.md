@@ -72,15 +72,13 @@ is the record. Don't rewrite history because the code moved on — add an amendm
 
 **When a doc names its own source, read that source whole.** A grep tells you whether your pattern
 matched, not whether the fact is there — and the answer is often in a second declaration a few lines
-away. Concretely: this skill's own PR claimed `docs-spec-sync` might not be a required check,
-because `CI_CHECKS` in `scripts/ci/lib/required-checks.mjs` did not contain it. At the time the same
-file declared a **separate `DOCS_CHECKS` array** that did, merging both into
-`ALL_REQUIRED_CHECKS`, so the docs were right and the verification was wrong — one topic, two
-locations, conclusion drawn from the first. That is the same failure shape as the
-`ENV_REFERENCE.md` story above, which is the point: it catches careful readers, and grep makes it
-easier, not harder. (`docs-spec-sync` has since been removed from `DOCS_CHECKS` in #1597, so today
-the grep and the truth agree. Read the arrays for what is in them, never this paragraph — which is
-the lesson, applied to itself.)
+away. Concretely: this skill's own PR claimed a check might not be required, because `CI_CHECKS` in
+`scripts/ci/lib/required-checks.mjs` did not contain it. The same file declared a **separate
+`DOCS_CHECKS` array** that did, merging both into `ALL_REQUIRED_CHECKS`, so the docs were right and
+the verification was wrong — one topic, two locations, conclusion drawn from the first. That is the
+same failure shape as the `ENV_REFERENCE.md` story above, which is the point: it catches careful
+readers, and grep makes it easier, not harder. Read the arrays for what is in them, never this
+paragraph — which is the lesson, applied to itself.
 
 **3. Verify before you act, cheapest first.** A path check is seconds; don't skip it because the
 doc reads well. Escalate to a provider call only when the claim is genuinely about provider state.
@@ -98,9 +96,7 @@ off-task, it was small, someone else would. The cost is asymmetric — fixing co
 and not fixing costs the next reader the same wrong conclusion you just avoided.
 
 **In an interactive session: fix it.** You already did the verification; the fix is the cheap part.
-This is explicitly sanctioned — `AGENTS.md` says fix in the same PR when it's in scope. A doc
-correction alongside a code change also satisfies the `docs-spec-sync` gate honestly, which is what
-that gate wanted in the first place.
+This is explicitly sanctioned — `AGENTS.md` says fix in the same PR when it's in scope.
 
 **What "fix" means, in order of preference:**
 

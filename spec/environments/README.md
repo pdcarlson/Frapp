@@ -192,8 +192,7 @@ The **Blocker?** column states the *intended* set — every `Yes` above is an en
 `DOCS_CHECKS` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs),
 with no exceptions — `buildProtectionPayload` appends nothing to the roster, it PUTs the arrays as
 they stand. (`branch-policy` was the exception this paragraph used to name. It was deleted with the
-`production` branch in #1340. The docs and drift checks below have their own requiredness column;
-`docs-spec-sync` is listed there, not here.)
+`production` branch in #1340.)
 Live branch protection is whatever an admin last applied and can lag the script, so no doc claims
 per-check whether a gate is live today; read live state per
 [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
@@ -231,7 +230,6 @@ All three run in `.github/workflows/docs.yml`. **Required?** below is the *inten
 
 | Check            | Provider       | What it validates                               | Required?  |
 | ---------------- | -------------- | ----------------------------------------------- | ---------- |
-| `docs-spec-sync` | GitHub Actions | Docs/spec sync on the PR diff (`check-docs-impact.mjs`). Structure is the separate `docs-structure` job, not this one | **No — removed from `DOCS_CHECKS`, being retired (#1597)** |
 | `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Yes — listed in `DOCS_CHECKS`. Whole-tree, so it can block a PR over a citation in a doc that PR never touched; that trade was taken deliberately ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
 | `migration-order` | GitHub Actions | No migration this change **introduces** sorts before a version staging or production has already applied (`check-migration-order.mjs`, read-only against the Supabase Management API) | Yes — listed in `DRIFT_CHECKS`. Reads head-minus-base, so a change touching no migrations makes zero network calls and cannot block a PR over unrelated state, and a PR that fixes an ordering fault turns its own check green. Checks **both** environments: #1373 was invisible to `migration-replay` because the replay rebuilds *production's* state and production had not applied the newer migration; staging had |
 | `migration-drift` | GitHub Actions | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`, read-only against the Supabase Management API) | **No — demoted from `DRIFT_CHECKS`.** It measures whether *staging* is behind *main*, which no PR can answer, so as a required check it was a repo-wide merge-freeze switch — #1373 used it as one and made every open PR unmergeable. It still runs and reports on every PR, and the scheduled [`check-migration-drift.yml`](../../.github/workflows/check-migration-drift.yml) covers the same ground daily across staging *and* production with a self-closing P1 issue |

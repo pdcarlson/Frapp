@@ -363,7 +363,4 @@ gate.
 | jscpd | `ignore` in [`.jscpd.json`](../../../.jscpd.json) |
 | ESLint | Unreachable by construction — `apps/api`'s lint script globs `{src,apps,libs,test}/**/*.ts` relative to the workspace, and there is no repo-root ESLint config |
 | Prettier | `.buildpad/` in [`.prettierignore`](../../../.prettierignore) |
-| docs/spec sync | `NON_CODE_PREFIXES` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) — see [`DOCS_CI.md`](DOCS_CI.md) |
 
-The docs/spec gate treats `.buildpad/` paths as **ignored**, not as documentation: a PR that edits
-code *and* `.buildpad/` still owes a `docs/` or `spec/` edit.

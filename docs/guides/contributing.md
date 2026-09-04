@@ -163,8 +163,8 @@ In CI, we also run:
 
 > **Warning:** Out-of-date documentation is a real bug. Spec-vs-code disagreement is a tracked bug, not silent discretion — file it or fix the stale side in the same PR. When in doubt, fix the docs in the same PR as the implementation change.
 
-### CI enforcement (`scripts/check-docs-impact.mjs`)
+### What CI checks
 
-PRs that change files **outside** `docs/` and `spec/` must also change **at least one** file under **`docs/`** or **`spec/`**. Prefer updating **`docs/`** (e.g. `docs/guides/`) and **`spec/`** together when behavior changes.
+No check requires you to touch a doc — the one that did was deleted in #1597 because it could only see that *some* doc moved, not whether it was the right one, so it was cheapest to satisfy with filler. What CI does check is that cited paths resolve, files sit in a declared home, and hand-copied rosters match their source.
 
-See also [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md) for rationale and optional future tightening of the gate.
+See [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md).
