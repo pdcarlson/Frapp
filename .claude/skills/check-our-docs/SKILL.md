@@ -132,7 +132,7 @@ credential names. This skill only adds the mapping from *doc claim* to *which pr
 
 | Doc claim | Settled by |
 |---|---|
-| Required-check / branch-protection tables (`CONTRIBUTING.md`, `spec/environments/README.md`) | GitHub branch protection, and the `CI_CHECKS` array in `scripts/ci/lib/required-checks.mjs` — that constant is what `scripts/configure-branch-protection.mjs` actually applies |
+| Required-check / branch-protection roster (`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Required Status Checks — the only doc that restates it) | GitHub branch protection, and the `CI_CHECKS` array in `scripts/ci/lib/required-checks.mjs` — that constant is what `scripts/configure-branch-protection.mjs` actually applies |
 | Infisical sync inventory (`SECRETS_MANAGEMENT.md` § Provider syncs) | The Infisical API — the doc's own note says the dashboard wins |
 | Which env vars exist per environment | Infisical, compared against `ENV_REFERENCE.md` |
 | Applied migrations, promotion state | Supabase (`npx supabase migration list --project-ref …`) |

@@ -52,43 +52,22 @@ it deployed, after Render and Vercel report healthy — see [Version Tagging](#v
 
 ## Required Status Checks
 
-Every PR must pass these checks before merging. Branch protection enforces this for all users, including admins.
+Every PR must pass the required status checks before merging. Branch protection enforces this for all users, including admins.
 
-### CI Jobs (GitHub Actions)
-
-| Check                | What it validates                                                                                  |
-| -------------------- | -------------------------------------------------------------------------------------------------- |
-| `packages-build`     | Shared packages compile                                                                            |
-| `lint-and-typecheck` | ESLint + TypeScript across all workspaces, **`nest build` for `apps/api`** (matches Render compile), landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests |
-| `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                   |
-| `api-tests`          | API Jest unit tests                                                                                |
-| `api-contract-check` | `openapi.json` + `packages/api-sdk/src/types.ts` freshness                                                      |
-| `migration-safety`   | Migration filename validation + promotion docs                                                     |
-| `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                  |
-| `ci-scripts-tests`   | `node --test` over `scripts/ci/__tests__/`, covering gate and deploy scripts under both `scripts/` and `scripts/ci/` |
-| `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                        |
-| `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)    |
-| `dependency-audit`   | npm audit gate: high/critical advisories not allowlisted in `scripts/npm-audit-allowlist.json` fail |
-| `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys |
-| `web-tests`          | `apps/web` unit tests plus the shared packages only this suite covers — `packages/hooks`, `packages/chat-core`, `packages/chat-integrations` |
-| `changes`            | Computes the path filter that decides whether `web-tests` and `web-responsive-floor` run. Required only because they need it — a required check with a non-required parent can be skipped *and* still count as passing |
-| `web-responsive-floor` | Every dashboard route renders without horizontal scroll at 375px, the floor `spec/ui/web-dashboard/README.md` states as a MUST. Playwright, but no baseline and no pixel diff — which is why it could be required, unlike the `web-visual-regression` snapshot job it was split out of (advisory, and since deleted) |
-| `dependency-cruiser` | Architectural boundaries: API layer direction, no package→app imports, no cross-app imports, no cycles. Existing violations are grandfathered in `.dependency-cruiser-known-violations.json` |
-| `web-production-build` | Builds `apps/web` and `apps/landing` on a `npm ci --omit=dev` tree — the only job that runs the program `next build` type-checks in production. A green preview does not cover this: previews restore a build cache instead of installing cold |
-| `duplicate-detection` | jscpd against a repo-wide duplication threshold — **advisory, not merge-blocking** (no clone-level baseline exists; see [`docs/internal/ci-cd/QUALITY_GATES.md`](docs/internal/ci-cd/QUALITY_GATES.md)) |
-| `docs-structure`     | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule (`scripts/check-docs-structure.mjs` against `scripts/ci/lib/docs-structure.mjs`, whole-tree) — **advisory, not merge-blocking yet** (see ‡) |
-| `doc-paths`          | Backticked repo-path citations in docs resolve to real files (`scripts/check-doc-paths.mjs`, whole-tree) |
-| `doc-refs`           | Bare `docs/`/`spec/` references in files *outside* the docs corpus — source, workflows, migrations, shell — resolve to real files (`scripts/check-doc-refs.mjs`, whole-tree) — **advisory, not merge-blocking yet** (see ‡) |
-| `migration-order`    | No migration this change **introduces** sorts before a version staging or production has already applied (`scripts/ci/check-migration-order.mjs`). The CLI refuses that outright rather than reordering — "Found local migration files to be inserted before the last migration on remote database" — which halted staging's deploy in #1373. Reads only head-minus-base, so a change touching no migrations makes zero network calls, and a PR that fixes an ordering problem turns its own check green |
-| `migration-drift`    | Staging holds every migration on `main` (`scripts/ci/check-migration-drift-gate.mjs`) — **reports only, no longer required** (see †). Compares `origin/main`, not your PR head |
-| `migration-replay`   | The migrations this PR adds actually **apply** to a database rebuilt at production's currently-applied state (`scripts/ci/check-migration-replay.mjs`). `pglite-migrations` applies the corpus from zero, which is a different question; this runs only the pending tail, through the same Supabase CLI path the real deploy uses. Read-only against production. Does real work only when the PR touches `supabase/migrations/**`, so it cannot block a PR over unrelated state |
-| `doc-tables`         | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`scripts/check-doc-tables.mjs`, whole-tree) — **reports only, not yet required** (ROLLOUT‡) |
-
-Live branch protection is whatever an admin last applied by running `npm run configure:branch-protection`, and it can lag the script, so this table does not claim per-check whether a gate is live today. Read live state per [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) rather than trusting a doc for it. New gates land report-only and are promoted by adding them to the array and re-running that command — the apply is the human half, with an admin PAT: the bare command is a live `PUT`, and an agent session runs `npm run configure:branch-protection:verify` (which writes nothing) and nothing else.
-
-† `migration-drift` was required and was **demoted** to reporting-only. It asserts that *staging* holds every migration on *main* — a question about two things the PR in front of it neither contains nor can change — so as a required check it is not a gate but a repo-wide merge-freeze switch. #1373 used it as one: a single back-dated migration filename halted staging's apply and made every open PR in the repository unmergeable until a human intervened. Detection is not lost — the scheduled [`check-migration-drift.yml`](.github/workflows/check-migration-drift.yml) runs the same comparison daily across staging *and* production and files a P1 issue that closes itself on recovery, and the PR job keeps running and reporting. What replaced it as a gate is `migration-order`, which asks the same question scoped to what the change introduces, so a PR can actually answer it.
-
-‡ `doc-tables`, `doc-refs` and `docs-structure` report first, like every gate here did. They and `doc-paths` all scan the whole tree rather than the PR diff — a citation breaks when the file it names moves, and a roster goes stale when a *workflow* changes, both on the other side of the reference — so as required checks they can block a PR over a file it never touched. `doc-paths` was added to `DOCS_CHECKS` on 2026-08-21 with that trade accepted — which is intent; it becomes live only when an admin re-runs `npm run configure:branch-protection`. That apply is the human half by policy, with an admin PAT — the bare command is a live `PUT`, and an agent session runs `npm run configure:branch-protection:verify`, which writes nothing. Promote `doc-tables`, `doc-refs` and `docs-structure` the same way once each has run green on `main`. See [`docs/internal/ci-cd/DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md).
+**The roster lives in one place and is not restated here.** Every check name, what it validates,
+which jobs are advisory rather than merge-blocking, why `migration-drift` was demoted, and the
+whole-tree rollout the docs gates go through are in
+[`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
+**§ Required Status Checks**. Its source of truth is the `CI_CHECKS` / `DOCS_CHECKS` /
+`DRIFT_CHECKS` arrays in
+[`scripts/ci/lib/required-checks.mjs`](scripts/ci/lib/required-checks.mjs); the runbook's tables are
+the only hand-kept copy left, asserted against those arrays by `npm run check:doc-tables`. Live
+branch protection is whatever an admin last applied and can lag the arrays, so **no doc claims
+per-check whether a gate is live today** — read live state per the runbook. New gates land
+report-only and are promoted by adding them to an array and re-running
+`npm run configure:branch-protection`, which is a live `PUT` and a human step with an admin PAT: an
+agent session runs `npm run configure:branch-protection:verify` (which writes nothing) and nothing
+else.
 
 ### Vercel deployment policy
 
@@ -99,16 +78,11 @@ Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled
 ### AI review coverage
 
 - Code review is a **local pre-push gate**, not CI: `.claude/hooks/pre-push-review-gate.sh` blocks
-  `git push` for a branch HEAD until that HEAD has been reviewed (review sub-agents inherit the
-  session model, Opus). Agents run **`/diff-review`**, which writes the marker the gate looks for;
-  the richer bundled **`/code-review`** is also available, but is model-invocable only when the
-  turn's prompt carries `/code-review` whitespace-delimited on both sides — backticks or trailing
-  punctuation defeat it (never in a sub-agent, never under `/next`)
-  — and it does not write the marker, so after using it record the evidence by hand rather than
-  reaching for `FRAPP_SKIP_REVIEW_GATE=1`, which is for emergencies and leaves a reviewed push
-  indistinguishable from an unreviewed one. The CI Claude review and the
-  `claude-review-gate` required check were removed (2026-06-04, ADR-14 amendment). See
-  [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+  `git push` for a branch HEAD until that HEAD has been reviewed; agents run **`/diff-review`**,
+  which writes the marker it looks for. The CI Claude review and the `claude-review-gate` required
+  check were removed (2026-06-04, ADR-14 amendment). Which skill, when the bundled `/code-review`
+  is reachable, how evidence is recorded, the bypass and the livelock release:
+  [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md) § What runs now.
 
 ### PR review requirement policy
 
@@ -161,8 +135,11 @@ type(scope): description
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
-- Code review runs **locally before you push** (the pre-push review-gate hook requires a
-  `/diff-review` pass — or `/code-review` plus `FRAPP_SKIP_REVIEW_GATE=1`), not on the PR — see [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+- Code review runs **locally before you push**, not on the PR: the pre-push review-gate hook requires a
+  `/diff-review` pass, which writes the evidence marker itself. `FRAPP_SKIP_REVIEW_GATE=1` is for
+  emergencies only — never as the routine path after a review you did run, because it leaves that push
+  indistinguishable from one that skipped review. Procedure:
+  [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md) § How the gate enforces.
 
 ### 4. Address feedback
 
