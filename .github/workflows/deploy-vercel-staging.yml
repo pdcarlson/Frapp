@@ -119,10 +119,15 @@ jobs:
       #
       # Runs per project because each has its own hostname. Not `if: always()` —
       # a failed deploy has nothing worth aliasing.
+      #
+      # DEPLOY_SHA, never GITHUB_SHA: `GITHUB_` is a reserved prefix, so a
+      # step-level `env: GITHUB_SHA:` is silently ignored and the script would
+      # read the ambient value — which on a `workflow_run` event is the default
+      # branch's tip, not the commit this job just deployed.
       - name: Point the staging hostnames at the new deployments
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          GITHUB_SHA: ${{ github.event.workflow_run.head_sha }}
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           VERCEL_PROJECT_ID="$VERCEL_WEB_PROJECT_ID" \

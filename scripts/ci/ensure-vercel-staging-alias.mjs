@@ -179,7 +179,15 @@ export async function ensureVercelStagingAlias({
 async function main() {
   const apiKey = requireEnv("VERCEL_API_KEY");
   const projectId = requireEnv("VERCEL_PROJECT_ID");
-  const sha = requireEnv("GITHUB_SHA");
+  // DEPLOY_SHA wins over GITHUB_SHA, for the same reason it does in
+  // `verify-vercel-deploy.mjs`: a step-level `env: GITHUB_SHA:` is SILENTLY
+  // IGNORED by Actions — `GITHUB_` is a reserved prefix — so a caller that
+  // needs to name a commit other than the ambient one reads as correct and gets
+  // the ambient value anyway. `deploy-vercel-staging.yml` is exactly that
+  // caller: it runs on `workflow_run`, where `github.sha` is the default
+  // branch's tip rather than `workflow_run.head_sha`, which is the commit CI
+  // verified and the one that was actually deployed.
+  const sha = process.env.DEPLOY_SHA || requireEnv("GITHUB_SHA");
   const stagingAlias = requireEnv("VERCEL_STAGING_ALIAS");
   const label = process.env.SERVICE_LABEL ?? projectId;
 

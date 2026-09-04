@@ -70,7 +70,7 @@ export const VERCEL_TARGET_PREVIEW = "preview";
  * syncs are split Production / Preview, so pulling the wrong environment
  * produces a bundle that points at the wrong API and the wrong Supabase project
  * while every status page reports success. See the header of
- * `deploy-vercel-production.mjs`.
+ * `deploy-vercel.mjs`.
  */
 export function vercelEnvironmentFor(target) {
   return target === VERCEL_TARGET_PRODUCTION ? "production" : "preview";

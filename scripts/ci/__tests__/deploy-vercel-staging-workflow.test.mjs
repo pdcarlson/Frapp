@@ -70,6 +70,21 @@ describe("deploy-vercel-staging.yml", () => {
     assert.match(uncommented, /DEPLOY_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
   });
 
+  it("names the commit with DEPLOY_SHA, never a step-level GITHUB_SHA", () => {
+    // `GITHUB_` is a reserved prefix, so `env: GITHUB_SHA:` in a step is
+    // SILENTLY IGNORED — it reads correct and the script gets the ambient
+    // value. On a `workflow_run` event that ambient value is the default
+    // branch's tip, not `workflow_run.head_sha`, so the alias would be pointed
+    // at a deployment for the wrong commit (or none). The same trap is
+    // documented at the CLI entry of verify-vercel-deploy.mjs.
+    assert.doesNotMatch(
+      uncommented,
+      /^\s*GITHUB_SHA:/m,
+      "a step-level GITHUB_SHA is silently ignored by Actions — use DEPLOY_SHA",
+    );
+    assert.match(uncommented, /DEPLOY_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
+  });
+
   it("deploys to the preview channel, never production", () => {
     assert.match(uncommented, /DEPLOY_TARGET: preview/);
     assert.doesNotMatch(uncommented, /DEPLOY_TARGET: production/);
