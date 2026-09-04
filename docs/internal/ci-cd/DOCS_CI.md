@@ -190,11 +190,13 @@ an undeclared child of that scope fails.
   `normalizeHome`. `normalizeHome` rejects any token not starting with `docs/` or `spec/`, which is
   right for the placement map and would silently match *nothing* in any index. Rootedness is decided
   before the trailing slash is stripped: testing the *stripped* `spec` against a `spec/` prefix said
-  it was not rooted, so a `[`spec/`](../spec/README.md)` row resolved to the phantom `docs/spec`.
+  it was not rooted, so a link target written `spec/` was joined onto the doc's own folder and
+  resolved to the phantom `docs/spec`.
 - **Link targets only, never the backticked display label.** Reading the label as an independent
   path claim was tried and is unsound — a label is written for a reader and its style varies by
-  design. `[`engineering`](engineering.md)` invents `spec/engineering`; `[`ops/`](internal/ops/DEPLOYMENT.md)`
-  invents `docs/ops`; a backticked identifier beside a link (`` [`main`](…/ci.yml) ``) invents
+  design. `` [`engineering`](engineering.md) `` invents `spec/engineering`;
+  `` [`ops/`](internal/ops/DEPLOYMENT.md) `` invents `docs/ops`; a backticked identifier beside a
+  link (`` [`main`](…/ci.yml) ``) invents
   `docs/internal/main`. In each the row's own target proves what it means. Whether the visible label
   agrees with its target is a separate check needing a different rule (#1667).
 

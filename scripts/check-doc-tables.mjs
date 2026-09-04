@@ -354,10 +354,10 @@ export function resolveIndexHome(token, fromDir) {
   if (!cleaned || /^[a-z][a-z0-9+.-]*:/i.test(cleaned)) return null;
 
   // Rootedness is decided BEFORE the trailing slash is stripped. Testing the
-  // stripped `spec` against a `spec/` prefix said it was not rooted, so a
-  // `[`spec/`](../spec/README.md)` row in docs/README.md reparented it as
-  // `docs/spec` — a phantom child of the doc's own folder, reported as
-  // undeclared with no declarable remedy.
+  // stripped `spec` against a `spec/` prefix said it was not rooted, so a link
+  // target written `spec/` (or `docs/`) was joined onto the doc's own folder and
+  // became `docs/spec` — a phantom child reported as undeclared, with no
+  // declarable remedy. A test pins the two tokens that reach this branch.
   const rooted = cleaned.startsWith("/") || /^(docs|spec)(\/|$)/.test(cleaned);
   const raw = cleaned.replace(/\/+$/, "");
   if (!raw) return null;
