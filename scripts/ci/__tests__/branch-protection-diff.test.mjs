@@ -489,11 +489,11 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
     );
   });
 
-  // Pinned by entry name so that deleting the canonical guard is caught. The
-  // other seven notes delegate to secret-scan's by "same caveat as secret-scan",
-  // so if that paragraph goes, seven inherit a clause that no longer exists —
-  // which a file-wide phrase match cannot see, because the other guarded note
-  // would satisfy it.
+  // Pinned by entry name so that deleting the canonical guard is caught. Of the
+  // eleven ROLLOUT notes, these two carry the guard and the other nine delegate
+  // to secret-scan's by "same caveat as secret-scan" — so if that paragraph goes,
+  // nine inherit a clause that no longer exists, which a file-wide phrase match
+  // cannot see because the other guarded note would satisfy it.
   it("the two notes that carry the instruction each hold the guard themselves", () => {
     const src = read("../lib/required-checks.mjs");
     for (const entry of ["secret-scan", "web-production-build"]) {

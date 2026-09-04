@@ -217,6 +217,18 @@ function buildProtectionPayload(branch) {
     // branch-protection audit is — stop and re-derive why the difference did not
     // matter. That cost two sessions. See LOCK_DEPENDENT_FLAGS below for why the
     // flag is inert here and excluded from the `--verify` diff.
+    //
+    // "Inert" holds only while `lock_branch` is false, which is the state today
+    // and the only state this repo has ever been in. It is not a no-op in every
+    // world: if a release freeze ever sets `lock_branch: true`, an apply now
+    // writes `false` and fork syncing is DISABLED for contributors, where the
+    // pre-#1580 roster would have written `true` and allowed it. That reversal is
+    // deliberate — a declaration should say what the branch actually does, and
+    // nothing recorded a rationale for the original `true`, which reads as an
+    // unexamined default rather than intent. Anyone turning `lock_branch` on
+    // should decide this flag on its merits at that point rather than inherit
+    // this line, because at that moment it stops being a declaration and starts
+    // being a setting.
     allow_fork_syncing: false,
   };
 }

@@ -65,7 +65,8 @@ export const CI_CHECKS = [
   // command spells the guard out itself, because a reader who stops at that note
   // never reaches this one — `branch-protection-diff.test.mjs` enforces exactly
   // that rule, so deleting this paragraph fails the suite rather than silently
-  // orphaning the seven notes that delegate to it.
+  // orphaning the nine notes that delegate to it. (Eleven ROLLOUT notes in all:
+  // this one and web-production-build carry the guard; the other nine delegate.)
   "secret-scan",
   // Clean-checkout guard: runs `npm ci && npm run check-types && npm run lint` with
   // no prebuilt shared packages, so a regression in turbo.json's `^build` dependency

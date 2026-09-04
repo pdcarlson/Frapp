@@ -954,8 +954,9 @@ this compares against a design, not against something that ran.) What makes it s
   `LOCK_DEPENDENT_FLAGS` excludes `allow_fork_syncing` from the diff while `lock_branch` is
   `false`, so a divergence on that one key stays invisible to a green `:verify`
   ([#1580](https://github.com/pdcarlson/Frapp/issues/1580) closed the divergence that existed;
-  the exclusion remains — see the runbook's `--verify` section for the current state). What
-  survives is
+  the exclusion remains). Canonical state, including the roster's current context count:
+  [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) § Step 1 —
+  do not restate its counts here. What survives is
   that a read is a **dated snapshot**, not a standing guarantee: nothing stops `main` drifting again
   between applies, so re-run the verify rather than trusting this date; (b) `restrictions: null` means the push-restriction
   allowlist is **disabled**, which is not the same as "nothing can bypass"; and (c) `bypass_actors`

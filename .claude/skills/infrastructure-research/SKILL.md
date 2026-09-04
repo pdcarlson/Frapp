@@ -154,7 +154,10 @@ ground-truth check on live `main` rather than a check of declared intent, but on
 false (GitHub honours it only on a locked branch, so comparing it would fail forever); rulesets and
 environments are not covered at all. A green `:verify` is therefore not proof that live protection
 matches the roster in every field — a divergence on that excluded key stays invisible
-([#1580](https://github.com/pdcarlson/Frapp/issues/1580) closed the one that existed).
+([#1580](https://github.com/pdcarlson/Frapp/issues/1580) closed the one that existed). Canonical
+state, including the current context count, lives in
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) —
+read it rather than the counts quoted above, which are dated observations.
 
 Applying — the bare `npm run configure:branch-protection` — remains a human step with an admin PAT
 by policy; the script reads `GITHUB_PAT` first, with `GITHUB_TOKEN` / `GH_PAT` / `GH_TOKEN`
