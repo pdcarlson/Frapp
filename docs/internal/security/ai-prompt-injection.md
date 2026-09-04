@@ -15,7 +15,7 @@ work not yet done.
 
 Two properties combine badly.
 
-**Tenant isolation is application-layer only.** Row-level security is enabled on all 41 base tables,
+**Tenant isolation is application-layer only.** Row-level security is enabled on every base table,
 but the API authenticates with the `SUPABASE_SERVICE_ROLE_KEY`
 ([`apps/api/src/infrastructure/supabase/supabase.provider.ts`](../../../apps/api/src/infrastructure/supabase/supabase.provider.ts)),
 and `service_role` bypasses RLS entirely. Isolation rests on `ChapterGuard` → `@CurrentChapterId()` →

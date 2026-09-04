@@ -396,7 +396,7 @@ done
 
 ## Infisical sync map
 
-The canonical sync map (which Infisical environment feeds which Render/Vercel/GitHub Actions destination) lives in [`docs/internal/ci-cd/AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md) under "Infisical sync map" — check it there rather than relying on a copy here.
+The canonical sync map (which Infisical environment feeds which Render/Vercel destination — GitHub Actions is not a sync, it pulls at job time) lives in [`docs/internal/ci-cd/AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md) under "Infisical sync map" — check it there rather than relying on a copy here.
 
 ---
 

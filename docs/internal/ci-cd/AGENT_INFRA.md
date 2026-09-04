@@ -160,7 +160,6 @@ Deeper deploy architecture: [`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md).
 | 4   | production    | Vercel → frapp-web (Production)     |
 | 5   | staging       | Vercel → frapp-landing (Preview)    |
 | 6   | production    | Vercel → frapp-landing (Production) |
-| 7   | per-env       | GitHub Actions (OIDC)               |
 
 Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) and root `.infisical.json`.
 
@@ -276,9 +275,9 @@ they take the default `release:patch` bump.
 ### The ignore list is a runtime constraint, not a preference
 
 `react`, `react-dom`, `react-test-renderer`, the `react-native*` family and the Expo client packages
-are ignored. React is pinned to an **exact** `19.1.0` in every workspace plus a root `overrides`
-entry: React Native 0.81.5 bundles `react-native-renderer` 19.1.0, which asserts exact version
-equality with `react` at runtime, while its peer range (`^19.1.0`) does not express that. npm will
+are ignored. React is pinned to an **exact** version in every workspace plus a root `overrides`
+entry: React Native bundles a `react-native-renderer` that asserts exact version equality with
+`react` at runtime, while its peer range does not express that. npm will
 therefore accept a newer React silently, hoist it, and kill `apps/mobile` on first render with
 "Invalid hook call" — a failure **only booting the app on a device catches**, never CI. See
 [`AGENTS.md` § Gotchas](../../../AGENTS.md) and PR #842. These packages move as a version-locked set
