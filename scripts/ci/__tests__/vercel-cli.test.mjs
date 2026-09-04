@@ -258,6 +258,28 @@ describe("buildAndDeployVercelProject", () => {
     assert.ok(!calls.some((c) => c.args[0] === "deploy"));
   });
 
+  it("names the SIGNAL when a build is killed, not 'exited null'", async () => {
+    // The OOM killer taking `next build` reports code null; without the signal
+    // the message reads "exited null" with no cause, and moving both app builds
+    // onto a 7GB runner is exactly what this change did.
+    const { runCommand } = makeRunStub({
+      build: { code: null, signal: "SIGKILL", stdout: "", stderr: "" },
+    });
+
+    await assert.rejects(
+      buildAndDeployVercelProject({
+        target: VERCEL_TARGET_PRODUCTION,
+        sha: SHA,
+        token: TOKEN,
+        orgId: TEAM_ID,
+        projectId: PROJECT_ID,
+        runCommand,
+        logger: quiet,
+      }),
+      /was killed by SIGKILL/,
+    );
+  });
+
   it("throws when deploy exits 0 but prints no URL", async () => {
     // A deploy whose result cannot be identified cannot be verified, and an
     // unverifiable deploy is not a successful one.

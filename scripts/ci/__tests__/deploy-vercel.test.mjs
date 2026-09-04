@@ -639,3 +639,58 @@ describe("fail-fast across projects", () => {
     assert.match(landing.message, /Not attempted.*frapp-web failed/s);
   });
 });
+
+describe("fail-fast distinguishes shipped from not-shipped", () => {
+  // The mirror-image hazard of the fail-fast itself. createVercelDeployment
+  // throws in three places AFTER the upload — the host lookup, the target
+  // assertion and the sha assertion — by which point the deployment exists and,
+  // on the production path, is already taking traffic. Aborting the remaining
+  // projects there would CREATE the split the flag exists to prevent.
+  it("continues to the next project when the failure came after the upload", async () => {
+    const attempted = [];
+    const runCommand = async ({ args, env }) => {
+      attempted.push(`${env.VERCEL_PROJECT_ID}:${args[0]}`);
+      return { code: 0, stdout: args[0] === "deploy" ? `https://${HOST}\n` : "", stderr: "" };
+    };
+    let call = 0;
+    const fetchImpl = async () => {
+      call += 1;
+      // web resolves to a DIFFERENT commit — a post-upload failure.
+      if (call === 1) {
+        return okJson({ id: "dpl_web", target: "production", meta: { githubCommitSha: "f".repeat(40) } });
+      }
+      if (call === 2) {
+        return okJson({ id: "dpl_landing", target: "production", meta: { githubCommitSha: SHA } });
+      }
+      return okJson({ id: "dpl_landing", state: "READY" });
+    };
+
+    const outcome = await deployVercel({
+      apiKey: API_KEY,
+      projects: [
+        { projectId: "prj_web", label: "frapp-web" },
+        { projectId: "prj_landing", label: "frapp-landing" },
+      ],
+      sha: SHA,
+      target: VERCEL_TARGET_PRODUCTION,
+      teamId: TEAM_ID,
+      clock: makeFakeClock(),
+      runCommand,
+      fetchImpl,
+      logger: quiet,
+    });
+
+    assert.ok(
+      attempted.some((step) => step === "prj_landing:deploy"),
+      `landing must still deploy — web already shipped. Got: ${attempted.join(", ")}`,
+    );
+    // The run still FAILS overall; it just does not make the split worse.
+    assert.equal(outcome.ok, false);
+    const landing = outcome.results.find((r) => r.label === "frapp-landing");
+    assert.equal(landing.status, "success");
+    assert.doesNotMatch(
+      outcome.results.find((r) => r.label === "frapp-web").message,
+      /Not attempted/,
+    );
+  });
+});

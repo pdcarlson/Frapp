@@ -196,6 +196,11 @@ export async function createVercelDeployment({
   fetchImpl = resilientFetch,
   logger = console,
 }) {
+  // Everything up to here can fail with NOTHING uploaded. Past it, the
+  // deployment exists and — on the production path — is already taking traffic.
+  // The distinction is load-bearing for `deployVercel`'s fail-fast, so it is
+  // marked on the error rather than left for a caller to guess at: see the
+  // `uploaded` flag below.
   const { host } = await buildAndDeployVercelProject({
     target,
     sha,
@@ -209,6 +214,42 @@ export async function createVercelDeployment({
     logger,
   });
 
+  try {
+    return await identifyVercelDeployment({
+      apiKey,
+      host,
+      teamId,
+      label,
+      sha,
+      target,
+      fetchImpl,
+    });
+  } catch (error) {
+    // The upload already happened, so this project has shipped whatever it
+    // shipped. Stopping the run's REMAINING projects on this would create the
+    // half-updated environment the fail-fast exists to prevent, in mirror
+    // image — web live on the new commit, landing left on the old one.
+    error.uploaded = true;
+    throw error;
+  }
+}
+
+/**
+ * Resolve and validate the deployment an upload just produced.
+ *
+ * Split out from `createVercelDeployment` only so the throw-after-upload
+ * boundary is a single, obvious `try`. Everything here runs against a
+ * deployment that already exists.
+ */
+async function identifyVercelDeployment({
+  apiKey,
+  host,
+  teamId,
+  label,
+  sha,
+  target,
+  fetchImpl = resilientFetch,
+}) {
   const resolved = await resolveDeploymentByHost({ apiKey, host, teamId, label, fetchImpl });
 
   const expected = expectedDeploymentTarget(target);
@@ -373,13 +414,19 @@ export async function deployVercel({
   const created = [];
   let aborted = null;
   for (const project of projects) {
-    // Stop at the first failure instead of shipping the rest. The builds are
-    // sequential, so when web's build fails landing has not been uploaded yet —
-    // and uploading it would put the new landing live on `frapp.live` while
-    // `app.frapp.live` stays on the previous release. A half-shipped production
-    // release, behind an already-applied migration, is strictly worse than one
-    // that stopped: the overall result is a failure either way, so the only
-    // question is how much of production moved before we admitted it.
+    // Stop at the first failure that shipped NOTHING, instead of deploying the
+    // rest. The builds are sequential, so when web's build fails landing has not
+    // been uploaded yet — and uploading it would put the new landing live on
+    // `frapp.live` while `app.frapp.live` stays on the previous release. A
+    // half-shipped production release, behind an already-applied migration, is
+    // strictly worse than one that stopped: the overall result is a failure
+    // either way, so the only question is how much of production moved before
+    // we admitted it.
+    //
+    // A failure AFTER the upload is the opposite case and must not abort. The
+    // deployment already exists and is already taking traffic, so stopping the
+    // remaining projects would create exactly the split described above, in
+    // mirror image. `createVercelDeployment` marks those errors `uploaded`.
     //
     // The skipped projects are still REPORTED, as failures with a reason. A
     // project that silently vanishes from the results is how "we deployed" and
@@ -414,7 +461,7 @@ export async function deployVercel({
       created.push({ project, ...result });
     } catch (error) {
       created.push({ project, deploymentId: null, error: error.message });
-      aborted = project.label;
+      if (!error.uploaded) aborted = project.label;
     }
   }
 

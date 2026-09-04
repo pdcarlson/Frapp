@@ -246,8 +246,13 @@ export async function buildAndDeployVercelProject({
     });
 
     if (result.code !== 0) {
+      // `killed by SIGKILL` rather than `exited null` when a signal ended it.
+      // The OOM killer taking `next build` is the most common CI build failure
+      // there is, and this change moved both app builds onto a runner — for
+      // that case `code` is null and `signal` is the only word that says why.
+      const how = result.signal ? `was killed by ${result.signal}` : `exited ${result.code}`;
       throw new Error(
-        `[${label}] \`vercel ${step.args.join(" ")}\` exited ${result.code}. ` +
+        `[${label}] \`vercel ${step.args.join(" ")}\` ${how}. ` +
           `${(result.stderr || result.stdout || "").trim().slice(-500) || "No output."}`,
       );
     }

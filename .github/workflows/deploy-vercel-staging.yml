@@ -134,8 +134,15 @@ jobs:
       # channels it could alias the staging hostname to the PRODUCTION build.
       # An id has neither problem. See the header of the alias script.
       #
-      # An empty id here is a failure, not a skip: `set -u` makes the empty
-      # expansion fatal before the script runs.
+      # An empty id here is a failure, not a skip — and the explicit `-z` check
+      # below is the ONLY thing that makes it one, so do not trim it as
+      # redundant. `set -u` does not help: the vars are set by the `env:` block,
+      # to the empty string, so they are never *unset*. Nor does the deploy step
+      # fail on its own: under `set -euo pipefail` a `$(grep … | tail -n1)` that
+      # matches nothing still leaves `echo` exiting 0, so an absent id is
+      # written as `web_id=` and the step stays green. Without the check the
+      # alias script would fall back to its SHA-search path and could exit 0
+      # having aliased nothing.
       - name: Point the staging hostnames at the new deployments
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}

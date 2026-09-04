@@ -363,8 +363,9 @@ jobs:
       # what is live. Up here the same failure costs nothing: nothing has been
       # applied yet.
       #
-      # They run before the stack is even needed, and are skipped on the paths
-      # that never reach a Vercel build.
+      # Placed after the rehearsal's disposable stack has been torn down, so the
+      # install never competes with it for disk or CPU, and skipped entirely on
+      # the paths that never reach a Vercel build.
       - name: Install dependencies for the Vercel build
         if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
         run: npm ci
