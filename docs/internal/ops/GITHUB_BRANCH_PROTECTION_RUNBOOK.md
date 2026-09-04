@@ -253,14 +253,24 @@ approval, not the merge.
 >
 > Running `npm run configure:branch-protection` applies **everything** in the arrays, not just the entry you added, and PUTs the whole payload — anything set by hand outside the arrays is overwritten. Read the `-- --dry-run` output in full before applying — **the `--` separator is load-bearing**; without it npm swallows the flag and the script applies. From an agent session run `npm run configure:branch-protection:verify` and nothing else (see Prerequisites).
 
-**Docs check (from `.github/workflows/docs.yml`):**
+**Docs and links checks — none of these are required:**
 
-| Check name       | What it validates                                                     |
-| ---------------- | --------------------------------------------------------------------- |
-| `doc-paths`      | Backticked repo-path citations resolve to real files (`check-doc-paths.mjs`, whole-tree) |
-| `doc-tables`     | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml`; the placement map and the six index READMEs match `DIRECTORIES` (`check-doc-tables.mjs`) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
-| `docs-structure` | Every file under `docs/`/`spec/` sits in a declared home and matches the naming rule (`check-docs-structure.mjs` against `scripts/ci/lib/docs-structure.mjs`, whole-tree) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
-| `doc-refs`       | Bare `docs/`/`spec/` references in files *outside* the docs corpus — source, workflows, migrations, shell — resolve to real files (`check-doc-refs.mjs`, whole-tree) — **not required yet**, see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
+| Check name   | Workflow                      | What it validates                                                     |
+| ------------ | ----------------------------- | --------------------------------------------------------------------- |
+| `env-slugs`  | `.github/workflows/docs.yml`  | Every Infisical environment slug named in the files [`check-env-slugs.mjs`](../../../scripts/check-env-slugs.mjs) scans is one that exists. Not a documentation gate — [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) |
+| `link-check` | `.github/workflows/links.yml` | lychee, offline: markdown links and heading anchors resolve across the paths that workflow passes it. External URLs are never fetched |
+
+> **Do not promote either of these, and do not re-add a deleted one.** `DOCS_CHECKS` in
+> [`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs) is **empty**, deliberately.
+> This table used to list four gates — `doc-paths` (the only one that was ever required),
+> `doc-tables`, `docs-structure` and `doc-refs` — and all four scripts have been deleted, so those
+> check runs can never report again. A required context that never reports parks every PR on
+> "Expected — Waiting for status to be reported" forever; if a stale live config still carries
+> `doc-paths`, clear it via **Stale required check reference** under **Troubleshooting** below.
+> What replaced the gates is the standard in
+> [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) plus the docs angle in
+> [`diff-review`](../../../.claude/skills/diff-review/SKILL.md); the reasoning, and what is now
+> checked by nothing, are in [`DOCS_CI.md`](../ci-cd/DOCS_CI.md).
 
 **Migration checks (from `.github/workflows/migration-drift-gate.yml`):**
 
@@ -346,7 +356,7 @@ gh pr checks <PR_NUMBER>
 ```
 
 1. Compare names exactly (including capitalization and punctuation):
-   - Required checks use emitted check-run names (`api-tests`, `doc-paths`)
+   - Required checks use emitted check-run names (`api-tests`, `migration-order`)
 
 Common causes and fixes:
 
@@ -408,17 +418,21 @@ If CI job names change (e.g., renaming a workflow job), update:
 1. `scripts/ci/lib/required-checks.mjs` — `CI_CHECKS`, `DOCS_CHECKS`, `DRIFT_CHECKS` arrays (moved
    out of `configure-branch-protection.mjs` in #1383)
 2. This runbook — the tables in **Required Status Checks** above, now the only hand-kept copy
-3. `docs/internal/ci-cd/DOCS_CI.md` — the docs-gate table and its **Required?** column
-4. Re-run `npm run configure:branch-protection` to apply the new names — **human step, admin PAT**;
-   the bare command is a live `PUT`, so an agent making the roster change in steps 1–3 opens the PR
+3. Re-run `npm run configure:branch-protection` to apply the new names — **human step, admin PAT**;
+   the bare command is a live `PUT`, so an agent making the roster change in steps 1–2 opens the PR
    and stops here
-5. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was
+4. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was
    missed, writes nothing, and is the one invocation an agent session may run
 
-This list used to carry two more steps, and that is why it was the drift engine rather than a safety
-net: `CONTRIBUTING.md` and `spec/environments/README.md` each restated the whole roster by hand, and
-`@repo/theme` and `packages/chat-integrations` went missing from every table at once. Both now hold a
-pointer to this section instead, and `DOC_TABLES` in `scripts/check-doc-tables.mjs` names only this
-file. Step 2 is asserted by `npm run check:doc-tables`; step 3 is not, and is the copy to watch. Keep
-preferring deletion-plus-a-pointer over a sixth step, and state posture as *intended* (what the
-arrays say) rather than *live* (what an admin last applied), which no doc can keep true.
+That is the whole list, and it is short on purpose. It used to carry three more steps, which is why
+it was the drift engine rather than a safety net: `CONTRIBUTING.md` and `spec/environments/README.md`
+each restated the whole roster by hand, and `@repo/theme` and `packages/chat-integrations` went
+missing from every table at once. Both now hold a pointer to this section instead, and a step
+pointing at a docs-gate roster table in [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) went when that table did.
+
+**Step 2 is now asserted by nothing.** The gate that used to compare this file's tables against
+`CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` was deleted with the rest of the docs gates, so the tables
+under **Required Status Checks** are hand-kept and unwatched: step 1 is the source of truth and this
+file can only drift from it. Read the arrays when the answer matters. Keep preferring
+deletion-plus-a-pointer over a fifth step, and state posture as *intended* (what the arrays say)
+rather than *live* (what an admin last applied), which no doc can keep true.

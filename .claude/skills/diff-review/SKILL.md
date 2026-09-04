@@ -130,10 +130,12 @@ failure mode, not a hypothetical.
   declared home under a conforming name. This angle inherits only the slice of each that the
   diff makes visible, and doc naming and placement are now conventions the standard states rather
   than rules a machine enforces. **It cannot catch drift between two files when neither is in the
-  diff** — the only CI checks still reading prose corpus-wide are the link checker (markdown links
-  and their anchors) and the env-slug check (environment slugs only). That is the accepted cost of
-  deleting the gates: a clean review here is not evidence that the corpus is clean, and must never
-  be reported as if it were.
+  diff.** Nor does CI close that gap: what still runs and over which trees — including the fixed
+  `SCAN_ROOTS` list the env-slug check reads, which is narrower than the corpus and does not include
+  `.claude/` — is in [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md), which is its one home;
+  read it there rather than restating it here. That is the accepted cost of deleting the gates: a
+  clean review here is not evidence that the corpus is clean, and must never be reported as if it
+  were.
 - **Blast radius, not diff radius.** "Pre-existing" is not grounds to drop a candidate, and a finder
   that drops one for that reason is under-reporting. Judge every such candidate against
   [`spec/engineering.md`](../../../spec/engineering.md#changing-existing-code) § Changing existing

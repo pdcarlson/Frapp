@@ -1256,6 +1256,46 @@ the ones a later reader would otherwise re-litigate.
   lock-dependence reasoning to conclude the difference did not matter. Canonical page for the
   current state: [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
+- **Amendment (2026-09-04) — the doc-table checker was deleted; the parse-as-source-text constraint
+  on `required-checks.mjs` lapses with it, and the agreement it enforced is now a review
+  responsibility.** Amendment (2026-09-01, #1383)(a) closes on a present-tense clause:
+  "`scripts/check-doc-tables.mjs` parses those arrays as source text and its pointer moved with
+  them". That is the record of 2026-09-01 and stands exactly as written; what follows corrects its
+  tense, not its words.
+
+  **The checker is gone, with no successor.** On 2026-09-04 this repository retired all four docs
+  gates — the doc-table checker along with the doc-path, doc-reference and structure checkers —
+  deleting their scripts, their `npm` scripts and their allowlists, and replaced them with the
+  written standard in `docs/internal/DOCUMENTATION_CONVENTIONS.md` plus a docs angle in the
+  diff-review skill. `.github/workflows/docs.yml` is down to one job, `env-slugs`. Nothing now
+  parses `scripts/ci/lib/required-checks.mjs` as source text for the **contents** of `CI_CHECKS`,
+  `DOCS_CHECKS` or `DRIFT_CHECKS`, and no gate holds a pointer into that file that has to move when
+  the arrays do.
+
+  **"Unasserted" would overstate it, and the difference is the useful part.**
+  `scripts/ci/__tests__/branch-protection-diff.test.mjs` still reads that file as source text — but
+  only to assert that the module stays free of entry points and side effects (no `process.argv`, no
+  `fetch(`, no `main`, no module-scope statement), which is precisely what makes it safe to import
+  on the production deploy path. Nothing asserts what the arrays *hold*. Their only consumers are
+  `scripts/configure-branch-protection.mjs` and `scripts/ci/validate-deploy-sha.mjs`, both by
+  import, so a relocation touches three code sites — those two and that test's relative path — plus
+  the comments and docs that name the path by hand, none of which anything checks any more.
+
+  **What the deletion costs, named rather than left to be rediscovered as a bug.** The deleted
+  checker compared exactly one doc against these arrays:
+  `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, which restates the roster by hand and is
+  the one doc deliberately permitted to. Until 2026-09-04 a machine held those two in step. Nothing
+  does now — a roster edit that leaves that runbook stale merges green, and the same is true of
+  every other doc that describes these arrays in prose. Keeping them in agreement is a reviewer's
+  job from here. The counts and rosters written in docs were already dated observations rather than
+  sources of truth; they are now unverified ones as well, which is an argument for re-reading the
+  arrays, not for copying them somewhere new.
+
+  **One count above moves with this change.** The amendment recording the `allow_fork_syncing`
+  closure notes the roster stood at 20 contexts after #1637 dropped `docs-spec-sync`. Retiring
+  `doc-paths` takes it to 19. That is the last count either amendment states, and it will go stale
+  the same way the previous one did — read `ALL_REQUIRED_CHECKS` rather than either number.
+
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an
 agent session, which would retire the write-only rollout step.

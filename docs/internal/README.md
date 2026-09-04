@@ -6,21 +6,11 @@ Operations, infrastructure, and agent/CI reference. Grouped by area.
   placement map for where docs/spec changes go (read before adding any doc).
 - **Admin:** [`ADMIN_DASHBOARD.md`](ADMIN_DASHBOARD.md)
 
-**This file is machine-checked.** Every declared child of `docs/internal/` needs a row in a table
-here, and a row may not name a child that is not declared — `npm run check:doc-tables`, against
-`DIRECTORIES` in [`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs). Add or retire a directory in
-the manifest and here in the same commit; the rule itself is described in
-[`DOCS_CI.md`](ci-cd/DOCS_CI.md) § Rosters.
-
-| Area | Folder | Contents |
-| ---- | ------ | -------- |
-| Ops / runbooks | [`ops/`](ops/) | DB promotion/rollback, incident response, branch protection, alert routing, deploy |
-| CI / agent infra | [`ci-cd/`](ci-cd/) | agent infra, quality gates, docs/spec CI checks, secret scanning, Claude Code routines, AI code review, GitHub project management |
-| Mobile | [`mobile/`](mobile/) | mobile testing + smoke checklist |
-| Quality | [`quality/`](quality/) | accessibility protocol, PR review process |
-| Environment | [`environment/`](environment/) | **Claude Code cloud sandbox (primary dev env)**, local dev, env reference, secrets management, agent credentials |
-| Security | [`security/`](security/) | upload validation, path traversal, fixes log |
-| Services | [`services/`](services/) | per-service performance notes |
+Which subfolder of `docs/internal/` owns which kind of change is stated once, in
+[`DOCUMENTATION_CONVENTIONS.md` § Where things go](DOCUMENTATION_CONVENTIONS.md#where-things-go).
+This index does not restate it; it only routes: [`ops/`](ops/), [`ci-cd/`](ci-cd/),
+[`mobile/`](mobile/), [`quality/`](quality/), [`environment/`](environment/README.md),
+[`security/`](security/README.md), [`services/`](services/).
 
 Design-system guidance moved to [`spec/ui/design-system/`](../../spec/ui/design-system/README.md) (Signet restructure).
 

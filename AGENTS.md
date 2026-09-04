@@ -55,10 +55,20 @@ What replaces it is a judgement you make, not a check you satisfy:
   match, to make a change look documented.** An unowned claim in a canonical
   doc is worse than no claim: the next reader believes it.
 
-What *is* enforced is narrow: markdown links and heading anchors resolve
-(`Links`), and every Infisical environment slug named anywhere is one that
-exists (`env-slugs`). Beyond that slug case nothing checks whether a doc's claims
-are true, or whether a path it cites still exists. Contract:
+What *is* enforced is narrow, and **neither check blocks a merge.** `Links`
+(lychee, `--offline`) checks that markdown links and heading anchors resolve in
+`docs/`, `spec/`, `.claude/`, `AGENTS.md`, `README.md` and `CONTRIBUTING.md`.
+`env-slugs` checks that every Infisical environment slug names one that exists,
+across exactly the roots `SCAN_ROOTS` in
+[`scripts/check-env-slugs.mjs`](scripts/check-env-slugs.mjs) lists —
+`package.json`, `.infisical.json`, `ci/environments.json`, `.github/workflows`,
+`.github/actions`, `docs/` and `spec/`; a slug named in `.claude/`, in
+`scripts/`, or in a root-level README is not scanned. Neither job — `link-check`
+nor `env-slugs` — appears in any roster in
+[`scripts/ci/lib/required-checks.mjs`](scripts/ci/lib/required-checks.mjs), so
+neither blocks a merge: a broken link or anchor turns a check red and the PR
+merges anyway. It is caught, and nothing stops on it. Beyond that slug case nothing checks whether a doc's
+claims are true, or whether a path it cites still exists. Contract:
 [`DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md).
 
 ## Work tracking

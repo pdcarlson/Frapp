@@ -2,20 +2,24 @@
 
 Where a fact lives, what a doc owes a reader, and what to do when a doc turns out to be wrong. These docs are read by agents mid-task: optimise for retrieval, not for reading.
 
+**What this document does not do is enforce itself.** Placement, naming and whether a cited path still exists used to be machine-checked; the four gates that did it were deleted, and no check replaced them — in CI those questions are now nobody's. So everything below is a convention this document states and a reviewer applies ([`.claude/skills/diff-review/SKILL.md`](../../.claude/skills/diff-review/SKILL.md)), not a rule a check will fail you on. A misplaced doc reds nothing; the cost lands later, on the reader who cannot find the fact or who trusts the stale copy of it. What CI does still check, and what it does not: [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md).
+
 ## Where a fact lives
 
 - **A fact belongs where the thing that would falsify it lives.** If a change to a guard, a schema, a workflow or a provider setting would make the sentence false, the sentence belongs in the doc that owns that thing. Everywhere else, link to it — path plus heading anchor, never a restatement. Most changes falsify nothing and need no doc edit; the question is never "did I touch a doc" but "which doc owns this fact". A paragraph parked in a canonical doc to look diligent is worse than none, because the next reader believes it.
-- **Two homes for one fact is a structure defect to merge, not a tie-break rule to write down.** Delete one copy and link to the other; never add a case-specific exception here to arbitrate a seam. The test is not whether text is repeated but whether one real-world change would require editing two docs — and two copies that are both correct today are still a defect, because they diverge.
+- **Two homes for one fact is a structure defect to merge, not a tie-break rule to write down.** Delete one copy and link to the other; never add a case-specific exception here to arbitrate a seam. The test is not whether text is repeated but whether one real-world change would require editing two docs — and two copies that are both correct today are still a defect, because they diverge: in #1586 one wrong timestamp reached five files in a single commit, because the list it belonged to had been copied six times.
 - **Never create a new top-level file, and never invent a top-level folder.** Put the change in the relevant existing doc; a new topic folder under `spec/` owes a `README.md` that routes to its files. Three homes are retired and must not come back: `docs/archive/` (git history is the archive), `docs/backlog/` (work tracking lives in **GitHub Issues** — see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md)), and `spec/**/chunks/` (merge canon into the real spec and track delivery as issues).
 - **Work status is not a doc, and a restructure is not a document.** Status, plans and one-off narrative markdown — audits, "NOTES", "STATUS", consolidation writeups, migration plans — go to GitHub Issues, as an `[Epic]` with sub-issues when the work is large. Narrating a restructure into a file is forbidden; doing one is not.
 
 ## Where things go
 
+Two rules make the table decidable, because rows nest and a directory is not a filename. **Take the most specific row that matches** — chat behavior goes to `spec/behavior/chat/`, not to the broader `spec/behavior/` row above it, and design-system work goes to `spec/ui/design-system/`, not to `spec/ui/`. **Inside the directory a row names, a topic is one file, `<topic>.md`**, and earns its own `<topic>/` folder with a `README.md` routing to its files only once it has 2+ of them; `spec/behavior/chat/` and `spec/behavior/settings/` are the two that crossed that line.
+
 | Kind of change | Canonical home |
 | -------------- | -------------- |
-| Product behavior, rules, flows, invariants | `spec/behavior/` |
-| Chat behavior | `spec/behavior/chat/` |
-| Settings behavior | `spec/behavior/settings/` |
+| Product behavior, rules, flows, invariants | `spec/behavior/<topic>.md` (or `<topic>/README.md` once it has 2+ files) |
+| Chat behavior (a topic with 2+ files) | `spec/behavior/chat/` |
+| Settings behavior (a topic with 2+ files) | `spec/behavior/settings/` |
 | Product features, surfaces, positioning, module catalog | `spec/product/` |
 | Architecture, data model, API patterns, ADRs | `spec/architecture/README.md` — ADRs are append-only (amend or supersede, never rewrite) |
 | Engineering principles | `spec/engineering.md` |
@@ -56,7 +60,7 @@ Where a fact lives, what a doc owes a reader, and what to do when a doc turns ou
 ## Naming and formatting
 
 - **kebab-case `.md`, or `README.md`.** Files that predate the rule are grandfathered, not precedent: rename one when you are already touching it, and never add a new file in the old style. Committed `.dc.html` design exports are exempt — they are artifacts of a design tool, not prose, and keep that tool's naming.
-- **Markdown is deliberately not machine-formatted.** `npm run format` covers `ts`/`tsx` only, so diffs here stay hand-authored and a reviewer reading one sees the change and not a reflow. Never run prettier over prose: most of the corpus differs from its defaults, so one `--write` buries whatever the diff was carrying, and there is no `.prettierignore` to stop you.
+- **Markdown is deliberately not machine-formatted.** `npm run format` covers `ts`/`tsx` only, so diffs here stay hand-authored and a reviewer reading one sees the change and not a reflow. Never run prettier over prose: 112 of the 148 tracked markdown files differ from its defaults — an observation, measured 2026-09-04 with `npx prettier@3.8.1 --list-different $(git ls-files '*.md') | wc -l`, which moves with the corpus, so re-run it rather than cite it. One `--write` therefore buries whatever the diff was carrying, and there is no `.prettierignore` to stop you. The `ts`/`tsx` half of the same command is unresolved rather than settled — no repo-root config, no `--check` in CI, and root defaults that contradict the repo's only committed style config ([`apps/api/.prettierrc`](../../apps/api/.prettierrc), `singleQuote`) — tracked in #1650.
 
 ## See also
 

@@ -59,9 +59,11 @@ which jobs are advisory rather than merge-blocking, and why `migration-drift` wa
 [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
 **§ Required Status Checks**. Its source of truth is the `CI_CHECKS` / `DOCS_CHECKS` /
 `DRIFT_CHECKS` arrays in
-[`scripts/ci/lib/required-checks.mjs`](scripts/ci/lib/required-checks.mjs); the runbook's tables are
-the only hand-kept copy left, and nothing asserts them against those arrays — read both. Live
-branch protection is whatever an admin last applied and can lag the arrays, so **no doc claims
+[`scripts/ci/lib/required-checks.mjs`](scripts/ci/lib/required-checks.mjs), which are the arrays
+`configure:branch-protection` actually applies. The runbook's tables are a reading copy of them for
+the admin procedure, and no check asserts the two agree any more: **the arrays decide.** Where a
+table disagrees with them, the table is stale — fix it there, and do not add a per-check note here.
+Live branch protection is whatever an admin last applied and can lag the arrays, so **no doc claims
 per-check whether a gate is live today** — read live state per the runbook. New gates land
 report-only and are promoted by adding them to an array and re-running
 `npm run configure:branch-protection`, which is a live `PUT` and a human step with an admin PAT: an

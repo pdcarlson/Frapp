@@ -30,15 +30,23 @@ concurrency:
 
 jobs:
   # The Infisical environment-slug gate. It is NOT a documentation gate — it
-  # asserts that every place in the repo naming an Infisical environment names
+  # asserts that an Infisical environment named inside the roots it scans names
   # one that exists, in `package.json` scripts and workflows as much as in
   # prose. It used to run as the second step of a docs job and would have died
   # with it; it has its own job so that a failure names what it is.
   #
-  # It reads the tree, not the diff: the reference and the slug list it is
-  # checked against sit in different files, so a diff-scoped scan would miss
-  # every reference the change did not happen to touch. That is also why it
-  # needs no Dependabot exemption — a lockfile-only PR simply passes.
+  # Its reach is exactly `SCAN_ROOTS` in `scripts/check-env-slugs.mjs`:
+  # `package.json`, `.infisical.json`, `ci/environments.json`,
+  # `.github/workflows`, `.github/actions`, `docs`, `spec`, and
+  # `docs/internal/environment/ENV_REFERENCE.md`. It is NOT a whole-repo scan —
+  # a slug written in `.claude/`, in `scripts/`, in app code or in a root
+  # README is not read by anything here.
+  #
+  # Within those roots it reads the tree, not the diff: the reference and the
+  # slug list it is checked against sit in different files, so a diff-scoped
+  # scan would miss every reference the change did not happen to touch. That is
+  # also why it needs no Dependabot exemption — a lockfile-only PR simply
+  # passes.
   env-slugs:
     runs-on: ubuntu-latest
     steps:
