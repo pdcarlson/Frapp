@@ -89,15 +89,7 @@ This repo is **mid-rebuild (Frapp → Signet)**. Treat existing code as *possibl
 
 ## Services and ports
 
-| What            | Port  | Notes                                     |
-| --------------- | ----- | ----------------------------------------- |
-| **Default run** | —     | `npm run dev:stack` (API + web + landing) |
-| Web             | 3000  |                                           |
-| API / Swagger   | 3001  | `/docs` for Swagger                       |
-| Landing         | 3002  |                                           |
-| Supabase Studio | 54323 | After `npx supabase start`                |
-
-Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md).
+Default local run: `npm run dev:stack` (API + web + landing). Ports, URLs, per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) § Ports and URLs.
 
 ## Starting the dev environment
 

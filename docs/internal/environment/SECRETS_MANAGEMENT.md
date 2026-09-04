@@ -74,42 +74,20 @@ The **slug** is what every tool takes — `infisical run --env=`, the workflows'
 
 ### 3. Add Canonical Values
 
-For each environment, add the canonical values from the table in [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#canonical-variables--the-complete-grid). Start with staging:
-
-| Variable                    | Staging value                                      |
-| --------------------------- | -------------------------------------------------- |
-| `SUPABASE_URL`              | `https://<staging-ref>.supabase.co`                |
-| `SUPABASE_SERVICE_ROLE_KEY` | From Supabase staging dashboard                    |
-| `SUPABASE_ANON_KEY`         | From Supabase staging dashboard                    |
-| `STRIPE_SECRET_KEY`         | `sk_test_...` from Stripe test mode                |
-| `STRIPE_WEBHOOK_SECRET`     | `whsec_...` from Stripe                            |
-| `STRIPE_PRICE_ID`           | `price_...` from Stripe                            |
-| `API_URL`                   | `https://api-staging.frapp.live` (bare origin — no `/v1`) |
-| `APP_URL`                   | `https://app.staging.frapp.live`                   |
-| `RENDER_DEPLOY_HOOK_URL`    | From Render staging service dashboard              |
-| `API_HEALTHCHECK_URL`       | `https://api-staging.frapp.live/health`            |
-| `SUPABASE_PROJECT_REF`      | Staging project reference ID                       |
-| `SUPABASE_ACCESS_TOKEN`     | From https://supabase.com/dashboard/account/tokens |
-| `SUPABASE_DB_PASSWORD`      | Staging database password (per-project — production differs). **Required for migrations**; see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#cd-secrets-deploy-workflows-only) |
-
-Repeat for `prod` with production values, and `dev` with local-development values.
+For each environment, add the canonical values from
+[`ENV_REFERENCE.md` § "Canonical Variables — The Complete Grid"](./ENV_REFERENCE.md#canonical-variables--the-complete-grid),
+together with its § "API-Only Settings" and § "CD Secrets (Deploy Workflows Only)" subsections. That grid
+has a column per slug and is the only complete list — work it whole rather than a subset. The partial table
+this section used to carry omitted `STRIPE_PUBLISHABLE_KEY`, which §4 below then references as a `${…}`
+value. Start with `staging`, then repeat for `prod` and `dev`.
 
 ### 4. Add References
 
-In **all three environments**, add these references (they're the same in every environment — the canonical value they resolve to changes per environment):
-
-| Variable                        | Value (Infisical reference syntax) |
-| ------------------------------- | ---------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | `${SUPABASE_URL}`                  |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}`             |
-| `NEXT_PUBLIC_API_URL`           | `${API_URL}`                       |
-| `NEXT_PUBLIC_APP_URL`           | `${APP_URL}`                       |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}`   |
-| `EXPO_PUBLIC_SUPABASE_URL`      | `${SUPABASE_URL}`                  |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}`             |
-| `EXPO_PUBLIC_API_URL`           | `${API_URL}`                       |
-| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}`   |
-| `EXPO_PUBLIC_APP_URL`           | `${APP_URL}`                       |
+In **all three environments**, add the reference rows from
+[`ENV_REFERENCE.md` § "References — Framework-Specific Names"](./ENV_REFERENCE.md#references--framework-specific-names)
+— the value string you type is identical in every environment; only the canonical value it resolves to
+changes. That table also flags the one `NEXT_PUBLIC_*` name that is a **literal**, not a `${…}` reference
+(`NEXT_PUBLIC_SENTRY_DSN`), and this list never carried it.
 
 `EXPO_PUBLIC_LANDING_URL` and `EXPO_PUBLIC_ASK_ENABLED` are **not** Infisical references — they are
 direct-set client flags/URLs (see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § apps/mobile). There is

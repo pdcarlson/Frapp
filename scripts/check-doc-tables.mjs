@@ -3,11 +3,11 @@
 // Doc/table drift gate: the required-check rosters and per-job test-suite lists that
 // several docs restate by hand must match their in-repo source of truth.
 //
-// The failure this exists to catch is not hypothetical. `@repo/theme` (#1153) and
-// `@repo/formatting` went missing from the `lint-and-typecheck` suite list in ALL THREE
-// required-check tables at once, and `packages/chat-integrations` (#1114) from two of the
-// `web-tests` lists — because GITHUB_BRANCH_PROTECTION_RUNBOOK.md documents the fanout as
-// manual procedure ("if CI job names change, update these files").
+// A roster maintained by hand-copying drifts silently: every copy is a place the list can go
+// stale without failing anything, and a doc that describes the fanout as manual procedure
+// guarantees it will (#1153, #1114). That is what this gate catches, and why exactly one doc
+// restates the roster. Do not add a doc back to DOC_TABLES in order to "document" the roster:
+// the fix for a roster that needs documenting is one home, not another policed copy.
 //
 // Sources of truth:
 //   - CI_CHECKS / DOCS_CHECKS / DRIFT_CHECKS in scripts/ci/lib/required-checks.mjs
@@ -31,12 +31,8 @@ export const PLACEMENT_DOC = "docs/internal/DOCUMENTATION_CONVENTIONS.md";
 // (GitHub Issues, or a named file such as `ci-cd/DOCS_CI.md`) need no
 // list: they are not `docs/`- or `spec/`-prefixed, so normalizeHome returns null.
 
-// The docs that restate the roster. Each is checked against the same source.
-export const DOC_TABLES = [
-  "CONTRIBUTING.md",
-  "spec/environments/README.md",
-  "docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md",
-];
+// The one doc that restates the roster, checked against the source above.
+export const DOC_TABLES = ["docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md"];
 
 // Jobs whose per-workspace test lists the docs spell out. These are the rows that drifted.
 export const SUITE_JOBS = ["lint-and-typecheck", "web-tests"];

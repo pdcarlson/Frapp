@@ -95,13 +95,7 @@ npx infisical run --env=dev -- npm run start:dev -w apps/api
 
 ### Accessing Services
 
-| Service          | URL                        |
-| ---------------- | -------------------------- |
-| Web App          | http://localhost:3000      |
-| API              | http://localhost:3001      |
-| API Swagger Docs | http://localhost:3001/docs |
-| Landing          | http://localhost:3002      |
-| Supabase Studio  | http://127.0.0.1:54323     |
+Ports and URLs for web, API, Swagger, landing and Supabase Studio: [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md) § Ports and URLs.
 
 ### Running Mobile
 
@@ -114,12 +108,7 @@ Scan the QR code with Expo Go. Phone and PC must be on the same network.
 
 ### Updating the API Contract
 
-After changing an API endpoint:
-
-```bash
-npm run openapi:export -w apps/api
-npm run generate -w packages/api-sdk
-```
+After changing an API endpoint, regenerate and commit both contract artifacts. Commands, the committed artifacts, and the CI freshness check: [`../architecture/README.md`](../architecture/README.md) § 10 API Contract Strategy.
 
 ---
 
@@ -165,31 +154,18 @@ CI runs as domain-specific parallel jobs on every PR to `main`. Each job is an i
 
 ### CI Job Matrix
 
-| Job                  | What it validates                                                                                    | Blocker?   |
-| -------------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
-| `packages-build`     | Shared packages compile                                                                              | Yes        |
-| `lint-and-typecheck` | ESLint + TypeScript across all workspaces; `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests | Yes        |
-| `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                     | Yes        |
-| `api-tests`          | API Jest unit tests                                                                                  | Yes (hard) |
-| `api-contract-check` | `openapi.json` and `packages/api-sdk/src/types.ts` freshness                                                      | Yes        |
-| `migration-safety`   | Migration filename validation + promotion docs                                                       | Yes        |
-| `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                    | Yes        |
-| `ci-scripts-tests`   | `node --test` over `scripts/ci/__tests__/`, covering the gate and deploy scripts under both `scripts/` and `scripts/ci/` — mostly pure-function tests, several spawning real git repos and shell hooks | Yes        |
-| `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                          | Yes        |
-| `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)      | Yes        |
-| `dependency-audit`   | npm audit gate — non-allowlisted high/critical advisories fail (`scripts/check-npm-audit.mjs`, #618) | Yes |
-| `chapter-directory-seed` | `supabase/seed/chapter_directory.csv` — canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (#840) | Yes |
-| `web-tests`          | `apps/web` unit tests plus the shared packages nothing else covers — `packages/hooks`, `packages/chat-core`, `packages/chat-integrations` | Yes |
-| `changes`            | Path filter deciding whether `web-tests` and `web-responsive-floor` run; asserts nothing itself      | Yes |
-| `web-responsive-floor` | Every dashboard route holds the 375px floor — no horizontal scroll (`apps/web/tests/visual/responsive-floor.spec.ts`, #1152) | Yes |
-| `dependency-cruiser` | Architectural boundaries — API layer direction, package/app separation, cycles — against a committed baseline | Yes |
-| `web-production-build` | Vercel parity — builds web and landing with devDependencies pruned, the shape a production deploy uses | Yes |
-| `duplicate-detection` | jscpd against a repo-wide duplication threshold                                                     | **No — advisory** |
+The roster is not restated here. Every check name, what it validates, and whether it blocks a merge
+or only reports are in
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
+**§ Required Status Checks** — the single hand-kept copy of the `CI_CHECKS` / `DOCS_CHECKS` /
+`DRIFT_CHECKS` arrays in
+[`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs), and the one
+`npm run check:doc-tables` asserts. What follows is the CI *model* those checks implement.
 
 `web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
 
-The **Blocker?** column states the *intended* set — every `Yes` above is an entry in `CI_CHECKS` /
-`DOCS_CHECKS` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs),
+The runbook's roster states the *intended* set — every entry in it is a line in `CI_CHECKS` /
+`DOCS_CHECKS` / `DRIFT_CHECKS` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs),
 with no exceptions — `buildProtectionPayload` appends nothing to the roster, it PUTs the arrays as
 they stand. (`branch-policy` was the exception this paragraph used to name. It was deleted with the
 `production` branch in #1340.)
@@ -224,17 +200,13 @@ Two consequences worth holding together:
 
 ### Additional Docs Checks
 
-All three run in `.github/workflows/docs.yml`. **Required?** below is the *intended* set — what
-`DOCS_CHECKS` lists — not live branch protection, which is whatever an admin last applied. See
-[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) for the rollout each one goes through:
-
-| Check            | Provider       | What it validates                               | Required?  |
-| ---------------- | -------------- | ----------------------------------------------- | ---------- |
-| `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Yes — listed in `DOCS_CHECKS`. Whole-tree, so it can block a PR over a citation in a doc that PR never touched; that trade was taken deliberately ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
-| `migration-order` | GitHub Actions | No migration this change **introduces** sorts before a version staging or production has already applied (`check-migration-order.mjs`, read-only against the Supabase Management API) | Yes — listed in `DRIFT_CHECKS`. Reads head-minus-base, so a change touching no migrations makes zero network calls and cannot block a PR over unrelated state, and a PR that fixes an ordering fault turns its own check green. Checks **both** environments: #1373 was invisible to `migration-replay` because the replay rebuilds *production's* state and production had not applied the newer migration; staging had |
-| `migration-drift` | GitHub Actions | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`, read-only against the Supabase Management API) | **No — demoted from `DRIFT_CHECKS`.** It measures whether *staging* is behind *main*, which no PR can answer, so as a required check it was a repo-wide merge-freeze switch — #1373 used it as one and made every open PR unmergeable. It still runs and reports on every PR, and the scheduled [`check-migration-drift.yml`](../../.github/workflows/check-migration-drift.yml) covers the same ground daily across staging *and* production with a self-closing P1 issue |
-| `migration-replay` | GitHub Actions | Pending migrations apply cleanly to a disposable Supabase stack rebuilt at production's applied state (`check-migration-replay.mjs`; production access is one read-only Management API call) | Yes — listed in `DRIFT_CHECKS`. Runs the replay only when the PR touches `supabase/migrations/**` and passes in seconds otherwise, so it cannot block a PR over unrelated state. A pending migration that sorts before production's newest applied version is a hard failure here too: the CLI refuses rather than reordering. A migration applied on production but missing from the repo is a hard failure: the state cannot be reconstructed, and `db push` would refuse anyway |
-| `doc-tables`     | GitHub Actions | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`, whole-tree) | Not yet — reports only, pending the same promotion step |
+`docs-structure`, `doc-paths`, `doc-refs` and `doc-tables` run in `.github/workflows/docs.yml`;
+`migration-order`, `migration-drift` and `migration-replay` run in
+`.github/workflows/migration-drift-gate.yml`. Which of them are required, what each validates, and
+why `migration-drift` was demoted out of `DRIFT_CHECKS` are in
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
+**§ Required Status Checks**; the report-only-then-promote rollout each docs gate goes through is in
+[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md).
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
 `.claude/hooks/pre-push-review-gate.sh` hook gates `git push` on *evidence* that a review ran for the
@@ -253,7 +225,7 @@ session model (Opus). There is no `claude-review-gate` required check, no `claud
 
 - **The frontend build gate is production-shaped, not preview-shaped.** `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install, because nothing in CI ran `next build` before #1374 and that gap took production down twice (#1331, #1372). Staging frontends are still verified through Vercel preview deployments off `main`; production deployments are created by `deploy-production.yml`. The build-shape difference between the two is a recorded trade-off — ADR-20 decision 3. **The staging half of that has not run since the unlink** (landing 2026-09-01, web 2026-09-02): with both Vercel projects unlinked from Git (ADR-21) no push produces a preview, so no Vercel build of either frontend happens on merge any more — see §6 **Web and Landing (Vercel)**.
 - **No placeholder secrets.** CI never sets `NEXT_PUBLIC_SUPABASE_URL` or similar to dummy values. All env-dependent builds happen in the provider (Vercel/Render).
-- **API contract check uses git-diff.** The `openapi.json` is committed as a source-of-truth artifact. CI checks freshness via `git diff` — it does not bootstrap the NestJS application, avoiding the need for Supabase/Stripe credentials in CI.
+- **The API contract check regenerates; it is not a git-diff heuristic.** `npm run check:api-contract` (`scripts/check-api-contract-drift.mjs`) builds the shared packages, rebuilds `apps/api/openapi.json` and `packages/api-sdk/src/types.ts`, and fails on any difference from the committed copies — the git-diff heuristic it replaced false-positived on contract-neutral controller edits. The Swagger export does bootstrap NestJS, but only to build the document, so placeholder credentials suffice and no Supabase/Stripe secrets are needed in CI. Details: [`../architecture/README.md`](../architecture/README.md) § 10 API Contract Strategy.
 - **Mobile CI is lint + typecheck only.** EAS builds are expensive and slow; they run on-demand, not per-PR.
 
 If any required check fails, the PR cannot be merged. Branch protection rules enforce this for all users, including admins.

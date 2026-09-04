@@ -34,12 +34,9 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
 2. **Automation pass**
    - Required checks pass.
    - Code review happens **before the push**, locally: the pre-push review-gate hook
-     (`.claude/hooks/pre-push-review-gate.sh`) requires one review pass on the diff before the branch
-     is pushed — `/diff-review` (always agent-invocable) or `/code-review` (richer; model-invocable
-     only when the turn's prompt carries `/code-review` whitespace-delimited on both sides).
-     There is no CI Claude
-     review or `claude-review-gate` check (removed 2026-06-04;
-     see `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`).
+     (`.claude/hooks/pre-push-review-gate.sh`) requires one review pass on the branch HEAD before it
+     is pushed. There is no CI Claude review or `claude-review-gate` check (removed 2026-06-04).
+     Which skill, and the rules for each: [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md) § Which review skill.
 3. **Human review pass** — a convention, **not a merge gate**. Branch protection sets
    `required_pull_request_reviews: null` and `required_conversation_resolution: false`
    (`scripts/configure-branch-protection.mjs`, applied to `main` only), so GitHub blocks neither an

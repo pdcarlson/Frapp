@@ -152,14 +152,8 @@ Deeper deploy architecture: [`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md).
 
 ## Infisical sync map
 
-| #   | Infisical env | Destination                         |
-| --- | ------------- | ----------------------------------- |
-| 1   | staging       | Render → frapp-api-staging          |
-| 2   | production    | Render → frapp-api-prod             |
-| 3   | staging       | Vercel → frapp-web (Preview)        |
-| 4   | production    | Vercel → frapp-web (Production)     |
-| 5   | staging       | Vercel → frapp-landing (Preview)    |
-| 6   | production    | Vercel → frapp-landing (Production) |
+The six live syncs — source environment, secret path, destination scope, git branch filter, and the
+date the dashboard was last read — are inventoried in exactly one place: [`SECRETS_MANAGEMENT.md` §5 "Configure Secret Syncs"](../environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs). GitHub Actions is not one of them; `deploy-api.yml` pulls at job time. Do not restate the table here.
 
 Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) and root `.infisical.json`.
 

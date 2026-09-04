@@ -33,6 +33,8 @@ If `infisical run` fails (no session, wrong project, or API key without `dev` ac
 | Landing         | 3002  | http://localhost:3002      |
 | Supabase Studio | 54323 | http://127.0.0.1:54323     |
 
+Studio is only up after `npx supabase start` (or `scripts/local-dev-setup.sh`).
+
 ## Per-app commands (only if you are not using `dev:stack`)
 
 | App     | With Infisical        | Without Infisical               |
