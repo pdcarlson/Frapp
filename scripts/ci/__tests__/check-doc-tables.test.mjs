@@ -281,8 +281,10 @@ test("normalizeHome reduces a home cell to the directory it claims", () => {
 });
 
 test("normalizeHome ignores homes that are not docs/spec directories", () => {
-  // The map legitimately names non-directory homes; they must not be read as drift.
-  for (const t of ["GitHub Issues", ".buildpad/", "REFACTOR-PLAN.md", "ci-cd/DOCS_CI.md"]) {
+  // The map legitimately names non-directory homes — today just the GitHub
+  // Issues row. The rest are synthetic: normalizeHome must reject anything
+  // that is not a docs/ or spec/ directory, whether or not the map uses it.
+  for (const t of ["GitHub Issues", "ci-cd/DOCS_CI.md"]) {
     assert.equal(normalizeHome(t), null, t);
   }
   // A tree root is not a directory entry — root files are governed separately.

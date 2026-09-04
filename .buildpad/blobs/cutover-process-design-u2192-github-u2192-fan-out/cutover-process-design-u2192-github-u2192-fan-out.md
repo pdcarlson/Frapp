@@ -1,7 +1,0 @@
-# Cutover process: Design \u2192 GitHub \u2192 fan-out
-
-Correction: "Fable" and "Ultracode" aren't separate products \u2014 Fable 5 is Anthropic's top-tier model (above Opus 5), "ultracode" is a Claude Code effort/orchestration mode, and board-drafting is a Claude Code skill ("github-planning"). So the "planning agent" is Claude Code configured with Fable 5 + ultracode + that skill, not a separate tool. Claude Design's real export is HTML/zip/PDF, not machine-readable tokens \u2014 so its output should feed a rewritten spec/ui/brand-identity.md (the durable artifact), not be treated as drop-in code.
-
-Recommended sequence: Wave 0 (serialized, one agent) = shared/hotspot files \u2014 brand-identity.md rewrite, token rename, nav-config.ts restructure, chat-core extraction, the two real bugs. Must merge before fan-out. Wave 1 (parallel, one agent/worktree per surface) = per-module reskins (events, tasks, points, study, dues, backwork, chat) \u2014 disjoint files, safe to parallelize. Wave 2 = mobile net-new builds (QR, study hours, dues, push), depends on Wave 0 decisions.
-
-Practical limits: git worktree per agent/issue, PR-per-issue, GitHub merge queue with CI gates, cap parallel agents at 3-5 (review bandwidth is the real ceiling, not agent capacity). Human checkpoints: approve the board plan before issues are created; batch PR review 2x/day; manually review Foundation/shared-file/billing PRs, let scoped reskin PRs merge on green CI + visual regression with periodic audit.

@@ -107,6 +107,10 @@ failure mode, not a hypothetical.
   - A fact **restated** in a second doc rather than linked. One canonical place per fact
     (`docs/internal/DOCUMENTATION_CONVENTIONS.md` hard rule 5); a duplicate is how a wrong one
     spreads. If the PR states something a doc already says, that is a finding.
+- **Blast radius, not diff radius.** "Pre-existing" is not grounds to drop a candidate, and a finder
+  that drops one for that reason is under-reporting. Judge every such candidate against
+  [`spec/engineering.md`](../../../spec/engineering.md#changing-existing-code) § Changing existing
+  code, which draws the fence — do not re-derive it here.
 - **Tracker rule.** Issues are opened on GitHub with the `triage` label. Shared boundary:
   [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines).
   Flag any code, script, or workflow that writes to a retired tracker.

@@ -28,8 +28,8 @@ const CI_YML = ".github/workflows/ci.yml";
 export const PLACEMENT_DOC = "docs/internal/DOCUMENTATION_CONVENTIONS.md";
 
 // Homes in that table that are deliberately not directories under docs/ or spec/
-// (GitHub Issues, `.buildpad/`, the root scratch files) need no list: they are
-// not `docs/`- or `spec/`-prefixed, so normalizeHome returns null for them.
+// (GitHub Issues, or a named file such as `ci-cd/DOCS_CI.md`) need no
+// list: they are not `docs/`- or `spec/`-prefixed, so normalizeHome returns null.
 
 // The docs that restate the roster. Each is checked against the same source.
 export const DOC_TABLES = [

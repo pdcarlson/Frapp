@@ -64,7 +64,7 @@ a wider allowlist:
 | | |
 | --- | --- |
 | **May edit** | `docs/**`, `spec/**`, `.claude/skills/**/*.md`, every `AGENTS.md` (including `apps/web/AGENTS.md`), root `CONTRIBUTING.md` / `README.md` — i.e. exactly the corpus below |
-| **Never** | product code, `apps/**` *except* its `AGENTS.md`, `packages/**`, `scripts/**`, `.github/**`, migrations, `.buildpad/**` (overwritten by the next sync), `REFACTOR-PLAN.md` / `REFACTOR-PROGRESS.md` (scratch) |
+| **Never** | product code, `apps/**` *except* its `AGENTS.md`, `packages/**`, `scripts/**`, `.github/**`, migrations |
 | **Volume** | at most **one** PR per run, on `claude/docs-upkeep-YYYY-MM-DD` (append `-2` if that branch exists). Never merge it — a human does. |
 
 > **ADRs are append-only.** `spec/architecture/README.md` holds ADRs and their amendments. Never
@@ -86,9 +86,8 @@ git ls-files 'docs/*.md' 'spec/*.md' '.claude/skills/*.md' '*AGENTS.md' CONTRIBU
 
 136 tracked files as of 2026-08-27, and the count `check-doc-paths` reports — if the two disagree,
 one of them has drifted and that is itself a finding. Tracked files only; never `find`, which would
-sweep untracked scratch no gate will ever see. `.buildpad/`, `spec/ui/design-system/reference/`
-(no markdown in it) and the `REFACTOR-*.md` scratch files fall outside the include set already —
-listed here only so nobody re-adds them.
+sweep untracked scratch no gate will ever see. `spec/ui/design-system/reference/` has no markdown in it, so it falls
+outside the include set already — listed here only so nobody re-adds it.
 
 **Pick the slice deterministically — carry no state.** Sessions are fresh per run and there is no
 tracker memory here, so derive the slice from the calendar and the corpus alone:

@@ -1,5 +1,0 @@
-# Not source. `.buildpad/` is a periodically-synced export of the Buildpad
-# product-planning canvas — `npm run format` would rewrite all of it into a
-# diff the next sync just undoes. Nothing under it is code.
-# See docs/internal/DOCUMENTATION_CONVENTIONS.md.
-.buildpad/

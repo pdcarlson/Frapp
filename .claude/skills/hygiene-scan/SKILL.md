@@ -66,7 +66,7 @@ design question** — do not ship the mechanical half.
 | | |
 | --- | --- |
 | **May edit** | `apps/**` and `packages/**` product code and their tests; under `scripts/**`, dead code and stale allowlist entries only — the check, CI and deploy scripts there *are* the gates, so their logic is never in scope; the gate baselines, downward only (`.dependency-cruiser-known-violations.json` via `--update-baseline` after a clean run, the `.jscpd.json` threshold); **path citations** in any doc — `spec/behavior/**` included — when a fix moves or renames a file (that is doc-sync, not intent), and the **relevant** `docs/` file when a fact it states moved; this skill directory (self-maintenance) |
-| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (frozen — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); dead code and correctness there are fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · the legacy `@repo/theme` exports landing consumes · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · ADRs (append-only) · `.buildpad/**` · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `FRAPP_SKIP_REVIEW_GATE` |
+| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (frozen — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); dead code and correctness there are fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · the legacy `@repo/theme` exports landing consumes · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · ADRs (append-only) · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `FRAPP_SKIP_REVIEW_GATE` |
 | **Volume** | at most **one** PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that branch exists); at most **one open** Hygiene Scan PR at a time; at most **~3** net-new issues per run. Never merge — a human does. |
 
 **Behaviour change is out of scope**, with one exception. Observable behaviour is anything a test,
@@ -414,7 +414,7 @@ run entry never restates. Keep it to the facts the next run needs.
 - **Whole-pattern or file it.** Never leave a pattern half-migrated.
 - **Net simpler, always.** A fix that adds a copy, a shim, or a parallel path is the wrong fix.
 - **Frozen means frozen.** `apps/landing` visuals, the seven mobile hotspot files, the legacy
-  theme exports landing consumes, ADRs, `.buildpad/`.
+  theme exports landing consumes, ADRs.
 - **Spec is intent; code is current.** A spec-vs-code contradiction is filed, never resolved by
   editing either side to match the other (`AGENTS.md` § Spec vs code).
 - **Never print secret values.** Names and presence only.

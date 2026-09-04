@@ -73,8 +73,17 @@ rollout is to reach the day it blocks.
 | Per-optimization performance notes (one file per optimization) | `docs/performance/` |
 | Data-layer hook conventions (query keys, chapter scope, optimistic mutations) | `docs/hooks/` |
 | Work status / planning | **GitHub Issues** — not a doc; see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) |
-| Product-planning canvas (Buildpad export) | `.buildpad/` — **read-only background, never a doc home**; see below |
-| In-flight consolidation scope + progress | `REFACTOR-PLAN.md` / `REFACTOR-PROGRESS.md` at repo root — **temporary scratch, never a doc home**; see below |
+
+## Formatting
+
+**Markdown is not machine-formatted.** `npm run format` covers `ts`/`tsx` only, and no CI check or
+hook runs prettier over prose. Diffs here stay hand-authored, so a reviewer reading one sees the
+change and not a reflow.
+
+Do not "fix" that by running prettier over the corpus: 112 of 149 tracked markdown files differ from
+its defaults today, so a single `--write` produces a ~114-file, ~3,600-line diff that buries whatever
+it was carrying. There is no `.prettierignore` to stop you. The `ts`/`tsx` half of the same command
+has its own unresolved problem, tracked in issue #1650.
 
 ## Naming
 
@@ -101,55 +110,6 @@ Most changes alter no documented fact and need no doc edit. When one does, the
 question is never "did I touch a doc" but "which doc owns this fact" — the
 placement map above answers it. Editing the wrong doc to look diligent is the
 failure mode these conventions exist to prevent, not a lesser form of compliance.
-
-## `.buildpad/` is background, not documentation
-
-`.buildpad/` is a periodically-synced git export of the Buildpad product-planning canvas: `blobs/`
-(research and audits), `documents/`, and `notes/`. It is committed so agents can read canvas research
-straight off the filesystem instead of having documents pasted into a prompt — point prompts at a path
-under `.buildpad/` rather than saying "I've attached X".
-
-Treat it as a running brainstorm, not a source of truth:
-
-1. **`spec/` wins.** The canvas can hold stale, superseded, or contradictory ideas — that is the nature
-   of a brainstorm. Nothing in it is a decision until the owner says so
-   ([`.buildpad/notes/process-note-everything-buildpad-and-claude-code.md`](../../.buildpad/notes/process-note-everything-buildpad-and-claude-code.md)).
-   Where it disagrees with `spec/`, `spec/` is the contract.
-2. **Never hand-edit it in a PR.** The next canvas sync overwrites it. A conclusion worth keeping gets
-   promoted into its canonical `spec/` or `docs/` home from the map above.
-3. **It is not documentation and cannot stand in for it.** A conclusion that matters gets promoted
-   into its canonical `docs/` or `spec/` home; leaving it in the canvas leaves it stale by design.
-4. **Source tooling skips it.** It holds no code, so the `Links`, `doc-paths` and docs-structure gates
-   never walk it, and [`.prettierignore`](../../.prettierignore) keeps `npm run format` from rewriting
-   the whole export into a diff the next sync would just undo.
-
-## `REFACTOR-PLAN.md` / `REFACTOR-PROGRESS.md` are scratch, not documentation
-
-Two tool-neutral files at repo root carry the scope and running state of the in-flight consolidation
-project: `REFACTOR-PLAN.md` (per-item `file:line` inventories, shared homes, call sites, and the
-cross-item collision map that keeps two parallel agents off the same file) and `REFACTOR-PROGRESS.md`
-(one checkbox per item). They exist so each isolated agent gets exact scope instead of re-deriving it,
-and they are **deleted when the project wraps**.
-
-**Why this is not a hole in Hard rules 3 and 4.** Rule 3 bans one-off narrative markdown *in `docs/`
-and `spec/`* — including migration plans — and rule 4 says work status lives in GitHub Issues. Both
-still hold: these two files are at repo root, not under `docs/` or `spec/`, they are excluded from the
-placement map rather than added to it, and they carry no work status. Item-level status, priority and
-ownership stay in GitHub Issues; `REFACTOR-PROGRESS.md` records only whether a given agent run
-finished its own scope, which is execution state a deleted file may lose harmlessly. An agent that
-finds real work does not write it here — it files a `triage` issue.
-
-The same rules as `.buildpad/` otherwise apply, with one difference that matters:
-
-1. **`spec/` still wins.** A plan file records what the code looks like today and what an agent should
-   do next. It is not a behavior contract.
-2. **They are not documentation.** Editing one never stands in for updating the doc that owns a fact;
-   they are short-lived scratch, and are deleted when the project wraps.
-3. **A conclusion worth keeping gets promoted** into its canonical `spec/` or `docs/` home from the map
-   above before the files are deleted.
-4. **Delete this section and the placement-map row in the same PR that deletes the files.** Both are
-   cited above as backticked `.md` paths inside `docs/`, which `check-doc-paths.mjs` walks — leaving
-   the section behind turns the citation gate red on a doc nobody touched.
 
 ## See also
 

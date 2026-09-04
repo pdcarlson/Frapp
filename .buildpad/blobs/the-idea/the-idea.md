@@ -1,3 +1,0 @@
-# The idea
-
-Signet (formerly "Frapp"): a multi-tenant SaaS platform for Greek life (fraternities/sororities) unifying chat, file storage, and AI. AI can answer questions across chapter docs, meeting notes, and chat history, scoped by role and chapter. Also planned: event attendance via refreshing QR code, geofenced study hour tracking, task/points assignment, community service tracking. Configurable per chapter, with paid feature tiers beyond a free base chat tier.

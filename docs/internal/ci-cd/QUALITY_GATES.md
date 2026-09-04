@@ -350,17 +350,3 @@ directive — a warning, which `--max-warnings 0` turns into a failure. Without 
 file `git status` never shows.
 
 ---
-
-## `.buildpad/` is excluded from all of this
-
-The Buildpad canvas export is planning data — research notes and markdown, synced periodically. It
-holds no code, so every tool that scans the tree must skip it, and a canvas sync must never fail a
-gate.
-
-| Tool | How |
-|---|---|
-| dependency-cruiser | `NOT_SOURCE` in [`.dependency-cruiser.cjs`](../../../.dependency-cruiser.cjs) (`doNotFollow` + `exclude`) |
-| jscpd | `ignore` in [`.jscpd.json`](../../../.jscpd.json) |
-| ESLint | Unreachable by construction — `apps/api`'s lint script globs `{src,apps,libs,test}/**/*.ts` relative to the workspace, and there is no repo-root ESLint config |
-| Prettier | `.buildpad/` in [`.prettierignore`](../../../.prettierignore) |
-
