@@ -388,6 +388,29 @@ touch this file **or** [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — 
 backs the habit, it does not prove the log complete. Appending here stays the
 promoter's job.
 
+## 2026-09-05: Points ledger idempotency key (#1719)
+
+One additive migration. Adds a nullable column and a partial unique index to an
+existing table; no backfill, no rewrite, no RLS change. Safe to apply ahead of
+the code — the column is simply unread until the API that writes it ships.
+
+### 20260905020000_point_transactions_client_message_id.sql
+* **Purpose**: Gives `point_transactions` the `client_message_id` idempotency
+  key it never had, so `POST /v1/points/adjust` can dedupe a retried adjustment
+  instead of writing a second ledger row. The ledger is append-only and has no
+  corrective path through the API, so a duplicate grant was unrecoverable.
+  Mirrors the `chat_messages` dedupe shape from `20260523150000_chat_hotpath.sql`.
+  The index is **partial** (`where client_message_id is not null`), which is what
+  keeps dashboard adjustments — they send no key — entirely unconstrained by it.
+* **Checks**: After `db push`, confirm both objects exist —
+  `select column_name from information_schema.columns where table_name = 'point_transactions' and column_name = 'client_message_id';` should return 1 row, and
+  `select indexname from pg_indexes where tablename = 'point_transactions' and indexname = 'idx_point_transactions_dedupe';` should return 1 row.
+  Confirm the index really is partial, since a non-partial one would reject a
+  chapter's second dashboard adjustment:
+  `select indexdef from pg_indexes where indexname = 'idx_point_transactions_dedupe';` — the definition must end in `WHERE (client_message_id IS NOT NULL)`.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the points ledger idempotency key.
+
 ## 2026-08-31: `chapter_documents` metadata — mime type, size, document type, effective date (#716)
 
 One additive migration. Adds four nullable columns to an existing table; no

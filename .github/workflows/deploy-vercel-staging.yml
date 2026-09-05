@@ -99,9 +99,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Pinned, like every other CLI this repo installs in CI (supabase 2.77.0
-      # in deploy-production.yml). An unpinned `@latest` makes the deploy path
-      # depend on whatever Vercel published this morning.
+      # Pinned, like every other CLI this repo installs in CI (the Supabase CLI
+      # pin lives in `.github/actions/supabase-cli`). An unpinned `@latest`
+      # makes the deploy path depend on whatever Vercel published this morning.
       - name: Install Vercel CLI
         run: npm install --global vercel@59.11.7
 
@@ -162,3 +162,70 @@ jobs:
             VERCEL_STAGING_ALIAS=staging.frapp.live \
             SERVICE_LABEL=frapp-landing \
             node scripts/ci/ensure-vercel-staging-alias.mjs
+
+  # ── Deploy outcome: alert on failure ────────────────────────────────────────
+  # Terminal reporting job (#1674). This workflow shipped in #1578 with no
+  # alerting of any kind: a `workflow_run` failure lands on no commit and no PR,
+  # so a failed staging deploy produced no commit status, no PR check and no
+  # notification. Staging web and landing would then quietly stay on the last
+  # commit that did deploy — which is exactly how ADR-21's Git unlink froze both
+  # staging hosts for days before anyone noticed.
+  #
+  # Shares `scripts/ci/deploy-alert.mjs` with `deploy-api.yml` rather than
+  # copying it; `ALERT_CONFIG` selects which workflow's jobs and alert issue to
+  # use. An unknown value there is a hard error, not a silent fallback.
+  deploy-outcome:
+    needs: [deploy]
+    # `always()` alone is NOT enough, and this is the subtle part: a skipped
+    # dependency does not stop a job that uses always(), so on every CI-failed
+    # run `deploy` would be skipped and this would still run and report
+    # "deployed NOTHING". That is true but actively misleading — CI failing is
+    # not a deploy failure, and CI is already red where a human looks. Repeating
+    # the `deploy` job's own conditions means this job runs exactly when a
+    # deploy was genuinely attempted, which is also what makes the script's
+    # "no-op" outcome unreachable for this configuration.
+    #
+    # Keep these three conditions in sync with the `deploy` job above. They are
+    # duplicated because GitHub Actions has no way to share a job-level `if:`,
+    # and `deploy-vercel-staging-workflow.test.mjs` fails if they drift.
+    #
+    # `always()` rather than `!cancelled()`, deliberately: a CANCELLED deploy
+    # does raise the alert, because `FAILED_RESULTS` in deploy-alert.mjs counts
+    # `cancelled` as a failure on purpose ("a cancelled deploy is not a deploy,
+    # and treating it as benign is precisely the green-history failure this
+    # script exists to end"). The visible cost is specific to this workflow:
+    # `cancel-in-progress: false` means merges QUEUE, so cancelling a
+    # superseded queued run by hand is routine, and it will file a P2. That
+    # alert self-closes as soon as the run behind it deploys, so the window is
+    # minutes — accepted rather than silenced, since the alternative suppresses
+    # a real cancelled-mid-deploy case that leaves the two hosts split.
+    if: |
+      always() &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The ONLY job here with any write scope, and it is job-scoped so the
+      # workflow-level `contents: read` above stays exactly as narrow as it was.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # deploy-alert.mjs is dependency-free (global fetch + node:fs on the
+      # runner's preinstalled Node) — no setup-node, no npm ci, matching the
+      # same step in deploy-api.yml.
+      - name: Report deploy outcome and alert on failure
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALERT_CONFIG: deploy-vercel-staging
+          DEPLOY_NEEDS: ${{ toJSON(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/ci/deploy-alert.mjs

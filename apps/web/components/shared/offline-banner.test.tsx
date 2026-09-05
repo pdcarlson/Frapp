@@ -50,7 +50,14 @@ describe("OfflineBanner", () => {
 
     const banner = screen.getByRole("alert");
     expect(banner).toBeInTheDocument();
-    expect(banner).toHaveTextContent("You're offline. Showing cached data. Changes will sync when you reconnect.");
+    // `spec/ui/resilience.md` § 2's OFFLINE banner cell, verbatim, and what
+    // mobile ships. The trailing "Changes will sync when you reconnect." was
+    // dropped in #1707: queueless writes now reject rather than pausing, so
+    // page chrome promising a sync on every route contradicts § 1 principle 1,
+    // "actions must never appear to succeed when they haven't". Only the chat
+    // composer has an outbox, and it states that at the control itself.
+    expect(banner).toHaveTextContent("You're offline. Showing cached data.");
+    expect(banner).not.toHaveTextContent(/will sync/i);
     expect(banner).toHaveClass(
       "border-destructive/45 bg-destructive/[.13] text-destructive",
     );

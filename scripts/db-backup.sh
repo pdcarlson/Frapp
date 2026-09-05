@@ -92,11 +92,18 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 # Prefer a `supabase` already on PATH — in CI that is the binary supabase/setup-cli
-# installed at the repo-wide pin, and using it keeps ONE CLI version across `link`
-# and `dump`. They share the linked-project state under supabase/.temp, so running
-# them on different versions is asking for a skew bug in the only backup this
-# project has. Falls back to a pinned npx for local runs, where nothing is
-# installed. Override with SUPABASE_CLI_VERSION to test another version.
+# installed by .github/actions/supabase-cli, which holds the repo's single pin, and
+# using it keeps ONE CLI version across `link` and `dump`. They share the
+# linked-project state under supabase/.temp, so running them on different versions
+# is asking for a skew bug in the only backup this project has. Falls back to a
+# pinned npx for local runs, where nothing is installed. Override with
+# SUPABASE_CLI_VERSION to test another version.
+#
+# The fallback below is a SECOND copy of that pin, and it is deliberate — teaching
+# this script to parse YAML would add a failure mode to the one script that
+# produces this project's only restorable backup. It is kept honest by a test
+# instead: scripts/ci/__tests__/infisical-secrets-action.test.mjs asserts this
+# literal equals the action's. Bump both together.
 SUPABASE_CLI_VERSION="${SUPABASE_CLI_VERSION:-2.77.0}"
 if command -v supabase >/dev/null 2>&1; then
   SUPABASE="supabase"
