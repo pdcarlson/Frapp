@@ -132,8 +132,14 @@ decision rather than a per-screen judgement call.
 submit button carries no state of its own, so `disabled` costs nothing beyond
 the press. **On a control whose appearance carries state, it is wrong.** The web
 Profile notification switches (#564) are
-queueless — `networkMode` is `"online"`, so an offline toggle writes
-optimistically, pauses before sending and is lost on tab close — so they refuse.
+queueless, and since #1754's `networkMode: "always"` an offline toggle no longer
+parks — it starts, exhausts `retry: 2` and rejects in about three seconds. That
+removed the silent loss, but not the reason to refuse: the optimistic `onMutate`
+moves the switch, it sits wrong for those three seconds, then snaps back under an
+error toast. On a control whose *position is the state*, showing a value the
+server was never told about is the failure; refusing costs nothing and answers
+immediately. So they refuse — this is § 2's "disabled with 'Reconnect to make
+changes'" applied to one surface ahead of the dashboard-wide #1753.
 They refuse with **`aria-disabled` plus a guard in the handler**, not the
 `disabled` attribute, because `apps/web/components/ui/switch.tsx` scopes every
 state colour to `enabled:` and its thumb takes `group-data-[disabled]`, which

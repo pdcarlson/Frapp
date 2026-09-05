@@ -775,15 +775,23 @@ export function ProfilePanel() {
                       /*
                        * Soft-disabled offline, NOT `disabled`.
                        *
-                       * The write must not go through: `networkMode` is at the
-                       * default `"online"`, so query-core runs `onMutate` — the
-                       * optimistic write lands and the switch moves — then
-                       * pauses the retryer before the request goes out. No
-                       * error, no revert, no toast, and web has no mutation
-                       * persister (see `handleDeleteAccount`), so closing the
-                       * tab loses it and the member believes they muted a
-                       * category that is still on. `handleCategoryToggle`
-                       * refuses it and says so.
+                       * The write is refused up front rather than attempted.
+                       * Since #1754 the query client sets `networkMode:
+                       * "always"`, so an offline mutation no longer parks — it
+                       * starts, exhausts `retry: 2`, and rejects in ~3s. That
+                       * is a real improvement over the pause-forever it
+                       * replaced, but it is still the wrong experience on a
+                       * *switch*: the optimistic `onMutate` moves it, it sits
+                       * wrong for three seconds while retries burn, then snaps
+                       * back under an error toast. Refusing costs the member
+                       * nothing and tells them immediately, and the switch
+                       * never shows a value the server was never told about.
+                       *
+                       * This is § 2's "disabled with 'Reconnect to make
+                       * changes'" applied to one surface. Doing it dashboard-
+                       * wide is #1753; #1754's own note says that until #1753
+                       * lands an offline member gets an error toast rather
+                       * than a control that declines to be pressed.
                        *
                        * But the real `disabled` attribute cost more than it
                        * bought. `switch.tsx` scopes every state colour to
@@ -812,11 +820,12 @@ export function ProfilePanel() {
               {isOffline ? (
                 // Says only what is true. An earlier draft added "your current
                 // settings are still in force", which is false in exactly the
-                // case the refusal exists for: a toggle made just before the
-                // connection dropped has already written its optimistic row and
-                // paused mid-flight, so a switch can be showing a value the
-                // server never received. Claiming the displayed state is
-                // authoritative would be most wrong precisely when it matters.
+                // case the refusal exists for: a toggle fired just before the
+                // connection dropped is mid-retry, so a switch can be showing a
+                // value the server has not accepted — and since #1754 it will
+                // reject a few seconds later and revert under the reader's
+                // eyes. Claiming the displayed state is authoritative would be
+                // most wrong precisely when it matters.
                 <p
                   id={OFFLINE_NOTE_ID}
                   className="text-sm text-muted-foreground"
