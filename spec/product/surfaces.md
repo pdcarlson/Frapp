@@ -49,7 +49,7 @@ The member experience (`apps/mobile`). Expo with Expo Router.
 - **Study Hours** — Select geofence, view map with polygon overlay. Start session — enters dedicated study mode screen (large timer, location status, progress toward next point, streak indicator). Foreground enforcement with pause/resume. Stop session. Session history with points earned.
 - **My Points** — Current balance, recent transactions (with reasons for adjustments), leaderboard (chapter rank). Time-window selector (all-time, semester, month).
 - **Notifications** — In-app notification center with deep linking. Mark as read. Filter by category. Quiet hours configuration.
-- **Profile** — Display name, profile photo, bio — read-only on mobile, which points to the web dashboard for editing. Push notification preferences (per-category). Quiet hours setting. Account info. Sign out.
+- **Profile** — Display name, avatar, points/service stats, account details and bio. Read-only on mobile; the screen points to the web dashboard for editing. Push preferences, quiet hours and Sign out are on the Preferences tab, not here.
 - **Member Directory** — Searchable list of chapter members with profile cards. Tap to view profile or start DM.
 - **Tasks** — View tasks assigned to the user. Update status (IN_PROGRESS, COMPLETED). See due dates, point rewards, and confirmation status.
 - **Service Hours** — Log service entries (date, duration, description, optional proof upload). View own history and approval status. Chapter service leaderboard.

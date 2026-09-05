@@ -29,7 +29,7 @@ A `points`, `task`, `event`, or `system_audit` card asserts that a server-side s
 
 ## Announcement gating
 
-`/announce` is exec-only and posts to the current chapter's `#announcements`. The gate is the `operation: 'read' | 'post'` parameter on the shared `canAccessChannel` predicate (default `'read'`): for `operation:'post'`, after the read check passes, the predicate denies when the channel `is_read_only` and the caller holds neither `announcements:post` nor `*`. Enforced server-side in `ChatService.sendMessage`, the only *client* send path since ADR-11 / #416. Server-originated writers bypass it on the service role and do not pass this gate — see the `system_audit` writers above, plus the Discord importer. The client hides the disallowed command for UX, but the server is the trust boundary.
+`/announce` is exec-only and posts to the current chapter's `#announcements`. The gate is the `operation: 'read' | 'post'` parameter on the shared `canAccessChannel` predicate (default `'read'`): for `operation:'post'`, after the read check passes, the predicate denies when the channel `is_read_only` and the caller holds neither `announcements:post` nor `*`. Enforced server-side in `ChatService.sendMessage`, which asserts channel access on every send. The `system_audit` writers listed above, and the Discord importer, write on the service-role path instead and never reach it. The client hides the disallowed command for UX, but the server is the trust boundary.
 
 ## Vote-change (UPSERT semantics)
 

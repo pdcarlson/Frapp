@@ -1568,7 +1568,7 @@ The Signet answer is the one approach the measurements left standing — surface
 
 ## 16. Mobile Chat Architecture
 
-The Expo app opens directly into chat and shares web's realtime transport and outbox, so presence and the offline composer queue are the same on both (ADR-10). Reactions and rich-message cards are **not** at parity, and voice memos are not built at all — [`../behavior/chat/README.md`](../behavior/chat/README.md#web--mobile-parity) § Web ↔ mobile parity owns that roster. The hot-path client and realtime manager are shared across platforms as `@repo/chat-core`, with the platform-specific layers injected through its adapter ports (`KeyValueStore`, `NetworkState`, `OutboxStore`) rather than forked. Each app owns its own renderer registry — `apps/web`'s is in `components/chat/renderers/`, and `apps/mobile` renders its one card kind directly without consuming `@repo/chat-integrations`.
+The Expo app opens directly into chat and shares web's realtime transport and outbox, so presence and the offline composer queue are the same on both (ADR-10). Reactions and rich-message cards are **not** at parity, and voice memos are not built at all — [`../behavior/chat/README.md`](../behavior/chat/README.md#web--mobile-parity) § Web ↔ mobile parity owns that roster. The hot-path client and realtime manager are shared across platforms as `@repo/chat-core`, with the platform-specific layers injected through its adapter ports (`KeyValueStore`, `NetworkState`, `OutboxStore`) rather than forked. The renderer registry is web-only (`apps/web/components/chat/renderers/`); `apps/mobile` does not consume `@repo/chat-integrations` and renders its one card kind directly.
 
 ### Storage layer (the Dexie analogue)
 

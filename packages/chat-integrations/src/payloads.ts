@@ -2,8 +2,7 @@
  * Payload shapes for rich chat messages (Chunk 05).
  *
  * Kept in `packages/chat-integrations` (zero React deps) so the shape has one
- * home; `index.ts` records what actually depends on this package. Renderers
- * live in the apps, not here.
+ * home. Renderers live in the apps, not here.
  */
 
 export interface PollOption {

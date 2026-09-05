@@ -2,7 +2,7 @@
  * Chat-integrations registry.
  *
  * This package holds the slash-command catalog, the input parsers, and the
- * payload shapes shared across web, mobile, and the Edge Functions. Rich
+ * payload shapes. `apps/web` and `@repo/chat-core` are the dependents. Rich
  * renderers themselves live in the apps (they're framework-bound — React for
  * web, Expo for mobile), but every renderer reads from the same contract
  * declared here so a wire change cannot drift across surfaces.
