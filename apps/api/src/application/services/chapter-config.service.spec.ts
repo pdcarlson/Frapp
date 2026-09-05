@@ -1100,7 +1100,7 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
     });
 
     it('recomputeAndPersistPalette reports a failed chapters read as an error too', async () => {
-      // Same controller, same `chapter_config:manage`, same collapse. Fixing
+      // Same controller, same `chapter-config:manage`, same collapse. Fixing
       // only getConfig would have left Save-accent with the identical
       // invisible 404 the comment above declares a bug.
       const supabase = makeSupabase([], null, {}, null, null, {

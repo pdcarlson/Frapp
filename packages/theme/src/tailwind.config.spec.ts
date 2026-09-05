@@ -299,7 +299,7 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
 
   /**
    * Walks by hand rather than with `readdirSync(dir, { recursive: true })`:
-   * that option needs Node >= 20.1, and `package.json` declares `>=18`. On an
+   * that option needs Node >= 20.1, and `package.json` declares `>=20`. On an
    * older runtime the option is ignored rather than rejected, so the scan would
    * quietly flatten to one directory level.
    */

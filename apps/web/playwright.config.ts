@@ -45,7 +45,7 @@ export default defineConfig({
   /**
    * A committed `test.only` narrows the run to that one test and still exits 0.
    * `web-responsive-floor` is a required check, so the gate would report success
-   * having measured one route of fifteen — the same silent-coverage loss it
+   * having measured a single dashboard route — the same silent-coverage loss it
    * exists to catch.
    *
    * The other hollow-gate route is running zero tests and exiting 0. Playwright
