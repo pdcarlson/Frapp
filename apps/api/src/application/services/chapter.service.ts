@@ -96,6 +96,14 @@ export interface ChapterMembershipSummary {
   chapter_id: string;
   role_ids: string[];
   has_completed_onboarding: boolean;
+  /**
+   * `MODULE_CATALOG` keys whose ops-setup nudge this member has dismissed in
+   * this chapter (#492). Rides this summary rather than getting its own read
+   * for the same reason `has_completed_onboarding` does: chat home already
+   * holds the membership, and a dedicated request per session would be a
+   * round trip to decide whether to render one card.
+   */
+  dismissed_ops_nudges: string[];
   // Projected, not the raw row: this endpoint has no billing permission, and
   // an unprojected chapter here leaked the same identifiers `/current` did
   // (#930). See `chapter-member-view.ts`.
@@ -590,6 +598,12 @@ export class ChapterService {
       chapter_id: member.chapter_id,
       role_ids: member.role_ids,
       has_completed_onboarding: member.has_completed_onboarding,
+      // `?? []` because the column was added after these rows existed: a member
+      // row read back by a client older than the migration, or from a test
+      // fixture that predates it, has no key here. The web contract declares a
+      // plain array, so normalizing at the boundary keeps `undefined` from
+      // reaching `selectOpsNudge`.
+      dismissed_ops_nudges: member.dismissed_ops_nudges ?? [],
       chapter: toChapterMemberView(chapter),
     };
   }

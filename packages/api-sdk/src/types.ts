@@ -570,6 +570,23 @@ export interface paths {
         patch: operations["MemberController_updateOnboarding_v1"];
         trace?: never;
     };
+    "/v1/members/me/ops-nudges/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Dismiss an ops-module setup nudge */
+        patch: operations["MemberController_dismissOpsNudge_v1"];
+        trace?: never;
+    };
     "/v1/alumni": {
         parameters: {
             query?: never;
@@ -3158,6 +3175,13 @@ export interface components {
         UpdateOnboardingDto: {
             has_completed_onboarding: boolean;
         };
+        DismissOpsNudgeDto: {
+            /**
+             * @description Module whose ops-setup nudge to dismiss for the caller in the active chapter. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing.
+             * @enum {string}
+             */
+            module_key: "dues" | "events" | "tasks" | "points";
+        };
         CreateInviteDto: {
             /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
             role?: string;
@@ -4838,6 +4862,27 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateOnboardingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MemberController_dismissOpsNudge_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissOpsNudgeDto"];
             };
         };
         responses: {
