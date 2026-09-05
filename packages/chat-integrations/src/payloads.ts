@@ -1,8 +1,8 @@
 /**
  * Payload shapes for rich chat messages (Chunk 05).
  *
- * Kept in `packages/chat-integrations` (zero React deps) so both web and the
- * the API envelope a consistent contract. Renderers in `apps/web` /
+ * Kept in `packages/chat-integrations` (zero React deps) so the clients and the
+ * API envelope a consistent contract. Renderers in `apps/web` /
  * `apps/mobile` are wired via the kind→renderer registry, but the payload
  * shape is the source of truth here.
  */

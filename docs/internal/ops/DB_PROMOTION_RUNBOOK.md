@@ -258,11 +258,14 @@ Two other refusals, both deliberate:
       `db-backup.yml` runs against `frapp-staging` only, and the free plan offers
       neither a snapshot nor PITR
       ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality).
-      `scripts/db-backup.sh` can dump any project, but read its header before
-      relying on it here: it needs a reachable Docker daemon, the target project's
-      own access token and DB password, and `--linked` persists the link under
-      `supabase/.temp`, so re-link before running anything else from the tree. It
-      captures the database only — Storage objects are deliberately out of scope.
+      `scripts/db-backup.sh` can dump any project. It always needs a reachable
+      Docker daemon (`supabase db dump` runs pg_dump in a container). Prefer
+      `--db-url` for a one-off — the credentials ride in the connection string and
+      nothing persists; `--linked` instead needs `supabase link`, which leaves the
+      link under `supabase/.temp`, so re-link before running anything else from the
+      tree. Either way it captures the **database** only; Storage objects need
+      `scripts/storage-backup-run.mjs`, which is what `db-backup.yml`'s second job
+      runs for staging.
 
 ## Local validation
 

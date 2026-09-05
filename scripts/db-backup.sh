@@ -33,7 +33,7 @@
 #
 # NOT COVERED, and deliberately not papered over: Storage objects. Per the same
 # guide, "Database backups do not include objects you store via the Storage API,
-# as the database only includes metadata about these objects." This repo has five
+# as the database only includes metadata about these objects." This repo has eight
 # buckets; a restore from these files yields rows that reference objects this
 # backup never captured. See DB_ROLLBACK_PLAYBOOK.md § What this backup does not
 # cover.

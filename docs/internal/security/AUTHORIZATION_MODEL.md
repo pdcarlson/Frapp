@@ -63,7 +63,7 @@ composed with **B** or **C** for per-row reads.
 | Controller / base | Routes | Guards | Row proof |
 | --- | --- | --- | --- |
 | `alumni` | `GET /` | A+C+P `members:view` | A — chapter-scoped list |
-| `backwork` | `POST /upload-url`, `POST /`, `GET /`, `GET /departments`, `PATCH /departments/:id`, `GET /professors`, `GET /:id`, `DELETE /:id` | A+C+P, `backwork:upload` **or** `backwork:admin` at class level — so reads are gated too; `POST /upload-url` and `POST /` override to require `backwork:upload` specifically | B — `resourceRepo.findById(id, chapterId)` (`backwork.service.ts:201,222`) |
+| `backwork` | `POST /upload-url`, `POST /`, `GET /`, `GET /departments`, `PATCH /departments/:id`, `GET /professors`, `GET /:id`, `DELETE /:id` | A+C+P, `backwork:upload` **or** `backwork:admin` at class level — so reads are gated too; `POST /upload-url` and `POST /` override to require `backwork:upload` specifically | B — `resourceRepo.findById(id, chapterId)` (`backwork.service.ts:192,213`) |
 | `billing` | `GET /status`, `POST /checkout`, `POST /portal` | A+C+P `billing:view` / `billing:manage`; `@SubscriptionExempt` | A — chapter is the subject |
 | `chapters/:id/config` | `GET`, `PATCH`, `POST /:id/theme-palette` | A+C+P `chapter-config:view` / `…:manage`\|`*` | A — data always comes from the guard-resolved chapter; `:id` disagreeing with it is rejected with `403 chapter.context.mismatch` (`chapter-config.controller.ts:45,64,80`, `assertMatchesActiveChapter`). See §5.1 |
 | `documents` | `POST /upload-url`, `POST /`, `GET /`, `GET /folders`, `POST /folders`, `PATCH /folders/:id`, `DELETE /folders/:id`, `GET /:id`, `DELETE /:id` | A+C+P `members:view`, `chapter_docs:upload` / `…:manage` | B — `findById(id, chapterId)` |
@@ -93,7 +93,7 @@ The interesting half. Each takes either **no** chapter id, or a client-supplied 
 | --- | --- | --- |
 | `GET /health` | none | Liveness only; no tenant data |
 | `GET /health/ready` | none | Readiness probe for deploy smoke checks; no tenant data |
-| `GET /v1/discord/connect/callback` | none | OAuth redirect target, so it cannot carry a bearer token. Its capability is the single-use `state` row it consumes; the query string is public and is never logged in the clear |
+| `GET /v1/discord/connect/callback` | none | OAuth redirect target, so it cannot carry a bearer token. Its capability is the single-use `state` row it consumes, which binds the chapter. `code` and `state` never reach a log — `LoggingInterceptor` strips the query string via `pathOnly` — though `error` / `error_description` are logged through `logSafe`, which caps and strips control characters rather than redacting |
 | `POST /webhooks/stripe` | none (throttler skipped) | **HMAC signature** verified against `STRIPE_WEBHOOK_SECRET` before the body is parsed; an invalid signature is `401` (`webhook.controller.ts:52-66`). Not user-authenticated by design |
 | `GET /chapter-directory/search` | A | Public reference dataset (Greek orgs + universities). Contains no chapter-owned data |
 | `GET /analytics/identity` | A | **D** — returns the caller's own pseudonymous id |

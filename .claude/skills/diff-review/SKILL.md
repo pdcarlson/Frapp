@@ -140,7 +140,7 @@ failure mode, not a hypothetical.
     | The two `QueryClient` defaults — `apps/web/lib/providers/query-provider.tsx` and `apps/mobile/lib/query-client.ts` — **they differ, and an unset option resolves per platform** | `spec/ui/resilience.md`, `spec/ui/web-dashboard/README.md` |
     | The `delete from` block in the `anonymize_user` RPC (latest migration re-creating it wins) | `spec/behavior/data-retention.md` |
     | `throttle-profiles.decorator.ts` **and every handler applying one** — the profile is applied by hand per route, never inherited | `spec/behavior/README.md` § Per-route rate limits, `docs/guides/api-architecture.md` |
-    | Appearance config — `apps/web/app/providers.tsx` (whether a theme provider exists at all) and `apps/mobile/app.json`'s `userInterfaceStyle` | `spec/behavior/README.md` § Dark Mode, `spec/ui/web-dashboard/README.md` |
+    | Appearance config — `apps/web/app/providers.tsx` (whether a theme provider exists at all) and `apps/mobile/app.json`'s `userInterfaceStyle` | `spec/behavior/README.md` § Dark Mode, `spec/architecture/README.md` §§ 3.2 and 3.3, `spec/ui/web-dashboard/README.md`, `spec/ui/mobile/README.md`, `spec/product/surfaces.md` |
 
     **A hand-maintained count is the highest-risk form.** Prefer deleting it and linking over
     syncing it — that is what the standard says, and a count with no mechanism behind it is a future
