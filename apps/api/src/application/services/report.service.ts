@@ -8,6 +8,7 @@ import {
 } from '../../domain/utils/points-window';
 import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
 import { chunkIds } from '../../domain/utils/chunk-ids';
+import { fetchAllPages as fetchAllPagesShared } from '../../infrastructure/supabase/supabase.utils';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 export interface AttendanceReportRow {
@@ -71,13 +72,11 @@ interface QueryResult<T> {
 /**
  * Rows requested per round-trip.
  *
- * This is a request size, not an assumption about the server's cap. The loop
- * advances by however many rows actually came back, so a server whose
- * `max_rows` is lower than this still reads correctly — it just takes more
- * trips. That matters because `supabase/config.toml` governs the *local*
- * stack only; the hosted project's "Max rows" is a dashboard setting this file
- * cannot see. `scheduled-jobs.repository.ts` reaches the same conclusion from
- * the other direction, by holding its page size deliberately below the cap.
+ * A request size, not an assumption about the server's cap — see
+ * `fetchAllPages` in `infrastructure/supabase/supabase.utils.ts`, which is the
+ * one home for why that holds. Every paged read in the API now shares that
+ * rule; the "hold the page size below the cap instead" reasoning that used to
+ * be cited here was #1628's bug, not a second safe strategy.
  */
 const REPORT_PAGE_SIZE = 1000;
 
@@ -238,31 +237,20 @@ async function fetchAllPages<T>(
   page: (from: number, to: number) => PromiseLike<QueryResult<T>>,
   { limit = REPORT_MAX_ROWS }: { limit?: number } = {},
 ): Promise<ReportResult<T>> {
-  const readLimit = limit + 1;
-  const rows: T[] = [];
-
-  for (let from = 0; from < readLimit;) {
-    const to = Math.min(from + REPORT_PAGE_SIZE, readLimit) - 1;
-    const { data, error } = await page(from, to);
-    throwIfError(error);
-
-    const batch = data ?? [];
-    rows.push(...batch);
-    // Only an empty page proves the rows ran out. Treating any *short* page as
-    // the end would silently truncate the moment the server's `max_rows` sits
-    // below `REPORT_PAGE_SIZE` — the caller would ask for 1000, be handed the
-    // cap, and read that as "no more rows", reinstating the exact bug this
-    // paging exists to close, with `truncated: false` attached to it.
-    // The cost of that guarantee is one extra, empty request per report once
-    // the rows run out. A report is an admin-initiated action already costing
-    // hundreds of milliseconds, so a round-trip is a cheap price for not
-    // having to be right about a server setting this file cannot read.
-    if (batch.length === 0) break;
-    // Advance by what arrived, never by what was asked for: if the server
-    // capped the page, the un-returned tail of the requested window has not
-    // been read yet and stepping over it would drop those rows outright.
-    from += batch.length;
-  }
+  // The empty-page termination and the advance-by-what-arrived rule both live
+  // in the shared helper now; see `supabase.utils.ts` for why each is
+  // load-bearing. What stays here is report-specific: the `limit + 1` read that
+  // makes `truncated` an observed fact, and the `QueryError -> Error`
+  // translation, which runs inside the callback so the helper only ever sees a
+  // clean result.
+  const rows = await fetchAllPagesShared<T>(
+    async (from, to) => {
+      const { data, error } = await page(from, to);
+      throwIfError(error);
+      return { data, error: null };
+    },
+    { pageSize: REPORT_PAGE_SIZE, limit: limit + 1 },
+  );
 
   const truncated = rows.length > limit;
   return {
