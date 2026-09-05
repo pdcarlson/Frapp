@@ -45,10 +45,24 @@ action file is not on disk yet when the runner resolves it.
   *the same CLI code path*; a rehearsal on a different build than the apply proves nothing,
   and the drift is silent — both runs go green. Change the pin in the action, for everybody.
 
-- **A local action needs a checkout in the same job.** `uses: ./…` resolves against the
-  runner workspace. `deploy-api.yml`'s `deploy-staging` job had none — it only fires a
-  deploy hook — and had to gain one. It runs on `workflow_run` after merge, so a PR would
-  never have caught the failure.
+- **A local action needs a checkout in the same job — and must not run after the workspace
+  moves.** `uses: ./…` resolves against the runner workspace *at step-execution time*, so a
+  checkout earlier in the job is necessary but **not sufficient**. Both halves are enforced by
+  `scripts/ci/__tests__/infisical-secrets-action.test.mjs`.
+
+  The first half: `deploy-api.yml`'s `deploy-staging` job had no checkout at all — it only
+  fires a deploy hook — and had to gain one. It runs on `workflow_run` after merge, so no PR
+  would ever have caught the failure.
+
+  The second half is the one that bites hardest. `deploy-production.yml` runs
+  `git checkout --detach "$DEPLOY_SHA"`, so **any local action called after that point is
+  loaded from the deployed commit's tree**: deploying a commit older than the action dies with
+  `Can't find 'action.yml'` — that is the rollback path, failing exactly when it is reached
+  for — and deploying a newer one silently uses *that commit's* copy of whatever the action
+  pins. Call local actions before the tree moves; that also puts them on the trusted ref, which
+  is what the job's own header argues for. A later `actions/checkout`, `git switch`,
+  `git reset --hard` and `git worktree` all count as moving the tree, and the guard rejects a
+  local-action call after any of them.
 
 ## Why this directory has a README
 

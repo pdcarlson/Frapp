@@ -66,7 +66,14 @@ const USES_INFISICAL = usesLocal("infisical-secrets");
 const USES_SUPABASE = usesLocal("supabase-cli");
 
 /** A job key: two-space indent, optionally quoted, optional trailing comment. */
-const JOB_KEY_RE = /^ {2}["']?[A-Za-z0-9_-]+["']?:\s*(#.*)?$/;
+const JOB_KEY_RE = /^ {2}["']?([A-Za-z0-9_-]+)["']?:\s*(#.*)?$/;
+
+// Anything that repoints the workspace at a different commit. Deliberately
+// broad and it must STAY broad: unlike `usesLocal`, a miss here fails OPEN.
+// `git checkout` alone was not enough — `git switch --detach "$DEPLOY_SHA"` is
+// a one-word modernization that silently disarmed the guard in testing.
+const WORKSPACE_REWRITE_RE =
+  /\bgit\s+(checkout|switch|worktree)\b|\bgit\s+reset\s+--hard\b/;
 
 const linesOf = (text) => text.split("\n");
 const countMatching = (text, re) => linesOf(text).filter((l) => re.test(l)).length;
@@ -110,6 +117,21 @@ describe("infisical-secrets composite action", () => {
     );
   });
 
+  it("defaults `on-missing-credentials` to `error`", () => {
+    // Ten of the eleven call sites pass nothing and rely entirely on this
+    // default. Nothing asserted it, so flipping it to `warn` made every site —
+    // deploy-production's `prod` injection included — continue past absent
+    // credentials into `supabase db push`, with the suite green. The shell
+    // branch test below could not see it: the branch shape is untouched by a
+    // change to the default that feeds it.
+    assert.match(
+      infisicalAction,
+      /on-missing-credentials:[\s\S]*?\n\s+default:\s*["']?error["']?\s*$/m,
+      "the default must be `error`; only staging-conformance opts into `warn`, " +
+        "explicitly, at its call site",
+    );
+  });
+
   it("fails closed when `on-missing-credentials` is anything but `warn`", () => {
     // A typo in the input must not downgrade a hard gate to a warning at ten
     // call sites that expect it to fail. Asserting the shape of the branch,
@@ -135,24 +157,41 @@ describe("infisical-secrets composite action", () => {
     //
     // So both trailing diagnostics must sit in the `else` of the MISSING test.
     // Asserted structurally, since the shell is not executed here.
+    // Block-scoped, not offset-based. Slicing at the first `else` and asking
+    // whether the text appears "after" it accepted a diagnostic moved OUTSIDE
+    // the `if` entirely — one line past the closing `fi`, unconditional again,
+    // which is the exact regression this test exists for. Confirmed by
+    // mutation. So: find the `if`, find its matching `fi` by indentation, and
+    // require each diagnostic to live between the `else` and that `fi`.
     const run = infisicalAction.slice(infisicalAction.indexOf('MISSING=""'));
-    const elseAt = run.indexOf("\n        else\n");
-    assert.ok(elseAt > 0, "the missing-credentials test must have an else branch");
-    const missingPath = run.slice(0, elseAt);
+    const lines = run.split("\n");
+    const ifAt = lines.findIndex((l) => /^ {8}if \[ -n "\$MISSING" \]; then$/.test(l));
+    assert.ok(ifAt >= 0, "the missing-credentials test must be an 8-space-indented if");
+    const elseAt = lines.findIndex((l, i) => i > ifAt && /^ {8}else$/.test(l));
+    const fiAt = lines.findIndex((l, i) => i > ifAt && /^ {8}fi$/.test(l));
+    assert.ok(elseAt > ifAt, "it must have an else branch");
+    assert.ok(fiAt > elseAt, "it must be closed by an fi at the same indent");
+
+    const elseBranch = lines.slice(elseAt + 1, fiAt).join("\n");
+    const everywhereElse = [
+      ...lines.slice(0, elseAt + 1),
+      ...lines.slice(fiAt),
+    ].join("\n");
+
     for (const [what, needle] of [
       ["the whitespace warning", "contains whitespace"],
       ["the 'a 401 means rejected' line", "Preflight complete"],
     ]) {
       assert.ok(
-        !missingPath.includes(needle),
-        `${what} is reachable when a credential is MISSING; it describes a credential ` +
-          `that is present and must stay inside the else branch`,
+        elseBranch.includes(needle),
+        `${what} must live in the else branch — it describes a credential that IS present`,
+      );
+      assert.ok(
+        !everywhereElse.includes(needle),
+        `${what} is also reachable when a credential is MISSING (outside the else), ` +
+          `so a run would warn the credential is absent and then state it is present`,
       );
     }
-    assert.ok(
-      run.slice(elseAt).includes("Preflight complete"),
-      "the 'a 401 means rejected' line must still run when credentials are present",
-    );
   });
 
   it("is a composite action", () => {
@@ -164,29 +203,59 @@ describe("Infisical call sites", () => {
   const callSites = workflows.filter((w) => USES_INFISICAL.test(w.text) ||
     codeLines(w.text).some((l) => USES_INFISICAL.test(l)));
 
-  it("covers all 11 sites across the 6 workflows that need secrets", () => {
-    const total = workflows.reduce(
-      (n, w) => n + countMatching(w.text, USES_INFISICAL),
-      0,
-    );
-    assert.equal(
-      total,
-      11,
-      "expected 11 Infisical call sites. If a workflow legitimately gained or " +
-        "lost one, update this number deliberately -- it is here so a site " +
-        "silently disappearing shows up as a failure rather than as nothing.",
-    );
+  it("injects the expected environment in each expected job", () => {
+    // Every call site named by FILE, JOB and SLUG rather than counted.
+    //
+    // A bare total of 11 plus a set of filenames let two real regressions
+    // through, both confirmed by mutation:
+    //
+    //   * moving a site between jobs in one file — deleting `deploy-staging`'s
+    //     injection and duplicating one into `migrate-staging` keeps the total
+    //     at 11 and the filename set identical, while the staging API deploy
+    //     loses every secret it needs;
+    //   * swapping a slug — `deploy-production.yml` asking for `staging`
+    //     type-checks as "a legal slug at a legal site", and the only path to
+    //     production then migrates the staging database.
+    //
+    // Neither is a counting error, so no count catches them. This is the
+    // roster the cutover actually has to preserve.
+    const EXPECTED = [
+      ["check-migration-drift.yml", "check-drift", "staging"],
+      ["check-migration-drift.yml", "check-drift", "prod"],
+      ["db-backup.yml", "backup-staging", "staging"],
+      ["db-backup.yml", "backup-staging-storage", "staging"],
+      ["deploy-api.yml", "migrate-staging", "staging"],
+      ["deploy-api.yml", "deploy-staging", "staging"],
+      ["deploy-production.yml", "deploy", "prod"],
+      ["migration-drift-gate.yml", "migration-drift", "staging"],
+      ["migration-drift-gate.yml", "migration-replay", "prod"],
+      ["migration-drift-gate.yml", "migration-order", "prod"],
+      ["staging-conformance.yml", "conformance", "staging"],
+    ];
+
+    const actual = [];
+    for (const { name, text } of workflows) {
+      const lines = linesOf(text).map((l) => (/^\s*#/.test(l) ? "" : l));
+      let job = null;
+      lines.forEach((line, i) => {
+        const m = line.match(JOB_KEY_RE);
+        if (m && i > 3) job = m[1];
+        if (!USES_INFISICAL.test(line)) return;
+        const slug = lines
+          .slice(i, i + 8)
+          .join("\n")
+          .match(/^\s+env-slug:\s*"([a-z]+)"\s*$/m)?.[1];
+        actual.push([name, job, slug]);
+      });
+    }
+
     assert.deepEqual(
-      callSites.map((w) => w.name).sort(),
-      [
-        "check-migration-drift.yml",
-        "db-backup.yml",
-        "deploy-api.yml",
-        "deploy-production.yml",
-        "migration-drift-gate.yml",
-        "staging-conformance.yml",
-      ],
+      actual.map((r) => r.join(" / ")).sort(),
+      EXPECTED.map((r) => r.join(" / ")).sort(),
+      "the Infisical call-site roster changed. Each entry is file / job / slug; " +
+        "update this list deliberately if a site legitimately moved.",
     );
+    assert.equal(actual.length, 11);
   });
 
   it("leaves no hand-written injection or preflight anywhere", () => {
@@ -356,6 +425,16 @@ describe("supabase-cli composite action", () => {
       "scripts/db-backup.sh's fallback Supabase CLI version has drifted from the pin in " +
         ".github/actions/supabase-cli/action.yml — bump both together",
     );
+    // …and the command must actually USE that variable. Checking the
+    // declaration alone let the two diverge with the assertion satisfied:
+    // hardcoding `supabase@2.70.0` on the invocation line leaves the declared
+    // fallback equal to the pin and completely ignored.
+    assert.match(
+      script,
+      /SUPABASE="npx --yes supabase@\$\{SUPABASE_CLI_VERSION\}"/,
+      "db-backup.sh must invoke the CLI through $SUPABASE_CLI_VERSION, not a literal — " +
+        "otherwise the checked declaration is dead and the real version is unpinned",
+    );
   });
 });
 
@@ -384,8 +463,13 @@ describe("local actions resolve at every call site", () => {
           workspaceMoved = null;
         }
         if (/uses:\s*actions\/checkout@/.test(line)) {
-          checkedOut = true;
-          workspaceMoved = null;
+          // The FIRST checkout in a job establishes the workspace. A LATER one
+          // moves it, and must be treated exactly like `git checkout --detach`
+          // — otherwise rewriting the detach as `actions/checkout` with
+          // `ref: ${{ inputs.sha }}` both re-breaks the rollback path and
+          // clears the flag that would have caught it. Confirmed by mutation.
+          if (checkedOut) workspaceMoved = i + 1;
+          else checkedOut = true;
         }
         // A step that rewrites the tree invalidates every LATER local action in
         // the job, because `uses: ./…` resolves from the workspace at
@@ -396,7 +480,7 @@ describe("local actions resolve at every call site", () => {
         // silently uses that commit's copy of the CLI pin. A checkout earlier
         // in the job is necessary but NOT sufficient, which is why this is
         // tracked separately.
-        if (/git\s+checkout\s+(--detach|-B|-b|\S+\s*$)/.test(line) && checkedOut) {
+        if (WORKSPACE_REWRITE_RE.test(line) && checkedOut) {
           workspaceMoved = i + 1;
         }
         if (USES_INFISICAL.test(line) || USES_SUPABASE.test(line)) {
