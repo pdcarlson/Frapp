@@ -6,7 +6,7 @@ Chapter configuration is the merge of **archetype defaults** with **per-chapter 
 
 Returns the merged chapter configuration: archetype defaults overlaid with per-chapter overrides.
 
-**Auth:** Bearer JWT + `x-chapter-id` header (chapter membership required). Permission: `chapter-config:view`.
+**Auth:** Bearer JWT, with chapter context resolved per [`multi-tenancy.md`](multi-tenancy.md) — the `active_chapter_id` claim is authoritative and `x-chapter-id` a legacy fallback — and membership required. Permission: `chapter-config:view`.
 
 **Response shape:**
 
@@ -28,10 +28,10 @@ Returns the merged chapter configuration: archetype defaults overlaid with per-c
 
 Updates chapter config fields. Writes a diff entry to `chapter_audit_log` and posts a `system_audit` chat message to `#chapter-audit`. Permission: `chapter-config:manage`.
 
-The customizable sub-resources surfaced through chapter config (full schema in [`spec/architecture/README.md`](../architecture/README.md)):
+The customizable sub-resources surfaced through chapter config (full schema in [`spec/architecture/README.md`](../architecture/README.md)) — the last three are reachable through this PATCH, the first two are not:
 
-- **`chapter_custom_fields`** — per-chapter member fields. `(key, label, type, required, visibility, sensitive, options, sort)`. `visibility ∈ {self, chapter, exec, president}`.
-- **`chapter_custom_roles`** — `(key, label, rank, capabilities[], core)`. `core=false` roles can be deleted.
+- **`chapter_custom_fields`** — **not on this PATCH.** `PatchChapterConfigDto` carries no `custom_fields` property; a CRUD controller (`custom-fields`) serves it, and [`settings/customization.md`](settings/customization.md) is canon for its routes. Per-chapter member fields. `(key, label, type, required, visibility, sensitive, options, sort)`. `visibility ∈ {self, chapter, exec, president}`.
+- **`chapter_custom_roles`** — **not on this PATCH** either, for the same reason and with its own `custom-roles` controller. `(key, label, rank, capabilities[], core)`. `core=false` roles can be deleted.
 - **`chapter_workflows`** — `(key, enabled, threshold, params)`. Each enabled workflow can configure its numeric threshold.
 - **`branding`** — Greek letters, designation, school short, founded year, and the accent seed (`colors.accent`). A second colour, `colors.dark`, existed until the #920 slice-9 cutover; it fed only the deleted legacy token map, and a row written before then keeps an inert value that no reader looks at.
 - **`enabled_modules`** — the per-module on/off map (see [`spec/product/modules.md`](../product/modules.md)).
@@ -56,13 +56,13 @@ Three details specific to this writer:
 
 ## POST /chapters/:id/theme-palette
 
-Recomputes the derived palette from `branding.colors.accent` via `buildChapterPalette`, persists to `chapters.theme_palette`, and returns the full token map. Triggered automatically by PATCH when `branding.colors` changes. The derivation and role map are canon in [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md); where the palette lives and who writes it is in [`spec/architecture/README.md`](../architecture/README.md).
+Recomputes the derived palette from `branding.colors.accent` via `buildChapterPalette`, persists to `chapters.theme_palette`, and returns the build — the token map under `palette`, plus `invalidSeed` and `failedContrastChecks`. Triggered automatically by a PATCH that carries `branding.colors`, changed or not. The derivation and role map are canon in [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md); where the palette lives and who writes it is in [`spec/architecture/README.md`](../architecture/README.md).
 
 ## Dues configuration
 
 Dues live in a singleton `chapter_dues_config` row per chapter (PK `chapter_id`), edited through chapter config:
 
-- `cadence` — monthly / per-semester / per-quarter.
+- `cadence` — the stored values are `monthly` / `per_semester` / `per_quarter`; [`settings/customization.md`](settings/customization.md) owns them.
 - `active_amount_cents`, `new_member_amount_cents`, `alumni_amount_cents` — per-tier amounts (non-negative integer cents).
 - `installments_allowed` (+ installment count when allowed), `late_fee_cents`, `grace_days`, `scholarship_pool_cents`.
 

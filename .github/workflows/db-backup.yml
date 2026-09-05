@@ -12,7 +12,8 @@ name: Nightly Backup
 # This is not redundancy on top of a provider snapshot. The `Frapp Live` org is on
 # the Supabase FREE plan, which gets no dashboard-accessible daily backups and no
 # PITR — so until that changes, this workflow produces the only restorable backup
-# either project has. Supabase's own free-tier guidance is exactly this:
+# `frapp-staging` has, and `frapp-prod` has none at all (see the scope note just
+# below). Supabase's own free-tier guidance is exactly this:
 # https://supabase.com/docs/guides/platform/backups
 #
 # Production is out of scope for now, but not because it is deferred: `frapp-prod`

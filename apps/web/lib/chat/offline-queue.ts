@@ -15,7 +15,7 @@
  *     silently lost.
  *
  * `clientId` (a UUID generated client-side and persisted here) doubles as the
- * `chat_messages.client_message_id`, which the Edge Function dedupes on — so
+ * `chat_messages.client_message_id`, which `ChatService.sendMessage` dedupes on — so
  * retries are idempotent end-to-end.
  */
 
