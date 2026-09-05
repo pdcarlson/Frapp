@@ -1,0 +1,138 @@
+name: Infisical secrets
+description: >
+  Verify the Infisical machine-identity credentials are present, then inject one
+  environment's secrets into the job. Every Infisical injection in this repo goes
+  through here -- see `.github/actions/README.md` for why hand-writing a second
+  one is a gate failure rather than a style preference.
+
+inputs:
+  env-slug:
+    description: >
+      The Infisical environment SLUG to inject: `staging` or `prod`.
+
+      THE NAME OF THIS INPUT IS LOAD-BEARING and must stay `env-slug`.
+      `scripts/check-env-slugs.mjs` § 3 is what stops this repo naming an
+      Infisical environment that does not exist, and it finds those names by
+      scanning `.github/workflows` AND `.github/actions` for the literal
+      pattern `env-slug: "<slug>"`. Inside this file the value is an
+      `inputs.env-slug` template expression, which that pattern cannot match and
+      is not meant to -- the real literals survive as the `with:` values at each
+      call site,
+      where the gate still reads them. Rename this input to anything else and
+      all eleven literals move out of its reach at once: the gate then scans
+      zero bytes and passes, which is the vacuous-green failure its own section
+      0 exists to refuse. Pinned by
+      `scripts/ci/__tests__/infisical-secrets-action.test.mjs`.
+
+      Note the name/slug trap the gate exists for: the Infisical UI shows
+      "Production", the slug is `prod`.
+    required: true
+  client-id:
+    description: >
+      `secrets.INFISICAL_MACHINE_IDENTITY_ID`, passed in from the call site.
+
+      Composite actions cannot read the `secrets` context -- a `secrets.*`
+      expression resolves to empty here, not to the secret, and a manifest that
+      writes one does not even load -- so the credentials have to
+      arrive as inputs. That is also why the check below is worth keeping: a
+      call site that forgets to pass them fails on this step with a named cause,
+      rather than several steps later on an unexplained 401.
+    required: true
+  client-secret:
+    description: "`secrets.INFISICAL_CLIENT_SECRET`, passed in from the call site."
+    required: true
+  on-missing-credentials:
+    description: >
+      What a MISSING credential does: `error` (default) fails the step, `warn`
+      logs and carries on.
+
+      Only `staging-conformance.yml` wants `warn`, and the reason is worth
+      stating because it looks like laziness and is the opposite. That workflow
+      exists to DETECT and report credential drift -- the #696/#763 incident --
+      by letting `staging-conformance.mjs` run, observe the rejection and file
+      the alert. Failing here would kill the run before the script could report
+      anything, so the single most likely drift class would produce a red run
+      and no issue.
+
+      This input exists so that call site can go through this action at all.
+      Its own `continue-on-error: true` covers the INJECTION failing, but it
+      cannot rescue this preflight: a failed step inside a composite action
+      skips the action's remaining steps, so a hard-failing check here would
+      mean the injection never runs -- staging secrets silently absent, and a
+      conformance report that blames the credential every time. `warn` keeps
+      the preflight advisory, which is what it always was at that site.
+    required: false
+    default: error
+
+runs:
+  using: composite
+  steps:
+    # This block had FIVE spellings across nine call sites, differing only in
+    # how much they told you: three named the environment, three ran the
+    # whitespace check, two printed the "present, so a 401 means rejected" line,
+    # and one (staging-conformance) warned instead of failing. Only that last
+    # difference was deliberate -- it is preserved as `on-missing-credentials`.
+    # The rest is four people writing the same check on different days, so the
+    # union is kept here and every call site gains the diagnostics it happened
+    # to lack, with `env-slug` naming the environment for free.
+    - name: Verify Infisical credentials are configured
+      shell: bash
+      env:
+        CLIENT_ID: ${{ inputs.client-id }}
+        CLIENT_SECRET: ${{ inputs.client-secret }}
+        ENV_SLUG: ${{ inputs.env-slug }}
+        ON_MISSING: ${{ inputs.on-missing-credentials }}
+      run: |
+        MISSING=""
+        [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+        [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+        if [ -n "$MISSING" ]; then
+          DETAIL="Infisical credentials are not configured for the $ENV_SLUG environment. Missing or empty:$MISSING. Set them as repository secrets — see docs/internal/environment/SECRETS_MANAGEMENT.md."
+          # Any value other than the literal `warn` fails closed. A typo in the
+          # input must not silently downgrade a hard gate to a warning.
+          if [ "$ON_MISSING" = "warn" ]; then
+            echo "::warning::$DETAIL"
+            echo "Continuing anyway — this call site reports credential problems rather than failing on them. A 401 from the next step is explained by the warning above, NOT by a rejected credential."
+          else
+            echo "::error::$DETAIL"
+            exit 1
+          fi
+        else
+          # Both lines below are in the `else` on purpose: they describe a
+          # credential that IS present, and this preflight exists to tell
+          # "absent" apart from "rejected" (#696/#763). In the inline originals
+          # `exit 1` made that structural -- nothing after the check ran unless
+          # the credentials existed. Adding the warn path removed that
+          # guarantee, and an unconditional "a 401 means rejected, not missing"
+          # would then assert the exact opposite of the warning printed three
+          # lines earlier, at the one call site whose job is reporting which of
+          # the two it was.
+          #
+          # Whitespace in a pasted secret is the most common cause of a 401 that
+          # reads as "revoked". Worth saying before the injection, not after.
+          case "$CLIENT_ID$CLIENT_SECRET" in
+            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
+          esac
+          echo "Preflight complete; a 401 from the next step means the credentials were rejected (revoked, rotated, or expired), not missing. See issue #696."
+        fi
+
+    # `secrets-action` exports through `$GITHUB_ENV`, which the runner applies to
+    # every LATER step in the calling job, not only to the rest of this action --
+    # so the injected secrets are visible to the workflow exactly as they were
+    # when this step was written inline. That is the one property the whole
+    # extraction rests on, and it is exercised on every same-repo pull request by
+    # `migration-drift-gate.yml`'s `migration-drift` job, whose injection carries
+    # no step-level `if:` and whose very next step reads `SUPABASE_PROJECT_REF`.
+    #
+    # `include-imports: true` is not a default -- it was written at all eleven
+    # call sites and is kept here for all of them.
+    - name: Inject ${{ inputs.env-slug }} secrets from Infisical
+      uses: Infisical/secrets-action@v1.0.12
+      with:
+        method: "universal"
+        client-id: ${{ inputs.client-id }}
+        client-secret: ${{ inputs.client-secret }}
+        project-slug: "frapp-live-ej-ls"
+        env-slug: ${{ inputs.env-slug }}
+        secret-path: "/"
+        include-imports: true

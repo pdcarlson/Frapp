@@ -168,7 +168,7 @@ These are only used by GitHub Actions. Leave them empty in the `dev` environment
 | `SUPABASE_ACCESS_TOKEN`  | _(leave empty)_ | Go to https://supabase.com/dashboard/account/tokens → Generate token → copy it. **Same token for both staging and production** — it's an account-level token. | _(same token as staging)_                                                       |
 | `SUPABASE_DB_PASSWORD`   | _(leave empty)_ | The **frapp-staging** database password (Supabase dashboard → project → database settings; reset it there if unknown).                                        | The **frapp-prod** database password — a _different_ value from staging.        |
 
-> **`SUPABASE_DB_PASSWORD` is required, not optional.** The Supabase CLI pinned in `deploy-api.yml` cannot initialise its `cli_login_postgres` login role — it issues that role's password with an already-expired validity window and fails with `permission denied to alter role`, which reads like a permissions problem but is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), tracked here as #835). With `SUPABASE_DB_PASSWORD` set, `supabase link` / `db push` connect directly and skip login-role initialisation. Without it, **every** migration job fails. Unlike `SUPABASE_ACCESS_TOKEN`, this value is per-project — staging and production have different passwords.
+> **`SUPABASE_DB_PASSWORD` is required, not optional.** The Supabase CLI pinned in [`.github/actions/supabase-cli`](../../../.github/actions/supabase-cli/action.yml) cannot initialise its `cli_login_postgres` login role — it issues that role's password with an already-expired validity window and fails with `permission denied to alter role`, which reads like a permissions problem but is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), tracked here as #835). With `SUPABASE_DB_PASSWORD` set, `supabase link` / `db push` connect directly and skip login-role initialisation. Without it, **every** migration job fails. Unlike `SUPABASE_ACCESS_TOKEN`, this value is per-project — staging and production have different passwords.
 
 ### Offsite Backup Secrets (`db-backup.yml` only)
 
@@ -440,7 +440,7 @@ provider state in a second file has no mechanism to stay true.
 
 **Current deploy workflow state:**
 
-`deploy-api.yml` now injects deploy-time secrets directly from Infisical using `Infisical/secrets-action`. That means GitHub **environment-scoped** copies of:
+`deploy-api.yml` injects deploy-time secrets directly from Infisical, through the shared [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml) action that every secret-needing workflow now calls. That means GitHub **environment-scoped** copies of:
 
 - `SUPABASE_ACCESS_TOKEN`
 - `SUPABASE_PROJECT_REF`

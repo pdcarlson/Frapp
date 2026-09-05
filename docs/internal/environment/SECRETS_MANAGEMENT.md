@@ -151,13 +151,23 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 
 #### GitHub Actions is not a sync
 
-There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. `deploy-api.yml`
-**pulls** at job time instead, via `Infisical/secrets-action@v1.0.12` with `method: "universal"`,
-authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_CLIENT_SECRET` repository
-secrets. This is universal auth, not OIDC.
+There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. The workflows
+that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` with
+`method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
+`INFISICAL_CLIENT_SECRET` repository secrets. This is universal auth, not OIDC. Six workflows do
+this — `deploy-api.yml`, `deploy-production.yml`, `db-backup.yml`, `check-migration-drift.yml`,
+`migration-drift-gate.yml` and `staging-conformance.yml` — not `deploy-api.yml` alone.
 
-Each injection step selects its source with `env-slug`. Note the production slug is **`prod`**, not
-`production` — the Infisical environment slug and the GitHub environment name differ.
+That call is written once, in the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml)
+composite action, which every workflow needing secrets calls; no workflow spells out
+`Infisical/secrets-action` itself. The credentials reach it as `with:` inputs because a composite
+action cannot read the `secrets` context.
+
+Each call site selects its source with `env-slug`. Note the production slug is **`prod`**, not
+`production` — the Infisical environment slug and the GitHub environment name differ. **Pass that
+slug as a quoted literal, never an expression:** `scripts/check-env-slugs.mjs` validates slugs by
+matching `env-slug: "<slug>"` in `.github/workflows` and `.github/actions`, so an expression is
+invisible to it and the gate would go green having checked nothing.
 
 Because the action exports every secret in the resolved environment as a job env var, **adding a
 secret to the right Infisical environment is sufficient to make it available to CI** — no workflow
@@ -277,7 +287,7 @@ works. Provisioning it is what makes a green run mean much.
 
 **Transitional (until Infisical GitHub Action injection is wired):**
 
-The deploy workflow (`deploy-api.yml`) injects these from Infisical at runtime via `Infisical/secrets-action`, so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
+The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
 
 | Secret                   | Staging value                           | Production value                |
 | ------------------------ | --------------------------------------- | ------------------------------- |
@@ -290,7 +300,9 @@ Once the `@infisical/secrets-action` is integrated into the deploy workflow, the
 
 #### Troubleshooting: `Deploy API` fails with `401 Invalid credentials`
 
-`Infisical/secrets-action` reports the same `401 Invalid credentials` whether the bootstrap secrets are **absent** or **rejected**. To tell those apart, `deploy-api.yml` runs a `Verify Infisical credentials are configured` preflight step before each injection:
+`Infisical/secrets-action` reports the same `401 Invalid credentials` whether the bootstrap secrets are **absent** or **rejected**. To tell those apart, every injection runs a `Verify Infisical credentials are configured` preflight first. That preflight is no longer written in the workflow: it is the first step of the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml) composite action, so it now runs at **all eleven** injection sites rather than the nine that happened to carry a copy.
+
+The table below describes the ten sites that **fail** on a missing credential. **`staging-conformance.yml` is the exception** and reads differently: it passes `on-missing-credentials: warn`, because that workflow exists to *report* credential drift rather than die of it. There the preflight step stays green and emits a `::warning::` naming the missing secret, so a missing credential shows up as a **warning above an otherwise-normal 401**, not as a failed step. Read the warning before concluding from row 3 that the credentials were rejected.
 
 | Preflight result                       | Meaning                                                                                          | Fix                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
