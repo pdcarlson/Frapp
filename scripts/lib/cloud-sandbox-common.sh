@@ -11,11 +11,12 @@ cs_log() {
 # Pinned Supabase CLI version for the cloud sandbox. Single source of truth; override
 # with FRAPP_SUPABASE_CLI_VERSION to test an upgrade.
 #
-# ⚠️ This is intentionally NOT the version CI uses to apply migrations:
+# ⚠️ This is intentionally NOT the version CI uses:
 # .github/actions/supabase-cli/action.yml holds the single supabase/setup-cli pin that
-# every migration step in CI — staging and production — installs from. (It lived inline
-# in deploy-api.yml until the composite-action extraction; that file names no version
-# now.) The skew is not introduced here — before this
+# every CI step needing the CLI installs from — the staging and production migration
+# applies, the migration-replay rehearsal, and db-backup.yml's pg_dump. (The same version
+# was written inline in FOUR workflows until the composite-action extraction; none names a
+# version now.) The skew is not introduced here — before this
 # helper existed the scripts ran unpinned `npx supabase`, i.e. whatever "latest" was that
 # day (2.110.0 at time of writing), so the same gap existed and drifted silently. Pinning
 # makes it an explicit, reviewable constant.

@@ -10,14 +10,24 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 // the Infisical preamble+injection (11 call sites across 6 workflows) and the
 // Supabase CLI version pin (4 sites).
 //
-// Why this file has teeth beyond "the copies stayed gone": only ONE of the
-// eleven Infisical call sites runs on a pull request at all -- `migration-drift`
-// in migration-drift-gate.yml, the one injection with no step-level `if:`. The
-// other ten live in scheduled or dispatch-only workflows, two of them on the
-// production deploy path. So CI proves the MECHANISM (a composite-nested
-// `secrets-action` still exports to the calling job) and this file has to prove
-// the TRANSCRIPTION -- that all eleven were converted, that none was left
-// hand-written, and that each still passes what it used to pass.
+// Why this file has teeth beyond "the copies stayed gone": most of the eleven
+// Infisical call sites never run on a pull request.
+//
+//   * ONE runs on every same-repo PR -- `migration-drift` in
+//     migration-drift-gate.yml, the only injection with no step-level `if:`.
+//     That is what proves the MECHANISM per PR: a composite-nested
+//     `secrets-action` still exports to the calling job.
+//   * TWO more, in that same workflow (`migration-replay`, `migration-order`),
+//     are step-gated on `steps.touched.outputs.run == 'true'`, so they run only
+//     on a PR that touches `supabase/migrations/`.
+//   * TWO are `workflow_run`, firing after merge (deploy-api.yml).
+//   * The remaining SIX are scheduled or dispatch-only, two of them on the
+//     production deploy path, which no PR ever exercises.
+//
+// So CI can prove the mechanism but not the TRANSCRIPTION, and this file has to:
+// that all eleven were converted, that none was left hand-written, that each
+// still passes what it used to pass, and that each still asks for the
+// environment its job actually needs.
 //
 // The one that would hurt most is asserted first: `check-env-slugs.mjs` finds
 // Infisical environment names by scanning for the literal `env-slug: "<slug>"`
@@ -115,6 +125,30 @@ describe("infisical-secrets composite action", () => {
       /uses:\s*Infisical\/secrets-action@v1\.0\.12/,
       "the pinned third-party action version must not drift silently",
     );
+  });
+
+  it("agrees with the version SECRETS_MANAGEMENT.md quotes", () => {
+    // That doc names `Infisical/secrets-action@v1.0.12` in prose — a second,
+    // hand-maintained copy of a version that now lives in one place. Same
+    // treatment as scripts/db-backup.sh's deliberate duplicate: keep the copy
+    // (a reader debugging a 401 wants the version in front of them) and let a
+    // test, rather than a habit, keep it equal.
+    const pin = infisicalAction.match(/uses:\s*Infisical\/secrets-action@(\S+)/)?.[1];
+    assert.ok(pin, "the action must pin a secrets-action version");
+    const doc = readFileSync(
+      join(REPO, "docs", "internal", "environment", "SECRETS_MANAGEMENT.md"),
+      "utf8",
+    );
+    const quoted = [...doc.matchAll(/Infisical\/secrets-action@(\S+?)`/g)].map((m) => m[1]);
+    assert.ok(quoted.length > 0, "SECRETS_MANAGEMENT.md no longer quotes the version");
+    for (const v of quoted) {
+      assert.equal(
+        v,
+        pin,
+        `SECRETS_MANAGEMENT.md quotes Infisical/secrets-action@${v} but the action pins ` +
+          `@${pin} — bump both together`,
+      );
+    }
   });
 
   it("defaults `on-missing-credentials` to `error`", () => {

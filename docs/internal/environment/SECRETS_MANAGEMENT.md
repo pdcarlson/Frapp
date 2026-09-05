@@ -151,10 +151,12 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 
 #### GitHub Actions is not a sync
 
-There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. `deploy-api.yml`
-**pulls** at job time instead, via `Infisical/secrets-action@v1.0.12` with `method: "universal"`,
-authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_CLIENT_SECRET` repository
-secrets. This is universal auth, not OIDC.
+There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. The workflows
+that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` with
+`method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
+`INFISICAL_CLIENT_SECRET` repository secrets. This is universal auth, not OIDC. Six workflows do
+this — `deploy-api.yml`, `deploy-production.yml`, `db-backup.yml`, `check-migration-drift.yml`,
+`migration-drift-gate.yml` and `staging-conformance.yml` — not `deploy-api.yml` alone.
 
 That call is written once, in the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml)
 composite action, which every workflow needing secrets calls; no workflow spells out
@@ -285,7 +287,7 @@ works. Provisioning it is what makes a green run mean much.
 
 **Transitional (until Infisical GitHub Action injection is wired):**
 
-The deploy workflow (`deploy-api.yml`) injects these from Infisical at runtime via `Infisical/secrets-action`, so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
+The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
 
 | Secret                   | Staging value                           | Production value                |
 | ------------------------ | --------------------------------------- | ------------------------------- |

@@ -440,7 +440,7 @@ provider state in a second file has no mechanism to stay true.
 
 **Current deploy workflow state:**
 
-`deploy-api.yml` now injects deploy-time secrets directly from Infisical using `Infisical/secrets-action`. That means GitHub **environment-scoped** copies of:
+`deploy-api.yml` injects deploy-time secrets directly from Infisical, through the shared [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml) action that every secret-needing workflow now calls. That means GitHub **environment-scoped** copies of:
 
 - `SUPABASE_ACCESS_TOKEN`
 - `SUPABASE_PROJECT_REF`

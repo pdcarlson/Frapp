@@ -44,6 +44,10 @@ action file is not on disk yet when the runner resolves it.
   at four call sites. The production apply and the `migration-replay` rehearsal exist to be
   *the same CLI code path*; a rehearsal on a different build than the apply proves nothing,
   and the drift is silent — both runs go green. Change the pin in the action, for everybody.
+  Enforced by `scripts/ci/__tests__/infisical-secrets-action.test.mjs` — one file guards both
+  of the actions this stage extracted, so a `version:` input fails a test named after the
+  other one. It also pins `scripts/db-backup.sh`'s deliberate second copy of the version
+  (its no-CLI-on-PATH fallback) to this same pin.
 
 - **A local action needs a checkout in the same job — and must not run after the workspace
   moves.** `uses: ./…` resolves against the runner workspace *at step-execution time*, so a
