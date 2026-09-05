@@ -10,6 +10,22 @@ import * as Sentry from '@sentry/nestjs';
 jest.mock('@sentry/nestjs', () => ({ captureMessage: jest.fn() }));
 const captureMessage = Sentry.captureMessage as jest.Mock;
 
+/**
+ * Put `ANALYTICS_HMAC_SALT` back exactly as it was.
+ *
+ * Assigning `undefined` to a `process.env` key stores the **string**
+ * `"undefined"`, which `pseudonymsAvailable()` reads as a real salt — so the
+ * naive restore leaks a working pseudonymizer into every later spec sharing the
+ * jest worker.
+ */
+function restoreSalt(priorSalt: string | undefined): void {
+  if (priorSalt === undefined) {
+    delete process.env.ANALYTICS_HMAC_SALT;
+  } else {
+    process.env.ANALYTICS_HMAC_SALT = priorSalt;
+  }
+}
+
 import { BillingService } from './billing.service';
 import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
@@ -808,47 +824,36 @@ describe('BillingService', () => {
           },
         },
       };
-      jest
-        .spyOn(service['logger'], 'error')
-        .mockImplementation(() => undefined);
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
       await service.handleWebhookEvent(event);
       expect(mockChapterRepo.update).not.toHaveBeenCalled();
     });
 
-    // #1710/#1738. These are the paths where revenue *recurs*, so a chapter that
-    // becomes unresolvable here keeps being billed monthly while nothing in the
-    // app can see it. The bare `logger.warn` this replaced made that
-    // indistinguishable from a foreign-account no-op.
-    it('reports a subscription webhook whose chapter cannot be resolved', async () => {
-      const loggerErrorSpy = jest
-        .spyOn(service['logger'], 'error')
+    // #1738. An unresolvable subscription stays at `warn` and raises no Sentry
+    // event, deliberately: `handleCheckoutCompleted` overwrites
+    // `subscription_id` when a canceled chapter resubscribes and then tells the
+    // operator to cancel the superseded subscription in Stripe, which emits
+    // `customer.subscription.deleted` for a subscription no chapter references.
+    // Alerting here would fire, at critical, on a flow the product instructs.
+    it('does not raise a Sentry alert for an unresolvable subscription', async () => {
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
         .mockImplementation(() => undefined);
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
 
       await service.handleWebhookEvent({
-        id: 'evt_sub_unknown_chapter',
-        type: 'customer.subscription.updated',
+        id: 'evt_sub_superseded',
+        type: 'customer.subscription.deleted',
         created: Date.now(),
-        data: { object: { id: 'sub_orphaned', status: 'past_due' } },
+        data: { object: { id: 'sub_superseded' } },
       });
 
-      expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
-      expect(loggerErrorSpy.mock.calls[0][0]).toContain('sub_orphaned');
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        'No chapter found for subscription: sub_superseded',
+      );
+      expect(captureMessage).not.toHaveBeenCalled();
 
-      expect(captureMessage).toHaveBeenCalledTimes(1);
-      const [, context] = captureMessage.mock.calls[0];
-      expect(context.level).toBe('error');
-      expect(context.tags).toMatchObject({
-        billing_event: 'subscription_unknown_chapter',
-        stripe_event_type: 'customer.subscription.updated',
-        stripe_event_id: 'evt_sub_unknown_chapter',
-      });
-      // No chapter is resolvable by definition on this path, so there is no
-      // chapter to tag — the reporter must not invent one.
-      expect(context.tags.chapter).toBeUndefined();
-
-      loggerErrorSpy.mockRestore();
+      loggerWarnSpy.mockRestore();
     });
 
     it('should ignore invoice.paid for missing subscription', async () => {
@@ -1061,25 +1066,31 @@ describe('BillingService', () => {
           .mockImplementation(() => undefined);
         mockChapterRepo.findById.mockResolvedValue(null);
 
-        await service.handleWebhookEvent(unknownChapterEvent());
+        try {
+          await service.handleWebhookEvent(unknownChapterEvent());
 
-        expect(captureMessage).toHaveBeenCalledTimes(1);
-        const [message, context] = captureMessage.mock.calls[0];
-        expect(message).toContain('checkout.session.completed');
-        expect(context.level).toBe('error');
-        expect(context.tags).toMatchObject({
-          billing_event: 'checkout_unknown_chapter',
-          stripe_event_type: 'checkout.session.completed',
-          stripe_event_id: 'evt_no_chapter_exist',
-        });
-        // Without a chapter dimension every occurrence collapses into one issue
-        // keyed on the constant message, and the real one cannot be told from
-        // the cross-environment noise. Hashed at the source, per
-        // AllExceptionsFilter.reportToSentry.
-        expect(context.tags.chapter).toEqual(expect.any(String));
-        expect(context.tags.chapter).not.toContain(MISSING_CHAPTER_ID);
-
-        process.env.ANALYTICS_HMAC_SALT = priorSalt;
+          expect(captureMessage).toHaveBeenCalledTimes(1);
+          const [message, context] = captureMessage.mock.calls[0];
+          expect(message).toContain('checkout.session.completed');
+          expect(context.level).toBe('error');
+          expect(context.tags).toMatchObject({
+            billing_event: 'checkout_unknown_chapter',
+            stripe_event_type: 'checkout.session.completed',
+            stripe_event_id: 'evt_no_chapter_exist',
+          });
+          // Without a chapter dimension every occurrence collapses into one
+          // issue keyed on the constant message, and the real one cannot be
+          // told from the cross-environment noise. Hashed at the source, per
+          // AllExceptionsFilter.reportToSentry.
+          expect(context.tags.chapter).toEqual(expect.any(String));
+          expect(context.tags.chapter).not.toContain(MISSING_CHAPTER_ID);
+        } finally {
+          // `process.env.X = undefined` stores the *string* "undefined", which
+          // `pseudonymsAvailable()` reads as a real salt — that would leak a
+          // working pseudonymizer into every later spec in this jest worker.
+          // Same guarded form the four other specs touching this var use.
+          restoreSalt(priorSalt);
+        }
       });
 
       it('omits the chapter tag rather than sending a raw id when the salt is unset', async () => {
@@ -1094,14 +1105,16 @@ describe('BillingService', () => {
           .mockImplementation(() => undefined);
         mockChapterRepo.findById.mockResolvedValue(null);
 
-        await service.handleWebhookEvent(unknownChapterEvent());
+        try {
+          await service.handleWebhookEvent(unknownChapterEvent());
 
-        const [, context] = captureMessage.mock.calls[0];
-        expect(context.tags.chapter).toBeUndefined();
-        expect(JSON.stringify(context.tags)).not.toContain(MISSING_CHAPTER_ID);
-
-        if (priorSalt !== undefined) {
-          process.env.ANALYTICS_HMAC_SALT = priorSalt;
+          const [, context] = captureMessage.mock.calls[0];
+          expect(context.tags.chapter).toBeUndefined();
+          expect(JSON.stringify(context.tags)).not.toContain(
+            MISSING_CHAPTER_ID,
+          );
+        } finally {
+          restoreSalt(priorSalt);
         }
       });
 

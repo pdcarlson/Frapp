@@ -531,7 +531,7 @@ export class BillingService {
    */
   private reportUnknownChapterRef(params: {
     event: WebhookEvent;
-    kind: 'checkout_unknown_chapter' | 'subscription_unknown_chapter';
+    kind: 'checkout_unknown_chapter';
     refKey: string;
     chapterId?: string;
     detail: string;
@@ -606,10 +606,7 @@ export class BillingService {
       );
       return;
     }
-    const chapter = await this.findChapterBySubscription(
-      subscription.id,
-      event,
-    );
+    const chapter = await this.findChapterBySubscription(subscription.id);
     if (!chapter) return;
 
     if (!subscription.status) {
@@ -671,10 +668,7 @@ export class BillingService {
       );
       return;
     }
-    const chapter = await this.findChapterBySubscription(
-      subscription.id,
-      event,
-    );
+    const chapter = await this.findChapterBySubscription(subscription.id);
     if (!chapter) return;
 
     // FRA-242: an older/retried delivery must not overwrite a newer status.
@@ -703,7 +697,7 @@ export class BillingService {
     const subscriptionId = invoice.subscription;
     if (!subscriptionId) return;
 
-    const chapter = await this.findChapterBySubscription(subscriptionId, event);
+    const chapter = await this.findChapterBySubscription(subscriptionId);
     if (!chapter) return;
 
     // FRA-242: a stale invoice payment must not reactivate a chapter whose
@@ -776,39 +770,33 @@ export class BillingService {
   /**
    * Resolve the chapter a subscription-shaped event belongs to.
    *
-   * **This miss is not the same as the checkout one, and the difference is not
-   * yet fixed (#1738).** `chapters.subscription_id` is written *only* by
+   * **This miss is a different problem from the checkout one, and it is not
+   * fixed here — see #1738.** `chapters.subscription_id` is written *only* by
    * `handleCheckoutCompleted`, and Stripe guarantees no ordering between
    * `checkout.session.completed` and the subscription events for the same
-   * checkout. So a `customer.subscription.updated` that overtakes its checkout
-   * finds no row, and its caller acks — losing that status transition
-   * permanently. That one is **transient**, so acking is the wrong answer for
-   * it; the checkout path's terminal reasoning does not carry over.
+   * checkout, so an event that overtakes its own checkout finds no row and its
+   * caller acks — losing that status transition permanently. That miss is
+   * **transient**, so the checkout path's terminal reasoning does not carry
+   * over and neither does its answer.
    *
-   * Changing those three handlers from ack to retry is a change to billing
-   * retry semantics, so it is filed rather than folded into #1710's
-   * observability fix. What lands here is the reporting only: until the
-   * behaviour is decided, a lost transition is at least visible instead of
-   * sitting at `warn` looking like a foreign-account no-op. That matters more
-   * here than on the checkout path, because these are the events that recur —
-   * a chapter keeps being billed monthly while nothing in the app can see it.
+   * **This deliberately stays at `warn` rather than joining the `error` +
+   * Sentry reporting above**, which an earlier draft of #1710 did and which
+   * review caught as wrong. An unresolvable subscription here is *routinely*
+   * expected: `handleCheckoutCompleted` overwrites `subscription_id` when a
+   * canceled chapter resubscribes, and its own log tells the operator to go
+   * cancel the superseded subscription in Stripe. Doing so emits
+   * `customer.subscription.deleted` for a subscription no chapter references —
+   * so alerting on this branch would fire, at critical, on an expected flow the
+   * product itself instructs. Separating "superseded reference" from "lost
+   * transition" needs the resolution work in #1738; until then a false alert
+   * every resubscribe would be worse than the quiet this leaves.
    */
   private async findChapterBySubscription(
     subscriptionId: string,
-    event: WebhookEvent,
   ): Promise<Chapter | null> {
     const chapter = await this.chapterRepo.findBySubscriptionId(subscriptionId);
     if (!chapter) {
-      this.reportUnknownChapterRef({
-        event,
-        kind: 'subscription_unknown_chapter',
-        refKey: `subscription:${subscriptionId}`,
-        detail: `no chapter references subscription ${subscriptionId}`,
-        benignCause:
-          'the subscription belongs to another integration on this Stripe account',
-        realCause:
-          'either this event overtook its own checkout (#1738) or a billed chapter is no longer visible — reconcile it in Stripe',
-      });
+      this.logger.warn(`No chapter found for subscription: ${subscriptionId}`);
     }
     return chapter;
   }
