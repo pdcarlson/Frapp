@@ -231,7 +231,7 @@ Every paid module ships with: slash command(s), rich renderer, system channel, a
 | Points | `points` | Earn/spend ledger, leaderboard |
 | Service Hours | `hours` | Time tracking with approval queue |
 | Dues | `dues` | Invoices, payment plans, scholarships, Stripe |
-| Polls | `polls` | Chapter votes, anonymous or named |
+| Polls | `polls` | Chapter votes with live tallies. **Named only** — anonymous mode is catalogued but not built, and the chat-card vote path makes every voter readable by every member who can read the poll ([`spec/behavior/polls.md`](../behavior/polls.md) § Anonymous polls) |
 | Recruitment | `rush` | Candidate funnel, voting, bid management |
 | Backwork | `backwork` | Document library + academic archive |
 | Documents | `documents` | Chapter-level docs (bylaws, minutes, policies) |

@@ -20,3 +20,56 @@
 - Once expired (or manually closed by the creator), the poll is locked — no more votes. **Manual close:** `POST /v1/polls/:messageId/close` (`polls:create` gate, matching `createPoll`) stamps `metadata.closed_at`/`closed_by`; only the poll's own sender may call it, and only while the poll is still open (closing an already-expired or already-closed poll 400s). `vote`, `removeVote`, `getPoll`'s `isExpired`, and `GET /v1/polls`'s `active` filter all treat a poll as closed the moment either `expires_at` passes **or** `closed_at` is set — a poll closed early with a still-future `expires_at` is excluded from `active=true` and included in `active=false` exactly like a deadline-expired one.
 - Polls are stored as a special message type (`type: POLL`) in `chat_messages` with poll data in `metadata`, plus a `poll_votes` table for individual votes.
 - **Expiry announcement.** A scheduled sweep (`ScheduledJobsService.sweepExpiredPolls`, every 5 minutes) posts a `system_audit` message — `Poll "<question>" has closed.` — into the channel of every poll whose `expires_at` has passed and that was not manually closed early (a manual `close` needs no announcement; the creator already knows). Like the other sweeps it claims a `scheduled_notification_dispatches` row (`entity_type: 'POLL'`, `threshold: 'EXPIRED'`) before posting, so it fires exactly once per poll across replicas and ticks. `system_audit` messages render in the channel timeline without sending a push notification (`push-rules.ts`), matching the pattern already used for invite-acceptance and chapter-welcome notices.
+
+## Anonymous polls — not built, and why the obvious fix does not work
+
+**No poll is anonymous today.** There is no anonymity flag in `PollMetadata`, no `anonymous` column anywhere, and no code path that treats one voter differently from another. The `polls.anonymous` entry in the module catalog (`packages/org-archetypes/src/index.ts`, `subFeatures`) is a **label with no storage**: `chapters.enabled_modules` is a flat `{module: boolean}` jsonb, no sub-feature key is written or read by anything, and the Settings Modules tab renders sub-features as read-only text under its own note that per-feature toggles are not built. Anything that reads `polls.anonymous` as configuration is reading a catalog string.
+
+This section states what an implementation has to contend with. It is design intent for work not yet scheduled, not a description of shipped behavior.
+
+### There are two poll systems, and they fail anonymity in opposite ways
+
+| | `/v1/polls` (REST) | Chat card (ADR-07) |
+| --- | --- | --- |
+| Poll body | `chat_messages.type = 'POLL'`, `metadata` | `chat_messages.payload`, `kind: "poll"` |
+| Votes | `poll_votes` (`message_id`, `user_id`, `option_index`) | `chat_message_actions` (`action_type = 'vote'`, `payload.option_id`) |
+| Tally computed | **Server-side** — `get_poll_vote_option_totals` / `get_poll_user_votes_for_messages` | **Client-side** — `tallyPollVotes` in `packages/chat-core/src/polls.ts` |
+| Client read of vote rows | **None.** RLS on, zero policies → default-deny; only the API's `service_role` reads it | **Granted.** `chat_message_actions_select` allows any authenticated user who passes `can_read_chat_message(message_id)` |
+| Realtime | Not published | In the `supabase_realtime` publication |
+
+**The REST path is already voter-private by construction.** `PollWithResults` projects per-option counts plus `userVotes` — the caller's own selections — and nothing else. No report, export or dashboard surface reads `poll_votes`. Adding anonymity there is a display concern, not a data-exposure one.
+
+**The chat-card path cannot be made anonymous by hiding a field.** The client is the tallier: `apps/web/lib/chat/use-chat-channel.ts` selects `chat_message_actions` directly, Realtime streams row changes as they happen, and `tallyPollVotes` counts `message.actions` locally so the per-option breakdown and the viewer's own choice need no round trip. Every member who can read the poll can already read every vote row, `user_id` included, live — with no API involvement to intercept. That read is deliberate (it is what makes the card's tally instant and offline-tolerant), so anonymity on this path is a **direct trade against the ADR-07 hot path**, not an oversight to patch.
+
+Making it anonymous requires all three of: revoking the client's SELECT on vote rows for anonymous polls, removing the table from the realtime carrier for those rows (or accepting that a stream of row events leaks voter identity even when the payload is trimmed), and moving the tally server-side behind an aggregate the client can subscribe to. That is a re-architecture of the card's vote path, and it should be costed as one.
+
+### Hard vs soft anonymity — the decision this rests on
+
+**Soft anonymity** keeps `user_id` on the vote row and hides it from clients. Vote change, one-vote-per-member, and the `idx_chat_message_actions_dedupe` unique index all keep working unchanged. But the link is permanent: `service_role` sees every voter, and account deletion tombstones a user rather than removing them (`anonymize_user`), so the vote stays joined to a stable id forever. Telling a member a poll is anonymous while retaining that link is a promise the data model does not keep.
+
+**Hard anonymity** stores no voter identity — at most a per-poll nullifier that proves "this member has voted" without revealing what for. It keeps the promise, and it costs: no vote change or retraction without a second construction, no per-member audit of who participated, and `idx_chat_message_actions_dedupe` / `poll_votes`' `unique (message_id, user_id, option_index)` both need replacing, since each is keyed on the identity being removed.
+
+**This choice is open and is not settled here.** It is a product and trust call, and it is the one the module catalog's minors/privacy concern actually turns on — a chapter running a rush ballot is exactly the case where "anonymous" being soft would matter to the people voting.
+
+### Recommendation: anonymity is per-poll, fixed at creation
+
+Recorded as a **recommendation for review**, not a settled decision.
+
+Anonymity should be a property of the individual poll — set when it is created, immutable once the first vote lands — rather than a chapter-level setting:
+
+- **A chapter is not uniformly one or the other.** The same chapter runs named quorum votes (where the record of who voted is the point) and anonymous rush ballots. A single chapter switch cannot describe both, and the driving use case in the module catalog — recruitment — is the minority case, so whichever way the switch defaulted would be wrong for real polls in the same channel.
+- **Anonymity is a promise made to the voter at the moment they vote.** It has to be a visible property of the poll in front of them. A setting an officer can flip afterwards can retroactively expose votes cast under the opposite promise, which is the failure mode worth designing out rather than documenting.
+- **It leaves the catalog entry meaning what every other sub-feature means.** `polls.anonymous` with `defaultOn: true` then reads as *the default for new polls in this chapter* — the same relationship `defaultOn` already implies elsewhere — rather than as a mode the chapter is in. That needs the sub-feature persistence path that does not exist yet, so an implementation that lands before it should default to named and let the creator opt in per poll.
+
+### Surfaces that must hide voter identity
+
+For a poll marked anonymous, every one of these is in scope. The first two are where it is currently impossible, not merely unimplemented:
+
+1. **`chat_message_actions` SELECT policy** — the client's direct read of vote rows.
+2. **The `supabase_realtime` publication** — live row events carry `user_id`.
+3. **`tallyPollVotes`** (`packages/chat-core/src/polls.ts`) and both card renderers (`apps/web/components/chat/renderers/poll-card.tsx`, `apps/mobile/components/chat/poll-card.tsx`) — they must consume a server aggregate instead of raw rows.
+4. **`PollWithResults.userVotes`** — correct as-is (the caller's own vote), but it must stay the caller's own and never be widened to other members.
+5. **`polls:view_all`** — grants the chapter-wide list. It must not become a way to see who voted; today it does not, and that has to stay true by test rather than by accident.
+6. **Any future poll export or report** — none exists today, which is the cheapest moment to write the constraint down.
+
+Not in scope, and worth stating so it is not re-derived: `poll_votes` needs no RLS change. It has no policies, so it is already unreadable by clients.
