@@ -9,6 +9,14 @@ export interface ChapterMembershipSummary {
   role_ids: string[];
   has_completed_onboarding: boolean;
   /**
+   * `MODULE_CATALOG` keys whose ops-setup nudge this member has dismissed in
+   * this chapter (#492). Optional here for the same reason the rest of this
+   * interface warns about: `useListChapters` *asserts* the response into this
+   * type, so a server older than the column returns `undefined` at runtime with
+   * nothing failing to say so. `selectOpsNudge` defaults it.
+   */
+  dismissed_ops_nudges?: string[];
+  /**
    * The member-safe projection the API actually returns, not the `chapters`
    * row (#930). `stripe_customer_id` and `subscription_id` were declared here
    * and are deliberately gone: this endpoint carries no billing permission, so
