@@ -313,10 +313,18 @@ export class MemberService {
    *
    * Read-then-write rather than a Postgres `array_append`, because the repository
    * boundary takes whole column values and the array is at most four entries —
-   * the width of `OPS_NUDGE_MODULES`. The lost-update window that read-modify-write
-   * normally opens is not reachable here: the two writers would have to be the
-   * same member in the same chapter dismissing two different nudges within one
-   * round trip, and only one nudge is ever rendered at a time.
+   * the width of `OPS_NUDGE_MODULES`.
+   *
+   * That does open a lost-update window, and it is **reachable**, not theoretical:
+   * dismissing one nudge falls the next one through immediately, putting a fresh
+   * dismiss control under the cursor, so two writes can overlap and the later one
+   * erases the earlier key. The client closes the realistic path by blocking a
+   * second dismissal while one is in flight (`OpsSetupNudgeCard`'s `isDismissing`).
+   * A cross-tab or cross-device race can still lose one, and that is accepted
+   * rather than fixed with an RPC: the entire cost is that one already-dismissed
+   * card reappears on the next load and is dismissed again. If this column ever
+   * carries something a member cannot trivially redo, this needs to become an
+   * atomic `array_append` first.
    */
   async dismissOpsNudge(memberId: string, moduleKey: string): Promise<Member> {
     const member = await this.memberRepo.findById(memberId);

@@ -8,11 +8,16 @@ let chapters: { data: unknown } = { data: [] };
 let orgConfig: { data: unknown } = { data: undefined };
 let permissions: { data: unknown } = { data: undefined };
 
+let dismissPending = false;
+
 vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => chapters,
   useOrgConfig: () => orgConfig,
   useMyPermissions: () => permissions,
-  useDismissOpsNudge: () => ({ mutate: dismissMutate }),
+  useDismissOpsNudge: () => ({
+    mutate: dismissMutate,
+    isPending: dismissPending,
+  }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -30,7 +35,9 @@ vi.mock("next/link", () => ({
   }) => <a href={href}>{children}</a>,
 }));
 
-import { OpsSetupNudge } from "./ops-setup-nudge";
+import { OpsSetupNudge, OpsSetupNudgeCard } from "./ops-setup-nudge";
+import { MODULE_CATALOG } from "@repo/org-archetypes";
+import { OPS_NUDGE_MODULES } from "@repo/validation";
 
 /** The officer case: can manage config, dues switched off, nothing dismissed. */
 function setUpEligible(
@@ -52,7 +59,12 @@ function setUpEligible(
     data: { enabled_modules: overrides.enabledModules ?? { dues: false } },
   };
   permissions = {
-    data: { permissions: overrides.permissions ?? ["chapter-config:manage"] },
+    data: {
+      permissions: overrides.permissions ?? [
+        "chapter-config:manage",
+        "members:view",
+      ],
+    },
   };
 }
 
@@ -67,6 +79,7 @@ function setUpEligible(
 describe("OpsSetupNudge", () => {
   beforeEach(() => {
     dismissMutate.mockClear();
+    dismissPending = false;
     setUpEligible();
   });
 
@@ -95,6 +108,18 @@ describe("OpsSetupNudge", () => {
   // control is Dismiss.
   it("renders nothing for a member without chapter-config:manage", () => {
     setUpEligible({ permissions: ["members:view"] });
+    const { container } = render(<OpsSetupNudge />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  // The client gate must match what the SERVER requires, not just what the
+  // destination control requires. `MemberController` carries a class-level
+  // `members:view` that `PermissionsGuard` unions into every route, so a custom
+  // role with settings access but no roster access would get a 403 on dismiss —
+  // and `onError` is a deliberate no-op, so the card would be undismissable
+  // forever. No seeded role has that shape; custom roles are a shipped feature.
+  it("renders nothing for a member who could not dismiss it server-side", () => {
+    setUpEligible({ permissions: ["chapter-config:manage"] });
     const { container } = render(<OpsSetupNudge />);
     expect(container).toBeEmptyDOMElement();
   });
@@ -187,5 +212,89 @@ describe("OpsSetupNudge", () => {
   it("promises no trial", () => {
     render(<OpsSetupNudge />);
     expect(screen.queryByText(/trial/i)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The card on its own, with no queries and no store — which is the reason it is
+ * exported separately. Without these, that export has no second call site and a
+ * prop change would be caught by nothing.
+ */
+describe("OpsSetupNudgeCard", () => {
+  const duesNudge = OPS_NUDGE_MODULES.find((m) => m.key === "dues")!;
+
+  it("renders from a nudge alone", () => {
+    render(<OpsSetupNudgeCard module={duesNudge} onDismiss={vi.fn()} />);
+    expect(screen.getByText(/collect dues in frapp/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /enable dues/i })).toBeInTheDocument();
+  });
+
+  it("hands the dismissed module key back to its caller", async () => {
+    const user = userEvent.setup();
+    const onDismiss = vi.fn();
+    render(<OpsSetupNudgeCard module={duesNudge} onDismiss={onDismiss} />);
+
+    await user.click(screen.getByRole("button", { name: /dismiss/i }));
+
+    expect(onDismiss).toHaveBeenCalledWith("dues");
+  });
+});
+
+/**
+ * The nudge catalog carries keys and pitch copy; the module's *name* belongs to
+ * `MODULE_CATALOG`. Nothing else ties the two together, and both failure modes
+ * are silent: a relabel would leave the card saying "Enable Dues" while every
+ * other surface said something new, and a key rename would make `?module=` match
+ * no row, quietly degrading the deep link to a plain Modules tab — the exact
+ * thing `?module=` exists to prevent.
+ */
+describe("nudge keys against MODULE_CATALOG", () => {
+  it("every nudge key resolves to a real catalog entry", () => {
+    const catalogKeys = new Set(MODULE_CATALOG.map((m) => m.key));
+    for (const nudge of OPS_NUDGE_MODULES) {
+      expect(catalogKeys.has(nudge.key)).toBe(true);
+    }
+  });
+
+  // Enabling is what the nudge asks for, so a free or always-on module here
+  // would be a card offering a switch that does not exist.
+  it("every nudge key names a toggleable paid module", () => {
+    for (const nudge of OPS_NUDGE_MODULES) {
+      const entry = MODULE_CATALOG.find((m) => m.key === nudge.key)!;
+      expect(entry.alwaysOn).toBe(false);
+      expect(entry.tier).toBe("paid");
+    }
+  });
+});
+
+/**
+ * Dismissing falls the next nudge through immediately, so a fresh dismiss
+ * control lands under the cursor in the same spot. The server appends to
+ * `dismissed_ops_nudges` read-modify-write, so two overlapping writes would each
+ * read the pre-write array and the later one would erase the earlier key.
+ */
+describe("OpsSetupNudge concurrent dismissals", () => {
+  beforeEach(() => {
+    dismissMutate.mockClear();
+    dismissPending = false;
+  });
+
+  it("blocks a second dismissal while the first is still in flight", () => {
+    dismissPending = true;
+    setUpEligible({ enabledModules: { dues: false, events: false } });
+    render(<OpsSetupNudge />);
+
+    expect(
+      screen.getByRole("button", { name: /dismiss the dues suggestion/i }),
+    ).toBeDisabled();
+  });
+
+  it("leaves the control usable when nothing is in flight", () => {
+    setUpEligible({ enabledModules: { dues: false } });
+    render(<OpsSetupNudge />);
+
+    expect(
+      screen.getByRole("button", { name: /dismiss the dues suggestion/i }),
+    ).toBeEnabled();
   });
 });

@@ -137,7 +137,7 @@ describe("SettingsModulesTab", () => {
   });
   // AC 2 of #492: chat's ops-setup nudge links here with `?module=<key>`, and
   // its whole value over a bare `?tab=modules` is landing the officer on the
-  // row it named rather than at the top of a fourteen-row list.
+  // row it named rather than at the top of the full module list.
   describe("focusModuleKey", () => {
     it("focuses the named module's switch", () => {
       render(

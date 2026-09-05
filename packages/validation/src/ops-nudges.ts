@@ -33,12 +33,20 @@
  * in #492's context block predates that and was not adopted.
  */
 
-/** One nudge, as drawn: a headline, a line of body copy, and the module it enables. */
+/** One nudge, as drawn: a headline, a line of body copy, and the module it enables.
+ *
+ * Deliberately carries **no `label`**. The module's display name belongs to
+ * `MODULE_CATALOG` in `@repo/org-archetypes`, and a second copy here would drift
+ * the moment that one is relabelled — the nudge would read "Enable Dues" while
+ * Settings → Modules, the sidebar and the slash palette all read something else.
+ * The rendering surface resolves it through `getModuleCatalogEntry(key)`, which
+ * is the accessor `spec/engineering.md` § "Catalog lookups and defaults"
+ * mandates. Only the nudge-specific *pitch* lives here, because the catalog has
+ * no field for it.
+ */
 export interface OpsNudgeModule {
   /** A `MODULE_CATALOG` key, written verbatim to `members.dismissed_ops_nudges`. */
   key: string;
-  /** The module's name, as the Settings → Modules row spells it. */
-  label: string;
   /** Card headline. Sentence case, per `spec/ui/design-system/writing.md`. */
   headline: string;
   /** One line naming what the chapter actually gets. */
@@ -52,28 +60,24 @@ export interface OpsNudgeModule {
 export const OPS_NUDGE_MODULES = [
   {
     key: "dues",
-    label: "Dues",
     headline: "Collect dues in Frapp",
     description:
       "Invoices, payment plans, and card or ACH payments, tracked against your roster.",
   },
   {
     key: "events",
-    label: "Events",
     headline: "Run your calendar in Frapp",
     description:
       "RSVPs, QR check-in, and attendance that grants points automatically.",
   },
   {
     key: "tasks",
-    label: "Tasks",
     headline: "Assign chapter tasks",
     description:
       "Hand out work, confirm it is done, and grant points on completion.",
   },
   {
     key: "points",
-    label: "Points",
     headline: "Track participation points",
     description: "An earn-and-spend ledger with a chapter leaderboard.",
   },

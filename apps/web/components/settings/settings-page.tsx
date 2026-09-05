@@ -220,14 +220,38 @@ function SettingsPageContent() {
   /**
    * `?module=` narrows a `?tab=modules` deep link to one row, so chat's
    * ops-setup nudge (#492) can land an officer on the module it named rather
-   * than at the top of a fourteen-row list. Validated against the nudge catalog
-   * rather than passed through: an unrecognised value should be an unfocused
-   * Modules tab, not a `querySelector` for an id that does not exist.
+   * than at the top of the full module list. Validated against the nudge
+   * catalog rather than passed through: an unrecognised value should be an
+   * unfocused Modules tab, not a `querySelector` for an id that does not exist.
+   *
+   * **Consumed once, not held for the visit.** `TabsContent` carries no
+   * `forceMount`, so Radix unmounts the inactive tab's content — and the tab is
+   * driven by local state without rewriting the URL, so `?module=` survives the
+   * whole visit. Without this latch, an officer who follows the nudge, enables
+   * the module, wanders to Theme and comes back to Modules gets focus yanked to
+   * the same switch and the list scrolled back to it, every single time.
    */
   const moduleParam = searchParams.get("module");
-  const focusModuleKey = isOpsNudgeModuleKey(moduleParam)
+  const requestedModuleKey = isOpsNudgeModuleKey(moduleParam)
     ? moduleParam
     : undefined;
+  const [consumedModuleKey, setConsumedModuleKey] = useState<string | null>(
+    null,
+  );
+  const focusModuleKey =
+    requestedModuleKey && consumedModuleKey !== requestedModuleKey
+      ? requestedModuleKey
+      : undefined;
+  useEffect(() => {
+    // State rather than a ref: `focusModuleKey` is read during render, and
+    // reading `ref.current` there is what `react-hooks/refs` forbids — a ref
+    // mutated in an effect does not re-render, so the value read during render
+    // would be a lie. The extra render this costs is one pass in which
+    // `shouldFocus` flips to false on an already-mounted row, which its own
+    // effect handles by returning early.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- latch a consumed `?module=` deep link; the param is never cleared from the URL
+    if (requestedModuleKey) setConsumedModuleKey(requestedModuleKey);
+  }, [requestedModuleKey]);
 
   const [accentDraft, setAccentDraft] = useState("");
   // The server's own §8 disclosure from the last successful save — distinct

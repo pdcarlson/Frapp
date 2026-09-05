@@ -5,8 +5,13 @@
 -- neither hides it from the rest of the exec board nor carries across their
 -- other chapters. `members` is `unique (user_id, chapter_id)`, so it is that
 -- grain by construction — the same reason `has_completed_onboarding` already
--- lives here rather than in `user_settings`, which is `unique (user_id)` and
--- is asserted chapter-independent by `tenant-scope-coverage.spec.ts`.
+-- lives here rather than in `user_settings`, which is `unique (user_id)` (see
+-- `00000000000000_initial_schema.sql`) and therefore cannot hold a per-chapter
+-- value at all: a second chapter's write would overwrite the first's.
+-- (`tenant-scope-coverage.spec.ts` records "user_settings is per-user and
+-- chapter-independent" as its reason for *exempting* that repository from
+-- tenant-scope coverage. That is a documented rationale, not an executing
+-- assertion — do not expect a red test to stop you there.)
 --
 -- Values are `MODULE_CATALOG` keys ('dues', 'events', 'tasks', 'points'). Kept
 -- as an unconstrained `text[]` rather than an enum or FK: the catalog is a

@@ -1570,7 +1570,7 @@ describe('MemberService', () => {
         ...member,
         dismissed_ops_nudges: ['dues'],
       });
-      mockRepo.update.mockResolvedValue({} as never);
+      mockRepo.update.mockResolvedValue({});
 
       await service.dismissOpsNudge('member-1', 'events');
 
@@ -1602,8 +1602,8 @@ describe('MemberService', () => {
       mockRepo.findById.mockResolvedValue({
         ...member,
         dismissed_ops_nudges: undefined,
-      } as never);
-      mockRepo.update.mockResolvedValue({} as never);
+      });
+      mockRepo.update.mockResolvedValue({});
 
       await service.dismissOpsNudge('member-1', 'points');
 
@@ -1615,9 +1615,9 @@ describe('MemberService', () => {
     it('throws when the member does not exist', async () => {
       mockRepo.findById.mockResolvedValue(null);
 
-      await expect(
-        service.dismissOpsNudge('missing', 'dues'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.dismissOpsNudge('missing', 'dues')).rejects.toThrow(
+        NotFoundException,
+      );
       expect(mockRepo.update).not.toHaveBeenCalled();
     });
   });
