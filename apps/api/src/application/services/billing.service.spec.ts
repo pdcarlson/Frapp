@@ -283,9 +283,10 @@ describe('BillingService', () => {
 
     it('withholds the trial from a chapter that has already held a subscription (#913)', async () => {
       // A canceled chapter still reaches checkout — the guard rejects only
-      // `active` — and StripeService passes `customer_email`, so Stripe mints a
-      // fresh Customer with no trial history. Without this, every such call
-      // would hand out another 14 free days, indefinitely.
+      // `active`. `grantTrial` is what stops it collecting another 14 free
+      // days, and it has to be: it is keyed on our own record of having held a
+      // subscription, not on what Stripe infers from a Customer. Without this,
+      // every such call would hand out another trial, indefinitely.
       mockChapterRepo.findById.mockResolvedValue({
         ...baseChapter,
         subscription_status: 'canceled',
