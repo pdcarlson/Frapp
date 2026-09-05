@@ -96,9 +96,13 @@ export class ChapterOnboardingService {
 
     // Best-effort: a failed custom-field / welcome / directory-request write
     // must not roll back an otherwise successfully created chapter.
+    // `error`, not `warn`, for the same reason the inner branch uses it: a
+    // rejection here (fetch/DNS/TLS) is the same every-chapter seeding outage
+    // as a returned PostgREST error, and splitting the two levels would put
+    // half the failure surface below the alerting threshold.
     await this.provisionCustomFields(chapter.id, seed.customFields).catch(
       (err) =>
-        this.logger.warn('Failed to provision archetype custom fields', err),
+        this.logger.error('Failed to provision archetype custom fields', err),
     );
 
     await this.postWelcomeMessage(chapter.id, branding).catch((err) =>

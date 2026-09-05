@@ -504,6 +504,9 @@ describe('ChapterOnboardingService', () => {
           visibleTo: 'chapter',
         },
       ]);
+      const logged = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
       fieldsUpsert.mockRejectedValueOnce(new Error('network down'));
 
       await expect(
@@ -512,6 +515,13 @@ describe('ChapterOnboardingService', () => {
       // The later best-effort writes must still run — a thrown seed must not
       // swallow the welcome message.
       expect(messageInsert).toHaveBeenCalled();
+      // A rejection is the same every-chapter outage as a returned PostgREST
+      // error, so it must log at the same level; asserting only that onboard()
+      // resolves would pass at any level, or at none.
+      expect(logged).toHaveBeenCalledWith(
+        'Failed to provision archetype custom fields',
+        expect.any(Error),
+      );
     });
   });
 });
