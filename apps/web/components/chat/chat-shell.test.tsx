@@ -35,6 +35,18 @@ const CHANNELS = [
     member_ids: [],
     is_read_only: true,
   },
+  // Not read-only, but the caller may not post — the alumni case. The two
+  // fields disagree here, which is exactly what makes this fixture worth
+  // having: a gate on either one alone passes one of the two channels above
+  // and fails this.
+  {
+    id: "chan-alumni-readable",
+    name: "alumni-readable",
+    type: "PUBLIC",
+    member_ids: [],
+    is_read_only: false,
+    can_post: false,
+  },
 ];
 
 /**
@@ -174,6 +186,14 @@ vi.mock("./channel-list", () => ({
       >
         random
       </button>
+      {/* The rail has no `isActive` guard, so clicking the channel already open
+          runs the same handler — the miss-click path (#489). */}
+      <button
+        data-testid="pick-general"
+        onClick={() => onPick?.({ id: "chan-general" })}
+      >
+        general
+      </button>
       {/* Echoed so the shell→rail category wiring is observable. Without this
           the prop could be dropped entirely and every test here still passed —
           the rail's own suite builds its inputs by hand, so nothing else
@@ -203,7 +223,11 @@ vi.mock("./composer", () => ({
   }: {
     channelId: string;
     onSend?: (body: string, attachments: unknown[]) => void;
-    replyTo?: { id: string; author: string; preview: string } | null;
+    replyTo?: {
+      id: string;
+      author: string | null;
+      preview: string | null;
+    } | null;
     onCancelReply?: () => void;
   }) => {
     // Deliberately mount-only: the assertion below needs "did this
@@ -221,7 +245,7 @@ vi.mock("./composer", () => ({
             things the SHELL owns: what it says is staged, and what it sends. */}
         <span data-testid="composer-reply-to">{replyTo?.id ?? "none"}</span>
         <span data-testid="composer-reply-preview">
-          {replyTo?.preview ?? ""}
+          {replyTo ? (replyTo.preview ?? "unavailable") : ""}
         </span>
         <button data-testid="composer-send" onClick={() => onSend?.("hi", [])}>
           send
@@ -951,14 +975,19 @@ describe("ChatShell bookmark write failure (#462)", () => {
  * through it. The seam that *is* drivable is this one.
  */
 describe("ChatShell reply-with-quote (#489)", () => {
+  // `channel_id` is load-bearing now, not fixture noise: a staged target
+  // carries the channel it was staged in, so a message without one could never
+  // resolve. Modelling it is what lets the cross-channel cases below be real.
   const ROOT = {
     id: "msg-1",
+    channel_id: "chan-general",
     content: "the original",
     created_at: "2026-01-01T00:00:00Z",
     reply_to_id: null,
   };
   const REPLY = {
     id: "msg-3",
+    channel_id: "chan-general",
     content: "a reply to it",
     created_at: "2026-01-01T00:02:00Z",
     reply_to_id: "msg-1",
@@ -1070,10 +1099,11 @@ describe("ChatShell reply-with-quote (#489)", () => {
   });
 
   it("drops the staged reply on a channel switch", async () => {
-    // `chat.service.ts` 400s a `reply_to_id` from another channel, and the
-    // Composer is remounted by its `key` on a switch — so the strip the member
-    // could have dismissed is already gone. Their first message in the new
-    // channel would fail for a reason nothing on screen explains.
+    // `chat.service.ts` 400s a `reply_to_id` naming a message in another
+    // channel. The target carries the channel it was staged in, so this holds
+    // structurally rather than by remembering to clear on every switch path —
+    // including the deep-link effect, which sets `selectedChannelId` directly
+    // and never calls the switch cleanup.
     const channel = withMessages([ROOT]);
     render(<ChatShell initialChannelId="chan-general" />);
 
@@ -1121,17 +1151,20 @@ describe("ChatShell reply-with-quote (#489)", () => {
     expect(screen.getByTestId("reply-offered")).toHaveTextContent("true");
   });
 
-  it("stages nothing when the target is not in the loaded window", () => {
-    // The strip and the send read the SAME derivation, so a target that cannot
-    // be shown cannot be sent either. Nothing backfills older history (#1571),
-    // so this is reachable, not hypothetical.
+  it("keeps a staged reply visible and sendable when its parent leaves the window", () => {
+    // Review changed this behaviour. Dropping the strip left the member with a
+    // reply they could neither see nor dismiss — Escape and the × both hang off
+    // `replyTo` — which then either vanished from the send or re-attached when
+    // the parent reappeared. The strip now renders the unavailable variant and
+    // the id still sends: same channel is guaranteed by scoping, which is all
+    // `ChatService` validates. Reachable via a jump or backfill re-windowing
+    // the list (#1571), not hypothetical.
     const channel = withMessages([ROOT]);
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
 
     fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
     expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
 
-    // The window turns over — the staged parent is no longer in it.
     mockUseChatChannel.mockReturnValue({
       ...chatChannelResult(),
       messages: [] as typeof MESSAGES,
@@ -1139,12 +1172,51 @@ describe("ChatShell reply-with-quote (#489)", () => {
     });
     rerender(<ChatShell initialChannelId="chan-general" />);
 
-    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none");
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+    expect(screen.getByTestId("composer-reply-preview")).toHaveTextContent(
+      "unavailable",
+    );
     fireEvent.click(screen.getByTestId("composer-send"));
 
     expect(channel.send).toHaveBeenCalledWith("hi", {
-      replyToId: null,
+      replyToId: "msg-1",
       attachments: [],
     });
+  });
+
+  it("keeps a staged reply through a miss-click on the channel already open", () => {
+    // The rail fires its switch handler for a click on the current channel too
+    // — an ordinary miss-click, or a scroll-to-top gesture. Clearing the reply
+    // there dropped it while leaving the draft text, so Enter posted a reply as
+    // a top-level message with nothing on screen having changed.
+    const channel = withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("pick-general"));
+
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+    fireEvent.click(screen.getByTestId("composer-send"));
+    expect(channel.send).toHaveBeenCalledWith("hi", {
+      replyToId: "msg-1",
+      attachments: [],
+    });
+  });
+
+  it("offers no Reply control to a member who cannot post here (alumni)", async () => {
+    // `can_post` comes back false for TWO reasons, and read-only is only one:
+    // the other is the alumni lifecycle restriction. An alumnus in an ordinary
+    // PUBLIC channel gets `is_read_only: false` + `can_post: false`, so the
+    // composer renders an explanation paragraph and no editor — a Reply chip
+    // there would stage into a strip that can never appear.
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-alumni-readable" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent(
+        "chan-alumni-readable",
+      );
+    });
+    expect(screen.getByTestId("reply-offered")).toHaveTextContent("false");
   });
 });

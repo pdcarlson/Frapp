@@ -1,6 +1,7 @@
 "use client";
 
-import type { ChatMessage } from "@repo/chat-core/types";
+import type { ChatMessage, ChatMessageKind } from "@repo/chat-core/types";
+import { DELETED_MESSAGE_PLACEHOLDER } from "./message-placeholders";
 import { cn } from "@/lib/utils";
 
 /**
@@ -8,8 +9,15 @@ import { cn } from "@/lib/utils";
  * its own. Deliberately not derived from `CARD_KINDS` in `./renderers`: that set
  * answers "is this a bubble?" for layout, and a quote needs a *noun* — the two
  * would drift into each other's jobs if one list served both.
+ *
+ * `Partial<Record<ChatMessageKind, …>>` rather than `Record<string, …>`, so a
+ * typo'd or retired key fails typecheck while `text` and `imported` — the two
+ * kinds that legitimately have no noun, because they quote by their body — stay
+ * absent on purpose. It does not force exhaustiveness: a kind added
+ * server-first would still fall through to the generic label rather than
+ * breaking the build, which is the right trade for a preview string.
  */
-const KIND_LABELS: Record<string, string> = {
+const KIND_LABELS: Partial<Record<ChatMessageKind, string>> = {
   poll: "Poll",
   announcement: "Announcement",
   system_audit: "Audit entry",
@@ -20,6 +28,37 @@ const KIND_LABELS: Record<string, string> = {
   hours: "Service hours",
   loading: "Card",
 };
+
+/**
+ * Flatten the markdown subset `MessageMarkdown` renders down to the text a
+ * reader sees, so the quote and the message it stands for say the same thing.
+ *
+ * Without this the strip shows *source*: replying to
+ * `See **the signed** [budget](https://drive.google.com/file/d/1aB…/view)`
+ * quotes the raw link, and because a quote is one truncated line, the cut lands
+ * inside the URL — the line whose only job is identifying the parent becomes
+ * punctuation and a Drive id.
+ *
+ * Scoped to exactly `ALLOWED_ELEMENTS` in `./renderers/message-markdown.tsx`
+ * (bold, italic, inline code, fenced code, links) — nothing wider, because
+ * nothing wider renders. Link *text* is kept and the href dropped: the text is
+ * what the reader saw.
+ */
+function flattenMarkdown(text: string): string {
+  return (
+    text
+      // `[label](href)` → `label`. Non-greedy, and the href may not contain a
+      // closing paren, which is CommonMark's own rule for an unescaped one.
+      .replace(/\[([^\]]*)\]\([^)\s]*(?:\s+"[^"]*")?\)/g, "$1")
+      // Fenced blocks keep their body; the fence and any info string go.
+      .replace(/```[^\n]*\n?/g, "")
+      // Emphasis and inline code markers. Applied after links so a `**bold**`
+      // link label survives with its text intact.
+      .replace(/(\*\*|__)(.*?)\1/g, "$2")
+      .replace(/(\*|_)(?=\S)(.*?\S)\1/g, "$2")
+      .replace(/`([^`]*)`/g, "$1")
+  );
+}
 
 /**
  * One line standing in for a message inside a quote.
@@ -38,9 +77,11 @@ const KIND_LABELS: Record<string, string> = {
  * whose body lives in `payload`.
  */
 export function replyPreviewText(message: ChatMessage): string {
-  if (message.is_deleted) return "[message deleted]";
+  if (message.is_deleted) return DELETED_MESSAGE_PLACEHOLDER;
 
-  const text = message.content?.replace(/\s+/g, " ").trim() ?? "";
+  const text = flattenMarkdown(message.content ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (text.length > 0) return text;
 
   const attachments = message.attachment_count ?? 0;
@@ -51,10 +92,24 @@ export function replyPreviewText(message: ChatMessage): string {
   return KIND_LABELS[message.kind ?? "text"] ?? "Message";
 }
 
+/** What a quote says when its message is outside the loaded window. */
+export const UNAVAILABLE_QUOTE = "Replying to a message that isn’t loaded";
+
 interface QuotedMessageProps {
-  /** Author label for the quoted message, resolved by the caller. */
-  author: string;
-  preview: string;
+  /**
+   * Author label for the quoted message, resolved by the caller — or `null`
+   * when the message is not in the loaded window, which renders the
+   * unavailable variant and ignores `preview`.
+   *
+   * Nothing backfills older history today (`useChatChannel` fetches one window
+   * and exposes no pagination — #1571), so the unavailable case is not an edge:
+   * any reply to a message older than the window lands there. It is a variant
+   * of this component rather than its own, because the two must share the rule,
+   * the indent and the type treatment — a fallback that drifts to a different
+   * indent is exactly the branch nobody re-screenshots.
+   */
+  author: string | null;
+  preview: string | null;
   /**
    * Opens the quoted message's thread. Optional: the composer's staged-reply
    * strip quotes a message with nowhere to navigate to, so it renders the same
@@ -81,20 +136,28 @@ export function QuotedMessage({
   onOpen,
   className,
 }: QuotedMessageProps) {
-  const content = (
+  const unavailable = author === null;
+
+  const shared = cn(
+    "flex min-w-0 items-baseline gap-1.5 border-l-2 border-border pl-2",
+    "text-[12.5px] text-muted-foreground",
+    unavailable && "italic",
+    className,
+  );
+
+  const content = unavailable ? (
+    <span className="truncate">{UNAVAILABLE_QUOTE}</span>
+  ) : (
     <>
       <span className="shrink-0 font-semibold">{author}</span>
       <span className="truncate">{preview}</span>
     </>
   );
 
-  const shared = cn(
-    "flex min-w-0 items-baseline gap-1.5 border-l-2 border-border pl-2",
-    "text-[12.5px] text-muted-foreground",
-    className,
-  );
-
-  if (!onOpen) {
+  // An unavailable quote has nothing to open, so it is never a control even
+  // when the caller offers `onOpen` — the parent it would navigate to is the
+  // thing that is missing.
+  if (!onOpen || unavailable) {
     return <div className={shared}>{content}</div>;
   }
 
@@ -109,42 +172,5 @@ export function QuotedMessage({
     >
       {content}
     </button>
-  );
-}
-
-interface ReplyQuoteProps {
-  /**
-   * The parent message, or `null` when `reply_to_id` names a message outside
-   * the loaded window.
-   *
-   * Nothing backfills older history today (`useChatChannel` fetches one window
-   * and exposes no pagination — #1571), so this is not an edge case: any reply
-   * to a message older than the window lands here. It renders an explicit
-   * unavailable line rather than nothing, because a reply that silently loses
-   * its quote is indistinguishable from a message that was never a reply.
-   */
-  parent: ChatMessage | null;
-  /** Author label for `parent`; ignored when `parent` is null. */
-  author: string;
-  onOpen?: () => void;
-}
-
-/** The quoted parent rendered above a reply in the main timeline (AC 2). */
-export function ReplyQuote({ parent, author, onOpen }: ReplyQuoteProps) {
-  if (!parent) {
-    return (
-      <div className="mb-1 flex min-w-0 items-baseline gap-1.5 border-l-2 border-border pl-2 text-[12.5px] italic text-muted-foreground">
-        Replying to a message that isn&rsquo;t loaded
-      </div>
-    );
-  }
-
-  return (
-    <QuotedMessage
-      className="mb-1"
-      author={author}
-      preview={replyPreviewText(parent)}
-      onOpen={onOpen}
-    />
   );
 }

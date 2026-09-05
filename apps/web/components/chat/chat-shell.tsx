@@ -25,7 +25,7 @@ import {
   useUnbookmarkMessage,
   resolveAuthorLabel,
 } from "@repo/hooks";
-import { allowsInThreadReplies, can } from "@repo/validation";
+import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -558,8 +558,19 @@ export function ChatShell({
    * the strip from it below means an edit, a delete or a reaction on the parent
    * is reflected in what the member sees they are replying to. A snapshot taken
    * at click time would quote text that no longer exists.
+   *
+   * Carries its **channel** alongside the message id, so a target can never
+   * outlive the channel it was staged in. `chat.service.ts` 400s a
+   * `reply_to_id` naming a message in another channel, and clearing on the
+   * switch paths alone is not enough to prevent that: the deep-link effect sets
+   * `selectedChannelId` directly without going through
+   * `dismissThreadForChannelSwitch`. Scoping makes it structural rather than a
+   * cleanup every future switch path has to remember.
    */
-  const [replyToId, setReplyToId] = useState<string | null>(null);
+  const [replyTarget, setReplyTarget] = useState<{
+    channelId: string;
+    messageId: string;
+  } | null>(null);
   // What had focus when a thread was opened (the row's Reply control, most
   // often) — restored by `closeThread` below, per the keyboard-navigation
   // acceptance criterion in #396.
@@ -572,13 +583,12 @@ export function ChatShell({
   const dismissThreadForChannelSwitch = useCallback(() => {
     setThreadParentId(null);
     threadTriggerRef.current = null;
-    // A staged reply belongs to the channel it was staged in. Left set, the id
-    // would still be attached to the next send — and `chat.service.ts` rejects
-    // a `reply_to_id` from another channel with a 400, so the member's first
-    // message in the new channel would fail for a reason nothing on screen
-    // explains (the Composer is remounted by its `key`, so the strip they could
-    // have dismissed is already gone).
-    setReplyToId(null);
+    // A staged reply is NOT cleared here. It is scoped to its own channel (see
+    // `replyTarget`), so it is already invisible and unsendable anywhere else,
+    // and clearing here would discard it on a path that is not a switch at all:
+    // the rail calls this for a click on the channel already open, which is an
+    // ordinary miss-click. That silently dropped the reply while leaving the
+    // draft text, so Enter posted it as a top-level message.
   }, []);
   // Channel-scoped: the notice belongs to the channel the jump was attempted
   // in, so it never follows the member into a channel the message was never in.
@@ -726,36 +736,87 @@ export function ChatShell({
    * loaded window, and the alternative (quoting nothing) is worse.
    */
   const startReply = useCallback((message: ChatMessage) => {
-    setReplyToId(message.reply_to_id ?? message.id);
+    setReplyTarget({
+      channelId: message.channel_id,
+      messageId: message.reply_to_id ?? message.id,
+    });
   }, []);
-  const cancelReply = useCallback(() => setReplyToId(null), []);
+  const cancelReply = useCallback(() => setReplyTarget(null), []);
+  /**
+   * Whether to offer Reply on rows in this channel at all.
+   *
+   * **Both halves are load-bearing, and each covers a case the other misses.**
+   *
+   * `can_post` — is there a composer to stage into? It is the server's own
+   * capability (`ChannelAccessService.withPostCapability`), and it comes back
+   * false for *two* reasons, only one of which is read-only: the other is the
+   * alumni lifecycle restriction (`spec/behavior/alumni.md`). An alumnus in an
+   * ordinary `PUBLIC` channel gets `is_read_only: false` and
+   * `can_post: false`, so a read-only-only check leaves them a Reply chip whose
+   * strip can never render — `Composer` returns the "Alumni can read this
+   * channel but not post" paragraph instead of an editor. Clicking it would
+   * change nothing anywhere on screen: an inert control, which
+   * `spec/ui/design-system/components.md` § 5 bans outright.
+   *
+   * `is_read_only` — does the channel allow in-thread replies at all?
+   * `spec/behavior/chat/README.md` § 253: "Announcement messages cannot be
+   * replied to in-thread… it holds regardless of permissions", and
+   * `ChatService.sendMessage` 400s such a send. `can_post` does not cover this,
+   * because it is deliberately **true** in `#announcements` for a holder of
+   * `announcements:post` — they may post a top-level announcement, and nobody
+   * threads one. Without this half, that member stages a strip and the send
+   * fails.
+   *
+   * Read off the two fields the rail actually carries rather than through
+   * `@repo/validation`'s `allowsInThreadReplies`. Calling the shared predicate
+   * would need a hand-built `ChannelAccessRecord`, and the fields the rail has
+   * never loaded would have to be invented — `required_permissions: null` and
+   * no `archived_at`. That is a projection wearing the full type: the moment
+   * the predicate consults a field this literal fabricates, the call silently
+   * disagrees with the server while *looking* like it cannot. This is a UX
+   * pre-filter; the server is the enforcement, and it is the server's copy of
+   * the rule that has to be right.
+   */
+  const canReplyHere =
+    !!activeChannel &&
+    activeChannel.can_post !== false &&
+    !activeChannel.is_read_only;
   /**
    * The staged reply, resolved for the composer's strip.
    *
-   * **This, not `replyToId`, is what a send reads.** It resolves to `null`
-   * whenever the target is not in the loaded window — a channel switch racing
-   * the message list, or a target aged out of the one window `useChatChannel`
-   * holds — so the strip the member can see and the `reply_to_id` the send
-   * carries are the *same* derivation and cannot disagree. A reply nobody was
-   * shown they were sending is the failure this shape rules out by
-   * construction, rather than by an effect that syncs the id back down (which
-   * would also be a `setState` in an effect, and is what `react-hooks/
-   * set-state-in-effect` is right to refuse).
+   * **This, not `replyTarget`, is what a send reads.** The strip the member can
+   * see and the `reply_to_id` the send carries come from the *same* derivation,
+   * so they cannot disagree — a reply nobody was shown they were sending is
+   * ruled out by construction rather than by an effect syncing state back down
+   * (which would also be a `setState` in an effect, and is what
+   * `react-hooks/set-state-in-effect` is right to refuse).
    *
-   * Keeping the raw id through a transient miss is deliberate: if the parent
-   * comes back into the window, the strip comes back with it, and nothing was
-   * silently discarded in between.
+   * It resolves to `null` only when nothing is staged for *this* channel. A
+   * staged target whose parent is not loaded still resolves — to the
+   * unavailable variant — so it stays visible and dismissable.
    */
   const replyTo = useMemo(() => {
-    if (!replyToId) return null;
-    const parent = channel.messages.find((m) => m.id === replyToId);
-    if (!parent) return null;
+    if (!replyTarget || replyTarget.channelId !== activeChannelId) return null;
+    const parent = channel.messages.find((m) => m.id === replyTarget.messageId);
+    // Staged but not in the loaded window — `author: null` renders
+    // `QuotedMessage`'s unavailable variant. It must NOT collapse to `null`:
+    // the id is still perfectly sendable (the server validates same-channel,
+    // which scoping already guarantees), so dropping the strip would leave the
+    // member with a reply they can neither see nor dismiss, which then either
+    // vanishes from the send or re-attaches when the parent reappears.
+    //
+    // Reachable, not hypothetical, in two ways: root normalization can target a
+    // root older than the one window `useChatChannel` loads (#1571), and a jump
+    // or backfill can re-window the list under a reply already staged.
+    if (!parent) {
+      return { id: replyTarget.messageId, author: null, preview: null };
+    }
     return {
       id: parent.id,
       author: resolveAuthorLabel(parent, nameFor, userId),
       preview: replyPreviewText(parent),
     };
-  }, [channel.messages, replyToId, nameFor, userId]);
+  }, [channel.messages, replyTarget, activeChannelId, nameFor, userId]);
 
   const closeThread = useCallback(() => {
     setThreadParentId(null);
@@ -1084,38 +1145,7 @@ export function ChatShell({
             loadError={channel.loadError}
             onReact={channel.react}
             onUnreact={channel.unreact}
-            // Withheld where a reply could not land, so the control is never
-            // offered against a rule the server will refuse. AC 4:
-            // `spec/behavior/chat/README.md` — "Announcement messages cannot be
-            // replied to in-thread… it holds regardless of permissions", and
-            // `ChatService.sendMessage` 400s through this same
-            // `allowsInThreadReplies` predicate. Two distinct failures without
-            // it: a member in `#announcements` has no composer at all
-            // (`can_post` false), so Reply would visibly do nothing; and a
-            // holder of `announcements:post` DOES get a composer, so Reply
-            // would stage a strip and then fail on send.
-            //
-            // The predicate, not a local `!is_read_only`: it is the same export
-            // the server calls, so client and server cannot drift on which
-            // channels are threadable.
-            //
-            // Built as an explicit `ChannelAccessRecord` rather than spread
-            // from the rail's `ChatChannel`, which carries no
-            // `required_permissions`: the predicate reads only
-            // `is_read_only`, but satisfying its declared shape by hand keeps
-            // the call honest instead of casting past a field the rail has
-            // never modelled.
-            onReply={
-              activeChannel &&
-              allowsInThreadReplies({
-                type: activeChannel.type,
-                member_ids: activeChannel.member_ids ?? null,
-                required_permissions: null,
-                is_read_only: activeChannel.is_read_only ?? null,
-              })
-                ? startReply
-                : undefined
-            }
+            onReply={canReplyHere ? startReply : undefined}
             onOpenThread={openThread}
             onRetry={channel.retry}
             onDiscard={channel.discard}
@@ -1171,7 +1201,7 @@ export function ChatShell({
               // still standing after the message appears in the timeline reads
               // as "your reply didn't send" — and would silently attach itself
               // to whatever the member typed next.
-              setReplyToId(null);
+              setReplyTarget(null);
               return channel.send(body, { replyToId: target, attachments });
             }}
             onSlashDispatch={(command: SlashCommand, args: string) =>

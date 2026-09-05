@@ -34,8 +34,23 @@ vi.mock("@repo/hooks", () => ({
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 import { Composer, composerPlaceholder } from "./composer";
+import { UNAVAILABLE_QUOTE } from "./reply-quote";
 
-function baseProps(overrides: Partial<Parameters<typeof Composer>[0]> = {}) {
+type ComposerProps = Parameters<typeof Composer>[0];
+
+/**
+ * The one cast in this file, and it is here rather than at ten call sites.
+ *
+ * `ComposerProps` is a discriminated union — `replyTo` may only be passed
+ * alongside `onCancelReply`, so a caller cannot render a staged-reply strip
+ * with no way to dismiss it. That contract is worth having on the production
+ * call site, but spreading `{...defaults, ...overrides}` produces a union of
+ * object types that TypeScript will not narrow back to one arm, so every
+ * `render(<Composer {...baseProps(…)} />)` below would fail to typecheck. The
+ * cast is confined to the helper; the union still checks `chat-shell.tsx`,
+ * which is the caller that matters.
+ */
+function baseProps(overrides: Partial<ComposerProps> = {}): ComposerProps {
   return {
     channelId: "chan-1",
     channelName: "general",
@@ -46,7 +61,7 @@ function baseProps(overrides: Partial<Parameters<typeof Composer>[0]> = {}) {
     onTyping: vi.fn(),
     isModuleEnabled: () => true,
     ...overrides,
-  };
+  } as ComposerProps;
 }
 
 function placeholderTextFrom(extensions: unknown[]) {
@@ -171,6 +186,26 @@ describe("Composer staged reply (#489)", () => {
     expect(onCancelReply).toHaveBeenCalledTimes(1);
   });
 
+  it("renders the unavailable variant for a target outside the loaded window", () => {
+    // The strip must still appear: a staged reply the member can neither see
+    // nor dismiss is one that silently rides onto their next message.
+    render(
+      <Composer
+        {...baseProps({
+          replyTo: { id: "msg-1", author: null, preview: null },
+          onCancelReply: vi.fn(),
+        })}
+      />,
+    );
+    // The exact label, not /replying to/i — the unavailable line starts with
+    // the same two words, so a loose matcher matches both and proves neither.
+    expect(screen.getByText("Replying to")).toBeInTheDocument();
+    expect(screen.getByText(UNAVAILABLE_QUOTE)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /cancel reply/i }),
+    ).toBeInTheDocument();
+  });
+
   it("cancels on Escape", async () => {
     const user = userEvent.setup();
     const onCancelReply = vi.fn();
@@ -217,5 +252,52 @@ describe("Composer staged reply (#489)", () => {
     host.dispatchEvent(event);
 
     expect(onCancelReply).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The palette is a second, independent way to invoke a slash command, and it
+ * skipped every refusal the typed path applies. All three checks now come from
+ * one `slashRefusal` helper so the two paths cannot diverge again.
+ */
+describe("Composer slash refusals cover the palette path too (#489)", () => {
+  async function pickFromPalette(props: Record<string, unknown>) {
+    const user = userEvent.setup();
+    const onSlashDispatch = vi.fn(async () => ({ ok: true }));
+    render(<Composer {...baseProps({ onSlashDispatch, ...props })} />);
+    await user.click(screen.getByRole("button", { name: /open slash commands/i }));
+    return { user, onSlashDispatch };
+  }
+
+  it("refuses a staged reply rather than dropping it", async () => {
+    // `dispatchSlash` posts its card through its own controller and takes no
+    // `replyToId`. Dispatching would drop the reply AND leave the strip
+    // standing, so the member's next ordinary message would quote a stranger.
+    const { user, onSlashDispatch } = await pickFromPalette({
+      replyTo: { id: "msg-1", author: "Alice Chen", preview: "the original" },
+      onCancelReply: vi.fn(),
+    });
+
+    await user.click(await screen.findByRole("option", { name: /poll/i }));
+
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
+  it("refuses while offline, as the typed path does", async () => {
+    const { user, onSlashDispatch } = await pickFromPalette({ isOffline: true });
+
+    await user.click(await screen.findByRole("option", { name: /poll/i }));
+
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
+  it("dispatches normally when nothing is staged", async () => {
+    // The other direction: refusing everything would pass both cases above and
+    // ship a palette that never works.
+    const { user, onSlashDispatch } = await pickFromPalette({});
+
+    await user.click(await screen.findByRole("option", { name: /poll/i }));
+
+    expect(onSlashDispatch).toHaveBeenCalled();
   });
 });

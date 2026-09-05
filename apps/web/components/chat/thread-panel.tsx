@@ -66,6 +66,23 @@ export function ThreadPanel({
     return allMessages.filter((message) => message.reply_to_id === parent.id);
   }, [allMessages, parent]);
 
+  /**
+   * The parent's own parent, when the collected message is itself a reply.
+   *
+   * Every row this panel renders has `reply_to_id` set — the replies by
+   * construction, and the parent whenever it sits inside an imported Discord
+   * chain — so `MessageItem` draws a quote on all of them. Leaving
+   * `replyParent` unpassed made every one of those quotes read "Replying to a
+   * message that isn't loaded", each pointing at the row directly above it.
+   * The replies resolve to `parent` trivially; only the parent needs a lookup.
+   */
+  const parentsParent = useMemo(() => {
+    if (!parent?.reply_to_id) return undefined;
+    return (
+      allMessages.find((message) => message.id === parent.reply_to_id) ?? null
+    );
+  }, [allMessages, parent]);
+
   // One batched request for the parent's avatar plus every distinct reply
   // author's, rather than one per row (#1231) — same pattern as the centre
   // timeline, a separate list here.
@@ -157,6 +174,7 @@ export function ThreadPanel({
             }
             viewerId={viewerId}
             showHeader
+            replyParent={parentsParent}
             onReact={onReact}
             onUnreact={onUnreact}
             onEdit={onEdit}
@@ -169,7 +187,7 @@ export function ThreadPanel({
           />
           {replies.length === 0 ? (
             <p className="px-5 py-4 text-[12.5px] text-muted-foreground">
-              No replies yet. Start the thread.
+              No replies yet. Use Reply on the message in the channel.
             </p>
           ) : (
             replies.map((message) => (
@@ -184,6 +202,12 @@ export function ThreadPanel({
                 }
                 viewerId={viewerId}
                 showHeader
+                // Every row in this list was selected by
+                // `reply_to_id === parent.id`, so the parent is known without
+                // a lookup — and passing it is what stops each reply from
+                // captioning itself "Replying to a message that isn't loaded"
+                // above the very message it is quoting.
+                replyParent={parent}
                 onReact={onReact}
                 onUnreact={onUnreact}
                 onEdit={onEdit}

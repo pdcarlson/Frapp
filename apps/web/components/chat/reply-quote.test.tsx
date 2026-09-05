@@ -1,7 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
-import { QuotedMessage, ReplyQuote, replyPreviewText } from "./reply-quote";
+import {
+  QuotedMessage,
+  UNAVAILABLE_QUOTE,
+  replyPreviewText,
+} from "./reply-quote";
 import type { ChatMessage } from "@repo/chat-core/types";
 
 function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
@@ -40,6 +44,34 @@ describe("replyPreviewText", () => {
     expect(replyPreviewText(message({ content: "hey there" }))).toBe(
       "hey there",
     );
+  });
+
+  it("flattens the markdown a message body actually renders", () => {
+    // The body renders through `MessageMarkdown`, so quoting the SOURCE makes
+    // the quote disagree with the message it stands for. Worse, a quote is one
+    // truncated line, so a raw link's URL eats the whole strip and the reader
+    // sees punctuation and a file id instead of the text they remember.
+    expect(
+      replyPreviewText(
+        message({
+          content:
+            "See **the signed** [chapter budget](https://drive.google.com/file/d/1aB/view?usp=sharing) now",
+        }),
+      ),
+    ).toBe("See the signed chapter budget now");
+    expect(replyPreviewText(message({ content: "use `npm ci` first" }))).toBe(
+      "use npm ci first",
+    );
+    expect(replyPreviewText(message({ content: "_really_ urgent" }))).toBe(
+      "really urgent",
+    );
+  });
+
+  it("leaves bare asterisks alone rather than eating them", () => {
+    // Emphasis needs a non-space after the opener; `2 * 3 * 4` is arithmetic,
+    // not italics, and a preview that silently deleted the operators would
+    // misreport what was said.
+    expect(replyPreviewText(message({ content: "2 * 3 * 4" }))).toBe("2 * 3 * 4");
   });
 
   it("collapses newlines, so a multi-paragraph parent stays one line", () => {
@@ -114,20 +146,37 @@ describe("QuotedMessage", () => {
     await user.click(screen.getByRole("button"));
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
-});
 
-describe("ReplyQuote", () => {
-  it("quotes the parent when it is loaded", () => {
-    render(<ReplyQuote parent={message({ content: "the parent" })} author="Alice Chen" />);
-    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
-    expect(screen.getByText("the parent")).toBeInTheDocument();
-  });
-
-  it("says so when the parent is outside the loaded window", () => {
+  it("says so when the quoted message is outside the loaded window", () => {
     // Not an edge case: nothing backfills older history (#1571), so every reply
     // to a message older than the one loaded window lands here. Rendering
     // nothing would make such a reply indistinguishable from a plain message.
-    render(<ReplyQuote parent={null} author="" />);
-    expect(screen.getByText(/isn’t loaded/i)).toBeInTheDocument();
+    render(<QuotedMessage author={null} preview={null} />);
+    expect(screen.getByText(UNAVAILABLE_QUOTE)).toBeInTheDocument();
+  });
+
+  it("never becomes a control when the message is unavailable", () => {
+    // The parent it would navigate to is the thing that is missing, so offering
+    // `onOpen` must not produce a button that opens an empty panel.
+    render(
+      <QuotedMessage author={null} preview={null} onOpen={vi.fn()} />,
+    );
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("shares one rule and indent across both variants", () => {
+    // The unavailable branch used to re-type the class string, in the one file
+    // whose stated purpose is that the two cannot drift — and it is the branch
+    // nobody re-screenshots, because it only appears for old parents.
+    const { container: loaded } = render(
+      <QuotedMessage author="Alice Chen" preview="hey" />,
+    );
+    const { container: missing } = render(
+      <QuotedMessage author={null} preview={null} />,
+    );
+    for (const cls of ["border-l-2", "border-border", "pl-2", "text-[12.5px]"]) {
+      expect(loaded.firstElementChild).toHaveClass(cls);
+      expect(missing.firstElementChild).toHaveClass(cls);
+    }
   });
 });

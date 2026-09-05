@@ -263,3 +263,91 @@ describe("ThreadPanel edit/delete wiring", () => {
     expect(onDelete).toHaveBeenCalledWith("reply-1");
   });
 });
+
+/**
+ * #489. The panel renders `MessageItem`, which grew an unconditional quote
+ * keyed on `message.reply_to_id`. Every row this panel shows has that field
+ * set — the replies by construction (`allMessages.filter(m => m.reply_to_id
+ * === parent.id)`), and the parent whenever it sits inside an imported Discord
+ * chain — so a panel that does not pass `replyParent` captions every one of
+ * them "Replying to a message that isn't loaded", each pointing at the row
+ * directly above it.
+ */
+describe("ThreadPanel reply quotes (#489)", () => {
+  function renderPanel(parent: ChatMessage, allMessages: ChatMessage[]) {
+    return render(
+      <ThreadPanel
+        channelId={parent.channel_id}
+        parent={parent}
+        allMessages={allMessages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        onClose={vi.fn()}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+      />,
+    );
+  }
+
+  it("does not claim a reply's parent is unloaded when it is the row above", () => {
+    const parent = message({ id: "parent-1", content: "the original" });
+    const reply = message({
+      id: "reply-1",
+      content: "agreed",
+      reply_to_id: "parent-1",
+      client_message_id: "client-2",
+    });
+
+    renderPanel(parent, [parent, reply]);
+
+    // Twice, and that is the fix: once as the parent's own body, once as the
+    // preview inside the reply's quote. Before this it appeared once, and the
+    // reply carried "Replying to a message that isn't loaded" instead.
+    expect(screen.getAllByText("the original")).toHaveLength(2);
+    expect(screen.getByText("agreed")).toBeInTheDocument();
+    expect(screen.queryByText(/isn’t loaded/i)).not.toBeInTheDocument();
+  });
+
+  it("resolves the collected message's own parent when it is itself a reply", () => {
+    // Root normalization is one hop, and `linkReplyPairs` writes genuinely
+    // nested chains during an archive import — so the panel's header row can be
+    // a mid-chain node whose parent is sitting in the same window.
+    const grandparent = message({ id: "gp-1", content: "the first word" });
+    const parent = message({
+      id: "parent-1",
+      content: "a middle reply",
+      reply_to_id: "gp-1",
+      client_message_id: "client-2",
+    });
+
+    renderPanel(parent, [grandparent, parent]);
+
+    expect(screen.getByText("the first word")).toBeInTheDocument();
+    expect(screen.queryByText(/isn’t loaded/i)).not.toBeInTheDocument();
+  });
+
+  it("still says so when the collected message's parent really is unloaded", () => {
+    // The honest case must survive the fix: `undefined` (not a reply) and
+    // `null` (a reply whose parent is not loaded) stay distinguishable.
+    const parent = message({
+      id: "parent-1",
+      content: "a middle reply",
+      reply_to_id: "aged-out",
+    });
+
+    renderPanel(parent, [parent]);
+
+    expect(screen.getByText(/isn’t loaded/i)).toBeInTheDocument();
+  });
+
+  it("does not tell the member to start a thread it has no composer for", () => {
+    // The panel is a read-only collector reached from a reply's quote; replies
+    // are authored on the row in the centre timeline.
+    const parent = message({ id: "parent-1" });
+
+    renderPanel(parent, [parent]);
+
+    expect(screen.queryByText(/start the thread/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/use reply on the message/i)).toBeInTheDocument();
+  });
+});

@@ -9,7 +9,7 @@ import { CHIP, CHIP_HIT_AREA } from "./chip";
 import { BookmarkGlyph, PinGlyph, ThreadGlyph } from "./chat-glyphs";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { MessageAttachments } from "./message-attachments";
-import { ReplyQuote } from "./reply-quote";
+import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import { MessageRenderer, rendersAsBubble } from "./renderers";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
@@ -300,13 +300,12 @@ export function MessageItem({
    */
   const replyQuote =
     message.reply_to_id && !message.is_deleted ? (
-      <ReplyQuote
-        parent={replyParent ?? null}
+      <QuotedMessage
+        className="mb-1"
         author={
-          replyParent
-            ? resolveAuthorLabel(replyParent, nameFor, viewerId)
-            : ""
+          replyParent ? resolveAuthorLabel(replyParent, nameFor, viewerId) : null
         }
+        preview={replyParent ? replyPreviewText(replyParent) : null}
         onOpen={
           replyParent && onOpenThread
             ? () => onOpenThread(replyParent)
