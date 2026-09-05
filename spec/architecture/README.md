@@ -1568,7 +1568,7 @@ The Signet answer is the one approach the measurements left standing — surface
 
 ## 16. Mobile Chat Architecture
 
-The Expo app opens directly into chat and shares web's realtime transport, so reactions and presence behave the same on both (ADR-10). It is **not** at feature parity beyond that — the subsections below and [`../behavior/chat/README.md`](../behavior/chat/README.md#message-kinds-and-actions) § Message Kinds and Actions own what is actually built. The hot-path client and realtime manager are shared across platforms as `@repo/chat-core`, with the platform-specific layers injected through its adapter ports (`KeyValueStore`, `NetworkState`, `OutboxStore`) rather than forked; the rich-message renderer registry is shared as a contract (`@repo/chat-integrations`) that `apps/web` binds framework-specific renderers to — `apps/mobile` does not consume it and renders its cards directly.
+The Expo app opens directly into chat and shares web's realtime transport, so presence is the same on both (ADR-10). It is **not** at feature parity beyond that — the subsections below and [`../behavior/chat/README.md`](../behavior/chat/README.md#message-kinds-and-actions) § Message Kinds and Actions own what is actually built. The hot-path client and realtime manager are shared across platforms as `@repo/chat-core`, with the platform-specific layers injected through its adapter ports (`KeyValueStore`, `NetworkState`, `OutboxStore`) rather than forked; the rich-message renderer registry is shared as a contract (`@repo/chat-integrations`) that `apps/web` binds framework-specific renderers to — `apps/mobile` does not consume it and renders its cards directly.
 
 ### Storage layer (the Dexie analogue)
 
