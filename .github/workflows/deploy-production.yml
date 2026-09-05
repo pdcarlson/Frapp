@@ -219,46 +219,51 @@ jobs:
             node scripts/ci/production-guardrails.mjs --preflight
           fi
 
+      # ── Both local composite actions run BEFORE the detach, deliberately ──
+      #
+      # `uses: ./…` resolves from the runner WORKSPACE at step-execution time,
+      # so a local action called after `git checkout --detach "$DEPLOY_SHA"`
+      # below is loaded from the DEPLOYED COMMIT's tree rather than from the
+      # trusted ref. Two consequences, both bad, and neither visible until a
+      # production dispatch:
+      #
+      #   * Deploying any commit from before these actions existed dies with
+      #     "Can't find 'action.yml'". That is the ROLLBACK path
+      #     (DB_ROLLBACK_PLAYBOOK.md § Deploying an OLDER commit), so it would
+      #     break at exactly the moment it is reached for.
+      #   * For a newer commit it still runs, but off THAT commit's copy of
+      #     `supabase-cli/action.yml` — so the pin the production apply uses is
+      #     whatever was recorded at `DEPLOY_SHA`, silently diverging from the
+      #     one `migration-replay` rehearsed with. That is the drift the action
+      #     exists to remove, reintroduced at the one site that matters most.
+      #
+      # Running them here also matches this job's existing trust argument: the
+      # validator above deliberately runs from already-trusted code, and so now
+      # do these. Both steps are tree-independent — one exports environment
+      # variables, the other puts a binary on PATH — so neither cares that the
+      # workspace moves underneath it afterwards.
+      #
+      # NOTE: the Infisical slug for production is `prod`, not `production`.
+      - name: Inject production secrets from Infisical
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "prod"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Setup Supabase CLI
+        uses: ./.github/actions/supabase-cli
+
       # Proven to be an ancestor of main, so this is already-reviewed code.
+      #
+      # Nothing after this point may call a local `./.github/actions/…` action —
+      # see the block above. `infisical-secrets-action.test.mjs` enforces it.
       - name: Check out the commit being deployed
         env:
           DEPLOY_SHA: ${{ inputs.sha }}
         run: |
           git checkout --detach "$DEPLOY_SHA"
           git --no-pager log -1 --format='Deploying %H%n%s'
-
-      - name: Verify Infisical credentials are configured
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured for the production environment. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-          case "$CLIENT_ID$CLIENT_SECRET" in
-            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
-          esac
-
-      # NOTE: the Infisical slug for production is `prod`, not `production`.
-      - name: Inject production secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.12
-        with:
-          method: "universal"
-          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "prod"
-          secret-path: "/"
-          include-imports: true
-
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v2
-        with:
-          version: 2.77.0
 
       # Only what the migrations need a real server for. The exclusion list is
       # copied verbatim from migration-drift-gate.yml — a different list is a
@@ -273,8 +278,8 @@ jobs:
       #
       # REPLAY_SUPABASE_CLI is not optional. Without it the script falls back to
       # `npx --yes supabase` and fetches whatever is latest, while the apply
-      # below uses the pinned 2.77.0 from PATH — and "the same CLI code path" is
-      # the entire premise of the rehearsal.
+      # below uses the pinned CLI on PATH (`.github/actions/supabase-cli`) — and
+      # "the same CLI code path" is the entire premise of the rehearsal.
       - name: Rehearse the migration against production's applied state
         id: replay
         env:
