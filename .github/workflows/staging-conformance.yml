@@ -75,25 +75,6 @@ jobs:
         with:
           node-version: 20
 
-      # Mirrors deploy-api.yml's preflight. A missing credential here would
-      # otherwise present as a 401 from the injection step, which reads as
-      # "revoked" when it is usually "never set". See #696.
-      - name: Verify Infisical credentials are configured
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::warning::Infisical credentials are not configured. Missing or empty:$MISSING. Set them as repository secrets — see docs/internal/environment/SECRETS_MANAGEMENT.md."
-          fi
-          case "$CLIENT_ID$CLIENT_SECRET" in
-            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
-          esac
-          echo "Preflight complete; a 401 from the next step means the credentials were rejected, not missing."
-
       # continue-on-error is load-bearing, not laziness. A revoked or rotated
       # machine identity — the #696/#763 incident this workflow exists to catch —
       # makes this action exit non-zero. Failing the job here would kill the run
@@ -101,17 +82,22 @@ jobs:
       # raise the alert, so the single most likely drift class would produce a
       # red run and no issue. Letting it through means the script runs, finds the
       # credential rejected, and files the alert that says so.
+      #
+      # `on-missing-credentials: warn` is the other half of that argument and is
+      # required rather than stylistic. `continue-on-error` stops a failed step
+      # failing the JOB, but a step that fails INSIDE a composite action skips
+      # that action's remaining steps — so a hard-failing preflight would skip
+      # the injection itself, and a missing credential would become
+      # indistinguishable from a rejected one. That distinction is the whole
+      # report. See the input's own comment in the action.
       - name: Inject staging secrets from Infisical
         continue-on-error: true
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "staging"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "staging"
-          secret-path: "/"
-          include-imports: true
+          on-missing-credentials: warn
 
       - name: Assert staging conformance
         env:
