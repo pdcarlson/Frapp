@@ -4,7 +4,11 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '@repo/validation';
+import {
+  MAX_ARCHIVE_CHAPTER_BYTES,
+  MAX_ARCHIVE_EXPORT_PART_BYTES,
+  MAX_ARCHIVE_IMPORT_BYTES,
+} from '@repo/validation';
 import { DiscordImportService } from './discord-import.service';
 import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
@@ -84,6 +88,18 @@ async function build(current: DiscordImport = job()) {
     ),
     findFiles: jest.fn(async () => []),
     markFilesUploaded: jest.fn(async () => 1),
+    // Default: the chapter's archive is empty, so the projection is just the
+    // batch in front of it. The quota tests override this per case.
+    projectedArchiveBytes: jest.fn(
+      async (
+        _chapterId: string,
+        _importId: string,
+        files: { relative_path: string; byte_size: number }[],
+      ) => {
+        const total = files.reduce((sum, file) => sum + file.byte_size, 0);
+        return { importBytes: total, chapterBytes: total };
+      },
+    ),
     claimNextRunnable: jest.fn(),
     renewLease: jest.fn(),
     releaseLease: jest.fn(),
@@ -270,6 +286,79 @@ describe('DiscordImportService — upload URLs', () => {
         ),
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses a batch that would take the import past its byte ceiling', async () => {
+    await build();
+    repo.projectedArchiveBytes.mockResolvedValue({
+      importBytes: MAX_ARCHIVE_IMPORT_BYTES + 1,
+      chapterBytes: MAX_ARCHIVE_IMPORT_BYTES + 1,
+    });
+
+    await expect(
+      service.requestUploadUrls(IMPORT_ID, CHAPTER, [file()]),
+    ).rejects.toThrow(/limit for one import/);
+  });
+
+  it('refuses a batch that would take the chapter past its byte ceiling', async () => {
+    await build();
+    // Under the per-import ceiling, over the chapter's — the second import that
+    // would tip a chapter which never purged its first.
+    repo.projectedArchiveBytes.mockResolvedValue({
+      importBytes: 1024,
+      chapterBytes: MAX_ARCHIVE_CHAPTER_BYTES + 1,
+    });
+
+    await expect(
+      service.requestUploadUrls(IMPORT_ID, CHAPTER, [file()]),
+    ).rejects.toThrow(/Delete an old import/);
+  });
+
+  it('registers nothing and mints nothing when the quota refuses', async () => {
+    // The ordering that makes this a quota rather than a report: a refused
+    // batch must not leave manifest rows behind, and must not hand back a
+    // signed URL the caller could still PUT to.
+    await build();
+    repo.projectedArchiveBytes.mockResolvedValue({
+      importBytes: MAX_ARCHIVE_IMPORT_BYTES + 1,
+      chapterBytes: MAX_ARCHIVE_IMPORT_BYTES + 1,
+    });
+
+    await expect(
+      service.requestUploadUrls(IMPORT_ID, CHAPTER, [file()]),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(repo.createFiles).not.toHaveBeenCalled();
+    expect(storage.getSignedUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it('allows a batch that lands exactly on the ceiling', async () => {
+    // `>` not `>=`: a chapter whose archive is precisely at the limit has not
+    // exceeded it, and an off-by-one here would refuse a legitimate final file.
+    await build();
+    repo.projectedArchiveBytes.mockResolvedValue({
+      importBytes: MAX_ARCHIVE_IMPORT_BYTES,
+      chapterBytes: MAX_ARCHIVE_CHAPTER_BYTES,
+    });
+
+    await expect(
+      service.requestUploadUrls(IMPORT_ID, CHAPTER, [file()]),
+    ).resolves.toHaveLength(1);
+  });
+
+  it('projects the batch it is about to register, declared sizes and all', async () => {
+    // The projection has to see this batch — a quota computed from stored rows
+    // alone would let every single request through, because the bytes it is
+    // deciding about have not been written yet.
+    await build();
+    await service.requestUploadUrls(IMPORT_ID, CHAPTER, [
+      file({ relative_path: 'part-000.json', byte_size: 111 }),
+      file({ relative_path: 'part-001.json', part_index: 1, byte_size: 222 }),
+    ]);
+
+    expect(repo.projectedArchiveBytes).toHaveBeenCalledWith(CHAPTER, IMPORT_ID, [
+      { relative_path: 'part-000.json', byte_size: 111 },
+      { relative_path: 'part-001.json', byte_size: 222 },
+    ]);
   });
 
   it('produces a key the storage path guard accepts, even from a traversal attempt', async () => {

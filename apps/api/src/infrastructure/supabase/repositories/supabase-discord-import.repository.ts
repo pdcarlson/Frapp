@@ -268,6 +268,49 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     return (data ?? []).length;
   }
 
+  async projectedArchiveBytes(
+    chapterId: string,
+    importId: string,
+    files: { relative_path: string; byte_size: number }[],
+  ): Promise<{ importBytes: number; chapterBytes: number }> {
+    // The two arrays are paired positionally by `unnest … with ordinality` in
+    // SQL, so they must be built in one pass over the same list — a `.map` each
+    // would pair correctly today and silently mis-pair the moment either side
+    // grew a filter.
+    const relativePaths: string[] = [];
+    const byteSizes: number[] = [];
+    for (const file of files) {
+      relativePaths.push(file.relative_path);
+      byteSizes.push(file.byte_size);
+    }
+
+    const { data, error } = await this.supabase.rpc(
+      'discord_import_projected_archive_bytes',
+      {
+        p_chapter_id: chapterId,
+        p_import_id: importId,
+        p_relative_paths: relativePaths,
+        p_byte_sizes: byteSizes,
+      },
+    );
+    if (error) throw error;
+
+    // A `returns table` function comes back as an array. It is always one row
+    // here — the body is a bare aggregate select — but an empty result must
+    // read as "no answer", never as zero: zero is the one value that would let
+    // an over-quota import through.
+    const row = data?.[0];
+    if (!row) {
+      throw new Error(
+        'discord_import_projected_archive_bytes returned no row; refusing to treat that as zero bytes.',
+      );
+    }
+    return {
+      importBytes: Number(row.import_bytes ?? 0),
+      chapterBytes: Number(row.chapter_bytes ?? 0),
+    };
+  }
+
   // ── the worker's lease ────────────────────────────────────────────────────
 
   async claimNextRunnable(

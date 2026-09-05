@@ -134,6 +134,27 @@ export interface IDiscordImportRepository {
     at: string,
   ): Promise<number>;
 
+  /**
+   * What this import and this chapter would weigh once `files` are registered.
+   *
+   * The read behind the archive quota (#1243). Two subtleties it owns so no
+   * caller has to, both documented in full in the migration:
+   *
+   * - `purged` imports are excluded. The purge sweeps their storage objects but
+   *   leaves their manifest rows, so counting them would make the quota ratchet
+   *   one way and never release.
+   * - Rows `files` will upsert over are not counted twice, so a resumed upload
+   *   is measured against what it actually adds rather than against itself.
+   *
+   * Returns bytes, not a verdict: the ceilings live in `@repo/validation` with
+   * the rest of the archive limits, and the service decides.
+   */
+  projectedArchiveBytes(
+    chapterId: string,
+    importId: string,
+    files: { relative_path: string; byte_size: number }[],
+  ): Promise<{ importBytes: number; chapterBytes: number }>;
+
   // ── the worker's lease ────────────────────────────────────────────────────
   /**
    * Claim one runnable job, or null when there is nothing to do or the race was

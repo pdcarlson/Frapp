@@ -9,7 +9,9 @@ import {
 } from '@nestjs/common';
 import { basename } from 'node:path';
 import {
+  MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_EXPORT_PART_BYTES,
+  MAX_ARCHIVE_IMPORT_BYTES,
   contentTypeByExtension,
   fileExtension,
   isAllowedUploadMime,
@@ -52,6 +54,21 @@ import { DiscordOAuthService } from './discord-oauth.service';
 
 /** How many files one mint request may register. */
 export const MAX_UPLOAD_URL_BATCH = 100;
+
+const BYTES_PER_GIB = 1024 * 1024 * 1024;
+
+/**
+ * Byte count as GiB for an admin-facing message.
+ *
+ * One decimal place, and trailing `.0` dropped so the two ceilings read as
+ * "20 GB" / "50 GB" rather than "20.0 GB". Labelled GB because that is what an
+ * admin looking at their own export in a file browser sees, even though the
+ * arithmetic is binary — the same convention `MAX_UPLOAD_LABEL` uses.
+ */
+function formatGiB(bytes: number): string {
+  const gib = bytes / BYTES_PER_GIB;
+  return `${gib.toFixed(1).replace(/\.0$/, '')} GB`;
+}
 
 /**
  * Discovery warnings kept on the job row.
@@ -217,6 +234,7 @@ export class DiscordImportService {
     }
 
     const rows = files.map((file) => this.toManifestRow(job, chapterId, file));
+    await this.assertWithinArchiveQuota(job, chapterId, rows);
     const created = await this.importRepo.createFiles(rows);
 
     // Signed with `upsert`, because re-requesting a URL for a file the admin
@@ -697,6 +715,69 @@ export class DiscordImportService {
     ) {
       throw new ConflictException(
         `This import is ${job.status} and can no longer be changed.`,
+      );
+    }
+  }
+
+  /**
+   * Refuse a batch that would take this import, or this chapter, past its
+   * archive ceiling (#1243).
+   *
+   * **This is a guard on declared sizes, not a byte-level control, and it
+   * cannot be anything else here.** `byte_size` arrives from the client, and
+   * the API never sees the upload: the browser PUTs straight to storage through
+   * a signed URL, which is what makes a multi-gigabyte archive tractable at all
+   * (see `requestUploadUrls`). So a caller that declares 1 byte and PUTs 100 MB
+   * walks past this, and no amount of work at this seam changes that.
+   *
+   * The two places a *real* size exists are a reconciliation against storage
+   * listings, and `start()`. `start()` is worthless as a storage control —
+   * by the time it runs the objects are already stored, so refusing there
+   * protects nothing. The reconciliation sweep is the real control and is
+   * tracked separately; it is the same prefix-walking shape as the
+   * `chat-archive` retention sweep in #1246.
+   *
+   * What this DOES stop is everything short of a deliberate lie: the runaway
+   * wizard, the retried import that never purged its predecessor, and the
+   * mint-100-URLs loop the issue describes, which has no reason to under-report
+   * because under-reporting also breaks the import it is trying to run.
+   *
+   * Checked BEFORE `createFiles`, so a refused batch registers nothing and
+   * mints nothing. The projection deliberately lives in SQL — see the migration
+   * for why a resumed upload must not be counted against itself, and why
+   * `purged` imports must not be counted at all.
+   */
+  private async assertWithinArchiveQuota(
+    job: DiscordImport,
+    chapterId: string,
+    rows: Omit<DiscordImportFile, 'id' | 'created_at' | 'uploaded_at'>[],
+  ): Promise<void> {
+    const { importBytes, chapterBytes } =
+      await this.importRepo.projectedArchiveBytes(
+        chapterId,
+        job.id,
+        rows.map((row) => ({
+          relative_path: row.relative_path,
+          byte_size: row.byte_size ?? 0,
+        })),
+      );
+
+    // Import ceiling first: it is the smaller of the two, so it is the one an
+    // ordinary oversized export trips, and naming it points the admin at the
+    // export rather than at their other imports.
+    if (importBytes > MAX_ARCHIVE_IMPORT_BYTES) {
+      throw new BadRequestException(
+        `This import would hold ${formatGiB(importBytes)} of files, past the ${formatGiB(
+          MAX_ARCHIVE_IMPORT_BYTES,
+        )} limit for one import. Re-export without media, or split the server across separate imports.`,
+      );
+    }
+
+    if (chapterBytes > MAX_ARCHIVE_CHAPTER_BYTES) {
+      throw new BadRequestException(
+        `Your chapter's archive would hold ${formatGiB(chapterBytes)} of files, past its ${formatGiB(
+          MAX_ARCHIVE_CHAPTER_BYTES,
+        )} limit. Delete an old import to free space, then continue.`,
       );
     }
   }

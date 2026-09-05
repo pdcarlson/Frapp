@@ -206,6 +206,26 @@ export interface Database {
           breakdown_by_category: Record<string, number>;
         }[];
       };
+      /**
+       * `20260905010000` (#1243). What one chapter and one import would weigh
+       * in the `chat-archive` bucket once a batch of files is registered —
+       * excluding `purged` imports, whose objects are gone but whose manifest
+       * rows survive, and excluding the rows the incoming batch will upsert
+       * over. Returns a single row.
+       */
+      discord_import_projected_archive_bytes: {
+        Args: {
+          p_chapter_id: string;
+          p_import_id: string;
+          p_relative_paths: string[];
+          p_byte_sizes: number[];
+        };
+        Returns: {
+          /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
+          import_bytes: number;
+          chapter_bytes: number;
+        }[];
+      };
       /** `20260602210000` — `returns setof tasks`. */
       confirm_task_completion: {
         Args: { p_task_id: string; p_chapter_id: string };
