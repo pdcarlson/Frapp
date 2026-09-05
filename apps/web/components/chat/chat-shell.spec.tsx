@@ -977,7 +977,7 @@ describe("ChatShell bookmark write failure (#462)", () => {
  * **root** message per `spec/behavior/chat/README.md` ("Replying to a reply
  * references the root message (no deep nesting)").
  *
- * These live here rather than in `composer.test.tsx` because jsdom renders no
+ * These live here rather than in `composer.spec.tsx` because jsdom renders no
  * ProseMirror view — `useEditor` is stubbed to `null` there, so `Composer`'s
  * own `submit()` returns on its first line and no test can drive a real send
  * through it. The seam that *is* drivable is this one.

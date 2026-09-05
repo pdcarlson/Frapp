@@ -135,6 +135,24 @@ const apiLayerRules = [
     to: { path: "^src/(interface|application)/" },
   },
   {
+    name: "api-domain-by-subpath",
+    severity: "error",
+    comment:
+      "The domain layer is imported by its `#domain/*` subpath (declared in " +
+      "apps/api/package.json \"imports\"), never by climbing. The three rules above cannot " +
+      "see the difference — both spellings resolve to the same module, so every layer edge " +
+      "looks identical either way, and tsc is indifferent too. This rule sees it because " +
+      "dependency-cruiser tags a subpath edge `aliased-subpath-import` and a relative edge " +
+      "not, which also means it covers the forms a lint rule on the specifier string misses: " +
+      "dynamic import(), require(), and `import(\"...\").T` type positions. " +
+      "src/domain/ importing itself is exempt — there is no subpath for an intra-domain edge. " +
+      "test/ is out of scope by construction (this cruise is rooted at the workspace and the " +
+      "rule is anchored to ^src/): those files reach every layer as ../src/<layer>/ and use no " +
+      "subpath at all, which is its own consistent convention.",
+    from: { path: "^src/", pathNot: "^src/domain/" },
+    to: { path: "^src/domain/", dependencyTypesNot: ["aliased-subpath-import"] },
+  },
+  {
     name: "api-application-not-to-interface",
     severity: "error",
     comment:
