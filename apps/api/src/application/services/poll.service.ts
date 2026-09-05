@@ -241,18 +241,40 @@ export class PollService {
 
     const metadata = message.metadata as PollMetadata;
     const options = metadata.options ?? [];
-    const votes = await this.voteRepo.findByMessage(messageId);
+
+    // Tally in Postgres, not here: the same `get_poll_vote_option_totals` RPC
+    // `listPolls` uses, called with this one message id. Reading every
+    // `poll_votes` row back to count them cost O(votes) on the wire and
+    // O(options × votes) to scan — a meeting poll in a large chapter is
+    // thousands of rows to answer a handful of integers. Unlike `listPolls`,
+    // a failed aggregate is NOT swallowed here: a detail view that renders
+    // every option at zero is indistinguishable from a real result, so the
+    // error propagates as it did when this read rows.
+    //
+    // The two reads need nothing from each other and both run behind the one
+    // channel gate above, so they go concurrently rather than costing this
+    // endpoint two serial round trips — a poll posted to a channel opens as a
+    // burst of detail views, not one at a time.
+    const [totals, userVoteList] = await Promise.all([
+      this.voteRepo.aggregateOptionTotalsByMessages([messageId]),
+      this.voteRepo.findByMessageAndUser(messageId, userId),
+    ]);
+
+    // Scoped to this poll before keying on `option_index` alone: the RPC takes
+    // a list, and a later caller widening it must not silently fold another
+    // poll's tallies into this one.
+    const countsByOption = new Map(
+      totals
+        .filter((row) => row.message_id === messageId)
+        .map((row) => [row.option_index, row.vote_count]),
+    );
 
     const results = options.map((optionText, optionIndex) => ({
       optionIndex,
       optionText,
-      voteCount: votes.filter((v) => v.option_index === optionIndex).length,
+      voteCount: countsByOption.get(optionIndex) ?? 0,
     }));
 
-    const userVoteList = await this.voteRepo.findByMessageAndUser(
-      messageId,
-      userId,
-    );
     const userVotes = userVoteList.map((v) => v.option_index);
 
     return {
