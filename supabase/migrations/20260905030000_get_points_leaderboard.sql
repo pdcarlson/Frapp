@@ -26,10 +26,21 @@
 -- quietly changed under a performance fix. Tracked in #1694, which also carries
 -- the shared bound-resolver that would make the drift unrepresentable.
 --
--- Every column reference is qualified with the `pt.` alias: the RETURNS TABLE
--- OUT parameters are named `user_id` and `total`, so a bare `user_id` would be
--- ambiguous against the column of the same name, and a bare `total` in ORDER BY
--- would resolve to the OUT parameter rather than the aggregate.
+-- Every column reference is qualified with the `pt.` alias. RETURNS TABLE makes
+-- `user_id` and `total` plpgsql OUT parameters, and an unqualified `user_id` in
+-- the SELECT list or GROUP BY is then genuinely ambiguous against the column of
+-- the same name. Verified rather than assumed: it fails with
+-- `column reference "user_id" is ambiguous ... It could refer to either a
+-- PL/pgSQL variable or a table column` — and only at CALL time, since
+-- CREATE FUNCTION on a plpgsql body checks syntax and not identifier
+-- resolution. That is why the PGlite gate now calls this function instead of
+-- merely applying the migration.
+--
+-- ORDER BY is the exception and is NOT a hazard: a bare `total` there binds to
+-- the SELECT list's output alias, not to the OUT parameter, so
+-- `order by total desc` is correct and returns the same board. Also verified.
+-- `sum(pt.amount)` is used anyway, because it says what it sorts by without
+-- depending on that resolution rule.
 
 -- No new index ships with this function. The two existing ones already serve
 -- both shapes: idx_point_transactions_chapter_user for the unbounded 'all'

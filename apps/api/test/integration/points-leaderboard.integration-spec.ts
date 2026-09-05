@@ -220,10 +220,12 @@ describeIntegration('get_points_leaderboard against live PostgREST', () => {
 
   it('resolves and returns rows at all — the function body actually runs', async () => {
     // The migration only proves this parses. `RETURNS TABLE (user_id, total)`
-    // makes both names OUT parameters that collide with `point_transactions`'
-    // own `user_id` column and with the `sum()` alias, and plpgsql resolves
-    // that at call time. An unqualified reference would 500 here and nowhere
-    // else in the test suite.
+    // makes `user_id` a plpgsql OUT parameter that collides with
+    // `point_transactions`' own column of that name, and plpgsql resolves it
+    // only at call time — an unqualified reference raises "column reference
+    // \"user_id\" is ambiguous" here and nowhere earlier. (`total` in ORDER BY
+    // is not part of that hazard: a bare name there binds to the SELECT
+    // alias.)
     const rows = await leaderboard(fixture.chapterId);
     expect(rows.length).toBeGreaterThan(0);
   });
