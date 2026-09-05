@@ -30,12 +30,16 @@ Examples:
 - `refactor: switch api auth to supabase`
 - `docs(guides): add docker guide`
 
-Types:
+Types — this list is canonical; `CONTRIBUTING.md` points here rather than
+restating it:
 
 - `feat` — new user-visible feature
 - `fix` — bug fix
 - `refactor` — code change that doesn't alter behavior
 - `docs` — documentation only
+- `test` — adding or changing tests
+- `ci` — workflows, CI scripts, and gates
+- `style` — formatting only, no behavior change
 - `chore` — tooling, config, or misc maintenance
 
 ## 3. Spec-first development
@@ -152,6 +156,6 @@ In CI, we also run:
 
 ### What CI checks
 
-No check requires you to touch a doc — the one that did was deleted in #1597 because it could only see that *some* doc moved, not whether it was the right one, so it was cheapest to satisfy with filler. What CI does check is that cited paths resolve, files sit in a declared home, and hand-copied rosters match their source.
+No check requires you to touch a doc — the one that did was deleted in #1597 because it could only see that *some* doc moved, not whether it was the right one, so it was cheapest to satisfy with filler. What CI does check is narrow: `link-check` resolves markdown links and heading anchors, and `env-slugs` catches an Infisical environment slug that does not exist. Whether a doc's claims are *true* is reviewed, not gated — by the docs angle in [`diff-review`](../../.claude/skills/diff-review/SKILL.md), against the standard.
 
 See [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md).

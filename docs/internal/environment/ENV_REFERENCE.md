@@ -369,11 +369,12 @@ Six names were missing from this enumeration until #1167 — the five Sentry one
 the tables above it. `EXPO_PUBLIC_WEB_SECURE_STORE` was absent from this file entirely, documented only in
 [`demo-data.md`](../../guides/demo-data.md); it is the reason the count moved by four rather than the three
 #1167 estimated. Worth stating plainly, because the set's whole
-value is being exhaustive: **nothing checks this list.** `check:doc-tables` compares hand-copied tables
-against an in-repo source (see [`DOCS_CI.md`](../ci-cd/DOCS_CI.md) § Rosters for what it covers), and
-there is no source of truth for env vars for it to compare against — so no gate asserts the set below.
-Note the `doc-tables` **job** does run `check-env-slugs.mjs` over this file, but that only checks that
-every Infisical environment slug named here exists; it says nothing about which variables are listed. Adding a prefixed variable without adding it here fails no CI job, which is how the previous
+value is being exhaustive: **nothing checks this list.** No gate asserts the set below, because there
+is no in-repo source of truth for env var *names* to compare it against. That is now doubly settled
+rather than a gap waiting on tooling: `check:doc-tables` — the roster gate that compared hand-copied
+tables against the sources that *do* exist — has itself been deleted. The `env-slugs` job does run
+`check-env-slugs.mjs` over this file, but that only checks that every Infisical environment slug
+named here exists; it says nothing about which variables are listed. Adding a prefixed variable without adding it here fails no CI job, which is how the previous
 three survived.
 
 `SUPABASE_AUTH_BYPASS` is the one **unprefixed** entry in the `apps/web` table: it is read in

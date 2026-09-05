@@ -36,7 +36,7 @@ with green CI. The `production` branch that used to occupy this table was retire
 
 ### Prerequisites
 
-- Node.js v18+
+- Node.js v20+ (CI, `apps/api/Dockerfile` and the root `engines` field all pin the same floor)
 - npm v10+
 - Docker available to your shell (Docker Desktop with **WSL integration** on Windows/WSL, or Docker Engine on Linux)
 - Supabase CLI (`npx supabase`)
@@ -159,8 +159,11 @@ or only reports are in
 [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
 **§ Required Status Checks** — the single hand-kept copy of the `CI_CHECKS` / `DOCS_CHECKS` /
 `DRIFT_CHECKS` arrays in
-[`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs), and the one
-`npm run check:doc-tables` asserts. What follows is the CI *model* those checks implement.
+[`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs). **Nothing asserts
+that copy.** `npm run check:doc-tables` used to compare the two; it was deleted along with the other
+docs gates, so the roster now stays true only because whoever edits the arrays remembers to edit the
+runbook in the same change. Where they disagree, `required-checks.mjs` is the source and the runbook
+is the stale one. What follows is the CI *model* those checks implement.
 
 `web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
 
@@ -198,15 +201,30 @@ Two consequences worth holding together:
 - **`check-migration-drift.yml` deliberately still reads its refs from Infisical.** Pointing it at the
   committed file too would make the pair agree by construction, and the fence would assert nothing.
 
-### Additional Docs Checks
+### Additional checks outside `ci.yml`
 
-`docs-structure`, `doc-paths`, `doc-refs` and `doc-tables` run in `.github/workflows/docs.yml`;
+`.github/workflows/docs.yml` has exactly one job, `env-slugs`, running
+[`scripts/check-env-slugs.mjs`](../../scripts/check-env-slugs.mjs) — it asserts that every Infisical
+environment slug it reads names a slug that exists, over the files and directories the script's own
+`SCAN_ROOTS` lists and nowhere else. `.github/workflows/links.yml` has exactly one job,
+`link-check` — lychee, offline, internal markdown links and heading anchors.
 `migration-order`, `migration-drift` and `migration-replay` run in
 `.github/workflows/migration-drift-gate.yml`. Which of them are required, what each validates, and
 why `migration-drift` was demoted out of `DRIFT_CHECKS` are in
 [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
-**§ Required Status Checks**; the report-only-then-promote rollout each docs gate goes through is in
+**§ Required Status Checks**; what each surviving job does is in
 [`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md).
+
+Four docs gates used to run here — `docs-structure`, `doc-paths`, `doc-refs` and `doc-tables` — and
+all four are **deleted**, with their scripts, their allowlists and their `check:doc-*` npm scripts.
+`doc-paths` was the only one ever promoted to required, which is why `DOCS_CHECKS` is now an empty
+array; the comment on that array in
+[`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs) records the trade,
+and what replaced them is the standard in
+[`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the docs
+angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus for documentation
+defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
+`.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
 `.claude/hooks/pre-push-review-gate.sh` hook gates `git push` on *evidence* that a review ran for the

@@ -100,7 +100,7 @@ Frapp/
 - **Authoring:** Developer guides in **[`docs/guides/`](../../docs/guides/README.md)**; product and architecture in **`spec/`**. Read and edit in GitHub or your editor; there is no separate Next.js documentation deployment in this repo for now.
 - **Spec rendering:** Previously the removed docs app rendered `spec/*.md` in a browser. Today, use the repo view on GitHub (or a local markdown preview). A future public docs site may restore styled rendering.
   - **Sync rule:** When behavior, architecture, or workflows change, update **`docs/`** and/or **`spec/`** in the same change set. Spec is intended behavior; code is current behavior; disagreement is a tracked bug (see [`AGENTS.md`](../../AGENTS.md) § Spec vs code).
-  - **Enforcement:** CI fails PRs that change product code without also updating **`docs/`** or **`spec/`**. See [`docs/internal/ci-cd/DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md).
+  - **Enforcement:** none. A gate that required a `docs/` or `spec/` write on every product-code PR existed and was deleted in #1597: it could not tell a real doc edit from filler, so it got filler. The sync rule above is reviewed, not gated — see [`docs/internal/ci-cd/DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) for what CI does still check.
   - **Workflow:** The PR template requires a “Docs / Spec impact” section; treat “None” as an explicit claim that reviewers should challenge.
 
 ---
@@ -121,7 +121,7 @@ Frapp/
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill. Consumed by the API (chapter config seed), web Settings + first-officer wizard, and `apps/mobile` (`package.json` declares the workspace dependency; the wizard reads `ARCHETYPES` directly). |
 | `@repo/theme`             | Shared Tailwind preset plus two stylesheets: `signet.css` (dark-only Signet tokens, imported by `apps/web`) and the legacy bone/bronze `globals.css` (imported by `apps/landing` only). Typed tokens for non-Tailwind consumers; `accent.ts` holds `resolveChapterAccentColor`, the per-surface accent re-validator. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
-| `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`, `isAnalyticsOptedOut`) used by API + clients. `z.record` requires a key schema and a value schema. |
+| `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document` / `archive`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`, `isAnalyticsOptedOut`) used by API + clients. `z.record` requires a key schema and a value schema. |
 
 ---
 
@@ -314,7 +314,7 @@ Owned by [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../docs/internal/s
 | `branding`, `profiles`, `documents`, `backwork`, `chat` | `20260808204500_declare_dashboard_created_buckets.sql` |
 | `chat-archive` | `20260823124000_chat_archive_bucket.sql` |
 
-Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_size_limit`. That limit is 26214400 (25MB = `MAX_UPLOAD_BYTES` in `@repo/validation`) on seven of the eight; `chat-archive` is 104857600 (100MB), sized to Discord's boosted-server per-file ceiling. `supabase/config.toml`'s global `[storage] file_size_limit` is 104857600 to match the highest of them — it caps the local stack and overrides any per-bucket column that is higher, so it is deliberately *not* 25MB and must not be "corrected" down to `MAX_UPLOAD_BYTES`. Application-layer MIME and extension checks use the same module (`packages/validation/src/upload-allowlists.ts`, kinds `image` / `proof` / `document`) — do not keep a second copy in a service or page. The bucket MIME list is **load-bearing, not documentation**: a signed upload URL cannot pin a content type — the uploader sets its own header on the PUT — so for the member-upload buckets the API's check gates only URL *issuance*, and these bucket columns are the only thing enforced on the upload itself. (`reports` is the exception: it is written only server-side, which passes the content type the server actually resolved, so there the column is a second belt rather than the only one. `chat-archive` is **both** — server-side on its bot path, but signed-URL on its upload path, where the bucket column is again the only enforcement.) What they enforce is the **declared header, not the bytes**, so the column does not stop hostile bytes reaching storage; it constrains the type they are served as. Without it a member with upload permission could have `text/html` served from the storage origin. Measurement, and what is *not* covered, in `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist actually enforces. Add the bucket declaration in the same change set as any new bucket; never create one from the dashboard alone. Shipped migration DDL is immutable; a genuine bucket-policy change is a new migration with a comment pointing at the shared kind.
+Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_size_limit`. That limit is 26214400 (25MB = `MAX_UPLOAD_BYTES` in `@repo/validation`) on seven of the eight; `chat-archive` is 104857600 (100MB), sized to Discord's boosted-server per-file ceiling. `supabase/config.toml`'s global `[storage] file_size_limit` is 104857600 to match the highest of them — it caps the local stack and overrides any per-bucket column that is higher, so it is deliberately *not* 25MB and must not be "corrected" down to `MAX_UPLOAD_BYTES`. Application-layer MIME and extension checks use the same module (`packages/validation/src/upload-allowlists.ts`, kinds `image` / `proof` / `document` / `archive`) — do not keep a second copy in a service or page. The bucket MIME list is **load-bearing, not documentation**: a signed upload URL cannot pin a content type — the uploader sets its own header on the PUT — so for the member-upload buckets the API's check gates only URL *issuance*, and these bucket columns are the only thing enforced on the upload itself. (`reports` is the exception: it is written only server-side, which passes the content type the server actually resolved, so there the column is a second belt rather than the only one. `chat-archive` is **both** — server-side on its bot path, but signed-URL on its upload path, where the bucket column is again the only enforcement.) What they enforce is the **declared header, not the bytes**, so the column does not stop hostile bytes reaching storage; it constrains the type they are served as. Without it a member with upload permission could have `text/html` served from the storage origin. Measurement, and what is *not* covered, in `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist actually enforces. Add the bucket declaration in the same change set as any new bucket; never create one from the dashboard alone. Shipped migration DDL is immutable; a genuine bucket-policy change is a new migration with a comment pointing at the shared kind.
 
 **Upload flow:** API generates a signed upload URL; client uploads directly to Supabase Storage. API generates a signed download URL; client fetches directly.
 
@@ -355,16 +355,13 @@ A unique `x-request-id` header is generated for each incoming request (or preser
 
 ### Health Check
 
-`GET /health` — No authentication required. Returns:
+Two unauthenticated endpoints — `GET /health` (liveness, always 2xx while the
+process is up) and `GET /health/ready` (readiness, 503 when a dependency is
+degraded, which is what the post-deploy smoke checks poll).
 
-```json
-{
-  "status": "ok",
-  "database": "connected",
-  "supabase": "connected",
-  "uptime": 3600
-}
-```
+The response bodies and the reason the two differ are owned by
+[`spec/behavior/observability.md`](../behavior/observability.md) § Health Check
+and are not restated here.
 
 ### Error Tracking
 
@@ -887,12 +884,16 @@ an agent cannot observe permission prompts. Decision record, probe table, and mi
 #### ADR-16 amendment 6 — a fourth Routine, and the first that fixes instead of files (2026-08-21)
 
 **Context:** amendment 5 carried over *three* Routines, all of which file GitHub issues and none of
-which edit docs. Documentation drift was left to [`check-our-docs`](../../.claude/skills/check-our-docs/SKILL.md),
-a mid-task habit with the coverage of whatever a session happened to read, so the low-traffic
-runbooks a cold session most needs were never swept. Routing that debt to the tracker instead did
-not work: well over half of all `area:docs` issues ever filed were still open, roughly a third of
-the open ones were five-minute fixes on the day they were filed, and several had never been
-touched since.
+which edit docs. Documentation drift was left to `check-our-docs`, a mid-task habit with the
+coverage of whatever a session happened to read, so the low-traffic runbooks a cold session most
+needs were never swept. Routing that debt to the tracker instead did not work: well over half of
+all `area:docs` issues ever filed were still open, roughly a third of the open ones were
+five-minute fixes on the day they were filed, and several had never been touched since.
+
+**Corrected 2026-09-05:** `check-our-docs` was retired. The paragraph above records what was true
+on 2026-08-21; that responsibility now sits in the documentation standard
+([`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md)) and in the
+docs angle of [`diff-review`](../../.claude/skills/diff-review/SKILL.md).
 
 **Decision:** add a fourth Routine, **Docs Upkeep** (`.claude/skills/docs-upkeep/`), weekly on
 Wednesday. It sweeps a calendar-derived rotating fifth of `docs/` and `spec/`, verifies the claims
@@ -902,10 +903,13 @@ a machine can settle, and **fixes them in a docs-only PR**. It is explicitly for
 **What this changes and what it does not.** It widens the *scope* of the self-maintenance docs-only
 PR from a routine's own skill files to `docs/`, `spec/` and the root guides. It does **not** relax
 the product-code ban, the never-self-merge rule, the one-PR-per-run cap, or the pre-push review
-gate. It inverts [`check-our-docs`](../../.claude/skills/check-our-docs/SKILL.md) §"Inside a
-scheduled routine" and [`audit`](../../.claude/skills/audit/SKILL.md)'s read-only posture **for
-this routine only**; the other three still file rather than fix. ADRs stay append-only — the
-routine may not rewrite one to match today's code.
+gate. It inverts the report-don't-fix posture scheduled routines had inherited (from the
+retired `check-our-docs` skill's §"Inside a scheduled routine" — see the Context above) and
+[`audit`](../../.claude/skills/audit/SKILL.md)'s read-only posture **for this routine only**; the
+other three still file rather than fix. **Corrected 2026-09-05:** this amendment also said "ADRs
+stay append-only — the routine may not rewrite one to match today's code." That carve-out is
+revoked (ADR-18); ADRs are ordinary docs, and this routine corrects a wrong one in place like any
+other.
 
 - Runbook: [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md).
 
@@ -965,12 +969,12 @@ unattended is where a weaker judgement is most expensive.
 - Recurring false positives or a need for shared org config → tune `.gitleaks.toml`, re-baseline (a baseline is already adopted), or move to a managed scanner.
 - Metered-minute pressure → the job is already minimal, but it can be folded into an existing job or made `paths`-aware.
 
-### ADR-18: Agent operating docs — recurring rules vs immutable ADRs; spec vs code (2026-08-19)
+### ADR-18: Agent operating docs — recurring rules vs one-off records; spec vs code (2026-08-19)
 
 **Decision:** Split agent operating knowledge by half-life.
 
 - **`AGENTS.md`** holds only rules that are (1) recurring, (2) still true, and (3) something an agent would not derive by reading the code. Target: short enough to load every session (~200 lines).
-- **ADRs** in this file are the immutable, append-only log of one-off incidents and decisions. Never edit an ADR in place; supersede it with an amendment or a new ADR. Incident narration (dated outages, specific PR numbers, permission-tool archaeology) lives here, not in `AGENTS.md`.
+- **ADRs** in this file record one-off incidents and decisions — what was decided, and the reasoning that made it the decision. They are ordinary documentation, governed by [`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md) like every other doc: when an ADR says something that is no longer true, correct it in place and date the correction. **Corrected 2026-09-05** (this bullet, edited in place under the rule it now states): it previously read "ADRs in this file are the immutable, append-only log of one-off incidents and decisions. Never edit an ADR in place; supersede it with an amendment or a new ADR." That append-only rule is revoked — it was keeping known-wrong sentences in the log, including dead command names an agent would try to run. Amending or superseding is still the right shape when the *decision* itself changes; it is no longer required to fix a *wrong sentence*. Two things the ordinary standard still requires here: evidence (dated records, run links, run ids, the command behind a figure) is not discarded when a claim around it is corrected, and ADR numbers and headings are cited across CI workflows, scripts and tests with nothing validating them, so renaming one is a rename like any other: sweep for what points at it first. Incident narration (dated outages, specific PR numbers, permission-tool archaeology) lives here, not in `AGENTS.md`.
 - **Skills** under `.claude/skills/` hold task playbooks (including filing follow-up issues). **Commands** under `.claude/commands/` hold user-invocable procedures (`/next` stays a command).
 - **Spec vs code:** `spec/` is the source of truth for *intended* behavior; code is the source of truth for *current* behavior. Disagreement is a tracked bug to file, not silent agent discretion.
 
@@ -1256,6 +1260,46 @@ the ones a later reader would otherwise re-litigate.
   lock-dependence reasoning to conclude the difference did not matter. Canonical page for the
   current state: [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).
 
+- **Amendment (2026-09-04) — the doc-table checker was deleted; the parse-as-source-text constraint
+  on `required-checks.mjs` lapses with it, and the agreement it enforced is now a review
+  responsibility.** Amendment (2026-09-01, #1383)(a) closes on a present-tense clause:
+  "`scripts/check-doc-tables.mjs` parses those arrays as source text and its pointer moved with
+  them". That is the record of 2026-09-01 and stands exactly as written; what follows corrects its
+  tense, not its words.
+
+  **The checker is gone, with no successor.** On 2026-09-04 this repository retired all four docs
+  gates — the doc-table checker along with the doc-path, doc-reference and structure checkers —
+  deleting their scripts, their `npm` scripts and their allowlists, and replaced them with the
+  written standard in `docs/internal/DOCUMENTATION_CONVENTIONS.md` plus a docs angle in the
+  diff-review skill. `.github/workflows/docs.yml` is down to one job, `env-slugs`. Nothing now
+  parses `scripts/ci/lib/required-checks.mjs` as source text for the **contents** of `CI_CHECKS`,
+  `DOCS_CHECKS` or `DRIFT_CHECKS`, and no gate holds a pointer into that file that has to move when
+  the arrays do.
+
+  **"Unasserted" would overstate it, and the difference is the useful part.**
+  `scripts/ci/__tests__/branch-protection-diff.test.mjs` still reads that file as source text — but
+  only to assert that the module stays free of entry points and side effects (no `process.argv`, no
+  `fetch(`, no `main`, no module-scope statement), which is precisely what makes it safe to import
+  on the production deploy path. Nothing asserts what the arrays *hold*. Their only consumers are
+  `scripts/configure-branch-protection.mjs` and `scripts/ci/validate-deploy-sha.mjs`, both by
+  import, so a relocation touches three code sites — those two and that test's relative path — plus
+  the comments and docs that name the path by hand, none of which anything checks any more.
+
+  **What the deletion costs, named rather than left to be rediscovered as a bug.** The deleted
+  checker compared exactly one doc against these arrays:
+  `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, which restates the roster by hand and is
+  the one doc deliberately permitted to. Until 2026-09-04 a machine held those two in step. Nothing
+  does now — a roster edit that leaves that runbook stale merges green, and the same is true of
+  every other doc that describes these arrays in prose. Keeping them in agreement is a reviewer's
+  job from here. The counts and rosters written in docs were already dated observations rather than
+  sources of truth; they are now unverified ones as well, which is an argument for re-reading the
+  arrays, not for copying them somewhere new.
+
+  **One count above moves with this change.** The amendment recording the `allow_fork_syncing`
+  closure notes the roster stood at 20 contexts after #1637 dropped `docs-spec-sync`. Retiring
+  `doc-paths` takes it to 19. That is the last count either amendment states, and it will go stale
+  the same way the previous one did — read `ALL_REQUIRED_CHECKS` rather than either number.
+
 **Trigger to revisit:** the six-stage program completes or is abandoned; production backups exist
 (retiring the decision-2 risk); or a provider gains a readable API for branch protection from an
 agent session, which would retire the write-only rollout step.
@@ -1469,7 +1513,7 @@ aggregate questions. Structured data is now a **tool surface**, not corpus — s
 
 - Vector index per chapter (pgvector), keyed by chapter ID. Cross-chapter retrieval is impossible by construction — no chapter sees another chapter's vectors. pgvector remains the right call at this scale: a per-chapter corpus is orders of magnitude below the ~5–10M-vector point where a dedicated vector service starts to pay for itself, and it avoids operating a second datastore.
 - **Retrieval is hybrid, not vector-only:** a dense vector search for semantic similarity, a sparse keyword search for exact terms (a bylaw article number, a dollar amount, a member's name), and a reranking pass over the merged candidate set. Dense-only retrieval reliably misses exact-match queries, which are common in this corpus.
-  - **The sparse half is new work — it does not exist yet.** `apps/api/src/application/services/search.service.ts` (global search) is four parallel `ILIKE '%q%'` scans with no ranking or scoring, and the repo's only `tsvector`/GIN index is on `chapter_directory` (the global onboarding autocomplete), not on chapter content. A content-side `tsvector` is part of the corpus work.
+  - **The sparse half now exists for global search, and the corpus can build on it.** `apps/api/src/application/services/search.service.ts` runs Postgres full-text search — all four sources match a `GENERATED ALWAYS … STORED` tsvector behind a GIN index, queried with `websearch_to_tsquery`. The per-source columns, indexes and migrations are enumerated in [`spec/behavior/search.md`](../behavior/search.md) (the Implementation bullet) and are not restated here. What remains corpus-specific is chunk-level indexing, **relevance scoring on the sparse side** — `search.service.ts` ranks nothing today, ordering chat by `created_at` and cutting at a flat limit — and rerank. The sparse *index* exists; the sparse *scoring* hybrid retrieval needs to merge candidate sets does not.
   - What **is** reusable from that service is the more valuable part: its authorization-filtered retrieval pattern — candidate rows are filtered through `canAccessChannel` before returning, and role lookups are re-scoped by `chapter_id` so a stray cross-chapter `role_id` cannot leak permissions. Corpus retrieval must follow the same shape.
 - Retrieval returns source rows with provenance metadata (source type, author or document title, timestamp, internal ID). The LLM prompt template injects this metadata so the model can cite it back.
 - Recency decay is applied at retrieval time so newer authoritative content outranks older content on time-sensitive questions ("when is the meeting"); decay is off for time-invariant content (policies, bylaws).

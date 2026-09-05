@@ -38,7 +38,7 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
 
 Treat this guide as the target-state runbook plus current operational notes.
 For live rollout tracking, see **GitHub Issues** — work status is not a doc
-([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) rule 4,
+([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives) § Where a fact lives,
 [`../ci-cd/GITHUB_PM.md`](../ci-cd/GITHUB_PM.md)).
 
 ---
