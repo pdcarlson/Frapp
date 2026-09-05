@@ -389,7 +389,7 @@ enabled with no client policies).
 ### 20260831220000_chapter_documents_metadata.sql
 * **Purpose**: Adds `content_type`, `byte_size`, `document_type`, `effective_date`
   to `chapter_documents`, prerequisite work for the AI corpus retrieval design
-  (ADR-13 §13, #720) which needs a currency signal distinct from upload time and
+  (`spec/architecture/README.md` § 13 AI Corpus Architecture — not ADR-13, which is Repository visibility; #720) which needs a currency signal distinct from upload time and
   provenance metadata beyond a title. `content_type`/`byte_size` are populated
   from what the client already knows about the file (`file.type` / `file.size`);
   `document_type`/`effective_date` are optional form fields, user-supplied and
