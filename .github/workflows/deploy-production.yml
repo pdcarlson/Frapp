@@ -227,38 +227,16 @@ jobs:
           git checkout --detach "$DEPLOY_SHA"
           git --no-pager log -1 --format='Deploying %H%n%s'
 
-      - name: Verify Infisical credentials are configured
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured for the production environment. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-          case "$CLIENT_ID$CLIENT_SECRET" in
-            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
-          esac
-
       # NOTE: the Infisical slug for production is `prod`, not `production`.
       - name: Inject production secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "prod"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "prod"
-          secret-path: "/"
-          include-imports: true
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v2
-        with:
-          version: 2.77.0
+        uses: ./.github/actions/supabase-cli
 
       # Only what the migrations need a real server for. The exclusion list is
       # copied verbatim from migration-drift-gate.yml — a different list is a
@@ -273,8 +251,8 @@ jobs:
       #
       # REPLAY_SUPABASE_CLI is not optional. Without it the script falls back to
       # `npx --yes supabase` and fetches whatever is latest, while the apply
-      # below uses the pinned 2.77.0 from PATH — and "the same CLI code path" is
-      # the entire premise of the rehearsal.
+      # below uses the pinned CLI on PATH (`.github/actions/supabase-cli`) — and
+      # "the same CLI code path" is the entire premise of the rehearsal.
       - name: Rehearse the migration against production's applied state
         id: replay
         env:

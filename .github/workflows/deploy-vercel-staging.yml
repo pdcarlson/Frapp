@@ -99,9 +99,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Pinned, like every other CLI this repo installs in CI (supabase 2.77.0
-      # in deploy-production.yml). An unpinned `@latest` makes the deploy path
-      # depend on whatever Vercel published this morning.
+      # Pinned, like every other CLI this repo installs in CI (the Supabase CLI
+      # pin lives in `.github/actions/supabase-cli`). An unpinned `@latest`
+      # makes the deploy path depend on whatever Vercel published this morning.
       - name: Install Vercel CLI
         run: npm install --global vercel@59.11.7
 

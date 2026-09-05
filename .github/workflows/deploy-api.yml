@@ -164,38 +164,15 @@ jobs:
         with:
           node-version: 20
 
-      - name: Verify Infisical credentials are configured
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured for the staging environment. Missing or empty:$MISSING. Set them as repository secrets, or as environment secrets on the 'staging' environment — see docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-          case "$CLIENT_ID$CLIENT_SECRET" in
-            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
-          esac
-          echo "Infisical credentials are present; a 401 from the next step means they were rejected (revoked, rotated, or expired), not missing. See issue #696."
-
       - name: Inject staging deploy secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "staging"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "staging"
-          secret-path: "/"
-          include-imports: true
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v2
-        with:
-          version: 2.77.0
+        uses: ./.github/actions/supabase-cli
 
       - name: Run migrations (dry-run)
         run: node scripts/run-migration.mjs --env staging --dry-run
@@ -215,33 +192,21 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Verify Infisical credentials are configured
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured for the staging environment. Missing or empty:$MISSING. Set them as repository secrets, or as environment secrets on the 'staging' environment — see docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-          case "$CLIENT_ID$CLIENT_SECRET" in
-            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
-          esac
-          echo "Infisical credentials are present; a 401 from the next step means they were rejected (revoked, rotated, or expired), not missing. See issue #696."
+      # This job needs no source of its own — it fires a Render deploy hook and
+      # health-checks the result. The checkout is here because the next step
+      # calls a LOCAL composite action, and `uses: ./…` resolves against the
+      # runner's workspace: without a checkout the action file is not on disk
+      # and the step fails with "Can't find 'action.yml'". Every other job that
+      # calls one already had a checkout for its own reasons; this one did not.
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Inject staging deploy secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "staging"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "staging"
-          secret-path: "/"
-          include-imports: true
 
       - name: Trigger Render deploy
         run: |
