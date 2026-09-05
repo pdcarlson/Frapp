@@ -150,19 +150,19 @@ routine 5 only files follow-ups and opens its PR through it, so this section doe
 sweep or scan; see rule 4 of the
 [ownership boundary](#shared-ownership-boundary-all-routines).
 
-> **No MCP read path returns a body faithfully — never source a body rewrite from one.**
-> `issue_read`, `list_issues` **and** `search_issues` all corrupt the body they return. Rewriting a
-> body from any of them deletes content without any error, and because markers are how the routines
-> recognise their own issues across runs, the damage surfaces a run later as a duplicate filing or a
-> reset watermark. **The damage is read-only: stored bodies are intact and nothing needs
-> back-filling.** So: **append a comment instead of rewriting**, or author the replacement body
-> yourself; the corruption vectors, the fidelity table, the probe, and the narrow escape hatch are in
+> **Whether an MCP read is safe to rewrite from is a measurement, not a constant — check it, don't
+> remember it.** It has flipped four times. The fidelity table, the probe that produces it, the
+> operative rule, and what to do when the probe is red all live in
 > [`GITHUB_PM.md` → Reading a body you intend to rewrite](GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity),
-> which is the canonical statement of this rule. Two consequences worth stating here: the `fp=`
-> marker is now a **visible line, not an HTML comment**, and the `fp=` **lookup is healthy** —
-> `search_issues` resolves fingerprints precisely, so dedup needs no redesign. Since it matches
-> semantically rather than by number, still confirm the returned `number` is the issue you meant.
-> Each skill states the rule for its own writes.
+> which is the canonical statement — **read it there rather than trusting a summary here.** As of
+> **2026-09-05** all three read paths measured faithful, so a rewrite sourced from a read is
+> permitted; re-run the probe against fixture #1736 before any bulk pass.
+>
+> Two things that hold either way, because they are cheap insurance rather than consequences of the
+> current measurement: the `fp=` marker is a **visible line, not an HTML comment**, and the `fp=`
+> **lookup is healthy** — `search_issues` resolves fingerprints precisely, so dedup needs no
+> redesign. Since it matches semantically rather than by number, still confirm the returned `number`
+> is the issue you meant. Each skill states the rule for its own writes.
 
 **Label roster** (auto-created on first use; re-verify with `issue_read get_labels` on a labeled
 issue if anything looks off):
