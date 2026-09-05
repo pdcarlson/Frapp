@@ -117,10 +117,10 @@ Fetch open issues whose description contains the `fp=pr-followup/` **or `fp=huma
 (`search_issues query:"fp=pr-followup in:body state:open"` **and**
 `search_issues query:"fp=human in:body state:open"`, plus a description check).
 
-> **These queries cannot see comment-form markers.** Items filed before 2026-08-20 may carry
-> `fp=` inside an `<!-- … -->` comment, which every MCP read deletes — so it is absent from the
-> search index too and these lookups return nothing for it. **Do not read a miss as "never
-> filed."** Cross-check the `[pr-followup]` / `[human]` **title** prefixes, which are visible and
+> **These queries may not see comment-form markers.** Items filed before 2026-08-20 may carry
+> `fp=` inside an `<!-- … -->` comment. The read that deleted those recovered on 2026-09-05, but
+> whether the **search index** matches text inside a comment was not re-measured with it — so
+> treat this coverage as unknown. **Do not read a miss as "never filed."** Cross-check the `[pr-followup]` / `[human]` **title** prefixes, which are visible and
 > reliable, before concluding an item is unharvested; when you touch such an issue for any other
 > reason, promote its marker to the visible form.
 
@@ -192,8 +192,8 @@ For each surviving item:
      ([`GITHUB_PM.md` → Agent briefs](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode))
      for agent-doable items · optionally an `Estimate:` line · ending with
      a visible `` `agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N>` `` line (a visible line, not
-     an HTML comment — every MCP read deletes comments, which hides the marker from the search
-     index too).
+     an HTML comment — the read has repeatedly deleted comments, hiding the marker from the search
+     index too; the form stays even now that it does not, because it costs nothing).
    - `[human]` items additionally open with `**Human action required — hold in triage; not for
      /next.**` so the triage routine keeps them in the inbox instead of promoting them.
 - **Budget:** at most **~10** new issues per run, highest-impact first; log what was dropped and

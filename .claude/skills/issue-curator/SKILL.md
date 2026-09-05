@@ -106,8 +106,8 @@ Start each run with the marker-count guard in `GITHUB_PM.md`.
 
 **Legacy markers.** Older suggestions carry a `<!-- cursor-suggestion: v1 fp=… -->` or
 `<!-- agent-suggestion: v1 fp=… -->` marker as an **HTML comment**. Those are still stored and still
-valid — they are merely unreadable through the MCP, so **a marker you cannot see is "unknown", never
-"absent"**; never re-file on that basis alone. New filings use the visible-line form below. When you
+valid, and as of 2026-09-05 readable again — but the rule stands whatever the current measurement:
+**a marker you cannot see is "unknown", never "absent"**; never re-file on that basis alone. New filings use the visible-line form below. When you
 refresh a body for any other reason, promote the marker to the visible form; never rewrite a body
 *only* to change the marker.
 
@@ -220,8 +220,8 @@ against `[human]` titles** — if an open `fp=human/` blocker already tracks the
 (dashboard toggles and advisor findings are the usual overlap), skip: filing a promotable twin
 would route `/next` into a wall the held issue already documents. Embed the marker:
 a visible `` `agent-suggestion: v1 fp=<area>/<slug> file=<path>` `` line — **a visible line, not an
-HTML comment**, because every MCP read deletes comments and that hides the marker from the search
-index too.
+HTML comment**. The read has repeatedly deleted comments, hiding the marker from the search index
+too; it currently does not, and the form stays regardless because it costs nothing.
 
 ### Agent brief
 
@@ -273,7 +273,7 @@ cross-cutting, architectural, security-sensitive, or subtle-correctness work; `m
 `agent-suggestion: v1 fp=<area>/<slug> file=<primary-path>`
 
 _Filed by the Issue Curator routine. Edit freely; keep the `fp=` line above — it is the dedup key,
-and it must stay a visible line (an HTML comment is invisible to every MCP read)._
+and it must stay a visible line (an HTML comment has repeatedly been invisible to the MCP read)._
 ```
 
 Title format: `[suggestion] <imperative title>`. `type:` is body metadata, not a label.
