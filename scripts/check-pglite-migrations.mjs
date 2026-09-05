@@ -2324,6 +2324,111 @@ console.log("\n=== security definer search_path ===");
   }
 }
 
+// ─── `get_points_leaderboard` executes and bounds correctly (#522) ───────────
+//
+// `CREATE FUNCTION` on a plpgsql body is a SYNTAX check only — identifier
+// resolution, aggregate semantics and ORDER BY binding are all deferred to the
+// first call. So "the migration applied" proves almost nothing about this
+// function, and it is the one that carries the points leaderboard's chapter
+// predicate since the aggregation moved out of Node.
+//
+// The unit suite cannot cover it either: it swaps the repository for a
+// TypeScript transcription of the SQL, so flipping `>` to `>=` here leaves it
+// green. `apps/api/test/integration/points-leaderboard.integration-spec.ts`
+// does execute the real function, but `test:integration` runs in no CI job
+// (#1568) — so without this section a boundary regression merges green.
+//
+// Deliberately minimal: one row sits exactly ON the shared bound instant, and
+// that same instant is passed as `p_since` in one call and `p_until` in the
+// next, so an inclusive/exclusive mix-up moves it between boards rather than
+// merely changing a count.
+console.log("\n=== get_points_leaderboard bounds + scoping (#522) ===");
+try {
+  const CH_A = "aaaaaaaa-0000-4000-8000-000000000001";
+  const CH_B = "aaaaaaaa-0000-4000-8000-000000000002";
+  const U1 = "bbbbbbbb-0000-4000-8000-00000000000a";
+  const U2 = "bbbbbbbb-0000-4000-8000-00000000000b";
+  const ON_BOUND = "2026-03-01T00:00:00Z";
+
+  await db.exec(`
+    insert into public.chapters (id, name, university) values
+      ('${CH_A}', 'PGlite A', 'U'), ('${CH_B}', 'PGlite B', 'U');
+    insert into public.users (id, supabase_auth_id, email, display_name) values
+      ('${U1}', '${U1}', 'lb-a@pglite.test', 'A'),
+      ('${U2}', '${U2}', 'lb-b@pglite.test', 'B');
+    insert into public.point_transactions (chapter_id, user_id, amount, category, created_at) values
+      ('${CH_A}', '${U1}', 10, 'MANUAL', '2026-01-01T00:00:00Z'),
+      ('${CH_A}', '${U1}', 5,  'MANUAL', '2026-09-01T00:00:00Z'),
+      ('${CH_A}', '${U2}', 30, 'MANUAL', '${ON_BOUND}'),
+      ('${CH_A}', '${U2}', -35,'FINE',   '2026-09-01T00:00:00Z'),
+      ('${CH_B}', '${U1}', 999,'MANUAL', '2026-01-01T00:00:00Z');
+  `);
+
+  const board = async (chapter, since, until) => {
+    const r = await db.query(
+      `select user_id::text as user_id, total::int as total
+         from get_points_leaderboard($1::uuid, $2::timestamptz, $3::timestamptz)`,
+      [chapter, since, until],
+    );
+    return r.rows;
+  };
+
+  // Runs the body at all — an unqualified `user_id`/`total` would raise
+  // "column reference is ambiguous" HERE and nowhere earlier.
+  const allTime = await board(CH_A, null, null);
+  const exclusiveLower = await board(CH_A, ON_BOUND, null);
+  const inclusiveUpper = await board(CH_A, null, ON_BOUND);
+  const otherChapter = await board(CH_B, null, null);
+
+  const totalFor = (rows, u) => rows.find((r) => r.user_id === u)?.total;
+
+  const checks = [
+    [allTime.length === 2, `all-time returns one row per member (got ${allTime.length})`],
+    [totalFor(allTime, U1) === 15, `sums per member (u1 = ${totalFor(allTime, U1)}, want 15)`],
+    [
+      totalFor(allTime, U2) === -5,
+      `negative totals survive (u2 = ${totalFor(allTime, U2)}, want -5)`,
+    ],
+    [
+      allTime[0].user_id === U1 && allTime[1].user_id === U2,
+      "orders by total descending",
+    ],
+    [
+      totalFor(exclusiveLower, U2) === -35,
+      `p_since is EXCLUSIVE — the row ON the bound is dropped (u2 = ${totalFor(exclusiveLower, U2)}, want -35)`,
+    ],
+    [
+      totalFor(inclusiveUpper, U2) === 30,
+      `p_until is INCLUSIVE — the row ON the bound is kept (u2 = ${totalFor(inclusiveUpper, U2)}, want 30)`,
+    ],
+    [
+      otherChapter.length === 1 && otherChapter[0].total === 999,
+      "chapter_id scopes the aggregation (no cross-chapter rows)",
+    ],
+  ];
+
+  for (const [ok, name] of checks) {
+    if (ok) {
+      console.log(`OK    ${name}`);
+    } else {
+      missing += 1;
+      console.log(`MISS  ${name}`);
+    }
+  }
+
+  // Leave the schema as the migrations produced it, same contract as the tiers
+  // above. Chapters cascade to point_transactions; users do not.
+  await db.exec(`
+    delete from public.chapters where id in ('${CH_A}', '${CH_B}');
+    delete from public.users where email like 'lb-%@pglite.test';
+  `);
+} catch (e) {
+  missing += 1;
+  console.log(
+    `MISS  get_points_leaderboard bounds + scoping\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+  );
+}
+
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,
 );

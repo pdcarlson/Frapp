@@ -41,9 +41,16 @@ interface Fixture {
   /** Ranked members of the primary chapter. */
   alice: string;
   bob: string;
-  /** Two members deliberately given equal totals, to pin the tie-break. */
-  tieLow: string;
-  tieHigh: string;
+  /**
+   * Two members deliberately given equal totals, to pin the tie-break.
+   *
+   * Named by the position they must hold on the board, not by id magnitude —
+   * `tieFirstId` is the lexicographically SMALLER uuid, because the SQL breaks
+   * ties with `user_id asc`. Naming them "high"/"low" invites a maintainer to
+   * read them as id magnitude and "correct" the assertions into a red test.
+   */
+  tieFirstId: string;
+  tieSecondId: string;
   cleanup: () => Promise<void>;
 }
 
@@ -63,62 +70,6 @@ async function seed(supabase: FrappSupabaseClient): Promise<Fixture> {
   const runTag = `lb-${randomUUID().slice(0, 8)}`;
   const chapterId = randomUUID();
   const otherChapterId = randomUUID();
-
-  const { error: chapterError } = await supabase.from('chapters').insert([
-    { id: chapterId, name: `${runTag} Primary`, university: 'Test University' },
-    {
-      id: otherChapterId,
-      name: `${runTag} Other`,
-      university: 'Test University',
-    },
-  ]);
-  assertOk('insert chapters', chapterError);
-
-  // Ids are sorted so the tie-break assertion can name which of the two equal
-  // scorers must come first without depending on how randomUUID happened to
-  // order them.
-  const [tieHigh, tieLow] = [randomUUID(), randomUUID()].sort();
-  const alice = randomUUID();
-  const bob = randomUUID();
-
-  const users = [alice, bob, tieHigh, tieLow].map((id, i) => ({
-    id,
-    supabase_auth_id: randomUUID(),
-    email: `${runTag}-${i}@example.test`,
-    display_name: `${runTag} ${i}`,
-  }));
-  const { error: userError } = await supabase.from('users').insert(users);
-  assertOk('insert users', userError);
-
-  const txn = (
-    chapter: string,
-    user: string,
-    amount: number,
-    created_at: string,
-  ) => ({
-    chapter_id: chapter,
-    user_id: user,
-    amount,
-    category: 'MANUAL' as const,
-    description: runTag,
-    created_at,
-  });
-
-  const { error: txnError } = await supabase.from('point_transactions').insert([
-    // alice: 10 early + 5 late = 15 all-time
-    txn(chapterId, alice, 10, EARLY),
-    txn(chapterId, alice, 5, LATE),
-    // bob: 30 sitting exactly ON the shared boundary instant
-    txn(chapterId, bob, 30, ON_BOUND),
-    // A fine, so a negative total is exercised end to end.
-    txn(chapterId, bob, -35, LATE),
-    // Two members tied at 7 apiece.
-    txn(chapterId, tieHigh, 7, EARLY),
-    txn(chapterId, tieLow, 7, EARLY),
-    // The same user, scoring far higher, in a chapter this board must not see.
-    txn(otherChapterId, alice, 9_999, EARLY),
-  ]);
-  assertOk('insert point_transactions', txnError);
 
   const cleanup = async (): Promise<void> => {
     // Chapters first: the cascade clears the rows referencing users, so the
@@ -148,7 +99,91 @@ async function seed(supabase: FrappSupabaseClient): Promise<Fixture> {
     }
   };
 
-  return { chapterId, otherChapterId, alice, bob, tieHigh, tieLow, cleanup };
+  // Every insert runs inside `build()` so a failure partway can still be swept.
+  // Without this the caller's `afterAll(fixture?.cleanup())` is a no-op on a
+  // throw — `fixture` was never assigned — and whatever was written before the
+  // throw survives forever on a stack other runs share. `users` in particular
+  // is reached by no cascade. Same reasoning and shape as `seedReportFixture`.
+  const build = async (): Promise<Fixture> => {
+    const { error: chapterError } = await supabase.from('chapters').insert([
+      {
+        id: chapterId,
+        name: `${runTag} Primary`,
+        university: 'Test University',
+      },
+      {
+        id: otherChapterId,
+        name: `${runTag} Other`,
+        university: 'Test University',
+      },
+    ]);
+    assertOk('insert chapters', chapterError);
+
+    // Ids are sorted so the tie-break assertion can name which of the two equal
+    // scorers must come first without depending on how randomUUID happened to
+    // order them.
+    const [tieFirstId, tieSecondId] = [randomUUID(), randomUUID()].sort();
+    const alice = randomUUID();
+    const bob = randomUUID();
+
+    const users = [alice, bob, tieFirstId, tieSecondId].map((id, i) => ({
+      id,
+      supabase_auth_id: randomUUID(),
+      email: `${runTag}-${i}@example.test`,
+      display_name: `${runTag} ${i}`,
+    }));
+    const { error: userError } = await supabase.from('users').insert(users);
+    assertOk('insert users', userError);
+
+    const txn = (
+      chapter: string,
+      user: string,
+      amount: number,
+      created_at: string,
+    ) => ({
+      chapter_id: chapter,
+      user_id: user,
+      amount,
+      category: 'MANUAL' as const,
+      description: runTag,
+      created_at,
+    });
+
+    const { error: txnError } = await supabase
+      .from('point_transactions')
+      .insert([
+        // alice: 10 early + 5 late = 15 all-time
+        txn(chapterId, alice, 10, EARLY),
+        txn(chapterId, alice, 5, LATE),
+        // bob: 30 sitting exactly ON the shared boundary instant
+        txn(chapterId, bob, 30, ON_BOUND),
+        // A fine, so a negative total is exercised end to end.
+        txn(chapterId, bob, -35, LATE),
+        // Two members tied at 7 apiece.
+        txn(chapterId, tieFirstId, 7, EARLY),
+        txn(chapterId, tieSecondId, 7, EARLY),
+        // The same user, scoring far higher, in a chapter this board must not see.
+        txn(otherChapterId, alice, 9_999, EARLY),
+      ]);
+    assertOk('insert point_transactions', txnError);
+
+    return {
+      chapterId,
+      otherChapterId,
+      alice,
+      bob,
+      tieFirstId,
+      tieSecondId,
+      cleanup,
+    };
+  };
+
+  try {
+    return await build();
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
 }
 
 describeIntegration('get_points_leaderboard against live PostgREST', () => {
@@ -166,7 +201,12 @@ describeIntegration('get_points_leaderboard against live PostgREST', () => {
       p_until: until,
     });
     assertOk('get_points_leaderboard', error);
-    return data ?? [];
+    // Deliberately NOT `data ?? []`. The empty-board case below asserts
+    // `toEqual([])`, and coalescing here would let a null body satisfy it —
+    // while `PointsService.getLeaderboard` would hand that null to the web
+    // Points page's `.map()`. An array is part of the contract being tested.
+    expect(Array.isArray(data)).toBe(true);
+    return data as { user_id: string; total: number }[];
   };
 
   beforeAll(async () => {
@@ -194,8 +234,8 @@ describeIntegration('get_points_leaderboard against live PostgREST', () => {
 
     expect(totals[fixture.alice]).toBe(15);
     expect(totals[fixture.bob]).toBe(-5); // 30 − 35: negatives survive
-    expect(totals[fixture.tieHigh]).toBe(7);
-    expect(totals[fixture.tieLow]).toBe(7);
+    expect(totals[fixture.tieFirstId]).toBe(7);
+    expect(totals[fixture.tieSecondId]).toBe(7);
   });
 
   it('scopes to the requested chapter', async () => {
@@ -246,8 +286,8 @@ describeIntegration('get_points_leaderboard against live PostgREST', () => {
     // rank from the index, so the order PostgREST returns IS the rank.
     expect(rows.map((r) => r.total)).toEqual([15, 7, 7, -5]);
     expect(rows[0].user_id).toBe(fixture.alice);
-    expect(rows[1].user_id).toBe(fixture.tieHigh);
-    expect(rows[2].user_id).toBe(fixture.tieLow);
+    expect(rows[1].user_id).toBe(fixture.tieFirstId);
+    expect(rows[2].user_id).toBe(fixture.tieSecondId);
     expect(rows[3].user_id).toBe(fixture.bob);
   });
 
