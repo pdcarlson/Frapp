@@ -52,7 +52,7 @@ Each topic file is canonical **intended** behavior. Delivery (which is shipped v
 
 ## Dark Mode
 
-- Full dark mode support across web and mobile.
+- Both surfaces are dark-only. There is no light theme, so "support" here means the dark palette is the only one shipped, not that a choice exists.
 - Palette, typeface, and dark-first Signet tokens live in [`spec/ui/brand-identity.md`](../ui/brand-identity.md) and [`spec/ui/design-system/`](../ui/design-system/README.md) — do not duplicate values here. The frozen landing site still ships the legacy `@repo/theme` tokens until its reskin; the web dashboard ships Signet dark-only since the #920 shell slice (no theme control).
 
 ---
@@ -71,9 +71,11 @@ All API errors follow a consistent shape:
 ```
 
 - Internal errors (500) never expose database details or stack traces. The `requestId` enables support to locate the full error in logs.
-- All errors are logged with structured context — one flat JSON object from
-  `apps/api/src/interface/filters/all-exceptions.filter.ts`, which owns that record's
-  shape. The *request* log is a different record, owned by
+- Error logging is per status class, not uniform. A 5xx is logged as one flat JSON
+  object by `apps/api/src/interface/filters/all-exceptions.filter.ts`. A 401, 403 or
+  429 instead produces a `security_event` record, whose shape is built and owned by
+  `apps/api/src/infrastructure/observability/security-events.ts`. Other 4xx produce no
+  error record at all — only the per-request log, which is a third record, owned by
   [`observability.md`](observability.md#structured-logging) § Structured Logging.
 - Validation errors (400) return the full list of field-level issues from the validation pipe.
 - Rate limit errors (429) include a `Retry-After` header.

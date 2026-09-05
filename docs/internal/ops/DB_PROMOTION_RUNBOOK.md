@@ -254,13 +254,15 @@ Two other refusals, both deliberate:
       (`check:migration-safety` requires touching this doc or the rollback
       playbook — it cannot tell which one you owed)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
-- [ ] For a **production** promotion, take a dump yourself first — nothing does it
-      for you. `db-backup.yml` runs against `frapp-staging` only, and the free plan
-      offers neither a snapshot nor PITR, but `scripts/db-backup.sh` is
-      project-agnostic: `supabase link --project-ref <prod ref>` then
-      `scripts/db-backup.sh --linked --out-dir <dir>`, or `--db-url` against the
-      project directly
-      ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality)
+- [ ] For a **production** promotion, know that nothing takes a backup for you:
+      `db-backup.yml` runs against `frapp-staging` only, and the free plan offers
+      neither a snapshot nor PITR
+      ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality).
+      `scripts/db-backup.sh` can dump any project, but read its header before
+      relying on it here: it needs a reachable Docker daemon, the target project's
+      own access token and DB password, and `--linked` persists the link under
+      `supabase/.temp`, so re-link before running anything else from the tree. It
+      captures the database only — Storage objects are deliberately out of scope.
 
 ## Local validation
 

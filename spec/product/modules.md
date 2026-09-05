@@ -56,7 +56,7 @@
 - Admins create invoices for members (e.g. semester dues).
 - Invoices have statuses: DRAFT, OPEN, PAID, VOID.
 - Payments tracked via Stripe PaymentIntents; members pay their own open invoices in-app and the webhook confirms payment (moves the invoice to PAID). Behavior details: [`spec/behavior/billing.md`](../behavior/billing.md).
-- Financial transactions log payments. The `type` column also permits `REFUND` and `ADJUSTMENT`, which nothing writes today — [`../behavior/billing.md`](../behavior/billing.md) owns the detail.
+- Financial transactions log payments. The `type` column also permits `REFUND` and `ADJUSTMENT`, which no production path writes today — [`../behavior/billing.md`](../behavior/billing.md) owns the detail.
 - Overdue tracking with notifications.
 
 ## Communications
@@ -162,7 +162,7 @@
 - Separate from Backwork (no academic metadata).
 - Optional flat folder structure (one level deep). Folders are first-class records: officers create, rename, reorder and delete them from the dashboard, and naming a new folder during upload still registers it. Renaming re-files the documents in it; deleting moves them to the root rather than deleting them.
 - Documents are searchable by title, combinable with the folder filter.
-- All members can view/download. Upload requires `chapter_docs:upload`; management requires `chapter_docs:manage`.
+- Reads are gated on `members:view`, which every seeded role holds or clears via `*`. Upload requires `chapter_docs:upload`; management requires `chapter_docs:manage`.
 
 ## Semester Rollover
 

@@ -2,7 +2,7 @@
  * Payload shapes for rich chat messages (Chunk 05).
  *
  * Kept in `packages/chat-integrations` (zero React deps) so both web and the
- * Edge Function envelope a consistent contract. Renderers in `apps/web` /
+ * the API envelope a consistent contract. Renderers in `apps/web` /
  * `apps/mobile` are wired via the kind→renderer registry, but the payload
  * shape is the source of truth here.
  */
@@ -119,5 +119,5 @@ export interface EventPayload {
   created_at: string;
 }
 
-/** Action type used for poll votes. Shared between renderer + Edge Function. */
+/** Action type used for poll votes. Shared between the renderer and the API. */
 export const POLL_VOTE_ACTION_TYPE = "vote";

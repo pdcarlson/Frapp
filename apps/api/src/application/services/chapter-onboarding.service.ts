@@ -17,7 +17,7 @@ type Branding = Record<string, unknown>;
 
 /**
  * Orchestrates the onboarding wizard submit (Chunk 03), entirely on the cold
- * path (NestJS + service-role Supabase) — never the chat Edge Functions:
+ * path (NestJS + service-role Supabase), not the chat hot path:
  *  1. materialize the chapter config from the archetype seed,
  *  2. create the chapter (+ default roles / membership / channels via
  *     ChapterService.create),
