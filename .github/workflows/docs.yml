@@ -1,13 +1,19 @@
 name: Docs checks
+# The display name is PINNED, not descriptive. `ci-wake.yml` selects this
+# workflow by display name (`on.workflow_run.workflows: [CI, "Docs checks",
+# Links]`), and `pr-base-guard.yml` names it in the comment it posts. Renaming
+# it here silently stops CI wake from ever firing for this workflow — a
+# workflow_run filter that matches nothing is not an error, it is silence. Any
+# rename has to change those files in the same commit.
 
 on:
   pull_request:
     branches: [main]
-    # `labeled`/`unlabeled` were here while a label could waive a required check:
-    # the default trigger set does not fire on a label change, so the waiver had
-    # to be able to re-run the check it waived. That gate is gone (#1597), and no
-    # job left in this workflow reads a label, so re-running all four on every
-    # label mutation bought nothing.
+    # `labeled`/`unlabeled` were here while a label could waive a required
+    # check: the default trigger set does not fire on a label change, so the
+    # waiver had to be able to re-run the check it waived. That gate is gone
+    # (#1597) and no job here reads a label, so re-running on every label
+    # mutation bought nothing.
   push:
     branches: [main]
 
@@ -23,94 +29,29 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Structure — whole-tree, and its own job, for the reason required-checks.mjs
-  # states next to doc-paths: a whole-tree check as a REQUIRED check can block a
-  # PR over a citation in a doc that PR never touched. One stale LEGACY_NAMES
-  # entry — or a directory whose last file was deleted — would turn every open
-  # PR red with no admin override, which is the merge-freeze shape #1373
-  # documents for migration-drift.
+  # The Infisical environment-slug gate. It is NOT a documentation gate — it
+  # asserts that an Infisical environment slug it matches inside the roots it
+  # scans is one that exists, in `package.json` scripts and workflows as much as
+  # in prose. It matches fixed syntaxes, not any mention of a slug. It used to run as the second step of a docs job and would have died
+  # with it; it has its own job so that a failure names what it is.
   #
-  # Whole-tree is also why it needs no `pull_request` guard: a push to main
-  # proves it green before any PR discovers a problem, which is the point of
-  # running it.
-  docs-structure:
+  # Its reach is exactly `SCAN_ROOTS` in `scripts/check-env-slugs.mjs`:
+  # `package.json`, `.infisical.json`, `ci/environments.json`,
+  # `.github/workflows`, `.github/actions`, `docs`, `spec`, and
+  # `docs/internal/environment/ENV_REFERENCE.md`. It is NOT a whole-repo scan —
+  # a slug written in `.claude/`, in `scripts/`, in app code or in a root
+  # README is not read by anything here.
+  #
+  # Within those roots it reads the tree, not the diff: the reference and the
+  # slug list it is checked against sit in different files, so a diff-scoped
+  # scan would miss every reference the change did not happen to touch. That is
+  # also why it needs no Dependabot exemption — a lockfile-only PR simply
+  # passes.
+  env-slugs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # No Dependabot exemption needed: the check reads the tree, not the diff,
-      # so a lockfile-only PR simply passes.
-      - name: Enforce docs/spec structure
-        run: node scripts/check-docs-structure.mjs
-
-  # Citation lint — a SEPARATE job, on purpose, for two reasons.
-  #
-  # 1. Blast radius. `doc-paths` is a REQUIRED check under
-  #    `enforce_admins: true`, and it is whole-tree rather than diff-scoped (a
-  #    citation breaks when the file it names moves — a change on the *other*
-  #    side of the reference — so diffing would miss the case it exists to
-  #    catch). Whole-tree + required + no override means a PR renaming a source
-  #    file can be blocked by a citation in a doc it never touched. It reported
-  #    only until 2026-08-21, following the rollout every other gate here used
-  #    (secret-scan, clean-checkout-typecheck, dependency-audit,
-  #    chapter-directory-seed). Keeping it a separate job still matters: see
-  #    reason 2.
-  # 2. A failure should say *citations*, not *docs sync*. Two different fixes.
-  doc-paths:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # No Dependabot exemption needed: the check reads the tree, not the diff,
-      # so a lockfile-only PR simply passes.
-      - name: Enforce doc path citations
-        run: node scripts/check-doc-paths.mjs
-
-  # Doc references OUTSIDE the docs corpus — a SEPARATE job, same reasoning.
-  #
-  # doc-paths is whole-tree but scoped to the documentation itself, so the many
-  # hundreds of references to docs/ and spec/ that live in source, tests,
-  # workflows, migrations and shell scripts were never checked. The previous restructure
-  # (epic #432) left dead pointers in `apps/api/README.md` and `supabase/seed.sql`
-  # that nothing caught for months.
-  #
-  # A failure should say *references*, not *citations*: doc-paths is about how a
-  # doc cites a path, this is about how CODE cites a doc, and the fix differs.
-  #
-  # Non-required to start, promoted the usual way once it has run green on the
-  # target branch — the same rollout doc-paths and doc-tables each had.
-  doc-refs:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # No Dependabot exemption needed: the check reads the tree, not the diff.
-      - name: Enforce doc references outside the docs corpus
-        run: node scripts/check-doc-refs.mjs
-
-  # Roster drift — also a SEPARATE job, for the same two reasons as doc-paths.
-  #
-  # It compares the required-check roster and per-job test-suite lists that the
-  # branch-protection runbook restates by hand — the last remaining copy, since
-  # CONTRIBUTING.md and spec/environments/README.md now point at it — against
-  # their source: the CI_CHECKS / DOCS_CHECKS arrays and ci.yml. Whole-tree,
-  # not diff-scoped — a table goes
-  # stale when a *workflow* changes, which is the other side of the reference.
-  #
-  # A failure should say *tables*, not *docs sync* or *citations*: three
-  # different fixes. Non-required to start, promoted the usual way once it has
-  # run green on the target branch.
-  doc-tables:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Enforce doc table rosters
-        run: node scripts/check-doc-tables.mjs
 
       - name: Enforce Infisical env slugs
         run: node scripts/check-env-slugs.mjs
