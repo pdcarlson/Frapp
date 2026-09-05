@@ -677,7 +677,7 @@ export class DiscordExportWorkerService {
         // avoid elsewhere (see the manifest-paging note in the repository), and
         // quietly dropping attachments once a chapter is full would tell the
         // admin their history imported when it did not.
-        throw new Error(archiveQuotaMessage(error));
+        throw new Error(archiveQuotaMessage(error, job.source));
       }
       throw error;
     }

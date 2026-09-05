@@ -60,22 +60,34 @@ export const MAX_UPLOAD_URL_BATCH = 100;
 /**
  * The admin-facing sentence for a refused batch, shared by both import paths.
  *
+ * Takes the import's `source` because the remedy is not the same on both. An
+ * admin on the **bot** path never ran DiscordChatExporter, has no export folder
+ * and no `--media` flag — telling them to "re-export without media" names three
+ * things that do not exist in their flow and leaves them with no next step. The
+ * chapter-ceiling advice ("delete an old import") is the only half that is
+ * path-neutral.
+ *
  * Sizes go through `formatBytes` rather than a local GB helper: the ceilings are
  * meant to be tuned (the rollback playbook names constant-tuning as the fast
  * forward-fix), and a hard-pinned GB unit renders a lowered ceiling as "0 GB".
  * `formatBytes` walks the unit ladder, so a 50 MB ceiling reads "50 MB".
- *
- * Both sizes are shown even though they can round to the same string at the
- * boundary, because the actionable half is the advice, not the arithmetic — an
- * admin 47 MB over a 20 GB ceiling needs to know to drop media, not to know the
- * exact overage.
  */
-export function archiveQuotaMessage(error: ArchiveQuotaExceededError): string {
+export function archiveQuotaMessage(
+  error: ArchiveQuotaExceededError,
+  source: DiscordImportSource,
+): string {
   const held = formatBytes(error.wouldHoldBytes);
   const cap = formatBytes(error.capBytes);
-  return error.scope === 'import'
-    ? `This import would hold ${held} of files, past the ${cap} limit for one import. Re-export with a smaller date range or without --media, or split the server across separate imports.`
-    : `Your chapter's archive would hold ${held} of files, past its ${cap} limit. Delete an old import to free space — deletion finishes in the background, so give it a moment before retrying.`;
+
+  if (error.scope === 'chapter') {
+    return `Your chapter's archive would hold ${held} of files, past its ${cap} limit. Delete an old import to free space — deletion finishes in the background, so give it a moment before retrying.`;
+  }
+
+  const remedy =
+    source === 'bot'
+      ? 'Import fewer channels, or delete an earlier import first.'
+      : 'Re-export with a smaller date range or without --media, or split the server across separate imports.';
+  return `This import would hold ${held} of files, past the ${cap} limit for one import. ${remedy}`;
 }
 
 /**
@@ -255,7 +267,7 @@ export class DiscordImportService {
       });
     } catch (error) {
       if (error instanceof ArchiveQuotaExceededError) {
-        throw new BadRequestException(archiveQuotaMessage(error));
+        throw new BadRequestException(archiveQuotaMessage(error, job.source));
       }
       throw error;
     }

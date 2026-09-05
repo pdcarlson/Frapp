@@ -57,6 +57,38 @@ declare
   v_import_bytes bigint;
   v_chapter_bytes bigint;
 begin
+  -- A ceiling is only a ceiling if it exists. `x > null` is null, so both guards
+  -- below would fall through and register the batch unbounded — silently, with a
+  -- 200 and no way to tell from the response that nothing was enforced. This
+  -- function is the single enforcement point precisely so it need not trust its
+  -- caller, and the caps are the one thing the caller still supplies.
+  if p_import_cap is null or p_chapter_cap is null
+     or p_import_cap < 0 or p_chapter_cap < 0 then
+    raise exception using
+      errcode = 'null_value_not_allowed',
+      message = 'discord_import_register_files requires non-negative import and chapter caps';
+  end if;
+
+  -- The import must belong to the chapter the caller claims. `chapter_id` is
+  -- written verbatim from `p_chapter_id` below and is NOT in the upsert's update
+  -- list, so a row filed under the wrong chapter can never be corrected by a
+  -- later well-formed call: the projection's first arm filters it out by
+  -- `chapter_id` and its second arm skips it as already-existing, so it is
+  -- missed by both forever while still occupying real storage. There is no
+  -- composite FK tying `discord_import_files.chapter_id` to the import's own,
+  -- so this check is the only thing standing in front of that.
+  if not exists (
+    select 1 from discord_imports
+     where id = p_import_id and chapter_id = p_chapter_id
+  ) then
+    raise exception using
+      errcode = 'foreign_key_violation',
+      message = format(
+        'discord_import_register_files: import %s does not belong to chapter %s',
+        p_import_id, p_chapter_id
+      );
+  end if;
+
   -- Serializes registration per chapter for the rest of the transaction, so the
   -- measure below and the upsert that follows cannot interleave with another
   -- request's pair. Keyed on the chapter because the chapter ceiling is the
@@ -89,12 +121,24 @@ begin
     -- re-price and making the answer SMALLER than the truth. jsonb has no such
     -- edge, and `coalesce(p_rows, '[]')` makes a null payload an empty batch
     -- rather than an unpriced one.
-    select
+    -- `distinct on` because `(import_id, relative_path)` is the conflict key and
+    -- Postgres refuses an ON CONFLICT batch that touches one row twice
+    -- ("cannot affect row a second time", SQLSTATE 21000) — which would surface
+    -- to the admin as a 500 carrying a Postgres internal, killing a whole
+    -- 100-file batch. Nothing upstream dedupes: the DTO validates files
+    -- individually and a Discord export can legitimately present the same
+    -- relative path twice. The largest declared size wins, so collapsing
+    -- duplicates can only ever price the batch higher, never sneak it under a
+    -- ceiling. It also fixes a double-count: without this the pricing arms
+    -- below counted a duplicated path once per copy.
+    select distinct on (x.relative_path)
       x.relative_path,
-      greatest(coalesce(x.byte_size, 0), 0) as byte_size
+      case when x.byte_size is null then null else greatest(x.byte_size, 0) end
+        as byte_size
       from jsonb_to_recordset(coalesce(p_rows, '[]'::jsonb))
         as x(relative_path text, byte_size bigint)
      where x.relative_path is not null
+     order by x.relative_path, x.byte_size desc nulls last
   )
   select
     coalesce(sum(effective) filter (where import_id = p_import_id), 0),
@@ -146,21 +190,36 @@ begin
       );
   end if;
 
-  -- Same upsert the API used to issue directly, with one change: `byte_size`
-  -- only ever moves up. Everything else about a re-registered row (storage
-  -- path, content type) is server-derived and safe to refresh, and
-  -- `uploaded_at` is deliberately untouched so a resumed upload keeps its
-  -- confirmation.
+  -- The upsert, with two rules that make the manifest a ledger rather than a
+  -- scratch pad.
+  --
+  -- **`byte_size` only ever moves up**, and NULL is preserved rather than
+  -- collapsed to 0. NULL means "this size was never known" — the bot path
+  -- writes it when Discord omits `attachment.size`, and the table's own CHECK
+  -- models the state — which is exactly the row the reconciliation sweep
+  -- (#1691) has to find and correct against real storage. Coalescing it to 0
+  -- here would make an unknown size indistinguishable from a genuinely empty
+  -- file, and the monotonic rule would then pin it at 0 forever.
+  --
+  -- **The identity columns are pinned on conflict.** `storage_path` for an
+  -- export part is derived from the client-supplied `part_index`, so refreshing
+  -- it let a caller re-register one `relative_path` with an incrementing
+  -- `part_index`, get a fresh signed URL for a fresh object each round, and
+  -- upload without bound while `greatest` held the ledger flat at one row. The
+  -- first registration of a path therefore owns where it lives; a re-mint gets
+  -- a URL for the SAME object, which is what the resume path wants anyway.
+  -- `uploaded_at` stays untouched for the same reason.
   return query
   with incoming as (
-    select
+    select distinct on (x.relative_path)
       x.relative_path,
       x.kind,
       x.part_index,
       x.bucket,
       x.storage_path,
       x.content_type,
-      greatest(coalesce(x.byte_size, 0), 0) as byte_size
+      case when x.byte_size is null then null else greatest(x.byte_size, 0) end
+        as byte_size
       from jsonb_to_recordset(coalesce(p_rows, '[]'::jsonb))
         as x(
           relative_path text,
@@ -172,6 +231,7 @@ begin
           byte_size bigint
         )
      where x.relative_path is not null
+     order by x.relative_path, x.byte_size desc nulls last
   )
   insert into discord_import_files as t (
     import_id, chapter_id, kind, part_index, relative_path,
@@ -182,12 +242,11 @@ begin
     i.bucket, i.storage_path, i.content_type, i.byte_size
     from incoming i
   on conflict (import_id, relative_path) do update
-    set kind         = excluded.kind,
-        part_index   = excluded.part_index,
-        bucket       = excluded.bucket,
-        storage_path = excluded.storage_path,
-        content_type = excluded.content_type,
-        byte_size    = greatest(coalesce(t.byte_size, 0), excluded.byte_size)
+    set content_type = coalesce(excluded.content_type, t.content_type),
+        byte_size    = case
+          when t.byte_size is null and excluded.byte_size is null then null
+          else greatest(coalesce(t.byte_size, 0), coalesce(excluded.byte_size, 0))
+        end
   returning t.*;
 end;
 $$;

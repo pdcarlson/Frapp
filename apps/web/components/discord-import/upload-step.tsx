@@ -7,7 +7,7 @@ import {
 } from "@/components/shared/meter";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { getErrorMessage, isClientError } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/utils";
 import {
   PREAMBLE_READ_BYTES,
   isMediaFile,
@@ -176,6 +176,9 @@ export function UploadStep({
 
         const landed: string[] = [];
         const failed: string[] = [];
+        // The first reason the server gave for refusing to mint, kept so the
+        // run can end by SAYING it rather than reporting a silent failure count.
+        let mintFailure: string | null = null;
 
         for (let i = 0; i < pending.length; i += MINT_BATCH) {
           const batch = pending.slice(i, i + MINT_BATCH);
@@ -192,17 +195,27 @@ export function UploadStep({
               })),
             });
           } catch (error) {
-            // A 4xx here is a decision about the whole archive, not bad luck on
-            // one batch: the archive quota (#1243), a rejected file type, an
-            // import that is no longer mutable. Every remaining batch would be
-            // refused for the same reason, so grinding through hundreds more
-            // only buys a "done" screen listing every file as failed with no
-            // reason given. Rethrow so the handler's toast shows the server's
-            // sentence, which is written to say what to do about it.
-            if (isClientError(error)) throw error;
-
-            // A transport blip, by contrast, is per-batch: keep going and let
-            // the admin re-pick the folder to resume the stragglers.
+            // Remember WHY, once. Before this, a refused mint was swallowed
+            // whole: the archive quota (#1243), a rejected file type, an import
+            // no longer mutable — all of them produced a "done" screen listing
+            // every file as failed with no reason anywhere, and the admin had
+            // nothing to act on.
+            //
+            // Recorded rather than rethrown, and that is the deliberate half.
+            // Throwing from here skips the `confirmUploads` loop below, so
+            // every object that already PUT successfully keeps
+            // `uploaded_at = null` — and `alreadyUploaded` is built from
+            // exactly that column. On a 40 GB archive refused two thirds of the
+            // way through, the documented recovery ("pick the folder again")
+            // would then re-send everything from byte zero, for hours, only to
+            // be refused at the same batch. Confirming what landed is what
+            // makes the refusal recoverable.
+            if (!mintFailure) {
+              mintFailure = getErrorMessage(
+                error,
+                "Some files could not be registered for upload.",
+              );
+            }
             failed.push(...batch.map((entry) => entry.relativePath));
             setFailures((prev) => [
               ...prev,
@@ -269,6 +282,14 @@ export function UploadStep({
             id: importId,
             storage_paths: landed.slice(i, i + CONFIRM_BATCH),
           });
+        }
+
+        // Said after the confirm loop, so the sentence and the resumable state
+        // both survive. Not fatal: whatever DID land is staged and importable,
+        // and re-picking the folder resumes the rest once the admin has acted
+        // on this.
+        if (mintFailure) {
+          toast({ variant: "destructive", description: mintFailure });
         }
 
         setStatus("done");

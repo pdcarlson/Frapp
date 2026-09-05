@@ -350,6 +350,28 @@ describe('DiscordImportService — upload URLs', () => {
     ).rejects.toThrow(/60 MB of files, past the 50 MB limit/);
   });
 
+  it('does not tell a bot-path admin to re-export without --media', async () => {
+    // They never ran DiscordChatExporter: there is no export folder and no
+    // --media flag in their flow, so that advice names three things that do
+    // not exist and leaves them with no next step.
+    await build(job({ source: 'bot' }));
+    repo.registerFiles.mockRejectedValue(
+      new ArchiveQuotaExceededError(
+        'import',
+        MAX_ARCHIVE_IMPORT_BYTES + 1,
+        MAX_ARCHIVE_IMPORT_BYTES,
+      ),
+    );
+
+    const caught = await service
+      .requestUploadUrls(IMPORT_ID, CHAPTER, [file()])
+      .catch((error: Error) => error);
+
+    expect(caught.message).toMatch(/limit for one import/);
+    expect(caught.message).not.toMatch(/--media/);
+    expect(caught.message).toMatch(/Import fewer channels/);
+  });
+
   it('hands registration the caller scope, the batch, and both ceilings', async () => {
     // The service never decides the verdict — it passes the ceilings down and
     // translates what comes back. If this drifts, the quota silently stops
