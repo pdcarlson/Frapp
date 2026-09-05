@@ -4,7 +4,11 @@ import { MemberService } from '../../application/services/member.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { UpdateMemberRolesDto, UpdateOnboardingDto } from '../dtos/member.dto';
+import {
+  DismissOpsNudgeDto,
+  UpdateMemberRolesDto,
+  UpdateOnboardingDto,
+} from '../dtos/member.dto';
 
 describe('MemberController', () => {
   let controller: MemberController;
@@ -20,6 +24,7 @@ describe('MemberController', () => {
       findAlumniByChapter: jest.fn(),
       updateRoles: jest.fn(),
       updateOnboarding: jest.fn(),
+      dismissOpsNudge: jest.fn(),
       remove: jest.fn(),
     } as any;
 
@@ -189,6 +194,28 @@ describe('MemberController', () => {
       expect(memberService.updateOnboarding).toHaveBeenCalledWith(
         'member-1',
         true,
+      );
+      expect(result).toEqual(updatedMember);
+    });
+  });
+
+  describe('dismissOpsNudge', () => {
+    it('dismisses the named nudge for the current member', async () => {
+      const dto: DismissOpsNudgeDto = { module_key: 'dues' };
+      const updatedMember = {
+        id: 'member-1',
+        dismissed_ops_nudges: ['dues'],
+      } as any;
+      memberService.dismissOpsNudge.mockResolvedValue(updatedMember);
+
+      const result = await controller.dismissOpsNudge({ id: 'member-1' }, dto);
+
+      // The member id comes from `@CurrentMember()`, never from the body:
+      // that is what makes this route safe without a permission decorator —
+      // there is no id a caller could substitute to write someone else's row.
+      expect(memberService.dismissOpsNudge).toHaveBeenCalledWith(
+        'member-1',
+        'dues',
       );
       expect(result).toEqual(updatedMember);
     });
