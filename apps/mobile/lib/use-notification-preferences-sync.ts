@@ -11,7 +11,9 @@ import {
   defaultNotificationCategoryState,
   isNotificationCategoryKey,
   MAX_TIME_ZONE_LENGTH,
+  rowsToNotificationCategoryState,
   type NotificationCategoryKey,
+  type NotificationCategoryState,
 } from "@repo/validation";
 import { useIsApiAuthenticated } from "./use-is-api-authenticated";
 
@@ -113,8 +115,13 @@ function normalizeTimeZone(value: unknown): string {
   return trimmed;
 }
 
-/** Which categories are on. Keys come from the shared catalog, never from here. */
-export type CategoryState = Record<NotificationCategoryKey, boolean>;
+/**
+ * Which categories are on. Keys come from the shared catalog, never from here.
+ *
+ * An alias rather than its own `Record<…>` so this screen and web's Profile
+ * card name one type: the shape is the catalog's, not this hook's.
+ */
+export type CategoryState = NotificationCategoryState;
 
 /** A concrete quiet-hour window. Times are `HH:mm`; `tz` is an IANA zone name. */
 export type QuietHoursWindow = {
@@ -235,27 +242,6 @@ function settingsToQuietHoursEnabled(
 ): boolean | null {
   if (!settings) return null;
   return settingsToQuietHoursWindow(settings) !== null;
-}
-
-/**
- * Fold the server's preference rows over the catalog defaults.
- *
- * A category with no row is enabled, because that is what the server does with
- * an absent row (`notification.service.ts` only suppresses on an explicit
- * `is_enabled: false`) — so this returns a complete state, not a patch, and a
- * category the member has never touched reads the same here as it behaves in
- * delivery.
- */
-function rowsToCategoryState(rows: unknown): CategoryState {
-  const state = defaultNotificationCategoryState();
-  if (!Array.isArray(rows)) return state;
-  for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
-    const { category, is_enabled: isEnabled } = row as Record<string, unknown>;
-    if (typeof isEnabled !== "boolean") continue;
-    if (isNotificationCategoryKey(category)) state[category] = isEnabled;
-  }
-  return state;
 }
 
 export type NotificationPreferencesSync = {
@@ -379,7 +365,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
     // ones it returned no row for — so its answer replaces the cache wholesale
     // rather than merging with it.
     if (notifPrefsQuery.isSuccess) {
-      return rowsToCategoryState(notifPrefsQuery.data);
+      return rowsToNotificationCategoryState(notifPrefsQuery.data);
     }
     return { ...defaultNotificationCategoryState(), ...cached.categories };
   }, [notifPrefsQuery.isSuccess, notifPrefsQuery.data, cached.categories]);

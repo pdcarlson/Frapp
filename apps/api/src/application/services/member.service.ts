@@ -305,6 +305,44 @@ export class MemberService {
     });
   }
 
+  /**
+   * Record that this member has dismissed `moduleKey`'s ops-setup nudge in this
+   * chapter (#492). Idempotent: re-dismissing an already-dismissed nudge is a
+   * no-op write rather than a duplicate array entry, so a double-click or a
+   * retried request cannot grow the column without bound.
+   *
+   * Read-then-write rather than a Postgres `array_append`, because the repository
+   * boundary takes whole column values and the array is at most four entries —
+   * the width of `OPS_NUDGE_MODULES`.
+   *
+   * That does open a lost-update window, and it is **reachable**, not theoretical:
+   * dismissing one nudge falls the next one through immediately, putting a fresh
+   * dismiss control under the cursor, so two writes can overlap and the later one
+   * erases the earlier key. The client closes that path by serializing the
+   * writes: `useDismissOpsNudge` carries `scope: { id: 'ops-nudge-dismiss' }`,
+   * so TanStack will not start a second dismissal while one with that scope is
+   * pending, and the second read therefore sees the first write. Pinned by
+   * `packages/hooks/src/use-ops-nudges.spec.tsx`. (An earlier revision disabled
+   * the dismiss control instead; that greys out the successor card for the whole
+   * retry window and indefinitely offline, which is a dead-end control.)
+   * A cross-tab or cross-device race can still lose one, and that is accepted
+   * rather than fixed with an RPC: the entire cost is that one already-dismissed
+   * card reappears on the next load and is dismissed again. If this column ever
+   * carries something a member cannot trivially redo, this needs to become an
+   * atomic `array_append` first.
+   */
+  async dismissOpsNudge(memberId: string, moduleKey: string): Promise<Member> {
+    const member = await this.memberRepo.findById(memberId);
+    if (!member) throw new NotFoundException('Member not found');
+
+    const dismissed = member.dismissed_ops_nudges ?? [];
+    if (dismissed.includes(moduleKey)) return member;
+
+    return this.memberRepo.update(memberId, {
+      dismissed_ops_nudges: [...dismissed, moduleKey],
+    });
+  }
+
   async remove(
     memberId: string,
     chapterId: string,

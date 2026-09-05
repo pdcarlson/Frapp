@@ -13,7 +13,10 @@
 #   https://supabase.com/docs/guides/platform/backups
 #
 # So this is not defence-in-depth on top of a provider snapshot. Until the org is
-# upgraded, it is the ONLY restorable backup either project has.
+# upgraded, it is the ONLY restorable backup `frapp-staging` has — and `frapp-prod`
+# has none at all, because db-backup.yml runs against staging only. This script can
+# dump any project; nothing schedules it against prod. See DB_ROLLBACK_PLAYBOOK.md
+# § Backup reality.
 #
 # Three files, per Supabase's documented backup recipe (same link, and
 # /guides/platform/migrating-within-supabase/backup-restore). They are separate
@@ -33,7 +36,7 @@
 #
 # NOT COVERED, and deliberately not papered over: Storage objects. Per the same
 # guide, "Database backups do not include objects you store via the Storage API,
-# as the database only includes metadata about these objects." This repo has five
+# as the database only includes metadata about these objects." This repo has eight
 # buckets; a restore from these files yields rows that reference objects this
 # backup never captured. See DB_ROLLBACK_PLAYBOOK.md § What this backup does not
 # cover.

@@ -254,7 +254,24 @@ Two other refusals, both deliberate:
       (`check:migration-safety` requires touching this doc or the rollback
       playbook — it cannot tell which one you owed)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
-- [ ] Supabase backups/snapshots confirmed before a **production** promotion
+- [ ] For a **production** promotion, a backup **taken by you**, with the dump path
+      or object key recorded on the PR — or an explicit, written acceptance that
+      there is no recovery path for this promotion. Nothing takes one for you:
+      `db-backup.yml` runs against `frapp-staging` only, and the free plan offers
+      neither a snapshot nor PITR
+      ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality),
+      so this box cannot be ticked by having read it. This replaced an older item
+      that asked you to *confirm* Supabase backups: there were none to confirm, so
+      it could only ever be ticked falsely.
+      `scripts/db-backup.sh` can dump any project. It always needs a reachable
+      Docker daemon (`supabase db dump` runs pg_dump in a container). Prefer
+      `--db-url` for a one-off — nothing is left behind **in the tree**, unlike
+      `--linked`, which needs `supabase link` and leaves the link under
+      `supabase/.temp`, so re-link before running anything else from it. (The URL
+      still carries the password on the command line, so it reaches your shell
+      history and the process table like any other argv.) Either way it captures
+      the **database** only; Storage objects need `scripts/storage-backup-run.mjs`,
+      which is what `db-backup.yml`'s second job runs for staging.
 
 ## Local validation
 
@@ -377,6 +394,42 @@ touch this file **or** [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — 
 backs the habit, it does not prove the log complete. Appending here stays the
 promoter's job.
 
+## 2026-09-05: Ops-setup nudge dismissals (#492)
+
+One additive migration. Adds a single `text[]` column with a literal default to
+an existing table; no backfill, no rewrite, no RLS change, no new policy. Safe to
+apply ahead of the code — the column is simply unread until the API that writes
+it ships, and its `'{}'` default means every existing row reads as "nothing
+dismissed" rather than null.
+
+Promoted alongside `20260905020000_point_transactions_client_message_id.sql`
+above. The two are independent — different tables, no shared object — so either
+order works; the prefixes differ only because this one was renamed off a
+collision with that one before merge.
+
+### 20260905030000_member_dismissed_ops_nudges.sql
+* **Purpose**: Gives `members` the `dismissed_ops_nudges` array that records
+  which ops-setup nudges a member has closed, per `spec/product/modules.md`
+  § "Ops-setup nudges". It lives on `members` rather than `user_settings`
+  because the spec requires the state **per user per chapter** and `members` is
+  `unique (user_id, chapter_id)` — that grain by construction — while
+  `user_settings` is `unique (user_id)` and cannot express it. Same placement as
+  `has_completed_onboarding`, the existing per-member UI-dismissal flag.
+* **Checks**: After `db push`, confirm the column exists with the right type and
+  default —
+  `select column_name, data_type, column_default, is_nullable from information_schema.columns where table_name = 'members' and column_name = 'dismissed_ops_nudges';`
+  should return one row reading `ARRAY` / `'{}'::text[]` / `NO`. The default and
+  the NOT NULL both matter: a null here would reach `selectOpsNudge` through the
+  API's `?? []` and read as "nothing dismissed", so a member's dismissals would
+  silently stop persisting rather than fail loudly.
+  Confirm no rows were left behind by the default —
+  `select count(*) from members where dismissed_ops_nudges is null;` must be 0.
+* **No data migration**: the column starts empty for every member by design.
+  Dismissals accrue only as officers close cards; there is nothing to backfill
+  and no prior state to preserve.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the ops-setup nudge dismissals.
+
 ## 2026-09-05: Points ledger idempotency key (#1719)
 
 One additive migration. Adds a nullable column and a partial unique index to an
@@ -409,7 +462,7 @@ enabled with no client policies).
 ### 20260831220000_chapter_documents_metadata.sql
 * **Purpose**: Adds `content_type`, `byte_size`, `document_type`, `effective_date`
   to `chapter_documents`, prerequisite work for the AI corpus retrieval design
-  (ADR-13 §13, #720) which needs a currency signal distinct from upload time and
+  (`spec/architecture/README.md` § 13 AI Corpus Architecture — not ADR-13, which is Repository visibility; #720) which needs a currency signal distinct from upload time and
   provenance metadata beyond a title. `content_type`/`byte_size` are populated
   from what the client already knows about the file (`file.type` / `file.size`);
   `document_type`/`effective_date` are optional form fields, user-supplied and
