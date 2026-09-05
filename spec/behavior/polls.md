@@ -23,7 +23,7 @@
 
 ## Anonymous polls — not built, and why the obvious fix does not work
 
-**No poll is anonymous today.** There is no anonymity flag in `PollMetadata`, no `anonymous` column anywhere, and no code path that treats one voter differently from another. The `polls.anonymous` entry in the module catalog (`packages/org-archetypes/src/index.ts`, `subFeatures`) is a **label with no storage**: `chapters.enabled_modules` is a flat `{module: boolean}` jsonb, no sub-feature key is written or read by anything, and the Settings Modules tab renders sub-features as read-only text under its own note that per-feature toggles are not built. Anything that reads `polls.anonymous` as configuration is reading a catalog string.
+**No poll is anonymous today.** There is no anonymity flag in `PollMetadata`, no `anonymous` column anywhere, and no code path that treats one voter differently from another. The `polls.anonymous` entry in the module catalog (`packages/org-archetypes/src/index.ts`, `subFeatures`) is a **label with no storage**: `chapters.enabled_modules` is a flat `{module: boolean}` jsonb, no sub-feature key is written or read by anything, and the Settings Modules tab renders sub-features as read-only text under its own note that per-feature toggles are not built. Anything that reads `polls.anonymous` as configuration is reading a catalog string. This is true of all 50 sub-feature keys, not just this one (#1760).
 
 This section states what an implementation has to contend with. It is design intent for work not yet scheduled, not a description of shipped behavior.
 
@@ -49,7 +49,7 @@ Making it anonymous requires all three of: revoking the client's SELECT on vote 
 
 **Hard anonymity** stores no voter identity — at most a per-poll nullifier that proves "this member has voted" without revealing what for. It keeps the promise, and it costs: no vote change or retraction without a second construction, no per-member audit of who participated, and `idx_chat_message_actions_dedupe` / `poll_votes`' `unique (message_id, user_id, option_index)` both need replacing, since each is keyed on the identity being removed.
 
-**This choice is open and is not settled here.** It is a product and trust call, and it is the one the module catalog's minors/privacy concern actually turns on — a chapter running a rush ballot is exactly the case where "anonymous" being soft would matter to the people voting.
+**This choice is open and is not settled here** (#1759). It is a product and trust call, and it is the one the module catalog's minors/privacy concern actually turns on — a chapter running a rush ballot is exactly the case where "anonymous" being soft would matter to the people voting.
 
 ### Recommendation: anonymity is per-poll, fixed at creation
 
