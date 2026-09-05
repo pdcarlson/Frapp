@@ -121,7 +121,7 @@ Frapp/
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill. Consumed by the API (chapter config seed), web Settings + first-officer wizard, and `apps/mobile` (`package.json` declares the workspace dependency; the wizard reads `ARCHETYPES` directly). |
 | `@repo/theme`             | Shared Tailwind preset plus two stylesheets: `signet.css` (dark-only Signet tokens, imported by `apps/web`) and the legacy bone/bronze `globals.css` (imported by `apps/landing` only). Typed tokens for non-Tailwind consumers; `accent.ts` holds `resolveChapterAccentColor`, the per-surface accent re-validator. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |
-| `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`, `isAnalyticsOptedOut`) used by API + clients. `z.record` requires a key schema and a value schema. |
+| `@repo/validation`        | Shared Zod 4 schemas, upload MIME/size allowlists (`image` / `proof` / `document` / `archive`), field-length caps, plus client gates (`can`, `isModuleEnabled`, `subscriptionWriteState`, `isAnalyticsOptedOut`) used by API + clients. `z.record` requires a key schema and a value schema. |
 
 ---
 
@@ -314,7 +314,7 @@ Owned by [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../docs/internal/s
 | `branding`, `profiles`, `documents`, `backwork`, `chat` | `20260808204500_declare_dashboard_created_buckets.sql` |
 | `chat-archive` | `20260823124000_chat_archive_bucket.sql` |
 
-Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_size_limit`. That limit is 26214400 (25MB = `MAX_UPLOAD_BYTES` in `@repo/validation`) on seven of the eight; `chat-archive` is 104857600 (100MB), sized to Discord's boosted-server per-file ceiling. `supabase/config.toml`'s global `[storage] file_size_limit` is 104857600 to match the highest of them — it caps the local stack and overrides any per-bucket column that is higher, so it is deliberately *not* 25MB and must not be "corrected" down to `MAX_UPLOAD_BYTES`. Application-layer MIME and extension checks use the same module (`packages/validation/src/upload-allowlists.ts`, kinds `image` / `proof` / `document`) — do not keep a second copy in a service or page. The bucket MIME list is **load-bearing, not documentation**: a signed upload URL cannot pin a content type — the uploader sets its own header on the PUT — so for the member-upload buckets the API's check gates only URL *issuance*, and these bucket columns are the only thing enforced on the upload itself. (`reports` is the exception: it is written only server-side, which passes the content type the server actually resolved, so there the column is a second belt rather than the only one. `chat-archive` is **both** — server-side on its bot path, but signed-URL on its upload path, where the bucket column is again the only enforcement.) What they enforce is the **declared header, not the bytes**, so the column does not stop hostile bytes reaching storage; it constrains the type they are served as. Without it a member with upload permission could have `text/html` served from the storage origin. Measurement, and what is *not* covered, in `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist actually enforces. Add the bucket declaration in the same change set as any new bucket; never create one from the dashboard alone. Shipped migration DDL is immutable; a genuine bucket-policy change is a new migration with a comment pointing at the shared kind.
+Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_size_limit`. That limit is 26214400 (25MB = `MAX_UPLOAD_BYTES` in `@repo/validation`) on seven of the eight; `chat-archive` is 104857600 (100MB), sized to Discord's boosted-server per-file ceiling. `supabase/config.toml`'s global `[storage] file_size_limit` is 104857600 to match the highest of them — it caps the local stack and overrides any per-bucket column that is higher, so it is deliberately *not* 25MB and must not be "corrected" down to `MAX_UPLOAD_BYTES`. Application-layer MIME and extension checks use the same module (`packages/validation/src/upload-allowlists.ts`, kinds `image` / `proof` / `document` / `archive`) — do not keep a second copy in a service or page. The bucket MIME list is **load-bearing, not documentation**: a signed upload URL cannot pin a content type — the uploader sets its own header on the PUT — so for the member-upload buckets the API's check gates only URL *issuance*, and these bucket columns are the only thing enforced on the upload itself. (`reports` is the exception: it is written only server-side, which passes the content type the server actually resolved, so there the column is a second belt rather than the only one. `chat-archive` is **both** — server-side on its bot path, but signed-URL on its upload path, where the bucket column is again the only enforcement.) What they enforce is the **declared header, not the bytes**, so the column does not stop hostile bytes reaching storage; it constrains the type they are served as. Without it a member with upload permission could have `text/html` served from the storage origin. Measurement, and what is *not* covered, in `packages/validation/src/upload-allowlists.ts` § What the bucket allowlist actually enforces. Add the bucket declaration in the same change set as any new bucket; never create one from the dashboard alone. Shipped migration DDL is immutable; a genuine bucket-policy change is a new migration with a comment pointing at the shared kind.
 
 **Upload flow:** API generates a signed upload URL; client uploads directly to Supabase Storage. API generates a signed download URL; client fetches directly.
 
@@ -355,16 +355,13 @@ A unique `x-request-id` header is generated for each incoming request (or preser
 
 ### Health Check
 
-`GET /health` — No authentication required. Returns:
+Two unauthenticated endpoints — `GET /health` (liveness, always 2xx while the
+process is up) and `GET /health/ready` (readiness, 503 when a dependency is
+degraded, which is what the post-deploy smoke checks poll).
 
-```json
-{
-  "status": "ok",
-  "database": "connected",
-  "supabase": "connected",
-  "uptime": 3600
-}
-```
+The response bodies and the reason the two differ are owned by
+[`spec/behavior/observability.md`](../behavior/observability.md) § Health Check
+and are not restated here.
 
 ### Error Tracking
 
@@ -1516,7 +1513,7 @@ aggregate questions. Structured data is now a **tool surface**, not corpus — s
 
 - Vector index per chapter (pgvector), keyed by chapter ID. Cross-chapter retrieval is impossible by construction — no chapter sees another chapter's vectors. pgvector remains the right call at this scale: a per-chapter corpus is orders of magnitude below the ~5–10M-vector point where a dedicated vector service starts to pay for itself, and it avoids operating a second datastore.
 - **Retrieval is hybrid, not vector-only:** a dense vector search for semantic similarity, a sparse keyword search for exact terms (a bylaw article number, a dollar amount, a member's name), and a reranking pass over the merged candidate set. Dense-only retrieval reliably misses exact-match queries, which are common in this corpus.
-  - **The sparse half is new work — it does not exist yet.** `apps/api/src/application/services/search.service.ts` (global search) is four parallel `ILIKE '%q%'` scans with no ranking or scoring, and the repo's only `tsvector`/GIN index is on `chapter_directory` (the global onboarding autocomplete), not on chapter content. A content-side `tsvector` is part of the corpus work.
+  - **The sparse half now exists for global search, and the corpus can build on it.** `apps/api/src/application/services/search.service.ts` runs Postgres full-text search — all four sources match a `GENERATED ALWAYS … STORED` tsvector behind a GIN index, queried with `websearch_to_tsquery`. The per-source columns, indexes and migrations are enumerated in [`spec/behavior/search.md`](../behavior/search.md) (the Implementation bullet) and are not restated here. What remains corpus-specific is chunk-level indexing, **relevance scoring on the sparse side** — `search.service.ts` ranks nothing today, ordering chat by `created_at` and cutting at a flat limit — and rerank. The sparse *index* exists; the sparse *scoring* hybrid retrieval needs to merge candidate sets does not.
   - What **is** reusable from that service is the more valuable part: its authorization-filtered retrieval pattern — candidate rows are filtered through `canAccessChannel` before returning, and role lookups are re-scoped by `chapter_id` so a stray cross-chapter `role_id` cannot leak permissions. Corpus retrieval must follow the same shape.
 - Retrieval returns source rows with provenance metadata (source type, author or document title, timestamp, internal ID). The LLM prompt template injects this metadata so the model can cite it back.
 - Recency decay is applied at retrieval time so newer authoritative content outranks older content on time-sensitive questions ("when is the meeting"); decay is off for time-invariant content (policies, bylaws).
