@@ -118,12 +118,20 @@ export function NotificationLevelPopover({
                     // Closes on click, unconditionally. An earlier revision
                     // kept it open until the write landed so a failure had
                     // somewhere to render; that made dismissal depend on an
-                    // `isPending` transition, which never arrives when
-                    // TanStack PAUSES the mutation offline (`networkMode:
-                    // "online"`) — the menu froze with every option disabled
-                    // and no explanation, on a surface that is explicitly
-                    // offline-capable. The failure is reported in the channel
-                    // header instead, which does not unmount.
+                    // `isPending` transition, which never arrived while
+                    // TanStack PAUSED the mutation offline — the menu froze
+                    // with every option disabled and no explanation, on a
+                    // surface that is explicitly offline-capable. The failure
+                    // is reported in the channel header instead, which does
+                    // not unmount.
+                    //
+                    // #1707 fixed that pause provider-wide (`query-provider.tsx`
+                    // now rejects offline writes rather than parking them), so
+                    // the specific hang described above can no longer happen.
+                    // This still closes unconditionally: dismissal should not
+                    // depend on a write's outcome at all, which was the actual
+                    // lesson, and the header is still the right place for the
+                    // error.
                     if (!selected) onChange(option.level);
                     setOpen(false);
                   }}
