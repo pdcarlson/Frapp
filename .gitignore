@@ -66,7 +66,7 @@ supabase/.branches/
 # scripts/install-{lychee,gitleaks,oasdiff}.sh, scripts/lib/cloud-sandbox-common.sh
 # (supabase-cli), and /diff-review (diff-review/ HEAD markers). Nothing under it
 # is ever tracked.
-.cache/
+/.cache/
 
 # link checker binary (never committed). The root-level patterns cover a manual
 # download, which check-links.mjs still finds via PATH; the cached copy that

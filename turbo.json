@@ -23,10 +23,6 @@
     "check-types": {
       "dependsOn": ["^build"]
     },
-    "test": {
-      "dependsOn": ["^build"],
-      "outputs": []
-    },
     "test:cov": {
       "dependsOn": ["^build"],
       "outputs": ["coverage/**"]

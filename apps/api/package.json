@@ -15,7 +15,7 @@
     "#test/*": {
       "types": "./test/*.ts",
       "source": "./test/*.ts",
-      "default": "./test/*.ts"
+      "default": null
     }
   },
   "private": true,

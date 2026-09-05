@@ -83,7 +83,14 @@ test("the local binary uses the repo's tooling-cache convention, and is gitignor
   // because `.cache` itself was not ignored, so the next tool to cache there
   // showed up untracked — which is how that list reached five. The property
   // this test cares about is unchanged: the cached binary is never committable.
-  assert.match(readFileSync(".gitignore", "utf8"), /^\.cache\/$/m);
+  //
+  // The leading slash is optional because it is a separate question. Each of the
+  // five collapsed entries had an interior slash, which anchors a pattern to the
+  // repo root; a bare `.cache/` has only a trailing one, so it would newly match
+  // a `.cache` directory at ANY depth and silently swallow, say, a package's
+  // committed `.cache/` fixture. `/.cache/` restores that anchoring, and both
+  // spellings satisfy the property above.
+  assert.match(readFileSync(".gitignore", "utf8"), /^\/?\.cache\/$/m);
 });
 
 test("paths resolve from the repo root, not the cwd", () => {

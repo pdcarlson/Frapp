@@ -136,9 +136,11 @@ export function resolveCheckInWindow(
  * "closes 6:15" / "opens 5:45" — the trailing clause drawn on the s07 card.
  *
  * Deliberately NOT `formatClock`: `@repo/formatting` exports a `formatClock`
- * that renders `"Mar 5, 6:15 PM"` — date included — and this file already
- * imports from that package, so two different renderings sat one identifier
- * apart. Importing the wrong one produced plausible, silently wrong copy.
+ * that renders `"Mar 5, 6:15 PM"` — date included. That package is a declared
+ * dependency of `apps/mobile`, so its version is one auto-import away from any
+ * file here, and under the old name the two renderings sat one identifier apart
+ * with nothing to tell them apart at the call site. Picking the wrong one
+ * produces plausible, silently wrong copy rather than an error.
  */
 export function formatEventClock(date: Date | null): string {
   return date ? clock(date) : "";

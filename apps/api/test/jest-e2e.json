@@ -26,7 +26,7 @@
   },
   "moduleNameMapper": {
     "^#domain/(.*)$": "<rootDir>/../src/domain/$1",
-    "^#test/(.*)$": "<rootDir>/./$1",
+    "^#test/(.*)$": "<rootDir>/$1",
     "^@repo/org-archetypes$": "<rootDir>/../../../packages/org-archetypes/src/index.ts",
     "^@repo/chapter-theme$": "<rootDir>/../../../packages/chapter-theme/src/index.ts",
     "^expo-server-sdk$": "<rootDir>/helpers/expo-server-sdk.stub.ts",
