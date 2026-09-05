@@ -50,7 +50,7 @@
 
 ## Edge Cases
 
-- Deleting a role does **not** release its holders. `RoleRepository.delete` is a bare `delete from roles` with no cleanup of `members.role_ids` or `events.required_role_ids`, and no trigger does it either — so the dangling id still matches, and a member who held the deleted role stays required, stays able to check in, and stays eligible for the auto-absent sweep.
+- Deleting a role does **not** release its holders. `RbacService.delete` calls straight through to `SupabaseRoleRepository.delete`, a bare `delete from roles`, with no cleanup of `members.role_ids` or `events.required_role_ids`, and no trigger does it either — so the dangling id still matches, and a member who held the deleted role stays required, stays able to check in, and stays eligible for the auto-absent sweep.
 - If an event's point value is changed after some members have already checked in, only future check-ins use the new value. Already-awarded points are not retroactively adjusted.
 
 ## Calendar Integration

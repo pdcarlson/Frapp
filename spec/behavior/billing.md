@@ -61,7 +61,7 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 - Payments tracked via Stripe PaymentIntents. Webhook confirms payment and moves invoice to PAID.
 - Overdue invoices: an invoice counts as overdue once it is OPEN past its `due_date` **plus the chapter's dues grace period** (the `wf_dues_grace` workflow, enabled with a 7-day threshold by default — see the runtime-enforcement rules in [`settings/customization.md`](settings/customization.md)); a notification is sent to the member and the invoice is flagged as overdue in the admin dashboard.
 - Invoice reminders are sent by a daily scheduled sweep: **1 day before `due_date`** while the invoice is still OPEN (matching the task reminder lead time in [`tasks.md`](tasks.md)), and again once it crosses `due_date` plus the dues grace. Each threshold notifies at most once per invoice — delivery is recorded in `scheduled_notification_dispatches`, so re-running a sweep, or running it on several API instances, cannot duplicate a reminder. An invoice that went overdue more than 7 days ago is not retro-notified.
-- Financial transactions log payments with Stripe charge IDs for reconciliation. The `type` column also permits `REFUND` and `ADJUSTMENT`, but the only write path is the `apply_invoice_payment` RPC, which hardcodes `'PAYMENT'` — no other kind is produced today.
+- Financial transactions log payments with Stripe charge IDs for reconciliation. The `type` column also permits `REFUND` and `ADJUSTMENT`, but the only path that writes one today is the `apply_invoice_payment` RPC, which hardcodes `'PAYMENT'`; the repository's `create` is the sole other insert and nothing calls it.
 
 ### Member payment flow
 

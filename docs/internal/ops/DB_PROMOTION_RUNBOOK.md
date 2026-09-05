@@ -254,9 +254,12 @@ Two other refusals, both deliberate:
       (`check:migration-safety` requires touching this doc or the rollback
       playbook — it cannot tell which one you owed)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
-- [ ] Understood that `frapp-prod` has **no** restorable backup to fall back on —
-      the nightly offsite dump covers `frapp-staging` only, and the free plan
-      offers neither a snapshot nor PITR
+- [ ] For a **production** promotion, take a dump yourself first — nothing does it
+      for you. `db-backup.yml` runs against `frapp-staging` only, and the free plan
+      offers neither a snapshot nor PITR, but `scripts/db-backup.sh` is
+      project-agnostic: `supabase link --project-ref <prod ref>` then
+      `scripts/db-backup.sh --linked --out-dir <dir>`, or `--db-url` against the
+      project directly
       ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality)
 
 ## Local validation

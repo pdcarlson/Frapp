@@ -21,7 +21,7 @@ Parsing rules live in `packages/chat-integrations/src/parsers.ts` (`parsePollArg
 
 - **Simple commands** (`/poll`, `/announce`) parse on the client and post via `POST /v1/channels/:id/messages` (`ChatService.sendMessage`) with the appropriate `kind` (`poll` | `announcement`) and parsed args in `payload`. One round-trip.
 - **Heavy commands** (e.g. `/points grant`, `/task`, `/dues remind overdue`) render a `kind="loading"` placeholder card optimistically (cache-only, with a `client_message_id`), then call a NestJS RPC; the server performs the side effect and posts the rich card itself carrying the **same `client_message_id`**, so the Realtime echo reconciles the placeholder in place via `mergeServerRow`. `/points` calls `POST /v1/points/adjust` with the active `channel_id` + `client_message_id`; on a committed ledger row the service posts the `kind="points"` card. `/task` calls `POST /v1/tasks` the same way; on a committed task row `TaskService.create` posts the `kind="task"` card (see *Server-originated kinds* below). `/event` calls `POST /v1/events` the same way; on a committed event row `EventService.create` posts the `kind="event"` card. The committed row is the source of truth — a failed card post is logged, never rolled back; the client drops the placeholder on an HTTP error.
-- A plain text message (no leading slash) goes through `chat-send` as `kind="text"`.
+- A plain text message (no leading slash) goes through the same `POST /v1/channels/:id/messages` as `kind="text"`.
 
 ## Server-originated kinds (anti-forgery)
 
@@ -29,7 +29,7 @@ A `points`, `task`, `event`, or `system_audit` card asserts that a server-side s
 
 ## Announcement gating
 
-`/announce` is exec-only and posts to the current chapter's `#announcements`. The gate is the `operation: 'read' | 'post'` parameter on the shared `canAccessChannel` predicate (default `'read'`): for `operation:'post'`, after the read check passes, the predicate denies when the channel `is_read_only` and the caller holds neither `announcements:post` nor `*`. Enforced server-side in both `chat-send` and the NestJS cold-path `chat.service.sendMessage`. The client hides the disallowed command for UX, but the server is the trust boundary.
+`/announce` is exec-only and posts to the current chapter's `#announcements`. The gate is the `operation: 'read' | 'post'` parameter on the shared `canAccessChannel` predicate (default `'read'`): for `operation:'post'`, after the read check passes, the predicate denies when the channel `is_read_only` and the caller holds neither `announcements:post` nor `*`. Enforced server-side in `ChatService.sendMessage`, the only send path since ADR-11 / #416. The client hides the disallowed command for UX, but the server is the trust boundary.
 
 ## Vote-change (UPSERT semantics)
 

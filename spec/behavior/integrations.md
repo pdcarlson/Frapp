@@ -15,7 +15,7 @@ Chat-side actions go through the NestJS chat routes (`POST /v1/channels/:id/mess
 
 ## Module Gating
 
-- A module is enabled per chapter via the `enabled_modules` boolean map on chapter config. Free-tier modules are always-on and cannot be toggled off. Every other module is enabled **unless** `enabled_modules[key]` is explicitly `false` — absence is not disablement — and archetype seeds turn most paid modules on at chapter creation.
+- A module is enabled per chapter via the `enabled_modules` boolean map on chapter config. Free-tier modules are always-on in the sense the UI enforces: `alwaysOn` in `MODULE_CATALOG` locks their Settings toggle, though the config PATCH itself does not yet reject disabling one. Every other module is enabled **unless** `enabled_modules[key]` is explicitly `false` — absence is not disablement — and each archetype seed writes an explicit value for every key at chapter creation; the operations-heavy archetypes turn most paid modules on, while `honor` and `colony` deliberately do not.
 - Module state is **always read from chapter config, never from a `window.*` global**. Renderers, dashboards, and RPC payloads import their state and helpers from ES modules — no module state is hung off `window`.
 - Disabling a module immediately hides its nav item (gated on `isModuleEnabled`), removes its slash commands from the chat palette, and mutes (does not delete) its system channel, so re-enabling restores it.
 - On module enable, its system channel `#<module>` is created if not already present. Member notification preferences for the channel default per chapter policy.

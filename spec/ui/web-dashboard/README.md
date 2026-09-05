@@ -20,7 +20,7 @@ A Chat anchor, three member sections, Finance, and a role-gated Admin group — 
 | Chapter | Service hours | `/service` | `hours` | — (log/approve gated inline via `service:log` / `service:approve`) |
 | Chapter | Polls | `/polls` | `polls` | `polls:view_all` (chapter list + tallies; vote/create remain channel-scoped) |
 | Resources | Documents | `/documents` | `documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
-| Resources | Backwork | `/backwork` | `backwork` | — (upload gated by `backwork:upload`) |
+| Resources | Backwork | `/backwork` | `backwork` | — (the API gates browsing on `backwork:upload` or `backwork:admin` at controller level; upload needs `backwork:upload` specifically) |
 | Directory | Directory | `/members` | — | `members:view` |
 | Finance | Billing | `/billing` | — | `billing:view` |
 | Admin | Roles | `/settings?tab=roles` | — | `roles:manage` |

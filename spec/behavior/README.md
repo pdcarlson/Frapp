@@ -71,8 +71,10 @@ All API errors follow a consistent shape:
 ```
 
 - Internal errors (500) never expose database details or stack traces. The `requestId` enables support to locate the full error in logs.
-- All errors are logged with structured context. The record's shape is owned by
-  [`observability.md`](observability.md#structured-logging) § Structured Logging — not restated here.
+- All errors are logged with structured context — one flat JSON object from
+  `apps/api/src/interface/filters/all-exceptions.filter.ts`, which owns that record's
+  shape. The *request* log is a different record, owned by
+  [`observability.md`](observability.md#structured-logging) § Structured Logging.
 - Validation errors (400) return the full list of field-level issues from the validation pipe.
 - Rate limit errors (429) include a `Retry-After` header.
 

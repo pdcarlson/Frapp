@@ -76,7 +76,7 @@ Frapp/
 - **Auth:** Supabase Auth (browser client via `@supabase/ssr`). Session token forwarded to API.
 - **Role:** Admin console for Presidents, Treasurers, and officers.
 - **Server Components** by default; Client Components marked with `'use client'` only where interactivity requires it.
-- **Dark mode:** Supported via `@repo/theme` with system preference detection and manual override.
+- **Dark mode:** Dark-only since the #920 shell slice — no theme provider and no user-facing switch, so there is nothing to detect or override.
 
 ### 3.3 Mobile App (`apps/mobile`)
 
@@ -1575,9 +1575,9 @@ The Expo app opens directly into chat and shares web's realtime transport and ou
 Web persists composer state in IndexedDB via Dexie (ADR-05); mobile uses the native equivalents behind the same storage interface (the `OutboxStore` port in `@repo/chat-core`):
 
 - **Drafts + outbound send/action queue:** AsyncStorage. Persist between cold launches so a force-quit mid-compose never loses input, and a queued message flushes in order on reconnect (idempotent on `client_message_id`, same dedupe index as web).
-- **Inbound message cache:** SQLite (`op-sqlite` or `expo-sqlite`) — last N messages per channel for offline reads and fast cold-start render.
+- **Inbound message cache — specified, not built:** SQLite (`op-sqlite` or `expo-sqlite`) for last-N-per-channel offline reads and fast cold-start render. `apps/mobile` has no sqlite dependency; today the inbound cache is TanStack's in-memory cache, and the AsyncStorage KV holds only the backfill cursor.
 
-The same TanStack Query mutations and Supabase Realtime subscriptions run on both platforms; only the storage seam differs.
+The same TanStack Query mutations and Supabase Realtime subscriptions run on both platforms; the storage seam differs, as do the renderer registry and the reaction affordance recorded above.
 
 ### App lifecycle and presence
 
@@ -1596,4 +1596,4 @@ is deliberately unset, so there is no background-sync handler to wake).
 
 ### Voice memos
 
-**Specified, not built.** `audio` is not in `CHAT_MESSAGE_KINDS`, so a send with that kind is rejected at the DTO today; [`../behavior/chat/README.md`](../behavior/chat/README.md) § Message Kinds and Actions marks it as specified-but-unbuilt and is the owner of that status. As designed: the mobile composer records a voice memo, uploads it to Supabase Storage (pre-signed upload, same flow as other attachments), and sends it as `kind="audio"` with waveform metadata in `payload`. Web renders the `audio` card with waveform playback — the renderer is shared, so a memo recorded on mobile plays back on web.
+**Specified, not built.** `audio` is not in `CHAT_MESSAGE_KINDS`, so a send with that kind is rejected at the DTO today; [`../behavior/chat/README.md`](../behavior/chat/README.md) § Message Kinds and Actions marks it as specified-but-unbuilt and is the owner of that status. As designed: the mobile composer records a voice memo, uploads it to Supabase Storage (pre-signed upload, same flow as other attachments), and sends it as `kind="audio"` with waveform metadata in `payload`. Web would render the `audio` card with waveform playback. Since each app owns its renderer registry, playback on both surfaces means each shipping its own `audio` renderer against the shared payload shape.

@@ -42,14 +42,14 @@ The member experience (`apps/mobile`). Expo with Expo Router.
 **Screens:**
 
 - **First-run (s03)** — Mobile's onboarding surface (`app/(auth)/welcome.tsx`), reached when the auth gate reads `has_completed_onboarding` as false. It is a single first-run screen, **not** the web modal slideshow; both are owned by [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § Onboarding Tutorial, which is where the per-surface split is stated.
-- **Home / Activity Feed** — Unified feed: upcoming events, recent announcements, new Backwork uploads, own point changes, new members. Point balance summary at the top.
+- **Activity Feed** — **specified, no surface today**: mobile's `(tabs)/index.tsx` is `ChatHomeScreen` and web's home redirects to `/chat`. The item set is owned by [`../behavior/activity-feed.md`](../behavior/activity-feed.md).
 - **Chat** — Channel list organized by categories (respecting permission gates). Direct Messages tab (1-on-1 and group DMs). Real-time messaging with reactions, replies, file/image uploads, typing indicators, online presence. Pinned messages panel. Full-text search within and across channels.
 - **Backwork** — Browse by department, course, professor, semester/year, assignment type, document variant, and tags. Upload flow: select file, fill metadata (all optional), optionally redact (v2), confirm. Download with signed URL. Full-text search.
 - **Events** — Upcoming events list with calendar view. Self-service check-in (during event time window). Past events with attendance status. "Add to Calendar" action generating .ics file. Recurring event indicators.
 - **Study Hours** — Select geofence, view map with polygon overlay. Start session — enters dedicated study mode screen (large timer, location status, progress toward next point, streak indicator). Foreground enforcement with pause/resume. Stop session. Session history with points earned.
 - **My Points** — Current balance, recent transactions (with reasons for adjustments), leaderboard (chapter rank). Time-window selector (all-time, semester, month).
 - **Notifications** — In-app notification center with deep linking. Mark as read. Filter by category. Quiet hours configuration.
-- **Profile** — Display name, profile photo, bio (editable). Push notification preferences (per-category). Quiet hours setting. Dark mode toggle. Account info. Sign out.
+- **Profile** — Display name, profile photo, bio (editable). Push notification preferences (per-category). Quiet hours setting. Appearance is shown as static text, not a control — the app is dark-only. Account info. Sign out.
 - **Member Directory** — Searchable list of chapter members with profile cards. Tap to view profile or start DM.
 - **Tasks** — View tasks assigned to the user. Update status (IN_PROGRESS, COMPLETED). See due dates, point rewards, and confirmation status.
 - **Service Hours** — Log service entries (date, duration, description, optional proof upload). View own history and approval status. Chapter service leaderboard.
