@@ -46,7 +46,7 @@
  *   native structured citations for the same reason: parsing tokens out of free
  *   text is the failure mode that contract exists to avoid.
  *
- * **Known divergence, deliberate.** ai.md puts events, dues amounts and rosters
+ * **Known divergence, deliberate.** ai.md puts events and dues amounts
  * in the *live structured* half of the corpus — read at answer time through the
  * permission-guarded API, never indexed. This table flattens all of it into one
  * keyword lookup, because there is no `ai` module to route a tool call through.
