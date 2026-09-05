@@ -77,14 +77,24 @@ begin
   -- missed by both forever while still occupying real storage. There is no
   -- composite FK tying `discord_import_files.chapter_id` to the import's own,
   -- so this check is the only thing standing in front of that.
+  -- The status check rides along for a reason: a `purged` or `purging` import
+  -- is excluded from the projection, so registering INTO one is free after the
+  -- first batch — the first pricing arm filters the import out entirely and the
+  -- second prices only rows that do not exist yet, so every subsequent batch
+  -- re-registers into a hole. `assertMutable` in the service refuses this today,
+  -- but this function's whole design is not to depend on that: it already owns
+  -- the caps, non-negativity and chapter ownership, and leaving status to the
+  -- caller would be the one remaining trust assumption.
   if not exists (
     select 1 from discord_imports
-     where id = p_import_id and chapter_id = p_chapter_id
+     where id = p_import_id
+       and chapter_id = p_chapter_id
+       and status not in ('purged', 'purging')
   ) then
     raise exception using
       errcode = 'foreign_key_violation',
       message = format(
-        'discord_import_register_files: import %s does not belong to chapter %s',
+        'discord_import_register_files: import %s is not a registerable import of chapter %s',
         p_import_id, p_chapter_id
       );
   end if;
@@ -201,14 +211,22 @@ begin
   -- here would make an unknown size indistinguishable from a genuinely empty
   -- file, and the monotonic rule would then pin it at 0 forever.
   --
-  -- **The identity columns are pinned on conflict.** `storage_path` for an
-  -- export part is derived from the client-supplied `part_index`, so refreshing
-  -- it let a caller re-register one `relative_path` with an incrementing
-  -- `part_index`, get a fresh signed URL for a fresh object each round, and
-  -- upload without bound while `greatest` held the ledger flat at one row. The
-  -- first registration of a path therefore owns where it lives; a re-mint gets
-  -- a URL for the SAME object, which is what the resume path wants anyway.
-  -- `uploaded_at` stays untouched for the same reason.
+  -- **Where a row LIVES is pinned on conflict; what it MEANS is not.**
+  -- `storage_path` for an export part is derived from the client-supplied
+  -- `part_index`, so refreshing it let a caller re-register one `relative_path`
+  -- with an incrementing `part_index`, get a fresh signed URL for a fresh
+  -- object each round, and upload without bound while `greatest` held the
+  -- ledger flat at one row. So `kind`, `bucket` and `storage_path` are fixed by
+  -- the first registration of a path, and a re-mint gets a URL for the SAME
+  -- object — which is what the resume path wants anyway. `uploaded_at` stays
+  -- untouched for the same reason.
+  --
+  -- `part_index` DOES refresh, and pinning it was over-correction: it is the
+  -- worker's walk order (`findFiles` pages by it), not a location. A re-picked
+  -- folder whose channel set changed renumbers the parts, and freezing the old
+  -- numbering left duplicate and missing indices for the worker to sort by.
+  -- Refreshing it cannot reopen the bypass above, because the object's path is
+  -- already fixed by then.
   return query
   with incoming as (
     select distinct on (x.relative_path)
@@ -242,7 +260,8 @@ begin
     i.bucket, i.storage_path, i.content_type, i.byte_size
     from incoming i
   on conflict (import_id, relative_path) do update
-    set content_type = coalesce(excluded.content_type, t.content_type),
+    set part_index   = excluded.part_index,
+        content_type = coalesce(excluded.content_type, t.content_type),
         byte_size    = case
           when t.byte_size is null and excluded.byte_size is null then null
           else greatest(coalesce(t.byte_size, 0), coalesce(excluded.byte_size, 0))

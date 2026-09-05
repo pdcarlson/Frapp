@@ -29,6 +29,16 @@ const MINT_BATCH = 100;
  */
 const CONFIRM_BATCH = 500;
 
+/**
+ * Consecutive refused mint batches before the run stops asking.
+ *
+ * One refusal is per-batch (a rejected file type, one oversized video). Three in
+ * a row is the archive itself — the quota, or an import that stopped being
+ * mutable — and every further batch would be refused identically while still
+ * costing a round trip and a server-side re-sum of the whole manifest.
+ */
+const MINT_FAILURES_BEFORE_STOP = 3;
+
 export interface StagedChannel {
   channelId: string;
   channelName: string;
@@ -104,6 +114,10 @@ export function UploadStep({
   const [uploaded, setUploaded] = useState(0);
   const [total, setTotal] = useState(0);
   const [failures, setFailures] = useState<string[]>([]);
+  // Why the server refused to register files, kept in state rather than only
+  // toasted: a toast is dismissible and the failures panel is the surface an
+  // admin is still looking at when they decide what to do next.
+  const [mintFailure, setMintFailure] = useState<string | null>(null);
 
   const handleFiles = useCallback(
     async (fileList: FileList | null) => {
@@ -113,6 +127,7 @@ export function UploadStep({
 
         setStatus("reading");
         setFailures([]);
+        setMintFailure(null);
         setUploaded(0);
 
         const channels = new Map<string, StagedChannel>();
@@ -178,7 +193,8 @@ export function UploadStep({
         const failed: string[] = [];
         // The first reason the server gave for refusing to mint, kept so the
         // run can end by SAYING it rather than reporting a silent failure count.
-        let mintFailure: string | null = null;
+        let mintFailureReason: string | null = null;
+        let consecutiveMintFailures = 0;
 
         for (let i = 0; i < pending.length; i += MINT_BATCH) {
           const batch = pending.slice(i, i + MINT_BATCH);
@@ -210,11 +226,12 @@ export function UploadStep({
             // would then re-send everything from byte zero, for hours, only to
             // be refused at the same batch. Confirming what landed is what
             // makes the refusal recoverable.
-            if (!mintFailure) {
-              mintFailure = getErrorMessage(
+            if (!mintFailureReason) {
+              mintFailureReason = getErrorMessage(
                 error,
                 "Some files could not be registered for upload.",
               );
+              setMintFailure(mintFailureReason);
             }
             failed.push(...batch.map((entry) => entry.relativePath));
             setFailures((prev) => [
@@ -222,8 +239,22 @@ export function UploadStep({
               ...batch.map((entry) => entry.relativePath),
             ]);
             setUploaded((prev) => prev + batch.length);
+
+            // Stop once the refusals are clearly about the archive rather than
+            // this batch. A quota refusal is deterministic — every remaining
+            // batch is refused identically, and each one still takes the
+            // chapter's advisory lock and re-sums the whole manifest server-side
+            // before saying no. Breaking (rather than throwing) leaves the
+            // confirm loop below intact, so what already landed stays resumable.
+            //
+            // Not on the FIRST failure, because a single rejected file — one
+            // oversized video in five thousand — is per-batch, and stopping the
+            // whole archive for it would strand every file after it.
+            consecutiveMintFailures += 1;
+            if (consecutiveMintFailures >= MINT_FAILURES_BEFORE_STOP) break;
             continue;
           }
+          consecutiveMintFailures = 0;
 
           const byRelativePath = new Map(
             tickets.map((ticket) => [ticket.relative_path, ticket]),
@@ -275,6 +306,16 @@ export function UploadStep({
           );
         }
 
+        // Said BEFORE the confirm loop, because the confirm calls can themselves
+        // fail — and if they do, control leaves for the outer catch and this
+        // sentence would never be shown at all. The admin would then see a
+        // transient confirm error and no trace of the refusal that actually
+        // stopped the archive. It also persists in `mintFailure` state, which
+        // the failures panel renders, so it survives the toast being dismissed.
+        if (mintFailureReason) {
+          toast({ variant: "destructive", description: mintFailureReason });
+        }
+
         // Chunked, because the API caps this at 500 paths. An unbatched call on a
         // real archive is a 400 that leaves every file unconfirmed.
         for (let i = 0; i < landed.length; i += CONFIRM_BATCH) {
@@ -282,14 +323,6 @@ export function UploadStep({
             id: importId,
             storage_paths: landed.slice(i, i + CONFIRM_BATCH),
           });
-        }
-
-        // Said after the confirm loop, so the sentence and the resumable state
-        // both survive. Not fatal: whatever DID land is staged and importable,
-        // and re-picking the folder resumes the rest once the admin has acted
-        // on this.
-        if (mintFailure) {
-          toast({ variant: "destructive", description: mintFailure });
         }
 
         setStatus("done");
@@ -387,10 +420,20 @@ export function UploadStep({
           <p className="font-semibold text-destructive-text">
             {failures.length} file(s) did not upload
           </p>
-          <p className="mt-1 text-muted-foreground">
-            Pick the folder again to retry — Signet re-sends only what is
-            missing. Files over 100 MB cannot be imported.
-          </p>
+          {/*
+            When the server said why, say that instead of guessing. The generic
+            advice below is actively wrong for an archive-quota refusal: re-picking
+            the folder is refused identically every time, and the cause is not the
+            100 MB per-file limit it names.
+          */}
+          {mintFailure ? (
+            <p className="mt-1 text-destructive-text">{mintFailure}</p>
+          ) : (
+            <p className="mt-1 text-muted-foreground">
+              Pick the folder again to retry — Signet re-sends only what is
+              missing. Files over 100 MB cannot be imported.
+            </p>
+          )}
           <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
             {failures.slice(0, 20).map((path) => (
               <li key={path}>{path}</li>
