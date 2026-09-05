@@ -35,9 +35,9 @@
  * ## What the bucket allowlist actually enforces
  *
  * Canonical statement. Other sites summarise in a sentence and link here
- * rather than repeating the detail, per
- * `docs/internal/DOCUMENTATION_CONVENTIONS.md` rule 5 — restating it is how a
- * wrong status code reached nine sites in the first place.
+ * rather than repeating the detail — one canonical place per fact, per
+ * `docs/internal/DOCUMENTATION_CONVENTIONS.md` § Where a fact lives. Restating
+ * it is how a wrong status code reached nine sites in the first place.
  *
  * Measured against the **local** stack (storage-api 1.66.4) on a throwaway
  * bucket with `allowed_mime_types: ["image/png"]`:
