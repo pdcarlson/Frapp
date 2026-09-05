@@ -452,6 +452,17 @@ export function ProfilePanel() {
     isEnabled: boolean,
   ) {
     if (!chapterId) return;
+    if (isOffline) {
+      // Refused rather than queued — see the `aria-disabled` note on the
+      // Switch. Said out loud, because a control that silently ignores a click
+      // is the dead control this card is otherwise careful to avoid.
+      toast({
+        title: "You're offline",
+        description:
+          "Reconnect to change your notification settings. Nothing has been changed.",
+      });
+      return;
+    }
     /*
      * `useUpdateNotificationPreference` writes the cache optimistically and
      * reverts just this category on failure (#312), so the switch moves at
@@ -742,19 +753,32 @@ export function ProfilePanel() {
                       id={switchId}
                       checked={categories[category.key]}
                       aria-describedby={descriptionId}
-                      // Offline, a toggle would be a lie rather than a delay.
-                      // `networkMode` is left at the default `"online"`, so
-                      // query-core runs `onMutate` — the optimistic write lands
-                      // and the switch moves — then pauses the retryer before
-                      // the request goes out. No error, no revert, no toast.
-                      // Web has no mutation persister (see `handleDeleteAccount`
-                      // below), so closing the tab loses the PATCH and the
-                      // member is never told: they believe they muted a
-                      // category that is still on. Mobile answers this with a
-                      // pending/retry sync indicator; the honest web answer
-                      // until #1707 settles queued writes generally is to not
-                      // accept the toggle at all.
-                      disabled={isOffline}
+                      /*
+                       * Soft-disabled offline, NOT `disabled`.
+                       *
+                       * The write must not go through: `networkMode` is at the
+                       * default `"online"`, so query-core runs `onMutate` — the
+                       * optimistic write lands and the switch moves — then
+                       * pauses the retryer before the request goes out. No
+                       * error, no revert, no toast, and web has no mutation
+                       * persister (see `handleDeleteAccount`), so closing the
+                       * tab loses it and the member believes they muted a
+                       * category that is still on. `handleCategoryToggle`
+                       * refuses it and says so.
+                       *
+                       * But the real `disabled` attribute cost more than it
+                       * bought. `switch.tsx` scopes every state colour to
+                       * `enabled:`, and its thumb takes `group-data-[disabled]`
+                       * which outranks the `data-[state]` rules — so all six
+                       * switches render an identical track and thumb, and the
+                       * only surviving on/off cue is the thumb offset at about
+                       * 2.24:1, under WCAG 1.4.11's 3:1 for non-text. Reading
+                       * which categories are muted is the *more* common offline
+                       * need, and `disabled` also drops all six out of the tab
+                       * order. `aria-disabled` keeps the colours, the tab order
+                       * and the announced state while still refusing the write.
+                       */
+                      aria-disabled={isOffline || undefined}
                       onCheckedChange={(checked) =>
                         handleCategoryToggle(
                           category.key,
@@ -767,9 +791,15 @@ export function ProfilePanel() {
                 );
               })}
               {isOffline ? (
+                // Says only what is true. An earlier draft added "your current
+                // settings are still in force", which is false in exactly the
+                // case the refusal exists for: a toggle made just before the
+                // connection dropped has already written its optimistic row and
+                // paused mid-flight, so a switch can be showing a value the
+                // server never received. Claiming the displayed state is
+                // authoritative would be most wrong precisely when it matters.
                 <p className="text-sm text-muted-foreground">
                   You&apos;re offline, so these can&apos;t be changed right now.
-                  Your current settings are still in force.
                 </p>
               ) : null}
               {/*

@@ -781,11 +781,18 @@ describe("ProfilePanel — notification categories (#564)", () => {
     expect(toasted.title).toMatch(/off/i);
   });
 
-  // The supersession guard. All six switches share one mutation observer, and
-  // v5 drops a superseded mutation's per-`mutate()` callbacks — so a card wired
-  // with `mutate(…, { onError })` loses the first toast entirely and mislabels
-  // the second. Two failures in flight together must produce two correctly
-  // named toasts, which is what `mutateAsync`'s per-call promise guarantees.
+  // Two failures in flight must produce two correctly named toasts.
+  //
+  // Scope honestly: `useUpdateNotificationPreference` is mocked wholesale here,
+  // so this does NOT exercise TanStack's `MutationObserver` and cannot by
+  // itself prove the supersession fix. What it pins is the half this file can
+  // see — that each call gets its own handler closed over its own label, so a
+  // late first failure is still reported and is not labelled with the second
+  // toggle's category. The other half (that a superseded mutation's promise
+  // still rejects to its own caller) is a property of query-core; pinning it
+  // would need a real `QueryClientProvider` with two overlapping failing
+  // PATCHes, which belongs in `packages/hooks`, not in a panel test that mocks
+  // the hook away.
   it("reports both failures when two toggles are in flight at once", async () => {
     let rejectFirst!: (error: Error) => void;
     mocks.updatePreferenceMutateAsync
@@ -891,12 +898,23 @@ describe("ProfilePanel — notification categories (#564)", () => {
       "data-state",
       "unchecked",
     );
-    // Disabled rather than optimistically accepted: an offline PATCH pauses
+    // Refused rather than optimistically accepted: an offline PATCH pauses
     // before it is sent, so accepting the toggle would move the switch, save
     // nothing, and say nothing.
-    expect(categorySwitch(/^points$/i)).toBeDisabled();
-    await userEvent.click(categorySwitch(/^points$/i));
+    //
+    // Soft-disabled, so it stays readable and reachable: the real `disabled`
+    // attribute makes `switch.tsx` drop every `enabled:`-scoped state colour,
+    // which flattens all six switches to one appearance and takes them out of
+    // the tab order — losing the ability to *read* which categories are muted,
+    // which is the more common offline need.
+    const points = categorySwitch(/^points$/i);
+    expect(points).toHaveAttribute("aria-disabled", "true");
+    expect(points).not.toBeDisabled();
+    await userEvent.click(points);
     expect(mocks.updatePreferenceMutateAsync).not.toHaveBeenCalled();
+    // And it says so, rather than swallowing the click.
+    expect(mocks.toast).toHaveBeenCalled();
+    expect(mocks.toast.mock.calls.at(-1)?.[0].title).toMatch(/offline/i);
   });
 
   // The store initialises to `activeChapterId: null`, so before rehydration —
