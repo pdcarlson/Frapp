@@ -81,7 +81,7 @@ summary before running anything from this family.
 | API deploy (staging) | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`) on `main`. Staging only since #1340. |
 | Production deploy   | `.github/workflows/deploy-production.yml` — `workflow_dispatch` ONLY, takes a `sha`. Validates the commit is an ancestor of `main` with green CI (`scripts/ci/validate-deploy-sha.mjs`) — the required-check roster intersected with the jobs that commit's own workflows define, so a check it predates reads *not applicable* instead of making an older commit undeployable (see the **Deploying an OLDER commit** callout in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`) — preflights the provider guardrails, replays the migration against production's live applied state, applies, deploys that commit to Render by `commitId` and to Vercel with `target: production`, then calls `release.yml`. One job under `environment: production`, so one approval click. A `scope: migrations-only` input applies the migrations and stops — no Render deploy, no Vercel build, no tag — which is what the deleted `Migrate production` workflow used to do, minus that workflow's habit of skipping every gate in this sentence. |
 | Production guardrails | `.github/workflows/production-guardrails.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`, and re-run as a preflight inside the production deploy. Asserts Render `frapp-api-prod` has auto-deploy **off** and tracks `main`, and that neither Vercel project is **linked to Git**. Both settings are dashboard-only and fail OPEN, so they can only be asserted, never enforced. The Vercel half was **inverted on 2026-09-02** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)): it used to assert that neither project's Production Branch was `main`, which ADR-21's unlink turned into a permanent self-inflicted failure — with `link: null` the branch is absent, and absent was coded as a violation, so the daily run AND the production-deploy preflight both failed. It now asserts the condition that actually keeps production safe post-ADR-21, that no Git link exists; a *present* link is the violation. Inverted rather than deleted, because staying unlinked is unversioned dashboard state a single click could undo. Because absent now means pass, the script first checks the response really is a project (`looksLikeVercelProject`) so an error envelope cannot read as "unlinked, therefore green". The Render assertion is unaffected. See the Vercel note under this table. Logic in `scripts/ci/production-guardrails.mjs`. **Not** a required check. |
-| Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
+| Deploy outcome      | Terminal `deploy-outcome` job in **both** `.github/workflows/deploy-api.yml` and `.github/workflows/deploy-vercel-staging.yml` — in each, the only job with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Shared logic in `scripts/ci/deploy-alert.mjs`, selected per workflow by the required `ALERT_CONFIG` env var (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`, `…/deploy-vercel-staging-workflow.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render state polling, **staging only**. Its two Vercel jobs (`verify-vercel-web`, `verify-vercel-landing`) were **removed on 2026-09-02** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)): ADR-21's unlink means no push produces a Vercel deployment, so polling for one was guaranteed to fail rather than able to detect anything, and both had been red on every push (landing since run #428, 2026-09-01T20:28Z; web since run #437, 2026-09-02T03:04Z — roughly six and a half hours apart, not together). [#1578](https://github.com/pdcarlson/Frapp/issues/1578) (2026-09-04) built the CI-driven deploys: `deploy-vercel-staging.yml` creates the staging deployments after green CI and verifies them **by deployment id**, so the Vercel jobs were not re-added here — an observer keyed on a pushed SHA is strictly worse than the workflow that holds the id, and it could not stay CI-gated. `ensure-vercel-staging-alias.mjs` is referenced again, from that workflow; `verify-vercel-deploy.mjs` is called by no workflow, but is **not** dead code — `deploy-vercel.mjs` imports its terminal-state sets, so it is on the production deploy path and must not be deleted or narrowed as unused. The Render half still polls. Production verifies itself inline inside `deploy-production.yml`, polling the deploy/deployment IDs it created, with stricter semantics: a `CANCELED` Vercel deployment is a failure there, never neutral. |
 | Migration drift     | `.github/workflows/check-migration-drift.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Compares each deployed database's `schema_migrations` against `supabase/migrations/` and upserts one `routine-state` alert issue, closing it when every environment is back in sync. Job-scoped `issues: write`; workflow-level grant stays `contents: read`. Logic in `scripts/ci/check-migration-drift.mjs` (tests: `scripts/ci/__tests__/check-migration-drift.test.mjs`). **Not** a required check. See "Schema drift detection" below. |
 | Staging conformance | `.github/workflows/staging-conformance.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, and an end-to-end sign-in whose JWT carries `active_chapter_id`. **Migration parity is deliberately NOT checked here** — `check-migration-drift.yml` above owns it end to end; see "Scheduled conformance" below. Upserts its own `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. |
@@ -1011,7 +1011,7 @@ noticed for 71 days ([#763](https://github.com/pdcarlson/Frapp/issues/763); the 
 itself is [#696](https://github.com/pdcarlson/Frapp/issues/696)). Three things compounded, and the
 first and third are what the `deploy-outcome` job fixes:
 
-1. **A skipped run is a green run.** The `check-changes` path gate skips all four migrate/deploy
+1. **A skipped run is a green run.** The `check-changes` path gate skips the migrate/deploy
    jobs when a push touches neither `apps/api/`, `packages/validation/`,
    `packages/typescript-config/` nor `supabase/migrations/`. 46 of the last 90 runs were
    green-because-empty, so the Actions list read "mostly healthy" while the deploy path was
@@ -1038,13 +1038,44 @@ A **no-op run never closes an open alert** — skipping every job proves nothing
 deploys work, and no-op runs are the majority. `routine-state` is what keeps `/next` from claiming
 the alert as backlog work (§0.2 treats that label as never-claimable).
 
-Channel choice matches the two sibling watchdogs: GitHub itself, via a dependency-free `.mjs` on
-`GITHUB_TOKEN` with an injectable `fetch`. `Deploy API` is push-driven with no PR to comment on,
-so an issue is the equivalent of their PR comment — no new service and no new token. The job holds
-the workflow's only write scope, job-scoped, leaving every other job on `contents: read`. Like the
-other watchdogs it is best-effort and **exits 0 on every handled outcome**: the underlying deploy
-job is already red, and a watchdog that reds the run creates the noise it exists to remove. If the
-issues API is unreachable the summary and annotation still land.
+#### Two workflows, one script (#1674)
+
+`deploy-alert.mjs` is **not** specific to `deploy-api.yml`. Since #1674 it also serves
+`deploy-vercel-staging.yml`, which shipped in #1578 with no alerting at all. Which workflow a run is
+reporting on is chosen by the **`ALERT_CONFIG`** env var, set explicitly in each workflow's
+`deploy-outcome` step and resolved against the `ALERT_CONFIGS` table in the script. There is **no
+default**: an absent or unknown value throws, because resolving to the wrong config would report one
+workflow's job results into the other's alert issue — or reopen the live P1 Deploy API alert from an
+unrelated failure.
+
+Consequences worth knowing before editing the script:
+
+- **Each config owns its alert title, and the two must never match.** The title is the lookup key, so
+  a shared one would let a recovered Deploy API run close a live Vercel outage's alert. A test pins
+  their uniqueness; renaming either orphans whatever alert is open under the old title, which can
+  then never be found or self-closed.
+- **`gateJob` may be null.** `deploy-vercel-staging.yml` has one job and no changed-path gate, so any
+  code assuming a gate exists is wrong for that config.
+- **A no-op means different things per config.** For Deploy API it is benign and the majority case.
+  For a config with no path gate it is a defect — nothing ran that could have — so
+  `noOpIsUnexpected` escalates it to a failure rather than an annotation, which on a `workflow_run`
+  run page would be exactly as invisible as the gap this closes.
+
+The full roster of GitHub-issue watchdogs, with what each one means and when it clears, is
+[`ALERT_ROUTING.md`](../ops/ALERT_ROUTING.md) § Automated GitHub-issue alerts — that table is the
+one home for the list; this section covers only the mechanics of this script.
+
+Channel choice matches the sibling watchdogs: GitHub itself, via a dependency-free `.mjs` on
+`GITHUB_TOKEN` with an injectable `fetch`. Both watched workflows are push-driven with no PR to
+comment on, so an issue is the equivalent of their PR comment — no new service and no new token. In
+each workflow the job holds the only write scope, job-scoped, leaving every other job on
+`contents: read`. Like the other watchdogs it is best-effort and **exits 0 on every handled
+outcome**: the underlying deploy job is already red, and a watchdog that reds the run creates the
+noise it exists to remove. If the issues API is unreachable the summary and annotation still land.
+
+The one deliberate exception is a **mis-wired** `ALERT_CONFIG`, which exits 1: that is not a handled
+outcome but a configuration error, and it must be loud where it is introduced rather than degrading
+into a watchdog that silently reports the wrong workflow.
 
 ### Schema drift detection (`scripts/ci/check-migration-drift.mjs`)
 
