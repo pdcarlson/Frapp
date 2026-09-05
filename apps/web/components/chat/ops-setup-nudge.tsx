@@ -65,10 +65,18 @@ export function OpsSetupNudge() {
   const [dismissedHere, setDismissedHere] = useState<readonly string[]>([]);
 
   const activeMembership = useMemo<ChapterMembershipSummary | null>(() => {
-    // Typed as the hook's own contract rather than a local structural shape:
-    // a local type with an optional `dismissed_ops_nudges` would still compile
-    // if the server stopped sending the field, and every officer's dismissals
-    // would silently stop being honoured with no test and no type error.
+    // Typed as the hook's own contract rather than a local structural shape, so
+    // the field this branch adds to `ChapterMembershipSummary` has a real
+    // reader and a rename there surfaces here.
+    //
+    // It is NOT a runtime guarantee, and saying otherwise would be the more
+    // comfortable lie: the field is optional on that interface too, and
+    // `useListChapters` `as`-casts the response rather than validating it (see
+    // its own docblock). If the server silently stopped sending the field,
+    // `?? []` would swallow it and dismissals would stop being honoured with
+    // nothing failing. What actually pins the wire shape is
+    // `chapter.service.spec.ts`, which asserts the membership summary's exact
+    // keys on the API side.
     const memberships = asArray<ChapterMembershipSummary>(chaptersQuery.data);
     if (!activeChapterId) return null;
     return memberships.find((m) => m.chapter_id === activeChapterId) ?? null;
@@ -130,13 +138,7 @@ export function OpsSetupNudge() {
     );
   }
 
-  return (
-    <OpsSetupNudgeCard
-      module={nudge}
-      onDismiss={dismiss}
-      isDismissing={dismissOpsNudge.isPending}
-    />
-  );
+  return <OpsSetupNudgeCard module={nudge} onDismiss={dismiss} />;
 }
 
 /**
@@ -146,24 +148,22 @@ export function OpsSetupNudge() {
 export function OpsSetupNudgeCard({
   module,
   onDismiss,
-  isDismissing = false,
 }: {
   module: OpsNudgeModule;
   onDismiss: (moduleKey: string) => void;
-  /**
-   * A dismissal is in flight. Blocks a second one, because the server appends to
-   * `dismissed_ops_nudges` read-modify-write: two overlapping writes each read
-   * the pre-write array and the later one erases the earlier key. That is
-   * reachable here rather than theoretical — dismissing falls the *next* nudge
-   * through immediately, putting a fresh X under the cursor in the same spot.
-   */
-  isDismissing?: boolean;
 }) {
   const headingId = `ops-nudge-${module.key}`;
   // The module's display name comes from `MODULE_CATALOG`, never from a copy in
-  // the nudge catalog, so a relabel there reaches this card. `ops-nudges.spec`
-  // in apps/web pins that every nudge key resolves to a real catalog entry, so
-  // `getModuleCatalogEntry`'s chat fallback is unreachable here.
+  // the nudge catalog, so a relabel there reaches this card.
+  //
+  // `getModuleCatalogEntry` falls back to `MODULE_CATALOG[0]` — the always-on
+  // "Chat" entry — for a key it does not know, which would render "Enable Chat"
+  // rather than fail. What makes that unreachable is the
+  // `describe("nudge keys against MODULE_CATALOG")` block in
+  // `ops-setup-nudge.test.tsx` beside this file. It cannot live in
+  // `packages/validation/src/ops-nudges.spec.ts`, which is where you would look
+  // first: that package cannot import `@repo/org-archetypes`, and its own
+  // comment says so.
   const label = getModuleCatalogEntry(module.key).label;
 
   return (
@@ -216,7 +216,6 @@ export function OpsSetupNudgeCard({
         <button
           type="button"
           onClick={() => onDismiss(module.key)}
-          disabled={isDismissing}
           /*
             An explicit label, not the bare "Dismiss" the icon would imply:
             with up to four of these across a chapter's life, a screen-reader
@@ -228,9 +227,7 @@ export function OpsSetupNudgeCard({
             // 44px square: §2's touch floor applies to the one control on this
             // card that destroys something, and it sits beside a 44px button.
             "inline-flex h-11 w-11 items-center justify-center rounded-md",
-            "text-accent-text transition-colors",
-            "enabled:hover:bg-accent-subtle-hover",
-            "disabled:cursor-not-allowed disabled:text-disabled",
+            "text-accent-text transition-colors hover:bg-accent-subtle-hover",
             FOCUS_RING,
           )}
         >

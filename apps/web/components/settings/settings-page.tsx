@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import {
@@ -242,16 +242,24 @@ function SettingsPageContent() {
     requestedModuleKey && consumedModuleKey !== requestedModuleKey
       ? requestedModuleKey
       : undefined;
-  useEffect(() => {
-    // State rather than a ref: `focusModuleKey` is read during render, and
-    // reading `ref.current` there is what `react-hooks/refs` forbids — a ref
-    // mutated in an effect does not re-render, so the value read during render
-    // would be a lie. The extra render this costs is one pass in which
-    // `shouldFocus` flips to false on an already-mounted row, which its own
-    // effect handles by returning early.
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- latch a consumed `?module=` deep link; the param is never cleared from the URL
-    if (requestedModuleKey) setConsumedModuleKey(requestedModuleKey);
-  }, [requestedModuleKey]);
+  /*
+    Latched by the row that actually took focus, NOT by an effect up here.
+    An effect on this component would fire on renders where the Modules panel
+    was never mounted — this function early-returns for "no active chapter"
+    below, and again for the loading / offline / error banner — so a cold load
+    (a pasted link, a refresh, open-in-new-tab, or just a slow first
+    `useCurrentChapter`) would consume `?module=` while there was nothing to
+    focus, and the officer would land at the top of the full module list. That
+    is the exact thing this param exists to prevent, so the latch has to mean
+    "focus was delivered", not "a render happened".
+
+    State rather than a ref because `focusModuleKey` is read during render, and
+    `react-hooks/refs` rightly forbids reading `ref.current` there.
+  */
+  const handleModuleFocused = useCallback(
+    (key: string) => setConsumedModuleKey(key),
+    [],
+  );
 
   const [accentDraft, setAccentDraft] = useState("");
   // The server's own §8 disclosure from the last successful save — distinct
@@ -899,6 +907,7 @@ function SettingsPageContent() {
                 canManage={canManage}
                 pendingModuleKeys={pendingConfigKeys}
                 focusModuleKey={focusModuleKey}
+                onModuleFocused={handleModuleFocused}
                 onToggle={(key, enabled) =>
                   patchConfig(
                     { enabled_modules: { [key]: enabled } },

@@ -255,11 +255,26 @@ export function useUpdateOnboarding() {
  * so leaving that cache standing would re-show the card the member just closed.
  * Not scoped to the active chapter id — the summary list is one cache entry
  * covering every membership, and the dismissal changed a row inside it.
+ *
+ * **`scope` is load-bearing, not decoration.** The server appends to
+ * `members.dismissed_ops_nudges` read-modify-write, and dismissing one nudge
+ * falls the next one through immediately — a fresh dismiss control lands under
+ * the cursor in the same spot. Without a shared scope those two writes overlap,
+ * each reads the pre-write array, and the later one erases the earlier key.
+ * A shared scope id makes TanStack run them in series instead, so the second
+ * read sees the first write.
+ *
+ * Chosen over disabling the control while `isPending`: mutations here retry
+ * with backoff and pause outright while offline (`networkMode` is the default
+ * `"online"`), so a disabled control would grey out the successor card for
+ * ~12s on a flaky connection and indefinitely offline — a dead-end control,
+ * which `spec/ui/design-system/README.md` bans.
  */
 export function useDismissOpsNudge() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
+    scope: { id: "ops-nudge-dismiss" },
     mutationFn: async (body: { module_key: OpsNudgeModuleKey }) => {
       const { data, error } = await client.PATCH(
         "/v1/members/me/ops-nudges/dismiss",

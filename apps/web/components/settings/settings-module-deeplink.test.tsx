@@ -30,9 +30,13 @@ vi.mock("@repo/hooks", () => ({
   usePendingConfigKeys: () => new Set<string>(),
 }));
 
+// Mutable so a test can start with no active chapter, which is how zustand's
+// `persist` cold-starts before it rehydrates.
+let activeChapterId: string | null = "chap-1";
+
 vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chap-1" }),
+  useChapterStore: (selector: (s: { activeChapterId: string | null }) => unknown) =>
+    selector({ activeChapterId }),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -63,6 +67,7 @@ describe("settings ?module= deep link", () => {
       isError: false,
     });
     searchParams = new URLSearchParams();
+    activeChapterId = "chap-1";
   });
 
   it("opens the Modules tab focused on the named module", () => {
@@ -72,20 +77,28 @@ describe("settings ?module= deep link", () => {
     expect(duesSwitch()).toHaveFocus();
   });
 
-  it("ignores a module key that is not a nudge key", () => {
-    // An unrecognised value must yield an ordinary unfocused Modules tab, not a
-    // lookup for a row id that does not exist.
-    searchParams = new URLSearchParams("tab=modules&module=not-a-module");
+  // Deliberately a REAL, toggleable catalog key that is not a nudge key. A
+  // nonsense value like "not-a-module" would prove nothing: focus is driven by
+  // `m.key === focusModuleKey`, so an unmatched string focuses nothing whether
+  // or not `isOpsNudgeModuleKey` guards it. `hours` is in MODULE_CATALOG and
+  // renders a switch, so dropping the guard really would focus and scroll it.
+  it("ignores a real module key that has no nudge", () => {
+    searchParams = new URLSearchParams("tab=modules&module=hours");
     render(<SettingsPage />);
 
-    expect(duesSwitch()).not.toHaveFocus();
+    // Asserted on the body, not on one row: checking only the Dues switch would
+    // pass while focus sat on Hours.
+    expect(document.body).toHaveFocus();
+    expect(
+      screen.getByRole("switch", { name: /service hours enabled/i }),
+    ).not.toHaveFocus();
   });
 
   it("focuses nothing when the tab is deep-linked without a module", () => {
     searchParams = new URLSearchParams("tab=modules");
     render(<SettingsPage />);
 
-    expect(duesSwitch()).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
   });
 
   /**
@@ -118,5 +131,48 @@ describe("settings ?module= deep link", () => {
     await user.click(screen.getByRole("tab", { name: /^modules$/i }));
 
     expect(scrollSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The cold-load path, and the regression that the first version of the latch
+ * introduced. `SettingsPageContent` early-returns before the tabs render — once
+ * for "no active chapter" (zustand `persist` starts null) and again for the
+ * loading / offline / error banner — so a latch driven by an effect on the page
+ * consumed `?module=` on renders where the Modules panel had never mounted. The
+ * officer then landed at the top of the full module list, which is exactly what
+ * the param exists to prevent.
+ *
+ * Reachable from: a pasted link, a bookmark, a refresh, open-in-new-tab on the
+ * nudge's link, or simply a cold `useCurrentChapter`. The in-app click path
+ * masked it, because the chapter query is already warm from the dashboard shell.
+ */
+describe("settings ?module= on a cold load", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    searchParams = new URLSearchParams("tab=modules&module=dues");
+    mockCurrentChapter.mockReturnValue({
+      data: { id: "chap-1", name: "Test", subscription_status: "active" },
+      isPending: false,
+      isError: false,
+    });
+  });
+
+  it("still focuses the module once the active chapter rehydrates", () => {
+    // First paint: no active chapter yet, so the page early-returns its
+    // "select a chapter" card and the Modules tab never mounts.
+    activeChapterId = null;
+    const { rerender } = render(<SettingsPage />);
+    expect(
+      screen.queryByRole("switch", { name: /dues enabled/i }),
+    ).not.toBeInTheDocument();
+
+    // The store rehydrates and the tabs mount for the first time. The deep link
+    // must still be live: a latch that fired on the earlier render would have
+    // consumed `?module=` without ever delivering the focus.
+    activeChapterId = "chap-1";
+    rerender(<SettingsPage />);
+
+    expect(duesSwitch()).toHaveFocus();
   });
 });

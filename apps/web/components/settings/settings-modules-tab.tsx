@@ -40,6 +40,12 @@ type Props = {
    * ops-setup nudge (#492) lands an officer on the module it named.
    */
   focusModuleKey?: string;
+  /**
+   * Called once the named row has actually taken focus. The page latches the
+   * deep link on this rather than on a render, so a cold load that early-returns
+   * before this tab mounts does not consume `?module=` without delivering it.
+   */
+  onModuleFocused?: (moduleKey: string) => void;
 };
 
 /**
@@ -74,6 +80,7 @@ export function SettingsModulesTab({
   onToggle,
   pendingModuleKeys,
   focusModuleKey,
+  onModuleFocused,
 }: Props) {
   const enabledCount = MODULE_CATALOG.filter((m) =>
     moduleIsOn(enabledModules, m.key),
@@ -99,6 +106,7 @@ export function SettingsModulesTab({
           onToggle={onToggle}
           pendingModuleKeys={pendingModuleKeys}
           focusModuleKey={focusModuleKey}
+          onModuleFocused={onModuleFocused}
         />
         <ModuleGroup
           title="Chapter Pro"
@@ -108,6 +116,7 @@ export function SettingsModulesTab({
           onToggle={onToggle}
           pendingModuleKeys={pendingModuleKeys}
           focusModuleKey={focusModuleKey}
+          onModuleFocused={onModuleFocused}
         />
       </CardContent>
     </Card>
@@ -122,6 +131,7 @@ function ModuleGroup({
   onToggle,
   pendingModuleKeys,
   focusModuleKey,
+  onModuleFocused,
 }: {
   title: string;
   modules: readonly ModuleCatalogEntry[];
@@ -130,6 +140,7 @@ function ModuleGroup({
   onToggle: (moduleKey: string, enabled: boolean) => void;
   pendingModuleKeys?: ReadonlySet<string>;
   focusModuleKey?: string;
+  onModuleFocused?: (moduleKey: string) => void;
 }) {
   return (
     <section className="space-y-2">
@@ -146,6 +157,7 @@ function ModuleGroup({
             onToggle={onToggle}
             pendingModuleKeys={pendingModuleKeys}
             shouldFocus={m.key === focusModuleKey}
+            onFocused={onModuleFocused}
           />
         ))}
       </ul>
@@ -160,6 +172,7 @@ function ModuleRow({
   onToggle,
   pendingModuleKeys,
   shouldFocus = false,
+  onFocused,
 }: {
   module: ModuleCatalogEntry;
   on: boolean;
@@ -168,6 +181,8 @@ function ModuleRow({
   pendingModuleKeys?: ReadonlySet<string>;
   /** This is the row `?module=` named — scroll to it and focus its switch. */
   shouldFocus?: boolean;
+  /** Reports that focus actually landed, so the page can latch the deep link. */
+  onFocused?: (moduleKey: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const hasSubFeatures = m.subFeatures.length > 0;
@@ -194,7 +209,8 @@ function ModuleRow({
     */
     control.focus({ preventScroll: true });
     control.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [shouldFocus]);
+    onFocused?.(m.key);
+  }, [shouldFocus, onFocused, m.key]);
 
   return (
     <li>

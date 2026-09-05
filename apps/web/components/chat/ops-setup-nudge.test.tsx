@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -8,16 +8,11 @@ let chapters: { data: unknown } = { data: [] };
 let orgConfig: { data: unknown } = { data: undefined };
 let permissions: { data: unknown } = { data: undefined };
 
-let dismissPending = false;
-
 vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => chapters,
   useOrgConfig: () => orgConfig,
   useMyPermissions: () => permissions,
-  useDismissOpsNudge: () => ({
-    mutate: dismissMutate,
-    isPending: dismissPending,
-  }),
+  useDismissOpsNudge: () => ({ mutate: dismissMutate }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -79,7 +74,6 @@ function setUpEligible(
 describe("OpsSetupNudge", () => {
   beforeEach(() => {
     dismissMutate.mockClear();
-    dismissPending = false;
     setUpEligible();
   });
 
@@ -90,6 +84,19 @@ describe("OpsSetupNudge", () => {
     expect(screen.getByText(/collect dues in frapp/i)).toBeInTheDocument();
     // One at a time — the Points nudge must not also be on screen.
     expect(screen.queryByText(/participation points/i)).not.toBeInTheDocument();
+  });
+
+  // Case-SENSITIVE and exact, which the raw key cannot satisfy. This branch
+  // deletes `label` from OPS_NUDGE_MODULES so the name resolves from
+  // MODULE_CATALOG via `getModuleCatalogEntry`; every other assertion here uses
+  // `/dues/i`, which "Enable dues" (the key) would satisfy just as well.
+  it("renders the module's catalog label, not its key", () => {
+    render(<OpsSetupNudge />);
+
+    expect(screen.getByText("Enable Dues")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Dismiss the Dues suggestion" }),
+    ).toBeInTheDocument();
   });
 
   it("links to the Modules tab targeting the module it names", () => {
@@ -162,7 +169,7 @@ describe("OpsSetupNudge", () => {
 
     expect(dismissMutate).toHaveBeenCalledWith(
       { module_key: "dues" },
-      expect.anything(),
+      expect.objectContaining({ onError: expect.any(Function) }),
     );
     // The card is gone on the optimistic local state — `GET /v1/chapters` has
     // not refetched, so a card that waited for it would sit under the cursor.
@@ -179,6 +186,27 @@ describe("OpsSetupNudge", () => {
     );
 
     expect(screen.getByText(/assign chapter tasks/i)).toBeInTheDocument();
+  });
+
+  // The mock never invokes the callbacks it is handed, so `onError` runs in no
+  // other test. Its contract is load-bearing and deliberately counter-intuitive
+  // — a failed write is NOT rolled back in-session, because re-showing a card
+  // the member just closed is worse than a dismissal they repeat next session —
+  // so it is invoked here directly.
+  it("keeps the card dismissed when the write fails", async () => {
+    const user = userEvent.setup();
+    render(<OpsSetupNudge />);
+
+    await user.click(
+      screen.getByRole("button", { name: /dismiss the dues suggestion/i }),
+    );
+
+    const options = dismissMutate.mock.calls[0]?.[1] as {
+      onError: (e: unknown) => void;
+    };
+    act(() => options.onError(new Error("403")));
+
+    expect(screen.queryByText(/collect dues in frapp/i)).not.toBeInTheDocument();
   });
 
   // Each dismiss button must be distinguishable by name alone: a screen-reader
@@ -268,33 +296,34 @@ describe("nudge keys against MODULE_CATALOG", () => {
 });
 
 /**
- * Dismissing falls the next nudge through immediately, so a fresh dismiss
- * control lands under the cursor in the same spot. The server appends to
- * `dismissed_ops_nudges` read-modify-write, so two overlapping writes would each
- * read the pre-write array and the later one would erase the earlier key.
+ * Overlapping dismissals are serialized by the mutation's `scope` in
+ * `useDismissOpsNudge`, not by disabling the control — a disabled X would grey
+ * out the successor card for the whole retry window, and indefinitely offline.
+ * What is pinned here is that the successor stays usable.
  */
-describe("OpsSetupNudge concurrent dismissals", () => {
+describe("OpsSetupNudge successive dismissals", () => {
   beforeEach(() => {
-    dismissMutate.mockClear();
-    dismissPending = false;
-  });
-
-  it("blocks a second dismissal while the first is still in flight", () => {
-    dismissPending = true;
+    dismissMutate.mockReset();
     setUpEligible({ enabledModules: { dues: false, events: false } });
-    render(<OpsSetupNudge />);
-
-    expect(
-      screen.getByRole("button", { name: /dismiss the dues suggestion/i }),
-    ).toBeDisabled();
   });
 
-  it("leaves the control usable when nothing is in flight", () => {
-    setUpEligible({ enabledModules: { dues: false } });
+  it("leaves the fall-through card's control usable", async () => {
+    const user = userEvent.setup();
     render(<OpsSetupNudge />);
 
-    expect(
+    await user.click(
       screen.getByRole("button", { name: /dismiss the dues suggestion/i }),
-    ).toBeEnabled();
+    );
+
+    // Events has fallen through under the cursor. It must be actionable: the
+    // write ordering is the hook's problem, not the member's.
+    const eventsDismiss = screen.getByRole("button", {
+      name: /dismiss the events suggestion/i,
+    });
+    expect(eventsDismiss).toBeEnabled();
+
+    await user.click(eventsDismiss);
+    expect(dismissMutate).toHaveBeenCalledTimes(2);
+    expect(dismissMutate.mock.calls[1]?.[0]).toEqual({ module_key: "events" });
   });
 });
