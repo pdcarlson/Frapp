@@ -142,8 +142,11 @@ From `packages/hooks` run:
 
 From the repo root, `npm run test -w packages/hooks` runs the whole suite — this
 is the command CI uses. The `web-tests` job in
-[`ci.yml`](../../.github/workflows/ci.yml) runs it (alongside `packages/chat-core`),
-reached via that job's `packages/**` path filter.
+[`ci.yml`](../../.github/workflows/ci.yml) runs it, reached via that job's `packages/**` path
+filter. Which other workspaces share that job is owned by
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
+§ Required Status Checks and by `scripts/ci/lib/required-checks.mjs`; this page does not restate it,
+because the copy that used to live here had already gone stale.
 
 `web-tests` **is a required status check** (ADR-15 2026-08-19 amendment — see
 [`spec/architecture/README.md`](../../spec/architecture/README.md)). The

@@ -618,7 +618,7 @@ For files > 5MB, consider chunked upload for resumability. Not in v1 scope, but 
 | Roles | 60s | 10min | Changes very rarely |
 | Events | 30s | 5min | New events / check-ins moderately frequent |
 | Points / Leaderboard | 30s | 5min | Points change frequently during events |
-| Chat messages | 0s (always fresh via Realtime) | 30min | Real-time primary, cache for history |
+| Chat messages | `Infinity` | _(default)_ | Realtime, not polling, keeps this cache fresh, so it opts out of staleness entirely — owned by [`web-dashboard/README.md`](web-dashboard/README.md) § Surviving data contracts. `use-chat-channel.ts` sets only `staleTime`, on web and mobile alike, so `gcTime` falls through to each app's own default: **10 minutes on web** (`query-provider.tsx`) and **TanStack's 5-minute default on mobile**, whose `query-client.ts` sets no `gcTime`. Recorded as-is rather than as an intent nothing implements |
 | Chat channels | 60s | 10min | Channel list changes rarely |
 | Notifications | 10s | 5min | Time-sensitive, refresh often |
 | Backwork | 60s | 10min | Content changes infrequently |

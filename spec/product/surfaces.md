@@ -17,6 +17,7 @@ The admin console (`apps/web`). Next.js App Router, Tailwind, ShadCN UI.
 
 **Screens:**
 
+- **Onboarding Tutorial** — Guided walkthrough on first sign-in, skippable and revisitable from settings (`components/onboarding/onboarding-tutorial.tsx`). The slides and their order are owned by [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § Onboarding Tutorial. There is no mobile equivalent — mobile's first-run screen is s03.
 - **Chat (member view)** — The post-sign-in landing (`/chat`) and the app's primary surface: channel list by category, DMs, real-time messaging with reactions, replies, uploads, and inline rich-message cards. There is no standalone dashboard home — `/dashboard` redirects here, and `/` does too once a Supabase session exists (signed-out visitors get the landing page). Chapter health at a glance is re-homed as an inline chat artifact, the pulse card — see [`spec/behavior/chat/catch-up.md`](../behavior/chat/catch-up.md). Subscription status lives in the dashboard shell and the Billing screen below.
 - **Members** — Searchable member directory with profile cards (name, role, points, join date, bio). Role assignment, invite generation, remove/deactivate.
 - **Roles & Permissions** — View/create/edit roles with open-ended permissions; assign display order and color; manage system role permissions. Presidency transfer UI.
@@ -40,6 +41,7 @@ The member experience (`apps/mobile`). Expo with Expo Router.
 
 **Screens:**
 
+- **First-run (s03)** — Mobile's onboarding surface (`app/(auth)/welcome.tsx`), reached when the auth gate reads `has_completed_onboarding` as false. It is a single first-run screen, **not** the web modal slideshow; both are owned by [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § Onboarding Tutorial, which is where the per-surface split is stated.
 - **Home / Activity Feed** — Unified feed: upcoming events, recent announcements, new Backwork uploads, point milestones, new members. Point balance summary at the top.
 - **Chat** — Channel list organized by categories (respecting permission gates). Direct Messages tab (1-on-1 and group DMs). Real-time messaging with reactions, replies, file/image uploads, typing indicators, online presence. Pinned messages panel. Full-text search within and across channels.
 - **Backwork** — Browse by department, course, professor, semester/year, assignment type, document variant, and tags. Upload flow: select file, fill metadata (all optional), optionally redact (v2), confirm. Download with signed URL. Full-text search.
@@ -53,7 +55,6 @@ The member experience (`apps/mobile`). Expo with Expo Router.
 - **Service Hours** — Log service entries (date, duration, description, optional proof upload). View own history and approval status. Chapter service leaderboard.
 - **Chapter Documents** — Browse and download chapter files organized by folder. Search by title.
 - **Alumni Directory** — Searchable list of alumni members. Filter by graduation year, city, company. View alumni profile cards.
-- **Onboarding Tutorial** — Guided walkthrough on first launch: Welcome, Chat, Events, Backwork, Study Hours, Profile Setup, Done. Skippable and revisitable from settings.
 - **Polls** — Vote on active polls. View results. Create polls (if permitted).
 
 ## Documentation (repo markdown today)
