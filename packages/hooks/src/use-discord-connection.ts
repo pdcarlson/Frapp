@@ -117,25 +117,6 @@ export function useConfirmDiscordConnect() {
   });
 }
 
-export function useDisconnectDiscord() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  const chapterId = useActiveChapterId();
-
-  return useMutation({
-    mutationFn: async () => {
-      const { data, error } = await client.DELETE("/v1/discord/connection");
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: discordConnectionKeys.connection(chapterId),
-      });
-    },
-  });
-}
-
 /** One channel or thread the scan found in the connected server. */
 export interface DiscoveredDiscordChannel {
   id: string;

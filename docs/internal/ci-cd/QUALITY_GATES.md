@@ -254,10 +254,19 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- Measured when this landed: **4.37%** duplicated lines (556 clones across 845 files).
-- Threshold: **4.5%**, just above it.
+- **Current measurement: 4.27%** duplicated lines (843 clones, 10,434 duplicated lines, across
+  1,114 files analysed) — measured 2026-09-05.
+- **Threshold: 4.4%**, just above it.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
-  make a red run green.
+  make a red run green. Set the new value from a *measured* run, never from a guess, and leave
+  enough headroom that ordinary drift does not redden it.
+- History: the gate landed with a **recorded** 4.37% (556 clones across 845 files) and a 4.5%
+  threshold. **Those recorded figures do not reproduce** — re-running jscpd at `df7c667`, the
+  commit that added `.jscpd.json`, against its own committed config measures 4.27% / 801 clones /
+  1,096 files (checked 2026-09-05). Why they differ has not been established, so treat the 4.37%
+  pair as a historical note and **never as a baseline to compare a current run against**. The
+  2026-09-05 ratchet to 4.4% was set from a fresh measurement of both sides — 4.30% on `main`,
+  4.27% after deleting the unconsumed `@repo/hooks` / `@repo/chat-core` exports.
 
 That mechanism is why this gate is advisory. A repo-wide percentage cannot distinguish one bad
 copy-paste from ordinary drift, which is too coarse to block a merge on.
