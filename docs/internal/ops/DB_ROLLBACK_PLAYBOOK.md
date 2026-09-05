@@ -299,7 +299,11 @@ After any rollback event:
 
 ## Rollback the ops-setup nudge dismissals
 
-* **Migration**: `20260905020000_member_dismissed_ops_nudges.sql`
+* **Migration**: `20260905030000_member_dismissed_ops_nudges.sql`
+  (renamed from `20260905020000_` before merge: #1735 landed
+  `20260905020000_point_transactions_client_message_id.sql` on `main` first, and
+  Supabase keys `schema_migrations` by the 14-digit prefix, so two files cannot
+  share one. Nothing had applied this migration yet, so the rename is free.)
 * **Action**: `ALTER TABLE members DROP COLUMN IF EXISTS dismissed_ops_nudges;`
   **Redeploy the web app at the pre-#492 revision first.** The API degrades gracefully
   without it — `mapMembershipSummary` normalizes a missing value to `[]` and
