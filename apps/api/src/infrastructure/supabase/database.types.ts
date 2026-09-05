@@ -207,6 +207,27 @@ export interface Database {
         }[];
       };
       /**
+       * `20260905100000` (#567). One row per member holding any transaction in
+       * the chapter, with their whole balance already summed — the roster
+       * report used to stream one row per *transaction* and reduce them in the
+       * API.
+       *
+       * Deliberately keyless-free, unlike {@link get_points_report}: it
+       * returns `user_id`, so a paged read can order on it for a total order
+       * (#747 is that function's missing key). No window parameters — a roster
+       * balance is the member's all-time chapter total.
+       */
+      get_roster_point_balances: {
+        Args: {
+          p_chapter_id: string;
+        };
+        Returns: {
+          user_id: string;
+          /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
+          total_points: number;
+        }[];
+      };
+      /**
        * `20260905010000` (#1243). Registers Discord-import manifest rows and
        * enforces the two `chat-archive` byte ceilings in one transaction,
        * returning the rows it wrote.

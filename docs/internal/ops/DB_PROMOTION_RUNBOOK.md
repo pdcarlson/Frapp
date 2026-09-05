@@ -377,6 +377,42 @@ touch this file **or** [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — 
 backs the habit, it does not prove the log complete. Appending here stays the
 promoter's job.
 
+## 2026-09-05: Roster point balances summed in Postgres (#567)
+
+One additive migration. Creates a new function under a new name — no `drop
+function`, no signature change, nothing existing rewritten — so there is no
+deploy window in which a live read is missing or ambiguous. Safe to apply ahead
+of the code: the function is simply uncalled until the API that reads it ships,
+and safe to leave in place if the code is rolled back.
+
+### 20260905100000_get_roster_point_balances.sql
+* **Purpose**: Lets the roster report ask Postgres for one already-summed row
+  per member instead of streaming up to 50,000 `point_transactions` rows into
+  the API and reducing them there. The old ceiling was a **correctness cliff**,
+  not a tuning knob: past it a chapter's roster came back the right length with
+  every balance wrong, footnoted rather than fixed. `GROUP BY user_id` makes the
+  read scale with roster size instead of chapter history.
+  Deliberately a **new function** rather than an extension of `get_points_report`,
+  which returns `member_name` and no key at all (#747) — the roster keys balances
+  by `user_id`, and display names are not unique. Adding a key to that function
+  changes its return type, which needs the drop-and-recreate sequence in
+  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) § Rollback `get_points_report` RPC;
+  keeping these separate leaves #747 independently fixable.
+* **Checks**: After `db push`, confirm the function exists and is locked down —
+  `select to_regprocedure('get_roster_point_balances(uuid)') is not null;` should return `t`.
+  The grant matters as much as the existence: a newly created function carries
+  Postgres's default EXECUTE-to-PUBLIC grant, and this one would be a per-member
+  points oracle for any chapter id if it kept it —
+  `select has_function_privilege('public', 'get_roster_point_balances(uuid)', 'EXECUTE');` must return `f`,
+  `select has_function_privilege('anon', 'get_roster_point_balances(uuid)', 'EXECUTE');` must return `f`, and
+  `select has_function_privilege('service_role', 'get_roster_point_balances(uuid)', 'EXECUTE');` must return `t`.
+  (Verified locally on the sandbox stack at author time: `f`, `f`, `t`.)
+
+**Rollback**: `drop function if exists get_roster_point_balances(uuid);` — but
+only after the API no longer calls it, since `ReportService.getRosterReport`
+returns a 500 rather than degrading if the RPC is missing. Reverting the code
+alone is sufficient and leaves the unused function inert.
+
 ## 2026-09-05: Points ledger idempotency key (#1719)
 
 One additive migration. Adds a nullable column and a partial unique index to an

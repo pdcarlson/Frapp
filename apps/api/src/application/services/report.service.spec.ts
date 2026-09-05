@@ -329,8 +329,8 @@ describe('ReportService', () => {
         ],
         error: null,
       });
-      const txnsChain = makeChain({
-        data: [{ user_id: 'u-1', amount: 25 }],
+      const balancesChain = makeChain({
+        data: [{ user_id: 'u-1', total_points: 25 }],
         error: null,
       });
       const rolesChain = makeChain({
@@ -341,9 +341,13 @@ describe('ReportService', () => {
       (mockSupabase.from as jest.Mock).mockImplementation((t: string) => {
         if (t === 'members') return membersChain;
         if (t === 'users') return usersChain;
-        if (t === 'point_transactions') return txnsChain;
         return rolesChain;
       });
+      (mockSupabase.rpc as jest.Mock).mockImplementation((fn: string) =>
+        fn === 'get_roster_point_balances'
+          ? balancesChain
+          : makeChain({ data: [], error: null }),
+      );
 
       const result = await service.getRosterReport('ch-1');
 
@@ -355,6 +359,119 @@ describe('ReportService', () => {
         join_date: '2026-01-15',
         point_balance: 25,
       });
+    });
+
+    it('sums balances in Postgres and never reads point_transactions (#567)', async () => {
+      // The regression this issue exists to prevent, and the one a balance
+      // assertion alone would miss: the roster used to stream every
+      // transaction row in and reduce them here. A reintroduced
+      // `from('point_transactions')` would still produce the right number on a
+      // small fixture while restoring the cliff on a real chapter, so the
+      // absence of that read is asserted directly.
+      const members = makeChain({
+        data: [
+          { user_id: 'u-1', role_ids: [], created_at: '2026-01-15T00:00:00Z' },
+        ],
+        error: null,
+      });
+      const balances = makeChain({
+        data: [{ user_id: 'u-1', total_points: 42 }],
+        error: null,
+      });
+      (mockSupabase.from as jest.Mock).mockImplementation((t: string) =>
+        t === 'members'
+          ? members
+          : makeChain({
+              data:
+                t === 'users'
+                  ? [{ id: 'u-1', display_name: 'Alice', email: 'a@test.com' }]
+                  : [],
+              error: null,
+            }),
+      );
+      (mockSupabase.rpc as jest.Mock).mockImplementation(() => balances);
+
+      const result = await service.getRosterReport('ch-1');
+
+      expect(result.rows[0].point_balance).toBe(42);
+      expect(mockSupabase.from).not.toHaveBeenCalledWith('point_transactions');
+      expect(mockSupabase.rpc).toHaveBeenCalledWith(
+        'get_roster_point_balances',
+        { p_chapter_id: 'ch-1' },
+      );
+      // A total order, which is what makes the paged read safe — and exactly
+      // what `get_points_report` cannot offer (#747: it returns no key).
+      expect(balances.order).toHaveBeenCalledWith('user_id', {
+        ascending: true,
+      });
+    });
+
+    it('gives a member with no transactions a zero balance, not a missing one', async () => {
+      // The aggregate emits no row for a member who has never scored, so the
+      // `?? 0` fallback is the only thing between them and `undefined` in the
+      // rendered document.
+      const members = makeChain({
+        data: [
+          { user_id: 'u-1', role_ids: [], created_at: '2026-01-15T00:00:00Z' },
+          { user_id: 'u-2', role_ids: [], created_at: '2026-01-15T00:00:00Z' },
+        ],
+        error: null,
+      });
+      (mockSupabase.from as jest.Mock).mockImplementation((t: string) =>
+        t === 'members'
+          ? members
+          : makeChain({
+              data:
+                t === 'users'
+                  ? [
+                      { id: 'u-1', display_name: 'Alice', email: 'a@t.com' },
+                      { id: 'u-2', display_name: 'Bob', email: 'b@t.com' },
+                    ]
+                  : [],
+              error: null,
+            }),
+      );
+      (mockSupabase.rpc as jest.Mock).mockImplementation(() =>
+        makeChain({ data: [{ user_id: 'u-1', total_points: 9 }], error: null }),
+      );
+
+      const result = await service.getRosterReport('ch-1');
+
+      expect(result.rows.map((r) => r.point_balance)).toEqual([9, 0]);
+    });
+
+    it('coerces a bigint balance handed back as a string', async () => {
+      // `total_points` is `bigint`. PostgREST serializes it as a JSON number,
+      // but 64-bit integers are the classic case where a driver hands back a
+      // string instead — and string concatenation would silently produce
+      // nonsense totals rather than an error.
+      const members = makeChain({
+        data: [
+          { user_id: 'u-1', role_ids: [], created_at: '2026-01-15T00:00:00Z' },
+        ],
+        error: null,
+      });
+      (mockSupabase.from as jest.Mock).mockImplementation((t: string) =>
+        t === 'members'
+          ? members
+          : makeChain({
+              data:
+                t === 'users'
+                  ? [{ id: 'u-1', display_name: 'Alice', email: 'a@t.com' }]
+                  : [],
+              error: null,
+            }),
+      );
+      (mockSupabase.rpc as jest.Mock).mockImplementation(() =>
+        makeChain({
+          data: [{ user_id: 'u-1', total_points: '1234' }],
+          error: null,
+        }),
+      );
+
+      const result = await service.getRosterReport('ch-1');
+
+      expect(result.rows[0].point_balance).toBe(1234);
     });
 
     it('should return empty array when no members', async () => {
@@ -524,42 +641,41 @@ describe('ReportService', () => {
       expect(result.rows[PAGE].description).toBe(`Entry ${PAGE}`);
     });
 
-    it('sums every page of point transactions into a roster balance', async () => {
-      // The sharpest form of this bug: a truncated transaction read does not
-      // shorten the roster, it makes every balance on it quietly wrong.
+    it('assembles every page of the balance read', async () => {
+      // The sharpest form of this bug: a short balance read does not shorten
+      // the roster, it makes the balances on it quietly wrong. An RPC result
+      // set is subject to `max_rows` exactly like a table read, so the paging
+      // still has to be right — it is just one row per member now instead of
+      // one per transaction.
+      const TOTAL = PAGE + 500;
       const members = makeChain({
-        data: [
-          {
-            id: 'm-1',
-            user_id: 'u-1',
-            role_ids: [],
-            created_at: '2026-01-15T00:00:00Z',
-          },
-        ],
-        error: null,
-      });
-      const users = makeChain({
-        data: [{ id: 'u-1', display_name: 'Alice', email: 'a@test.com' }],
-        error: null,
-      });
-      const txns = makeChain({
-        data: rows(PAGE + 500, (i) => ({
-          id: `pt-${i}`,
-          user_id: 'u-1',
-          amount: 1,
+        data: rows(TOTAL, (i) => ({
+          id: `m-${String(i).padStart(6, '0')}`,
+          user_id: `u-${String(i).padStart(6, '0')}`,
+          role_ids: [],
+          created_at: '2026-01-15T00:00:00Z',
         })),
         error: null,
       });
-      (mockSupabase.from as jest.Mock).mockImplementation((t: string) => {
-        if (t === 'members') return members;
-        if (t === 'users') return users;
-        return txns;
+      const balances = makeChain({
+        data: rows(TOTAL, (i) => ({
+          user_id: `u-${String(i).padStart(6, '0')}`,
+          total_points: 7,
+        })),
+        error: null,
       });
+      (mockSupabase.from as jest.Mock).mockImplementation((t: string) =>
+        t === 'members' ? members : makeChain({ data: [], error: null }),
+      );
+      (mockSupabase.rpc as jest.Mock).mockImplementation(() => balances);
 
       const result = await service.getRosterReport('ch-1');
 
-      // 1500, not 1000: the balance counts transactions past the first page.
-      expect(result.rows[0].point_balance).toBe(PAGE + 500);
+      // The member past the first page still carries a real balance, not the
+      // `?? 0` fallback that a dropped page would leave behind.
+      expect(result.rows).toHaveLength(TOTAL);
+      expect(result.rows[PAGE].point_balance).toBe(7);
+      expect(result.rows.every((r) => r.point_balance === 7)).toBe(true);
       expect(result.truncated).toBe(false);
     });
   });
@@ -642,6 +758,10 @@ describe('ReportService', () => {
   });
 
   describe('roster balances truncated by the aggregate ceiling', () => {
+    // Post-#567 the ceiling counts MEMBERS, not transactions: the aggregate
+    // emits one row per member holding any transaction. Reaching it now needs
+    // a 50,000-member chapter rather than a 50,000-transaction one, so these
+    // guard a bound that is still real but no longer a cliff anyone hits.
     it('reports its own ceiling and names the balances, not the row count', async () => {
       // The roster is complete at one line; only the balances are wrong.
       // Reporting REPORT_MAX_ROWS here would print "capped at the first 5,000
@@ -658,19 +778,19 @@ describe('ReportService', () => {
         data: [{ id: 'u-1', display_name: 'Alice', email: 'a@test.com' }],
         error: null,
       });
-      const txns = makeChain({
-        data: rows(REPORT_AGGREGATE_MAX_ROWS + 1, () => ({
-          user_id: 'u-1',
-          amount: 1,
+      const balances = makeChain({
+        data: rows(REPORT_AGGREGATE_MAX_ROWS + 1, (i) => ({
+          user_id: `u-${String(i).padStart(6, '0')}`,
+          total_points: 1,
         })),
         error: null,
       });
       (mockSupabase.from as jest.Mock).mockImplementation((t: string) => {
         if (t === 'members') return members;
         if (t === 'users') return users;
-        if (t === 'point_transactions') return txns;
         return makeChain({ data: [], error: null });
       });
+      (mockSupabase.rpc as jest.Mock).mockImplementation(() => balances);
 
       const result = await service.getRosterReport('ch-1');
 
@@ -678,6 +798,10 @@ describe('ReportService', () => {
       expect(result.truncated).toBe(true);
       expect(result.limit).toBe(REPORT_AGGREGATE_MAX_ROWS);
       expect(result.note).toContain('point balances are incomplete');
+      // The note has to name what the ceiling actually counts now, or it sends
+      // the reader looking at transaction volume for a members-shaped bound.
+      expect(result.note).toContain('members');
+      expect(result.note).not.toContain('transactions');
     });
 
     it('reports both cuts when the roster and the balances are each truncated', async () => {
@@ -691,18 +815,17 @@ describe('ReportService', () => {
         })),
         error: null,
       });
-      const txns = makeChain({
-        data: rows(REPORT_AGGREGATE_MAX_ROWS + 1, () => ({
-          user_id: 'u-0',
-          amount: 1,
+      const balances = makeChain({
+        data: rows(REPORT_AGGREGATE_MAX_ROWS + 1, (i) => ({
+          user_id: `u-${String(i).padStart(6, '0')}`,
+          total_points: 1,
         })),
         error: null,
       });
-      (mockSupabase.from as jest.Mock).mockImplementation((t: string) => {
-        if (t === 'members') return members;
-        if (t === 'point_transactions') return txns;
-        return makeChain({ data: [], error: null });
-      });
+      (mockSupabase.from as jest.Mock).mockImplementation((t: string) =>
+        t === 'members' ? members : makeChain({ data: [], error: null }),
+      );
+      (mockSupabase.rpc as jest.Mock).mockImplementation(() => balances);
 
       const result = await service.getRosterReport('ch-1');
 

@@ -115,17 +115,20 @@ export const REPORT_MAX_ROWS = 5_000;
 
 /**
  * Ceiling on rows read only to aggregate a number that lands in the document
- * — point transactions behind a roster balance, not roster lines themselves.
+ * — roster balances, not roster lines themselves.
  *
- * Higher than `REPORT_MAX_ROWS` because these rows never reach the renderer,
- * but not dramatically so: the pages are read sequentially, each waiting on
- * the last, so the ceiling is really a latency budget. At 50,000 that is up to
- * 50 round-trips (~1.2 s by the measurement in the perf notes) before any
- * rendering starts. Raising it buys correctness for chapters this large at a
- * cost that lands on every roster export.
+ * Higher than `REPORT_MAX_ROWS` because these rows never reach the renderer.
+ * The pages are read sequentially, each waiting on the last, so the ceiling is
+ * really a latency budget rather than a render cost.
  *
- * The real fix is to stop streaming transactions into the API and let Postgres
- * sum them — tracked in #567. This ceiling is what keeps the interim honest.
+ * **It counts members, not transactions (#567).** Balances come from
+ * `get_roster_point_balances`, which groups by `user_id` and emits one row per
+ * member with any transaction, so this bound scales with roster size and is
+ * independent of chapter history. It used to bound the *transaction* stream
+ * this replaced, where an active chapter could cross it in a semester and the
+ * export would then report wrong balances behind a footnote. At one row per
+ * member the ceiling is no longer a cliff anyone reaches; it stays because the
+ * bound is still real, not because it is expected to fire.
  */
 export const REPORT_AGGREGATE_MAX_ROWS = 50_000;
 
@@ -182,9 +185,15 @@ interface UserRosterRow {
   email: string;
 }
 
-interface UserAmountRow {
+/**
+ * One member's whole balance, already summed by `get_roster_point_balances`
+ * (`20260905100000`). This replaced a `{ user_id, amount }` row per
+ * *transaction*: the roster used to stream those in and reduce them in Node.
+ */
+interface RosterBalanceRow {
   user_id: string;
-  amount: number;
+  /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
+  total_points: number;
 }
 
 interface RoleNameRow {
@@ -458,25 +467,32 @@ export class ReportService {
             .in('id', ids) as PromiseLike<QueryResult<UserRosterRow>>,
       ),
     );
-    // Scoped by chapter alone, then matched against the roster in memory
-    // below. Filtering on `user_id` as well would mean an `in` list holding
-    // every member, chunked across a query that also has to page — for a
-    // filter that changes nothing: a balance is only ever read back for a
-    // member's own ID, so a departed member's residual rows are inert.
-    const transactionsQuery = fetchAllPages<UserAmountRow>(
+    // Summed by Postgres, one row per member, rather than streamed in as one
+    // row per transaction (#567). Scoped by chapter alone, then matched
+    // against the roster in memory below. Filtering on `user_id` as well would
+    // mean an `in` list holding every member — for a filter that changes
+    // nothing: a balance is only ever read back for a member's own ID, so a
+    // departed member's residual rows are inert.
+    //
+    // Still paged, on the same terms as `getPointsReport` above: PostgREST
+    // applies `max_rows` to an RPC result set exactly as to a table read. The
+    // order is on `user_id`, which `get_roster_point_balances` groups by and
+    // is therefore unique across the result — a TOTAL order, so no row can
+    // duplicate or drop across a page boundary. (`get_points_report` cannot do
+    // this: it returns no key and can only tie-break on display name, which is
+    // the whole of #747.)
+    const balancesQuery = fetchAllPages<RosterBalanceRow>(
       (from, to) =>
         this.supabase
-          .from('point_transactions')
-          .select('user_id, amount')
-          .eq('chapter_id', chapterId)
-          .order('id', { ascending: true })
+          .rpc('get_roster_point_balances', { p_chapter_id: chapterId })
+          .order('user_id', { ascending: true })
           .range(from, to),
       { limit: REPORT_AGGREGATE_MAX_ROWS },
     );
 
-    const [userPages, transactions] = await Promise.all([
+    const [userPages, balanceRows] = await Promise.all([
       usersQuery,
-      transactionsQuery,
+      balancesQuery,
     ]);
 
     for (const pageResult of userPages) {
@@ -492,11 +508,13 @@ export class ReportService {
       ),
     );
 
-    const balances = new Map<string, number>();
-    for (const t of transactions.rows) {
-      const uid = t.user_id;
-      balances.set(uid, (balances.get(uid) ?? 0) + (t.amount ?? 0));
-    }
+    // One row per member now, so this is a lookup table rather than a
+    // reduction. `Number(...)` because the SQL type is `bigint`: PostgREST
+    // serializes it as a JSON number, but the same cast guards the string form
+    // some drivers hand back for 64-bit integers.
+    const balances = new Map<string, number>(
+      balanceRows.rows.map((b) => [b.user_id, Number(b.total_points)]),
+    );
 
     // Every role the chapter defines, rather than the subset the roster
     // mentions: `roles` is already chapter-scoped and a chapter holds a
@@ -530,15 +548,23 @@ export class ReportService {
       };
     });
 
-    // A truncated transaction read is not a short roster — it is a roster of
-    // the right length carrying *wrong* balances, which no row count reveals.
-    // It counts as truncation so the report still declares itself incomplete,
-    // but it reports its own ceiling and says which field is wrong: labelling
-    // a complete 300-line roster "capped at 5,000 rows" reads as a false
+    // A truncated balance read is not a short roster — it is a roster of the
+    // right length carrying *wrong* balances, which no row count reveals. It
+    // counts as truncation so the report still declares itself incomplete, but
+    // it reports its own ceiling and says which field is wrong: labelling a
+    // complete 300-line roster "capped at 5,000 rows" reads as a false
     // positive, and the reader goes looking for missing members instead of
     // distrusting the balances.
-    if (transactions.truncated) {
-      const balanceNote = `point balances are incomplete — summed from the first ${REPORT_AGGREGATE_MAX_ROWS.toLocaleString('en-US')} transactions`;
+    //
+    // THE CEILING NOW COUNTS MEMBERS, NOT TRANSACTIONS, which is the point of
+    // #567. `get_roster_point_balances` emits one row per member with any
+    // transaction, so reaching 50,000 needs a 50,000-member chapter rather
+    // than a 50,000-transaction one — the difference between a bound no real
+    // chapter approaches and one an active chapter crosses in a semester. The
+    // branch stays because the bound is still real, not because it is expected
+    // to fire.
+    if (balanceRows.truncated) {
+      const balanceNote = `point balances are incomplete — summed for the first ${REPORT_AGGREGATE_MAX_ROWS.toLocaleString('en-US')} members`;
       return {
         rows,
         truncated: true,
