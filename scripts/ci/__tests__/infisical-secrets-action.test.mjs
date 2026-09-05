@@ -124,6 +124,37 @@ describe("infisical-secrets composite action", () => {
     assert.match(errorBranch, /else\n\s+echo "::error::\$DETAIL"\n\s+exit 1/);
   });
 
+  it("keeps the 'credentials are present' diagnostics off the missing path", () => {
+    // The whole point of this preflight is telling an ABSENT credential apart
+    // from a REJECTED one (#696/#763). In the inline originals `exit 1` made
+    // that structural — nothing after the check ran unless the credentials
+    // existed. The warn path removed that guarantee, and an unconditional
+    // trailing echo then asserts "a 401 means rejected, not missing" three
+    // lines after warning that it IS missing — at staging-conformance, the one
+    // call site whose entire job is reporting which of the two it was.
+    //
+    // So both trailing diagnostics must sit in the `else` of the MISSING test.
+    // Asserted structurally, since the shell is not executed here.
+    const run = infisicalAction.slice(infisicalAction.indexOf('MISSING=""'));
+    const elseAt = run.indexOf("\n        else\n");
+    assert.ok(elseAt > 0, "the missing-credentials test must have an else branch");
+    const missingPath = run.slice(0, elseAt);
+    for (const [what, needle] of [
+      ["the whitespace warning", "contains whitespace"],
+      ["the 'a 401 means rejected' line", "Preflight complete"],
+    ]) {
+      assert.ok(
+        !missingPath.includes(needle),
+        `${what} is reachable when a credential is MISSING; it describes a credential ` +
+          `that is present and must stay inside the else branch`,
+      );
+    }
+    assert.ok(
+      run.slice(elseAt).includes("Preflight complete"),
+      "the 'a 401 means rejected' line must still run when credentials are present",
+    );
+  });
+
   it("is a composite action", () => {
     assert.match(infisicalAction, /using:\s*composite/);
   });
