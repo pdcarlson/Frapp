@@ -34,7 +34,13 @@ import {
   useRequestChatUploadUrl,
   useUploadSignedUrl,
 } from "@repo/hooks";
+import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+// Imported, never restated. A structural copy of this shape is assignable even
+// when it is missing a field, so a hand-written `{ ok, error? }` silently erases
+// any outcome added later — which is exactly what happened at the
+// `use-chat-channel` boundary before #544 added `warning`.
+import type { DispatchResult } from "@repo/chat-core/dispatch";
 import { useToast } from "@/hooks/use-toast";
 import {
   MAX_UPLOAD_LABEL,
@@ -88,7 +94,7 @@ interface ComposerProps {
   onSlashDispatch?: (
     command: SlashCommand,
     args: string,
-  ) => Promise<{ ok: boolean; error?: string; warning?: string }>;
+  ) => Promise<DispatchResult>;
   onTyping: () => void;
   isModuleEnabled: (moduleKey: string) => boolean;
   /**
@@ -164,6 +170,40 @@ export function composerPlaceholder(channelName: string, isDirect?: boolean) {
 }
 
 /**
+ * Await a dispatch and turn a REJECTION into a normal `{ ok: false }` outcome.
+ *
+ * `dispatchSlashCommand` documents itself as total — every path returns a
+ * `DispatchResult` — but `/poll` and `/announce` call `sendMessage` without a
+ * guard, and its outbox enqueue sits outside its own try block, so a Dexie
+ * failure rejects instead. Both call sites here clear the composer (and, via
+ * `onUpdate`, the persisted draft) *before* dispatching, so an unhandled
+ * rejection cost the user their typed command AND every scrap of feedback.
+ * `void`-ing the promise at one site and returning it into a `void`-typed
+ * palette handler at the other meant nothing ever observed it.
+ *
+ * The `captureException` is not optional. Precisely because nothing observed
+ * these rejections, Sentry's `GlobalHandlers` integration was capturing them as
+ * unhandled — so catching them here without reporting would trade a silent user
+ * experience for a silent *monitoring* one, and make #1718's failure class
+ * invisible in production exactly as we start handling it.
+ *
+ * This is the caller's own safety net; the dispatcher honouring its contract is
+ * tracked separately (#1718).
+ */
+export async function runDispatch(
+  dispatch: NonNullable<ComposerProps["onSlashDispatch"]>,
+  command: SlashCommand,
+  args: string,
+): Promise<DispatchResult> {
+  try {
+    return await dispatch(command, args);
+  } catch (error) {
+    Sentry.captureException(error);
+    return { ok: false };
+  }
+}
+
+/**
  * Toast the outcome of a slash dispatch. Shared by the two call sites (typed
  * `/command` submit and palette pick) so they cannot drift — they previously
  * held byte-identical failure branches.
@@ -173,10 +213,10 @@ export function composerPlaceholder(channelName: string, isDirect?: boolean) {
  * card failed to post — #544). That gets a plain, non-destructive toast: styling
  * it as a failure would invite a retry that writes a second ledger row.
  */
-function notifyDispatchOutcome(
+export function notifyDispatchOutcome(
   toast: ReturnType<typeof useToast>["toast"],
   commandName: string,
-  result: { ok: boolean; error?: string; warning?: string },
+  result: DispatchResult,
 ): void {
   if (!result.ok) {
     toast({
@@ -388,7 +428,7 @@ export function Composer({
           notifyDispatchOutcome(
             toast,
             command.name,
-            await onSlashDispatch(command, parsed.args),
+            await runDispatch(onSlashDispatch, command, parsed.args),
           );
         })();
         return;
@@ -504,7 +544,7 @@ export function Composer({
       notifyDispatchOutcome(
         toast,
         command.name,
-        await onSlashDispatch(command, args),
+        await runDispatch(onSlashDispatch, command, args),
       );
     },
     [editor, onSlashDispatch, toast],

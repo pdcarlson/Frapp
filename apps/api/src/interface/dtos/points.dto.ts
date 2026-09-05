@@ -22,18 +22,18 @@ import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
 } from '@repo/validation';
+import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
 
-// Declared above its first use so `AdjustPointsResponseDto`'s decorator can read
-// it — decorators evaluate at class-definition time, so a `const` declared
-// further down the file would be in the temporal dead zone.
-const TRANSACTION_CATEGORIES = [
-  'ATTENDANCE',
-  'ACADEMIC',
-  'SERVICE',
-  'FINE',
-  'MANUAL',
-  'STUDY',
-] as const;
+/**
+ * The only two categories `POST /v1/points/adjust` can write. Shared by the
+ * request and the response DTOs because they are necessarily the same set — the
+ * service stores `input.category` unchanged — so the published response contract
+ * cannot drift into advertising categories this route never produces.
+ *
+ * Deliberately NOT the full `PointCategory` union: `ATTENDANCE`, `ACADEMIC`,
+ * `SERVICE` and `STUDY` rows are written by other flows, never by this one.
+ */
+const ADJUSTABLE_CATEGORIES = ['MANUAL', 'FINE'] as const;
 
 export class AdjustPointsDto {
   // UUID-validated for the reason UpdateMemberRolesDto.custom_role_ids is: the
@@ -56,9 +56,9 @@ export class AdjustPointsDto {
   @Max(POINTS_ADJUSTMENT_MAX)
   amount: number;
 
-  @ApiProperty({ enum: ['MANUAL', 'FINE'] })
-  @IsEnum(['MANUAL', 'FINE'])
-  category: 'MANUAL' | 'FINE';
+  @ApiProperty({ enum: ADJUSTABLE_CATEGORIES })
+  @IsEnum(ADJUSTABLE_CATEGORIES)
+  category: (typeof ADJUSTABLE_CATEGORIES)[number];
 
   // Capped because this is interpolated into the points chat card's content
   // and posted through PointsService directly, bypassing SendMessageDto's cap.
@@ -92,10 +92,31 @@ export class AdjustPointsDto {
  * renders as `content?: never` — so `data` reached the SDK typed `never` and no
  * client could read a response field without an unchecked cast. Declaring it is
  * what lets `/points` see `card_posted` (#544); the transaction fields are
- * flattened at the top level exactly as the route already returned them, so
- * this documents the existing body rather than changing it.
+ * flattened at the top level exactly as the route already returned them.
+ *
+ * `implements PointTransaction` earns its place, but it guards exactly one case,
+ * and the boundaries matter more than the guarantee. It forces this class to
+ * gain any **required** field added to the ledger row — including the new half
+ * of a rename — because a missing required member fails to compile, and without
+ * it even that was unguarded (`@ApiCreatedResponse` is pure metadata and the
+ * controller has no return-type annotation).
+ *
+ * Two changes slip straight through it, both verified against `tsc` rather than
+ * assumed:
+ *   - a **dropped** column — an extra class member is always legal, so this DTO
+ *     keeps advertising a field the route no longer sends;
+ *   - an **optional** field added to the interface (`voided_at?: string | null`,
+ *     the shape every later-added column in this repo uses) — nothing requires
+ *     the class to declare it, so the published contract silently omits it.
+ *
+ * In both cases the artifacts regenerate faithfully from a stale decorator and
+ * every gate stays green. **Anything but adding a required column still needs
+ * this file checked by hand.**
+ *
+ * A narrower `category` still satisfies the interface, which is what makes the
+ * honest two-value enum below compatible with the domain's six-value union.
  */
-export class AdjustPointsResponseDto {
+export class AdjustPointsResponseDto implements PointTransaction {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
@@ -110,8 +131,12 @@ export class AdjustPointsResponseDto {
   @ApiProperty()
   amount: number;
 
-  @ApiProperty({ enum: TRANSACTION_CATEGORIES })
-  category: (typeof TRANSACTION_CATEGORIES)[number];
+  // Only the two this route can write — see ADJUSTABLE_CATEGORIES. Publishing
+  // the full six-value union would tell every SDK consumer to write four
+  // unreachable branches, and would contradict `spec/behavior/points.md`
+  // § Categories, which says manual adjustments are MANUAL or FINE only.
+  @ApiProperty({ enum: ADJUSTABLE_CATEGORIES })
+  category: (typeof ADJUSTABLE_CATEGORIES)[number];
 
   /** The adjustment reason, stored as the ledger row's description. */
   @ApiProperty()
@@ -150,6 +175,15 @@ export class PointsWindowQueryDto {
   @IsUUID()
   semester_archive_id?: string;
 }
+
+const TRANSACTION_CATEGORIES = [
+  'ATTENDANCE',
+  'ACADEMIC',
+  'SERVICE',
+  'FINE',
+  'MANUAL',
+  'STUDY',
+] as const;
 
 export class ListPointTransactionsQueryDto {
   @ApiPropertyOptional({

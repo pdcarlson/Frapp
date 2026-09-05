@@ -8823,12 +8823,8 @@
           "category": {
             "type": "string",
             "enum": [
-              "ATTENDANCE",
-              "ACADEMIC",
-              "SERVICE",
-              "FINE",
               "MANUAL",
-              "STUDY"
+              "FINE"
             ]
           },
           "description": {

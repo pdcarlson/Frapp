@@ -3458,7 +3458,7 @@ export interface components {
             user_id: string;
             amount: number;
             /** @enum {string} */
-            category: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+            category: "MANUAL" | "FINE";
             description: string;
             /** @description Adjustment metadata — `adjusted_by`, `reason`, and `flagged` when the amount met the chapter anomaly threshold. */
             metadata: {
