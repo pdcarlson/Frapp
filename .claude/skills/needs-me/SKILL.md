@@ -91,8 +91,8 @@ Then:
 1. **Ground the steps in reality, not in the issue.** The issue's "How to do it" section was
    written when it was filed and may have drifted; confirm names and paths against the repo and,
    for provider state, [`/infrastructure-research`](../infrastructure-research/SKILL.md). If a doc
-   you rely on turns out to be wrong, [`/check-our-docs`](../check-our-docs/SKILL.md) fixes it in
-   the same pass.
+   you rely on turns out to be wrong, fix it in the same pass — the fix ladder is in
+   [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md).
 2. **Do everything you can do yourself first**, and say what you did. Only what genuinely requires
    his account, his card, his dashboard, or his judgment should reach him.
 3. **Hand him one step at a time.** Exact setting names, exact secret names (never values), exact
