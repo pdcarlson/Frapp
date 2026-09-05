@@ -12,7 +12,6 @@ import {
   normalizeProtection,
 } from "../../configure-branch-protection.mjs";
 import { ALL_REQUIRED_CHECKS } from "../lib/required-checks.mjs";
-import { parseCheckArray } from "../../check-doc-tables.mjs";
 
 // Before #1383 `configure-branch-protection.mjs` had exactly one API call and
 // exactly one method — PUT — so it could report only what it INTENDED to write.
@@ -193,13 +192,6 @@ describe("one roster, two consumers (#1383 scope item 1)", () => {
     assert.doesNotMatch(importLine[0], /\b(CI_CHECKS|DOCS_CHECKS|DRIFT_CHECKS)\b/);
   });
 
-  it("the doc-table gate parses the rosters from their new home", () => {
-    // `check-doc-tables.mjs` reads the arrays as SOURCE TEXT, so moving them
-    // without moving its pointer silently breaks the docs gate.
-    const src = read("../../check-doc-tables.mjs");
-    assert.match(src, /const SCRIPT_SRC = "scripts\/ci\/lib\/required-checks\.mjs";/);
-  });
-
   it("the data module stays free of side effects and entry points", () => {
     // The whole reason the deploy path can import it safely. Asserted by
     // IMPORTING it and watching, rather than by grepping for three spellings of
@@ -210,30 +202,6 @@ describe("one roster, two consumers (#1383 scope item 1)", () => {
     assert.doesNotMatch(src, /\bfetch\(/);
     assert.doesNotMatch(src, /function main\b/);
     assert.doesNotMatch(src, /^\s*(await|console\.|process\.env\s*\[|execSync)/m);
-  });
-
-  it("check-doc-tables can still parse the rosters in their new `export const` form", () => {
-    // The parser builds `const NAME = [` unanchored, so `export const NAME = [`
-    // matches on the substring — but nothing pinned that, and anchoring the
-    // regex to `^const` (a natural hardening) would silently stop the roster
-    // gate parsing anything. That failure lands only on the non-required
-    // doc-tables job, so nothing would block a merge on it.
-    const src = read("../lib/required-checks.mjs");
-    for (const name of ["CI_CHECKS", "DOCS_CHECKS", "DRIFT_CHECKS"]) {
-      assert.ok(
-        parseCheckArray(src, name)?.length > 0,
-        `check-doc-tables must parse ${name} from the roster module`,
-      );
-    }
-    assert.equal(
-      [
-        ...parseCheckArray(src, "CI_CHECKS"),
-        ...parseCheckArray(src, "DOCS_CHECKS"),
-        ...parseCheckArray(src, "DRIFT_CHECKS"),
-      ].length,
-      ALL_REQUIRED_CHECKS.length,
-      "the parsed roster must match the imported one",
-    );
   });
 });
 

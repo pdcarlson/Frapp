@@ -6,8 +6,9 @@
  * the dashboard routes, and writes 2x PNGs to `screenshots/web/`.
  *
  * Output is gitignored on purpose: docs/internal/DOCUMENTATION_CONVENTIONS.md
- * hard rule 1 forbids inventing a new top-level docs folder, and there is no
- * sanctioned home for generated marketing binaries. Regenerate, do not commit.
+ * forbids inventing a new top-level folder ("never create a new top-level file,
+ * and never invent a top-level folder"), and there is no sanctioned home for
+ * generated marketing binaries. Regenerate, do not commit.
  *
  * Prereqs: local Supabase up, demo seed loaded, API on :3001, web on :3000.
  *

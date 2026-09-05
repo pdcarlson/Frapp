@@ -8,17 +8,16 @@ Each topic lives in its own file. Cross-cutting concerns (visual themeing, error
 
 ## Topics
 
-**This file is machine-checked.** Every declared child of `spec/behavior/` needs a row in a table
-here, and a row may not name a child that is not declared — `npm run check:doc-tables`, against
-`DIRECTORIES` in [`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs). Add or retire a directory in
-the manifest and here in the same commit; the rule itself is described in
-[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) § Rosters.
+One row per topic. No CI check asserts this table is complete — the surviving link-check only proves
+the targets resolve — so add the row in the same change that adds the topic file. Which tree a behavior rule belongs in at all is settled by
+[`docs/internal/DOCUMENTATION_CONVENTIONS.md` § Where things go](../../docs/internal/DOCUMENTATION_CONVENTIONS.md#where-things-go).
 
 | Topic                                                | File                                       |
 | ---------------------------------------------------- | ------------------------------------------ |
 | Multi-tenancy invariants                             | [`multi-tenancy.md`](multi-tenancy.md)     |
 | RBAC, roles, presidency transfer                     | [`rbac.md`](rbac.md)                       |
 | Backwork (academic library)                          | [`backwork.md`](backwork.md)               |
+| Rush / recruitment / intake                          | [`rush.md`](rush.md)                       |
 | Points ledger — security, audit, atomicity           | [`points.md`](points.md)                   |
 | Chapter billing (Stripe), grace periods, dues        | [`billing.md`](billing.md)                 |
 | Chat (channels, DMs, messages, slash commands)       | [`chat/`](chat/README.md)                  |
