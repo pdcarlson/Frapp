@@ -21,11 +21,16 @@
  *   priority, so the switch would have muted URGENT broadcasts. That is fixed —
  *   `notifyUser` now exempts URGENT from this gate entirely (#1041), which is
  *   what #564 always assumed. What replaces it is that the category has no
- *   non-URGENT traffic to switch: `chat.service.ts` is the only emitter and it
- *   sends every announcements-channel post as URGENT, so a preference row here
- *   would suppress nothing — the exact dead-control failure the first paragraph
- *   of this docblock exists to prevent. It ships once routine announcements are
- *   distinguishable from emergency ones; see #1323.
+ *   non-URGENT traffic to switch: **both** emitters send URGENT —
+ *   `chat.service.ts:834` broadcasts every announcements-channel post that way,
+ *   and the chat push worker marks anything its announcement predicate matches
+ *   the same (`chat-push-worker.service.ts:421`, keyed on `kind` OR a channel
+ *   *named* `announcements`). So a preference row here would suppress nothing —
+ *   the exact dead-control failure the first paragraph of this docblock exists
+ *   to prevent. It ships once routine announcements are distinguishable from
+ *   emergency ones; see #1323. (An earlier version of this docblock said
+ *   `chat.service.ts` was the only emitter, which would have let someone
+ *   evaluating #1323 check one call site and miss the worker's.)
  * - **`admin`** — "new member joined" / "invite accepted" / "role change". It is
  *   member-facing in *delivery* (`InviteService` sends it through
  *   `notifyChapter`, so every member gets a row), but it is chapter operations
@@ -48,7 +53,9 @@
  * render an accurate switch before the first `GET` lands, not to encode a policy
  * of its own.
  *
- * Web's Profile grid adopting this catalog is the other half of #564.
+ * Both surfaces now draw from here — mobile's s16 grid and web's Profile
+ * Notifications card — which is what #564 closed. Anything that renders these
+ * switches maps this array; nothing hand-writes a second list of keys.
  */
 
 /** One member-facing category, as drawn: a switch with a label and a hint. */
@@ -139,17 +146,55 @@ export function isNotificationCategoryKey(
   return typeof value === "string" && CATEGORY_KEYS.has(value);
 }
 
+/** Every switch's position, complete — never a patch over some other state. */
+export type NotificationCategoryState = Record<
+  NotificationCategoryKey,
+  boolean
+>;
+
 /**
  * The catalog's defaults as a plain map — the starting point a surface folds
  * server rows onto, and what it renders while the first `GET` is in flight.
  */
-export function defaultNotificationCategoryState(): Record<
-  NotificationCategoryKey,
-  boolean
-> {
-  const state = {} as Record<NotificationCategoryKey, boolean>;
+export function defaultNotificationCategoryState(): NotificationCategoryState {
+  const state = {} as NotificationCategoryState;
   for (const category of NOTIFICATION_CATEGORIES) {
     state[category.key] = category.defaultEnabled;
+  }
+  return state;
+}
+
+/**
+ * Fold `GET /v1/notifications/preferences` rows over the catalog defaults.
+ *
+ * A category with no row is enabled, because that is what the server does with
+ * an absent row (`notification.service.ts` suppresses only on an explicit
+ * `is_enabled: false`, and no migration seeds rows) — so this returns a
+ * **complete** state rather than a patch, and a category the member has never
+ * touched reads here exactly as it behaves in delivery.
+ *
+ * Takes `unknown` on purpose. `GET /v1/notifications/preferences` declares no
+ * response schema, so the SDK types the body loosely and every caller is
+ * narrowing anyway; doing it here once means no surface hand-rolls the checks.
+ * Rows for categories outside the catalog are dropped per
+ * {@link isNotificationCategoryKey} — the column is unconstrained `text`, so a
+ * stale `announcements` row or anything else previously `PATCH`ed must not
+ * widen a surface's state beyond the switches it draws.
+ *
+ * Shared rather than per-surface for the reason in this module's docblock: web
+ * and mobile fold the same rows onto the same catalog, and a second copy is how
+ * the two drift into disagreeing about what a member's switches say.
+ */
+export function rowsToNotificationCategoryState(
+  rows: unknown,
+): NotificationCategoryState {
+  const state = defaultNotificationCategoryState();
+  if (!Array.isArray(rows)) return state;
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const { category, is_enabled: isEnabled } = row as Record<string, unknown>;
+    if (typeof isEnabled !== "boolean") continue;
+    if (isNotificationCategoryKey(category)) state[category] = isEnabled;
   }
   return state;
 }
