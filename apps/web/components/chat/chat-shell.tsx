@@ -36,6 +36,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
   ChannelList,
+  type ChannelCategory,
   type ChannelUnread,
   type ChatChannel,
 } from "./channel-list";
@@ -184,6 +185,28 @@ export function ChatShell({
         muted: levelByChannelId.get(ch.id) === "off",
       })),
     [channelsQuery.data, levelByChannelId],
+  );
+
+  // The rail groups plain channels under these. Passed through in the order the
+  // API returned them — `SupabaseChatCategoryRepository.findByChapter` orders by
+  // `display_order` and then `created_at` server-side, so there is nothing to
+  // re-sort here.
+  //
+  // **A failed categories fetch degrades to the flat list rather than an error
+  // state.** Unlike `channelsQuery` below, there is no `isError` branch:
+  // `asArray` turns the absent payload into `[]` and every channel falls into
+  // the default "Channels" group, which is exactly the pre-category rail.
+  //
+  // Note what this does *not* say: chat is still gated on
+  // `categoriesQuery.isPending` below, so a member does wait out the query
+  // provider's `retry: 3` backoff before that fallback renders. That gate
+  // predates categories being drawn and was pure cost then; it now buys a rail
+  // that paints grouped on first render instead of flat-then-reflowed. Whether
+  // that trade is right is worth revisiting — but the degradation is at the end
+  // of the retries, not instead of them.
+  const categories = useMemo(
+    () => asArray<ChannelCategory>(categoriesQuery.data),
+    [categoriesQuery.data],
   );
 
   // Seeded from the `?channel=` query param a caller (e.g. the member
@@ -805,6 +828,7 @@ export function ChatShell({
             viewerId={userId}
             memberNames={memberNames}
             channels={channels}
+            categories={categories}
             unreadByChannelId={unreadByChannelId}
             activeChannelId={activeChannelId}
             onPick={(ch) => {
