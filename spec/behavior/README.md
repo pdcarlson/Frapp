@@ -52,8 +52,8 @@ Each topic file is canonical **intended** behavior. Delivery (which is shipped v
 
 ## Dark Mode
 
-- Both surfaces are dark-only. There is no light theme, so "support" here means the dark palette is the only one shipped, not that a choice exists.
-- Palette, typeface, and dark-first Signet tokens live in [`spec/ui/brand-identity.md`](../ui/brand-identity.md) and [`spec/ui/design-system/`](../ui/design-system/README.md) — do not duplicate values here. The frozen landing site still ships the legacy `@repo/theme` tokens until its reskin; the web dashboard ships Signet dark-only since the #920 shell slice (no theme control).
+- The web dashboard and mobile are dark-only: the dark palette is the only one they ship, and neither offers a theme control, so "support" here does not mean a choice exists. The landing site is the exception — it still renders light, per the bullet below.
+- Palette, typeface, and dark-first Signet tokens live in [`spec/ui/brand-identity.md`](../ui/brand-identity.md) and [`spec/ui/design-system/`](../ui/design-system/README.md) — do not duplicate values here. The frozen landing site still ships the legacy `@repo/theme` tokens until its reskin — their bare `:root` is the light bone palette and `.dark` is opt-in, so with no such class on `apps/landing` the public site renders light-only; the web dashboard ships Signet dark-only since the #920 shell slice (no theme control).
 
 ---
 

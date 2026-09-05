@@ -254,18 +254,24 @@ Two other refusals, both deliberate:
       (`check:migration-safety` requires touching this doc or the rollback
       playbook — it cannot tell which one you owed)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
-- [ ] For a **production** promotion, know that nothing takes a backup for you:
+- [ ] For a **production** promotion, a backup **taken by you**, with the dump path
+      or object key recorded on the PR — or an explicit, written acceptance that
+      there is no recovery path for this promotion. Nothing takes one for you:
       `db-backup.yml` runs against `frapp-staging` only, and the free plan offers
       neither a snapshot nor PITR
-      ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality).
+      ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality),
+      so this box cannot be ticked by having read it. This replaced an older item
+      that asked you to *confirm* Supabase backups: there were none to confirm, so
+      it could only ever be ticked falsely.
       `scripts/db-backup.sh` can dump any project. It always needs a reachable
       Docker daemon (`supabase db dump` runs pg_dump in a container). Prefer
-      `--db-url` for a one-off — the credentials ride in the connection string and
-      nothing persists; `--linked` instead needs `supabase link`, which leaves the
-      link under `supabase/.temp`, so re-link before running anything else from the
-      tree. Either way it captures the **database** only; Storage objects need
-      `scripts/storage-backup-run.mjs`, which is what `db-backup.yml`'s second job
-      runs for staging.
+      `--db-url` for a one-off — nothing is left behind **in the tree**, unlike
+      `--linked`, which needs `supabase link` and leaves the link under
+      `supabase/.temp`, so re-link before running anything else from it. (The URL
+      still carries the password on the command line, so it reaches your shell
+      history and the process table like any other argv.) Either way it captures
+      the **database** only; Storage objects need `scripts/storage-backup-run.mjs`,
+      which is what `db-backup.yml`'s second job runs for staging.
 
 ## Local validation
 

@@ -31,7 +31,7 @@ The admin console (`apps/web`). Next.js App Router, Tailwind, ShadCN UI.
 - **Polls** — Chapter-wide poll list with aggregate tallies on the web app (`GET /v1/polls`, gated by `polls:view_all`; see [`spec/behavior/polls.md`](../behavior/polls.md) and [`spec/ui/web-dashboard/README.md`](../ui/web-dashboard/README.md)). Create polls and vote in channels per chat permissions.
 - **Tasks** — Create/assign tasks to members. Track status (TODO, IN_PROGRESS, COMPLETED, OVERDUE). Confirm completion and award points. Filter by assignee, status, due date.
 - **Service Hours** — Admin review queue for submitted service entries. Approve/reject with optional comments. Chapter-wide service report. Configure points-per-hour rate.
-- **Chapter Documents** — Upload, organize, and manage chapter files (bylaws, constitutions, agendas). Flat folder structure. All members can view/download.
+- **Chapter Documents** — Upload, organize, and manage chapter files (bylaws, constitutions, agendas). Flat folder structure. Reads are gated on `members:view` — every seeded role holds it or clears it via `*`, so in practice every member can view and download, but a custom role without it cannot; [`../behavior/chapter-docs.md`](../behavior/chapter-docs.md) owns the gate.
 - **Reports & Export** — Generate and download CSV/PDF reports: attendance, points, member roster, service hours. Select date range and scope. Branded PDF templates with chapter logo.
 - **Settings** — Chapter profile (name, university). Chapter branding (upload logo, set accent color). Default role configuration. Notification defaults. Semester rollover action ("Start New Semester"). Danger zone (cancel subscription, transfer presidency).
 

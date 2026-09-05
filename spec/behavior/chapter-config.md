@@ -28,10 +28,10 @@ Returns the merged chapter configuration: archetype defaults overlaid with per-c
 
 Updates chapter config fields. Writes a diff entry to `chapter_audit_log` and posts a `system_audit` chat message to `#chapter-audit`. Permission: `chapter-config:manage`.
 
-Two customizable sub-resources sit alongside chapter config. **Neither is reachable through this PATCH** — `PatchChapterConfigDto` carries no `custom_fields` or `custom_roles` property; each is served by its own CRUD controller (`custom-fields`, `custom-roles`), and [`settings/customization.md`](settings/customization.md) is canon for their routes. Full schema in [`spec/architecture/README.md`](../architecture/README.md):
+The customizable sub-resources surfaced through chapter config (full schema in [`spec/architecture/README.md`](../architecture/README.md)) — the last three are reachable through this PATCH, the first two are not:
 
-- **`chapter_custom_fields`** — per-chapter member fields. `(key, label, type, required, visibility, sensitive, options, sort)`. `visibility ∈ {self, chapter, exec, president}`.
-- **`chapter_custom_roles`** — `(key, label, rank, capabilities[], core)`. `core=false` roles can be deleted.
+- **`chapter_custom_fields`** — **not on this PATCH.** `PatchChapterConfigDto` carries no `custom_fields` property; a CRUD controller (`custom-fields`) serves it, and [`settings/customization.md`](settings/customization.md) is canon for its routes. Per-chapter member fields. `(key, label, type, required, visibility, sensitive, options, sort)`. `visibility ∈ {self, chapter, exec, president}`.
+- **`chapter_custom_roles`** — **not on this PATCH** either, for the same reason and with its own `custom-roles` controller. `(key, label, rank, capabilities[], core)`. `core=false` roles can be deleted.
 - **`chapter_workflows`** — `(key, enabled, threshold, params)`. Each enabled workflow can configure its numeric threshold.
 - **`branding`** — Greek letters, designation, school short, founded year, and the accent seed (`colors.accent`). A second colour, `colors.dark`, existed until the #920 slice-9 cutover; it fed only the deleted legacy token map, and a row written before then keeps an inert value that no reader looks at.
 - **`enabled_modules`** — the per-module on/off map (see [`spec/product/modules.md`](../product/modules.md)).

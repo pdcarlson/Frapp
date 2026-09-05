@@ -1,8 +1,13 @@
 /**
  * Payload shapes for rich chat messages (Chunk 05).
  *
- * Kept in `packages/chat-integrations` (zero React deps) so the shape has one
- * home. Renderers live in the apps, not here.
+ * Kept in `packages/chat-integrations` (zero React deps). This is the canonical
+ * home, not the only one: `packages/chat-core/src/polls.ts` deliberately
+ * redeclares `PollOption`, `PollPayload` and `POLL_VOTE_ACTION_TYPE` rather than
+ * importing them, because `chat-core` is a mobile dependency and this package
+ * cannot be pulled in transitively (#989). Nothing type-checks the two against
+ * each other, so a change here must be carried there by hand. Renderers live in
+ * the apps, not here.
  */
 
 export interface PollOption {
