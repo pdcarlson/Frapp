@@ -439,6 +439,15 @@ one that decides the answer, because it is the only vector whose failure destroy
 irrecoverably. Steps 1-3 disagreeing with step 4 means the read is lossy; steps 1-3 *agreeing* with
 step 4 means it is faithful, whatever this document's table says.
 
+**Known gap in this fixture, stated so it is not mistaken for a pass.** The probe measures what a
+read *returns*; it does **not** measure whether the search **index** matches text that exists only
+inside an HTML comment. #1736 cannot answer that — every comment-borne string in it also appears as
+visible text (in the answer key, or quoted in a code span), which is what makes the fixture readable
+but also makes it non-discriminating for this one question. That matters only for pre-2026-08-20
+comment-form `fp=` markers; every marker written since is a visible line, which the index indexes.
+Adding a discriminator would mean a string that appears **only** inside a comment — worth doing if
+the legacy-marker audit in #697 is ever run.
+
 ### The direct REST read (ground truth for a raw body)
 
 **`api.github.com` REST is reachable out of band, and it is the better ground-truth read.**
