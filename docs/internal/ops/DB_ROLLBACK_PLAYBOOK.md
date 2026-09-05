@@ -297,6 +297,35 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the ops-setup nudge dismissals
+
+* **Migration**: `20260905020000_member_dismissed_ops_nudges.sql`
+* **Action**: `ALTER TABLE members DROP COLUMN IF EXISTS dismissed_ops_nudges;`
+  **Redeploy the web app at the pre-#492 revision first.** The API degrades gracefully
+  without it — `mapMembershipSummary` normalizes a missing value to `[]` and
+  `MemberService.dismissOpsNudge` reads through `?? []` — but `PATCH
+  /v1/members/me/ops-nudges/dismiss` 500s on the write, so with the old column gone and
+  the new web build still deployed, every officer's Dismiss click fails silently and the
+  card returns on the next refetch. Reads keep working throughout; only the dismissal
+  write is lost.
+* **Note**: Purely additive — one `text[] not null default '{}'` column. No existing
+  column, row, policy, or function is touched, so nothing that predates the migration
+  can be lost and rolling back cannot corrupt anything. What it removes is the memory of
+  which suggestions an officer has already closed: every eligible chapter's officers see
+  the Dues nudge again. Annoying, not damaging, and no data outside this column depends
+  on it.
+* **Data caveat**: the column is the *only* record of a dismissal — there is no second
+  copy and no way to recompute it, because "this officer chose to close this card" is
+  not derivable from any other state. Dropping it is therefore lossy in a way the
+  additive-column rollbacks above are not, and re-applying the migration brings every
+  member back at `'{}'`. If the dismissals matter, snapshot first:
+  `CREATE TABLE members_dismissed_ops_nudges_backup AS SELECT id, dismissed_ops_nudges
+  FROM members WHERE dismissed_ops_nudges <> '{}';` — that predicate keeps the snapshot
+  to the rows that actually carry a choice. Restore with an `UPDATE ... FROM` on `id`.
+  The loss is one UI preference per officer, so prefer simply not rolling this back:
+  hiding the card is a web-side change (stop rendering `OpsSetupNudge`) that needs no
+  migration at all.
+
 ## Rollback the chat-archive upload quota
 
 * **Migration**: `20260905010000_discord_import_archive_quota.sql`
