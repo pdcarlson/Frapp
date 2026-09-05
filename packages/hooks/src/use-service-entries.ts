@@ -37,22 +37,6 @@ export function useServiceEntries(
   });
 }
 
-export function useServiceEntry(id: string) {
-  const client = useFrappClient();
-  return useQuery({
-    queryKey: ["service-entries", id],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/service-entries/{id}", {
-        params: { path: { id } },
-      });
-      if (error) throw error;
-      return data;
-    },
-    staleTime: 30_000,
-    enabled: !!id,
-  });
-}
-
 export function useCreateServiceEntry() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

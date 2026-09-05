@@ -88,19 +88,6 @@ export function useDeleteAccount() {
   });
 }
 
-export function useRequestAvatarUploadUrl() {
-  const client = useFrappClient();
-  return useMutation({
-    mutationFn: async (body: { filename: string; content_type: string }) => {
-      const { data, error } = await client.POST("/v1/users/me/avatar-url", {
-        body,
-      });
-      if (error) throw error;
-      return data;
-    },
-  });
-}
-
 /**
  * Load the caller's effective permission set for the active chapter.
  *

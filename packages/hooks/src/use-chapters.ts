@@ -82,21 +82,6 @@ export function useCurrentChapter(options?: {
   });
 }
 
-export function useCreateChapter() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (body: { name: string; university: string }) => {
-      const { data, error } = await client.POST("/v1/chapters", { body });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
-    },
-  });
-}
-
 export interface OnboardChapterInput {
   name: string;
   university: string;
@@ -176,60 +161,6 @@ export function useUpdateChapter() {
       const { data, error } = await client.PATCH("/v1/chapters/current", {
         body,
       });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
-      queryClient.invalidateQueries({
-        queryKey: chapterQueryKey("current", activeChapterId ?? null),
-      });
-    },
-  });
-}
-
-export function useRequestLogoUploadUrl() {
-  const client = useFrappClient();
-  return useMutation({
-    mutationFn: async (body: { filename: string; content_type: string }) => {
-      const { data, error } = await client.POST(
-        "/v1/chapters/current/logo-url",
-        { body },
-      );
-      if (error) throw error;
-      return data;
-    },
-  });
-}
-
-export function useConfirmLogo() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  const activeChapterId = useActiveChapterId();
-  return useMutation({
-    mutationFn: async (body: { storage_path: string }) => {
-      const { data, error } = await client.POST("/v1/chapters/current/logo", {
-        body,
-      });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
-      queryClient.invalidateQueries({
-        queryKey: chapterQueryKey("current", activeChapterId ?? null),
-      });
-    },
-  });
-}
-
-export function useDeleteLogo() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  const activeChapterId = useActiveChapterId();
-  return useMutation({
-    mutationFn: async () => {
-      const { data, error } = await client.DELETE("/v1/chapters/current/logo");
       if (error) throw error;
       return data;
     },
