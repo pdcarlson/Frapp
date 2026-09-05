@@ -118,15 +118,9 @@ Use conventional commit messages:
 type(scope): description
 ```
 
-| Type       | Use for                              |
-| ---------- | ------------------------------------ |
-| `feat`     | New feature                          |
-| `fix`      | Bug fix                              |
-| `docs`     | Documentation changes                |
-| `style`    | Formatting, missing semicolons, etc. |
-| `refactor` | Code refactoring                     |
-| `test`     | Adding tests                         |
-| `chore`    | Maintenance tasks                    |
+The canonical type list lives in [`docs/guides/contributing.md`](docs/guides/contributing.md)
+§ Commit messages. It is not restated here — this file and that one carried two
+divergent lists until #1635.
 
 ### 3. Open a PR targeting `main`
 

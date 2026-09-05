@@ -7,7 +7,7 @@
 3. After authentication, enters chapter details (name, university).
 4. **Accepts Terms of Service and Privacy Policy** (required checkbox).
 5. API creates chapter with `subscription_status: incomplete`.
-6. Default system roles and default channels (#general, #announcements, #alumni) are seeded.
+6. Default system roles and default channels (#general, #announcements, #chapter-audit, #alumni) are seeded. Full seeded definitions: [`spec/behavior/onboarding.md`](../behavior/onboarding.md).
 
 Payment is **not** part of chapter creation. Nothing in the onboarding path touches Stripe — the chapter lands at `incomplete` and stays there until someone starts checkout explicitly:
 
