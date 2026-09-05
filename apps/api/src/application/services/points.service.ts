@@ -243,13 +243,30 @@ export class PointsService {
     if (window === 'all') return {};
 
     const now = new Date();
-    const since =
-      window === 'month'
-        ? resolveWindowSince('month', { now })
-        : ((await this.getSemesterRange(chapterId))?.after ?? null);
+    // Branch on each window by name rather than treating "not month" as
+    // semester. `filterByWindow` guards its archive lookup with an explicit
+    // `window === 'semester'`, and collapsing that into an else would hand
+    // semester bounds to any window added later — silently, since only
+    // `resolveWindowSince` has the `never` exhaustiveness check that would
+    // force the author to notice. The leaderboard would then disagree with the
+    // same member's own balance for that new window.
+    let since: Date | null;
+    if (window === 'month') {
+      since = resolveWindowSince('month', { now });
+    } else if (window === 'semester') {
+      since = (await this.getSemesterRange(chapterId))?.after ?? null;
+    } else {
+      const exhaustive: never = window;
+      throw new BadRequestException(
+        `Unsupported points window: ${String(exhaustive)}`,
+      );
+    }
 
-    // No resolvable lower bound (a 'semester' window before the chapter's first
-    // rollover) means all-time, upper bound included — same as filterByWindow.
+    // No resolvable lower bound — a 'semester' window on a chapter that has not
+    // rolled over yet. That means all-time, which is NO bound on either side:
+    // `filterByWindow` expresses it by returning the list untouched, so a
+    // future-dated row counts. Returning `{ until: now }` here would look
+    // equivalent and quietly drop those rows.
     if (!since) return {};
 
     return { since: since.toISOString(), until: now.toISOString() };

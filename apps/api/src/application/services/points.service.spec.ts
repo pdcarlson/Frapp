@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PointsService } from './points.service';
+import { SupabasePointTransactionRepository } from '../../infrastructure/supabase/repositories/supabase-point-transaction.repository';
 import {
   POINT_TRANSACTION_REPOSITORY,
   IPointTransactionRepository,
@@ -29,21 +30,25 @@ import {
 } from './chapter-points-config.service';
 
 /**
- * What `get_points_leaderboard` does, in TypeScript.
+ * A stand-in for `get_points_leaderboard`, used to test the SERVICE.
  *
- * The leaderboard sum moved into Postgres (#522), so the service no longer sees
+ * The sum moved into Postgres (#522), so the service no longer sees
  * transactions — it computes `(since, until]` bounds and hands them to the
  * repository. Asserting only "was called with these bounds" would leave the
- * *meaning* of those bounds untested, and the boundary rules here are subtle
- * (exclusive lower, inclusive upper, either side unbounded when omitted) and
- * shared with the points report.
+ * *meaning* of those bounds untested, and the rules are subtle: exclusive
+ * lower, inclusive upper, and either side unbounded when omitted. So the tests
+ * keep their transaction fixtures and this applies the bounds to them.
  *
- * So the tests keep their transaction fixtures and this fake plays the database:
- * same predicate, same grouping, same ordering as the SQL. A window bug then
- * still fails a test, exactly as it did when the reduction ran in Node.
+ * **What this does NOT do is test the SQL.** It is a transcription, and a
+ * transcription cannot catch a divergence between itself and the migration —
+ * flip `>` to `>=` in the .sql file and every test here still passes. The real
+ * function is covered against a live database in
+ * `test/integration/points-leaderboard.integration-spec.ts`; that suite, not
+ * this fake, is what makes the SQL's boundary behaviour a tested claim.
  */
 const applyLeaderboardBounds = (
   transactions: PointTransaction[],
+  chapterId: string,
   { since, until }: PointsLeaderboardWindow,
 ): PointsLeaderboardRow[] => {
   const sinceMs = since === undefined ? null : new Date(since).getTime();
@@ -51,6 +56,10 @@ const applyLeaderboardBounds = (
 
   const totals = new Map<string, number>();
   for (const txn of transactions) {
+    // The SQL's first predicate. Mirrored so a fixture row planted in another
+    // chapter stays out of the board here too, rather than the fake being
+    // laxer than the thing it stands in for.
+    if (txn.chapter_id !== chapterId) continue;
     const at = new Date(txn.created_at).getTime();
     if (sinceMs !== null && !(at > sinceMs)) continue; // exclusive lower
     if (untilMs !== null && !(at <= untilMs)) continue; // inclusive upper
@@ -121,8 +130,8 @@ describe('PointsService', () => {
    * fixtures still decide the board.
    */
   const seedTransactions = (transactions: PointTransaction[]) => {
-    mockPointTxnRepo.leaderboard.mockImplementation((_chapterId, window) =>
-      Promise.resolve(applyLeaderboardBounds(transactions, window)),
+    mockPointTxnRepo.leaderboard.mockImplementation((chapterId, window) =>
+      Promise.resolve(applyLeaderboardBounds(transactions, chapterId, window)),
     );
   };
 
@@ -1120,18 +1129,28 @@ describe('PointsService', () => {
       }
     });
 
-    it('never loads the chapter transaction list into the service', async () => {
-      // The whole point of #522: the service must not have a way to pull every
-      // row. `findByChapter` was deleted from the repository interface, so this
-      // asserts the seam stays closed rather than being quietly reintroduced.
-      expect(
-        (mockPointTxnRepo as Record<string, unknown>).findByChapter,
-      ).toBeUndefined();
-
+    it('reads the board with exactly one aggregated call', async () => {
       seedTransactions(buildLargeFixture());
       await service.getLeaderboard('ch-1', 'all');
 
       expect(mockPointTxnRepo.leaderboard).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves no unbounded chapter read on the real repository', () => {
+      // The whole point of #522: no seam remains through which the service can
+      // pull every transaction in the chapter.
+      //
+      // Asserted against the REAL repository's prototype, not the mock literal
+      // in this file. The mock would satisfy a `findByChapter === undefined`
+      // check simply by never listing the key, so that assertion would keep
+      // passing after someone re-added the method to the interface and the
+      // implementation — which is precisely the regression it exists to catch.
+      const methods = Object.getOwnPropertyNames(
+        SupabasePointTransactionRepository.prototype,
+      );
+
+      expect(methods).toContain('leaderboard');
+      expect(methods).not.toContain('findByChapter');
     });
   });
 

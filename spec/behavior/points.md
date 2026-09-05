@@ -59,11 +59,9 @@ When a user checks into an event:
   unresolved row: it is a record officers read ids out of, not a name slot.
 - Rank is the member's position on the **whole** board for the selected window.
   Filtering the view — by name or by pasted user id — never renumbers it.
-- Totals are summed in Postgres (`get_points_leaderboard`), which returns one
-  row per member rather than the chapter's transaction history. Rows come back
-  by total descending, **ties broken by `user_id`** — so two members on the same
-  total hold the same relative order on every request rather than depending on
-  which of them last earned points.
+- Rows come back by total descending, **ties broken by `user_id`** — so two
+  members on the same total hold the same relative order on every request,
+  rather than depending on which of them most recently earned points.
 - Configurable time window: all-time, this semester, this month, or one
   specific archived semester by id (`semester_archive_id`, resolved against
   that archive's own `[start_date, end_date]` calendar-day range) — the

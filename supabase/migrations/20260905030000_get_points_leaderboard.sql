@@ -12,15 +12,38 @@
 -- what resolveWindowSince says they mean, in one place, so the leaderboard and
 -- the points report cannot drift apart on what "this semester" is.
 --
--- Bound semantics match get_points_report and the in-Node filter this replaces:
+-- Bound SEMANTICS match get_points_report and the in-Node filter this replaces:
 -- created_at > p_since (exclusive) and created_at <= p_until (inclusive). A null
 -- bound is "unbounded on that side" — which is how the all-time window, and a
 -- 'semester' window on a chapter with no archive yet, both arrive here.
+--
+-- The VALUES the two callers pass are not identical, and saying otherwise would
+-- be wrong: for the 'month' and 'semester' enum windows the leaderboard sends
+-- p_until = now while ReportService.getPointsReport leaves it null, so a row
+-- dated ahead of the API host's clock counts in the report and not on the board.
+-- That asymmetry is pre-existing — the in-Node filterByWindow applied
+-- `createdAt <= now` too — and is deliberately preserved here rather than
+-- quietly changed under a performance fix. Tracked separately; see #522.
 --
 -- Every column reference is qualified with the `pt.` alias: the RETURNS TABLE
 -- OUT parameters are named `user_id` and `total`, so a bare `user_id` would be
 -- ambiguous against the column of the same name, and a bare `total` in ORDER BY
 -- would resolve to the OUT parameter rather than the aggregate.
+
+-- No new index ships with this function, and that is a measured decision rather
+-- than an oversight. The two existing indexes already serve both shapes: the
+-- planner takes idx_point_transactions_chapter_user for the unbounded 'all'
+-- window and idx_point_transactions_chapter_created_at for a bounded one.
+-- Measured on 420k rows across 20 chapters (40k in the chapter being read):
+-- all-time 10.3ms, a 120-day window 2.3ms. A covering
+-- `(chapter_id, created_at) include (user_id, amount)` index — and a
+-- `(chapter_id, user_id) include (amount, created_at)` variant — were both
+-- built and re-planned: neither was chosen, because the narrower existing
+-- indexes win on cost and a fresh-inserted heap is not all-visible, so the
+-- hoped-for index-only scan does not materialise either way. Adding one would
+-- have cost write amplification on an append-only table for no plan change.
+-- Re-measure before adding one; do not add it on the reasoning that a GROUP BY
+-- "should" have a covering index.
 
 create or replace function get_points_leaderboard(
   p_chapter_id uuid,
