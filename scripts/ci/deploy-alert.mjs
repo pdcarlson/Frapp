@@ -401,6 +401,7 @@ export function buildAlertIssueBody({
   headBranch,
   headSha,
   runUrl,
+  escalated = false,
   config = DEFAULT_ALERT_CONFIG,
 }) {
   return [
@@ -418,7 +419,7 @@ export function buildAlertIssueBody({
     "",
     "### Latest failure",
     "",
-    `- Failed jobs: ${failed.map((name) => `\`${name}\``).join(", ")}`,
+    `- ${escalated ? "Jobs that did not run" : "Failed jobs"}: ${failed.map((name) => `\`${name}\``).join(", ")}`,
     `- Ref: \`${headBranch ?? "unknown"}\``,
     `- Commit: \`${headSha ?? "unknown"}\``,
     runUrl ? `- Run: ${runUrl}` : "",
@@ -439,6 +440,7 @@ export function buildAlertCommentBody({
   headSha,
   runUrl,
   reopened,
+  escalated = false,
   config = DEFAULT_ALERT_CONFIG,
 }) {
   const lines = [
@@ -448,7 +450,7 @@ export function buildAlertCommentBody({
     "",
     headline,
     "",
-    `- Failed jobs: ${failed.map((name) => `\`${name}\``).join(", ")}`,
+    `- ${escalated ? "Jobs that did not run" : "Failed jobs"}: ${failed.map((name) => `\`${name}\``).join(", ")}`,
     `- Ref: \`${headBranch ?? "unknown"}\``,
     `- Commit: \`${headSha ?? "unknown"}\``,
   ];
@@ -521,6 +523,7 @@ export async function raiseAlert({
   headBranch,
   headSha,
   runUrl,
+  escalated = false,
   config = DEFAULT_ALERT_CONFIG,
 }) {
   return raiseAlertIssue({
@@ -531,7 +534,7 @@ export async function raiseAlert({
     labels: config.alertLabels,
     lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
     buildIssueBody: () =>
-      buildAlertIssueBody({ headline, failed, headBranch, headSha, runUrl, config }),
+      buildAlertIssueBody({ headline, failed, headBranch, headSha, runUrl, escalated, config }),
     buildCommentBody: ({ reopened }) =>
       buildAlertCommentBody({
         headline,
@@ -540,6 +543,7 @@ export async function raiseAlert({
         headSha,
         runUrl,
         reopened,
+        escalated,
         config,
       }),
   });
@@ -643,6 +647,7 @@ export async function runDeployAlert({
       headBranch,
       headSha,
       runUrl,
+      escalated,
       config,
     });
     logger.log?.(

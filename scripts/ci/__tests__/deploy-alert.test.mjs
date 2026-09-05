@@ -1033,3 +1033,48 @@ test("escalation leaves the gated config's classify shape untouched", () => {
   assert.deepEqual(Object.keys(result).sort(), ["deployed", "failed", "outcome"]);
   assert.equal(result.outcome, "no-op");
 });
+
+test("an escalated alert issue does not call a job that never ran a failed job", async () => {
+  // "Failed jobs: `deploy`" for a job whose result is `skipped` sends the
+  // responder into a run with no failing step, looking for a build that never
+  // started. The alert issue is the surface they read first, so the label has
+  // to match what actually happened.
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
+
+  await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: { deploy: { result: "skipped" } },
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+    config,
+  });
+
+  const created = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
+  assert.match(created.body.body, /Jobs that did not run: `deploy`/);
+  assert.doesNotMatch(created.body.body, /Failed jobs/);
+
+  // A genuine failure keeps the ordinary label.
+  const second = makeFetchStub({ issues: [] });
+  await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: vercelFailedNeeds(),
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl: second.fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+    config,
+  });
+  const realFailure = second.calls.find(
+    (c) => c.method === "POST" && c.path === "/repos/o/r/issues",
+  );
+  assert.match(realFailure.body.body, /Failed jobs: `deploy`/);
+});
