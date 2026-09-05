@@ -21,11 +21,11 @@ Naming: spec prose says **Signet**. Code identifiers, package names, domains, an
 
 ## Per-surface rules
 
-**This file is machine-checked.** Every declared child of `spec/ui/` needs a row in a table
-here, and a row may not name a child that is not declared — `npm run check:doc-tables`, against
-`DIRECTORIES` in [`scripts/ci/lib/docs-structure.mjs`](../../scripts/ci/lib/docs-structure.mjs). Add or retire a directory in
-the manifest and here in the same commit; the rule itself is described in
-[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) § Rosters.
+This table is kept for the **Status** column — which surface is Signet-active and which is frozen.
+The frozen list is also stated below and in `.claude/skills/signet-cutover/SKILL.md`, which is the
+one an agent loads before touching UI; change it there in the same edit. Where a UI change belongs is settled by
+[`docs/internal/DOCUMENTATION_CONVENTIONS.md` § Where things go](../../docs/internal/DOCUMENTATION_CONVENTIONS.md#where-things-go),
+not by the Governs column here. No CI check asserts this table is complete or its statuses current.
 
 | Spec | Governs | Status |
 | ---- | ------- | ------ |

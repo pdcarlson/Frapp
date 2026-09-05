@@ -16,11 +16,11 @@ Hosted agent sessions may carry provider/research credentials and cloud-sandbox 
 
 ## Spec vs code
 
-**`spec/` is the source of truth for intended behavior. Code is the source of truth for current behavior.** Disagreement between them is a tracked bug — file it, do not silently pick whichever loaded first. Fix the stale side in the same PR when it's in scope. Do not "correct" a spec to match a bug, and do not "correct" working code to match a superseded spec, without an explicit decision. Mid-task habit: [`.claude/skills/check-our-docs/SKILL.md`](.claude/skills/check-our-docs/SKILL.md).
+**`spec/` is the source of truth for intended behavior. Code is the source of truth for current behavior.** Disagreement between them is a tracked bug — file it, do not silently pick whichever loaded first. Fix the stale side in the same PR when it's in scope. Do not "correct" a spec to match a bug, and do not "correct" working code to match a superseded spec, without an explicit decision. Mid-task habit: before you act on what a doc told you, verify the claim against whatever owns it, and fix the doc in the same pass. How: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 
 ## ADR discipline
 
-One-off incidents and decisions are logged **once** as an immutable ADR in [`spec/architecture/README.md`](spec/architecture/README.md). Never edit an ADR in place; supersede it with an amendment or a new ADR. **What immutability governs is the text, not the filing.** Its decision, rationale and consequences are never reworded, never "corrected" against today's code, and its number and amendment chain never change. Relocating an ADR, changing its heading level, or retargeting a link path is mechanical and permitted, provided every word of the record survives the move intact — an ADR that reads identically in a new file is still logged once. Note the corollary: some ADRs describe their own filing (ADR-18 says "ADRs **in this file**"), so a move can make an ADR's own sentence false. That is fixed with a new dated amendment, never by editing the ADR. A rule graduates into **this file** only when it is (1) recurring, (2) still true, and (3) something an agent would not derive by reading the code. Incident narration stays in the ADR.
+One-off incidents and decisions are logged as ADRs in [`spec/architecture/README.md`](spec/architecture/README.md). **They are ordinary documentation:** when an ADR says something no longer true, fix it in place as you would any other doc, and date the correction so a reader can tell it from the original. Keep what the log is *for* — the decision and why, including alternatives rejected and arguments later refuted, the part nobody can reconstruct from the code. No special ADR rule governs that; the documentation standard does ([§ What a doc owes a reader](docs/internal/DOCUMENTATION_CONVENTIONS.md#what-a-doc-owes-a-reader)). ADR numbers and headings are cited from CI, product code, tests and migrations, and nothing validates those citations, so changing one is a rename like any other: sweep for what points at it first ([§ When a doc turns out to be wrong](docs/internal/DOCUMENTATION_CONVENTIONS.md#when-a-doc-turns-out-to-be-wrong)). A rule graduates into **this file** only when it is (1) recurring, (2) still true, and (3) something an agent would not derive by reading the code. Incident narration stays in the ADR.
 
 ## Project overview
 
@@ -55,13 +55,22 @@ What replaces it is a judgement you make, not a check you satisfy:
   match, to make a change look documented.** An unowned claim in a canonical
   doc is worse than no claim: the next reader believes it.
 
-What *is* enforced: cited paths resolve (`doc-paths`, required), files sit in a
-declared home with the naming rule (`docs-structure`), references from outside
-the corpus resolve (`doc-refs`), hand-copied check rosters and Infisical env
-slugs match their source (`doc-tables`), and links and anchors resolve (`Links`).
-Every one of them checks a fact and costs nothing when you are right. The full
-contract is [`DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md) — read it there rather
-than trusting this list to stay complete.
+What *is* enforced is narrow, and **neither check blocks a merge.** `Links`
+(lychee, `--offline`) checks that markdown links and heading anchors resolve in
+`docs/`, `spec/`, `.claude/`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`,
+`apps/web/AGENTS.md` and `.github/pull_request_template.md`.
+`env-slugs` checks Infisical environment slugs, but only where it looks and only
+in the syntaxes it matches — `SCAN_ROOTS` and the patterns in
+[`scripts/check-env-slugs.mjs`](scripts/check-env-slugs.mjs), read there rather
+than restated here. A slug in `.claude/`, in `scripts/`, or in a root-level
+README is outside its roots; a slug carried by a syntax it does not match is
+invisible to it even inside one. Neither job — `link-check`
+nor `env-slugs` — appears in any roster in
+[`scripts/ci/lib/required-checks.mjs`](scripts/ci/lib/required-checks.mjs), so
+neither blocks a merge: a broken link or anchor turns a check red and the PR
+merges anyway. It is caught, and nothing stops on it. Beyond that slug case nothing checks whether a doc's
+claims are true, or whether a path it cites still exists. Contract:
+[`DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md).
 
 ## Work tracking
 
@@ -122,10 +131,6 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 | API compile  | `npm run build -w apps/api` (matches Render `Dockerfile` builder) |
 | API image    | `docker build -f apps/api/Dockerfile .` (also runs in CI as `api-docker-build`) |
 | API contract | `npm run check:api-contract`        |
-| Doc citations | `npm run check:doc-paths` — backticked repo paths in docs resolve; **required**, whole-tree |
-| Doc rosters  | `npm run check:doc-tables` — hand-copied required-check tables vs `CI_CHECKS`/`ci.yml`, and the placement map plus the six index READMEs vs `DIRECTORIES`; advisory |
-| Doc references | `npm run check:doc-refs` — `docs/`/`spec/` references in SOURCE, workflows, migrations and shell resolve; advisory, whole-tree |
-| Doc structure | `npm run check:docs-structure` — every doc sits in a declared home and matches the naming rule ([`scripts/ci/lib/docs-structure.mjs`](scripts/ci/lib/docs-structure.mjs)); advisory, whole-tree |
 | Doc links    | `npm run check:links` — markdown links and heading anchors; needs `npm run install:lychee` first |
 | Migrations   | `npm run check:migration-safety`    |
 | Boundaries   | `npm run check:dep-cruiser` — required gate; existing violations grandfathered in `.dependency-cruiser-known-violations.json`, which exists to shrink |
@@ -147,7 +152,6 @@ All skills live under [`.claude/skills/`](.claude/skills/) and are invocable by 
 | [`/realtime-resilience`](.claude/skills/realtime-resilience/SKILL.md) | Chat realtime, connection state, topic teardown, message delivery. |
 | [`/testing`](.claude/skills/testing/SKILL.md) | Tests, verification, CI parity. |
 | [`/audit`](.claude/skills/audit/SKILL.md) | Audits / quality reviews (RLS coverage, deps, contract, CI). |
-| [`/check-our-docs`](.claude/skills/check-our-docs/SKILL.md) | Verify a doc claim before acting on it; fix the doc in the same pass. |
 | [`/file-follow-up`](.claude/skills/file-follow-up/SKILL.md) | File out-of-scope work and proven human-only blockers as GitHub issues. |
 | [`/infrastructure-research`](.claude/skills/infrastructure-research/SKILL.md) | Deploy / CI / provider runtime-truth gathering. |
 | [`/live-verification`](.claude/skills/live-verification/SKILL.md) | Verifying against **deployed staging** (live Realtime, RLS-as-GoTrue, deployed UI). Staging only, never prod. |

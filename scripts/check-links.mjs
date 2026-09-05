@@ -9,8 +9,7 @@
 // The flags are READ OUT OF THE WORKFLOW rather than copied here. A second copy
 // of an argument list is exactly the hand-synced-fact problem the rest of this
 // PR is about: it would drift, and the local check would quietly stop matching
-// the gate it is meant to preview. `check-doc-tables.mjs` polices hand-copied
-// rosters for the same reason; here the copy is simply not made.
+// the gate it is meant to preview. Here the copy is simply not made.
 //
 // Install the binary first: ./scripts/install-lychee.sh
 

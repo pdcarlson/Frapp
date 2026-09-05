@@ -163,8 +163,8 @@ export function satisfiesPromotionDocs(changedFiles) {
  *
  * Tracked, not merely present on disk: a `git mv` that leaves the old filename
  * behind untracked would otherwise satisfy the manifest locally and fail in
- * CI's clean checkout. `check-docs-structure.mjs` resolves its own ratchet the
- * same way, for the same reason.
+ * CI's clean checkout. Any gate with a hand-kept path list needs the same
+ * answer: ask git what is tracked, never the filesystem.
  */
 export function staleDocs(isTracked = tracked) {
   return MIGRATION_DOCS.filter((doc) => !isTracked(doc));
@@ -193,9 +193,8 @@ function tracked(doc) {
  * the exact misattribution this manifest exists to prevent.
  *
  * Exit 2, not 1. In this repo 1 means "the change violates the rule" and 2 means
- * "the gate cannot do its job" — see the malformed-flag exit above, and the
- * stale-manifest exits in check-doc-tables.mjs and check-docs-structure.mjs.
- * A repo-wide blocker triaged as one author's oversight is how this gets lost.
+ * "the gate cannot do its job" — see the malformed-flag exit above. A repo-wide
+ * blocker triaged as one author's oversight is how this gets lost.
  */
 function validateDocManifest() {
   const missing = staleDocs();

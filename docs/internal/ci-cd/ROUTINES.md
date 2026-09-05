@@ -3,7 +3,9 @@
 Canonical, version-controlled spec for Frapp's scheduled backlog agents, which run as **Claude Code
 Routines** (claude.ai/code → the Frapp environment → **Routines**). Routines are configured in the
 UI (config-as-code isn't supported), so this file is the source of truth you copy into the UI. Keep
-it in sync when you change a routine. History of how backlog automation got here: ADR-16 and its
+it in sync in both directions: editing a prompt block here changes nothing that runs until a human
+re-pastes it, so a prompt change lands as a `[human]` issue, never as a note parked in this file
+(open one: [#1685](https://github.com/pdcarlson/Frapp/issues/1685) is the pattern). History of how backlog automation got here: ADR-16 and its
 amendments in [`spec/architecture/README.md`](../../../spec/architecture/README.md); the
 Linear-to-GitHub migration record is [#680](https://github.com/pdcarlson/Frapp/issues/680).
 
@@ -215,7 +217,7 @@ Reads accept issue numbers (`issue_read`, `list_issues`, `search_issues`); write
 | Environment | the Frapp Claude Code web environment (`pdcarlson/Frapp`) | Routine sessions clone the repo and load `.claude/` skills from the default branch (`main`) at run time. |
 | Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET**; PR Follow-ups **weekly Mon 07:00 ET**; Docs Upkeep **weekly Wed 07:00 ET**; Hygiene Scan **daily 06:00 ET** | If the UI takes cron in UTC: `0 12 * * *`, `0 13 * * *`, `0 11 * * 1`, `0 11 * * 3`, and `0 10 * * *` during EDT (shift +1h when ET returns to EST). Docs Upkeep sits on Wednesday so it never shares a morning with the PR Follow-ups batch. Hygiene Scan runs first every morning so its PR and any follow-ups it files are on the board before the Curator and Triage passes, which then maintain and rank them the same day. Daily/weekly cadence — no per-PR trigger. Flip PR Follow-ups to twice weekly with `0 11 * * 1,4` if a week's batch runs long. |
 | Model | **Daily tracker routines: Opus 5** (`claude-opus-5`). **Weekly routines: Fable 5** (`claude-fable-5`). **Hygiene Scan: Fable 5.1** (`claude-fable-5-1`). | Cadence sets the tier for the tracker and docs routines. The dailies (Curator, Triage) carry the tracker and run often enough that a weaker judgement call compounds; the weeklies (PR Follow-ups, Docs Upkeep) do bounded, evidence-heavy passes. Owner convention, 2026-08-21. Hygiene Scan is the deliberate exception: it is the one routine that edits product code unattended, and the judgement it needs — is this shape wrong, is this code dead, is this fix a rebuild or a band-aid — is exactly where a weaker tier is most expensive, so it takes the top tier regardless of cadence. Owner decision, 2026-09-02. |
-| Autofix on PR create | **Off** for Curator, Triage and PR Follow-ups. **On** for Docs Upkeep and Hygiene Scan. | Not an inconsistency. The first three barely open PRs — only self-maintenance — so autofix would mostly be dormant, and a tracker routine repairing its own CI unattended is out of its lane. Docs Upkeep opens a docs-only PR every run, and the failures it is likeliest to hit (`doc-paths`, `doc-tables`, `link-check`) are docs problems in its own scope that its own sweep caused. Handing those back as a red PR would contradict the routine's premise, which is that it repairs rather than files. Hygiene Scan's PR is product code whose CI failures are, by construction, in code it just touched; its skill has it read the check runs once and fix its own failures before the run ends, and it deliberately does **not** subscribe the routine session — so autofix is the single driver after the run ends, and two drivers never push to one branch. |
+| Autofix on PR create | **Off** for Curator, Triage and PR Follow-ups. **On** for Docs Upkeep and Hygiene Scan. | Not an inconsistency. The first three barely open PRs — only self-maintenance — so autofix would mostly be dormant, and a tracker routine repairing its own CI unattended is out of its lane. Docs Upkeep opens a docs-only PR every run, and the failures it is likeliest to hit (`link-check`, and `env-slugs` when the sweep touches a doc that names an Infisical environment) are docs problems in its own scope that its own sweep caused. Handing those back as a red PR would contradict the routine's premise, which is that it repairs rather than files. Hygiene Scan's PR is product code whose CI failures are, by construction, in code it just touched; its skill has it read the check runs once and fix its own failures before the run ends, and it deliberately does **not** subscribe the routine session — so autofix is the single driver after the run ends, and two drivers never push to one branch. |
 | Session | fresh session per run | Each run re-reads its skill from `main` — no state carried between runs; the tracker itself is the memory (markers, labels, comments). |
 | Access | **GitHub MCP** (pre-approved by the environment) | Plus the repo itself for the curator's engineering/spec lenses and for the Hygiene Scan's gates and test suites — the SessionStart hook installs dependencies and brings up the local stack, and the scan runs `npm run check-types`, `npm run lint`, the workspace tests and the root `check:*` gates in the sandbox. No secrets needed. |
 | Completion notification | Existing four: as configured in the UI (not copied here). **Hygiene Scan: push on**, if the UI exposes it. | A Hygiene Scan run that opened a PR needs a human within the day, and the run report is its only channel — the repo has no in-run notification mechanism, and the skill does not invent one. |
@@ -292,15 +294,16 @@ the docs-upkeep skill (.claude/skills/docs-upkeep/SKILL.md) and follow it EXACTL
 week's slice by the rotation the skill defines (do NOT carry state between runs), read every file
 in it, and verify the claims that a machine can settle — commands against package.json, CI jobs
 and required checks against .github/workflows and scripts/ci/lib/required-checks.mjs, env var names
-against the codebase, paths via check-doc-paths, provider state via infrastructure-research. FIX
-what is wrong, in one docs-only PR restricted to the skill's path allowlist, and prefer deleting a
+against the codebase, every cited repo path via git ls-files --error-unmatch, every markdown link
+via npm run check:links, provider state via infrastructure-research. FIX what is wrong, in one
+docs-only PR restricted to the skill's path allowlist, and prefer deleting a
 duplicated fact and linking to its canonical home over syncing two copies. NEVER open an
 area:docs issue — this routine repairs, it does not file; anything not fixable in a docs edit goes
-in the run report instead. Never modify product code, never rewrite an ADR in place, never merge
-your own PR. Zero changes is a perfectly good outcome — never manufacture edits to show work. Say
-"unverified" rather than guessing when a provider is unreachable. Where this prompt and the skill
-disagree, the skill wins. End with the run report the skill specifies, leading with the slice and
-the "found but not fixable" list.
+in the run report instead. Never modify product code, never merge your own PR. Zero changes is a
+perfectly good outcome — never manufacture edits to show work. Say "unverified" rather than
+guessing when a provider is unreachable. Where this prompt and the skill disagree, the skill wins.
+End with the run report the skill specifies, leading with the slice and the "found but not
+fixable" list.
 ```
 
 **Routine 5 — "Hygiene Scan"** (daily 06:00 ET):
@@ -326,7 +329,7 @@ at most one open Hygiene Scan PR at a time (if one is open, service it and file 
 what you will not fix unattended via file-follow-up (triage + suggestion + area + priority +
 Agent brief + a visible fp=hygiene/ marker; at most ~3 net-new per run) and append this run's
 entry to the ledger. Never touch migrations, CI workflows, dependency versions, gate posture,
-apps/landing visuals, the seven frozen mobile files, spec/ behavior, or ADRs; never change
+apps/landing visuals, the seven frozen mobile files, or spec/ behavior; never change
 observable behaviour except a bug fix carried by a failing-then-passing test under its own
 heading. Zero fixes with the reasons written down is a fine outcome — never manufacture a change.
 If the GitHub MCP is unavailable, push the branch, report its name, and stop. Where this prompt
@@ -387,8 +390,8 @@ the PR link (or "no PR" and why) and the "Needs you" list.
   week number) and opens **at most one** docs-only PR, touching only the corpus its skill defines
   — `docs/`, `spec/`, `.claude/skills/**/*.md`, any `AGENTS.md`, root `CONTRIBUTING.md` /
   `README.md`. Confirm it opens **no** `area:docs` issue, leaves product code untouched, and that
-  the PR passes `doc-paths` and `link-check`. **A clean slice means no PR at
-  all** — a report saying so is a pass, not a failure. Run it again the same week → the **same**
+  the PR passes `link-check`. **A clean slice means no PR at all** — a report saying so is a pass,
+  not a failure. Run it again the same week → the **same**
   slice (the rotation is derived from `date -u +%V` and the corpus, not random).
 - **Hygiene Scan:** run it once manually. Confirm the run report opens with the **grounding**
   it did (standards read, gate baselines recorded, ledger and open hygiene PR checked) and names
