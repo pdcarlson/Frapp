@@ -44,6 +44,35 @@ const Switch = React.forwardRef<
       "enabled:data-[state=unchecked]:border-input enabled:data-[state=unchecked]:bg-accent",
       FOCUS_RING_OFFSET,
       "disabled:cursor-not-allowed disabled:border-border disabled:bg-card",
+      /*
+       * Soft-disabled: `aria-disabled` without the attribute, for a control
+       * that is refused rather than inert (`spec/ui/resilience.md` § UI
+       * Indicators). Deliberately NOT the `disabled:` rules above — those
+       * repaint the track and, via `group-data-[disabled]`, the thumb, which
+       * erases the on/off state this control's whole appearance carries.
+       *
+       * The cursor and nothing else. An `opacity` dim was tried and rejected,
+       * because `opacity` composites the whole element:
+       *
+       *   - It dims the focus ring, and soft-disabling is precisely the case
+       *     where the switch KEEPS its place in the tab order, so that ring is
+       *     the entire focus indicator. Measured over all 19 seeds with
+       *     `tests/signet-contrast.ts`, ring-vs-`--background` falls from
+       *     3.05-4.07 to 1.78-2.17 — none of the 19 still clears §6's 3:1.
+       *     `focus.ts` calls the untinted offset band load-bearing; a
+       *     composited one is no longer `--background` at all.
+       *   - It flattens the very cue this variant exists to protect: checked
+       *     `--primary` vs unchecked `--accent-subtle` drops below 3:1 on six
+       *     accents (`#003087` 4.01 → 2.22, `#CC0000` 3.10 → 1.76), which is
+       *     the same erasure, at the same magnitude, that made the real
+       *     `disabled` attribute wrong here.
+       *
+       * `button.tsx` and `label.tsx` already state the system's ban on this
+       * idiom: it dims fill and content by the same amount and lands wherever
+       * the underlying colour happened to be. Nothing else here should reach
+       * for `opacity` either.
+       */
+      "aria-disabled:cursor-not-allowed",
       className
     )}
     {...props}
