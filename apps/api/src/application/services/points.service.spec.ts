@@ -898,12 +898,7 @@ describe('PointsService', () => {
         ...txn1b, // user-1, amount 5 — after `now`, excluded by the upper bound
         created_at: '2027-06-01T00:00:00.000Z',
       };
-      seedTransactions([
-        active,
-        onEndDateDay,
-        beforeEnd,
-        future,
-      ]);
+      seedTransactions([active, onEndDateDay, beforeEnd, future]);
 
       const result = await service.getLeaderboard('ch-1', 'semester');
 
@@ -935,10 +930,7 @@ describe('PointsService', () => {
         ...txn1, // user-1 — 00:00 next day → active, included
         created_at: '2027-01-01T00:00:00.000Z',
       };
-      seedTransactions([
-        lastInstantOfEndDay,
-        firstInstantOfNextDay,
-      ]);
+      seedTransactions([lastInstantOfEndDay, firstInstantOfNextDay]);
 
       const result = await service.getLeaderboard('ch-1', 'semester');
 
@@ -1103,8 +1095,11 @@ describe('PointsService', () => {
         // Same members, same totals. Compared as maps because the new path
         // breaks equal-total ties by user_id where the old one used the
         // incidental `created_at desc` arrival order.
-        expect(Object.fromEntries(actual.map((r) => [r.user_id, r.total])))
-          .toEqual(Object.fromEntries(expected.map((r) => [r.user_id, r.total])));
+        expect(
+          Object.fromEntries(actual.map((r) => [r.user_id, r.total])),
+        ).toEqual(
+          Object.fromEntries(expected.map((r) => [r.user_id, r.total])),
+        );
         expect(actual.length).toBe(expected.length);
         expect(actual.length).toBeGreaterThan(0);
       },
