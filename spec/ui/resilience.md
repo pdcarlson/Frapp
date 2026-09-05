@@ -647,7 +647,7 @@ cache retention against the platform you are on; the web defaults in full are ow
 | User changes roles | `['members', chapterId]`, `['roles']` |
 | Supabase Realtime event | Relevant query key (auto-updated) |
 | Window focus (tab switch) | All stale queries (TanStack built-in) |
-| Network reconnect | **Observed queries only, on both platforms** — a cached-but-unmounted query is never refetched on reconnect, however fresh its `gcTime` window. Among observed ones, web refetches **all** of them (`refetchOnReconnect: "always"` forces even a fresh query); mobile refetches the **stale** ones only, leaving the TanStack default (`true`), so a `staleTime: Infinity` cache such as chat is *not* refetched there and relies on the subscribe-then-backfill `?since=` path instead |
+| Network reconnect | **Mounted, enabled queries.** Web refetches them even when fresh (`refetchOnReconnect: "always"`); mobile leaves the TanStack default, so it refetches only the **stale** ones — which means a `staleTime: Infinity` cache such as chat is not refetched on mobile at all and relies on the subscribe-then-backfill `?since=` path instead. A disabled (`enabled: false`) query is skipped on both. Treat this row as the rule, not the whole mechanism: TanStack also resumes any request that was paused mid-flight when the network dropped, including one whose screen has since unmounted |
 
 **Those last two rows are delivered on mobile, not merely specified.** They depend on
 TanStack's `onlineManager` and `focusManager`, which nothing wired until
