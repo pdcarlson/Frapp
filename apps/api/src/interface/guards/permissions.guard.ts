@@ -14,8 +14,8 @@ import {
   PERMISSIONS_KEY,
   PERMISSIONS_ANY_KEY,
 } from '../decorators/permissions.decorator';
-import { WILDCARD } from '../../domain/constants/permissions';
-import { flattenPermissionSets } from '../../domain/utils/permissions';
+import { WILDCARD } from '#domain/constants/permissions';
+import { flattenPermissionSets } from '#domain/utils/permissions';
 import type { RequestContext } from '../types/request-context.types';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 

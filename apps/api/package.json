@@ -1,6 +1,33 @@
 {
   "name": "api",
   "version": "0.0.1",
+  "imports": {
+    "#domain/adapters": {
+      "types": "./src/domain/adapters/index.ts",
+      "source": "./src/domain/adapters/index.ts",
+      "default": "./dist/domain/adapters/index.js"
+    },
+    "#domain/entities": {
+      "types": "./src/domain/entities/index.ts",
+      "source": "./src/domain/entities/index.ts",
+      "default": "./dist/domain/entities/index.js"
+    },
+    "#domain/repositories": {
+      "types": "./src/domain/repositories/index.ts",
+      "source": "./src/domain/repositories/index.ts",
+      "default": "./dist/domain/repositories/index.js"
+    },
+    "#domain/*": {
+      "types": "./src/domain/*.ts",
+      "source": "./src/domain/*.ts",
+      "default": "./dist/domain/*.js"
+    },
+    "#test/*": {
+      "types": "./test/*.ts",
+      "source": "./test/*.ts",
+      "default": "./test/*.ts"
+    }
+  },
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
@@ -20,7 +47,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:integration": "jest --config ./test/integration/jest-integration.json",
     "test:ai-evals": "jest --config ./test/ai-evals/jest-ai-evals.json",
-    "openapi:export": "ts-node src/export-openapi.ts"
+    "openapi:export": "node --conditions=source -r ts-node/register src/export-openapi.ts"
   },
   "dependencies": {
     "@discordjs/rest": "^2.6.3",
@@ -100,6 +127,10 @@
     ],
     "coverageDirectory": "../coverage",
     "coverageProvider": "v8",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^#domain/(.*)$": "<rootDir>/domain/$1",
+      "^#test/(.*)$": "<rootDir>/../test/$1"
+    }
   }
 }

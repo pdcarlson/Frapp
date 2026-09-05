@@ -5,8 +5,8 @@ import type {
   IPollVoteRepository,
   PollUserVoteRow,
   PollVoteOptionTotalRow,
-} from '../../../domain/repositories/poll-vote.repository.interface';
-import type { PollVote } from '../../../domain/entities/poll-vote.entity';
+} from '#domain/repositories/poll-vote.repository.interface';
+import type { PollVote } from '#domain/entities/poll-vote.entity';
 
 /** PostgREST default `max-rows` is often 1000; page through to avoid silent truncation. */
 const POLL_VOTES_PAGE_SIZE = 1000;

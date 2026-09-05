@@ -5,7 +5,7 @@ import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/rep
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
-} from '../../domain/repositories/chat.repository.interface';
+} from '#domain/repositories/chat.repository.interface';
 import { ChapterModule } from '../chapter/chapter.module';
 import { RbacModule } from '../rbac/rbac.module';
 

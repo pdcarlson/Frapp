@@ -9,7 +9,7 @@ import {
   type CreatePaymentIntentParams,
   type PaymentIntentResult,
   type WebhookEvent,
-} from '../../domain/adapters/billing.interface';
+} from '#domain/adapters/billing.interface';
 
 /**
  * The trial the public site sells (#913). `apps/landing/app/page.tsx` labels the

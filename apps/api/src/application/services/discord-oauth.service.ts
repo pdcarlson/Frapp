@@ -16,12 +16,12 @@ import {
   DiscordNotConfiguredError,
   type IDiscordBotGateway,
   type IDiscordOAuthClient,
-} from '../../domain/adapters/discord.interface';
+} from '#domain/adapters/discord.interface';
 import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
-} from '../../domain/repositories/discord-connection.repository.interface';
-import type { DiscordOAuthState } from '../../domain/entities/discord-connection.entity';
+} from '#domain/repositories/discord-connection.repository.interface';
+import type { DiscordOAuthState } from '#domain/entities/discord-connection.entity';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /**

@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { StripeBillingService } from './stripe.service';
-import { chargeIdFromLatestCharge } from '../../domain/adapters/billing.interface';
+import { chargeIdFromLatestCharge } from '#domain/adapters/billing.interface';
 import Stripe from 'stripe';
 
 jest.mock('stripe');

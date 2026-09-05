@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import type { INotificationRepository } from '../../../domain/repositories/notification.repository.interface';
-import type { Notification } from '../../../domain/entities/notification.entity';
+import type { INotificationRepository } from '#domain/repositories/notification.repository.interface';
+import type { Notification } from '#domain/entities/notification.entity';
 
 @Injectable()
 export class SupabaseNotificationRepository implements INotificationRepository {

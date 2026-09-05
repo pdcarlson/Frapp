@@ -20,8 +20,8 @@ import {
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
   CHAT_MESSAGE_BOOKMARK_REPOSITORY,
-} from '../../domain/repositories/chat.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+} from '#domain/repositories/chat.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { NotificationModule } from '../notification/notification.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';

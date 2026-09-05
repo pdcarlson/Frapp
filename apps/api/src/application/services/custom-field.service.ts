@@ -17,7 +17,7 @@ import type {
   ChapterCustomField,
   CustomFieldVisibility,
   MemberCustomFieldValue,
-} from '../../domain/entities/chapter-custom-field.entity';
+} from '#domain/entities/chapter-custom-field.entity';
 import type {
   CreateCustomFieldDto,
   UpdateCustomFieldDto,

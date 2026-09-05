@@ -5,10 +5,10 @@ import {
   GoneException,
 } from '@nestjs/common';
 import { UserService } from './user.service';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import type { IStorageProvider } from '#domain/adapters/storage.interface';
 
 describe('UserService', () => {
   let service: UserService;

@@ -4,37 +4,37 @@ import { randomUUID } from 'node:crypto';
 import {
   DISCORD_IMPORT_REPOSITORY,
   type IDiscordImportRepository,
-} from '../../domain/repositories/discord-import.repository.interface';
+} from '#domain/repositories/discord-import.repository.interface';
 import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
-} from '../../domain/repositories/discord-connection.repository.interface';
+} from '#domain/repositories/discord-connection.repository.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '@repo/validation';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveImportPrefix,
-} from '../../domain/constants/storage';
+} from '#domain/constants/storage';
 import {
   CHAT_CHANNEL_REPOSITORY,
   type IChatChannelRepository,
-} from '../../domain/repositories/chat.repository.interface';
+} from '#domain/repositories/chat.repository.interface';
 import {
   DiscordExportFormatError,
   parseExportPart,
   toImportedAttachments,
   toImportedMessage,
   type DiscordExportMessage,
-} from '../../domain/utils/discord-export';
+} from '#domain/utils/discord-export';
 import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
   DiscordImportStatus,
-} from '../../domain/entities/discord-import.entity';
+} from '#domain/entities/discord-import.entity';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
 
 /**

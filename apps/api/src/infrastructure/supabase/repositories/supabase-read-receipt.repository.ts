@@ -1,11 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import type { IChannelReadReceiptRepository } from '../../../domain/repositories/chat.repository.interface';
+import type { IChannelReadReceiptRepository } from '#domain/repositories/chat.repository.interface';
 import {
   ChannelReadReceipt,
   ChannelUnreadCount,
-} from '../../../domain/entities/chat.entity';
+} from '#domain/entities/chat.entity';
 
 @Injectable()
 export class SupabaseReadReceiptRepository implements IChannelReadReceiptRepository {

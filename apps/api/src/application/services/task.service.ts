@@ -6,14 +6,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
-import type { ITaskRepository } from '../../domain/repositories/task.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import type { Task, TaskView } from '../../domain/entities/task.entity';
-import { TaskStatus } from '../../domain/entities/task.entity';
+import { TASK_REPOSITORY } from '#domain/repositories/task.repository.interface';
+import type { ITaskRepository } from '#domain/repositories/task.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import type { Task, TaskView } from '#domain/entities/task.entity';
+import { TaskStatus } from '#domain/entities/task.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';

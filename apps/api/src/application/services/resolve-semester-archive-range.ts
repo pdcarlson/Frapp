@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
-import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
-import { resolveArchiveRange } from '../../domain/utils/points-window';
+import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
+import { resolveArchiveRange } from '#domain/utils/points-window';
 
 /**
  * Resolve one specific archived period by id, chapter-scoped so an id from

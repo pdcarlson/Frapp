@@ -9,16 +9,16 @@ import { PointsService } from './points.service';
 import {
   POINT_TRANSACTION_REPOSITORY,
   IPointTransactionRepository,
-} from '../../domain/repositories/point-transaction.repository.interface';
+} from '#domain/repositories/point-transaction.repository.interface';
 import {
   SEMESTER_ARCHIVE_REPOSITORY,
   ISemesterArchiveRepository,
-} from '../../domain/repositories/semester-archive.repository.interface';
+} from '#domain/repositories/semester-archive.repository.interface';
 import {
   USER_REPOSITORY,
   IUserRepository,
-} from '../../domain/repositories/user.repository.interface';
-import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
+} from '#domain/repositories/user.repository.interface';
+import type { PointTransaction } from '#domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 import {

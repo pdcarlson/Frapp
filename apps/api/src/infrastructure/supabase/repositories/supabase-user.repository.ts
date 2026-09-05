@@ -5,12 +5,9 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IUserRepository } from '../../../domain/repositories/user.repository.interface';
-import {
-  User,
-  UserDisplayIdentity,
-} from '../../../domain/entities/user.entity';
-import { chunkIds } from '../../../domain/utils/chunk-ids';
+import { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { User, UserDisplayIdentity } from '#domain/entities/user.entity';
+import { chunkIds } from '#domain/utils/chunk-ids';
 
 @Injectable()
 export class SupabaseUserRepository implements IUserRepository {

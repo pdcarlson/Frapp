@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChatPushWorkerService } from './chat-push-worker.service';
 import {

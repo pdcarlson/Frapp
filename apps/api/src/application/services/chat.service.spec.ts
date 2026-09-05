@@ -17,7 +17,7 @@ import {
   ChatMessageDuplicateError,
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
-} from '../../domain/repositories/chat.repository.interface';
+} from '#domain/repositories/chat.repository.interface';
 import type {
   IChatChannelRepository,
   IChatCategoryRepository,
@@ -26,17 +26,17 @@ import type {
   IChatMessageRepository,
   IMessageReactionRepository,
   IChannelReadReceiptRepository,
-} from '../../domain/repositories/chat.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import type { IStorageProvider } from '../../domain/adapters/storage.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+} from '#domain/repositories/chat.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import type { IStorageProvider } from '#domain/adapters/storage.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type {
   ChatChannel,
   ChatMessage,
   ChatMessageAction,
   ChatChannelCategory,
   MessageReaction,
-} from '../../domain/entities/chat.entity';
+} from '#domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { RbacService } from './rbac.service';

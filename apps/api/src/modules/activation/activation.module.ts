@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ActivationService } from '../../application/services/activation.service';
 import { SupabaseActivationMilestoneRepository } from '../../infrastructure/supabase/repositories/supabase-activation-milestone.repository';
-import { ACTIVATION_MILESTONE_REPOSITORY } from '../../domain/repositories/activation-milestone.repository.interface';
+import { ACTIVATION_MILESTONE_REPOSITORY } from '#domain/repositories/activation-milestone.repository.interface';
 import { AnalyticsModule } from '../analytics/analytics.module';
 
 /**

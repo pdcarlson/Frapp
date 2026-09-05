@@ -33,7 +33,7 @@ import {
   ReviewServiceEntryDto,
   ServiceLeaderboardQueryDto,
 } from '../dtos/service-entry.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Service Entries')
 @ApiBearerAuth()

@@ -23,27 +23,27 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InviteService } from './invite.service';
-import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
-import type { IInviteRepository } from '../../domain/repositories/invite.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
-import type { Chapter } from '../../domain/entities/chapter.entity';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import type { Invite } from '../../domain/entities/invite.entity';
-import type { Role } from '../../domain/entities/role.entity';
-import type { Member } from '../../domain/entities/member.entity';
-import { SystemRoleKeys } from '../../domain/constants/permissions';
+import { INVITE_REPOSITORY } from '#domain/repositories/invite.repository.interface';
+import type { IInviteRepository } from '#domain/repositories/invite.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import type { Chapter } from '#domain/entities/chapter.entity';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import type { Invite } from '#domain/entities/invite.entity';
+import type { Role } from '#domain/entities/role.entity';
+import type { Member } from '#domain/entities/member.entity';
+import { SystemRoleKeys } from '#domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
 import { ConfigService } from '@nestjs/config';
-import { EMAIL_PROVIDER } from '../../domain/adapters/email.interface';
-import type { IEmailProvider } from '../../domain/adapters/email.interface';
+import { EMAIL_PROVIDER } from '#domain/adapters/email.interface';
+import type { IEmailProvider } from '#domain/adapters/email.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
 describe('InviteService', () => {

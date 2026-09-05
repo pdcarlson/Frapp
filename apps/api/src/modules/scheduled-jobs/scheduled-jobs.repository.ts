@@ -4,20 +4,14 @@ import type {
   FrappSupabaseClient,
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
-import { TaskStatus } from '../../domain/entities';
+import { TaskStatus } from '#domain/entities';
 
 // Re-exported from the entity so the sweep signatures and the typed
 // `scheduled_notification_dispatches` row can never drift apart. Kept as
 // named exports here because `scheduled-jobs.service.ts` imports them from
 // this module.
-export type {
-  DispatchEntityType,
-  DispatchThreshold,
-} from '../../domain/entities';
-import type {
-  DispatchEntityType,
-  DispatchThreshold,
-} from '../../domain/entities';
+export type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
+import type { DispatchEntityType, DispatchThreshold } from '#domain/entities';
 
 /** Postgres unique-violation. A losing claim, not an error. */
 const UNIQUE_VIOLATION = '23505';

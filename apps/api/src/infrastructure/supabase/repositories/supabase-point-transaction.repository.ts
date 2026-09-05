@@ -4,8 +4,8 @@ import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import {
   IPointTransactionRepository,
   type ListChapterPointTransactionsOptions,
-} from '../../../domain/repositories/point-transaction.repository.interface';
-import { PointTransaction } from '../../../domain/entities/point-transaction.entity';
+} from '#domain/repositories/point-transaction.repository.interface';
+import { PointTransaction } from '#domain/entities/point-transaction.entity';
 
 @Injectable()
 export class SupabasePointTransactionRepository implements IPointTransactionRepository {

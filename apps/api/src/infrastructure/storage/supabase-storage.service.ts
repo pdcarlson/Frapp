@@ -6,8 +6,8 @@ import type {
   SignedUploadOptions,
   StorageObject,
   StreamUploadOptions,
-} from '../../domain/adapters/storage.interface';
-import { assertSafeStoragePath } from '../../domain/utils/storage-path';
+} from '#domain/adapters/storage.interface';
+import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import type { FrappSupabaseClient } from '../supabase/database.types';
 
 /**

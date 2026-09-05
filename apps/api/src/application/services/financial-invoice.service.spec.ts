@@ -7,13 +7,13 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { FinancialInvoiceService } from './financial-invoice.service';
-import { FINANCIAL_INVOICE_REPOSITORY } from '../../domain/repositories/financial-invoice.repository.interface';
-import type { IFinancialInvoiceRepository } from '../../domain/repositories/financial-invoice.repository.interface';
-import { FINANCIAL_TRANSACTION_REPOSITORY } from '../../domain/repositories/financial-transaction.repository.interface';
-import type { IFinancialTransactionRepository } from '../../domain/repositories/financial-transaction.repository.interface';
-import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
-import type { IBillingProvider } from '../../domain/adapters/billing.interface';
-import type { FinancialInvoice } from '../../domain/entities/financial-invoice.entity';
+import { FINANCIAL_INVOICE_REPOSITORY } from '#domain/repositories/financial-invoice.repository.interface';
+import type { IFinancialInvoiceRepository } from '#domain/repositories/financial-invoice.repository.interface';
+import { FINANCIAL_TRANSACTION_REPOSITORY } from '#domain/repositories/financial-transaction.repository.interface';
+import type { IFinancialTransactionRepository } from '#domain/repositories/financial-transaction.repository.interface';
+import { BILLING_PROVIDER } from '#domain/adapters/billing.interface';
+import type { IBillingProvider } from '#domain/adapters/billing.interface';
+import type { FinancialInvoice } from '#domain/entities/financial-invoice.entity';
 import { NotificationService } from './notification.service';
 import { ChapterWorkflowsService } from './chapter-workflows.service';
 

@@ -4,16 +4,16 @@ import {
   DiscordExportWorkerService,
   EXPORT_PAGE_SIZE,
 } from './discord-export-worker.service';
-import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
-import { DISCORD_CONNECTION_REPOSITORY } from '../../domain/repositories/discord-connection.repository.interface';
-import { DISCORD_BOT_GATEWAY } from '../../domain/adapters/discord.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import { MISSING_MESSAGE_CONTENT_INTENT_ERROR } from '../../domain/utils/discord-api-message';
+import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
+import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
+import { DISCORD_BOT_GATEWAY } from '#domain/adapters/discord.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import { MISSING_MESSAGE_CONTENT_INTENT_ERROR } from '#domain/utils/discord-api-message';
 import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
-} from '../../domain/entities/discord-import.entity';
+} from '#domain/entities/discord-import.entity';
 
 const NOW = new Date('2026-08-24T12:00:00Z');
 const CHAPTER = 'chapter-1';

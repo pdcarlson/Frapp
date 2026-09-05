@@ -6,22 +6,22 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { RbacService } from './rbac.service';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import {
   ALUMNI_ROLE_NAME,
   SystemPermissions,
   SystemRoleKeys,
-} from '../../domain/constants/permissions';
+} from '#domain/constants/permissions';
 import { CustomRoleService } from './custom-role.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
-import type { Role } from '../../domain/entities/role.entity';
-import type { Member } from '../../domain/entities/member.entity';
-import type { Chapter } from '../../domain/entities/chapter.entity';
+import type { Role } from '#domain/entities/role.entity';
+import type { Member } from '#domain/entities/member.entity';
+import type { Chapter } from '#domain/entities/chapter.entity';
 
 describe('RbacService', () => {
   let service: RbacService;
