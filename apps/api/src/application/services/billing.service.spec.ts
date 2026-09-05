@@ -5,6 +5,23 @@ import {
   BadRequestException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
+
+// One shared scope object rather than a fresh one per `withScope`, so a test can
+// assert the tags the unknown-chapter report sets (#1710). `mock`-prefixed names
+// are the ones jest's hoisting lets a factory close over.
+const mockSentryScope = {
+  setLevel: jest.fn(),
+  setTag: jest.fn(),
+};
+jest.mock('@sentry/nestjs', () => ({
+  captureMessage: jest.fn(),
+  withScope: jest.fn((callback: (scope: unknown) => void) =>
+    callback(mockSentryScope),
+  ),
+}));
+const captureMessage = Sentry.captureMessage as jest.Mock;
+
 import { BillingService } from './billing.service';
 import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
@@ -147,6 +164,13 @@ describe('BillingService', () => {
   const checkoutChapter: Chapter = { ...baseChapter, id: CHECKOUT_CHAPTER_ID };
 
   beforeEach(async () => {
+    // Every other mock here is rebuilt below; the Sentry ones live at module
+    // scope because jest.mock's factory owns them, so they need clearing by
+    // hand or call counts leak between tests.
+    captureMessage.mockClear();
+    mockSentryScope.setLevel.mockClear();
+    mockSentryScope.setTag.mockClear();
+
     mockBillingProvider = {
       createCustomer: jest.fn(),
       createCheckoutSession: jest.fn(),
@@ -920,24 +944,123 @@ describe('BillingService', () => {
       loggerWarnSpy.mockRestore();
     });
 
-    it('should ignore checkout.session.completed for non-existent chapter', async () => {
-      const event = {
-        id: 'evt_no_chapter_exist',
+    // #1710. Three separate contracts live on this branch, and the bug was that
+    // only the first was pinned: it acks (correct), it changes nothing
+    // (correct), and it says so loudly enough to tell "a foreign environment's
+    // event" apart from "a paid checkout that activated nothing" (the gap).
+    describe('checkout.session.completed for a chapter this database lacks', () => {
+      const unknownChapterEvent = (id = 'evt_no_chapter_exist') => ({
+        id,
         type: 'checkout.session.completed',
         created: Date.now(),
         data: {
           object: {
             metadata: { chapter_id: MISSING_CHAPTER_ID },
             subscription: 'sub_123',
+            customer: 'cus_123',
           },
         },
-      };
-      mockChapterRepo.findById.mockResolvedValue(null);
-      await service.handleWebhookEvent(event);
-      // A well-formed id that simply isn't ours: the lookup still runs, unlike
-      // the non-UUID guard below which returns before touching the repository.
-      expect(mockChapterRepo.findById).toHaveBeenCalledWith(MISSING_CHAPTER_ID);
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('looks the chapter up, then changes nothing', async () => {
+        mockChapterRepo.findById.mockResolvedValue(null);
+
+        await service.handleWebhookEvent(unknownChapterEvent());
+
+        // A well-formed id that simply isn't ours: the lookup still runs, unlike
+        // the non-UUID guard below which returns before touching the repository.
+        expect(mockChapterRepo.findById).toHaveBeenCalledWith(
+          MISSING_CHAPTER_ID,
+        );
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('acks the event so Stripe stops redelivering it', async () => {
+        // The load-bearing half of the decision. Every way this branch is
+        // reachable is terminal — a cross-environment event on the shared
+        // test-mode Stripe account, or a row removed out of band — so a retry
+        // could never succeed. If someone later makes this throw, the event
+        // stays unprocessed and Stripe retries a foreign event for days.
+        mockChapterRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.handleWebhookEvent(unknownChapterEvent('evt_ack_unknown')),
+        ).resolves.not.toThrow();
+
+        expect(mockWebhookEventRepo.markProcessed).toHaveBeenCalledWith(
+          'evt_ack_unknown',
+        );
+        expect(mockWebhookEventRepo.markFailed).not.toHaveBeenCalled();
+      });
+
+      it('reports the swallow at error level, naming the consequence', async () => {
+        const loggerErrorSpy = jest
+          .spyOn(service['logger'], 'error')
+          .mockImplementation(() => {});
+        mockChapterRepo.findById.mockResolvedValue(null);
+
+        await service.handleWebhookEvent(unknownChapterEvent());
+
+        // `warn` was the defect: it read as a benign no-op on a revenue path.
+        expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
+        const message = loggerErrorSpy.mock.calls[0][0] as string;
+        expect(message).toContain(MISSING_CHAPTER_ID);
+        expect(message).toContain('evt_no_chapter_exist');
+        // The two things an operator cannot reconstruct from the id alone.
+        expect(message).toContain('will not redeliver');
+        expect(message).toContain('reconcile it in Stripe');
+
+        loggerErrorSpy.mockRestore();
+      });
+
+      it('reports to Sentry, tagged so it can be routed', async () => {
+        jest
+          .spyOn(service['logger'], 'error')
+          .mockImplementation(() => undefined);
+        mockChapterRepo.findById.mockResolvedValue(null);
+
+        await service.handleWebhookEvent(unknownChapterEvent());
+
+        expect(captureMessage).toHaveBeenCalledTimes(1);
+        expect(mockSentryScope.setLevel).toHaveBeenCalledWith('error');
+        expect(mockSentryScope.setTag).toHaveBeenCalledWith(
+          'billing_event',
+          'checkout_unknown_chapter',
+        );
+        expect(mockSentryScope.setTag).toHaveBeenCalledWith(
+          'stripe_event_id',
+          'evt_no_chapter_exist',
+        );
+      });
+
+      it('still acks when Sentry itself fails', async () => {
+        // Reporting is a side channel. If it could change the outcome, an
+        // unreachable Sentry would turn a correct ack into a 5xx and hand
+        // Stripe a retry loop over an event that can never succeed.
+        jest
+          .spyOn(service['logger'], 'error')
+          .mockImplementation(() => undefined);
+        const loggerWarnSpy = jest
+          .spyOn(service['logger'], 'warn')
+          .mockImplementation(() => undefined);
+        captureMessage.mockImplementationOnce(() => {
+          throw new Error('sentry unreachable');
+        });
+        mockChapterRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.handleWebhookEvent(unknownChapterEvent('evt_sentry_down')),
+        ).resolves.not.toThrow();
+
+        expect(mockWebhookEventRepo.markProcessed).toHaveBeenCalledWith(
+          'evt_sentry_down',
+        );
+        expect(loggerWarnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('sentry unreachable'),
+        );
+
+        loggerWarnSpy.mockRestore();
+      });
     });
 
     it('should ignore a checkout session whose chapter_id is not a UUID', async () => {

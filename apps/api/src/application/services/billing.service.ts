@@ -6,6 +6,7 @@ import {
   BadRequestException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import {
   BILLING_PROVIDER,
   chargeIdFromLatestCharge,
@@ -357,9 +358,7 @@ export class BillingService {
 
     const chapter = await this.chapterRepo.findById(chapterId);
     if (!chapter) {
-      this.logger.warn(
-        `checkout.session.completed for non-existent chapter: ${chapterId}`,
-      );
+      this.reportUnknownChapterCheckout(event, chapterId, session);
       return;
     }
 
@@ -424,6 +423,82 @@ export class BillingService {
     await this.activation.record(chapterId, 'activation-checkout-completed');
 
     this.logger.log(`Chapter ${chapterId} activated via checkout`);
+  }
+
+  /**
+   * Report a `checkout.session.completed` whose chapter this database does not
+   * have (#1710).
+   *
+   * **Why this still acks instead of throwing.** Throwing is what buys a Stripe
+   * retry — `processWebhookEvent`'s catch arm says so in as many words — and a
+   * retry is useless here, because every way this branch is reachable is
+   * terminal:
+   *
+   *  - **Cross-environment delivery, the reachable one.** Local dev and staging
+   *    share one Stripe test-mode account (`ENV_REFERENCE.md` § `STRIPE_SECRET_KEY`:
+   *    *"Same as staging"*), and Stripe fans every test-mode event out to every
+   *    registered endpoint in that account. So a staging checkout reaches a
+   *    developer's `stripe listen`, and a local checkout reaches the staging
+   *    endpoint. The `chapter_id` is a real UUID from the *other* environment's
+   *    database, so the non-UUID guard above cannot catch it, and the row will
+   *    never appear here however many times Stripe redelivers.
+   *  - **A row removed out of band.** There is no delete path to reach it with —
+   *    `IChapterRepository` has no `delete`, nothing in `apps/api/src` deletes
+   *    from `chapters`, and no migration drops the table — so this can only come
+   *    from manual database intervention, which a redelivery cannot repair
+   *    either.
+   *
+   * The spec's own remedy for this row ("upsert logic … retry naturally") was
+   * never built and would be wrong if it were: upserting would mint a chapter
+   * row out of a foreign environment's event.
+   *
+   * **Why it is louder than the `warn` it replaces.** Acking is right; being
+   * *quiet* about it was the defect. The same branch also covers "a paid
+   * checkout completed and the chapter was never activated", and at `warn` that
+   * was indistinguishable from the benign cross-environment case — one log line
+   * with no consequence stated, on a revenue path. This follows
+   * `discord-oauth.service.ts`'s `captureSwallowed`, whose docblock makes the
+   * general argument: *"a swallowed failure has to report itself."*
+   *
+   * Sentry only reports where a DSN is configured, and the raw `chapterId` is
+   * pseudonymized or dropped by `sentry-scrubbing.ts` on the way out — so the
+   * unhashed id stays in the internal log line, where the spec permits it.
+   */
+  private reportUnknownChapterCheckout(
+    event: WebhookEvent,
+    chapterId: string,
+    session: CheckoutSessionWebhookObject,
+  ): void {
+    this.logger.error(
+      `checkout.session.completed for non-existent chapter ${chapterId} ` +
+        `(event ${event.id}, subscription ${session.subscription ?? 'none'}, ` +
+        `customer ${session.customer ?? 'none'}). Acknowledged without ` +
+        'activating anything, and Stripe will not redeliver. If this event ' +
+        'belongs to another environment sharing this Stripe account, it is ' +
+        'expected and no action is needed. Otherwise a checkout was paid for a ' +
+        'chapter this database cannot see — reconcile it in Stripe.',
+    );
+
+    // Never let a reporting failure change the webhook's outcome: the ack is
+    // the correct result with or without Sentry. Same posture as the
+    // security-event emitter in AllExceptionsFilter.
+    try {
+      Sentry.withScope((scope) => {
+        scope.setLevel('error');
+        scope.setTag('billing_event', 'checkout_unknown_chapter');
+        scope.setTag('stripe_event_type', event.type);
+        scope.setTag('stripe_event_id', event.id);
+        Sentry.captureMessage(
+          'checkout.session.completed for a chapter this database does not have',
+        );
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Sentry report failed for unknown-chapter checkout ${event.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private async handleSubscriptionUpdated(event: WebhookEvent): Promise<void> {
