@@ -230,7 +230,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Private / role-gated channel | `LockGlyph` |
 | Direct or group message | `DirectMessageGlyph` |
 | Connection lost | `OfflineGlyph` |
-| Reply in thread | `ThreadGlyph` |
+| Reply to a message | `ThreadGlyph` |
 | Per-channel notification level / mute | `MuteGlyph` |
 | Event location | `LocationGlyph` |
 | Event card | `EventsGlyph` (shared with the nav intent) |
