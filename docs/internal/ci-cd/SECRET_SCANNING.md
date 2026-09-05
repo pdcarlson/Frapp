@@ -1,9 +1,21 @@
 # Secret scanning (gitleaks)
 
 Local **pre-commit** + **CI** secret scanning with [gitleaks](https://github.com/gitleaks/gitleaks).
-This is the ADR-13 mitigation for the GitHub-native secret scanning and **push protection** lost when
-`pdcarlson/Frapp` went private — see ADR-13 / ADR-17 in
+This began as the ADR-13 mitigation for the GitHub-native secret scanning and **push protection** lost
+when `pdcarlson/Frapp` went private — see ADR-13 / ADR-17 in
 [`spec/architecture/README.md`](../../../spec/architecture/README.md).
+
+**That premise no longer holds, and this gate is not waiting on it.** The repo is **public** again
+(confirmed 2026-08-21 by fetching the README over `raw.githubusercontent.com` with no credentials:
+HTTP 200 against a 404 control — the method and evidence table are in
+[`AGENT_INFRA.md`](AGENT_INFRA.md) § GitHub environments and bootstrap secrets), so GitHub-native
+secret scanning and push protection are available to it. What is unchanged is what this doc
+describes: the `secret-scan` CI job is still a **required** check on every PR and push to `main`, so
+the enforcement below is live and nothing here is a stopgap waiting to be replaced. **Whether to
+adopt the native features as well, or instead, has not been decided** — ADR-17's "repo re-opens"
+revisit trigger has fired and is unactioned. Do not read this section as recording a decision to
+keep gitleaks over GHAS; it records that the original reason for choosing it has lapsed and nobody
+has revisited the choice.
 
 ## How it works
 

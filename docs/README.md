@@ -18,9 +18,11 @@ What to update in a PR, and where docs vs. spec belong: **[`docs/internal/DOCUME
 
 The docs CI checks — what they do and do not enforce — are described in [`internal/ci-cd/DOCS_CI.md`](internal/ci-cd/DOCS_CI.md). None of them require a PR to touch a doc.
 
-The other quality gates — dependency-cruiser boundaries, oasdiff breaking-change detection, the
-`nestjs-typed` response-schema rule, jscpd duplication, and coverage — are in
+The other quality gates are in
 [`internal/ci-cd/QUALITY_GATES.md`](internal/ci-cd/QUALITY_GATES.md), which also records *why* each
-one is required, advisory, or `warn`.
+one is required, advisory, or `warn`. This index does not enumerate them — a second copy of that
+roster drifts, and the last one did: it omitted two of the three **required** gates (the 375px
+responsive floor and the Vercel-parity production build) and listed coverage, which
+`QUALITY_GATES.md` states outright is measured and **not** gated.
 
 Tech debt found in the Frapp → Signet rebuild is tracked as **GitHub Issues**, not in a doc — see [`AGENTS.md` § Tech debt protocol](../AGENTS.md#tech-debt-protocol-non-optional) for what to do when you find orphaned or contradictory code.

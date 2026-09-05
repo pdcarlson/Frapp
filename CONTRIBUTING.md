@@ -184,7 +184,7 @@ CI validates migration filenames and requires promotion docs to be updated. Migr
 - **Never** commit secrets (`.env*`, credentials, private keys).
 - **Never** log secrets.
 - **Never** use placeholder secrets in CI/CD workflows.
-- All secrets are managed in Infisical and synced to providers (Vercel, Render, EAS, GitHub Actions).
+- All secrets are managed in Infisical. It syncs to **Vercel and Render only**. GitHub Actions is not a sync target (CI pulls at job time), and neither is EAS — an `EXPO_PUBLIC_*` a device build needs must also be set in the EAS dashboard, or as a non-secret `eas.json` `build.<profile>.env` entry. See [`SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md) § 4 for the EAS rule and § 5 for the live sync list.
 - See **[`docs/internal/environment/ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
 - See **[`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md)** for the Infisical setup guide and rotation policy.
 

@@ -117,6 +117,30 @@ failure mode, not a hypothetical.
   - **Roster drift.** For every array, job id, workspace list, table or version constant the diff
     changes, search for a doc that restates it by hand. This is the case that reads as a pure code
     change while the breakage sits in a doc nobody on the PR opened.
+
+    The semantic sweep in [#1635](https://github.com/pdcarlson/Frapp/issues/1635) adjudicated 57
+    duplicated facts and found **52 already had a false copy in the tree**. These are the sources
+    whose rosters that sweep found restated in prose — when the diff touches one, search the corpus
+    before you approve it. The list is the useful residue of that sweep's per-fact analysis, not an
+    exhaustive inventory; treat a source not named here the same way.
+
+    | Source of truth | Search these when it changes |
+    | --- | --- |
+    | `scripts/ci/lib/required-checks.mjs` (`CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS`) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `spec/environments/README.md`, `QUALITY_GATES.md`, `docs/README.md`, `docs/hooks/README.md` |
+    | `.github/workflows/ci.yml` job steps (esp. which workspaces `web-tests` runs) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `docs/hooks/README.md` |
+    | `CHAT_MESSAGE_KINDS` (declared in **three** files: `@repo/validation`, `chat.entity.ts`, `@repo/chat-core`) | `spec/behavior/chat/README.md`, `spec/architecture/README.md` |
+    | `push-rules.ts:defaultLevelFor` | `spec/behavior/notifications.md`, `spec/architecture/README.md` |
+    | `packages/validation/src/upload-allowlists.ts` (`MAX_UPLOAD_BYTES`, kinds) — **per-bucket caps differ**; `config.toml` is not the same number | `content-validation.md`, `spec/architecture/README.md` § 7, `AUTHORIZATION_MODEL.md` |
+    | `buildChapterConfigFromArchetype` (which seeds are `structuredClone`d) | `spec/engineering.md`, `spec/architecture/README.md` |
+    | `DEFAULT_SYSTEM_ROLES` / `DEFAULT_CHANNELS` / `SystemPermissions` | `spec/behavior/rbac.md`, `spec/behavior/chat/README.md`, `spec/product/modules.md`, `AUTHORIZATION_MODEL.md` |
+    | `scripts/check-env-slugs.mjs:INFISICAL_ENV_SLUGS` | `ENV_REFERENCE.md`, `SECRETS_MANAGEMENT.md`, `docs/guides/env-config.md`, `spec/environments/README.md` |
+    | Storage bucket declarations in `supabase/migrations/` | `spec/architecture/README.md` § 7, `AUTHORIZATION_MODEL.md` |
+    | `apps/web/tests/visual/routes.ts` | `apps/web/tests/visual/README.md` |
+    | The exact React pin — every `package.json` naming it, root `overrides` included (`git ls-files '*package.json' \| xargs grep -ln '"react": "19'`) | `AGENTS.md`, `MOBILE_TESTING.md`, `SECURITY_FIXES.md` |
+
+    **A hand-maintained count is the highest-risk form.** Prefer deleting it and linking over
+    syncing it — that is what the standard says, and a count with no mechanism behind it is a future
+    contradiction whether or not it is true today.
   - **Placement and duplication.** A new or moved fact belongs in the home the standard names — not
     a stray file added so the change looks documented, and not an unowned section appended to
     whichever doc was open; the test is what that doc is *for*. Two homes for one fact is a defect:
