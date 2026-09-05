@@ -119,7 +119,10 @@ export const REPORT_MAX_ROWS = 5_000;
  *
  * Higher than `REPORT_MAX_ROWS` because these rows never reach the renderer.
  * The pages are read sequentially, each waiting on the last, so the ceiling is
- * really a latency budget rather than a render cost.
+ * really a latency budget rather than a render cost: at 50,000 that is up to
+ * 50 round-trips (~1.2 s by the measurement in the perf notes) before any
+ * rendering starts. That arithmetic is unchanged by #567 — what changed is how
+ * many rows it takes to get there.
  *
  * **It counts members, not transactions (#567).** Balances come from
  * `get_roster_point_balances`, which groups by `user_id` and emits one row per
@@ -150,7 +153,7 @@ export interface ReportResult<T> {
    * The ceiling that `truncated` refers to. Carried rather than assumed
    * because a report can be cut short by more than one limit — a roster is
    * bounded by `REPORT_MAX_ROWS` rows but its balances are bounded by
-   * `REPORT_AGGREGATE_MAX_ROWS` transactions, and reporting the wrong one
+   * `REPORT_AGGREGATE_MAX_ROWS` members, and reporting the wrong one
    * gives an officer a number that contradicts the document in front of them.
    */
   limit: number;
@@ -457,7 +460,7 @@ export class ReportService {
 
     // ⚡ Bolt: Parallelize independent DB queries to eliminate sequential
     // network roundtrips. Expected impact: Reduces latency during roster
-    // generation by fetching users and points transactions concurrently.
+    // generation by fetching users and point balances concurrently.
     const usersQuery = Promise.all(
       chunkIds(userIds).map(
         (ids) =>
@@ -477,10 +480,23 @@ export class ReportService {
     // Still paged, on the same terms as `getPointsReport` above: PostgREST
     // applies `max_rows` to an RPC result set exactly as to a table read. The
     // order is on `user_id`, which `get_roster_point_balances` groups by and
-    // is therefore unique across the result — a TOTAL order, so no row can
-    // duplicate or drop across a page boundary. (`get_points_report` cannot do
-    // this: it returns no key and can only tie-break on display name, which is
-    // the whole of #747.)
+    // is therefore unique across the result — a total order, so no *tie* can
+    // duplicate or drop a row across a page boundary. (`get_points_report`
+    // cannot do this: it returns no key and can only tie-break on display
+    // name, which is the whole of #747.)
+    //
+    // A total order is not a snapshot, and does not claim to be: a paged read
+    // is several statements, so a concurrent write can still shift a boundary
+    // (`fetchAllPages`' own docstring says so). That is the report-wide caveat
+    // in the perf notes, not something this ordering fixes.
+    //
+    // What DID change is the shape of that rare failure, and it cuts both
+    // ways. A row inserted between pages used to double-count one transaction;
+    // now a duplicated aggregate row just rewrites the Map with the same value,
+    // which is harmless. But a delete that removes a member's whole group no
+    // longer shaves one transaction off their balance — it drops the group, and
+    // they render as 0. Both need a chapter past one page of scoring members
+    // plus a concurrent write mid-report.
     const balancesQuery = fetchAllPages<RosterBalanceRow>(
       (from, to) =>
         this.supabase
@@ -512,8 +528,15 @@ export class ReportService {
     // reduction. `Number(...)` because the SQL type is `bigint`: PostgREST
     // serializes it as a JSON number, but the same cast guards the string form
     // some drivers hand back for 64-bit integers.
+    //
+    // `?? 0` keeps the nullish guard the per-transaction sum had. The function
+    // coalesces, so a null total should be unreachable — but `Number(undefined)`
+    // is `NaN`, and a NaN balance does not throw: it renders as "NaN" in the
+    // PDF and CSV an officer downloads. A wrong number that announces itself as
+    // wrong is still worse than a zero here, and neither is worth the risk of
+    // relying on a shape this file does not own.
     const balances = new Map<string, number>(
-      balanceRows.rows.map((b) => [b.user_id, Number(b.total_points)]),
+      balanceRows.rows.map((b) => [b.user_id, Number(b.total_points ?? 0)]),
     );
 
     // Every role the chapter defines, rather than the subset the roster

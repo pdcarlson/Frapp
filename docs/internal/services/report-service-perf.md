@@ -87,11 +87,21 @@ here.
 
 That read still pages, under the separate higher ceiling
 (`REPORT_AGGREGATE_MAX_ROWS`, 50,000), because an RPC result set is subject to
-PostgREST's `max_rows` exactly like a table read. But the ceiling now counts
-**members, not transactions** — reaching it needs a 50,000-member chapter rather
-than a 50,000-transaction one, which is the difference between a bound no real
-chapter approaches and one an active chapter crossed in a semester. Before this,
-crossing it meant a roster of the right length carrying wrong balances.
+PostgREST's `max_rows` exactly like a table read. That bound remains a latency
+budget rather than a render cost: the pages are sequential, so 50,000 rows is up
+to 50 round-trips (~1.2 s) before anything else happens — unchanged by #567,
+which altered how many rows it takes to reach that number, not the arithmetic.
+
+But the ceiling now counts **members, not transactions** — reaching it needs a
+50,000-member chapter rather than a 50,000-transaction one, which is the
+difference between a bound no real chapter approaches and one an active chapter
+crossed in a semester. Before this, crossing it meant a roster of the right
+length carrying wrong balances.
+
+The aggregate is index-backed: `idx_point_transactions_chapter_user`
+(`chapter_id, user_id`) already covers both the filter and the grouping.
+Measured on the sandbox stack with `enable_seqscan = off`, the plan is a Bitmap
+Index Scan feeding a GroupAggregate — not a sequential scan of the ledger.
 
 A short balance read still does not shorten the roster; it leaves balances on it
 wrong. So it marks the report truncated but reports **its own** ceiling and a

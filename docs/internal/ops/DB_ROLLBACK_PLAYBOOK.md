@@ -1236,6 +1236,11 @@ After any rollback event:
   ```
 * **Note**: Grant-only change, no data loss and no function body change — restores the pre-migration Postgres-default EXECUTE-to-PUBLIC behavior for `anon`/`authenticated`. Should not be needed: all three RPCs are `security invoker` (RLS still applies under the caller's own privileges) and both callers (`ReportService.getPointsReport`, `SupabasePollVoteRepository`) already go through the API's `service_role` client, which keeps EXECUTE regardless. Only relevant if some other caller was found to invoke these RPCs directly as `anon`/`authenticated` (e.g. via PostgREST) after this migration shipped — confirm that caller's actual need before rolling back, since re-opening the grant is exactly the convention gap #678 closed.
 
+## Rollback `get_roster_point_balances` RPC
+* **Migration**: `20260905100000_get_roster_point_balances.sql`
+* **Action**: `DROP FUNCTION IF EXISTS get_roster_point_balances(uuid);`
+* **Note**: Purely additive — a new function under a new name. It drops nothing, changes no existing signature, and touches no column or row, so there is no data loss on rollback and no deploy window in which an existing read is missing or ambiguous. **Forward-fix required before dropping it**: `ReportService.getRosterReport` calls this RPC through `fetchAllPages`, which raises on a query error rather than degrading, so dropping the function while the current API revision is live makes every roster export return 500. Deploy an API revision that no longer calls it first — or simply revert the code, which leaves the unused function inert and costs nothing. Not to be confused with `get_points_report` (next section): they aggregate the same table but are independent functions, and this one exists precisely because that one returns no `user_id` key (#747).
+
 ## Rollback `get_points_report` RPC `p_until` bound
 * **Migration**: `20260902010001_get_points_report_until.sql` (supersedes `20260604140000_get_points_report_window_filter.sql`)
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz, timestamptz);`, then recreate the 3-arg `(uuid, uuid, timestamptz)` overload from `20260604140000`, and re-apply its EXECUTE lock-down (revoke from `public`/`anon`/`authenticated`, grant to `service_role`) per `20260901173000`.

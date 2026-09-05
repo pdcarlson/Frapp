@@ -440,6 +440,60 @@ describe('ReportService', () => {
       expect(result.rows.map((r) => r.point_balance)).toEqual([9, 0]);
     });
 
+    it('joins balances by user_id, not by row position', async () => {
+      // Every other balance test has the roster and the aggregate in the same
+      // order with the same members, so a positional zip would pass all of
+      // them. Two things break that here: the aggregate comes back in a
+      // different order than the roster (it is ordered by `user_id`, the
+      // roster by `members.id`, so they genuinely can differ), and it carries a
+      // row for a departed member who is no longer on the roster — the case
+      // the service comment calls "inert", which is only inert if the lookup is
+      // by key.
+      const members = makeChain({
+        data: [
+          { user_id: 'u-b', role_ids: [], created_at: '2026-01-15T00:00:00Z' },
+          { user_id: 'u-a', role_ids: [], created_at: '2026-01-15T00:00:00Z' },
+        ],
+        error: null,
+      });
+      (mockSupabase.from as jest.Mock).mockImplementation((t: string) =>
+        t === 'members'
+          ? members
+          : makeChain({
+              data:
+                t === 'users'
+                  ? [
+                      { id: 'u-a', display_name: 'Alice', email: 'a@t.com' },
+                      { id: 'u-b', display_name: 'Bob', email: 'b@t.com' },
+                    ]
+                  : [],
+              error: null,
+            }),
+      );
+      (mockSupabase.rpc as jest.Mock).mockImplementation(() =>
+        makeChain({
+          data: [
+            { user_id: 'u-a', total_points: 10 },
+            // A member removed from the chapter keeps ledger rows, so the
+            // aggregate still emits them. They must not land on anyone.
+            { user_id: 'u-gone', total_points: 999 },
+            { user_id: 'u-b', total_points: 20 },
+          ],
+          error: null,
+        }),
+      );
+
+      const result = await service.getRosterReport('ch-1');
+
+      // Roster order is Bob then Alice; balance order is Alice, departed, Bob.
+      // A positional zip would give Bob 10 and Alice 999.
+      expect(result.rows.map((r) => [r.name, r.point_balance])).toEqual([
+        ['Bob', 20],
+        ['Alice', 10],
+      ]);
+      expect(result.rows.some((r) => r.point_balance === 999)).toBe(false);
+    });
+
     it('coerces a bigint balance handed back as a string', async () => {
       // `total_points` is `bigint`. PostgREST serializes it as a JSON number,
       // but 64-bit integers are the classic case where a driver hands back a

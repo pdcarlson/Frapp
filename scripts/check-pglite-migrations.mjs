@@ -2324,6 +2324,87 @@ console.log("\n=== security definer search_path ===");
   }
 }
 
+// ─── Functional smoke: get_roster_point_balances (#567) ─────────────────────
+//
+// Replay proves the function was CREATED; it proves nothing about what it
+// returns. That gap matters more than usual here for two reasons.
+//
+// First, the roster report's balances now come from this function, so a wrong
+// answer is a wrong number on a document an officer downloads — the exact
+// failure mode #567 existed to remove, reintroduced one layer down.
+//
+// Second, the hazard is invisible to DDL review: `user_id` is both a RETURNS
+// TABLE OUT variable and a real column on `point_transactions`, so an
+// unqualified reference raises `column reference "user_id" is ambiguous` at
+// CALL time, not at CREATE time. A migration that replays clean can still fail
+// on first use. Only calling it catches that.
+console.log("\n=== Functional smoke: get_roster_point_balances (#567) ===");
+{
+  const CH_A = "aaaaaaaa-1111-1111-1111-111111111111";
+  const CH_B = "bbbbbbbb-2222-2222-2222-222222222222";
+  const U1 = "11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const U2 = "22222222-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  try {
+    await db.exec(`
+      insert into chapters (id, name, university) values
+        ('${CH_A}', 'Smoke A', 'U'), ('${CH_B}', 'Smoke B', 'U');
+      insert into users (id, supabase_auth_id, email) values
+        ('${U1}', gen_random_uuid(), 'rpb1@smoke.test'),
+        ('${U2}', gen_random_uuid(), 'rpb2@smoke.test');
+      insert into point_transactions (chapter_id, user_id, amount, category, description) values
+        ('${CH_A}', '${U1}', 10, 'ATTENDANCE', 's'),
+        ('${CH_A}', '${U1}',  5, 'SERVICE',    's'),
+        ('${CH_A}', '${U1}', -3, 'FINE',       's'),
+        ('${CH_A}', '${U2}',  7, 'ATTENDANCE', 's'),
+        ('${CH_B}', '${U1}', 999,'ATTENDANCE', 's');
+    `);
+
+    const got = await db.query(
+      `select user_id::text as user_id, total_points::int as total_points
+         from get_roster_point_balances($1) order by total_points desc`,
+      [CH_A],
+    );
+    const rows = got.rows.map((r) => `${r.user_id}=${r.total_points}`).join(",");
+    // 12 = 10 + 5 - 3: the sum has to survive a negative (a FINE), which a
+    // `sum(abs(...))` or a `where amount > 0` slip would break silently.
+    const want = `${U1}=12,${U2}=7`;
+    if (rows === want) {
+      console.log("OK    sums per member, including a negative FINE row");
+    } else {
+      missing += 1;
+      console.log(`MISS  roster balances\n        ↳ got ${rows}, want ${want}`);
+    }
+
+    // The one that is a security property rather than an arithmetic one: the
+    // 999 belongs to the SAME user in another chapter. Tenant isolation here is
+    // application-layer only — RLS is bypassed by the service role — so this
+    // function's own `where chapter_id` is the entire boundary.
+    const leaked = got.rows.some((r) => Number(r.total_points) >= 999);
+    console.log(
+      leaked
+        ? `MISS  cross-chapter leak: another chapter's 999 reached chapter A`
+        : "OK    another chapter's rows stay out (chapter_id is the whole boundary)",
+    );
+    if (leaked) missing += 1;
+
+    const none = await db.query(
+      `select count(*)::int as n from get_roster_point_balances($1)`,
+      ["cccccccc-3333-3333-3333-333333333333"],
+    );
+    if (none.rows[0].n === 0) {
+      console.log("OK    an unknown chapter returns no rows");
+    } else {
+      missing += 1;
+      console.log(`MISS  unknown chapter returned ${none.rows[0].n} row(s)`);
+    }
+  } catch (e) {
+    missing += 1;
+    console.log(
+      `ERR   get_roster_point_balances\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+    );
+  }
+}
+
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,
 );

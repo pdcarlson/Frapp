@@ -24,6 +24,21 @@
 -- the chapter — `getRosterReport` takes no window and never filtered by date.
 -- Adding `p_since`/`p_until` here would be inventing a capability no caller
 -- asks for, on a function whose signature is then expensive to change.
+--
+-- KNOWN OVERLAP, RECORDED RATHER THAN HIDDEN. PR #1698 (issue #522) is open at
+-- the time of writing and adds `get_points_leaderboard(uuid, timestamptz,
+-- timestamptz)`, which with both bounds null computes the same per-member sum
+-- this function does. Whichever lands second leaves the repo with two functions
+-- answering one question, which the tech-debt protocol in `AGENTS.md` says to
+-- collapse rather than accumulate.
+--
+-- It is NOT collapsed here because that would mean building on an unmerged
+-- migration: #1698's signature is still reviewable and could change or close,
+-- and depending on it would block this fix behind someone else's PR and pin a
+-- merge order nothing enforces. So this ships standalone and correct, and the
+-- collapse is tracked as its own follow-up once #1698 actually merges — at
+-- which point the roster can call the leaderboard function with null bounds and
+-- this one is dropped. Do not "fix" the duplication by reverting either PR.
 
 create or replace function get_roster_point_balances(p_chapter_id uuid)
 returns table (
