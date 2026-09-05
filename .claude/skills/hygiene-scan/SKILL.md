@@ -393,7 +393,8 @@ mode this routine replaces. Everything past the cap goes to the ledger, where a 
 promote it.
 
 **Ledger.** Append **one comment** to the "Hygiene Scan — ledger" issue per run, in this shape,
-and never rewrite its body (no MCP read returns a body faithfully — `ROUTINES.md` § Tracker access):
+and never rewrite its body — that body is append-only by design and run state lives in the comments,
+so the rule holds regardless of what the read is doing (`ROUTINES.md` § Tracker access):
 
 ```text
 hygiene-scan run: v1 date=YYYY-MM-DD slice=<0-4> pr=#<N>|none filed=#<a>,#<b>|none
