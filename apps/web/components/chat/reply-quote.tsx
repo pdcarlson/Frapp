@@ -30,6 +30,17 @@ const KIND_LABELS: Partial<Record<ChatMessageKind, string>> = {
 };
 
 /**
+ * How much of a body to flatten. The strip shows one CSS-truncated line — far
+ * less than this — so the cap costs nothing visible and bounds every regex
+ * below against a hostile body. `CHAT_MESSAGE_CONTENT_MAX_LENGTH` is 10,000,
+ * and the link pattern backtracks quadratically on unmatched `[`: measured at
+ * 74ms per call for 10,000 of them, paid on **every render** of that row and of
+ * the composer strip, since this is uncached inside Virtuoso's `itemContent`.
+ * Any member could plant that. Capped, the same input measures under 1ms.
+ */
+const PREVIEW_SOURCE_LIMIT = 500;
+
+/**
  * Flatten the markdown subset `MessageMarkdown` renders down to the text a
  * reader sees, so the quote and the message it stands for say the same thing.
  *
@@ -43,20 +54,41 @@ const KIND_LABELS: Partial<Record<ChatMessageKind, string>> = {
  * (bold, italic, inline code, fenced code, links) — nothing wider, because
  * nothing wider renders. Link *text* is kept and the href dropped: the text is
  * what the reader saw.
+ *
+ * **Over-stripping is the failure mode that matters here, not under-stripping.**
+ * A marker left in a preview is mildly ugly; text the sender never typed is a
+ * lie about what they said, in the one line standing in for their message. Two
+ * rules follow from that, and an earlier cut got both wrong:
+ *
+ * - **`_` needs non-word flanking, `*` does not.** That is CommonMark's own
+ *   asymmetry (`react-markdown` is plain CommonMark here, with no GFM), and it
+ *   is the difference between quoting `reply_to_id` and quoting `replytoid`.
+ *   Identifiers, filenames and Drive URLs are full of intraword underscores;
+ *   `snake_case_name` and `.../d/1a_b_c_d/view` both mangled before this.
+ * - **A fence marker deletes itself, never the rest of its line.** `/```[^\n]*\n?/`
+ *   ate everything after an inline triple-backtick, so "put it in ``` fences
+ *   like this and keep reading" previewed as "put it in ". Only a real fence —
+ *   backticks, an optional info string, then a newline — takes its line with it.
  */
 function flattenMarkdown(text: string): string {
   return (
     text
-      // `[label](href)` → `label`. Non-greedy, and the href may not contain a
-      // closing paren, which is CommonMark's own rule for an unescaped one.
-      .replace(/\[([^\]]*)\]\([^)\s]*(?:\s+"[^"]*")?\)/g, "$1")
-      // Fenced blocks keep their body; the fence and any info string go.
-      .replace(/```[^\n]*\n?/g, "")
-      // Emphasis and inline code markers. Applied after links so a `**bold**`
-      // link label survives with its text intact.
-      .replace(/(\*\*|__)(.*?)\1/g, "$2")
-      .replace(/(\*|_)(?=\S)(.*?\S)\1/g, "$2")
-      .replace(/`([^`]*)`/g, "$1")
+      .slice(0, PREVIEW_SOURCE_LIMIT)
+      // `[label](href)` → `label`, with an optional title. Every quantifier is
+      // bounded; the href may not contain whitespace or a closing paren, which
+      // is CommonMark's rule for an unescaped one.
+      .replace(/\[([^\]]{0,300})\]\([^)\s]{0,500}(?:\s+"[^"]{0,200}")?\)/g, "$1")
+      // A real opening fence takes its info string and newline. A bare ``` on a
+      // line of prose is handled by the next line, which removes the marker
+      // only.
+      .replace(/```[A-Za-z0-9]{0,20}\n/g, "")
+      .replace(/```/g, "")
+      // Emphasis, longest marker first so `**` is not eaten as two `*`.
+      .replace(/\*\*(?=\S)([^*]{0,300}?\S)\*\*/g, "$1")
+      .replace(/(^|[^\w])__(?=\S)([^_]{0,300}?\S)__(?!\w)/g, "$1$2")
+      .replace(/\*(?=\S)([^*]{0,300}?\S)\*/g, "$1")
+      .replace(/(^|[^\w])_(?=\S)([^_]{0,300}?\S)_(?!\w)/g, "$1$2")
+      .replace(/`([^`]{0,300})`/g, "$1")
   );
 }
 
@@ -92,8 +124,16 @@ export function replyPreviewText(message: ChatMessage): string {
   return KIND_LABELS[message.kind ?? "text"] ?? "Message";
 }
 
-/** What a quote says when its message is outside the loaded window. */
-export const UNAVAILABLE_QUOTE = "Replying to a message that isn’t loaded";
+/**
+ * What a quote says when its message is outside the loaded window.
+ *
+ * Deliberately **context-free**, with no "Replying to" of its own: the composer
+ * strip already prints that label beside the quote, so a self-contained sentence
+ * rendered there read "Replying to Replying to a message that isn't loaded".
+ * The timeline needs no prefix — a left rule above a message already says
+ * "this is what it answers".
+ */
+export const UNAVAILABLE_QUOTE = "Original message not loaded";
 
 interface QuotedMessageProps {
   /**

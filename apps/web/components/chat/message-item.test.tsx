@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { MessageItem, type MessageItemProps } from "./message-item";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { UNAVAILABLE_QUOTE } from "./reply-quote";
 
 /**
  * `spec/ui/design-system/components.md` specifies the incoming meta line as
@@ -376,7 +377,7 @@ describe("MessageItem reply-with-quote (#489)", () => {
 
   it("renders no quote at all on a message that is not a reply", () => {
     renderItemWithProps({ message: message({ reply_to_id: null }) });
-    expect(screen.queryByText(/isn’t loaded/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(UNAVAILABLE_QUOTE)).not.toBeInTheDocument();
     expect(screen.queryByText("the original")).not.toBeInTheDocument();
   });
 
@@ -388,7 +389,7 @@ describe("MessageItem reply-with-quote (#489)", () => {
       message: message({ id: "child-1", reply_to_id: "gone" }),
       replyParent: null,
     });
-    expect(screen.getByText(/isn’t loaded/i)).toBeInTheDocument();
+    expect(screen.getByText(UNAVAILABLE_QUOTE)).toBeInTheDocument();
   });
 
   it("drops the quote on a deleted reply, as it drops the reactions", () => {

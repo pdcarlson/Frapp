@@ -67,6 +67,47 @@ describe("replyPreviewText", () => {
     );
   });
 
+  it("never eats an intraword underscore — over-stripping is the real hazard", () => {
+    // CommonMark (and therefore `react-markdown`, which renders the bubble)
+    // does not treat intraword `_` as emphasis. An earlier cut did, so the
+    // quote said something the sender never typed — in the one line standing in
+    // for their message. Identifiers, filenames and Drive ids are full of them.
+    for (const body of [
+      "run the reply_to_id migration",
+      "Ran run_test and do_thing today",
+      "see https://drive.google.com/file/d/1a_b_c_d/view",
+      "my_file_name.py is broken",
+      "`snake_case_var` is the field",
+    ]) {
+      expect(replyPreviewText(message({ content: body }))).toBe(
+        body.replace(/`/g, ""),
+      );
+    }
+  });
+
+  it("lets a fence delete itself, never the rest of its line", () => {
+    // `/```[^\n]*\n?/` ate everything after an inline triple-backtick, which is
+    // content loss rather than an unstripped marker.
+    expect(
+      replyPreviewText(
+        message({ content: "put it in ``` fences like this and keep reading" }),
+      ),
+    ).toBe("put it in fences like this and keep reading");
+    expect(
+      replyPreviewText(message({ content: "```\ncode\n``` trailing words" })),
+    ).toBe("code trailing words");
+  });
+
+  it("stays fast on a hostile body", () => {
+    // The link pattern backtracks quadratically on unmatched `[`, and this runs
+    // uncached on every render of a quoted row inside a virtualized list. 10,000
+    // brackets — plantable by any member, under the 10,000-char content cap —
+    // measured 74ms per call before the input was bounded.
+    const started = performance.now();
+    replyPreviewText(message({ content: "[".repeat(10_000) }));
+    expect(performance.now() - started).toBeLessThan(20);
+  });
+
   it("leaves bare asterisks alone rather than eating them", () => {
     // Emphasis needs a non-space after the opener; `2 * 3 * 4` is arithmetic,
     // not italics, and a preview that silently deleted the operators would

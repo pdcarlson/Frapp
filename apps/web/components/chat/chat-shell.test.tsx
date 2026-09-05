@@ -244,8 +244,16 @@ vi.mock("./composer", () => ({
             here (jsdom renders no ProseMirror view), so these expose the two
             things the SHELL owns: what it says is staged, and what it sends. */}
         <span data-testid="composer-reply-to">{replyTo?.id ?? "none"}</span>
+        {/* Keyed on `author`, because that is what `QuotedMessage` branches on
+            (`const unavailable = author === null`). Keying it on `preview` — as
+            an earlier version did — modelled the assumption under test: setting
+            `author` to a stale name beside a null preview passed 44/44 while
+            the real strip would have shown a fabricated author. */}
+        <span data-testid="composer-reply-author">
+          {replyTo ? (replyTo.author ?? "unavailable") : ""}
+        </span>
         <span data-testid="composer-reply-preview">
-          {replyTo ? (replyTo.preview ?? "unavailable") : ""}
+          {replyTo?.preview ?? ""}
         </span>
         <button data-testid="composer-send" onClick={() => onSend?.("hi", [])}>
           send
@@ -1173,7 +1181,9 @@ describe("ChatShell reply-with-quote (#489)", () => {
     rerender(<ChatShell initialChannelId="chan-general" />);
 
     expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
-    expect(screen.getByTestId("composer-reply-preview")).toHaveTextContent(
+    // The field `QuotedMessage` actually branches on. Asserting the preview
+    // alone proved only that it was nullish.
+    expect(screen.getByTestId("composer-reply-author")).toHaveTextContent(
       "unavailable",
     );
     fireEvent.click(screen.getByTestId("composer-send"));
@@ -1201,6 +1211,38 @@ describe("ChatShell reply-with-quote (#489)", () => {
       replyToId: "msg-1",
       attachments: [],
     });
+  });
+
+  it("does not let a send in another channel discard a reply staged here", async () => {
+    // Clearing unconditionally on send reproduced the exact failure channel
+    // scoping exists to prevent: stage a reply in #general, answer a ping in
+    // #random — that send wiped it — then come back to a per-channel draft
+    // still sitting in the composer with no strip above it, so Enter posts the
+    // reply as a top-level message.
+    const channel = withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+    });
+    // Scoping already hides it here, and the send must carry nothing.
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none");
+    fireEvent.click(screen.getByTestId("composer-send"));
+    expect(channel.send).toHaveBeenLastCalledWith("hi", {
+      replyToId: null,
+      attachments: [],
+    });
+
+    fireEvent.click(screen.getByTestId("pick-general"));
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-general");
+    });
+
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
   });
 
   it("offers no Reply control to a member who cannot post here (alumni)", async () => {

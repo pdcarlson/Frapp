@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { ThreadPanel } from "./thread-panel";
 import type { ChatMessage } from "@repo/chat-core/types";
+import { UNAVAILABLE_QUOTE } from "./reply-quote";
 
 // `useAuthorAvatars` (#1231) is the one hook `ThreadPanel` calls unconditionally
 // (every other `@repo/hooks` usage on this surface is a plain, non-hook helper),
@@ -305,7 +306,7 @@ describe("ThreadPanel reply quotes (#489)", () => {
     // reply carried "Replying to a message that isn't loaded" instead.
     expect(screen.getAllByText("the original")).toHaveLength(2);
     expect(screen.getByText("agreed")).toBeInTheDocument();
-    expect(screen.queryByText(/isn’t loaded/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(UNAVAILABLE_QUOTE)).not.toBeInTheDocument();
   });
 
   it("resolves the collected message's own parent when it is itself a reply", () => {
@@ -323,7 +324,7 @@ describe("ThreadPanel reply quotes (#489)", () => {
     renderPanel(parent, [grandparent, parent]);
 
     expect(screen.getByText("the first word")).toBeInTheDocument();
-    expect(screen.queryByText(/isn’t loaded/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(UNAVAILABLE_QUOTE)).not.toBeInTheDocument();
   });
 
   it("still says so when the collected message's parent really is unloaded", () => {
@@ -337,7 +338,7 @@ describe("ThreadPanel reply quotes (#489)", () => {
 
     renderPanel(parent, [parent]);
 
-    expect(screen.getByText(/isn’t loaded/i)).toBeInTheDocument();
+    expect(screen.getByText(UNAVAILABLE_QUOTE)).toBeInTheDocument();
   });
 
   it("does not tell the member to start a thread it has no composer for", () => {

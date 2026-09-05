@@ -9,9 +9,19 @@ import { describe, it, expect, vi } from "vitest";
 // below is tested directly and needs none of this; only the "fresh mount"
 // integration test near the bottom needs `useEditor` stubbed, to capture the
 // real `Placeholder` extension Composer wires it into.
-const { capturedExtensions } = vi.hoisted(() => ({
-  capturedExtensions: [] as unknown[][],
-}));
+const { capturedExtensions, mockRequestUploadUrl, mockUploadSignedUrl } =
+  vi.hoisted(() => ({
+    capturedExtensions: [] as unknown[][],
+    // Resolves a real response shape. Returning bare `vi.fn()` (undefined) made
+    // `handleAttach` throw on `response.storagePath` and toast instead of
+    // staging a chip, so no test could ever reach the attachment branch.
+    mockRequestUploadUrl: vi.fn(async () => ({
+      signedUrl: "https://example.test/upload",
+      storagePath: "chapters/c/chat/ch/m/notes.pdf",
+      messageId: "m",
+    })),
+    mockUploadSignedUrl: vi.fn(async () => undefined),
+  }));
 
 vi.mock("@tiptap/react", async () => {
   const actual =
@@ -27,8 +37,8 @@ vi.mock("@tiptap/react", async () => {
 });
 
 vi.mock("@repo/hooks", () => ({
-  useRequestChatUploadUrl: () => ({ mutateAsync: vi.fn() }),
-  useUploadSignedUrl: () => ({ mutateAsync: vi.fn() }),
+  useRequestChatUploadUrl: () => ({ mutateAsync: mockRequestUploadUrl }),
+  useUploadSignedUrl: () => ({ mutateAsync: mockUploadSignedUrl }),
   useChapterRoster: () => ({ data: [] }),
 }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
@@ -286,6 +296,31 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
   it("refuses while offline, as the typed path does", async () => {
     const { user, onSlashDispatch } = await pickFromPalette({ isOffline: true });
 
+    await user.click(await screen.findByRole("option", { name: /poll/i }));
+
+    expect(onSlashDispatch).not.toHaveBeenCalled();
+  });
+
+  it("refuses when a file is staged, as the typed path does", async () => {
+    // The third `slashRefusal` branch. It had no test on either path, so the
+    // guard could be deleted wholesale and every suite stayed green — a slash
+    // command posts a card, which has nowhere to hang a file.
+    const user = userEvent.setup();
+    const onSlashDispatch = vi.fn(async () => ({ ok: true }));
+    const { container } = render(
+      <Composer {...baseProps({ onSlashDispatch })} />,
+    );
+
+    const file = new File(["x"], "notes.pdf", { type: "application/pdf" });
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    )!;
+    await user.upload(input, file);
+    await screen.findByRole("button", { name: /remove notes\.pdf/i });
+
+    await user.click(
+      screen.getByRole("button", { name: /open slash commands/i }),
+    );
     await user.click(await screen.findByRole("option", { name: /poll/i }));
 
     expect(onSlashDispatch).not.toHaveBeenCalled();

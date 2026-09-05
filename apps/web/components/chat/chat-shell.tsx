@@ -1201,7 +1201,14 @@ export function ChatShell({
               // still standing after the message appears in the timeline reads
               // as "your reply didn't send" — and would silently attach itself
               // to whatever the member typed next.
-              setReplyTarget(null);
+              //
+              // Only when the target belongs to THIS channel. Clearing
+              // unconditionally reproduced the exact bug the channel-scoping
+              // above exists to prevent: a member stages a reply in #general,
+              // answers a ping in #random — that send wiped it — and comes back
+              // to #general to a per-channel draft still in the composer and no
+              // strip above it, so Enter posts the reply as a top-level message.
+              if (replyTo) setReplyTarget(null);
               return channel.send(body, { replyToId: target, attachments });
             }}
             onSlashDispatch={(command: SlashCommand, args: string) =>

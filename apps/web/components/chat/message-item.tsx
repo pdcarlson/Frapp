@@ -58,10 +58,14 @@ export interface MessageItemProps {
   onOpenThread?: (message: ChatMessage) => void;
   /**
    * The message this one replies to, when `message.reply_to_id` is set and that
-   * parent is inside the loaded window. `null` means "is a reply, parent not
-   * loaded" — the quote says so; `undefined` means "not a reply" and renders
-   * no quote at all. The two must stay distinguishable, or every reply to an
-   * old message would silently render as an ordinary one.
+   * parent is inside the loaded window; `null` or absent when it is not.
+   *
+   * **Whether a quote renders is decided by `message.reply_to_id`, not by this
+   * prop** — deliberately, so a caller that forgets to wire it cannot silently
+   * downgrade a reply to an ordinary message. It degrades the other way instead,
+   * to a visible "not loaded" line, which is how the thread panel's missing
+   * wiring was caught rather than shipped. (`null` and `undefined` are therefore
+   * equivalent here; callers may pass whichever they hold.)
    */
   replyParent?: ChatMessage | null;
   onRetry?: (clientMessageId: string) => void;
@@ -405,10 +409,10 @@ export function MessageItem({
         onUnreact={(emoji) => onUnreact(message.id, emoji)}
       />
       {/*
-        Same glyph, same chip, same cluster — `iconography.md:233` maps "Reply
-        in thread" to `ThreadGlyph` and `components.md` § 11 places the control
-        here, so only the handler changed. It stages an inline reply now rather
-        than opening the side panel.
+        Same glyph, same chip, same cluster — `iconography.md`'s chat table maps
+        "Reply to a message" to `ThreadGlyph` and `components.md` § 11 places the
+        control here, so only the handler changed. It stages an inline reply now
+        rather than opening the side panel.
       */}
       {onReply ? (
         <button
