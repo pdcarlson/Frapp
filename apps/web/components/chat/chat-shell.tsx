@@ -192,12 +192,18 @@ export function ChatShell({
   // `display_order` and then `created_at` server-side, so there is nothing to
   // re-sort here.
   //
-  // **A failed categories fetch degrades to the flat list on purpose.** Unlike
-  // `channelsQuery` below, there is no error branch: `asArray` turns the absent
-  // payload into `[]` and every channel falls into the default "Channels" group,
-  // which is exactly the pre-category rail. Blocking chat behind an error state
-  // because a display-only grouping could not load would cost far more than the
-  // grouping is worth.
+  // **A failed categories fetch degrades to the flat list rather than an error
+  // state.** Unlike `channelsQuery` below, there is no `isError` branch:
+  // `asArray` turns the absent payload into `[]` and every channel falls into
+  // the default "Channels" group, which is exactly the pre-category rail.
+  //
+  // Note what this does *not* say: chat is still gated on
+  // `categoriesQuery.isPending` below, so a member does wait out the query
+  // provider's `retry: 3` backoff before that fallback renders. That gate
+  // predates categories being drawn and was pure cost then; it now buys a rail
+  // that paints grouped on first render instead of flat-then-reflowed. Whether
+  // that trade is right is worth revisiting — but the degradation is at the end
+  // of the retries, not instead of them.
   const categories = useMemo(
     () => asArray<ChannelCategory>(categoriesQuery.data),
     [categoriesQuery.data],

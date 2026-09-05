@@ -28,9 +28,19 @@ const CHANNELS = [
   { id: "chan-random", name: "random", type: "PUBLIC", member_ids: [] },
 ];
 
+/**
+ * Array order disagrees with **both** ways a caller might be tempted to re-sort:
+ * it is not alphabetical, and `display_order` descends rather than ascends.
+ *
+ * The second half matters more than it looks. `chat-admin-page.tsx` re-sorts by
+ * `display_order` client-side, and `channel-list.tsx` names that as the pattern
+ * the rail deliberately does not copy — so a fixture whose array order happened
+ * to match `display_order` ascending could not tell a faithful pass-through from
+ * exactly the divergence being warned about.
+ */
 const CATEGORIES = [
-  { id: "cat-exec", name: "Executive", display_order: 1 },
-  { id: "cat-comm", name: "Committees", display_order: 2 },
+  { id: "cat-exec", name: "Executive", display_order: 2 },
+  { id: "cat-comm", name: "Committees", display_order: 1 },
 ];
 
 const MESSAGES = [

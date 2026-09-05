@@ -17,9 +17,15 @@ import {
  */
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
+/** A second DM participant, named so it sorts *before* `OTHER`'s "Alice Chen". */
+const THIRD = "33333333-3333-4333-8333-333333333333";
 const DM_NAME = `dm-${VIEWER}-${OTHER}`;
 
-const NAMES = { [VIEWER]: "Viewer Self", [OTHER]: "Alice Chen" };
+const NAMES = {
+  [VIEWER]: "Viewer Self",
+  [OTHER]: "Alice Chen",
+  [THIRD]: "Aaron Alumni",
+};
 
 const dm: ChatChannel = {
   id: "c-dm",
@@ -247,6 +253,29 @@ describe("ChannelList category grouping", () => {
         return id ? (container.querySelector(`#${CSS.escape(id)}`)?.textContent ?? null) : null;
       }),
     ).toEqual(["Channels", "Executive", "Direct messages"]);
+  });
+
+  it("sorts the built-in sections too, not only the category ones", () => {
+    // The sort runs over the assembled `sections` array precisely so no section
+    // can be left out of it. That benefit was untested: skipping `dms` in the
+    // loop left the whole suite green.
+    //
+    // Only the DM section can carry this. `system` is matched by exact name
+    // (`chapter-audit`), so two system rows necessarily share a title and their
+    // sort is vacuous — there is nothing to assert there.
+    const otherDm: ChatChannel = {
+      id: "c-dm2",
+      name: `dm-${VIEWER}-${THIRD}`,
+      type: "DM",
+      member_ids: [VIEWER, THIRD],
+    };
+    // Passed in reverse order, so insertion order fails the assertion.
+    const { container } = renderList([dm, otherDm], undefined, CATEGORIES);
+
+    expect(channelsUnder(container, "Direct messages")).toEqual([
+      "Aaron Alumni",
+      "Alice Chen",
+    ]);
   });
 
   it("sorts by title inside a category, not by arrival order", () => {
