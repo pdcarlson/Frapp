@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   NotFoundException,
@@ -9,6 +10,7 @@ import { PointsService } from './points.service';
 import {
   POINT_TRANSACTION_REPOSITORY,
   IPointTransactionRepository,
+  PointTransactionDuplicateError,
 } from '../../domain/repositories/point-transaction.repository.interface';
 import {
   SEMESTER_ARCHIVE_REPOSITORY,
@@ -82,6 +84,7 @@ describe('PointsService', () => {
   beforeEach(async () => {
     mockPointTxnRepo = {
       create: jest.fn(),
+      findByClientMessageId: jest.fn().mockResolvedValue(null),
       findByUser: jest.fn(),
       findByChapter: jest.fn(),
       findByChapterFiltered: jest.fn(),
@@ -365,6 +368,9 @@ describe('PointsService', () => {
           adjusted_by: 'admin-1',
           reason: 'Good work',
         }),
+        // No key was supplied (a dashboard adjustment), so the row is written
+        // with an explicit null and is not covered by the dedupe index.
+        client_message_id: null,
       });
       expect(result).toEqual(created);
     });
@@ -703,6 +709,229 @@ describe('PointsService', () => {
           expect.objectContaining({
             metadata: expect.objectContaining({ flagged: true }),
           }),
+        );
+      });
+    });
+
+    // #1719: the ledger is append-only, so a retried adjustment that writes a
+    // second row is unrecoverable through the API. These cover the two ways a
+    // replay can arrive — one after the first attempt finished, one racing it.
+    describe('idempotency on client_message_id', () => {
+      const original: PointTransaction = {
+        id: 'pt-original',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: 5,
+        category: 'MANUAL',
+        description: 'great work',
+        metadata: { adjusted_by: 'admin-1', reason: 'great work' },
+        client_message_id: 'cmid-replay',
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+
+      const replay = () =>
+        service.adjustPoints({
+          chapterId: 'ch-1',
+          targetUserId: 'user-2',
+          adminUserId: 'admin-1',
+          amount: 5,
+          category: 'MANUAL',
+          reason: 'great work',
+          channelId: 'chan-1',
+          clientMessageId: 'cmid-replay',
+        });
+
+      it('commit-then-lost-response: the replay writes exactly one ledger row', async () => {
+        // The first attempt committed; its 200 never reached the officer, who
+        // retried with the same key. The pre-check finds the original.
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        const result = await replay();
+
+        expect(result).toBe(original);
+        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+        // Pin the argument ORDER, not just the call. Both parameters are
+        // strings, so swapping them typechecks; in production every pre-check
+        // would then miss, the dedupe would silently never fire, and duplicate
+        // grants would come straight back with every test still green.
+        expect(mockPointTxnRepo.findByClientMessageId).toHaveBeenCalledWith(
+          'ch-1',
+          'cmid-replay',
+        );
+      });
+
+      it('a replay fires no side effect at all', async () => {
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        await replay();
+
+        // Re-notifying would just move the duplicate from the ledger to the
+        // member's phone; re-posting is covered by the channel case below.
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('a replay posts no second chat card, even into another channel', async () => {
+        // The card only LOOKS idempotent. `idx_chat_messages_dedupe` is scoped
+        // (channel_id, sender_id, client_message_id), and the ledger row
+        // records no channel — so a replay naming a different channel would
+        // NOT collide, and would post a second audit card for one ledger row.
+        // For a FINE that re-broadcasts a member's penalty to a wider audience.
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        await service.adjustPoints({
+          chapterId: 'ch-1',
+          targetUserId: 'user-2',
+          adminUserId: 'admin-1',
+          amount: 5,
+          category: 'MANUAL',
+          reason: 'great work',
+          channelId: 'chan-DIFFERENT',
+          clientMessageId: 'cmid-replay',
+        });
+
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      describe('a key reused for a DIFFERENT adjustment is refused, never answered', () => {
+        // The index is chapter-scoped and the key is client-supplied, so a
+        // colliding or replayed key can name another member's row. Returning it
+        // would report "granted" while writing nothing and discarding the
+        // adjustment actually requested — a 200 carrying someone else's data.
+        beforeEach(() => {
+          mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+        });
+
+        const withOverrides = (overrides: Record<string, unknown>) =>
+          service.adjustPoints({
+            chapterId: 'ch-1',
+            targetUserId: 'user-2',
+            adminUserId: 'admin-1',
+            amount: 5,
+            category: 'MANUAL',
+            reason: 'great work',
+            channelId: 'chan-1',
+            clientMessageId: 'cmid-replay',
+            ...overrides,
+          });
+
+        it.each([
+          ['a different target member', { targetUserId: 'user-3' }],
+          ['a different amount', { amount: 50 }],
+          ['a different category', { category: 'FINE' as const }],
+          ['a different reason', { reason: 'something else' }],
+          ['a different acting admin', { adminUserId: 'admin-9' }],
+        ])('409s on %s', async (_label, overrides) => {
+          await expect(withOverrides(overrides)).rejects.toBeInstanceOf(
+            ConflictException,
+          );
+          expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+          expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+        });
+      });
+
+      it('a racing replay is not refused 429 for an adjustment that committed', async () => {
+        // The twin committed between the pre-check and the rate-limit count, so
+        // the count now reads at the ceiling. Reporting 429 would tell the
+        // officer the grant was refused when it had in fact landed.
+        mockChapterPointsConfig.getConfig.mockResolvedValue({
+          adjustment_rate_limit_per_hour: 50,
+          anomaly_threshold: 100,
+        });
+        mockPointTxnRepo.countRecentAdjustments.mockResolvedValue(50);
+        mockPointTxnRepo.findByClientMessageId
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(original);
+
+        const result = await replay();
+
+        expect(result).toBe(original);
+        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('still refuses 429 when the ceiling is real and no replay exists', async () => {
+        mockChapterPointsConfig.getConfig.mockResolvedValue({
+          adjustment_rate_limit_per_hour: 50,
+          anomaly_threshold: 100,
+        });
+        mockPointTxnRepo.countRecentAdjustments.mockResolvedValue(50);
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(null);
+
+        await expect(replay()).rejects.toMatchObject({ status: 429 });
+      });
+
+      it('a replay short-circuits before the rate-limit read', async () => {
+        // Not because a replay would otherwise consume budget — the budget is
+        // counted from committed rows and a replay writes none either way — but
+        // because reaching the limit check first lets an officer at the ceiling
+        // be told 429 for a grant that already landed.
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        await replay();
+
+        expect(mockPointTxnRepo.countRecentAdjustments).not.toHaveBeenCalled();
+      });
+
+      it('racing replays: a unique-index violation returns the winner’s row', async () => {
+        // Both requests missed the pre-check, so the partial unique index
+        // arbitrated. The loser must return the committed row, not a 500.
+        mockPointTxnRepo.findByClientMessageId
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(original);
+        mockPointTxnRepo.create.mockRejectedValue(
+          new PointTransactionDuplicateError('ch-1', 'cmid-replay'),
+        );
+
+        const result = await replay();
+
+        expect(result).toBe(original);
+        expect(mockPointTxnRepo.create).toHaveBeenCalledTimes(1);
+      });
+
+      it('rethrows a duplicate whose original cannot be read back', async () => {
+        // The index fired on a row this chapter cannot see. There is nothing
+        // sane to return, so it must not be reported as a successful grant.
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(null);
+        mockPointTxnRepo.create.mockRejectedValue(
+          new PointTransactionDuplicateError('ch-1', 'cmid-replay'),
+        );
+
+        await expect(replay()).rejects.toBeInstanceOf(
+          PointTransactionDuplicateError,
+        );
+      });
+
+      it('persists the key on the ledger row so a later replay can find it', async () => {
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(null);
+        mockPointTxnRepo.create.mockResolvedValue(original);
+
+        await replay();
+
+        expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ client_message_id: 'cmid-replay' }),
+        );
+      });
+
+      it('a dashboard adjustment sends no key and is not deduplicated', async () => {
+        mockPointTxnRepo.create.mockResolvedValue({
+          ...original,
+          client_message_id: null,
+        });
+
+        await service.adjustPoints({
+          chapterId: 'ch-1',
+          targetUserId: 'user-2',
+          adminUserId: 'admin-1',
+          amount: 5,
+          category: 'MANUAL',
+          reason: 'great work',
+        });
+
+        // No key means no lookup — two deliberate identical grants from the
+        // dashboard are two legitimate rows, not a duplicate.
+        expect(mockPointTxnRepo.findByClientMessageId).not.toHaveBeenCalled();
+        expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ client_message_id: null }),
         );
       });
     });
