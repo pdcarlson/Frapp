@@ -35,6 +35,13 @@ alter table point_transactions
 -- Postgres treats NULLs in a unique index as distinct, and the WHERE clause
 -- keeps them out of the index altogether, so this constrains retried
 -- chat-originated adjustments only.
+--
+-- Chapter-wide scope does mean a key reaches further than the chat one, which
+-- is confined to a single sender's own channel. What contains that is NOT the
+-- index but `PointsService.resolveReplay`: it treats a request as a replay only
+-- when the target, amount, category, reason and acting admin all match the
+-- stored row, and answers 409 otherwise. So a collided or guessed key cannot
+-- suppress a grant or return another member's transaction — it can only refuse.
 create unique index if not exists idx_point_transactions_dedupe
   on point_transactions (chapter_id, client_message_id)
   where client_message_id is not null;
