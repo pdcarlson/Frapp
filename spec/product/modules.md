@@ -179,7 +179,7 @@
 
 ## Alumni
 
-- Alumni is a system role with limited permissions: read chat, view Backwork, view member directory.
+- Alumni is a system role with limited permissions: read chat, view member directory. The seeded set, and why the restrictions are enforced in the domain services rather than by the permission guard, are owned by [`../behavior/alumni.md`](../behavior/alumni.md).
 - **Alumni directory:** Searchable list with optional self-reported fields (graduation year, current city, current company).
 - **Alumni channel:** Default `#alumni` channel seeded on chapter creation.
 - **Donation link:** Optional external URL in chapter settings. "Support the Chapter" button shown to alumni.
