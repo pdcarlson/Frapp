@@ -2,20 +2,10 @@
   "name": "api",
   "version": "0.0.1",
   "imports": {
-    "#domain/adapters": {
-      "types": "./src/domain/adapters/index.ts",
-      "source": "./src/domain/adapters/index.ts",
-      "default": "./dist/domain/adapters/index.js"
-    },
     "#domain/entities": {
       "types": "./src/domain/entities/index.ts",
       "source": "./src/domain/entities/index.ts",
       "default": "./dist/domain/entities/index.js"
-    },
-    "#domain/repositories": {
-      "types": "./src/domain/repositories/index.ts",
-      "source": "./src/domain/repositories/index.ts",
-      "default": "./dist/domain/repositories/index.js"
     },
     "#domain/*": {
       "types": "./src/domain/*.ts",
@@ -76,7 +66,6 @@
   },
   "devDependencies": {
     "@darraghor/eslint-plugin-nestjs-typed": "^7.3.4",
-    "@eslint/eslintrc": "^3.3.6",
     "@eslint/js": "^9.39.5",
     "@nestjs/cli": "^12.0.0",
     "@nestjs/schematics": "^11.1.0",
@@ -94,10 +83,8 @@
     "globals": "^17.11.0",
     "jest": "^30.5.0",
     "prettier": "^3.9.6",
-    "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.4.12",
-    "ts-loader": "^9.6.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
