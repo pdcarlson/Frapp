@@ -65,7 +65,7 @@ export function usePoll(messageId: string) {
   });
 }
 
-export function useVote() {
+export function useVoteOnPoll() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
@@ -91,9 +91,6 @@ export function useVote() {
     },
   });
 }
-
-// Alias so feature code reads naturally — mirrors the mobile naming.
-export const useVoteOnPoll = useVote;
 
 export function useRemoveVote() {
   const client = useFrappClient();
