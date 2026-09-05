@@ -55,6 +55,26 @@ describe('Billing webhook (e2e)', () => {
       .expect(400);
   });
 
+  it('rejects an invalid Stripe signature with 401 and never reaches billing', async () => {
+    // This route is intentionally exempt from the per-IP throttler (see the
+    // burst test below), so signature verification is the only thing standing
+    // between an unauthenticated caller and subscription state. Asserting the
+    // 401 alone would still pass if the event were applied and then rejected,
+    // so the real assertion is that billing was never called.
+    handleWebhookEvent.mockClear();
+    constructWebhookEvent.mockImplementationOnce(() => {
+      throw new Error('No signatures found matching the expected signature');
+    });
+
+    await request(app.getHttpServer())
+      .post(`${V1}/webhooks/stripe`)
+      .set('stripe-signature', 'sig_forged')
+      .send({ type: 'checkout.session.completed' })
+      .expect(401);
+
+    expect(handleWebhookEvent).not.toHaveBeenCalled();
+  });
+
   it('accepts valid signed webhook and forwards to billing service', async () => {
     await request(app.getHttpServer())
       .post(`${V1}/webhooks/stripe`)
