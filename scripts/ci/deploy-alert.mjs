@@ -1,6 +1,16 @@
 #!/usr/bin/env node
-// Terminal reporting job for .github/workflows/deploy-api.yml (see the
-// `deploy-outcome` job). Closes the visibility gap recorded in issue #763:
+// Terminal reporting job for the `deploy-outcome` job of a deploy workflow.
+// WHICH workflow it reports on is chosen by the `ALERT_CONFIG` env var; the
+// configurations live in `ALERT_CONFIGS` below and an unknown name is a hard
+// error, never a silent fallback.
+//
+// Written for .github/workflows/deploy-api.yml, and generalised in #1674 to
+// also watch .github/workflows/deploy-vercel-staging.yml, which shipped in
+// #1578 with no alerting of any kind. Parameterised rather than copied: a
+// second copy of an upsert-one-tracking-issue script is two places for the
+// "an open alert means it is broken right now" contract to drift.
+//
+// Closes the visibility gap recorded in issue #763:
 // `Deploy API` failed 44 of 44 executing runs for 71 days and nobody noticed,
 // because three things compounded —
 //
@@ -11,6 +21,13 @@
 //   2. `workflow_run` failures never land on a commit or a PR the way `CI`
 //      does, so nothing turned red anywhere a human normally looks.
 //   3. There was no notification of any kind.
+//
+// Only (1) is specific to a workflow that HAS a path gate. (2) and (3) are
+// properties of every `workflow_run`-triggered deploy in this repo, which is
+// exactly why `deploy-vercel-staging.yml` needed this too: it has no skip path,
+// so a failure does go red in the Actions list, but there is still no commit
+// status, no PR check and no notification. ADR-21's Git unlink froze both
+// staging hosts and went undetected for days on precisely that gap.
 //
 // This script answers (1) and (3). It runs after every deploy/migrate job in
 // the run and:
@@ -32,7 +49,9 @@
 //   GITHUB_TOKEN       — required (issues: write)
 //   GITHUB_REPOSITORY  — required, owner/repo
 //   DEPLOY_NEEDS       — required, `toJSON(needs)` from the workflow
-//   RUN_URL            — required, html_url of this Deploy API run
+//   ALERT_CONFIG       — which ALERT_CONFIGS entry to use; defaults to
+//                        "deploy-api" so the original call site is unchanged
+//   RUN_URL            — required, html_url of this run
 //   HEAD_BRANCH        — the deployed ref (always `main` since #1340)
 //   HEAD_SHA           — the deployed commit
 //
@@ -54,26 +73,136 @@ import { requireEnv } from "./lib/env.mjs";
 // stable across releases. `routine-state` marks it as routine infrastructure —
 // `/next` §0.2 treats that label as never-claimable, which is what keeps agent
 // sessions from picking the alert up as if it were backlog work.
-export const ALERT_ISSUE_TITLE =
-  "Deploy API is failing — pushes are not reaching the environment";
 export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
-export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
-// The gate job, and the jobs that actually migrate or deploy. Order is the
-// order they are reported in.
+// ── Alert configurations ────────────────────────────────────────────────────
+// One entry per watched deploy workflow. A config is the complete answer to
+// "which jobs am I reading, and which alert issue am I upserting" — everything
+// workflow-specific in this file reads from here, and nothing else does.
 //
-// `migrate-production` and `deploy-production` used to be here. They were
-// deleted from deploy-api.yml with the `production` branch (#1340) — production
-// now deploys through `deploy-production.yml`, a manual dispatch that does its
-// own terminal reporting in its `report` job. A name left here that no workflow
-// emits would report as a permanently missing job.
-//
-// NOTE: `ALERT_ISSUE_TITLE` above is deliberately NOT rescoped to "staging"
-// even though this now only watches staging. The title is the issue LOOKUP KEY,
-// so renaming it orphans any alert issue currently open — it could never be
-// found again, and so never self-close.
-export const GATE_JOB_NAME = "check-changes";
-export const DEPLOY_JOB_NAMES = ["migrate-staging", "deploy-staging"];
+// ⚠️ `alertTitle` is the issue LOOKUP KEY, matched by exact string. Renaming
+// one orphans whatever alert issue is currently open under the old title: it
+// could never be found again, and so would never self-close. Titles are
+// append-only in practice. That is also why the Deploy API title is NOT
+// rescoped to "staging" even though it now only watches staging.
+
+/**
+ * `.github/workflows/deploy-api.yml` — the original, and the default.
+ *
+ * `migrate-production` and `deploy-production` used to be in `deployJobs`.
+ * They were deleted from deploy-api.yml with the `production` branch (#1340) —
+ * production now deploys through `deploy-production.yml`, a manual dispatch
+ * that does its own terminal reporting in its `report` job. A name left here
+ * that no workflow emits would report as a permanently missing job.
+ */
+export const DEPLOY_API_CONFIG = {
+  name: "deploy-api",
+  workflowLabel: "Deploy API",
+  workflowFile: ".github/workflows/deploy-api.yml",
+  gateJob: "check-changes",
+  deployJobs: ["migrate-staging", "deploy-staging"],
+  gateOutputRows: [
+    { label: "API paths changed", output: "api-changed" },
+    { label: "Migration paths changed", output: "migrations-changed" },
+  ],
+  alertTitle: "Deploy API is failing — pushes are not reaching the environment",
+  alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
+  noOpReason: "the changed-path gate skipped every migrate and deploy job",
+  noOpNote:
+    "The changed-path gate (`check-changes`) found no changes under `apps/api/`, " +
+    "`packages/validation/`, `packages/typescript-config/`, or `supabase/migrations/`, " +
+    "so every migrate and deploy job was skipped. **A green run of this shape is not " +
+    "evidence that deploys work** — see issue #763.",
+  whyLines: [
+    "`Deploy API` is triggered by `workflow_run`, so its failures never appear as a PR check or a",
+    "commit status, and runs that skip every job report green. That combination hid a 100% deploy",
+    "failure rate for 71 days (#763). This issue is the notification that was missing.",
+    "",
+    "Background on the original outage: #696.",
+  ],
+};
+
+/**
+ * `.github/workflows/deploy-vercel-staging.yml` — added by #1674.
+ *
+ * `gateJob` is **null**, not a differently-named gate: this workflow has one
+ * job and no changed-path filter at all. Every consumer below has to handle
+ * that, which is why it is spelled as an explicit null rather than omitted.
+ *
+ * P2 rather than the Deploy API alert's P1, and the difference is deliberate.
+ * This watches STAGING web + landing only; production frontend deploys are
+ * `deploy-production.yml`'s, which reports through its own `report` job. A
+ * frozen staging host blocks verification, it does not take a customer
+ * surface down — the same "degraded rather than down" reasoning
+ * `ALERT_ROUTING.md` already applies to the PR base-sync alert.
+ */
+export const DEPLOY_VERCEL_STAGING_CONFIG = {
+  name: "deploy-vercel-staging",
+  workflowLabel: "Deploy Vercel staging",
+  workflowFile: ".github/workflows/deploy-vercel-staging.yml",
+  gateJob: null,
+  deployJobs: ["deploy"],
+  gateOutputRows: [],
+  alertTitle:
+    "Deploy Vercel staging is failing — web and landing are not reaching staging",
+  alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P2"],
+  noOpReason: "no deploy job ran",
+  // Unreachable in practice: the `deploy-outcome` job carries the same `if:`
+  // as the `deploy` job, so whenever it runs, `deploy` ran too. Kept honest
+  // rather than omitted — a config that cannot describe its own no-op would
+  // print "undefined" if that assumption ever stopped holding.
+  noOpNote:
+    "No deploy job ran, so nothing was uploaded to Vercel. **A green run of this shape is not " +
+    "evidence that deploys work.** This is not expected for this workflow — its `deploy-outcome` " +
+    "job carries the same trigger conditions as its `deploy` job, so reaching this state means " +
+    "those two have drifted apart.",
+  whyLines: [
+    "`Deploy Vercel staging` is triggered by `workflow_run`, so its failures never appear as a PR",
+    "check or a commit status — nothing turns red anywhere a human normally looks, and no",
+    "notification is sent. Staging web and landing then quietly stay on the last commit that did",
+    "deploy.",
+    "",
+    "That is not hypothetical: ADR-21 unlinked both Vercel projects from Git, which froze both",
+    "staging hosts, and it went undetected for days. This workflow (#1578) is the replacement",
+    "deploy; this issue (#1674) is the notification it shipped without.",
+  ],
+};
+
+export const ALERT_CONFIGS = {
+  [DEPLOY_API_CONFIG.name]: DEPLOY_API_CONFIG,
+  [DEPLOY_VERCEL_STAGING_CONFIG.name]: DEPLOY_VERCEL_STAGING_CONFIG,
+};
+
+export const DEFAULT_ALERT_CONFIG = DEPLOY_API_CONFIG;
+
+/** Throws on an unknown name. A mis-wired workflow must be loud, not silent. */
+export function resolveAlertConfig(name) {
+  const config = ALERT_CONFIGS[name ?? DEFAULT_ALERT_CONFIG.name];
+  if (!config) {
+    throw new Error(
+      `Unknown ALERT_CONFIG "${name}". Known configurations: ${Object.keys(ALERT_CONFIGS).join(", ")}.`,
+    );
+  }
+  return config;
+}
+
+/**
+ * The jobs this config reads, in the order they are reported. The gate comes
+ * first when there is one; a config with `gateJob: null` reports only its
+ * deploy jobs.
+ */
+export function alertJobNames(config = DEFAULT_ALERT_CONFIG) {
+  return config.gateJob ? [config.gateJob, ...config.deployJobs] : [...config.deployJobs];
+}
+
+// Back-compat named exports for the Deploy API configuration. These are the
+// values this module exported before it was parameterised; keeping them is what
+// lets `deploy-alert.test.mjs` stay byte-identical across #1674, which is the
+// evidence that the Deploy API alert's behaviour did not change.
+export const ALERT_ISSUE_TITLE = DEPLOY_API_CONFIG.alertTitle;
+export const ALERT_ISSUE_LABELS = DEPLOY_API_CONFIG.alertLabels;
+export const GATE_JOB_NAME = DEPLOY_API_CONFIG.gateJob;
+export const DEPLOY_JOB_NAMES = DEPLOY_API_CONFIG.deployJobs;
 
 // Results that mean the job did not do its work. `cancelled` and `timed_out`
 // are included deliberately: a cancelled deploy is not a deploy, and treating it
@@ -87,16 +216,18 @@ export const FAILED_RESULTS = new Set(["failure", "cancelled", "timed_out"]);
  *   "deployed" — nothing failed and at least one migrate/deploy job succeeded
  *   "no-op"    — nothing failed and nothing ran (the green-because-empty case)
  */
-export function classifyDeployOutcome({ jobResults }) {
+export function classifyDeployOutcome({ jobResults, config = DEFAULT_ALERT_CONFIG }) {
   const failed = [];
   const deployed = [];
 
-  for (const name of [GATE_JOB_NAME, ...DEPLOY_JOB_NAMES]) {
+  for (const name of alertJobNames(config)) {
     const result = jobResults[name];
     if (FAILED_RESULTS.has(result)) {
       failed.push(name);
-    } else if (result === "success" && name !== GATE_JOB_NAME) {
-      // The gate succeeding is not a deploy — only the four real jobs count.
+    } else if (result === "success" && name !== config.gateJob) {
+      // The gate succeeding is not a deploy — only the real deploy jobs count.
+      // With `gateJob: null` this comparison is always true, which is correct:
+      // such a config has no gate to exclude.
       deployed.push(name);
     }
   }
@@ -111,24 +242,31 @@ export function classifyDeployOutcome({ jobResults }) {
  * context (renamed or removed) reads as "skipped" rather than throwing, so a
  * future edit to deploy-api.yml degrades to silence instead of a red run.
  */
-export function readJobResults(needs) {
+export function readJobResults(needs, config = DEFAULT_ALERT_CONFIG) {
   const results = {};
-  for (const name of [GATE_JOB_NAME, ...DEPLOY_JOB_NAMES]) {
+  for (const name of alertJobNames(config)) {
     results[name] = needs?.[name]?.result ?? "skipped";
   }
   return results;
 }
 
 /** Human-readable one-liner used in the annotation and the issue body. */
-export function buildHeadline({ outcome, failed, deployed, headBranch }) {
+export function buildHeadline({
+  outcome,
+  failed,
+  deployed,
+  headBranch,
+  config = DEFAULT_ALERT_CONFIG,
+}) {
   const ref = headBranch ? `\`${headBranch}\`` : "this ref";
+  const label = config.workflowLabel;
   if (outcome === "failed") {
-    return `Deploy API FAILED on ${ref} — ${failed.join(", ")} did not succeed. Nothing was deployed by this run.`;
+    return `${label} FAILED on ${ref} — ${failed.join(", ")} did not succeed. Nothing was deployed by this run.`;
   }
   if (outcome === "deployed") {
-    return `Deploy API succeeded on ${ref} — ${deployed.join(", ")} completed.`;
+    return `${label} succeeded on ${ref} — ${deployed.join(", ")} completed.`;
   }
-  return `Deploy API deployed NOTHING on ${ref} — the changed-path gate skipped every migrate and deploy job. This run is green because it declined to deploy, not because a deploy succeeded.`;
+  return `${label} deployed NOTHING on ${ref} — ${config.noOpReason}. This run is green because it declined to deploy, not because a deploy succeeded.`;
 }
 
 /**
@@ -144,9 +282,11 @@ export function buildRunSummary({
   headBranch,
   headSha,
   runUrl,
-  apiChanged,
-  migrationsChanged,
+  // Keyed by the gate job's raw output name, e.g. { "api-changed": true }.
+  // Empty for a config with no gate job, which then renders no changed rows.
+  gateOutputs = {},
   gateSucceeded,
+  config = DEFAULT_ALERT_CONFIG,
 }) {
   const badge = {
     failed: "❌ **FAILED — nothing deployed**",
@@ -160,36 +300,31 @@ export function buildRunSummary({
   const changed = (value) => (gateSucceeded ? (value ? "yes" : "no") : "unknown");
 
   const lines = [
-    "## Deploy API outcome",
+    `## ${config.workflowLabel} outcome`,
     "",
     badge,
     "",
-    buildHeadline({ outcome, failed, deployed, headBranch }),
+    buildHeadline({ outcome, failed, deployed, headBranch, config }),
     "",
     "| | |",
     "| --- | --- |",
     `| Ref | \`${headBranch ?? "unknown"}\` |`,
     `| Commit | \`${headSha ?? "unknown"}\` |`,
-    `| API paths changed | ${changed(apiChanged)} |`,
-    `| Migration paths changed | ${changed(migrationsChanged)} |`,
+    // A config with no gate contributes no rows here, rather than printing
+    // "unknown" for a question its workflow never asks.
+    ...config.gateOutputRows.map(
+      ({ label, output }) => `| ${label} | ${changed(gateOutputs[output])} |`,
+    ),
     "",
     "### Job results",
     "",
     "| Job | Result |",
     "| --- | --- |",
-    ...[GATE_JOB_NAME, ...DEPLOY_JOB_NAMES].map(
-      (name) => `| \`${name}\` | ${jobResults[name]} |`,
-    ),
+    ...alertJobNames(config).map((name) => `| \`${name}\` | ${jobResults[name]} |`),
   ];
 
   if (outcome === "no-op") {
-    lines.push(
-      "",
-      "The changed-path gate (`check-changes`) found no changes under `apps/api/`, " +
-        "`packages/validation/`, `packages/typescript-config/`, or `supabase/migrations/`, " +
-        "so every migrate and deploy job was skipped. **A green run of this shape is not " +
-        "evidence that deploys work** — see issue #763.",
-    );
+    lines.push("", config.noOpNote);
   }
 
   if (runUrl) lines.push("", `- Run: ${runUrl}`);
@@ -197,15 +332,22 @@ export function buildRunSummary({
 }
 
 /** Body for the alert issue when it is first created. */
-export function buildAlertIssueBody({ headline, failed, headBranch, headSha, runUrl }) {
+export function buildAlertIssueBody({
+  headline,
+  failed,
+  headBranch,
+  headSha,
+  runUrl,
+  config = DEFAULT_ALERT_CONFIG,
+}) {
   return [
-    "## Deploy API is failing",
+    `## ${config.workflowLabel} is failing`,
     "",
     headline,
     "",
     "This issue is **opened and closed automatically** by the `deploy-outcome` job in",
-    "`.github/workflows/deploy-api.yml` (`scripts/ci/deploy-alert.mjs`). While it is open, the",
-    "deploy path is broken: the most recent `Deploy API` run that actually tried to deploy did",
+    `\`${config.workflowFile}\` (\`scripts/ci/deploy-alert.mjs\`). While it is open, the`,
+    `deploy path is broken: the most recent \`${config.workflowLabel}\` run that actually tried to deploy did`,
     "not succeed. It closes itself as soon as a later run deploys successfully.",
     "",
     "Do not claim this issue as backlog work — it carries `routine-state` and tracks live state,",
@@ -220,11 +362,7 @@ export function buildAlertIssueBody({ headline, failed, headBranch, headSha, run
     "",
     "### Why this issue exists",
     "",
-    "`Deploy API` is triggered by `workflow_run`, so its failures never appear as a PR check or a",
-    "commit status, and runs that skip every job report green. That combination hid a 100% deploy",
-    "failure rate for 71 days (#763). This issue is the notification that was missing.",
-    "",
-    "Background on the original outage: #696.",
+    ...config.whyLines,
   ]
     .filter((line) => line !== "")
     .join("\n");
@@ -238,11 +376,12 @@ export function buildAlertCommentBody({
   headSha,
   runUrl,
   reopened,
+  config = DEFAULT_ALERT_CONFIG,
 }) {
   const lines = [
     reopened
-      ? "**Deploy API is failing again** — reopening."
-      : "**Deploy API failed again.**",
+      ? `**${config.workflowLabel} is failing again** — reopening.`
+      : `**${config.workflowLabel} failed again.**`,
     "",
     headline,
     "",
@@ -259,9 +398,15 @@ export function buildAlertCommentBody({
 }
 
 /** Body for the comment posted when a deploy succeeds and the alert resolves. */
-export function buildRecoveryCommentBody({ deployed, headBranch, headSha, runUrl }) {
+export function buildRecoveryCommentBody({
+  deployed,
+  headBranch,
+  headSha,
+  runUrl,
+  config = DEFAULT_ALERT_CONFIG,
+}) {
   const lines = [
-    "**Deploy API recovered.** Closing.",
+    `**${config.workflowLabel} recovered.** Closing.`,
     "",
     `\`${deployed.join("`, `")}\` succeeded on \`${headBranch ?? "unknown"}\`.`,
     "",
@@ -284,12 +429,17 @@ export function buildRecoveryCommentBody({ deployed, headBranch, headSha, runUrl
  * lookup then falls through to "create", because a duplicate alert is a better
  * failure mode than silence, and the resolve path closes every match.
  */
-export async function findAlertIssues({ token, repo, fetchImpl }) {
+export async function findAlertIssues({
+  token,
+  repo,
+  fetchImpl,
+  config = DEFAULT_ALERT_CONFIG,
+}) {
   return findAlertIssuesByTitle({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
+    title: config.alertTitle,
     lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
   });
 }
@@ -308,18 +458,27 @@ export async function raiseAlert({
   headBranch,
   headSha,
   runUrl,
+  config = DEFAULT_ALERT_CONFIG,
 }) {
   return raiseAlertIssue({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    labels: ALERT_ISSUE_LABELS,
+    title: config.alertTitle,
+    labels: config.alertLabels,
     lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
     buildIssueBody: () =>
-      buildAlertIssueBody({ headline, failed, headBranch, headSha, runUrl }),
+      buildAlertIssueBody({ headline, failed, headBranch, headSha, runUrl, config }),
     buildCommentBody: ({ reopened }) =>
-      buildAlertCommentBody({ headline, failed, headBranch, headSha, runUrl, reopened }),
+      buildAlertCommentBody({
+        headline,
+        failed,
+        headBranch,
+        headSha,
+        runUrl,
+        reopened,
+        config,
+      }),
   });
 }
 
@@ -336,15 +495,16 @@ export async function resolveAlert({
   headBranch,
   headSha,
   runUrl,
+  config = DEFAULT_ALERT_CONFIG,
 }) {
   return resolveAlertIssue({
     token,
     repo,
     fetchImpl,
-    title: ALERT_ISSUE_TITLE,
+    title: config.alertTitle,
     lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
     buildRecoveryBody: () =>
-      buildRecoveryCommentBody({ deployed, headBranch, headSha, runUrl }),
+      buildRecoveryCommentBody({ deployed, headBranch, headSha, runUrl, config }),
   });
 }
 
@@ -370,13 +530,17 @@ export async function runDeployAlert({
   fetchImpl = fetch,
   writeSummary = defaultWriteSummary,
   logger = console,
+  config = DEFAULT_ALERT_CONFIG,
 }) {
-  const jobResults = readJobResults(needs);
-  const { outcome, failed, deployed } = classifyDeployOutcome({ jobResults });
-  const apiChanged = needs?.[GATE_JOB_NAME]?.outputs?.["api-changed"] === "true";
-  const migrationsChanged =
-    needs?.[GATE_JOB_NAME]?.outputs?.["migrations-changed"] === "true";
-  const headline = buildHeadline({ outcome, failed, deployed, headBranch });
+  const jobResults = readJobResults(needs, config);
+  const { outcome, failed, deployed } = classifyDeployOutcome({ jobResults, config });
+  const gateOutputs = Object.fromEntries(
+    config.gateOutputRows.map(({ output }) => [
+      output,
+      needs?.[config.gateJob]?.outputs?.[output] === "true",
+    ]),
+  );
+  const headline = buildHeadline({ outcome, failed, deployed, headBranch, config });
 
   writeSummary(
     buildRunSummary({
@@ -387,9 +551,12 @@ export async function runDeployAlert({
       headBranch,
       headSha,
       runUrl,
-      apiChanged,
-      migrationsChanged,
-      gateSucceeded: jobResults[GATE_JOB_NAME] === "success",
+      gateOutputs,
+      // A config with no gate job has no gate to succeed. `false` is the safe
+      // reading — but it is also unobservable, because such a config declares
+      // no gateOutputRows, so `changed()` is never called.
+      gateSucceeded: config.gateJob ? jobResults[config.gateJob] === "success" : false,
+      config,
     }),
   );
 
@@ -407,6 +574,7 @@ export async function runDeployAlert({
       headBranch,
       headSha,
       runUrl,
+      config,
     });
     logger.log?.(
       alert.action === "failed"
@@ -425,6 +593,7 @@ export async function runDeployAlert({
       headBranch,
       headSha,
       runUrl,
+      config,
     });
     if (alert.action === "closed") {
       logger.log?.(`[deploy-alert] closed alert issue(s): ${alert.closed.join(", ")}`);
@@ -445,6 +614,11 @@ async function main() {
   const token = requireEnv("GITHUB_TOKEN");
   const repo = requireEnv("GITHUB_REPOSITORY");
   const needs = JSON.parse(requireEnv("DEPLOY_NEEDS"));
+  // Throws on an unknown name. This is the one place a mis-wired workflow can
+  // be caught, so it is deliberately the one place that is strict: falling back
+  // to the default would make a typo'd ALERT_CONFIG write the Deploy API
+  // alert's issue from the wrong workflow's job results.
+  const config = resolveAlertConfig(process.env.ALERT_CONFIG);
   await runDeployAlert({
     token,
     repo,
@@ -452,6 +626,7 @@ async function main() {
     runUrl: process.env.RUN_URL ?? "",
     headBranch: process.env.HEAD_BRANCH ?? "",
     headSha: process.env.HEAD_SHA ?? "",
+    config,
   });
 }
 

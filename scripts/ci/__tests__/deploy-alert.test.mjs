@@ -218,8 +218,7 @@ test("the run summary distinguishes a no-op from a deploy at a glance", () => {
     headBranch: "main",
     headSha: "4de96af",
     runUrl: "https://example.test/run/1",
-    apiChanged: false,
-    migrationsChanged: false,
+    gateOutputs: { "api-changed": false, "migrations-changed": false },
     gateSucceeded: true,
   });
   assert.match(summary, /\| API paths changed \| no \|/);
@@ -238,8 +237,7 @@ test("the failed summary names the failing job and the commit", () => {
     headBranch: "main",
     headSha: "4de96af",
     runUrl: "https://example.test/run/1",
-    apiChanged: true,
-    migrationsChanged: false,
+    gateOutputs: { "api-changed": true, "migrations-changed": false },
     gateSucceeded: true,
   });
   assert.match(summary, /FAILED — nothing deployed/);
