@@ -176,7 +176,11 @@ describe("Infisical call sites", () => {
     // would stop seeing that slug -- silently, since an unmatched line is
     // indistinguishable from a file with no slugs in it.
     for (const { name, text } of workflows) {
-      const lines = linesOf(text);
+      // Comment lines are dropped before the window is taken: a commented-out
+      // `# env-slug: "staging"` sitting near a call site would otherwise satisfy
+      // this, which is the same prose-satisfies-assertion hole the warn check
+      // had. Positional line numbers are kept for the failure message.
+      const lines = linesOf(text).map((l) => (/^\s*#/.test(l) ? "" : l));
       lines.forEach((line, i) => {
         if (!USES_INFISICAL.test(line)) return;
         const window = lines.slice(i, i + 8).join("\n");
@@ -203,7 +207,11 @@ describe("Infisical call sites", () => {
     // REPORT credential drift, so it needs the run to continue -- see its own
     // comment and the input's.
     for (const { name, text } of workflows) {
-      const uses = /on-missing-credentials:\s*warn/.test(text);
+      // Non-comment lines ONLY. staging-conformance.yml's own comment explains
+      // why it passes `on-missing-credentials: warn`, and reading raw text let
+      // that prose satisfy this assertion -- deleting the real input left the
+      // suite green. Caught by mutation-checking this file, not by review.
+      const uses = codeLines(text).some((l) => /on-missing-credentials:\s*warn/.test(l));
       if (name === "staging-conformance.yml") {
         assert.ok(uses, "staging-conformance.yml must keep on-missing-credentials: warn");
         assert.match(
@@ -279,7 +287,10 @@ describe("local actions resolve at every call site", () => {
     // -- it only curls a deploy hook -- and gained one for exactly this reason.
     // That job runs on workflow_run after merge, so no PR would have caught it.
     for (const { name, text } of workflows) {
-      const lines = linesOf(text);
+      // Comments blanked for the same reason as above: a commented-out
+      // `# uses: actions/checkout@v4` must not satisfy the requirement for a
+      // real one.
+      const lines = linesOf(text).map((l) => (/^\s*#/.test(l) ? "" : l));
       let checkedOut = false;
       lines.forEach((line, i) => {
         if (/^  [a-z0-9_-]+:\s*$/.test(line) && i > 3) checkedOut = false;

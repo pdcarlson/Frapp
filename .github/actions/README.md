@@ -13,6 +13,8 @@ action file is not on disk yet when the runner resolves it.
 | Action | What it does |
 | --- | --- |
 | [`turbo-packages-build`](./turbo-packages-build/action.yml) | ADR-15 lever (A): restores the `.turbo` cache and builds `packages/*`. One producer (`packages-build`, `save: "true"`) and seven consumers. |
+| [`infisical-secrets`](./infisical-secrets/action.yml) | The credential preflight plus the `Infisical/secrets-action` injection for one environment. 11 call sites across 6 workflows. |
+| [`supabase-cli`](./supabase-cli/action.yml) | Installs the Supabase CLI at the one pinned version. 4 call sites. Takes **no inputs** — see below. |
 
 ## Rules that are enforced, not just documented
 
@@ -29,6 +31,24 @@ action file is not on disk yet when the runner resolves it.
   that builds through an action here needs `.github/actions/**` in *that* filter list.
   Without it a PR editing only the action skips the job, and a job skipped by a
   job-level `if:` reports **Success** — so a required check passes without running.
+
+- **`infisical-secrets`'s input must stay named `env-slug`, and call sites must pass a
+  quoted literal.** `scripts/check-env-slugs.mjs` finds Infisical environment names by
+  matching `env-slug: "<slug>"` across `.github/workflows` and `.github/actions`. Inside
+  the action the value is `${{ inputs.env-slug }}`, which that scan cannot match — the
+  real literals survive only as the `with:` values at the call sites. Renaming the input,
+  or passing an expression, moves slugs out of the gate's reach while it keeps exiting 0.
+  That is the vacuous green its own section 0 exists to refuse.
+
+- **`supabase-cli` takes no inputs on purpose.** A `version:` input would put the pin back
+  at four call sites. The production apply and the `migration-replay` rehearsal exist to be
+  *the same CLI code path*; a rehearsal on a different build than the apply proves nothing,
+  and the drift is silent — both runs go green. Change the pin in the action, for everybody.
+
+- **A local action needs a checkout in the same job.** `uses: ./…` resolves against the
+  runner workspace. `deploy-api.yml`'s `deploy-staging` job had none — it only fires a
+  deploy hook — and had to gain one. It runs on `workflow_run` after merge, so a PR would
+  never have caught the failure.
 
 ## Why this directory has a README
 
