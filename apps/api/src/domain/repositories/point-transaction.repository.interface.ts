@@ -18,9 +18,7 @@ export class PointTransactionDuplicateError extends Error {
     public readonly chapter_id: string,
     public readonly client_message_id: string,
   ) {
-    super(
-      'Duplicate point_transactions insert (client_message_id collision)',
-    );
+    super('Duplicate point_transactions insert (client_message_id collision)');
     this.name = 'PointTransactionDuplicateError';
   }
 }
