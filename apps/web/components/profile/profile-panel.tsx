@@ -47,7 +47,6 @@ import {
 } from "@/components/shared/nested-states";
 import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { useChapterStore } from "@/lib/stores/chapter-store";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { getErrorMessage, initials } from "@/lib/utils";
 
@@ -88,9 +87,6 @@ export function ProfilePanel() {
   // /profile, has a tenant. With no active chapter there is nothing to read and
   // the query stays disabled; see the `chapterId` branch below.
   const chapterId = useActiveChapterId();
-  // Read straight from the store, not through `useActiveChapterId`, because the
-  // question is whether that hook's `null` means "none" or "not read yet".
-  const hasHydratedChapter = useChapterStore((s) => s.hasHydrated);
   const preferencesQuery = useNotificationPreferences(chapterId ?? "");
   const updatePreference = useUpdateNotificationPreference();
 
@@ -382,14 +378,24 @@ export function ProfilePanel() {
    * nothing, which is the dead-control failure the shared catalog exists to
    * prevent.
    *
-   * `hasHydratedChapter` is the first rung because `activeChapterId` comes from
-   * a persisted zustand store that initializes to `null` (`chapter-store.ts`),
-   * so "no chapter yet" and "no chapter at all" are the same value for the
-   * first paint and through a chapter switch — `subscription-gate.tsx` records
-   * the same window. Telling a member with a chapter that they have none, and
-   * shipping that sentence in the server-rendered HTML, is worse than a
-   * skeleton. `hasHydrated` exists on the store for exactly this and had no
-   * reader until now.
+   * The no-chapter copy is phrased as an instruction rather than a claim about
+   * the member's account, and that is load-bearing. `activeChapterId` comes
+   * from a persisted zustand store that initializes to `null`
+   * (`chapter-store.ts`), so before rehydration — and in the server-rendered
+   * HTML — a member WITH a chapter is indistinguishable from one without;
+   * `subscription-gate.tsx` records the same window. "Select a chapter" is
+   * true in both states, where "you have no chapter" would be a confident
+   * falsehood in one of them.
+   *
+   * Gating this rung on the store's `hasHydrated` was tried and reverted: it
+   * can never become true when `localStorage` access throws (privacy modes,
+   * blocked site data). `createJSONStorage` returns `undefined` there
+   * (`zustand/esm/middleware.mjs:283`) and `hydrate()` early-returns on
+   * `!storage` (`:382`) WITHOUT invoking the rehydration callback, so the flag
+   * sticks at `false` and the card would show a permanent skeleton — to
+   * precisely the members for whom "no active chapter" is actually true, since
+   * nothing can have been persisted. A wrong-for-an-instant sentence is worth
+   * fixing; a card that never resolves is not the way to fix it.
    *
    * `data === undefined` guards the offline and error rungs for the reason the
    * screen-scale block above spells out: TanStack keeps `data` through a
@@ -399,15 +405,11 @@ export function ProfilePanel() {
   const preferencesPaused =
     preferencesQuery.isPending && preferencesQuery.fetchStatus === "paused";
   let categoriesState: React.ReactNode = null;
-  if (!hasHydratedChapter) {
-    categoriesState = (
-      <NestedLoading message="Loading your notification settings..." lines={6} />
-    );
-  } else if (!chapterId) {
+  if (!chapterId) {
     categoriesState = (
       <NestedEmpty
-        title="No active chapter"
-        description="Category switches sync once you join or select a chapter."
+        title="Select a chapter"
+        description="Notification categories are set per chapter, so these switches appear once a chapter is active."
       />
     );
   } else if (isOffline && preferencesQuery.data === undefined) {

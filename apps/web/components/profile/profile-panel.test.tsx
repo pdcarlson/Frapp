@@ -59,11 +59,11 @@ const mocks = vi.hoisted(() => {
     },
     signOutCurrentSession: vi.fn(() => Promise.resolve()),
     // #564's Notifications card. `chapterId` is separate from the query fixture
-    // because the no-active-chapter branch is reached by the ID being null
-    // while the query never runs — the exact pairing that would spin a
-    // skeleton forever if the branches were ordered the other way.
+    // because the no-chapter branch is reached by the ID being null while the
+    // query never runs: `useNotificationPreferences` is `enabled: !!chapterId`,
+    // and a disabled query reports `isLoading: false` (v5 derives it as
+    // `isPending && isFetching`), so it never reaches the loading rung at all.
     chapterId: "chap-1" as string | null,
-    hasHydratedChapter: true,
     preferencesQuery: {
       data: undefined as unknown,
       isPending: false,
@@ -88,13 +88,6 @@ vi.mock("@repo/hooks", () => ({
   useUpdateNotificationPreference: () => ({
     mutateAsync: mocks.updatePreferenceMutateAsync,
   }),
-}));
-
-// Only `hasHydrated` is read from the store; `activeChapterId` reaches the panel
-// through the mocked `useActiveChapterId` above.
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (state: { hasHydrated: boolean }) => unknown) =>
-    selector({ hasHydrated: mocks.hasHydratedChapter }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -680,7 +673,6 @@ describe("ProfilePanel — notification categories (#564)", () => {
     mocks.updatePreferenceMutateAsync.mockResolvedValue({});
     mockOffline.value = false;
     mocks.chapterId = "chap-1";
-    mocks.hasHydratedChapter = true;
     mocks.preferencesQuery.data = [];
     mocks.preferencesQuery.isPending = false;
     mocks.preferencesQuery.isLoading = false;
@@ -821,14 +813,23 @@ describe("ProfilePanel — notification categories (#564)", () => {
   // The branch that has no counterpart on the card above it. With no chapter
   // the query never runs, so it sits pending-and-idle forever; a loading
   // branch checked first would spin a skeleton with nothing on the way.
-  it("explains the no-active-chapter case instead of spinning forever", () => {
+  // The rung's real job: without it the card falls through every branch to
+  // `null` and draws six live-looking switches that the toggle handler then
+  // silently drops at its own `!chapterId` guard — a dead control.
+  //
+  // The fixture is a genuine disabled query: `isPending: true` with
+  // `isLoading: false` and `fetchStatus: "idle"`. An earlier version set
+  // `isLoading: true` alongside `fetchStatus: "idle"`, which TanStack cannot
+  // produce (v5 derives `isLoading = isPending && isFetching`, and a disabled
+  // query never fetches) — so it "proved" a claim about the loading rung that
+  // was never reachable.
+  it("draws no switches at all when no chapter is active", () => {
     mocks.chapterId = null;
     mocks.preferencesQuery.data = undefined;
     mocks.preferencesQuery.isPending = true;
-    mocks.preferencesQuery.isLoading = true;
+    mocks.preferencesQuery.isLoading = false;
     render(<ProfilePanel />);
 
-    expect(screen.getByText(/no active chapter/i)).toBeTruthy();
     expect(screen.queryAllByRole("switch")).toHaveLength(0);
     expect(
       screen.queryByText(/loading your notification settings/i),
@@ -898,16 +899,19 @@ describe("ProfilePanel — notification categories (#564)", () => {
     expect(mocks.updatePreferenceMutateAsync).not.toHaveBeenCalled();
   });
 
-  // The store initialises to `activeChapterId: null`, so before rehydration a
-  // member WITH a chapter is indistinguishable from one without. Asserting "no
-  // active chapter" at them — and shipping that in the server-rendered HTML —
-  // would be a confident falsehood.
-  it("does not claim a hydrating member has no chapter", () => {
-    mocks.hasHydratedChapter = false;
+  // The store initialises to `activeChapterId: null`, so before rehydration —
+  // and in the server-rendered HTML — a member WITH a chapter is
+  // indistinguishable from one without. The copy must therefore not assert
+  // anything about their account; it instructs instead. Gating the rung on the
+  // store's `hasHydrated` was tried and reverted (that flag can never flip when
+  // `localStorage` access throws), so this phrasing is the guard.
+  it("instructs rather than asserting when no chapter is active", () => {
     mocks.chapterId = null;
     render(<ProfilePanel />);
 
+    expect(screen.getByText(/select a chapter/i)).toBeTruthy();
     expect(screen.queryByText(/no active chapter/i)).toBeNull();
+    expect(screen.queryByText(/you have no chapter/i)).toBeNull();
     expect(screen.queryAllByRole("switch")).toHaveLength(0);
   });
 
