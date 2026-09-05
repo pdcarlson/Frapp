@@ -203,10 +203,38 @@ export const LEDGER_ENTRY_PATTERNS = new Map([
     "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md",
     [
       /^[*-] \*\*Migration\*\*: `(\d{14}_[a-z0-9_]+\.sql)`/gm,
-      /^## Rollback .*\((\d{14}_[a-z0-9_]+\.sql)\)[ \t]*$/gm,
+      // Recipe headings name their subject three ways: by filename, by bare
+      // 14-digit version, or by a version glob for a chunk applied together
+      // (`## Rollback Chunk 02 migrations (20260523*)`). Reading only the first
+      // put eleven fully-documented migrations on the allowlist as false debt.
+      // No `$` anchor — these headings often carry a trailing issue ref, and
+      // requiring the parenthetical to end the line silently dropped them.
+      /^## Rollback .*\((\d{14}_[a-z0-9_]+\.sql)\)/gm,
+      /^## Rollback .*\((\d{14})\)/gm,
+      /^## Rollback .*\((\d{6,13}\*)\)/gm,
     ],
   ],
 ]);
+
+/**
+ * Does this ledger's set of captured tokens record the given migration?
+ *
+ * Tokens are not all filenames. A heading may name its subject by bare version
+ * (`(20260803120000)`) or by a glob covering a chunk applied together
+ * (`(20260523*)`), and both are real recipes — treating them as absent is what
+ * put eleven fully-documented migrations on the rollback allowlist as "false
+ * debt". Resolution happens here rather than in `ledgerEntries` because only
+ * the coverage pass knows the migration filenames to resolve against.
+ */
+function tokenCovers(tokens, migration) {
+  if (tokens.has(migration)) return true;
+  const version = migration.slice(0, 14);
+  if (tokens.has(version)) return true;
+  for (const token of tokens) {
+    if (token.endsWith("*") && version.startsWith(token.slice(0, -1))) return true;
+  }
+  return false;
+}
 
 /**
  * The version prefix at which this ratchet was installed. No allowlist entry
@@ -244,9 +272,10 @@ export const RATCHET_VERSION_CEILING = "20260905010000";
  * history was on the page the whole time. If this list grows again, suspect the
  * parser before believing the gap.
  *
- * The rollback list is shorter for a structural reason worth keeping: a
- * rollback recipe is derivable from the migration's own DDL, so those gaps are
- * genuinely fillable by whoever next touches the area.
+ * The rollback list is far shorter (4 vs 35) for a structural reason worth
+ * keeping: a rollback recipe is derivable from the migration's own DDL, so
+ * those gaps get filled by whoever next touches the area, while a promotion
+ * date can only be recovered from the promotion itself.
  */
 export const UNLEDGERED = new Map([
   [
@@ -294,19 +323,8 @@ export const UNLEDGERED = new Map([
     [
       "00000000000000_initial_schema.sql",
       "20250226120000_add_get_points_report_rpc.sql",
-      "20260523120000_chapter_customization.sql",
-      "20260523130000_audit_log.sql",
-      "20260523140000_chapter_directory.sql",
-      "20260523150000_chat_hotpath.sql",
-      "20260803120000_invoice_payment_rpc_and_indexes.sql",
-      "20260803140000_account_deletion_anonymize_user_rpc.sql",
-      "20260809120000_chapter_document_folders.sql",
-      "20260809124500_service_hours_config_and_leaderboard.sql",
       "20260814120000_backfill_chapter_accent_color_from_branding.sql",
-      "20260817170000_event_check_in_zone.sql",
       "20260901020000_study_session_location_reject_streak.sql",
-      "20260902120000_chat_message_bookmarks.sql",
-      "20260902160000_anonymize_user_purge_bookmarks.sql",
     ],
   ],
 ]);
@@ -371,12 +389,12 @@ export function ledgerCoverageProblems(
     const allowed = new Set(unledgered.get(doc) ?? []);
 
     for (const migration of migrations) {
-      if (entries.has(migration) || allowed.has(migration)) continue;
+      if (tokenCovers(entries, migration) || allowed.has(migration)) continue;
       problems.push({ kind: "missing", doc, migration });
     }
 
     for (const migration of allowed) {
-      if (entries.has(migration)) {
+      if (tokenCovers(entries, migration)) {
         problems.push({ kind: "covered", doc, migration });
       } else if (!onDisk.has(migration)) {
         problems.push({ kind: "absent", doc, migration });
@@ -385,9 +403,11 @@ export function ledgerCoverageProblems(
 
     if (HISTORICAL_LEDGERS.has(doc)) continue;
 
-    for (const migration of entries) {
-      if (!onDisk.has(migration)) {
-        problems.push({ kind: "orphan", doc, migration });
+    // Only filename tokens can be orphaned: a bare version or a glob cannot be
+    // resolved to a specific absent file, so silence is the honest answer.
+    for (const token of entries) {
+      if (token.endsWith(".sql") && !onDisk.has(token)) {
+        problems.push({ kind: "orphan", doc, migration: token });
       }
     }
   }
@@ -469,9 +489,31 @@ function validateDocManifest() {
  *
  * Exit 2 throughout: the gate cannot do its job, and no single author caused it.
  */
+/**
+ * Allowlist entries that postdate the ratchet — the shrink-only rule, as a pure
+ * function so it can be tested without driving `process.exit`.
+ *
+ * Versions are fixed-width 14-digit prefixes, so lexicographic comparison is
+ * numeric comparison; `00000000000000_initial_schema.sql` sorts below every
+ * real migration, as intended.
+ */
+export function ratchetViolations(
+  unledgered = UNLEDGERED,
+  ceiling = RATCHET_VERSION_CEILING,
+) {
+  return [...unledgered].flatMap(([doc, allowed]) =>
+    allowed
+      .filter((migration) => migration.slice(0, 14) > ceiling)
+      .map((migration) => ({ doc, migration })),
+  );
+}
+
 function validateLedgerManifest() {
+  // `.length`, not `.has`: a declared-but-EMPTY pattern array parses every doc
+  // as covering nothing, which reports every migration in the tree as `missing`
+  // at exit 1 — the author-blaming outcome this check exists to prevent.
   const undeclared = MIGRATION_DOCS.filter(
-    (doc) => !LEDGER_ENTRY_PATTERNS.has(doc),
+    (doc) => !LEDGER_ENTRY_PATTERNS.get(doc)?.length,
   );
   if (undeclared.length > 0) {
     console.error(
@@ -489,11 +531,7 @@ function validateLedgerManifest() {
     process.exit(2);
   }
 
-  const grown = [...UNLEDGERED].flatMap(([doc, allowed]) =>
-    allowed
-      .filter((migration) => migration.slice(0, 14) > RATCHET_VERSION_CEILING)
-      .map((migration) => ({ doc, migration })),
-  );
+  const grown = ratchetViolations();
   if (grown.length === 0) return;
 
   console.error("Migration safety check failed: UNLEDGERED grew.");
@@ -518,7 +556,7 @@ function validateLedgerManifest() {
  * the migration exists. Measured over the last 400 commits: nineteen migration
  * commits touched the rollback playbook alone and two the promotion runbook
  * alone, which is how the promotion log came to hold 35 entries against 70
- * migrations on disk (55 of 70 have a rollback recipe; only 25 have both). The
+ * migrations on disk (66 of 70 have a rollback recipe; only 33 have both). The
  * most recent migration on `main` exhibits it exactly —
  * `20260905010000_discord_import_archive_quota.sql` has a rollback recipe and
  * no promotion entry.

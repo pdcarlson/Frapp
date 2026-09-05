@@ -8,11 +8,11 @@ const REPO_ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..",
 // of the other check-*.mjs gates); its test lives here so the existing
 // `test:ci-scripts` glob (scripts/ci/__tests__/*.test.mjs) runs it — hence the
 // ../../ reach up.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
 import {
   LEDGER_ENTRY_PATTERNS,
@@ -20,6 +20,7 @@ import {
   RATCHET_VERSION_CEILING,
   UNLEDGERED,
   ledgerCoverageProblems,
+  ratchetViolations,
   ledgerEntries,
   satisfiesPromotionDocs,
   staleDocs,
@@ -383,4 +384,93 @@ test("the allowlists describe real gaps, not padding", () => {
     }
     assert.equal(new Set(allowed).size, allowed.length, `${doc} allowlist has duplicates`);
   }
+});
+
+// ── The ratchet's own enforcement, driven through the shipped CLI ────────────
+// Round-2 review proved these were unpinned: mutating `process.exit(2)` to
+// `exit(1)`, or `grown.length === 0` to `>= 0`, left the whole suite green.
+// Unit-testing the constant is not enough either — a test that reads
+// RATCHET_VERSION_CEILING re-derives the rule from the value it should pin, so
+// raising the ceiling and appending a filename passed. Pin the literal, and run
+// the real gate in a subprocess so exit codes are observed, not assumed.
+
+const GATE = join(REPO_ROOT, "scripts", "check-migration-safety.mjs");
+
+function runGate(env = {}) {
+  const result = spawnSync(process.execPath, [GATE], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+  return { status: result.status, out: `${result.stdout}${result.stderr}` };
+}
+
+test("RATCHET_VERSION_CEILING is pinned to its literal value", () => {
+  // Deliberately a literal, not a re-read of the constant. Raising the ceiling
+  // re-opens the allowlist escape hatch, so it must be a visible decision in a
+  // diff rather than a one-line edit that keeps CI green.
+  assert.equal(RATCHET_VERSION_CEILING, "20260905010000");
+});
+
+test("no allowlist entry is newer than the pinned ceiling", () => {
+  for (const [doc, allowed] of UNLEDGERED) {
+    for (const migration of allowed) {
+      assert.ok(
+        migration.slice(0, 14) <= "20260905010000",
+        `${migration} (${doc}) is newer than the ratchet ceiling`,
+      );
+    }
+  }
+});
+
+test("the shipped gate passes on the current tree", () => {
+  const { status, out } = runGate();
+  assert.equal(status, 0, out);
+});
+
+test("the shipped gate exits 2, not 1, when a declared ledger cannot be read", () => {
+  // Exit 1 means "your change broke a rule"; this is "the gate cannot do its
+  // job". validateDocManifest asks git what is TRACKED, so a doc present in the
+  // index but absent from the worktree reaches the read and used to surface as
+  // a raw ENOENT at exit 1, blaming a blameless author.
+  const moved = `${join(REPO_ROOT, MIGRATION_DOCS[1])}.moved`;
+  renameSync(join(REPO_ROOT, MIGRATION_DOCS[1]), moved);
+  try {
+    const { status, out } = runGate();
+    assert.equal(status, 2, out);
+    assert.match(out, /declared ledger is unreadable/);
+  } finally {
+    renameSync(moved, join(REPO_ROOT, MIGRATION_DOCS[1]));
+  }
+});
+
+test("the shipped gate exits 1 when a migration has no ledger entry", () => {
+  const probe = join(REPO_ROOT, "supabase", "migrations", "29990101000000_ledger_probe.sql");
+  writeFileSync(probe, "-- fixture\n");
+  try {
+    const { status, out } = runGate();
+    assert.equal(status, 1, out);
+    assert.match(out, /29990101000000_ledger_probe\.sql needs an entry/);
+    // Both ledgers, not just one — the whole point of the change.
+    assert.match(out, /DB_PROMOTION_RUNBOOK\.md/);
+    assert.match(out, /DB_ROLLBACK_PLAYBOOK\.md/);
+  } finally {
+    rmSync(probe);
+  }
+});
+
+test("ratchetViolations rejects an entry newer than the ceiling", () => {
+  const violations = ratchetViolations(
+    new Map([["doc.md", ["20260101000000_old.sql", "20990101000000_new.sql"]]]),
+    "20260905010000",
+  );
+  assert.deepEqual(
+    violations,
+    [{ doc: "doc.md", migration: "20990101000000_new.sql" }],
+    "only the post-ceiling entry is a violation",
+  );
+});
+
+test("ratchetViolations accepts the shipped allowlists", () => {
+  assert.deepEqual(ratchetViolations(), []);
 });
