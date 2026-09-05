@@ -66,10 +66,16 @@ type Row = Record<string, unknown>;
  * member from a non-member, so the test would pass no matter what the guard did.
  *
  * Supported: `select` / `insert` / `update` / `delete`, the filters the API's
- * repositories actually use, `order` / `limit`, `single` / `maybeSingle`, and
- * awaiting the builder directly (PostgREST builders are thenable). Unsupported
- * operators are no-ops that widen the result set rather than narrowing it —
- * safe for a test whose assertions are all "this must be rejected".
+ * repositories actually use, `order` / `limit` / `range`, `single` /
+ * `maybeSingle`, and awaiting the builder directly (PostgREST builders are
+ * thenable). Unsupported operators are no-ops that widen the result set rather
+ * than narrowing it — safe for a test whose assertions are all "this must be
+ * rejected".
+ *
+ * `range` is the one exception to that widening rule: it narrows, because a
+ * `range` that ignored its window would make a paged read loop rather than
+ * fail (#1628). `order` does **not** sort, so `range` slices seed order — this
+ * mock cannot prove a paging query carries a stable sort tiebreaker.
  */
 export function createTableAwareSupabaseMock(options: {
   authUser?: SupabaseAuthUser | null;
@@ -148,7 +154,16 @@ export function createTableAwareSupabaseMock(options: {
       contains: jest.fn(() => builder),
       overlaps: jest.fn(() => builder),
       order: jest.fn(() => builder),
-      range: jest.fn(() => builder),
+      // Honours the window, both bounds inclusive, as PostgREST does — and it
+      // has to. Paged reads terminate only on an *empty* page (#1628), so a
+      // `range` that ignored its offset and re-served the same rows forever
+      // would drive a caller into `fetchAllPages`' runaway guard instead of
+      // returning. Note this narrows on *seed order*: `order` below is a
+      // pass-through, so the mock cannot catch a missing sort tiebreaker.
+      range: jest.fn((from: number, to: number) => {
+        rows = rows.slice(from, to + 1);
+        return builder;
+      }),
       limit: jest.fn((n: number) => {
         rows = rows.slice(0, n);
         return builder;
