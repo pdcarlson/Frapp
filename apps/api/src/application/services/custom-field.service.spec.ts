@@ -26,6 +26,12 @@ function makeSupabase(opts: {
   updateResult?: { data?: unknown; error?: unknown };
   /** Rows returned by the list query. */
   listRows?: unknown[];
+  /**
+   * Highest-`sort` row for the chapter, read by `nextSort` before an insert
+   * that supplies no explicit `sort`. `null`/omitted = the chapter has no
+   * fields yet, so the next sort is 0.
+   */
+  highestSortRow?: { sort: number } | null;
 }) {
   const auditInserts: AuditRow[] = [];
   const customFieldInsert = jest.fn();
@@ -49,7 +55,18 @@ function makeSupabase(opts: {
           data: opts.listRows ?? [],
           error: null,
         });
-        return Object.assign(resolved, { order: jest.fn(() => resolved) });
+        return Object.assign(resolved, {
+          order: jest.fn(() => resolved),
+          // nextSort chains .order().limit().maybeSingle() for the top row.
+          limit: jest.fn(() => ({
+            maybeSingle: jest.fn(() =>
+              Promise.resolve({
+                data: opts.highestSortRow ?? null,
+                error: null,
+              }),
+            ),
+          })),
+        });
       });
       builder.eq = jest.fn(() => builder);
       builder.maybeSingle = jest.fn(() =>
@@ -150,6 +167,46 @@ describe('CustomFieldService', () => {
         target_id: created.id,
         member_visible: true,
       });
+    });
+
+    it('appends after the highest existing sort when none is supplied', async () => {
+      // The Fields tab sends no `sort`. A fixed default of 0 would place every
+      // hand-added field ahead of the fields seeded at onboarding (#572), since
+      // findByChapter orders by sort then created_at.
+      const supabase = makeSupabase({
+        highestSortRow: { sort: 7 },
+        insertResult: { data: { id: 'f9' }, error: null },
+      });
+      const service = await buildService(supabase);
+
+      await service.create(CHAPTER_ID, ACTOR_ID, {
+        key: 'nickname',
+        label: 'Nickname',
+        type: 'text',
+      });
+
+      expect(supabase.customFieldInsert).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 8 }),
+      );
+    });
+
+    it('honours an explicitly supplied sort', async () => {
+      const supabase = makeSupabase({
+        highestSortRow: { sort: 7 },
+        insertResult: { data: { id: 'f9' }, error: null },
+      });
+      const service = await buildService(supabase);
+
+      await service.create(CHAPTER_ID, ACTOR_ID, {
+        key: 'nickname',
+        label: 'Nickname',
+        type: 'text',
+        sort: 2,
+      });
+
+      expect(supabase.customFieldInsert).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 2 }),
+      );
     });
 
     it('rejects a select field with no choices and does not audit', async () => {

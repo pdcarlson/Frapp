@@ -1,14 +1,14 @@
 import {
   buildCustomFieldRows,
   slugifyFieldKey,
+  SEED_SORT_BASE,
 } from './custom-field-provisioning';
+import { CUSTOM_FIELDS_SEED } from '@repo/org-archetypes';
 import type { CustomFieldEntry } from '@repo/org-archetypes';
 
-// `@repo/org-archetypes` ships ESM-only dist that the API's jest setup doesn't
-// transform, and the module under test imports only its *types* (erased at
-// compile time). So these fixtures mirror the real CUSTOM_FIELDS_SEED shape
-// rather than importing it — the mapping is what's under test here, not the
-// seed's contents.
+// The fixtures below exercise the mapping's branches; the `CUSTOM_FIELDS_SEED`
+// block at the bottom pins the real seed, which `packages/org-archetypes` has
+// no tests of its own for.
 const CHAPTER = 'ch-1';
 
 function entry(over: Partial<CustomFieldEntry> = {}): CustomFieldEntry {
@@ -160,7 +160,9 @@ describe('buildCustomFieldRows', () => {
       entry({ id: 'cf_1', label: 'Major' }),
     ]);
 
-    expect(skipped).toEqual(['cf_4']);
+    expect(skipped).toEqual([
+      'cf_4: A select field requires a non-empty options.choices list',
+    ]);
     expect(rows).toHaveLength(1);
     expect(rows[0].key).toBe('major');
     // The surviving entry keeps its original seed index, not a re-packed one.
@@ -174,7 +176,42 @@ describe('buildCustomFieldRows', () => {
 
     expect(skipped).toEqual([]);
     expect(rows[0].key).toBe('cf_9');
-    expect(rows[0].key).toMatch(/^[a-z0-9_]+$/);
+  });
+
+  it('slugifies the fallback id rather than trusting it verbatim', () => {
+    // `key` is immutable after creation and the create contract enforces
+    // /^[a-z0-9_]+$/, so writing a raw `cf-9` would be a row no officer could
+    // have made and that cannot be edited afterwards.
+    const { rows, skipped } = buildCustomFieldRows(CHAPTER, [
+      entry({ id: 'cf-9', label: '???' }),
+    ]);
+
+    expect(skipped).toEqual([]);
+    expect(rows[0].key).toBe('cf_9');
+  });
+
+  it('skips an entry when neither its label nor its id yields a usable key', () => {
+    const { rows, skipped } = buildCustomFieldRows(CHAPTER, [
+      entry({ id: '???', label: '!!!' }),
+    ]);
+
+    expect(rows).toEqual([]);
+    expect(skipped).toEqual([
+      '???: no unused key could be derived from its label or id',
+    ]);
+  });
+
+  it('skips a duplicate seed id instead of seeding two fields for it', () => {
+    // Copy-pasting a seed line without bumping the id: the second entry's label
+    // slug is taken, so it would otherwise fall back to the shared id -- which
+    // nothing had reserved -- and land as a duplicate field, silently.
+    const { rows, skipped } = buildCustomFieldRows(CHAPTER, [
+      entry({ id: 'cf_5', label: 'Dietary' }),
+      entry({ id: 'cf_5', label: 'Dietary' }),
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(skipped).toEqual(['cf_5: duplicate seed id']);
   });
 
   it('falls back to the seed id when two labels slugify identically', () => {
@@ -216,5 +253,41 @@ describe('buildCustomFieldRows', () => {
       rows: [],
       skipped: [],
     });
+  });
+});
+
+// The fixture tests above prove the mapping's branches; these prove the thing
+// that actually ships. `packages/org-archetypes` has no test files, so without
+// this block a bad seed edit -- a `select` with no choices, two labels
+// slugifying together, a hyphenated id -- would be dropped from every newly
+// onboarded chapter with nothing but a log line, and the suite would stay green.
+describe('CUSTOM_FIELDS_SEED (the real seed, as shipped)', () => {
+  const { rows, skipped } = buildCustomFieldRows(CHAPTER, CUSTOM_FIELDS_SEED);
+
+  it('maps every entry — nothing is silently dropped', () => {
+    expect(skipped).toEqual([]);
+    expect(rows).toHaveLength(CUSTOM_FIELDS_SEED.length);
+  });
+
+  it('derives a unique, contract-legal key for every entry', () => {
+    const keys = rows.map((row) => row.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const key of keys) expect(key).toMatch(/^[a-z0-9_]+$/);
+  });
+
+  it('gives every select entry a non-empty options.choices', () => {
+    const selects = rows.filter((row) => row.type === 'select');
+    expect(selects.length).toBeGreaterThan(0);
+    for (const row of selects) {
+      expect(
+        (row.options as { choices: string[] }).choices.length,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('numbers sort contiguously from the seed base', () => {
+    expect(rows.map((row) => row.sort)).toEqual(
+      CUSTOM_FIELDS_SEED.map((_, index) => SEED_SORT_BASE + index),
+    );
   });
 });

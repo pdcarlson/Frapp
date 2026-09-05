@@ -191,7 +191,12 @@ export class ChapterOnboardingService {
       .from('chapter_custom_fields')
       .upsert(rows, { onConflict: 'chapter_id,key', ignoreDuplicates: true });
     if (error) {
-      this.logger.warn('chapter_custom_fields seed insert failed', error);
+      // `error`, not `warn`: a failure here is silent from the officer's side —
+      // onboarding still returns 201 — and it fails for *every* chapter, not
+      // one, since the rows are identical each time. A wrong conflict target or
+      // a renamed column would otherwise seed nothing indefinitely with no
+      // signal above debug noise.
+      this.logger.error('chapter_custom_fields seed insert failed', error);
     }
   }
 
