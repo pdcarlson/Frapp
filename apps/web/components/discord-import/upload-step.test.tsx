@@ -149,6 +149,52 @@ describe("UploadStep — a refused registration", () => {
     expect(confirmed).toContain("p/photo-0.png");
   });
 
+  it("reports the reason that actually stopped the run, not an earlier unrelated one", async () => {
+    // A real export carries one rejected file early on; the archive fills up
+    // much later. Latching the FIRST reason would blame the `.exe` for a quota
+    // refusal 290 batches later — and, because a reason is present, would hide
+    // the panel's generic advice too. The admin deletes the .exe, re-picks, and
+    // is refused in exactly the same place.
+    const requestUrls = vi
+      .fn()
+      .mockRejectedValueOnce({
+        message: '"gamehack.exe" is a file type the archive does not accept.',
+        statusCode: 400,
+      })
+      .mockResolvedValueOnce([])
+      .mockRejectedValue({ message: QUOTA_MESSAGE, statusCode: 400 });
+
+    renderStep({ requestUrls });
+
+    pick(mediaFiles(600));
+
+    await waitFor(() => {
+      expect(screen.getByText(QUOTA_MESSAGE)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/gamehack\.exe/)).toBeNull();
+  });
+
+  it("counts the files it never attempted, not just the ones it was refused", async () => {
+    // Stopping early leaves the rest unsent, and they are still missing from
+    // the archive. Reporting only the refused batches told an admin whose
+    // 600-file archive stopped at batch 3 that 300 files needed attention.
+    const requestUrls = vi.fn().mockRejectedValue({
+      message: QUOTA_MESSAGE,
+      statusCode: 400,
+    });
+    const onStaged = vi.fn();
+    renderStep({ requestUrls, onStaged });
+
+    pick(mediaFiles(600));
+
+    await waitFor(() => expect(onStaged).toHaveBeenCalled());
+    // 3 batches attempted and refused (300), 300 never sent.
+    expect(onStaged.mock.calls[0]?.[0]).toMatchObject({ pendingUploads: 600 });
+    expect(
+      screen.getByText(/300 of them were never attempted/),
+    ).toBeInTheDocument();
+  });
+
   it("reports the reason even when confirming then fails", async () => {
     // Said before the confirm loop for this reason: a transient failure there
     // sends control to the outer catch, and a reason reported after it would

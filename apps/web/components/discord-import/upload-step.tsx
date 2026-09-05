@@ -118,6 +118,9 @@ export function UploadStep({
   // toasted: a toast is dismissible and the failures panel is the surface an
   // admin is still looking at when they decide what to do next.
   const [mintFailure, setMintFailure] = useState<string | null>(null);
+  // Files the run never sent, because it stopped early. Distinct from
+  // `failures`, which holds only what was sent and refused.
+  const [unattempted, setUnattempted] = useState(0);
 
   const handleFiles = useCallback(
     async (fileList: FileList | null) => {
@@ -128,6 +131,7 @@ export function UploadStep({
         setStatus("reading");
         setFailures([]);
         setMintFailure(null);
+        setUnattempted(0);
         setUploaded(0);
 
         const channels = new Map<string, StagedChannel>();
@@ -195,9 +199,15 @@ export function UploadStep({
         // run can end by SAYING it rather than reporting a silent failure count.
         let mintFailureReason: string | null = null;
         let consecutiveMintFailures = 0;
+        // Files whose batch was actually sent. After an early break the rest
+        // were never attempted, and they are still missing from the archive —
+        // counting only the refused ones would report a 5,000-file archive
+        // stopped at batch 3 as "300 files did not upload".
+        let attempted = 0;
 
         for (let i = 0; i < pending.length; i += MINT_BATCH) {
           const batch = pending.slice(i, i + MINT_BATCH);
+          attempted += batch.length;
           let tickets;
           try {
             tickets = await requestUrls.mutateAsync({
@@ -226,13 +236,17 @@ export function UploadStep({
             // would then re-send everything from byte zero, for hours, only to
             // be refused at the same batch. Confirming what landed is what
             // makes the refusal recoverable.
-            if (!mintFailureReason) {
-              mintFailureReason = getErrorMessage(
-                error,
-                "Some files could not be registered for upload.",
-              );
-              setMintFailure(mintFailureReason);
-            }
+            // The MOST RECENT reason, not the first. The stop below is caused
+            // by the last three failures, so latching the first would report an
+            // unrelated earlier rejection — one bad `.exe` in batch 7 — as the
+            // explanation for a quota refusal at batch 300, while also
+            // suppressing the panel's generic advice. The admin would delete the
+            // .exe, re-pick, and be refused in exactly the same place.
+            mintFailureReason = getErrorMessage(
+              error,
+              "Some files could not be registered for upload.",
+            );
+            setMintFailure(mintFailureReason);
             failed.push(...batch.map((entry) => entry.relativePath));
             setFailures((prev) => [
               ...prev,
@@ -312,6 +326,8 @@ export function UploadStep({
         // transient confirm error and no trace of the refusal that actually
         // stopped the archive. It also persists in `mintFailure` state, which
         // the failures panel renders, so it survives the toast being dismissed.
+        setUnattempted(pending.length - attempted);
+
         if (mintFailureReason) {
           toast({ variant: "destructive", description: mintFailureReason });
         }
@@ -339,7 +355,8 @@ export function UploadStep({
           exportCount: staged.filter((entry) => entry.kind === "export").length,
           mediaCount: staged.filter((entry) => entry.kind === "media").length,
           resumedCount: skipped,
-          pendingUploads: failed.length,
+          // Everything still missing: refused, plus never sent.
+          pendingUploads: failed.length + (pending.length - attempted),
         });
       } catch (error) {
         // This runs as `void handleFiles(...)`, so an escaping rejection would
@@ -418,7 +435,10 @@ export function UploadStep({
       {failures.length > 0 ? (
         <div className="rounded-md border border-border p-3 text-sm">
           <p className="font-semibold text-destructive-text">
-            {failures.length} file(s) did not upload
+            {failures.length + unattempted} file(s) did not upload
+            {unattempted > 0
+              ? ` — ${unattempted} of them were never attempted, because the upload stopped early`
+              : null}
           </p>
           {/*
             When the server said why, say that instead of guessing. The generic

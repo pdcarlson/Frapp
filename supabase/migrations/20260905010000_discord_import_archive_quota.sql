@@ -260,7 +260,17 @@ begin
     i.bucket, i.storage_path, i.content_type, i.byte_size
     from incoming i
   on conflict (import_id, relative_path) do update
-    set part_index   = excluded.part_index,
+    -- `part_index` refreshes, but never to NULL on a row that is an export
+    -- part. `kind` is pinned, so a re-registration declaring the same path as
+    -- `media` (which carries `part_index: null`) would otherwise null the index
+    -- of a row that stays `kind = 'export'` — and the worker sorts parts by
+    -- `part_index ?? 0` into a POSITIONAL cursor, so one nulled index reorders
+    -- the whole walk. Guarded off the pinned `t.kind`, not the incoming one.
+    set part_index   = case
+          when t.kind = 'export' and excluded.part_index is null
+            then t.part_index
+          else excluded.part_index
+        end,
         content_type = coalesce(excluded.content_type, t.content_type),
         byte_size    = case
           when t.byte_size is null and excluded.byte_size is null then null
