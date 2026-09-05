@@ -237,7 +237,8 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   `` `agent-suggestion: v1 fp=human/<slug> source=<...>` `` (namespaces partition lifecycle
   ownership — PR Follow-ups owns both `pr-followup/` and `human/`). The `fp=` grammar is unchanged,
   so existing dedup queries keep working, and **legacy comment-form markers remain valid** — they
-  are stored, merely unreadable, so a missing marker means "unknown", never "absent". Ad-hoc
+  are stored, and readable again as of 2026-09-05 — but a missing marker still means "unknown",
+  never "absent", because that reading survives the next flip and a re-file does not. Ad-hoc
   filings (`/next` follow-ups, review deferrals) need no marker.
 - **Search before filing** (`search_issues`, open **and** closed) — refresh a near-match instead
   of duplicating it. This applies to every filing path, marker or not.
@@ -275,12 +276,16 @@ every run, so a hand-edit there is both overwritten and capable of destroying it
 
 ## Reading a body you intend to rewrite (MCP read fidelity)
 
-**Every GitHub MCP read path returns an issue body faithfully — measured 2026-09-05.** All three
-vectors that used to corrupt a read are clear on all three paths. **This has now flipped four
-times, so the measurement, not the prose, is what you trust**: re-run [the probe](#re-verifying-this-the-probe)
+**The four read paths in the table below return an issue body faithfully — measured 2026-09-05.**
+All three vectors that used to corrupt a read are clear on each. **This has now flipped four times,
+so the measurement, not the prose, is what you trust**: re-run [the probe](#re-verifying-this-the-probe)
 before any bulk rewrite, and treat a stale date on this table as "unknown", not "fine".
 
-| Read path | HTML comments (`fp=` markers) | HTML/JSX tags | `'` `"` `&` `>` | Safe to re-body from? |
+"The four in the table" is meant literally — `search_pull_requests`, `pull_request_read
+get_comments` and review comments were **not** probed, so say "measured on the paths below" rather
+than "the MCP is fine". An unmeasured path is unknown, not clean.
+
+| Read path | HTML comments (`fp=` markers) | HTML/JSX tags | `'` `"` `&` `>` `<` | Safe to re-body from? |
 | --- | --- | --- | --- | --- |
 | `issue_read method:get` | ✅ intact | ✅ intact | ✅ literal | **Yes**, as of 2026-09-05 |
 | `list_issues fields:["body"]` | ✅ intact | ✅ intact | ✅ literal | **Yes**, as of 2026-09-05 |
@@ -302,7 +307,7 @@ The three vectors, kept here because a future regression will present as one of 
    insurance against the next flip, not a workaround for the last one.
 2. **Unrecognised tags**, including JSX *inside fenced code blocks*. Unrecoverable by convention: a
    dropped marker can be reconstructed from `fp=<area>/<slug>`, a dropped code snippet cannot.
-3. **`'`, `"`, `&`, `>` entity-escaped** — inside code fences the quoted JSON, SQL and shell stop
+3. **`'`, `"`, `&`, `>`, `<` entity-escaped** (as `&#39;` `&#34;`/`&quot;` `&amp;` `&gt;` `&lt;`) — inside code fences the quoted JSON, SQL and shell stop
    being copy-pasteable. This vector alone *is* mechanically reversible.
 
 The tag sanitizer, when active, is **allowlist-based, not blanket** — `<br>` survives while
@@ -322,15 +327,34 @@ read raw over REST): **#357** (repaired), and **#714 #1034 #1146 #1150 #1164 #12
 (identified, repair tracked in **#1737**). #1381 is the worst — the owner's own quoted words carry
 `&#39;`/`&#34;`, and escaped `&gt;` has broken its blockquotes.
 
+**That scan covered the most recent regression only, and the damage is probably older.** The window
+starts at 2026-08-19 because that is when `search_issues` joined the defect — but the version of
+this section it replaces recorded `issue_read` and `list_issues` as escaping entities **"always"**.
+So any body rewritten from one of those before 2026-08-19, and untouched since, was never looked at
+and is not in the nine. **Do not read a clean re-run of the same `since=2026-08-19` scan as a clean
+corpus.** Widening the window is cheap — the recipe takes `since` as a parameter — and #1737 carries
+it as an open question rather than an assumption.
+
 Re-run the scan with the recipe in [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body).
 Three hits are **legitimate and expected**: #1736 (the fixture stores escapes on purpose), #1725,
 and #357's repair note — each quotes an escape sequence as documentation rather than suffering one.
 
-**The other read surfaces are clear too.** **Issue comments** (`issue_read get_comments`) were
+**Issue comments are clear; PR bodies are only partly measured.** `issue_read get_comments` was
 re-measured 2026-09-05 against [#1736's comment control](https://github.com/pdcarlson/Frapp/issues/1736#issuecomment-5552915853),
-which carries the same three vectors: all intact. **PR bodies** (`pull_request_read get`) return
-vector 3 literally in the same session. When the sanitizer *is* active it runs on all of these, so a
-regression will show up here as well as in issue bodies — re-check a comment, not only a body.
+which carries all three vectors: all intact.
+
+**PR bodies have no fixture.** `pull_request_read get` was observed returning **vector 3** literally
+in the same session, and — spot-checked during review — PR **#1136**'s body now returns
+`` `agent-suggestion: v1 fp=<area>/<slug> file=<path>` `` intact, the exact string recorded on
+2026-08-20 as coming back `fp=/ file=`. That is two observations, not a fixture: there is no
+PR-side control carrying all three vectors, so treat PR bodies as *probably* clean and
+*not measured*. So the standing PR-body advice is unchanged, and
+does not depend on the table above: **a PR body you compose with tags or `fp=` placeholders in it is
+stored correctly even if it reads back mangled** (proven 2026-08-20 by reading PR #1136 back as
+`fp=/ file=` while the rendered page showed the placeholders intact). Never "fix" a PR body on the
+strength of an MCP read, and quote a PR's text to a human from the rendered page or the raw API,
+not from `pull_request_read`. When the sanitizer *is* active it runs on comments and PR bodies too,
+so a regression shows up in all of them — re-check a comment, not only a body.
 
 ### The operative rule
 
@@ -353,7 +377,7 @@ That is a conditional permission, not a standing one — this defect has flipped
 - **If the probe is red, fall back to the old rule:** never source a rewrite from a read; append a
   comment instead; and if you must rewrite, take the body from REST, confirm it holds **no HTML
   comment and no tags anywhere including inside code fences**, and un-escape vector 3
-  (`&#39;`→`'`, `&#34;`→`"`, `&amp;`→`&`, `&gt;`→`>`) before writing back. Deleted content cannot be
+  (`&#39;`→`'`, `&#34;`→`"`, `&quot;`→`"`, `&amp;`→`&`, `&gt;`→`>`, `&lt;`→`<`) before writing back. **All six** — an earlier version of this list named four, and three of the nine damaged bodies below carry `&lt;` and nothing else, so a four-substitution pass would have declared them repaired while leaving them broken. Deleted content cannot be
   un-deleted; only escaping is reversible — which is exactly how the nine damaged bodies above
   happened, and why they were recoverable.
 
@@ -430,7 +454,7 @@ silently stopped being runnable — a rotted probe that still *looked* like a co
 | 2 | `list_issues` `state:OPEN labels:["routine-state"] fields:["number","title","body"]` | Same, for #1736's entry | ✅ all three |
 | 3 | `search_issues` `"MCP read-fidelity probe control fixture"`, `fields:["number","title","body"]` | Same | ✅ all three |
 | 4 | [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body) of #1736 | Ground truth — steps 1-3 must agree with it | ✅ byte-identical to all three |
-| 5 | `issue_read get_comments` on #1736 | The comment control carries the same three vectors | ✅ all three |
+| 5 | `issue_read get_comments` on #1736 | Two comment controls: one carrying all three vectors, one extending vector 3 to **bare `<`** and re-testing vector 2 for a *lowercase* unknown tag (`<not a tag>`, `<name>`) | ✅ all vectors on both |
 | 6 | `search_issues` a real `fp=` and a fabricated one | 1 precise hit / 0 hits | ✅ both correct — lookup healthy |
 
 **State which vectors and which paths a re-verification covered.** A check naming only HTML comments
@@ -439,14 +463,27 @@ one that decides the answer, because it is the only vector whose failure destroy
 irrecoverably. Steps 1-3 disagreeing with step 4 means the read is lossy; steps 1-3 *agreeing* with
 step 4 means it is faithful, whatever this document's table says.
 
-**Known gap in this fixture, stated so it is not mistaken for a pass.** The probe measures what a
-read *returns*; it does **not** measure whether the search **index** matches text that exists only
-inside an HTML comment. #1736 cannot answer that — every comment-borne string in it also appears as
-visible text (in the answer key, or quoted in a code span), which is what makes the fixture readable
-but also makes it non-discriminating for this one question. That matters only for pre-2026-08-20
-comment-form `fp=` markers; every marker written since is a visible line, which the index indexes.
-Adding a discriminator would mean a string that appears **only** inside a comment — worth doing if
-the legacy-marker audit in #697 is ever run.
+**Run step 5, not only steps 1-3.** The fixture's *body* contains no bare `<` outside a tag, so the
+body alone cannot discriminate `&lt;`-escaping — and that is not a hypothetical gap: three of the
+nine damaged bodies below (#1034, #1164, #1521) carry `&lt;` **and nothing else**, so a probe that
+skipped step 5 would have called vector 3 green while exactly that damage was being written. The
+second comment control closes it, and also re-tests vector 2 for a *lowercase* unknown tag, which
+an allowlist-based sanitizer need not treat the same as a capitalised JSX-style one.
+
+Vector 2's coverage is still **narrow in shape**: every non-allowlisted token in the fixture is a
+bare tag name (`Tabs.Screen`, `not a tag`, `name`). A sanitizer keyed on *attributes* rather than
+tag names would pass this probe and still eat content. If you are extending the fixture, a second
+shape — an unknown tag carrying an event-handler or `style` attribute — is the cheapest thing to
+add.
+
+**Known gap, stated so it is not mistaken for a pass.** The probe measures what a read *returns*; it
+does **not** measure whether the search **index** matches text that exists only inside an HTML
+comment. #1736 cannot answer that — every comment-borne string in it also appears as visible text
+(in the answer key, or quoted in a code span), which is what makes the fixture readable but also
+makes it non-discriminating for this one question. That matters only for pre-2026-08-20 comment-form
+`fp=` markers; every marker written since is a visible line, which the index indexes. Adding a
+discriminator would mean a string that appears **only** inside a comment — worth doing if the
+legacy-marker audit in #697 is ever run.
 
 ### The direct REST read (ground truth for a raw body)
 

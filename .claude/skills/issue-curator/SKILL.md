@@ -31,8 +31,8 @@ unavailable, stop and report — no fallback**: no `gh`, no REST, no scratch fil
 substitute for the MCP on tracker work, read or write** — reachability is route-dependent, not
 session-dependent, and that changes nothing. The carve-out is only for provider settings the MCP
 exposes no tool for (branch protection, environments, rulesets, repo visibility,
-`vulnerability-alerts`) and the raw-`body` verification read under the escape hatch below — never
-issues, PRs or comments. The label roster and shared routine config live in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+`vulnerability-alerts`) and the raw-`body` verification read the read-fidelity section below
+licenses — never issues, PRs or comments. The label roster and shared routine config live in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
 ## Ownership boundary (read first — hard invariant)
 
@@ -72,7 +72,7 @@ per issue, grounded in **current code and `spec/`** (not a hunch):
 | Referenced behavior now **exists / implemented** — the suggestion is **done** | Close as **`completed`** + comment citing the proving file/path (and PR if known) |
 | Code/spec **moved on** so it's **moot / superseded** | Close as **`not_planned`** + comment why it's obsolete |
 | **Duplicate** of another `suggestion` issue | **Close the newer/worse-specified one** as `duplicate` with `duplicate_of` the canonical, comment the link. Never edit the canonical beyond a back-link |
-| Intent **still valid** but file/line refs or context **drifted** | **Comment the correction** (the drifted paths/snippet/spec quote, and an [Agent brief](#agent-brief) if missing) — a comment is lossless, and re-bodying means round-tripping the body through a lossy read. Rewrite the description only when you author the whole replacement, or under the escape hatch; if you do, keep the `fp=` marker. Leave open |
+| Intent **still valid** but file/line refs or context **drifted** | **Correct the body** when the fidelity probe is green (it is, as of 2026-09-05) — a drifted body is what wastes the next reader's run, and a stack of correcting comments is a poor substitute for an accurate issue. **Comment instead when the probe is red**, or when you cannot re-run it. Either way keep the `fp=` marker, and include an [Agent brief](#agent-brief) if one is missing. Leave open |
 | **Aging / uncertain** — you **cannot prove** resolved/duplicate/obsolete | Add the **`stale`** label + a short comment ("no longer matches X as of <date>; confirm or close"). **Leave it open** |
 | Still accurate and active | **Skip** — leave untouched |
 

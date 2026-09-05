@@ -41,12 +41,18 @@ fallback.** The label roster and shared routine config live in
 > the probe against fixture #1736 before a bulk pass. The same hazard applies to every routine that
 > re-bodies an issue.
 >
-> **Agent-brief backfills are blocked again — and that is the correct behavior.** Runs on
-> 2026-08-10 and -08-12 refused to write briefs; 2026-08-14 unblocked them on the strength of
-> `search_issues` being lossless; the 2026-08-20 run refused again, correctly, because it is not.
-> **Add a brief by leaving a comment**, or by authoring the full replacement body yourself under
-> the escape hatch. Do not round-trip a body through a read to add a brief to it — that is exactly
-> the destructive edit Pass A step 3 and Pass B would otherwise perform at scale.
+> **Agent-brief backfills have been blocked and unblocked four times.** Refused 2026-08-10 and
+> -08-12; allowed 2026-08-14; refused again 2026-08-20; **allowed again 2026-09-05** on a fixture
+> round-trip through all three read paths. That history is the reason the rule is written as a
+> measurement rather than a verdict: **re-run the probe against #1736 at the start of a run that
+> intends to backfill briefs into existing bodies**, and record in the run log that you did. A
+> backfill pass touches ~25 bodies, so it is precisely the case the operative rule's one condition
+> exists for.
+>
+> **When the probe is red, add a brief by leaving a comment instead** — or by authoring the full
+> replacement body yourself, which is safe in every round. Never round-trip a body through a lossy
+> read to add a section to it; that is the destructive edit Pass A step 3 and Pass B would
+> otherwise perform at scale.
 >
 > **What still works:** the `fp=` **lookup**. `search_issues` resolves fingerprints precisely (1 hit
 > for a real one, 0 for a fabricated one), so dedup needs no redesign — only the marker format
@@ -95,9 +101,11 @@ each:
    (template in the [curator skill](../issue-curator/SKILL.md#agent-brief); field policy in
    [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode));
    fix a brief that is obviously mis-calibrated (a schema-touching change marked `skim`). **Err
-   deeper**: when unsure between two depths, pick the deeper one. **Deliver it as a comment**, not
-   as a body edit — per the read-fidelity block above, adding a section to an existing body means
-   round-tripping that body through a lossy read. `/next` reads the brief either way — including a
+   deeper**: when unsure between two depths, pick the deeper one. **Deliver it as a body edit when
+   the probe is green, and as a comment when it is not** — a brief in the body is what actually
+   gates `/next`, so prefer it, but adding a section to someone else's body means round-tripping
+   that body through the read, which is only safe while the fidelity table is current (see the
+   read-fidelity block above). `/next` reads the brief either way — including a
    correction a previous run already commented, so check for one first
    ([comment once](#comment-once-not-once-per-run)).
 4. **Blocked-by.** Record `Blocked by #N` where a dependency is obvious — but know what a comment
@@ -112,8 +120,9 @@ each:
    That leaves two cases:
    - **A body you authored this run** — write the line into the body. This is the only delivery
      that actually gates `/next`.
-   - **Anyone else's body** — you may not rewrite it (step 3's read-fidelity hazard, plus the
-     ownership boundary on non-`suggestion` issues). Leave the comment anyway, since a `/next`
+   - **Anyone else's body** — the **ownership boundary** on non-`suggestion` issues still bars a
+     rewrite, and that bar is unaffected by read fidelity: it is about whose issue it is, not about
+     whether the read is lossy. Leave the comment anyway, since a `/next`
      session reads it during §1.2 verification and it saves that session the re-derivation — but
      **do not treat the comment as the fix**, and surface the issue in the
      [board-health report](#board-health-report) as needing an owner body edit.
@@ -152,8 +161,8 @@ runs walk the whole Backlog):
   suggestion is `P3`/`P4`; `P2` is for genuine high-impact (security, data-loss, broken core
   flows). Correct priority is what protects real work in `/next`.
 - **Agent briefs:** within the same batch, backfill missing briefs on `suggestion`-owned issues
-  and correct mis-calibrated ones — same rules as Pass A step 3, **including delivering them as
-  comments rather than body edits** and **not re-stating a correction a prior run already
+  and correct mis-calibrated ones — same rules as Pass A step 3, **including the probe check before
+  a body-edit backfill** and **not re-stating a correction a prior run already
   commented** ([comment once](#comment-once-not-once-per-run)). An out-of-roster value is worth
   one correcting comment, never a second; the systemic fix is tracked in #1205. Treat the roster
   itself (`depth:skim|standard|deep`, `model:fable|any`) as the test rather than matching a list
