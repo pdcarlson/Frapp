@@ -232,6 +232,11 @@ describe('ChapterService', () => {
         chapter_id: 'ch-1',
         role_ids: ['role-president'],
         has_completed_onboarding: true,
+        // `[]`, not absent: the member fixtures predate `dismissed_ops_nudges`
+        // (#492) and carry no such key, so this pins the `?? []` normalization
+        // in `mapMembershipSummary` — the web contract declares a plain array
+        // and `undefined` reaching `selectOpsNudge` would be a silent hole.
+        dismissed_ops_nudges: [],
         chapter: toChapterMemberView(chapters[0]),
       },
       {
@@ -239,6 +244,7 @@ describe('ChapterService', () => {
         chapter_id: 'ch-2',
         role_ids: ['role-member'],
         has_completed_onboarding: false,
+        dismissed_ops_nudges: [],
         chapter: toChapterMemberView(chapters[1]),
       },
     ]);
