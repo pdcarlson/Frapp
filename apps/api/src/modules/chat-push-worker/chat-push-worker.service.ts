@@ -201,11 +201,18 @@ export class ChatPushWorkerService
       // a default, so this guards a malformed payload, not a historical row.
       const mentions = row.mentions ?? [];
 
+      // One batched read for the whole audience, not one per recipient. This
+      // loop used to `await` a preference lookup per member, so a 150-member
+      // channel issued ~150 queries per message on a path with no
+      // backpressure. A user with no stored preferences is simply absent from
+      // the map, which is what the per-user read's empty array meant.
+      const prefsByUser = await this.prefRepo.findForUsers(
+        recipientIds,
+        channel.chapter_id,
+      );
+
       for (const recipientId of recipientIds) {
-        const prefs = await this.prefRepo.findForUser(
-          recipientId,
-          channel.chapter_id,
-        );
+        const prefs = prefsByUser.get(recipientId) ?? [];
         const decision = decidePush(
           {
             channelName: channel.name,

@@ -14,7 +14,7 @@ describe('ChatPushWorkerService', () => {
   let service: ChatPushWorkerService;
   let notifyUser: jest.Mock;
   let findByChapter: jest.Mock;
-  let findForUser: jest.Mock;
+  let findForUsers: jest.Mock;
   let getEffectivePermissions: jest.Mock;
 
   const CHANNEL = {
@@ -37,7 +37,7 @@ describe('ChatPushWorkerService', () => {
   beforeEach(async () => {
     notifyUser = jest.fn().mockResolvedValue(undefined);
     findByChapter = jest.fn();
-    findForUser = jest.fn().mockResolvedValue([]);
+    findForUsers = jest.fn().mockResolvedValue(new Map());
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
 
     const mod = await Test.createTestingModule({
@@ -58,7 +58,7 @@ describe('ChatPushWorkerService', () => {
         },
         {
           provide: ChatNotificationPreferenceRepository,
-          useValue: { findForUser },
+          useValue: { findForUsers },
         },
         {
           provide: RbacService,
@@ -199,7 +199,7 @@ describe('ChatPushWorkerService', () => {
       scope_kind: null,
       level: 'off',
     };
-    findForUser.mockResolvedValue([pref]);
+    findForUsers.mockResolvedValue(new Map([['a', [pref]]]));
     await service.handleMessage({
       id: 'm1',
       channel_id: ANNOUNCEMENT_CHANNEL.id,
@@ -209,6 +209,37 @@ describe('ChatPushWorkerService', () => {
       created_at: '',
     });
     expect(notifyUser).toHaveBeenCalledTimes(0);
+  });
+
+  /**
+   * The point of #552: the preference lookup is made **once per message**, not
+   * once per recipient. It used to be awaited inside the recipient loop, so a
+   * 150-member channel issued ~150 queries per message on a Realtime path with
+   * no backpressure.
+   *
+   * Asserting the call count alone would pass if the worker batched but asked
+   * about the wrong people, so this also pins the argument: every recipient,
+   * and the sender excluded.
+   */
+  it('reads preferences once per message regardless of recipient count', async () => {
+    service.__setChannelForTest(CHANNEL);
+    const recipients = Array.from({ length: 150 }, (_, i) => `user-${i}`);
+    setMembers(['sender', ...recipients]);
+
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: CHANNEL.id,
+      sender_id: 'sender',
+      content: 'hello',
+      kind: 'text',
+      created_at: '',
+    });
+
+    expect(findForUsers).toHaveBeenCalledTimes(1);
+    const [askedFor, chapterId] = findForUsers.mock.calls[0];
+    expect([...askedFor].sort()).toEqual([...recipients].sort());
+    expect(askedFor).not.toContain('sender');
+    expect(chapterId).toBe('chap-1');
   });
 
   it('pushes a per-channel off recipient when they are @mentioned (mute override)', async () => {
@@ -222,7 +253,7 @@ describe('ChatPushWorkerService', () => {
       scope_kind: null,
       level: 'off',
     };
-    findForUser.mockResolvedValue([pref]);
+    findForUsers.mockResolvedValue(new Map([['a', [pref]]]));
     // `mentions` is a `users.id[]` column on `chat_messages`, resolved by the
     // API at send time (C1 of #937).
     //
@@ -302,7 +333,7 @@ describe('ChatPushWorkerService', () => {
       required_permissions: null,
     });
     setMembers(['alice', 'bob', 'carol']);
-    findForUser.mockResolvedValue([]);
+    findForUsers.mockResolvedValue(new Map());
 
     await service.handleMessage({
       id: 'm1',
@@ -460,7 +491,7 @@ describe('ChatPushWorkerService', () => {
           },
           {
             provide: ChatNotificationPreferenceRepository,
-            useValue: { findForUser: jest.fn().mockResolvedValue([]) },
+            useValue: { findForUsers: jest.fn().mockResolvedValue(new Map()) },
           },
           {
             provide: RbacService,

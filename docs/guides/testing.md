@@ -499,9 +499,15 @@ recurring shapes, all worth checking in any spec of this kind:
   as the rule under test.
 - A fixture that cannot express the failure — mute cases on a channel whose default level already
   skips.
-- A stub that is more permissive than the real collaborator: a user-agnostic
-  `findForUser.mockResolvedValue([row])` hands one member's preference to every member, so a
-  strict-looking `toEqual(['dm-partner'])` can pass on an inherited level rather than the right one.
+- A stub that is more permissive than the real collaborator. When the push worker read preferences
+  one member at a time, a user-agnostic `findForUser.mockResolvedValue([row])` handed one member's
+  preference to *every* member, so a strict-looking `toEqual(['dm-partner'])` could pass on an
+  inherited level rather than the right one. Batching that read into a keyed `Map` removes that
+  particular hazard — `prefsByUser.get(recipientId) ?? []` reaches exactly one id — and replaces it
+  with a subtler one: a **static** Map ignores which ids the caller actually asked for, so a stub can
+  answer for a member the code never queried, and a real bug that narrows the audience still looks
+  green. The `setPrefs` helper in `chat-push-worker.realtime.spec.ts` builds its Map from the ids it
+  was passed, for exactly that reason.
 - A double cast (`as unknown as Payload`) that disables checking of the very field the file exists
   to exercise.
 

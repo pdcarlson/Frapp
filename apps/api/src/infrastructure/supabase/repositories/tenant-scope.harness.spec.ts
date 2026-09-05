@@ -121,6 +121,73 @@ describe('tenant-scope harness', () => {
         }),
       ).rejects.toThrow(/returned 1 row\(s\) from another chapter/);
     });
+
+    /**
+     * The read-side walk has to see inside a `Map`, and this is the failing
+     * case that proves it does.
+     *
+     * A `Map`'s entries are not own enumerable properties, so `Object.values()`
+     * on one returns `[]`. Before the walk handled `Map` explicitly, a
+     * repository that grouped its rows — `ChatNotificationPreferenceRepository.
+     * findForUsers` returns `Map<userId, rows>` — had its returned payload
+     * inspected for nothing at all, while `expectTenantScoped` still reported
+     * "scoped". A passing-direction test cannot catch that: it is green either
+     * way. This one is red unless the branch exists.
+     */
+    it('reports rows that leak inside a Map or a Set', async () => {
+      const harness = createTenantHarness({ tables: widgets() });
+
+      const scopedRead = async () => {
+        await (harness.client as any)
+          .from('widgets')
+          .select('*')
+          .eq('chapter_id', CHAPTER_B);
+      };
+
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, async () => {
+          await scopedRead();
+          return new Map([
+            ['some-user-id', [{ id: ROW_A, chapter_id: CHAPTER_A }]],
+          ]);
+        }),
+      ).rejects.toThrow(/returned 1 row\(s\) from another chapter/);
+
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, async () => {
+          await scopedRead();
+          return new Set([{ id: ROW_A, chapter_id: CHAPTER_A }]);
+        }),
+      ).rejects.toThrow(/returned 1 row\(s\) from another chapter/);
+    });
+
+    /**
+     * Walking Maps and Sets removed an accidental cycle barrier — a Map used to
+     * end the walk by yielding no values — so the traversal carries a seen-set.
+     * A tenancy assertion that dies with `RangeError: Maximum call stack size
+     * exceeded` reads as an unrelated bug, which is the confusion this harness
+     * orders its checks to avoid.
+     */
+    it('survives a cyclic result rather than overflowing the stack', async () => {
+      const harness = createTenantHarness({ tables: widgets() });
+
+      const leaked: Record<string, unknown> = {
+        id: ROW_A,
+        chapter_id: CHAPTER_A,
+      };
+      // parent ↔ child back-reference, threaded through a Map.
+      leaked.group = new Map([['self', leaked]]);
+
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, async () => {
+          await (harness.client as any)
+            .from('widgets')
+            .select('*')
+            .eq('chapter_id', CHAPTER_B);
+          return [leaked];
+        }),
+      ).rejects.toThrow(/returned 1 row\(s\) from another chapter/);
+    });
   });
 
   describe('write scoping', () => {

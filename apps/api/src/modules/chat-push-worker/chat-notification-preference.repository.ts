@@ -4,6 +4,28 @@ import type {
   FrappSupabaseClient,
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
+import { chunkIds } from '../../domain/utils/chunk-ids';
+
+/**
+ * Rows per round trip when reading preferences for a batch of users.
+ *
+ * PostgREST caps a response at `max_rows` and signals truncation with a plain
+ * 200 and a null error. The per-user read this replaced could not hit that cap
+ * — one member's preferences are bounded by the channels and kinds they have
+ * touched — but a batched read multiplies those rows by the chunk size, so the
+ * cap becomes reachable and has to be paged for.
+ *
+ * The page size is a **request, not an assumption**: `readChunk` advances by
+ * the rows that arrived and stops only on an *empty* page, so it is correct
+ * whatever the server's cap turns out to be. That matters because
+ * `supabase/config.toml`'s `max_rows = 1000` governs the **local** stack only —
+ * the hosted project's Max rows is a dashboard setting this code cannot read,
+ * so "our page size is below the cap" is not a fact any file here can assert.
+ * This is the `fetchAllPages` rule from #686 (`report.service.ts`, and
+ * `docs/internal/services/report-service-perf.md`), not a fourth variant of it;
+ * #1628 tracks collapsing the copies into one shared helper.
+ */
+export const PREFERENCE_PAGE_SIZE = 500;
 
 /** Per-channel-or-kind notification level (ADR-06). */
 export type ChatNotificationLevel = 'all' | 'mentions' | 'off';
@@ -28,39 +50,138 @@ export class ChatNotificationPreferenceRepository {
   ) {}
 
   /**
-   * Load every chat-pref row for the (user, chapter) pair. The push worker
-   * decides per-message whether the channel-specific row or the kind-fallback
-   * row applies; loading both arms in one query keeps the hot path cheap.
-   * Returns an empty array on missing rows (default falls back to channel
-   * name in the worker).
+   * Load every chat-pref row for a batch of users in one chapter, grouped by
+   * user. The push worker decides per-message whether the channel-specific row
+   * or the kind-fallback row applies; loading both arms keeps the hot path
+   * cheap.
+   *
+   * This replaced a per-user `findForUser`, which `handleMessage` awaited once
+   * per recipient inside its loop — ~150 round trips per message in a
+   * 150-member channel, on top of the membership query. There is deliberately
+   * no single-user method left beside this one: the worker was the only caller,
+   * and two live paths to the same rows is how the batched one silently stops
+   * being the one that runs.
+   *
+   * **A user absent from the returned map has no stored preferences**, exactly
+   * as the old empty array meant. Callers read it as `map.get(id) ?? []`.
+   *
+   * Chunked because a chapter-sized id list in one `in (...)` overflows the
+   * request line and returns 414 (see the measurement in
+   * `domain/utils/chunk-ids`), and paged because a batched read can reach
+   * `max_rows` where a single user's read never could.
+   *
+   * Degrades to whatever it managed to read rather than throwing, and never
+   * propagates a database error to the caller — the worker must keep deciding
+   * pushes for the rest of the batch, and a missed mute beats a dropped
+   * notification. The UI reads below throw instead, and the contrast is
+   * deliberate; see {@link findChannelPreferencesForUser}.
    */
-  async findForUser(
-    userId: string,
+  async findForUsers(
+    userIds: string[],
     chapterId: string,
-  ): Promise<ChatNotificationPreferenceRow[]> {
-    const { data, error } = await this.supabase
-      .from('chat_notification_preferences')
-      .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
-      .eq('user_id', userId)
-      .eq('chapter_id', chapterId);
+  ): Promise<Map<string, ChatNotificationPreferenceRow[]>> {
+    const byUser = new Map<string, ChatNotificationPreferenceRow[]>();
+    if (userIds.length === 0) return byUser;
 
-    if (error) {
-      this.logger.warn(
-        `chat-prefs: lookup failed for user ${userId} in chapter ${chapterId}`,
-        error,
-      );
-      return [];
+    // Chunks run concurrently, as every other `chunkIds` consumer does
+    // (`supabase-user.repository.ts`, `report.service.ts`): this is a
+    // per-message hot path, and reading them in series would rebuild a smaller
+    // version of the serialisation this method exists to remove.
+    const chunks = await Promise.all(
+      chunkIds(userIds).map((chunk) => this.readChunk(chunk, chapterId)),
+    );
+
+    for (const rows of chunks) {
+      // `null` is a chunk that failed. Its members are left ABSENT rather than
+      // half-populated, so they read as "no stored preferences" — exactly what
+      // the per-user method returned when one member's lookup failed. A
+      // partially-read user would be worse than an absent one: a missing
+      // channel row silently resolves through to a kind row or the channel-name
+      // default, which is a *different* level rather than the default one.
+      if (!rows) continue;
+      for (const row of rows) {
+        const existing = byUser.get(row.user_id);
+        if (existing) existing.push(row);
+        else byUser.set(row.user_id, [row]);
+      }
     }
-    return data ?? [];
+    return byUser;
+  }
+
+  /**
+   * Every preference row for one chunk of users, or `null` if the read failed.
+   *
+   * **Known limit, shared with every other paged read here.** `range()` is
+   * OFFSET/LIMIT across independent statements, so a row deleted between two
+   * pages shifts the window and the row that follows it is never read. Keyset
+   * paging on `id` would be immune; this stays offset-based to match
+   * `report.service.ts` and `scheduled-jobs.repository.ts` rather than
+   * introducing a third paging shape, and #1628 tracks unifying them. The
+   * exposure is small in practice — a chunk reaches a second page only past
+   * `PREFERENCE_PAGE_SIZE` rows for 100 members — and the failure direction is
+   * a missed mute, the same one the error path already accepts.
+   *
+   * All-or-nothing per chunk, deliberately. Failing one chunk costs at most
+   * `ID_CHUNK_SIZE` members their preferences for this one message; returning
+   * what had been read so far would instead hand back users whose row set is
+   * silently incomplete, and abandoning the remaining chunks would strip
+   * preferences from members whose query never even ran.
+   */
+  private async readChunk(
+    chunk: string[],
+    chapterId: string,
+  ): Promise<ChatNotificationPreferenceRow[] | null> {
+    const rows: ChatNotificationPreferenceRow[] = [];
+
+    for (let from = 0; ;) {
+      const { data, error } = await this.supabase
+        .from('chat_notification_preferences')
+        .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
+        .in('user_id', chunk)
+        .eq('chapter_id', chapterId)
+        // Offset paging needs a total order or a row sharing a sort value
+        // across a page boundary is served twice or skipped. `id` is the
+        // primary key, so it is unconditionally total and needs no projection —
+        // the same key every other paged read here sorts on.
+        .order('id', { ascending: true })
+        .range(from, from + PREFERENCE_PAGE_SIZE - 1);
+
+      if (error) {
+        // `error.message` and `error.code`, never the error object: a
+        // `PostgrestError` carries `details`, which is Postgres' row-value
+        // channel and can quote the offending row into plaintext logs (#1669).
+        this.logger.warn(
+          `chat-prefs: batch lookup failed for ${chunk.length} users in chapter ${chapterId}` +
+            ` (${error.code ?? 'no code'}: ${error.message})`,
+        );
+        return null;
+      }
+
+      const page = data ?? [];
+      // Only an EMPTY page proves the rows ran out. A short page is
+      // indistinguishable from the server capping the response at its
+      // `max_rows`, and reading it as the end is the #686 bug (#1628 tracks the
+      // copies that still have it). The price is one extra empty request per
+      // chunk; the alternative is being silently wrong about a hosted setting
+      // this code cannot read.
+      if (page.length === 0) break;
+      rows.push(...page);
+      // Advance by what ARRIVED, not by what was asked for: a capped page
+      // leaves the un-returned tail of the requested window unread, and
+      // stepping over it drops those rows outright.
+      from += page.length;
+    }
+
+    return rows;
   }
 
   /**
    * Channel-scoped rows only, for the caller's own mute UI.
    *
-   * Unlike {@link findForUser}, this one **throws** rather than degrading to an
-   * empty array. The worker swallows because a failed preference lookup there
-   * should not stop a push from being decided at all — a missed mute is better
-   * than a dropped notification. Here the array *is* the answer: returning `[]`
+   * Unlike {@link findForUsers}, this one **throws** rather than degrading to
+   * an empty array. The worker swallows because a failed preference lookup
+   * there should not stop a push from being decided at all — a missed mute is
+   * better than a dropped notification. Here the array *is* the answer: `[]`
    * on a database error would render every channel as unmuted, which is
    * indistinguishable from the user having muted nothing, and the UI would
    * silently lie about their settings.
