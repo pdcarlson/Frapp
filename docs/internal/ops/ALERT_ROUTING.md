@@ -63,7 +63,7 @@ tree held five, because a count is a second copy of a fact the rows already stat
 | *Staging conformance is failing — frapp-staging has drifted* | `staging-conformance.yml` (daily 07:30 UTC) | at least one assertion about live `frapp-staging` **failed** — paused project, disabled auth hook, or a failing secret sync | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
 | *Database schema drift — a deployed database no longer matches supabase/migrations/* | `check-migration-drift.yml` (daily 07:00 UTC) | a deployed database's `schema_migrations` does not match `supabase/migrations/` — behind, or carrying a version that exists nowhere in the repo | every environment is back in sync |
 | *PR base sync cannot auto-update PR branches* | `pr-base-sync.yml` (every push to `main`) | at least one open PR was behind `main` and none could be updated automatically — no App token minted, the token rejected, or the update-branch API failing. **P2, not P1:** PRs still merge, they just need `Update branch` by hand, so this is degraded rather than down | a later sweep updates a branch, or runs with a working token and blocks on nothing |
-| *Production deploy guardrails have drifted — auto-deploy or production branch is wrong* | `production-guardrails.yml` (daily) and the `deploy-production.yml` preflight | a provider-side production setting no longer matches what the guardrails assert. **P1.** Listed here as of #1674 — it has raised alerts since it shipped, but the roster above it said "four" and never included it, which is the drift the removed count caused | a later guardrail run finds nothing drifted |
+| *Production deploy guardrails have drifted — auto-deploy or production branch is wrong* | `production-guardrails.yml` (daily 07:15 UTC) | a provider-side production setting no longer matches what the guardrails assert. **P1.** Listed here as of #1674 — it has raised alerts since it shipped, but the roster above it said "four" and never included it, which is the drift the removed count caused | a later guardrail run finds nothing drifted |
 
 Unlike the others, the base-sync alert fires on a **per-merge** cadence rather than per-incident
 or daily, so it is written only on a state *change* — an already-open one is never re-commented. An
@@ -78,10 +78,18 @@ with separate titles: the title is the lookup key, so a shared one would let a r
 close a live Vercel outage's alert. Renaming either title orphans whatever alert is open under the old
 one — it could never be found again, and so would never self-close.
 
-**Two scheduled watchdogs, two separate concerns.** `check-migration-drift.yml` owns migration
-parity for *every* environment; `staging-conformance.yml` owns everything else about staging and
-deliberately does **not** re-run the drift comparison, so one real drift raises exactly one alert.
-If both alerts are open at once they are telling you about different problems.
+`production-guardrails.mjs` is also `deploy-production.yml`'s preflight, but that invocation
+(`--preflight`) **files nothing** — it exits non-zero on a violation and lets the deploy fail. Only
+the scheduled run raises or clears the alert issue, so an open one always means the daily check
+found drift, never that someone's deploy was blocked.
+
+**The scheduled watchdogs own disjoint concerns, and are staggered.** `check-migration-drift.yml`
+(07:00 UTC) owns migration parity for *every* environment; `production-guardrails.yml` (07:15) owns
+provider-side production settings; `staging-conformance.yml` (07:30) owns everything else about
+staging and deliberately does **not** re-run the drift comparison, so one real drift raises exactly
+one alert. If several of these alerts are open at once they are telling you about different
+problems. The staggering is so they do not all report in the same minute — the full schedule is
+[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance.
 
 **Read the conformance alert's clearing condition literally — an open issue does not always mean
 "broken right now."** It closes only when the specific assertions it names pass, not merely when

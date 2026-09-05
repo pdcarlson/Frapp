@@ -939,8 +939,12 @@ test("every workflow running deploy-alert.mjs sets a known ALERT_CONFIG", () => 
     "workflows",
   );
 
+  // `.yaml` as well as `.yml`. Actions honours both, and scanning only one is
+  // the exact hole this test exists to close — a `deploy-mobile.yaml` with a
+  // copied deploy-outcome block would never be read, and the roster assertion
+  // below could not compensate because it is built from the same list.
   const callers = readdirSync(workflowDir)
-    .filter((name) => name.endsWith(".yml"))
+    .filter((name) => name.endsWith(".yml") || name.endsWith(".yaml"))
     .map((name) => ({ name, text: readFileSync(join(workflowDir, name), "utf8") }))
     .filter(({ text }) =>
       text.split("\n").some((line) => !/^\s*#/.test(line) && line.includes("deploy-alert.mjs")),
@@ -953,17 +957,79 @@ test("every workflow running deploy-alert.mjs sets a known ALERT_CONFIG", () => 
     "expected exactly the two known callers — add the new one to this list deliberately",
   );
 
+  // Tolerates the forms a human will actually write: quoted or bare, with or
+  // without a trailing comment. A guard that fails on `ALERT_CONFIG: "deploy-api"`
+  // trains people to distrust it. `matchAll`, not `match`, so a workflow with
+  // two reporting steps has BOTH checked rather than only the first.
+  const configsIn = (text) =>
+    [
+      ...text.matchAll(
+        /^[ \t]*ALERT_CONFIG:[ \t]*["']?([A-Za-z0-9._-]+)["']?[ \t]*(?:#.*)?$/gm,
+      ),
+    ].map((m) => m[1]);
+
+  const claimedBy = new Map();
   for (const { name, text } of callers) {
-    const match = text.match(/^\s*ALERT_CONFIG:\s*(\S+)\s*$/m);
-    assert.ok(match, `${name} runs deploy-alert.mjs but sets no ALERT_CONFIG`);
-    assert.ok(
-      Object.hasOwn(ALERT_CONFIGS, match[1]),
-      `${name} sets ALERT_CONFIG: ${match[1]}, which is not a known configuration`,
-    );
+    const configs = configsIn(text);
+    assert.ok(configs.length > 0, `${name} runs deploy-alert.mjs but sets no ALERT_CONFIG`);
+    for (const config of configs) {
+      assert.ok(
+        Object.hasOwn(ALERT_CONFIGS, config),
+        `${name} sets ALERT_CONFIG: ${config}, which is not a known configuration`,
+      );
+      claimedBy.set(config, (claimedBy.get(config) ?? new Set()).add(name));
+    }
   }
 
-  // And the two must not both claim the same one, which would point two
-  // workflows at a single alert issue.
-  const configured = callers.map(({ text }) => text.match(/^\s*ALERT_CONFIG:\s*(\S+)\s*$/m)[1]);
-  assert.equal(new Set(configured).size, configured.length, "two workflows share an ALERT_CONFIG");
+  // No configuration may be claimed by two different workflows — that would
+  // point both at one alert issue, so either could close the other's incident.
+  for (const [config, files] of claimedBy) {
+    assert.equal(
+      files.size,
+      1,
+      `ALERT_CONFIG ${config} is claimed by ${[...files].join(" and ")}`,
+    );
+  }
+});
+
+test("an escalated no-op explains its own job table instead of contradicting it", () => {
+  // Escalation puts a job whose result is `skipped` into `failed`. Reported
+  // with the ordinary failure copy that renders as a contradiction the reader
+  // cannot resolve — a red "FAILED" badge and "deploy did not succeed" above a
+  // table saying `deploy | skipped` — which sends them hunting for a failed
+  // build that does not exist.
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const jobResults = readJobResults({ deploy: { result: "skipped" } }, config);
+  const { outcome, failed, deployed, escalated } = classifyDeployOutcome({ jobResults, config });
+  assert.equal(escalated, true);
+
+  const headline = buildHeadline({ outcome, failed, deployed, headBranch: "main", escalated, config });
+  assert.match(headline, /did not run at all/);
+  assert.doesNotMatch(headline, /did not succeed/);
+
+  const summary = buildRunSummary({
+    outcome,
+    failed,
+    deployed,
+    jobResults,
+    headBranch: "main",
+    headSha: "abc1234",
+    runUrl: "https://example.test/run/1",
+    gateOutputs: {},
+    gateSucceeded: false,
+    escalated,
+    config,
+  });
+  assert.match(summary, /NOTHING RAN/);
+  // The note is what reconciles the red badge with the `skipped` row.
+  assert.match(summary, /those two have drifted apart/);
+});
+
+test("escalation leaves the gated config's classify shape untouched", () => {
+  // `escalated` is spread in only when true, so a Deploy API run returns
+  // exactly the three keys it always did. A differential harness compares these
+  // objects; an unconditional key would break that parity for no benefit.
+  const result = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+  assert.deepEqual(Object.keys(result).sort(), ["deployed", "failed", "outcome"]);
+  assert.equal(result.outcome, "no-op");
 });

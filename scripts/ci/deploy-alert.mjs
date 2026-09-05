@@ -274,8 +274,15 @@ export function classifyDeployOutcome({ jobResults, config = DEFAULT_ALERT_CONFI
   // lands on a `workflow_run` run page — no commit, no PR — which is the exact
   // invisibility this script exists to end. It self-closes on the next
   // successful deploy like any other alert.
+  //
+  // `escalated` is reported so the summary can EXPLAIN itself. Without it the
+  // reader gets a "FAILED — nothing deployed" badge above a job table reading
+  // `deploy | skipped`, which is a contradiction they cannot resolve. It is
+  // spread in only when true, so the returned shape for a gated config stays
+  // exactly what it was — the same trick `lib/alert-issue.mjs` uses for
+  // `bodyRefreshFailed`.
   if (config.noOpIsUnexpected) {
-    return { outcome: "failed", failed: [...config.deployJobs], deployed };
+    return { outcome: "failed", failed: [...config.deployJobs], deployed, escalated: true };
   }
 
   return { outcome: "no-op", failed, deployed };
@@ -300,11 +307,18 @@ export function buildHeadline({
   failed,
   deployed,
   headBranch,
+  escalated = false,
   config = DEFAULT_ALERT_CONFIG,
 }) {
   const ref = headBranch ? `\`${headBranch}\`` : "this ref";
   const label = config.workflowLabel;
   if (outcome === "failed") {
+    // An escalated no-op needs its own sentence. Saying "did not succeed" of a
+    // job whose result is `skipped` reads as a lie next to the job table, and
+    // sends the reader looking for a failed build that does not exist.
+    if (escalated) {
+      return `${label} deployed NOTHING on ${ref} — ${failed.join(", ")} did not run at all, on a run that was eligible to deploy. This is a configuration defect, not a skip.`;
+    }
     return `${label} FAILED on ${ref} — ${failed.join(", ")} did not succeed. Nothing was deployed by this run.`;
   }
   if (outcome === "deployed") {
@@ -330,13 +344,16 @@ export function buildRunSummary({
   // Empty for a config with no gate job, which then renders no changed rows.
   gateOutputs = {},
   gateSucceeded,
+  escalated = false,
   config = DEFAULT_ALERT_CONFIG,
 }) {
-  const badge = {
-    failed: "❌ **FAILED — nothing deployed**",
-    deployed: "✅ **DEPLOYED**",
-    "no-op": "⏭️ **NO-OP — nothing deployed**",
-  }[outcome];
+  const badge = escalated
+    ? "❌ **NOTHING RAN — nothing deployed**"
+    : {
+        failed: "❌ **FAILED — nothing deployed**",
+        deployed: "✅ **DEPLOYED**",
+        "no-op": "⏭️ **NO-OP — nothing deployed**",
+      }[outcome];
 
   // When the gate job itself did not succeed, its outputs are empty — which is
   // NOT the same as "no paths changed". Reporting the absent output as "no"
@@ -348,7 +365,7 @@ export function buildRunSummary({
     "",
     badge,
     "",
-    buildHeadline({ outcome, failed, deployed, headBranch, config }),
+    buildHeadline({ outcome, failed, deployed, headBranch, escalated, config }),
     "",
     "| | |",
     "| --- | --- |",
@@ -367,7 +384,9 @@ export function buildRunSummary({
     ...alertJobNames(config).map((name) => `| \`${name}\` | ${jobResults[name]} |`),
   ];
 
-  if (outcome === "no-op") {
+  // The note is what explains a job table reading `skipped` under a red badge,
+  // so it is required on the escalated path, not only on the benign one.
+  if (outcome === "no-op" || escalated) {
     lines.push("", config.noOpNote);
   }
 
@@ -577,7 +596,12 @@ export async function runDeployAlert({
   config = DEFAULT_ALERT_CONFIG,
 }) {
   const jobResults = readJobResults(needs, config);
-  const { outcome, failed, deployed } = classifyDeployOutcome({ jobResults, config });
+  const {
+    outcome,
+    failed,
+    deployed,
+    escalated = false,
+  } = classifyDeployOutcome({ jobResults, config });
   const gateOutputs = Object.fromEntries(
     config.gateOutputRows.map(({ output }) => [
       output,
@@ -600,6 +624,7 @@ export async function runDeployAlert({
       // reading — but it is also unobservable, because such a config declares
       // no gateOutputRows, so `changed()` is never called.
       gateSucceeded: config.gateJob ? jobResults[config.gateJob] === "success" : false,
+      escalated,
       config,
     }),
   );
@@ -622,7 +647,12 @@ export async function runDeployAlert({
     });
     logger.log?.(
       alert.action === "failed"
-        ? "[deploy-alert] could not write the alert issue"
+        ? // Annotated, not a plain log line. This is the WORSE of the two
+          // write failures — a deploy is genuinely broken and the notification
+          // for it did not get written, so the run exits 0 with the failure
+          // invisible again, which is the whole condition this script exists
+          // to end. A bare log line buried in step output is not a signal.
+          "::error::[deploy-alert] the deploy FAILED and the alert issue could not be written — this failure is currently unnotified"
         : `[deploy-alert] alert issue #${alert.issueNumber} ${alert.action}`,
     );
     return { outcome, failed, deployed, alert };

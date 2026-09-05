@@ -194,16 +194,41 @@ describe("deploy-vercel-staging.yml", () => {
     /** The `if: |` block of a job, as one whitespace-normalised expression. */
     const jobIf = (jobKey) => {
       const lines = uncommented.split("\n");
-      const start = lines.findIndex((line) => line === `  ${jobKey}:`);
-      assert.notEqual(start, -1, `job ${jobKey} not found`);
-      const ifLine = lines.findIndex(
-        (line, i) => i > start && /^ {4}if: \|/.test(line),
+      // Allow a trailing comment on the job key, which is ordinary YAML.
+      const start = lines.findIndex((line) =>
+        new RegExp(`^ {2}${jobKey}:[ \\t]*(#.*)?$`).test(line),
       );
-      assert.notEqual(ifLine, -1, `job ${jobKey} has no block-scalar if:`);
+      assert.notEqual(start, -1, `job ${jobKey} not found`);
+
+      // BOUND the search to this job. An unbounded scan silently returns the
+      // NEXT job's if: when this one has none — so a `deploy` that lost its
+      // block scalar would be compared against `deploy-outcome`'s own if: and
+      // trivially "match" itself.
+      let end = lines.length;
+      for (let i = start + 1; i < lines.length; i += 1) {
+        if (/^ {2}\S/.test(lines[i])) {
+          end = i;
+          break;
+        }
+      }
+      const block = lines.slice(start, end);
+
+      const ifLine = block.findIndex((line) => /^ {4}if:/.test(line));
+      assert.notEqual(ifLine, -1, `job ${jobKey} has no if:`);
+      assert.match(
+        block[ifLine],
+        /^ {4}if: \|/,
+        `job ${jobKey}'s if: must stay a literal block scalar (\`if: |\`) — this guard compares the two jobs' conditions textually and cannot read a folded or inline form`,
+      );
+
       const body = [];
-      for (let i = ifLine + 1; i < lines.length; i += 1) {
-        if (!/^ {6}\S/.test(lines[i])) break;
-        body.push(lines[i].trim());
+      for (let i = ifLine + 1; i < block.length; i += 1) {
+        // A blank line inside a block scalar is legal and must not truncate
+        // the expression — truncating both blocks symmetrically would let the
+        // equality below pass on two half-read strings.
+        if (block[i].trim() === "") continue;
+        if (!/^ {6}/.test(block[i])) break;
+        body.push(block[i].trim());
       }
       assert.ok(body.length > 0, `job ${jobKey}'s if: block is empty`);
       return body.join(" ").replace(/\s+/g, " ").trim();
