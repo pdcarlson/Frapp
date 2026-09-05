@@ -18,9 +18,13 @@ import type { WebhookRequest } from '../types/request-context.types';
  * only the status would still pass if the controller applied the event and
  * threw afterwards, which is the failure that actually matters here.
  *
- * The e2e suite (`test/billing-webhook.e2e-spec.ts`) covers the missing-header
- * and valid-signature cases over real HTTP; the invalid-signature case was
- * untested at any layer before this file.
+ * Division of labour with `test/billing-webhook.e2e-spec.ts`, which exercises
+ * the same route over real HTTP: that suite proves the wiring — status codes
+ * and the response body — for the missing-header, invalid-signature and
+ * valid-signature cases. This spec covers the branches HTTP cannot reach
+ * cheaply (a missing raw body, a non-Error thrown by the provider) and pins
+ * the arguments verification is called with. Before this change, the
+ * invalid-signature branch was untested at either layer.
  */
 describe('WebhookController', () => {
   let controller: WebhookController;
@@ -81,13 +85,36 @@ describe('WebhookController', () => {
     it('does not leak the provider error message to the caller', async () => {
       // The provider's message can name the expected signature scheme and the
       // timestamp tolerance. It is logged, not returned.
+      const logged = jest
+        .spyOn(controller['logger'], 'warn')
+        .mockImplementation(() => undefined);
       billingProvider.constructWebhookEvent.mockImplementation(() => {
         throw new Error('Expected signature v1=deadbeef, tolerance 300s');
       });
 
-      await expect(
-        controller.handleStripeWebhook(requestWithBody(), 'sig_forged'),
-      ).rejects.toThrow('Invalid Stripe webhook signature');
+      const thrown = await controller
+        .handleStripeWebhook(requestWithBody(), 'sig_forged')
+        .then(
+          () => null,
+          (err: unknown) => err,
+        );
+
+      // `.rejects.toThrow('...')` would NOT do here: it is a substring match,
+      // so it passes for a message that *appends* the provider's text to the
+      // safe prefix — which is the shape this regression actually takes. Assert
+      // the whole message, and the absence of the leaked detail explicitly.
+      expect(thrown).toBeInstanceOf(UnauthorizedException);
+      expect((thrown as UnauthorizedException).message).toBe(
+        'Invalid Stripe webhook signature',
+      );
+      expect((thrown as UnauthorizedException).message).not.toContain(
+        'deadbeef',
+      );
+
+      // The other half of the claim: suppressed for the caller, kept for us.
+      // A forged-signature attempt on an unauthenticated, un-throttled route
+      // must leave a trace somewhere.
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining('deadbeef'));
     });
 
     it('rejects a non-Error thrown by the provider just the same', async () => {

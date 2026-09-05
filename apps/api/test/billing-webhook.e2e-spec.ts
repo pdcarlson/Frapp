@@ -11,13 +11,14 @@ const V1 = '/v1';
 
 describe('Billing webhook (e2e)', () => {
   let app: INestApplication;
-  const handleWebhookEvent = jest.fn().mockResolvedValue(undefined);
-  const constructWebhookEvent = jest.fn().mockReturnValue({
+  const DEFAULT_EVENT = {
     id: 'evt_test_1',
     type: 'checkout.session.completed',
     created: Date.now(),
     data: { object: { metadata: { chapter_id: 'ch-1' } } },
-  });
+  };
+  const handleWebhookEvent = jest.fn().mockResolvedValue(undefined);
+  const constructWebhookEvent = jest.fn().mockReturnValue(DEFAULT_EVENT);
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -48,6 +49,17 @@ describe('Billing webhook (e2e)', () => {
     await app.close();
   });
 
+  // The app is built once in beforeAll, so these mocks are shared across every
+  // test in the file. Reset them to their defaults per test rather than
+  // clearing: a `mockImplementationOnce` that its own test never consumes —
+  // which happens whenever a request is rejected before reaching the provider —
+  // would otherwise stay queued and fire inside the *next* test, reporting the
+  // failure against the wrong case.
+  beforeEach(() => {
+    handleWebhookEvent.mockReset().mockResolvedValue(undefined);
+    constructWebhookEvent.mockReset().mockReturnValue(DEFAULT_EVENT);
+  });
+
   it('rejects missing Stripe signature', async () => {
     await request(app.getHttpServer())
       .post(`${V1}/webhooks/stripe`)
@@ -61,18 +73,25 @@ describe('Billing webhook (e2e)', () => {
     // between an unauthenticated caller and subscription state. Asserting the
     // 401 alone would still pass if the event were applied and then rejected,
     // so the real assertion is that billing was never called.
-    handleWebhookEvent.mockClear();
     constructWebhookEvent.mockImplementationOnce(() => {
       throw new Error('No signatures found matching the expected signature');
     });
 
-    await request(app.getHttpServer())
+    const res = await request(app.getHttpServer())
       .post(`${V1}/webhooks/stripe`)
       .set('stripe-signature', 'sig_forged')
       .send({ type: 'checkout.session.completed' })
       .expect(401);
 
+    // Asserting the 401 alone would pass for the wrong reason if verification
+    // ever moved to an earlier layer (a guard) and rejected before the
+    // provider was consulted — the status and "billing untouched" would both
+    // still hold while this test stopped exercising the branch it names.
+    expect(constructWebhookEvent).toHaveBeenCalled();
     expect(handleWebhookEvent).not.toHaveBeenCalled();
+    // The provider's message names the expected signature scheme and the
+    // timestamp tolerance; it must not reach an unauthenticated caller.
+    expect(JSON.stringify(res.body)).not.toContain('No signatures found');
   });
 
   it('accepts valid signed webhook and forwards to billing service', async () => {
