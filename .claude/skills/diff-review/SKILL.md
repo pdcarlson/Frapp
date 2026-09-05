@@ -132,11 +132,15 @@ failure mode, not a hypothetical.
     | `push-rules.ts:defaultLevelFor` | `spec/behavior/notifications.md`, `spec/architecture/README.md` |
     | `packages/validation/src/upload-allowlists.ts` (`MAX_UPLOAD_BYTES`, kinds) — **per-bucket caps differ**; `config.toml` is not the same number | `content-validation.md`, `spec/architecture/README.md` § 7, `AUTHORIZATION_MODEL.md` |
     | `buildChapterConfigFromArchetype` (which seeds are `structuredClone`d) | `spec/engineering.md`, `spec/architecture/README.md` |
-    | `DEFAULT_SYSTEM_ROLES` / `DEFAULT_CHANNELS` / `SystemPermissions` | `spec/behavior/rbac.md`, `spec/behavior/chat/README.md`, `spec/product/modules.md`, `AUTHORIZATION_MODEL.md` |
+    | `DEFAULT_SYSTEM_ROLES` / `DEFAULT_CHANNELS` / `SystemPermissions` | `spec/behavior/rbac.md`, `spec/behavior/chat/README.md`, `spec/behavior/alumni.md`, `spec/product/modules.md`, `spec/product/personas.md`, `AUTHORIZATION_MODEL.md` |
     | `scripts/check-env-slugs.mjs:INFISICAL_ENV_SLUGS` | `ENV_REFERENCE.md`, `SECRETS_MANAGEMENT.md`, `docs/guides/env-config.md`, `spec/environments/README.md` |
     | Storage bucket declarations in `supabase/migrations/` | `spec/architecture/README.md` § 7, `AUTHORIZATION_MODEL.md` |
     | `apps/web/tests/visual/routes.ts` | `apps/web/tests/visual/README.md` |
     | The exact React pin — every `package.json` naming it, root `overrides` included (`git ls-files '*package.json' \| xargs grep -ln '"react": "19'`) | `AGENTS.md`, `MOBILE_TESTING.md`, `SECURITY_FIXES.md` |
+    | The two `QueryClient` defaults — `apps/web/lib/providers/query-provider.tsx` and `apps/mobile/lib/query-client.ts` — **they differ, and an unset option resolves per platform** | `spec/ui/resilience.md`, `spec/ui/web-dashboard/README.md` |
+    | The `delete from` block in the `anonymize_user` RPC (latest migration re-creating it wins) | `spec/behavior/data-retention.md` |
+    | `throttle-profiles.decorator.ts` **and every handler applying one** — the profile is applied by hand per route, never inherited | `spec/behavior/README.md` § Per-route rate limits, `docs/guides/api-architecture.md` |
+    | Appearance config — `apps/web/app/providers.tsx` (whether a theme provider exists at all) and `apps/mobile/app.json`'s `userInterfaceStyle` | `spec/behavior/README.md` § Dark Mode, `spec/architecture/README.md` §§ 3.2 and 3.3, `spec/ui/web-dashboard/README.md`, `spec/ui/mobile/README.md` |
 
     **A hand-maintained count is the highest-risk form.** Prefer deleting it and linking over
     syncing it — that is what the standard says, and a count with no mechanism behind it is a future
