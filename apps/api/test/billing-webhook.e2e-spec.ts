@@ -89,9 +89,13 @@ describe('Billing webhook (e2e)', () => {
     // still hold while this test stopped exercising the branch it names.
     expect(constructWebhookEvent).toHaveBeenCalled();
     expect(handleWebhookEvent).not.toHaveBeenCalled();
-    // The provider's message names the expected signature scheme and the
-    // timestamp tolerance; it must not reach an unauthenticated caller.
-    expect(JSON.stringify(res.body)).not.toContain('No signatures found');
+    // Pin the whole message rather than grepping for the string this fixture
+    // happens to throw: a `not.toContain('No signatures found')` only catches
+    // leaks worded like the mock, and passes for a differently-phrased one
+    // (proven — `...(expected scheme v1, tolerance 300s)` slipped through it).
+    // Asserting the exact safe message also makes the check non-vacuous: it
+    // fails if the body is ever empty, rather than trivially passing.
+    expect(res.body.message).toBe('Invalid Stripe webhook signature');
   });
 
   it('accepts valid signed webhook and forwards to billing service', async () => {

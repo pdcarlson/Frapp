@@ -61,6 +61,15 @@ describe('WebhookController', () => {
     controller = module.get<WebhookController>(WebhookController);
   });
 
+  // The logger spy below is installed on the controller's own `logger` field.
+  // A fresh controller per test makes leaking it moot *today*, but that safety
+  // rests on `logger` staying per-instance — move it to a shared or injected
+  // logger and an unrestored spy would silence `warn` for the rest of the file
+  // with nothing failing. Restore explicitly rather than depend on that.
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
