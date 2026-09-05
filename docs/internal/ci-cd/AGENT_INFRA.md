@@ -606,7 +606,7 @@ watching session was never woken — the PR sat silent for ~2h until a human not
 
 `on.pull_request.branches` on `ci.yml`, `docs.yml`, and `links.yml` is `[main]`.
 GitHub matches that list against the PR **base**, not the head. A PR whose base is another
-feature branch therefore never runs CI, docs-spec-sync, or Links. GitHub still allows a
+feature branch therefore never runs CI, Docs checks, or Links. GitHub still allows a
 squash-merge; the UI shows MERGED; the commits exist only on the base feature branch.
 `origin/main` is unchanged. `pr-base-sync.yml` only sweeps PRs targeting `main`, and
 `ci-wake.yml` never fires because CI never ran — the babysit loop is blind.
@@ -1062,8 +1062,9 @@ real:
   has never existed in this repository (hand-applied in February). `supabase db push` refuses to
   run at all in that state, and the error's suggested fix (`migration repair --status reverted`) is
   destructive if applied without first reading what the row did — see
-  [`../ops/DB_PROMOTION_RUNBOOK.md`](../ops/DB_PROMOTION_RUNBOOK.md) § reconciling a foreign
-  migration row.
+  [`../ops/DB_PROMOTION_RUNBOOK.md`](../ops/DB_PROMOTION_RUNBOOK.md), the **On-call note —
+  reconciling a foreign migration row** paragraph — bold prose inside the `## 2026-08-10: Staging
+  migration backlog cleared` entry, not a heading, so search the phrase rather than the headings.
 
 **Why scheduled and not post-deploy.** `Deploy API` failed 44 of 44 executing runs for 71 days
 (#763). A check that only ran after a successful deploy would have been silent for exactly the
