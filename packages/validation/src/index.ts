@@ -809,20 +809,25 @@ export {
   MAX_TIME_ZONE_LENGTH,
 } from "./time-zone";
 
-// ── Notification categories (issue #564, mobile half in C4 of #937) ──────────
+// ── Notification categories (issue #564; mobile half shipped in C4 of #937) ──
 // Shared because each `key` is written verbatim into
 // `notification_preferences.category` and nothing validates it — the column is
 // unconstrained `text` and the DTO only length-limits the string — so a
-// per-surface copy drifts into preference rows the server never reads. Web's
-// Profile grid adopting this is the other half of #564.
+// per-surface copy drifts into preference rows the server never reads. Both
+// surfaces now draw from here: mobile's s16 grid and web's Profile card.
+// `rowsToNotificationCategoryState` is shared for the same reason the catalog
+// is — it is the fold from server rows onto those keys, and a second copy is
+// how two surfaces come to disagree about what a member's switches say.
 export {
   NOTIFICATION_CATEGORIES,
   isNotificationCategoryKey,
   defaultNotificationCategoryState,
+  rowsToNotificationCategoryState,
 } from "./notification-categories";
 export type {
   NotificationCategory,
   NotificationCategoryKey,
+  NotificationCategoryState,
 } from "./notification-categories";
 
 // ── Poll vote rules ──────────────────────────────────────────────────────────
