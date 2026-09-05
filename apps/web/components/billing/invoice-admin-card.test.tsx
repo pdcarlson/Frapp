@@ -107,14 +107,53 @@ describe("InvoiceAdminCard overdue availability (#1621)", () => {
     expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
   });
 
-  it("claims failure when the overdue read errors", () => {
+  it("claims failure when the overdue read errors, even mid-retry", () => {
+    // `isFetching: true` is what makes this case pin the `isError` disjunct.
+    // With it false the second disjunct already satisfies the flag, and the
+    // test whose name is the error path would stay green with `isError`
+    // deleted from the expression.
     overdueQuery.data = undefined;
     overdueQuery.isError = true;
+    overdueQuery.isFetching = true;
     chapterSubscription(mockCurrentChapter).active();
 
     render(<InvoiceAdminCard />);
 
     expect(screen.getByText(FAILURE_COPY)).toBeInTheDocument();
+  });
+
+  // The filter is a Radix `Select`, so its items only mount once the dropdown
+  // is open — unlike the page header's native `<select>`, which is why
+  // `billing/page.test.tsx` can assert the sibling flag without this step.
+  async function overdueOption() {
+    await userEvent.click(screen.getByRole("combobox", { name: "Filter invoices" }));
+    return screen.getByRole("option", { name: "OVERDUE" });
+  }
+
+  it("degrades the OVERDUE filter while the read is in flight, without the card", async () => {
+    // The weak flag, which the strong one is deliberately *not* allowed to
+    // replace. Both halves of the split need pinning or the split is one
+    // refactor from collapsing back: here the option must already be disabled
+    // (the read has not answered, so "no overdue invoices" would be a fact
+    // derived from nothing) while the failure card must stay away.
+    overdueQuery.data = undefined;
+    overdueQuery.isFetching = true;
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(await overdueOption()).toHaveAttribute("data-disabled");
+    expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
+  });
+
+  it("leaves the OVERDUE filter enabled once the read has answered", async () => {
+    overdueQuery.data = [];
+    overdueQuery.isFetching = false;
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(await overdueOption()).not.toHaveAttribute("data-disabled");
   });
 
   it("claims failure when the read holds nothing and is not in flight", () => {
