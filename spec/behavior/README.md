@@ -80,7 +80,7 @@ All API errors follow a consistent shape:
 
 ## Security Invariants
 
-- All API endpoints require authentication, except `/health`, webhooks, and the Discord
+- All API endpoints require authentication, except the health routes (`/health` and `/health/ready`), webhooks, and the Discord
   OAuth callback (`GET /v1/discord/connect/callback`), whose capability is its single-use `state`.
 - All data access is scoped by `chapter_id`. No cross-chapter data access is possible through any endpoint.
 - Webhook endpoints (Stripe) verify signatures before processing. Invalid signatures return 401 and are logged as security events.

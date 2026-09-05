@@ -6,7 +6,7 @@ A "Chapter Files" storage area for organizational documents (bylaws, constitutio
 
 - `chapter_docs:upload` — Upload new documents.
 - `chapter_docs:manage` — Delete documents, create/rename/delete folders.
-- Reads are gated on `members:view`, which every seeded role holds — so in practice every member can view and download, but the controller's class-level gate is a permission rather than an all-members bypass. Upload and management need their own `chapter_docs:*` permissions.
+- Reads are gated on `members:view`, which every seeded role either holds or clears via the `*` wildcard (President's seeded set is `['*']` alone) — so in practice every member can view and download, but the controller's class-level gate is a permission rather than an all-members bypass. Upload and management need their own `chapter_docs:*` permissions.
 
 ## Structure
 

@@ -30,12 +30,12 @@
  *
  * Bucket policies in `supabase/migrations/*.sql` must keep mirroring these
  * MIME lists (comment cross-references only on shipped migrations). Size is
- * **not** one number: the member-upload buckets pin `MAX_UPLOAD_BYTES`,
- * `chat-archive` is higher, and `supabase/config.toml`'s global
- * `[storage] file_size_limit` is sized for the larger of them rather than
- * matching `MAX_UPLOAD_BYTES` — it is a global cap that overrides a
- * per-bucket column when it is lower. The per-bucket values are owned by
- * `docs/internal/security/content-validation.md` § 3.
+ * **not** one number, and `supabase/config.toml`'s `[storage] file_size_limit`
+ * is not `MAX_UPLOAD_BYTES`: it caps the **local stack** and overrides a higher
+ * per-bucket column there, while the hosted projects carry an equivalent
+ * dashboard-only setting. See `MAX_ARCHIVE_UPLOAD_BYTES` below for the one kind
+ * deliberately held off this cap; the per-bucket values are owned by
+ * `spec/architecture/README.md` § 7 (Storage).
  *
  * ## What the bucket allowlist actually enforces
  *
