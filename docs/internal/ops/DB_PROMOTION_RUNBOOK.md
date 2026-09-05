@@ -254,7 +254,10 @@ Two other refusals, both deliberate:
       (`check:migration-safety` requires touching this doc or the rollback
       playbook — it cannot tell which one you owed)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
-- [ ] Supabase backups/snapshots confirmed before a **production** promotion
+- [ ] Understood that `frapp-prod` has **no** restorable backup to fall back on —
+      the nightly offsite dump covers `frapp-staging` only, and the free plan
+      offers neither a snapshot nor PITR
+      ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality)
 
 ## Local validation
 
