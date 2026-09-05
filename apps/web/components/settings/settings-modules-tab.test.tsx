@@ -135,4 +135,66 @@ describe("SettingsModulesTab", () => {
       screen.getByRole("switch", { name: /tasks enabled/i }),
     ).toBeEnabled();
   });
+  // AC 2 of #492: chat's ops-setup nudge links here with `?module=<key>`, and
+  // its whole value over a bare `?tab=modules` is landing the officer on the
+  // row it named rather than at the top of the full module list.
+  describe("focusModuleKey", () => {
+    it("focuses the named module's switch", () => {
+      render(
+        <SettingsModulesTab
+          enabledModules={{ dues: false }}
+          canManage
+          onToggle={() => {}}
+          focusModuleKey="dues"
+        />,
+      );
+      expect(screen.getByRole("switch", { name: /dues enabled/i })).toHaveFocus();
+    });
+
+    it("focuses nothing when no module is named", () => {
+      render(
+        <SettingsModulesTab
+          enabledModules={{ dues: false }}
+          canManage
+          onToggle={() => {}}
+        />,
+      );
+      expect(
+        screen.getByRole("switch", { name: /dues enabled/i }),
+      ).not.toHaveFocus();
+      expect(document.body).toHaveFocus();
+    });
+
+    // A locked row has no switch at all, so the effect must find no control
+    // and do nothing rather than throw on a null ref.
+    it("does not throw when the named module is always-on", () => {
+      expect(() =>
+        render(
+          <SettingsModulesTab
+            enabledModules={{}}
+            canManage
+            onToggle={() => {}}
+            focusModuleKey="chat"
+          />,
+        ),
+      ).not.toThrow();
+    });
+
+    // Only the named row. An effect that ran on every row would leave focus on
+    // whichever mounted last.
+    it("leaves the other rows unfocused", () => {
+      render(
+        <SettingsModulesTab
+          enabledModules={{ dues: false, tasks: false }}
+          canManage
+          onToggle={() => {}}
+          focusModuleKey="tasks"
+        />,
+      );
+      expect(screen.getByRole("switch", { name: /tasks enabled/i })).toHaveFocus();
+      expect(
+        screen.getByRole("switch", { name: /dues enabled/i }),
+      ).not.toHaveFocus();
+    });
+  });
 });
