@@ -37,6 +37,14 @@ interface ThreadPanelProps {
  * replies (rows whose `reply_to_id` matches the parent id). When no thread
  * is open, the parent shell renders a details placeholder instead — see
  * `chat-shell.tsx`.
+ *
+ * **It is a read-only collector, and that is now deliberate.** Replies are
+ * authored inline in the composer against the main timeline (#489), per
+ * `spec/behavior/chat/README.md` § Reply threads: "Discord-style
+ * reply-with-quote, not Slack-style nested threads. All replies appear in the
+ * main channel timeline." This panel is reached from a reply's **quote**, not
+ * from the row's Reply control — that control used to open it, which made
+ * "Reply" a dead end, since this component has never had a composer.
  */
 export function ThreadPanel({
   channelId,
@@ -56,6 +64,23 @@ export function ThreadPanel({
   const replies = useMemo(() => {
     if (!parent) return [];
     return allMessages.filter((message) => message.reply_to_id === parent.id);
+  }, [allMessages, parent]);
+
+  /**
+   * The parent's own parent, when the collected message is itself a reply.
+   *
+   * Every row this panel renders has `reply_to_id` set — the replies by
+   * construction, and the parent whenever it sits inside an imported Discord
+   * chain — so `MessageItem` draws a quote on all of them. Leaving
+   * `replyParent` unpassed made every one of those quotes read "Replying to a
+   * message that isn't loaded", each pointing at the row directly above it.
+   * The replies resolve to `parent` trivially; only the parent needs a lookup.
+   */
+  const parentsParent = useMemo(() => {
+    if (!parent?.reply_to_id) return undefined;
+    return (
+      allMessages.find((message) => message.id === parent.reply_to_id) ?? null
+    );
   }, [allMessages, parent]);
 
   // One batched request for the parent's avatar plus every distinct reply
@@ -110,7 +135,8 @@ export function ThreadPanel({
             Thread
           </p>
           <p className="mt-1 text-[12.5px] text-muted-foreground">
-            Replies stay in this thread; they still appear in the channel.
+            Every reply is already in the channel. This collects them in one
+            place.
           </p>
         </div>
         <Button
@@ -148,6 +174,7 @@ export function ThreadPanel({
             }
             viewerId={viewerId}
             showHeader
+            replyParent={parentsParent}
             onReact={onReact}
             onUnreact={onUnreact}
             onEdit={onEdit}
@@ -160,7 +187,7 @@ export function ThreadPanel({
           />
           {replies.length === 0 ? (
             <p className="px-5 py-4 text-[12.5px] text-muted-foreground">
-              No replies yet. Start the thread.
+              No replies yet. Use Reply on the message in the channel.
             </p>
           ) : (
             replies.map((message) => (
@@ -175,6 +202,12 @@ export function ThreadPanel({
                 }
                 viewerId={viewerId}
                 showHeader
+                // Every row in this list was selected by
+                // `reply_to_id === parent.id`, so the parent is known without
+                // a lookup — and passing it is what stops each reply from
+                // captioning itself "Replying to a message that isn't loaded"
+                // above the very message it is quoting.
+                replyParent={parent}
                 onReact={onReact}
                 onUnreact={onUnreact}
                 onEdit={onEdit}
