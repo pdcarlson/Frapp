@@ -355,10 +355,14 @@ describe('DiscordImportService — upload URLs', () => {
       file({ relative_path: 'part-001.json', part_index: 1, byte_size: 222 }),
     ]);
 
-    expect(repo.projectedArchiveBytes).toHaveBeenCalledWith(CHAPTER, IMPORT_ID, [
-      { relative_path: 'part-000.json', byte_size: 111 },
-      { relative_path: 'part-001.json', byte_size: 222 },
-    ]);
+    expect(repo.projectedArchiveBytes).toHaveBeenCalledWith(
+      CHAPTER,
+      IMPORT_ID,
+      [
+        { relative_path: 'part-000.json', byte_size: 111 },
+        { relative_path: 'part-001.json', byte_size: 222 },
+      ],
+    );
   });
 
   it('produces a key the storage path guard accepts, even from a traversal attempt', async () => {

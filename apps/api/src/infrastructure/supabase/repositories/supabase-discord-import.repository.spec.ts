@@ -217,3 +217,68 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
     ).toContainEqual(['metadata->>discord_import_id', IMPORT_B]);
   });
 });
+
+/**
+ * The archive quota read (#1243).
+ *
+ * The projection arithmetic itself lives in SQL and is exercised against a real
+ * Postgres — the tenant harness records queries without executing them, so it
+ * cannot answer what `unnest … with ordinality` does. What is worth pinning
+ * here is the wrapper's own two jobs: pairing the parallel arrays in one pass,
+ * and refusing to invent a zero when the function answers nothing.
+ */
+describe('SupabaseDiscordImportRepository — projectedArchiveBytes', () => {
+  function repoWithRpc(result: {
+    data: unknown;
+    error: unknown;
+  }): [SupabaseDiscordImportRepository, jest.Mock] {
+    const rpc = jest.fn(async () => result);
+    const client = { rpc } as unknown as ConstructorParameters<
+      typeof SupabaseDiscordImportRepository
+    >[0];
+    return [new SupabaseDiscordImportRepository(client), rpc];
+  }
+
+  it('pairs paths to sizes positionally and binds both scopes', async () => {
+    const [repo, rpc] = repoWithRpc({
+      data: [{ import_bytes: 300, chapter_bytes: 900 }],
+      error: null,
+    });
+
+    const result = await repo.projectedArchiveBytes(CHAPTER_A, IMPORT_A, [
+      { relative_path: 'part-000.json', byte_size: 100 },
+      { relative_path: 'a.png', byte_size: 200 },
+    ]);
+
+    expect(result).toEqual({ importBytes: 300, chapterBytes: 900 });
+    expect(rpc).toHaveBeenCalledWith('discord_import_projected_archive_bytes', {
+      p_chapter_id: CHAPTER_A,
+      p_import_id: IMPORT_A,
+      // Index-aligned: SQL joins these two on ordinality, so a reordering on
+      // either side would silently price a file at another file's size.
+      p_relative_paths: ['part-000.json', 'a.png'],
+      p_byte_sizes: [100, 200],
+    });
+  });
+
+  it('throws rather than reading an empty result as zero bytes', async () => {
+    // Zero is the one wrong answer that fails OPEN: it would clear every
+    // ceiling and let an over-quota import straight through.
+    const [repo] = repoWithRpc({ data: [], error: null });
+
+    await expect(
+      repo.projectedArchiveBytes(CHAPTER_A, IMPORT_A, []),
+    ).rejects.toThrow(/refusing to treat that as zero bytes/);
+  });
+
+  it('propagates the RPC error instead of answering zero', async () => {
+    const [repo] = repoWithRpc({
+      data: null,
+      error: new Error('rpc exploded'),
+    });
+
+    await expect(
+      repo.projectedArchiveBytes(CHAPTER_A, IMPORT_A, []),
+    ).rejects.toThrow('rpc exploded');
+  });
+});
