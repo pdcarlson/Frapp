@@ -281,7 +281,7 @@ export class PointsService {
     // Racing replays that both miss this read are still caught by
     // `idx_point_transactions_dedupe` at the insert.
     const replay = await this.resolveReplay(input);
-    if (replay) return this.completeReplay(input, replay);
+    if (replay) return this.completeReplay(replay);
 
     // Both anti-fraud limits are chapter-configurable (spec/behavior/points.md
     // § Anti-Fraud). A chapter with no `chapter_points_config` row gets the
@@ -304,7 +304,7 @@ export class PointsService {
       // land — telling the officer it was rate-limited when it succeeded. One
       // extra read, only on the refusal path, buys the honest answer.
       const raced = await this.resolveReplay(input);
-      if (raced) return this.completeReplay(input, raced);
+      if (raced) return this.completeReplay(raced);
 
       throw new HttpException(
         `Rate limit exceeded: maximum ${rateLimit} point adjustments per hour`,
@@ -341,7 +341,7 @@ export class PointsService {
         // A duplicate with no readable original would mean the index fired on a
         // row this chapter cannot see. Nothing sane to return, so surface it.
         if (!raced) throw error;
-        return this.completeReplay(input, raced);
+        return this.completeReplay(raced);
       }
       throw error;
     }
@@ -420,21 +420,24 @@ export class PointsService {
   }
 
   /**
-   * Finish a replay: re-attempt the chat card, then return the original row.
+   * Finish a replay: return the original row, firing no side effect at all.
    *
-   * The card post is re-attempted rather than skipped because it is the one
-   * side effect that IS idempotent — `ChatService.sendMessage` dedupes on the
-   * same `client_message_id` via `idx_chat_messages_dedupe` — and because the
-   * first attempt's post is best-effort and may have failed after the ledger
-   * row committed. Skipping it would make that card permanently unrecoverable:
-   * a real transaction with no audit card, and an optimistic client placeholder
-   * that no Realtime echo ever reconciles.
+   * An earlier revision of this re-attempted the chat card here, reasoning that
+   * the first attempt's post is best-effort and a card lost there could
+   * otherwise never be healed. **That was unsafe, and the reason is worth
+   * keeping:** `idx_chat_messages_dedupe` is scoped
+   * `(channel_id, sender_id, client_message_id)` — not by key alone — while the
+   * ledger row carries no channel at all. So a replay cannot prove it names the
+   * channel the original card went to, and re-posting would not deduplicate
+   * against it. A caller could send a byte-identical body with a different
+   * `channel_id` and get a *second* audit card for one ledger row, which for a
+   * FINE means re-broadcasting a member's penalty to a wider audience.
+   *
+   * Healing a lost card needs the origin channel recorded on the transaction;
+   * until then the ledger row is the durable record and the card is not. See
+   * #1734.
    */
-  private async completeReplay(
-    input: AdjustPointsInput,
-    existing: PointTransaction,
-  ): Promise<PointTransaction> {
-    await this.tryPostPointsCard(input, existing);
+  private completeReplay(existing: PointTransaction): PointTransaction {
     return existing;
   }
 

@@ -760,37 +760,23 @@ describe('PointsService', () => {
         );
       });
 
-      it('a replay does not re-send the non-idempotent push notification', async () => {
+      it('a replay fires no side effect at all', async () => {
         mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
 
         await replay();
 
         // Re-notifying would just move the duplicate from the ledger to the
-        // member's phone.
+        // member's phone; re-posting is covered by the channel case below.
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
       });
 
-      it('a replay DOES re-attempt the chat card, which is idempotent', async () => {
-        // The first attempt's card post is best-effort and may have failed
-        // after the ledger row committed. Skipping it on the replay would make
-        // that card permanently unrecoverable — a real transaction with no
-        // audit card, and a client placeholder no echo ever reconciles.
-        // `sendMessage` dedupes on the same key, so this cannot double-post.
-        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
-
-        await replay();
-
-        expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
-        expect(mockChatService.sendMessage).toHaveBeenCalledWith(
-          expect.objectContaining({
-            kind: 'points',
-            client_message_id: 'cmid-replay',
-            payload: expect.objectContaining({ transaction_id: 'pt-original' }),
-          }),
-        );
-      });
-
-      it('a dashboard replay posts no card (no channel to post into)', async () => {
+      it('a replay posts no second chat card, even into another channel', async () => {
+        // The card only LOOKS idempotent. `idx_chat_messages_dedupe` is scoped
+        // (channel_id, sender_id, client_message_id), and the ledger row
+        // records no channel — so a replay naming a different channel would
+        // NOT collide, and would post a second audit card for one ledger row.
+        // For a FINE that re-broadcasts a member's penalty to a wider audience.
         mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
 
         await service.adjustPoints({
@@ -800,6 +786,7 @@ describe('PointsService', () => {
           amount: 5,
           category: 'MANUAL',
           reason: 'great work',
+          channelId: 'chan-DIFFERENT',
           clientMessageId: 'cmid-replay',
         });
 
