@@ -67,11 +67,6 @@ a wider allowlist:
 | **Never** | product code, `apps/**` *except* its `AGENTS.md`, `packages/**`, `scripts/**`, `.github/**`, migrations |
 | **Volume** | at most **one** PR per run, on `claude/docs-upkeep-YYYY-MM-DD` (append `-2` if that branch exists). Never merge it — a human does. |
 
-> **ADRs are append-only.** `spec/architecture/README.md` holds ADRs and their amendments. Never
-> rewrite one to make it match today's code, even when it is factually overtaken — that is what
-> `AGENTS.md` § ADR discipline forbids. A superseded ADR claim goes in the run report, or becomes a
-> new dated amendment if the owner asks for one. Historical records are *supposed* to read as stale.
-
 ---
 
 ## Scope and the rotation

@@ -887,12 +887,16 @@ an agent cannot observe permission prompts. Decision record, probe table, and mi
 #### ADR-16 amendment 6 — a fourth Routine, and the first that fixes instead of files (2026-08-21)
 
 **Context:** amendment 5 carried over *three* Routines, all of which file GitHub issues and none of
-which edit docs. Documentation drift was left to `check-our-docs`,
-a mid-task habit with the coverage of whatever a session happened to read, so the low-traffic
-runbooks a cold session most needs were never swept. Routing that debt to the tracker instead did
-not work: well over half of all `area:docs` issues ever filed were still open, roughly a third of
-the open ones were five-minute fixes on the day they were filed, and several had never been
-touched since.
+which edit docs. Documentation drift was left to `check-our-docs`, a mid-task habit with the
+coverage of whatever a session happened to read, so the low-traffic runbooks a cold session most
+needs were never swept. Routing that debt to the tracker instead did not work: well over half of
+all `area:docs` issues ever filed were still open, roughly a third of the open ones were
+five-minute fixes on the day they were filed, and several had never been touched since.
+
+**Corrected 2026-09-05:** `check-our-docs` was retired. The paragraph above records what was true
+on 2026-08-21; that responsibility now sits in the documentation standard
+([`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md)) and in the
+docs angle of [`diff-review`](../../.claude/skills/diff-review/SKILL.md).
 
 **Decision:** add a fourth Routine, **Docs Upkeep** (`.claude/skills/docs-upkeep/`), weekly on
 Wednesday. It sweeps a calendar-derived rotating fifth of `docs/` and `spec/`, verifies the claims
@@ -902,10 +906,13 @@ a machine can settle, and **fixes them in a docs-only PR**. It is explicitly for
 **What this changes and what it does not.** It widens the *scope* of the self-maintenance docs-only
 PR from a routine's own skill files to `docs/`, `spec/` and the root guides. It does **not** relax
 the product-code ban, the never-self-merge rule, the one-PR-per-run cap, or the pre-push review
-gate. It inverts `check-our-docs` §"Inside a
-scheduled routine" and [`audit`](../../.claude/skills/audit/SKILL.md)'s read-only posture **for
-this routine only**; the other three still file rather than fix. ADRs stay append-only — the
-routine may not rewrite one to match today's code.
+gate. It inverts the report-don't-fix posture scheduled routines had inherited (from the
+retired `check-our-docs` skill's §"Inside a scheduled routine" — see the Context above) and
+[`audit`](../../.claude/skills/audit/SKILL.md)'s read-only posture **for this routine only**; the
+other three still file rather than fix. **Corrected 2026-09-05:** this amendment also said "ADRs
+stay append-only — the routine may not rewrite one to match today's code." That carve-out is
+revoked (ADR-18); ADRs are ordinary docs, and this routine corrects a wrong one in place like any
+other.
 
 - Runbook: [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md).
 
@@ -965,12 +972,12 @@ unattended is where a weaker judgement is most expensive.
 - Recurring false positives or a need for shared org config → tune `.gitleaks.toml`, re-baseline (a baseline is already adopted), or move to a managed scanner.
 - Metered-minute pressure → the job is already minimal, but it can be folded into an existing job or made `paths`-aware.
 
-### ADR-18: Agent operating docs — recurring rules vs immutable ADRs; spec vs code (2026-08-19)
+### ADR-18: Agent operating docs — recurring rules vs one-off records; spec vs code (2026-08-19)
 
 **Decision:** Split agent operating knowledge by half-life.
 
 - **`AGENTS.md`** holds only rules that are (1) recurring, (2) still true, and (3) something an agent would not derive by reading the code. Target: short enough to load every session (~200 lines).
-- **ADRs** in this file are the immutable, append-only log of one-off incidents and decisions. Never edit an ADR in place; supersede it with an amendment or a new ADR. Incident narration (dated outages, specific PR numbers, permission-tool archaeology) lives here, not in `AGENTS.md`.
+- **ADRs** in this file record one-off incidents and decisions — what was decided, and the reasoning that made it the decision. They are ordinary documentation, governed by [`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md) like every other doc: when an ADR says something that is no longer true, correct it in place and date the correction. **Corrected 2026-09-05** (this bullet, edited in place under the rule it now states): it previously read "ADRs in this file are the immutable, append-only log of one-off incidents and decisions. Never edit an ADR in place; supersede it with an amendment or a new ADR." That append-only rule is revoked — it was keeping known-wrong sentences in the log, including dead command names an agent would try to run. Amending or superseding is still the right shape when the *decision* itself changes; it is no longer required to fix a *wrong sentence*. Two things the ordinary standard still requires here: evidence (dated records, run links, run ids, the command behind a figure) is not discarded when a claim around it is corrected, and ADR numbers and headings are cited across CI workflows, scripts and tests with nothing validating them, so renaming one is a rename like any other: sweep for what points at it first. Incident narration (dated outages, specific PR numbers, permission-tool archaeology) lives here, not in `AGENTS.md`.
 - **Skills** under `.claude/skills/` hold task playbooks (including filing follow-up issues). **Commands** under `.claude/commands/` hold user-invocable procedures (`/next` stays a command).
 - **Spec vs code:** `spec/` is the source of truth for *intended* behavior; code is the source of truth for *current* behavior. Disagreement is a tracked bug to file, not silent agent discretion.
 

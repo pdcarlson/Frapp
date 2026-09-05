@@ -3,7 +3,9 @@
 Canonical, version-controlled spec for Frapp's scheduled backlog agents, which run as **Claude Code
 Routines** (claude.ai/code → the Frapp environment → **Routines**). Routines are configured in the
 UI (config-as-code isn't supported), so this file is the source of truth you copy into the UI. Keep
-it in sync when you change a routine. History of how backlog automation got here: ADR-16 and its
+it in sync in both directions: editing a prompt block here changes nothing that runs until a human
+re-pastes it, so a prompt change lands as a `[human]` issue, never as a note parked in this file
+(open one: [#1685](https://github.com/pdcarlson/Frapp/issues/1685) is the pattern). History of how backlog automation got here: ADR-16 and its
 amendments in [`spec/architecture/README.md`](../../../spec/architecture/README.md); the
 Linear-to-GitHub migration record is [#680](https://github.com/pdcarlson/Frapp/issues/680).
 
@@ -297,11 +299,11 @@ via npm run check:links, provider state via infrastructure-research. FIX what is
 docs-only PR restricted to the skill's path allowlist, and prefer deleting a
 duplicated fact and linking to its canonical home over syncing two copies. NEVER open an
 area:docs issue — this routine repairs, it does not file; anything not fixable in a docs edit goes
-in the run report instead. Never modify product code, never rewrite an ADR in place, never merge
-your own PR. Zero changes is a perfectly good outcome — never manufacture edits to show work. Say
-"unverified" rather than guessing when a provider is unreachable. Where this prompt and the skill
-disagree, the skill wins. End with the run report the skill specifies, leading with the slice and
-the "found but not fixable" list.
+in the run report instead. Never modify product code, never merge your own PR. Zero changes is a
+perfectly good outcome — never manufacture edits to show work. Say "unverified" rather than
+guessing when a provider is unreachable. Where this prompt and the skill disagree, the skill wins.
+End with the run report the skill specifies, leading with the slice and the "found but not
+fixable" list.
 ```
 
 **Routine 5 — "Hygiene Scan"** (daily 06:00 ET):
@@ -327,7 +329,7 @@ at most one open Hygiene Scan PR at a time (if one is open, service it and file 
 what you will not fix unattended via file-follow-up (triage + suggestion + area + priority +
 Agent brief + a visible fp=hygiene/ marker; at most ~3 net-new per run) and append this run's
 entry to the ledger. Never touch migrations, CI workflows, dependency versions, gate posture,
-apps/landing visuals, the seven frozen mobile files, spec/ behavior, or ADRs; never change
+apps/landing visuals, the seven frozen mobile files, or spec/ behavior; never change
 observable behaviour except a bug fix carried by a failing-then-passing test under its own
 heading. Zero fixes with the reasons written down is a fine outcome — never manufacture a change.
 If the GitHub MCP is unavailable, push the branch, report its name, and stop. Where this prompt

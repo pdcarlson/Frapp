@@ -5,9 +5,8 @@ Where a fact lives, what a doc owes a reader, and what to do when a doc turns ou
 **What this document does not do is enforce itself.** Placement, naming and whether a cited path still exists used to be machine-checked; the four gates that did it were deleted, and no check replaced them — in CI those questions are now nobody's. So everything below is a convention this document states and a reviewer applies ([`.claude/skills/diff-review/SKILL.md`](../../.claude/skills/diff-review/SKILL.md)), not a rule a check will fail you on. A misplaced doc reds nothing; the cost lands later, on the reader who cannot find the fact or who trusts the stale copy of it. What CI does still check, and what it does not: [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md).
 
 **Cite a rule here by its section, never by a number.** These rules are named, not numbered, so a
-citation survives one being added or reordered. Records that cite "hard rule N" predate that and
-point at the section whose wording matches; an append-only record keeps its original words, so the
-number stays and the section is where to read it.
+citation survives one being added or reordered. Records that cite "hard rule N" predate that; read
+them against the section whose wording matches.
 
 ## Where a fact lives
 
@@ -26,7 +25,7 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Chat behavior (a topic with 2+ files) | `spec/behavior/chat/` |
 | Settings behavior (a topic with 2+ files) | `spec/behavior/settings/` |
 | Product features, surfaces, positioning, module catalog | `spec/product/` |
-| Architecture, data model, API patterns, ADRs | `spec/architecture/README.md` — ADRs are append-only (amend or supersede, never rewrite) |
+| Architecture, data model, API patterns, ADRs | `spec/architecture/README.md` |
 | Engineering principles | `spec/engineering.md` |
 | Environments, CI/CD model | `spec/environments/README.md` |
 | UI requirements (brand, assets, resilience) | `spec/ui/` |
@@ -52,7 +51,7 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 
 - **A hand-maintained number is a future contradiction.** A total typed into prose has no mechanism to stay true, and two hand-kept copies of one total will eventually disagree. Delete it; restate one only where it is load-bearing, and then name the command that produces it.
 - **A copy of live state must say whether it states intent or observation.** The doc owns intent — what the system is supposed to do. An observation is what something was doing when someone looked, so it is only borrowed: it carries a dated stamp naming *how* it was checked (the command, the API call, the run), and the claim is refreshed whenever the date is. A bare date is decoration — it ages while nobody knows what to re-run.
-- **Do not verify intent against code.** `spec/` states intended behavior, code states current behavior, and a rationale is the record rather than a claim about the world that code can settle. When the code moves on, amend with a dated note; never rewrite the record to match today's code.
+- **Do not verify intent against code.** `spec/` states intended behavior, code states current behavior, and a rationale is the record rather than a claim about the world that code can settle. Code moving on is not evidence the rationale was wrong, so never "correct" a record to match today's code. Correct it when the record itself is wrong, and date the correction so a reader can tell it from the original.
 - **Provenance is evidence, not narration, and a rule is never widened past what was verified.** A dated record naming the run or command that tested something is the only proof it works, so compressing it away deletes the proof; and a narrow claim that was checked beats a general one that was not. Both rules in full: [`spec/engineering.md` § Changing existing code](../../spec/engineering.md#changing-existing-code).
 - **Say what a doc does not cover, beside what it does.** Coverage a reader assumes and does not have is how a confident wrong conclusion ships. A doc that hedges about its own accuracy is instructing you to verify before acting — so remove the reason for the hedge rather than leaving it standing with nothing to check against.
 
