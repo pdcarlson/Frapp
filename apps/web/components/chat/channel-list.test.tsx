@@ -5,6 +5,7 @@ import {
   ChannelList,
   badgeLabel,
   unreadAnnouncement,
+  type ChannelCategory,
   type ChatChannel,
   type ChannelUnread,
 } from "./channel-list";
@@ -31,6 +32,7 @@ const general: ChatChannel = { id: "c-gen", name: "general", type: "PUBLIC" };
 function renderList(
   channels: ChatChannel[],
   unreadByChannelId?: Map<string, ChannelUnread>,
+  categories?: ChannelCategory[],
 ) {
   return render(
     <ChannelList
@@ -39,8 +41,34 @@ function renderList(
       viewerId={VIEWER}
       memberNames={NAMES}
       unreadByChannelId={unreadByChannelId}
+      categories={categories}
       onPick={vi.fn()}
     />,
+  );
+}
+
+/**
+ * Section headers, in DOM order.
+ *
+ * Read off the rendered rail rather than asserted one at a time, because the
+ * *order* of the groups is half of what these tests are about — an assertion
+ * per header would pass on a rail that rendered them backwards.
+ */
+function sectionLabels(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll("p.uppercase")).map(
+    (node) => node.textContent ?? "",
+  );
+}
+
+/** Row titles under one section header, in DOM order. */
+function channelsUnder(container: HTMLElement, label: string): string[] {
+  const header = Array.from(container.querySelectorAll("p.uppercase")).find(
+    (node) => node.textContent === label,
+  );
+  if (!header) return [];
+  const list = header.parentElement?.querySelector("ul");
+  return Array.from(list?.querySelectorAll("li") ?? []).map((li) =>
+    li.querySelector("span.truncate")?.textContent ?? "",
   );
 }
 
@@ -72,6 +100,168 @@ describe("ChannelList display names", () => {
     renderList([general]);
 
     expect(screen.getByText("general")).toBeInTheDocument();
+  });
+});
+
+describe("ChannelList category grouping", () => {
+  // Deliberately NOT alphabetical, and deliberately not the order a naive
+  // `Object.keys` or a sort-by-name would produce: "Executive" before
+  // "Committees" is the server's `display_order`, and reproducing it is the
+  // whole of AC 4. A client-side sort by name would fail this test, which is
+  // the point.
+  const CATEGORIES: ChannelCategory[] = [
+    { id: "cat-exec", name: "Executive" },
+    { id: "cat-comm", name: "Committees" },
+  ];
+
+  const exec: ChatChannel = {
+    id: "c-exec",
+    name: "exec-board",
+    type: "PRIVATE",
+    category_id: "cat-exec",
+  };
+  const philanthropy: ChatChannel = {
+    id: "c-phil",
+    name: "philanthropy",
+    type: "PUBLIC",
+    category_id: "cat-comm",
+  };
+  const audit: ChatChannel = {
+    id: "c-audit",
+    name: "chapter-audit",
+    type: "PUBLIC",
+  };
+
+  it("nests each channel under its category header", () => {
+    const { container } = renderList(
+      [general, exec, philanthropy],
+      undefined,
+      CATEGORIES,
+    );
+
+    expect(channelsUnder(container, "Executive")).toEqual(["exec-board"]);
+    expect(channelsUnder(container, "Committees")).toEqual(["philanthropy"]);
+  });
+
+  it("puts uncategorized channels in the default Channels group", () => {
+    const { container } = renderList([general, exec], undefined, CATEGORIES);
+
+    expect(channelsUnder(container, "Channels")).toEqual(["general"]);
+  });
+
+  it("renders categories in the API's order, not alphabetically", () => {
+    const { container } = renderList(
+      [general, exec, philanthropy],
+      undefined,
+      CATEGORIES,
+    );
+
+    expect(sectionLabels(container)).toEqual([
+      "Channels",
+      "Executive",
+      "Committees",
+    ]);
+  });
+
+  it("keeps DMs and system channels in their own sections, below the categories", () => {
+    const { container } = renderList(
+      [general, exec, dm, audit],
+      undefined,
+      CATEGORIES,
+    );
+
+    expect(sectionLabels(container)).toEqual([
+      "Channels",
+      "Executive",
+      "Direct messages",
+      "System",
+    ]);
+    expect(channelsUnder(container, "Direct messages")).toEqual(["Alice Chen"]);
+    expect(channelsUnder(container, "System")).toEqual(["chapter-audit"]);
+  });
+
+  it("hides a category with no channels", () => {
+    const { container } = renderList([general, exec], undefined, CATEGORIES);
+
+    // "Committees" has no members here.
+    expect(sectionLabels(container)).toEqual(["Channels", "Executive"]);
+  });
+
+  it("hides the Channels group when every channel is categorized", () => {
+    const { container } = renderList([exec, philanthropy], undefined, CATEGORIES);
+
+    expect(sectionLabels(container)).toEqual(["Executive", "Committees"]);
+  });
+
+  it("falls back to uncategorized for a category_id that is not in the list", () => {
+    // Deleting a category tells the admin its channels "become uncategorized",
+    // and a stale cache produces the same shape. Either way the row must still
+    // render — dropping it would hide a channel the member can open.
+    const orphan: ChatChannel = {
+      id: "c-orphan",
+      name: "old-committee",
+      type: "PUBLIC",
+      category_id: "cat-deleted",
+    };
+    const { container } = renderList([orphan], undefined, CATEGORIES);
+
+    expect(channelsUnder(container, "Channels")).toEqual(["old-committee"]);
+  });
+
+  it("never lets a category pull a DM out of Direct messages", () => {
+    // Type is tested before category, so this cannot happen — asserted because
+    // the API does not forbid the column being set on a DM row.
+    const categorizedDm: ChatChannel = { ...dm, category_id: "cat-exec" };
+    const { container } = renderList([categorizedDm], undefined, CATEGORIES);
+
+    expect(channelsUnder(container, "Direct messages")).toEqual(["Alice Chen"]);
+    expect(sectionLabels(container)).toEqual(["Direct messages"]);
+  });
+
+  it("renders the pre-category layout when no categories are passed", () => {
+    // The prop is optional; a caller that has not loaded categories must get
+    // the single Channels group, not an empty rail.
+    const { container } = renderList([general, exec, dm]);
+
+    expect(sectionLabels(container)).toEqual(["Channels", "Direct messages"]);
+    expect(channelsUnder(container, "Channels")).toEqual([
+      "exec-board",
+      "general",
+    ]);
+  });
+
+  it("sorts by title inside a category, not by arrival order", () => {
+    const zulu: ChatChannel = {
+      id: "c-z",
+      name: "zulu",
+      type: "PUBLIC",
+      category_id: "cat-exec",
+    };
+    const alpha: ChatChannel = {
+      id: "c-a",
+      name: "alpha",
+      type: "PUBLIC",
+      category_id: "cat-exec",
+    };
+    const { container } = renderList([zulu, alpha], undefined, CATEGORIES);
+
+    expect(channelsUnder(container, "Executive")).toEqual(["alpha", "zulu"]);
+  });
+
+  it("drops a category header when the search filters out its last channel", async () => {
+    const user = userEvent.setup();
+    const { container } = renderList(
+      [general, exec, philanthropy],
+      undefined,
+      CATEGORIES,
+    );
+
+    await user.type(screen.getByLabelText("Search channels"), "exec");
+
+    // Filtering happens before grouping, so a category whose only match is
+    // filtered out disappears along with its header.
+    expect(sectionLabels(container)).toEqual(["Executive"]);
+    expect(channelsUnder(container, "Executive")).toEqual(["exec-board"]);
   });
 });
 

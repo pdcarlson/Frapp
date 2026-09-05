@@ -36,6 +36,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
 import {
   ChannelList,
+  type ChannelCategory,
   type ChannelUnread,
   type ChatChannel,
 } from "./channel-list";
@@ -184,6 +185,14 @@ export function ChatShell({
         muted: levelByChannelId.get(ch.id) === "off",
       })),
     [channelsQuery.data, levelByChannelId],
+  );
+
+  // The rail groups plain channels under these. Passed through in the order the
+  // API returned them — `SupabaseChatCategoryRepository.findByChapter` orders by
+  // `display_order` server-side, so there is nothing to re-sort here.
+  const categories = useMemo(
+    () => asArray<ChannelCategory>(categoriesQuery.data),
+    [categoriesQuery.data],
   );
 
   // Seeded from the `?channel=` query param a caller (e.g. the member
@@ -805,6 +814,7 @@ export function ChatShell({
             viewerId={userId}
             memberNames={memberNames}
             channels={channels}
+            categories={categories}
             unreadByChannelId={unreadByChannelId}
             activeChannelId={activeChannelId}
             onPick={(ch) => {
