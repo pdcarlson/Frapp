@@ -9,8 +9,9 @@ COPY packages/validation/package.json ./packages/validation/
 COPY packages/org-archetypes/package.json ./packages/org-archetypes/
 COPY packages/chapter-theme/package.json ./packages/chapter-theme/
 COPY packages/color/package.json ./packages/color/
+COPY packages/formatting/package.json ./packages/formatting/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
-RUN npm ci --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/color --workspace=packages/typescript-config --include-workspace-root
+RUN npm ci --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/color --workspace=packages/formatting --workspace=packages/typescript-config --include-workspace-root
 
 # Stage 2: Compile TypeScript
 FROM node:20-alpine AS builder
@@ -25,6 +26,8 @@ COPY packages/chapter-theme/src/ ./packages/chapter-theme/src/
 COPY packages/chapter-theme/tsconfig.json ./packages/chapter-theme/
 COPY packages/color/src/ ./packages/color/src/
 COPY packages/color/tsconfig.json ./packages/color/
+COPY packages/formatting/src/ ./packages/formatting/src/
+COPY packages/formatting/tsconfig.json ./packages/formatting/
 COPY apps/api/src/ ./apps/api/src/
 COPY apps/api/tsconfig.json apps/api/tsconfig.build.json apps/api/nest-cli.json ./apps/api/
 RUN npm run build --workspace=packages/validation
@@ -35,6 +38,8 @@ RUN npm run build --workspace=packages/org-archetypes
 # and fail on a dist that does not exist yet.
 RUN npm run build --workspace=packages/color
 RUN npm run build --workspace=packages/chapter-theme
+# @repo/formatting has no @repo dependencies, so it only has to precede apps/api.
+RUN npm run build --workspace=packages/formatting
 RUN npm run build --workspace=apps/api
 
 # Stage 3: Production-only dependencies (clean install, no dev deps)
@@ -46,6 +51,7 @@ COPY packages/validation/package.json ./packages/validation/
 COPY packages/org-archetypes/package.json ./packages/org-archetypes/
 COPY packages/chapter-theme/package.json ./packages/chapter-theme/
 COPY packages/color/package.json ./packages/color/
+COPY packages/formatting/package.json ./packages/formatting/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
 # mkdir guards the runner-stage COPYs. Hoisting decides where every dependency
 # lands, and BOTH directions break a COPY that assumes the other:
@@ -56,12 +62,13 @@ COPY packages/typescript-config/package.json ./packages/typescript-config/
 # packages/validation/node_modules, neither of which the runner copied, so the
 # image built cleanly and then died on its first require(). Every tree the
 # runner stage copies is created here so no COPY can fail with "not found".
-RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/color --workspace=packages/typescript-config --include-workspace-root \
+RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/color --workspace=packages/formatting --workspace=packages/typescript-config --include-workspace-root \
     && mkdir -p apps/api/node_modules \
        packages/validation/node_modules \
        packages/org-archetypes/node_modules \
        packages/chapter-theme/node_modules \
-       packages/color/node_modules
+       packages/color/node_modules \
+       packages/formatting/node_modules
 
 # Stage 4: Minimal production image
 FROM node:20-alpine AS runner
@@ -85,6 +92,9 @@ COPY --from=prod-deps --chown=frapp:frapp /app/packages/chapter-theme/node_modul
 COPY --from=builder --chown=frapp:frapp /app/packages/color/dist/ ./packages/color/dist/
 COPY --from=builder --chown=frapp:frapp /app/packages/color/package.json ./packages/color/
 COPY --from=prod-deps --chown=frapp:frapp /app/packages/color/node_modules/ ./packages/color/node_modules/
+COPY --from=builder --chown=frapp:frapp /app/packages/formatting/dist/ ./packages/formatting/dist/
+COPY --from=builder --chown=frapp:frapp /app/packages/formatting/package.json ./packages/formatting/
+COPY --from=prod-deps --chown=frapp:frapp /app/packages/formatting/node_modules/ ./packages/formatting/node_modules/
 
 USER frapp
 WORKDIR /app/apps/api
