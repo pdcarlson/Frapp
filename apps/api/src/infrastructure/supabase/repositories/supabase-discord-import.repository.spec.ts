@@ -1,4 +1,5 @@
 import { SupabaseDiscordImportRepository } from './supabase-discord-import.repository';
+import { ArchiveQuotaExceededError } from '../../../domain/repositories/discord-import.repository.interface';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -215,5 +216,141 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
     expect(
       harness.ops[0].filters.map((f) => [f.column, f.value]),
     ).toContainEqual(['metadata->>discord_import_id', IMPORT_B]);
+  });
+});
+
+/**
+ * The archive quota (#1243).
+ *
+ * The arithmetic lives in SQL and is exercised against a real Postgres — the
+ * tenant harness records queries without executing them, so it cannot answer
+ * what the monotonic `greatest(...)` upsert or the advisory lock do. What is
+ * worth pinning here is the wrapper's own contract: the payload it sends, and
+ * that it turns the function's raised ceiling into the domain error rather than
+ * letting a raw PostgREST error reach a caller that would report it as a 500.
+ */
+describe('SupabaseDiscordImportRepository — registerFiles', () => {
+  const ROW = {
+    import_id: IMPORT_A,
+    chapter_id: CHAPTER_A,
+    kind: 'media' as const,
+    part_index: null,
+    relative_path: 'a.png',
+    bucket: 'chat-archive',
+    storage_path: 'p/2',
+    content_type: 'image/png',
+    byte_size: 50,
+  };
+
+  function repoWithRpc(result: {
+    data: unknown;
+    error: unknown;
+  }): [SupabaseDiscordImportRepository, jest.Mock] {
+    const rpc = jest.fn(async () => result);
+    const client = { rpc } as unknown as ConstructorParameters<
+      typeof SupabaseDiscordImportRepository
+    >[0];
+    return [new SupabaseDiscordImportRepository(client), rpc];
+  }
+
+  it('sends the batch and both ceilings in one call', async () => {
+    const [repo, rpc] = repoWithRpc({
+      data: [{ ...ROW, id: 'f1', created_at: 'now', uploaded_at: null }],
+      error: null,
+    });
+
+    await repo.registerFiles(CHAPTER_A, IMPORT_A, [ROW], {
+      importBytes: 20,
+      chapterBytes: 50,
+    });
+
+    expect(rpc).toHaveBeenCalledWith('discord_import_register_files', {
+      p_chapter_id: CHAPTER_A,
+      p_import_id: IMPORT_A,
+      p_rows: [
+        {
+          relative_path: 'a.png',
+          kind: 'media',
+          part_index: null,
+          bucket: 'chat-archive',
+          storage_path: 'p/2',
+          content_type: 'image/png',
+          byte_size: 50,
+        },
+      ],
+      p_import_cap: 20,
+      p_chapter_cap: 50,
+    });
+  });
+
+  it('translates a raised ceiling into ArchiveQuotaExceededError with its numbers', async () => {
+    const [repo] = repoWithRpc({
+      data: null,
+      error: {
+        code: '23514',
+        message:
+          'discord_import_archive_quota: chapter 1234 would hold 900 bytes, past its 850 byte ceiling',
+      },
+    });
+
+    const caught = await repo
+      .registerFiles(CHAPTER_A, IMPORT_A, [ROW], {
+        importBytes: 1,
+        chapterBytes: 850,
+      })
+      .catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(ArchiveQuotaExceededError);
+    const quota = caught as ArchiveQuotaExceededError;
+    expect(quota.scope).toBe('chapter');
+    expect(quota.wouldHoldBytes).toBe(900);
+    expect(quota.capBytes).toBe(850);
+  });
+
+  it('does not mistake an unrelated check_violation for a quota refusal', async () => {
+    // The prefix match is what keeps a table constraint from being reported to
+    // an admin as "your archive is full".
+    const [repo] = repoWithRpc({
+      data: null,
+      error: {
+        code: '23514',
+        message:
+          'new row for relation "discord_import_files" violates check constraint "discord_import_files_kind_check"',
+      },
+    });
+
+    const caught = await repo
+      .registerFiles(CHAPTER_A, IMPORT_A, [ROW], {
+        importBytes: 1,
+        chapterBytes: 1,
+      })
+      .catch((error: unknown) => error);
+
+    expect(caught).not.toBeInstanceOf(ArchiveQuotaExceededError);
+  });
+
+  it('refuses to report success when the function returns no rows', async () => {
+    // A silent empty result would mint upload URLs for files that have no
+    // manifest row, and the worker skips every one of those.
+    const [repo] = repoWithRpc({ data: [], error: null });
+
+    await expect(
+      repo.registerFiles(CHAPTER_A, IMPORT_A, [ROW], {
+        importBytes: 1000,
+        chapterBytes: 1000,
+      }),
+    ).rejects.toThrow(/returned no rows/);
+  });
+
+  it('is a no-op for an empty batch', async () => {
+    const [repo, rpc] = repoWithRpc({ data: [], error: null });
+
+    await expect(
+      repo.registerFiles(CHAPTER_A, IMPORT_A, [], {
+        importBytes: 1,
+        chapterBytes: 1,
+      }),
+    ).resolves.toEqual([]);
+    expect(rpc).not.toHaveBeenCalled();
   });
 });

@@ -29,6 +29,16 @@ const MINT_BATCH = 100;
  */
 const CONFIRM_BATCH = 500;
 
+/**
+ * Consecutive refused mint batches before the run stops asking.
+ *
+ * One refusal is per-batch (a rejected file type, one oversized video). Three in
+ * a row is the archive itself — the quota, or an import that stopped being
+ * mutable — and every further batch would be refused identically while still
+ * costing a round trip and a server-side re-sum of the whole manifest.
+ */
+const MINT_FAILURES_BEFORE_STOP = 3;
+
 export interface StagedChannel {
   channelId: string;
   channelName: string;
@@ -104,6 +114,13 @@ export function UploadStep({
   const [uploaded, setUploaded] = useState(0);
   const [total, setTotal] = useState(0);
   const [failures, setFailures] = useState<string[]>([]);
+  // Why the server refused to register files, kept in state rather than only
+  // toasted: a toast is dismissible and the failures panel is the surface an
+  // admin is still looking at when they decide what to do next.
+  const [mintFailure, setMintFailure] = useState<string | null>(null);
+  // Files the run never sent, because it stopped early. Distinct from
+  // `failures`, which holds only what was sent and refused.
+  const [unattempted, setUnattempted] = useState(0);
 
   const handleFiles = useCallback(
     async (fileList: FileList | null) => {
@@ -113,6 +130,8 @@ export function UploadStep({
 
         setStatus("reading");
         setFailures([]);
+        setMintFailure(null);
+        setUnattempted(0);
         setUploaded(0);
 
         const channels = new Map<string, StagedChannel>();
@@ -176,9 +195,19 @@ export function UploadStep({
 
         const landed: string[] = [];
         const failed: string[] = [];
+        // The first reason the server gave for refusing to mint, kept so the
+        // run can end by SAYING it rather than reporting a silent failure count.
+        let mintFailureReason: string | null = null;
+        let consecutiveMintFailures = 0;
+        // Files whose batch was actually sent. After an early break the rest
+        // were never attempted, and they are still missing from the archive —
+        // counting only the refused ones would report a 5,000-file archive
+        // stopped at batch 3 as "300 files did not upload".
+        let attempted = 0;
 
         for (let i = 0; i < pending.length; i += MINT_BATCH) {
           const batch = pending.slice(i, i + MINT_BATCH);
+          attempted += batch.length;
           let tickets;
           try {
             tickets = await requestUrls.mutateAsync({
@@ -191,15 +220,55 @@ export function UploadStep({
                 part_index: entry.partIndex,
               })),
             });
-          } catch {
+          } catch (error) {
+            // Remember WHY, once. Before this, a refused mint was swallowed
+            // whole: the archive quota (#1243), a rejected file type, an import
+            // no longer mutable — all of them produced a "done" screen listing
+            // every file as failed with no reason anywhere, and the admin had
+            // nothing to act on.
+            //
+            // Recorded rather than rethrown, and that is the deliberate half.
+            // Throwing from here skips the `confirmUploads` loop below, so
+            // every object that already PUT successfully keeps
+            // `uploaded_at = null` — and `alreadyUploaded` is built from
+            // exactly that column. On a 40 GB archive refused two thirds of the
+            // way through, the documented recovery ("pick the folder again")
+            // would then re-send everything from byte zero, for hours, only to
+            // be refused at the same batch. Confirming what landed is what
+            // makes the refusal recoverable.
+            // The MOST RECENT reason, not the first. The stop below is caused
+            // by the last three failures, so latching the first would report an
+            // unrelated earlier rejection — one bad `.exe` in batch 7 — as the
+            // explanation for a quota refusal at batch 300, while also
+            // suppressing the panel's generic advice. The admin would delete the
+            // .exe, re-pick, and be refused in exactly the same place.
+            mintFailureReason = getErrorMessage(
+              error,
+              "Some files could not be registered for upload.",
+            );
+            setMintFailure(mintFailureReason);
             failed.push(...batch.map((entry) => entry.relativePath));
             setFailures((prev) => [
               ...prev,
               ...batch.map((entry) => entry.relativePath),
             ]);
             setUploaded((prev) => prev + batch.length);
+
+            // Stop once the refusals are clearly about the archive rather than
+            // this batch. A quota refusal is deterministic — every remaining
+            // batch is refused identically, and each one still takes the
+            // chapter's advisory lock and re-sums the whole manifest server-side
+            // before saying no. Breaking (rather than throwing) leaves the
+            // confirm loop below intact, so what already landed stays resumable.
+            //
+            // Not on the FIRST failure, because a single rejected file — one
+            // oversized video in five thousand — is per-batch, and stopping the
+            // whole archive for it would strand every file after it.
+            consecutiveMintFailures += 1;
+            if (consecutiveMintFailures >= MINT_FAILURES_BEFORE_STOP) break;
             continue;
           }
+          consecutiveMintFailures = 0;
 
           const byRelativePath = new Map(
             tickets.map((ticket) => [ticket.relative_path, ticket]),
@@ -251,6 +320,18 @@ export function UploadStep({
           );
         }
 
+        // Said BEFORE the confirm loop, because the confirm calls can themselves
+        // fail — and if they do, control leaves for the outer catch and this
+        // sentence would never be shown at all. The admin would then see a
+        // transient confirm error and no trace of the refusal that actually
+        // stopped the archive. It also persists in `mintFailure` state, which
+        // the failures panel renders, so it survives the toast being dismissed.
+        setUnattempted(pending.length - attempted);
+
+        if (mintFailureReason) {
+          toast({ variant: "destructive", description: mintFailureReason });
+        }
+
         // Chunked, because the API caps this at 500 paths. An unbatched call on a
         // real archive is a 400 that leaves every file unconfirmed.
         for (let i = 0; i < landed.length; i += CONFIRM_BATCH) {
@@ -274,7 +355,8 @@ export function UploadStep({
           exportCount: staged.filter((entry) => entry.kind === "export").length,
           mediaCount: staged.filter((entry) => entry.kind === "media").length,
           resumedCount: skipped,
-          pendingUploads: failed.length,
+          // Everything still missing: refused, plus never sent.
+          pendingUploads: failed.length + (pending.length - attempted),
         });
       } catch (error) {
         // This runs as `void handleFiles(...)`, so an escaping rejection would
@@ -353,12 +435,25 @@ export function UploadStep({
       {failures.length > 0 ? (
         <div className="rounded-md border border-border p-3 text-sm">
           <p className="font-semibold text-destructive-text">
-            {failures.length} file(s) did not upload
+            {failures.length + unattempted} file(s) did not upload
+            {unattempted > 0
+              ? ` — ${unattempted} of them were never attempted, because the upload stopped early`
+              : null}
           </p>
-          <p className="mt-1 text-muted-foreground">
-            Pick the folder again to retry — Signet re-sends only what is
-            missing. Files over 100 MB cannot be imported.
-          </p>
+          {/*
+            When the server said why, say that instead of guessing. The generic
+            advice below is actively wrong for an archive-quota refusal: re-picking
+            the folder is refused identically every time, and the cause is not the
+            100 MB per-file limit it names.
+          */}
+          {mintFailure ? (
+            <p className="mt-1 text-destructive-text">{mintFailure}</p>
+          ) : (
+            <p className="mt-1 text-muted-foreground">
+              Pick the folder again to retry — Signet re-sends only what is
+              missing. Files over 100 MB cannot be imported.
+            </p>
+          )}
           <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
             {failures.slice(0, 20).map((path) => (
               <li key={path}>{path}</li>
