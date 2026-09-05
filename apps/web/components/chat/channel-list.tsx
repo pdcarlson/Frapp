@@ -55,6 +55,33 @@ export interface ChannelUnread {
 
 const NO_UNREAD: ChannelUnread = { unreadCount: 0, mentionCount: 0 };
 
+/**
+ * A display-only channel grouping, from `GET /v1/channels/categories/list`.
+ *
+ * Deliberately narrower than the API row, which also carries `chapter_id`,
+ * `created_at` and `display_order`. **`display_order` is absent on purpose: the
+ * rail never sorts by it.** `SupabaseChatCategoryRepository.findByChapter`
+ * returns the rows already ordered — `display_order` first, then `created_at`
+ * to break ties deterministically — so the array arrives in the order it should
+ * render, and re-sorting here would be a second implementation of the same rule,
+ * free to disagree with the server's the moment either changes.
+ *
+ * So: **order is the caller's array order.**
+ *
+ * Note this is *not* how the chat-admin screen reads it — `chat-admin-page.tsx`
+ * re-sorts by `display_order` client-side. That is a real divergence and not the
+ * pattern to copy here: it predates the server's tie-break, and while
+ * `Array.sort` is stable enough that the two agree today, only one of them is
+ * reading the order the server actually decided.
+ */
+export interface ChannelCategory {
+  id: string;
+  name: string;
+}
+
+/** Stable empty default, so an absent `categories` prop is not a new array per render. */
+const NO_CATEGORIES: ChannelCategory[] = [];
+
 type Section = { key: string; label: string; channels: ChatChannel[] };
 
 const SYSTEM_CHANNEL_NAMES = new Set(["chapter-audit"]);
@@ -121,6 +148,14 @@ export interface ChannelListProps {
    * missing data.
    */
   unreadByChannelId?: Map<string, ChannelUnread>;
+  /**
+   * Chapter channel categories, in the order they should render.
+   *
+   * Optional and defaulting to none, which reproduces the pre-category layout
+   * exactly — a caller that has no categories, or has not loaded them yet, gets
+   * the single "Channels" group rather than an empty rail.
+   */
+  categories?: ChannelCategory[];
   onPick: (channel: ChatChannel) => void;
 }
 
@@ -147,6 +182,7 @@ export function ChannelList({
   viewerId,
   memberNames,
   unreadByChannelId,
+  categories = NO_CATEGORIES,
   onPick,
 }: ChannelListProps) {
   const [query, setQuery] = useState("");
@@ -189,26 +225,69 @@ export function ChannelList({
     );
   }, [channels, query, titleFor]);
 
+  /**
+   * Rail sections, in render order: the uncategorized default group, then one
+   * per category, then DMs, then system.
+   *
+   * **Type wins over category.** A row is tested for system and DM *before* its
+   * `category_id` is consulted, so a stray category on a DM row can never pull
+   * it out of "Direct messages" — the three type groups are what s04 draws, and
+   * categories subdivide the plain-channel group only.
+   *
+   * **Uncategorized keeps the label "Channels" and stays first.**
+   * `spec/behavior/chat/README.md` § Channel categories names the fallback group
+   * "Channels", which is what this rail already called it — so adopting
+   * categories moves no uncategorized channel. A chapter that categorizes
+   * everything just sees that group's empty section disappear, which the render
+   * below already does for any empty section.
+   */
   const sections = useMemo<Section[]>(() => {
-    const groups: Record<string, ChatChannel[]> = {
-      channels: [],
-      dms: [],
-      system: [],
-    };
+    const uncategorized: ChatChannel[] = [];
+    const dms: ChatChannel[] = [];
+    const system: ChatChannel[] = [];
+    // Seeded from `categories` so a category with no channels still gets an
+    // entry — it renders as an empty section, which the list then omits.
+    const byCategory = new Map<string, ChatChannel[]>(
+      categories.map((category) => [category.id, []]),
+    );
+
     for (const channel of filtered) {
-      if (isSystem(channel)) groups.system!.push(channel);
-      else if (isDm(channel)) groups.dms!.push(channel);
-      else groups.channels!.push(channel);
+      if (isSystem(channel)) system.push(channel);
+      else if (isDm(channel)) dms.push(channel);
+      else {
+        // A `category_id` naming a category that is not in the list — deleted,
+        // or a stale cache — falls back to uncategorized rather than vanishing.
+        // That matches what the admin screen promises when a category is
+        // deleted: "Channels in this category become uncategorized."
+        const bucket =
+          channel.category_id != null
+            ? byCategory.get(channel.category_id)
+            : undefined;
+        (bucket ?? uncategorized).push(channel);
+      }
     }
-    for (const list of Object.values(groups)) {
-      list.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
-    }
-    return [
-      { key: "channels", label: "Channels", channels: groups.channels! },
-      { key: "dms", label: "Direct messages", channels: groups.dms! },
-      { key: "system", label: "System", channels: groups.system! },
+
+    const result: Section[] = [
+      { key: "channels", label: "Channels", channels: uncategorized },
+      ...categories.map((category) => ({
+        // Prefixed so a category whose id ever collided with a literal key
+        // below cannot silently replace that section.
+        key: `category:${category.id}`,
+        label: category.name,
+        channels: byCategory.get(category.id) ?? [],
+      })),
+      { key: "dms", label: "Direct messages", channels: dms },
+      { key: "system", label: "System", channels: system },
     ];
-  }, [filtered, titleFor]);
+
+    // Sorted off the assembled list rather than a hand-written enumeration of
+    // the buckets: a section added above but forgotten in a second list would
+    // render unsorted, and nothing would catch the omission.
+    for (const section of result) {
+      section.channels.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
+    }
+    return result;
+  }, [filtered, titleFor, categories]);
 
   if (channels.length === 0) {
     return (
@@ -244,10 +323,22 @@ export function ChannelList({
       {sections.map((section) =>
         section.channels.length === 0 ? null : (
           <div key={section.key}>
-            <p className="px-3 pb-1 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            {/*
+              The header names the list rather than just sitting above it. With
+              three fixed, memorizable groups a bare label was survivable; the
+              rail now has one section per chapter category, so a screen-reader
+              member navigating by list or by button — the common mode, not
+              linear reading — would otherwise hear "exec-board, button" with no
+              indication of which group it belongs to, and the grouping this
+              component exists to provide would be inaudible.
+            */}
+            <p
+              id={`channel-section:${section.key}`}
+              className="px-3 pb-1 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+            >
               {section.label}
             </p>
-            <ul>
+            <ul aria-labelledby={`channel-section:${section.key}`}>
               {section.channels.map((channel) => {
                 const isActive = channel.id === activeChannelId;
                 const countsKnown = unreadByChannelId !== undefined;
