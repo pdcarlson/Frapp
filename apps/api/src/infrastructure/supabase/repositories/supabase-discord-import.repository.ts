@@ -1,12 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import { fetchAllPages } from '../supabase.utils';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
+  ArchiveQuotaScope,
   ClaimedDiscordImport,
   DiscordImportProgressPatch,
   IDiscordImportRepository,
 } from '../../../domain/repositories/discord-import.repository.interface';
+import { ArchiveQuotaExceededError } from '../../../domain/repositories/discord-import.repository.interface';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -21,17 +24,51 @@ import type {
 /**
  * PostgREST caps a response at `max_rows` (1000 — `supabase/config.toml`) and
  * signals truncation with a plain 200 and a null error, so an unpaged read
- * drops rows silently. Every batch here stays comfortably below the cap, and
- * with headroom rather than at it: a short page then unambiguously means the
- * rows ran out. Same reasoning as `SupabaseScheduledJobsRepository`.
+ * drops rows silently. Paged reads here go through the shared `fetchAllPages`
+ * (`infrastructure/supabase/supabase.utils.ts`), which stops only on an *empty*
+ * page and advances by the rows actually returned.
+ *
+ * For the *paged* reads the batch sizes below are therefore throughput choices
+ * rather than correctness ones. An earlier version of this note argued they had
+ * to keep headroom below the cap because "a short page then unambiguously means
+ * the rows ran out" — that rule was the bug (#1628), not the safeguard, and it
+ * also named a class (`SupabaseScheduledJobsRepository`) that does not exist.
+ *
+ * `MESSAGE_BATCH_SIZE` is the narrower case and still carries a real
+ * assumption: besides chunking inserts it bounds the `.in()` slice in
+ * `findExistingExternalIds`, which is *not* paged, so its result is silently
+ * truncated if `max_rows` ever drops below it. Tracked separately (#1722).
  */
 const MESSAGE_BATCH_SIZE = 200;
 
-/**
- * Manifest rows read per round trip. Below `max_rows` for the same reason
- * everything else in this file is — see the note above.
- */
+/** Manifest rows read per round trip. See the note above. */
 const FILE_PAGE_SIZE = 500;
+
+/**
+ * The message `discord_import_register_files` raises on a ceiling, parsed back
+ * into the domain error.
+ *
+ * The numbers travel in the message because PostgREST surfaces a raised
+ * exception as `{ code, message, details, hint }` and gives no structured
+ * channel for them. Matching is anchored on a literal prefix the function owns,
+ * so an unrelated `check_violation` from a table constraint cannot be mistaken
+ * for a quota refusal and reported to an admin as one.
+ */
+const ARCHIVE_QUOTA_MESSAGE =
+  /^discord_import_archive_quota: (import|chapter) \S+ would hold (\d+) bytes, past its (\d+) byte ceiling/;
+
+function parseArchiveQuotaError(error: {
+  message?: string | null;
+}): ArchiveQuotaExceededError | null {
+  const match = ARCHIVE_QUOTA_MESSAGE.exec(error?.message ?? '');
+  if (!match) return null;
+  const [, scope, wouldHold, cap] = match;
+  return new ArchiveQuotaExceededError(
+    scope as ArchiveQuotaScope,
+    Number(wouldHold),
+    Number(cap),
+  );
+}
 
 @Injectable()
 export class SupabaseDiscordImportRepository implements IDiscordImportRepository {
@@ -193,21 +230,56 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
 
   // ── uploaded files ────────────────────────────────────────────────────────
 
-  async createFiles(
+  async registerFiles(
+    chapterId: string,
+    importId: string,
     rows: Omit<DiscordImportFile, 'id' | 'created_at' | 'uploaded_at'>[],
+    caps: { importBytes: number; chapterBytes: number },
   ): Promise<DiscordImportFile[]> {
     if (rows.length === 0) return [];
-    // Upsert on the manifest's natural key so re-requesting an upload URL for a
-    // file the admin already registered is a no-op rather than a 23505. That is
-    // the normal path when an interrupted upload is resumed.
-    const { data, error } = await this.supabase
-      .from('discord_import_files')
-      .upsert(rows as TablesInsert<'discord_import_files'>[], {
-        onConflict: 'import_id,relative_path',
-      })
-      .select();
-    if (error) throw error;
-    return data ?? [];
+
+    // One RPC rather than an upsert here, because the quota check and the write
+    // have to share a transaction — see the migration for the concurrent-mint
+    // and ledger-rewrite failures that shape forecloses. The upsert on the
+    // manifest's natural key still happens, inside the function, so
+    // re-requesting a URL for an already-registered file remains the ordinary
+    // resume path rather than a 23505.
+    const { data, error } = await this.supabase.rpc(
+      'discord_import_register_files',
+      {
+        p_chapter_id: chapterId,
+        p_import_id: importId,
+        p_rows: rows.map((row) => ({
+          relative_path: row.relative_path,
+          kind: row.kind,
+          part_index: row.part_index,
+          bucket: row.bucket,
+          storage_path: row.storage_path,
+          content_type: row.content_type,
+          byte_size: row.byte_size,
+        })),
+        p_import_cap: caps.importBytes,
+        p_chapter_cap: caps.chapterBytes,
+      },
+    );
+
+    if (error) {
+      const quota = parseArchiveQuotaError(error);
+      if (quota) throw quota;
+      throw error;
+    }
+
+    // An empty result for a non-empty batch means the function returned no
+    // rows, which it cannot do on success — never read that as "registered
+    // nothing and that's fine", because the caller would then mint URLs for
+    // files with no manifest row and the worker would skip every one of them.
+    const created = data ?? [];
+    if (created.length === 0) {
+      throw new Error(
+        'discord_import_register_files returned no rows for a non-empty batch.',
+      );
+    }
+    return created;
   }
 
   async findFiles(
@@ -229,25 +301,23 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     // `resolveAsset` returns null, the attachment is silently absent, and the
     // message lands with an under-counted `attachment_count` on an import the
     // admin was told succeeded. That is the failure this paging removes.
-    const all: DiscordImportFile[] = [];
-    for (let from = 0; ; from += FILE_PAGE_SIZE) {
-      const { data, error } = await this.supabase
-        .from('discord_import_files')
-        .select('*')
-        .eq('import_id', importId)
-        .eq('chapter_id', chapterId)
-        .order('part_index', { ascending: true })
-        // The `id` tiebreaker is load-bearing, not cosmetic. `part_index` is
-        // null on every media row, so ordering by it alone leaves one enormous
-        // tie — and `.range()` over an unstable order can serve a row on two
-        // pages or on none, which is the very failure this loop exists to fix.
-        .order('id', { ascending: true })
-        .range(from, from + FILE_PAGE_SIZE - 1);
-      if (error) throw error;
-      const page = data ?? [];
-      all.push(...page);
-      if (page.length < FILE_PAGE_SIZE) return all;
-    }
+    return fetchAllPages<DiscordImportFile>(
+      (from, to) =>
+        this.supabase
+          .from('discord_import_files')
+          .select('*')
+          .eq('import_id', importId)
+          .eq('chapter_id', chapterId)
+          .order('part_index', { ascending: true })
+          // The `id` tiebreaker is load-bearing, not cosmetic. `part_index` is
+          // null on every media row, so ordering by it alone leaves one
+          // enormous tie — and `.range()` over an unstable order can serve a
+          // row on two pages or on none, which is the very failure this paging
+          // exists to fix.
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: FILE_PAGE_SIZE },
+    );
   }
 
   async markFilesUploaded(

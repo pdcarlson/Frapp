@@ -4,24 +4,11 @@ Developer guides and operator runbooks. Product and architecture truth lives in 
 
 ## Folders
 
-| Area | Path | Use for |
-| ---- | ---- | ------- |
-| **Guides** | [`guides/`](guides/README.md) | Contributor docs: getting started, testing, API/database overview, env config, Docker, deployment |
-| **Internal** | [`internal/`](internal/README.md) | Operations, CI/CD, mobile, quality, environment, security, and services |
-| **Performance** | [`performance/`](performance/README.md) | Ad-hoc performance investigations and optimization notes |
-| **Hooks** | [`hooks/`](hooks/README.md) | Conventions and tests for `packages/hooks` |
-
-## Internal subfolders
-
-| Topic | Path |
-| ----- | ---- |
-| Operations & runbooks | [`internal/ops/`](internal/ops/DEPLOYMENT.md) |
-| CI/CD & automations | [`internal/ci-cd/`](internal/ci-cd/DOCS_CI.md) |
-| Mobile | [`internal/mobile/`](internal/mobile/MOBILE_TESTING.md) |
-| Quality | [`internal/quality/`](internal/quality/PR_REVIEW_PROCESS.md) |
-| Environment & secrets | [`internal/environment/`](internal/environment/ENV_REFERENCE.md) |
-| Security | [`internal/security/`](internal/security/README.md) |
-| Service performance notes | [`internal/services/`](internal/services/chapter-service-perf.md) |
+Which directory owns which kind of change — across `docs/`, `docs/internal/` and `spec/` — is stated
+once, in [`docs/internal/DOCUMENTATION_CONVENTIONS.md` § Where things go](internal/DOCUMENTATION_CONVENTIONS.md#where-things-go).
+This index does not restate it; it only routes:
+[`guides/`](guides/README.md), [`internal/`](internal/README.md),
+[`performance/`](performance/README.md), [`hooks/`](hooks/README.md).
 
 The design system (tokens, components, iconography, microcopy, accent engine) lives in **[`spec/ui/design-system/`](../spec/ui/design-system/README.md)**.
 
@@ -29,11 +16,13 @@ The design system (tokens, components, iconography, microcopy, accent engine) li
 
 What to update in a PR, and where docs vs. spec belong: **[`docs/internal/DOCUMENTATION_CONVENTIONS.md`](internal/DOCUMENTATION_CONVENTIONS.md)**.
 
-The docs/spec CI gate (a change outside `docs/` or `spec/` must also touch one of them) is described in [`internal/ci-cd/DOCS_CI.md`](internal/ci-cd/DOCS_CI.md).
+The docs CI checks — what they do and do not enforce — are described in [`internal/ci-cd/DOCS_CI.md`](internal/ci-cd/DOCS_CI.md). None of them require a PR to touch a doc.
 
-The other quality gates — dependency-cruiser boundaries, oasdiff breaking-change detection, the
-`nestjs-typed` response-schema rule, jscpd duplication, and coverage — are in
+The other quality gates are in
 [`internal/ci-cd/QUALITY_GATES.md`](internal/ci-cd/QUALITY_GATES.md), which also records *why* each
-one is required, advisory, or `warn`.
+one is required, advisory, or `warn`. This index does not enumerate them — a second copy of that
+roster drifts, and the last one did: it omitted two of the three **required** gates (the 375px
+responsive floor and the Vercel-parity production build) and listed coverage, which
+`QUALITY_GATES.md` states outright is measured and **not** gated.
 
 Tech debt found in the Frapp → Signet rebuild is tracked as **GitHub Issues**, not in a doc — see [`AGENTS.md` § Tech debt protocol](../AGENTS.md#tech-debt-protocol-non-optional) for what to do when you find orphaned or contradictory code.

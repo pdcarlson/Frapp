@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Runs on `workflow_run: completed` for CI / Docs spec sync / Links (see
+// Runs on `workflow_run: completed` for CI / Docs checks / Links (see
 // .github/workflows/ci-wake.yml). Closes the wake gap in the PR-babysitting
 // loop: the PR-activity webhook that wakes a watching agent session delivers
 // CI failures, successful check-suite rollups, comments and reviews — but
@@ -11,7 +11,7 @@
 // The comment surface is deliberately narrow, and narrower than it once was:
 // this watchdog comments ONLY on outcomes the webhook does not already carry.
 // Success and real failures are the webhook's job — duplicating them put three
-// fresh comments (CI, Docs spec sync, Links) on every push and buried the
+// fresh comments (CI, Docs checks, Links) on every push and buried the
 // signal that was worth reading. See AGENT_INFRA.md § Wake coverage.
 //
 // Three responsibilities:

@@ -57,8 +57,8 @@ the design-board pass into `screenshots/mobile-reference/`.
 
 Output lands in `screenshots/`, which is **gitignored**. There is no sanctioned
 home for generated marketing binaries
-([`DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md) hard
-rule 1 forbids a new top-level docs folder), so regenerate them rather than
+([`DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives)
+forbids inventing a top-level folder), so regenerate them rather than
 committing them.
 
 Prefer a production build (`npm run build -w apps/web && npm run start -w apps/web`)

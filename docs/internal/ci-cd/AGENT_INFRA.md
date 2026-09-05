@@ -76,18 +76,18 @@ summary before running anything from this family.
 
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing, `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, and `@repo/api-sdk` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks`, `packages/chat-core`, and `packages/chat-integrations` suites; `api-docker-build` runs `apps/api/Dockerfile`; `web-production-build` builds `apps/web` and `apps/landing` on a `npm ci --omit=dev` tree, the Vercel production install shape) |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs. Per-job suite lists are **not restated here**: they live in [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) § Required Status Checks. Nothing asserts that copy any more — the docs gate that compared it against `ci.yml` was deleted along with the rest of them — so read `ci.yml` itself whenever the two could disagree. This copy was unasserted and had already lost `@repo/theme` — the same package whose disappearance (#1153) the gate exists to catch |
 | Composite actions   | `.github/actions/<name>/action.yml` — shared step sequences called as `uses: ./.github/actions/<name>`. Requires an `actions/checkout` earlier in the job. Currently one: **`turbo-packages-build`**, the ADR-15 Lever A turbo cache restore + `packages/*` build, used by all 8 jobs that need prebuilt packages. Its cache key is single-sourced there and **no workflow may spell it out again** — `scripts/ci/__tests__/turbo-packages-build-action.test.mjs` enforces that, and also that `clean-checkout-typecheck` and `web-production-build` never acquire the action. Add `.github/actions/**` to any `dorny/paths-filter` list that gates a job using one, or a PR touching only the action skips that job. |
 | API deploy (staging) | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`) on `main`. Staging only since #1340. |
 | Production deploy   | `.github/workflows/deploy-production.yml` — `workflow_dispatch` ONLY, takes a `sha`. Validates the commit is an ancestor of `main` with green CI (`scripts/ci/validate-deploy-sha.mjs`) — the required-check roster intersected with the jobs that commit's own workflows define, so a check it predates reads *not applicable* instead of making an older commit undeployable (see the **Deploying an OLDER commit** callout in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`) — preflights the provider guardrails, replays the migration against production's live applied state, applies, deploys that commit to Render by `commitId` and to Vercel with `target: production`, then calls `release.yml`. One job under `environment: production`, so one approval click. A `scope: migrations-only` input applies the migrations and stops — no Render deploy, no Vercel build, no tag — which is what the deleted `Migrate production` workflow used to do, minus that workflow's habit of skipping every gate in this sentence. |
 | Production guardrails | `.github/workflows/production-guardrails.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`, and re-run as a preflight inside the production deploy. Asserts Render `frapp-api-prod` has auto-deploy **off** and tracks `main`, and that neither Vercel project is **linked to Git**. Both settings are dashboard-only and fail OPEN, so they can only be asserted, never enforced. The Vercel half was **inverted on 2026-09-02** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)): it used to assert that neither project's Production Branch was `main`, which ADR-21's unlink turned into a permanent self-inflicted failure — with `link: null` the branch is absent, and absent was coded as a violation, so the daily run AND the production-deploy preflight both failed. It now asserts the condition that actually keeps production safe post-ADR-21, that no Git link exists; a *present* link is the violation. Inverted rather than deleted, because staying unlinked is unversioned dashboard state a single click could undo. Because absent now means pass, the script first checks the response really is a project (`looksLikeVercelProject`) so an error envelope cannot read as "unlinked, therefore green". The Render assertion is unaffected. See the Vercel note under this table. Logic in `scripts/ci/production-guardrails.mjs`. **Not** a required check. |
-| Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
-| Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render state polling, **staging only**. Its two Vercel jobs (`verify-vercel-web`, `verify-vercel-landing`) were **removed on 2026-09-02** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)): ADR-21's unlink means no push produces a Vercel deployment, so polling for one was guaranteed to fail rather than able to detect anything, and both had been red on every push (landing since run #428, 2026-09-01T20:28Z; web since run #437, 2026-09-02T03:04Z — roughly six and a half hours apart, not together). `verify-vercel-deploy.mjs` and `ensure-vercel-staging-alias.mjs` are **kept** for [#1578](https://github.com/pdcarlson/Frapp/issues/1578) to re-wire against a deployment CI creates; they are unreferenced meanwhile. The Render half still polls. Production verifies itself inline inside `deploy-production.yml`, polling the deploy/deployment IDs it created, with stricter semantics: a `CANCELED` Vercel deployment is a failure there, never neutral. |
+| Deploy outcome      | Terminal `deploy-outcome` job in **both** `.github/workflows/deploy-api.yml` and `.github/workflows/deploy-vercel-staging.yml` — in each, the only job with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Shared logic in `scripts/ci/deploy-alert.mjs`, selected per workflow by the required `ALERT_CONFIG` env var (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`, `…/deploy-vercel-staging-workflow.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
+| Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render state polling, **staging only**. Its two Vercel jobs (`verify-vercel-web`, `verify-vercel-landing`) were **removed on 2026-09-02** ([#1579](https://github.com/pdcarlson/Frapp/issues/1579)): ADR-21's unlink means no push produces a Vercel deployment, so polling for one was guaranteed to fail rather than able to detect anything, and both had been red on every push (landing since run #428, 2026-09-01T20:28Z; web since run #437, 2026-09-02T03:04Z — roughly six and a half hours apart, not together). [#1578](https://github.com/pdcarlson/Frapp/issues/1578) (2026-09-04) built the CI-driven deploys: `deploy-vercel-staging.yml` creates the staging deployments after green CI and verifies them **by deployment id**, so the Vercel jobs were not re-added here — an observer keyed on a pushed SHA is strictly worse than the workflow that holds the id, and it could not stay CI-gated. `ensure-vercel-staging-alias.mjs` is referenced again, from that workflow; `verify-vercel-deploy.mjs` is called by no workflow, but is **not** dead code — `deploy-vercel.mjs` imports its terminal-state sets, so it is on the production deploy path and must not be deleted or narrowed as unused. The Render half still polls. Production verifies itself inline inside `deploy-production.yml`, polling the deploy/deployment IDs it created, with stricter semantics: a `CANCELED` Vercel deployment is a failure there, never neutral. |
 | Migration drift     | `.github/workflows/check-migration-drift.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Compares each deployed database's `schema_migrations` against `supabase/migrations/` and upserts one `routine-state` alert issue, closing it when every environment is back in sync. Job-scoped `issues: write`; workflow-level grant stays `contents: read`. Logic in `scripts/ci/check-migration-drift.mjs` (tests: `scripts/ci/__tests__/check-migration-drift.test.mjs`). **Not** a required check. See "Schema drift detection" below. |
 | Staging conformance | `.github/workflows/staging-conformance.yml` — **scheduled** (see § Scheduled conformance below for the time) + `workflow_dispatch`. Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, and an end-to-end sign-in whose JWT carries `active_chapter_id`. **Migration parity is deliberately NOT checked here** — `check-migration-drift.yml` above owns it end to end; see "Scheduled conformance" below. Upserts its own `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. |
 | Release tags        | `.github/workflows/release.yml` — `workflow_call` from `deploy-production.yml` (plus `workflow_dispatch` for retry). Tags the deployed commit AFTER Render and Vercel report healthy, so a `v*` tag names something live. Bump is the highest `release:*` label across every PR merged since the last tag (`scripts/ci/resolve-release-bump.mjs`), overridable by a dispatch input. |
-| Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
-| CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), and upserts one PR wake comment **only for an outcome the PR-activity webhook does not already carry** — a cancelled or timed-out run, or an infra failure the re-queue could not absorb. Success and real failures clear the stale wake and say nothing. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
+| Docs                | `.github/workflows/docs.yml` — one job, `env-slugs`: an Infisical environment slug is one that exists, wherever `scripts/check-env-slugs.mjs` looks and in the syntaxes it matches — both are in the script, not restated here. Despite the workflow's name it is **not** a documentation gate, and it is **not** a required check; the four docs gates that used to run here were deleted, and nothing replaced them in CI. Markdown links are a separate workflow (`links.yml`, job `link-check`), also not required. See [`DOCS_CI.md`](DOCS_CI.md) |
+| CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs checks / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), and upserts one PR wake comment **only for an outcome the PR-activity webhook does not already carry** — a cancelled or timed-out run, or an infra failure the re-queue could not absorb. Success and real failures clear the stale wake and say nothing. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
 | PR base sync        | `.github/workflows/pr-base-sync.yml` — `push` to `main`: sweeps open PRs targeting it (cap 20, logged); behind + clean PRs are auto-updated via the update-branch API **only when the base-sync GitHub App token mints** (default-token pushes trigger no CI). Conflicts and per-PR update failures upsert one `<!-- frapp-base-sync -->` wake comment telling the watching agent to merge `main` itself; a missing or rejected token is repo-wide, so it raises **one** `routine-state` alert issue instead of the same comment on every PR. Logic in `scripts/ci/pr-base-sync.mjs` (tests: `scripts/ci/__tests__/pr-base-sync.test.mjs`). **Not** a required check. See "Base-branch sync" below. |
 | PR base guard       | `.github/workflows/pr-base-guard.yml` — the **only** workflow with no `on.pull_request.branches` filter, so it runs on every PR whatever the base. Fails when the base is not `main`, which is the one check a stacked PR would otherwise never get. No checkout, no npm, no third-party action; reads `pull_request.base.ref` off the event payload. Fires on `edited` too, so retargeting a base cannot leave a stale green. **Not** yet a required check — see "CI branch filters" below. |
 | PR CI branch filter | `ci.yml` / `docs.yml` / `links.yml` set `on.pull_request.branches: [main]`. GitHub matches that list against the PR **base**. A PR whose base is anything else skips every required check. See "CI branch filters" under PR babysitting. |
@@ -113,10 +113,13 @@ summary before running anything from this family.
 > [`spec/architecture/README.md`](../../../spec/architecture/README.md), with its 2026-09-02
 > amendment — read it there rather than
 > re-deriving it here. The replacement model (`vercel build`
-> plus `vercel deploy --prebuilt --prod` driven from GitHub Actions) is **designed, not built** —
+> plus `vercel deploy --prebuilt` driven from GitHub Actions) was **built** by
 > CI/CD stage 7, [#1578](https://github.com/pdcarlson/Frapp/issues/1578) under the
-> [#1381](https://github.com/pdcarlson/Frapp/issues/1381) epic. Nothing in this repo deploys Vercel
-> today; do not read any row above as describing a working path.
+> [#1381](https://github.com/pdcarlson/Frapp/issues/1381) epic:
+> `.github/workflows/deploy-vercel-staging.yml` deploys staging after green CI on `main`, and
+> `deploy-production.yml` deploys production from a dispatched SHA. Both run
+> `scripts/ci/deploy-vercel.mjs`. Note it has **never run against the live projects** — the first
+> real exercise of either path is its first run.
 >
 > This does **not** retire the "dashboard-only, fail-open settings" framing the guardrail row sits
 > inside. While the projects stay unlinked there is no Production Branch left to point at `main` —
@@ -152,15 +155,8 @@ Deeper deploy architecture: [`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md).
 
 ## Infisical sync map
 
-| #   | Infisical env | Destination                         |
-| --- | ------------- | ----------------------------------- |
-| 1   | staging       | Render → frapp-api-staging          |
-| 2   | production    | Render → frapp-api-prod             |
-| 3   | staging       | Vercel → frapp-web (Preview)        |
-| 4   | production    | Vercel → frapp-web (Production)     |
-| 5   | staging       | Vercel → frapp-landing (Preview)    |
-| 6   | production    | Vercel → frapp-landing (Production) |
-| 7   | per-env       | GitHub Actions (OIDC)               |
+The six live syncs — source environment, secret path, destination scope, git branch filter, and the
+date the dashboard was last read — are inventoried in exactly one place: [`SECRETS_MANAGEMENT.md` §5 "Configure Secret Syncs"](../environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs). GitHub Actions is not one of them; `deploy-api.yml` pulls at job time. Do not restate the table here.
 
 Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) and root `.infisical.json`.
 
@@ -276,9 +272,9 @@ they take the default `release:patch` bump.
 ### The ignore list is a runtime constraint, not a preference
 
 `react`, `react-dom`, `react-test-renderer`, the `react-native*` family and the Expo client packages
-are ignored. React is pinned to an **exact** `19.1.0` in every workspace plus a root `overrides`
-entry: React Native 0.81.5 bundles `react-native-renderer` 19.1.0, which asserts exact version
-equality with `react` at runtime, while its peer range (`^19.1.0`) does not express that. npm will
+are ignored. React is pinned to an **exact** version in every workspace plus a root `overrides`
+entry: React Native bundles a `react-native-renderer` that asserts exact version equality with
+`react` at runtime, while its peer range does not express that. npm will
 therefore accept a newer React silently, hoist it, and kill `apps/mobile` on first render with
 "Invalid hook call" — a failure **only booting the app on a device catches**, never CI. See
 [`AGENTS.md` § Gotchas](../../../AGENTS.md) and PR #842. These packages move as a version-locked set
@@ -314,44 +310,17 @@ invisible to it, so they neither get bumped nor get cleaned up as the direct dep
 them in move on. Reviewing that block is a manual job; `npm run check:npm-audit` is what tells you an
 override is no longer doing its work.
 
-### Dependabot PRs are exempt from the docs/spec sync gate
+### Dependabot PRs need no docs exemption
 
-`check-docs-impact.mjs` runs from **one** workflow — `.github/workflows/docs.yml` (the required
-`docs-spec-sync` check) — and skips when the PR author is `dependabot[bot]`.
+They used to. `docs-spec-sync` was a required check under `enforce_admins: true` that failed any PR
+touching non-`docs/` files without touching `docs/` — and a Dependabot PR changes `package.json` /
+`package-lock.json` and nothing else, so without a step-level exemption keyed on the PR author every
+one of them was permanently unmergeable, not merely red. The gate was deleted in #1597 and the
+exemption went with it.
 
-Without that exemption Dependabot would be unusable here, not merely noisy: its PRs change
-`package.json` / `package-lock.json` and nothing else, `check-docs-impact.mjs` fails any PR that
-touches non-`docs/` files without touching `docs/`, and **`docs-spec-sync` is a required status check**
-(`scripts/ci/lib/required-checks.mjs`) under `enforce_admins: true`. Every Dependabot PR would
-therefore have been permanently unmergeable — blocked, with no admin override.
-
-Two things to preserve if you ever edit that condition:
-
-- **Skip the step, never the job.** A skipped job never reports its check run, so the PR would block
-  forever on a required check that never arrives — worse than the failure being replaced. The
-  step-level `if` keeps the job, and therefore `docs-spec-sync`, green.
-- **Key on `github.event.pull_request.user.login`, not `github.actor`.** The actor changes when a
-  human re-runs the workflow, which would silently flip the exemption off mid-PR.
-
-`check-docs-structure.mjs` needs no exemption, but not for the reason this line used to give. It is
-no longer a step in `docs-spec-sync` at all: since 2026-09 it reads the **whole tree** rather than
-newly added paths, so it moved to its own reporting-only `docs-structure` job
-([`DOCS_CI.md`](DOCS_CI.md)). A dependency bump passes it because the tree is clean, not because the
-diff is — and being non-required, it could not make a Dependabot PR unmergeable even if it failed.
-
-**There used to be a second copy, and keeping two in sync is exactly what failed.** `ci.yml` ran the
-same script as the last step of `lint-and-typecheck`, unguarded, so every Dependabot PR went green on
-`docs-spec-sync` and red on `lint-and-typecheck` for the identical reason the exemption exists — the
-exemption was real but inert, and the PRs were just as unmergeable. It was given the same condition
-(#1011) and then **removed entirely** when the `no-doc-change-needed` waiver landed: honouring a label
-in `ci.yml` would have meant re-running the whole suite, Docker build included, on every label
-mutation on every PR. **The gate now has exactly one home. Do not add a second** — the drift above is
-what a second copy buys you. Full contract: [`DOCS_CI.md`](DOCS_CI.md).
-
-One caller outside CI: [`scripts/run-local-ci-gate.mjs`](../../../scripts/run-local-ci-gate.mjs) runs
-the script locally. It needs no Dependabot exemption (a human runs it), and it inherits
-`PR_LABELS_JSON` from the shell, so the waiver works there too — see
-[`DOCS_CI.md`](DOCS_CI.md#the-no-doc-change-needed-waiver).
+The lesson worth keeping is why the exemption existed at all: a required check that a whole category
+of legitimate PR **cannot** satisfy is not a gate, it is a block. That was the argument for deleting
+the gate, and it is the test to apply before adding any check to `DOCS_CHECKS`.
 
 ### `colorjs.io` is ignored: it is a vendored-generator pin, not a dependency
 
@@ -588,7 +557,7 @@ drift this layer exists to stop (stage 4 of the CI/CD redesign, [#1382](https://
 | `scripts/ci/lib/http.mjs` | `fetchWithRetry`, `resilientFetch`, `isRetriableStatus`, `IDEMPOTENT_METHODS` | Any outbound call. `resilientFetch` is a drop-in `fetch` carrying a 15s timeout and a bounded 3-attempt retry. |
 | `scripts/ci/lib/github.mjs` | `ghRequest`, `githubHeaders`, `GITHUB_API` | Every GitHub REST call. Never throws — a network rejection returns `{ ok: false, status: 0, data: <message> }`, where the message folds in the error's `cause` (undici leaves `message` as the bare "fetch failed" and hangs the real diagnosis there). `data` is `null` only when a real HTTP response carried an empty body, so a truthy `data` is **not** evidence a response was received — check `status !== 0` for that. |
 | `scripts/ci/lib/providers.mjs` | `fetchJson`, `fetchRenderDeploys`, `fetchVercelDeployments`, `findRenderDeployBySha`, `findVercelDeploymentBySha`, `vercelDeploymentCreatedAt` | `fetchJson` is the shared ok-check-throw-json wrapper (was three near-identical copies, #1351); `fetchRenderDeploys` / `fetchVercelDeployments` list one page through it. `findRenderDeployBySha` / `findVercelDeploymentBySha` page back through that listing, bounded, looking for a SHA — use these rather than the single-page fetchers when matching against a specific commit, since a page holds only the newest slice and an older SHA can fall off it (#1377). |
-| `scripts/ci/lib/polling.mjs` | `createClock`, `pollUntilTerminal` | `createClock` is an injectable clock, so a poll loop's tests run without sleeping. `pollUntilTerminal` is the shared "fetch, classify, sleep, repeat until terminal or timeout" loop behind all four provider pollers (`verify-render-deploy.mjs`, `verify-vercel-deploy.mjs`, `deploy-render-production.mjs`, `deploy-vercel-production.mjs`, #1351) — it owns only the loop mechanics; each caller's `classify` closure keeps its own terminal-state judgment (the production-path pollers treat a cancel as failure where the observers treat it as neutral, deliberately not unified). |
+| `scripts/ci/lib/polling.mjs` | `createClock`, `pollUntilTerminal` | `createClock` is an injectable clock, so a poll loop's tests run without sleeping. `pollUntilTerminal` is the shared "fetch, classify, sleep, repeat until terminal or timeout" loop behind all four provider pollers (`verify-render-deploy.mjs`, `verify-vercel-deploy.mjs`, `deploy-render-production.mjs`, `deploy-vercel.mjs`, #1351) — it owns only the loop mechanics; each caller's `classify` closure keeps its own terminal-state judgment (the production-path pollers treat a cancel as failure where the observers treat it as neutral, deliberately not unified). |
 | `scripts/ci/lib/alert-issue.mjs` | `findAlertIssuesDetailed`, `raiseAlert`, `resolveAlert` | The create/reopen/comment/close upsert contract for `routine-state` alert issues. |
 
 Every one of these takes an injectable `fetchImpl` (or clock), which is what keeps the suites offline.
@@ -597,9 +566,13 @@ Every one of these takes an injectable `fetchImpl` (or clock), which is what kee
 
 `fetchWithRetry` retries `GET`, `HEAD` and `OPTIONS`. It does **not** retry `POST`, `PATCH`, `PUT` or
 `DELETE`, and that restriction is load-bearing rather than conservative habit: `deploy-render-production.mjs`
-and `deploy-vercel-production.mjs` both **POST to create a deployment**. If the first POST reaches the
+**POSTs to create a deployment**. If the first POST reaches the
 provider and only its response is lost — a gateway 502, or the timeout firing on a slow but successful
 call — then re-sending it starts a **second production deploy**.
+
+The Vercel deployer reaches this module with `GET`s only — a deployment lookup and a poll — because it
+creates deployments through the Vercel CLI, not through this client. That is why it is not a second example
+here; the rule is unchanged for anything that does POST a create.
 
 Non-idempotent calls are still bounded, but on a **much longer** deadline (`NON_IDEMPOTENT_TIMEOUT_MS`,
 120s, against 15s for a retriable call). Aborting a create is not free: if the short deadline fired on
@@ -633,7 +606,7 @@ watching session was never woken — the PR sat silent for ~2h until a human not
 
 `on.pull_request.branches` on `ci.yml`, `docs.yml`, and `links.yml` is `[main]`.
 GitHub matches that list against the PR **base**, not the head. A PR whose base is another
-feature branch therefore never runs CI, docs-spec-sync, or Links. GitHub still allows a
+feature branch therefore never runs CI, Docs checks, or Links. GitHub still allows a
 squash-merge; the UI shows MERGED; the commits exist only on the base feature branch.
 `origin/main` is unchanged. `pr-base-sync.yml` only sweeps PRs targeting `main`, and
 `ci-wake.yml` never fires because CI never ran — the babysit loop is blind.
@@ -752,7 +725,7 @@ three; they never prompt.**
 > red wake outliving the failure it described.
 
 The webhook's success coverage is the reason the watchdog stopped commenting on green runs. Before
-that, every push put three fresh comments on the PR (CI, Docs spec sync, Links) restating what the
+that, every push put three fresh comments on the PR (CI, Docs checks, Links) restating what the
 checks UI and the webhook had both already said, and the delete-then-create cadence re-notified on
 each one — so the wake that *was* worth reading arrived indistinguishable from two that were not.
 A watchdog whose output gets skimmed is not a watchdog. Silence is now the signal that nothing
@@ -785,7 +758,7 @@ Two earlier claims about this tool are corrected: on this surface the call does 
 `-32003`, and approval is **not** converted to a denial — the owner approved and the call succeeded,
 returning a live trigger id. It simply *asks*, and asking is what disqualifies it from unattended
 runs — not failing. Owner's standing preference (2026-08-08): don't call it. The other three layers
-carried PR #743 unaided — three `CI wake` comments (CI, Docs spec sync, Links) plus the merge
+carried PR #743 unaided — three `CI wake` comments (CI, Docs checks, Links) plus the merge
 notification, none of which prompted. Anything genuinely needing a schedule is a real Routine
 created in the UI, which works fine. If a session does call it and it prompts, say so once, never
 re-arm, and never ship a settings change to "fix" it — that would be the fourth attempt at a fix
@@ -979,16 +952,20 @@ this compares against a design, not against something that ran.) What makes it s
   issue. **That read is available to a session**, contrary to what this bullet used to say: it called the read "session-dependent" and
   therefore treated the whole layer as not-verifiable-from-a-session, which the route rule under
   Work status corrects — `GET /repos/pdcarlson/Frapp/branches/main/protection` returns 200 direct
-  (21 required contexts, `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
+  (21 required contexts as the roster stood at that read, since reduced by #1637 and by the
+  docs-gate retirement; read `ALL_REQUIRED_CHECKS` rather than any count quoted here. Plus
+  `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
   `required_pull_request_reviews: null`, measured 2026-09-02) and the verify script exits 0 from
   this sandbox, printing "No changes — live protection already matches this roster." So live `main`
   matches every field that diff compares as of 2026-09-02 — the drift
   `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` records (12 contexts against 17 intended)
-  was closed by a run on 2026-08-21. Exit 0 is not "live matches the roster in full", though: the
-  roster declares `allow_fork_syncing: true` and live `main` is `false`, and `LOCK_DEPENDENT_FLAGS`
-  excludes that key from the diff because GitHub honours fork-syncing only on a locked branch and
-  `lock_branch` is `false` — so the flag is inert either way
-  ([#1580](https://github.com/pdcarlson/Frapp/issues/1580)). What survives is
+  was closed by a run on 2026-08-21. Exit 0 is still not "live matches the roster in full":
+  `LOCK_DEPENDENT_FLAGS` excludes `allow_fork_syncing` from the diff while `lock_branch` is
+  `false`, so a divergence on that one key stays invisible to a green `:verify`
+  ([#1580](https://github.com/pdcarlson/Frapp/issues/1580) closed the divergence that existed;
+  the exclusion remains). Canonical state, including the roster's current context count:
+  [`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) § Step 1 —
+  read it rather than the dated counts above, and do not add new ones here. What survives is
   that a read is a **dated snapshot**, not a standing guarantee: nothing stops `main` drifting again
   between applies, so re-run the verify rather than trusting this date; (b) `restrictions: null` means the push-restriction
   allowlist is **disabled**, which is not the same as "nothing can bypass"; and (c) `bypass_actors`
@@ -1034,7 +1011,7 @@ noticed for 71 days ([#763](https://github.com/pdcarlson/Frapp/issues/763); the 
 itself is [#696](https://github.com/pdcarlson/Frapp/issues/696)). Three things compounded, and the
 first and third are what the `deploy-outcome` job fixes:
 
-1. **A skipped run is a green run.** The `check-changes` path gate skips all four migrate/deploy
+1. **A skipped run is a green run.** The `check-changes` path gate skips the migrate/deploy
    jobs when a push touches neither `apps/api/`, `packages/validation/`,
    `packages/typescript-config/` nor `supabase/migrations/`. 46 of the last 90 runs were
    green-because-empty, so the Actions list read "mostly healthy" while the deploy path was
@@ -1061,13 +1038,44 @@ A **no-op run never closes an open alert** — skipping every job proves nothing
 deploys work, and no-op runs are the majority. `routine-state` is what keeps `/next` from claiming
 the alert as backlog work (§0.2 treats that label as never-claimable).
 
-Channel choice matches the two sibling watchdogs: GitHub itself, via a dependency-free `.mjs` on
-`GITHUB_TOKEN` with an injectable `fetch`. `Deploy API` is push-driven with no PR to comment on,
-so an issue is the equivalent of their PR comment — no new service and no new token. The job holds
-the workflow's only write scope, job-scoped, leaving every other job on `contents: read`. Like the
-other watchdogs it is best-effort and **exits 0 on every handled outcome**: the underlying deploy
-job is already red, and a watchdog that reds the run creates the noise it exists to remove. If the
-issues API is unreachable the summary and annotation still land.
+#### Two workflows, one script (#1674)
+
+`deploy-alert.mjs` is **not** specific to `deploy-api.yml`. Since #1674 it also serves
+`deploy-vercel-staging.yml`, which shipped in #1578 with no alerting at all. Which workflow a run is
+reporting on is chosen by the **`ALERT_CONFIG`** env var, set explicitly in each workflow's
+`deploy-outcome` step and resolved against the `ALERT_CONFIGS` table in the script. There is **no
+default**: an absent or unknown value throws, because resolving to the wrong config would report one
+workflow's job results into the other's alert issue — or reopen the live P1 Deploy API alert from an
+unrelated failure.
+
+Consequences worth knowing before editing the script:
+
+- **Each config owns its alert title, and the two must never match.** The title is the lookup key, so
+  a shared one would let a recovered Deploy API run close a live Vercel outage's alert. A test pins
+  their uniqueness; renaming either orphans whatever alert is open under the old title, which can
+  then never be found or self-closed.
+- **`gateJob` may be null.** `deploy-vercel-staging.yml` has one job and no changed-path gate, so any
+  code assuming a gate exists is wrong for that config.
+- **A no-op means different things per config.** For Deploy API it is benign and the majority case.
+  For a config with no path gate it is a defect — nothing ran that could have — so
+  `noOpIsUnexpected` escalates it to a failure rather than an annotation, which on a `workflow_run`
+  run page would be exactly as invisible as the gap this closes.
+
+The full roster of GitHub-issue watchdogs, with what each one means and when it clears, is
+[`ALERT_ROUTING.md`](../ops/ALERT_ROUTING.md) § Automated GitHub-issue alerts — that table is the
+one home for the list; this section covers only the mechanics of this script.
+
+Channel choice matches the sibling watchdogs: GitHub itself, via a dependency-free `.mjs` on
+`GITHUB_TOKEN` with an injectable `fetch`. Both watched workflows are push-driven with no PR to
+comment on, so an issue is the equivalent of their PR comment — no new service and no new token. In
+each workflow the job holds the only write scope, job-scoped, leaving every other job on
+`contents: read`. Like the other watchdogs it is best-effort and **exits 0 on every handled
+outcome**: the underlying deploy job is already red, and a watchdog that reds the run creates the
+noise it exists to remove. If the issues API is unreachable the summary and annotation still land.
+
+The one deliberate exception is a **mis-wired** `ALERT_CONFIG`, which exits 1: that is not a handled
+outcome but a configuration error, and it must be loud where it is introduced rather than degrading
+into a watchdog that silently reports the wrong workflow.
 
 ### Schema drift detection (`scripts/ci/check-migration-drift.mjs`)
 
@@ -1085,8 +1093,9 @@ real:
   has never existed in this repository (hand-applied in February). `supabase db push` refuses to
   run at all in that state, and the error's suggested fix (`migration repair --status reverted`) is
   destructive if applied without first reading what the row did — see
-  [`../ops/DB_PROMOTION_RUNBOOK.md`](../ops/DB_PROMOTION_RUNBOOK.md) § reconciling a foreign
-  migration row.
+  [`../ops/DB_PROMOTION_RUNBOOK.md`](../ops/DB_PROMOTION_RUNBOOK.md), the **On-call note —
+  reconciling a foreign migration row** paragraph — bold prose inside the `## 2026-08-10: Staging
+  migration backlog cleared` entry, not a heading, so search the phrase rather than the headings.
 
 **Why scheduled and not post-deploy.** `Deploy API` failed 44 of 44 executing runs for 71 days
 (#763). A check that only ran after a successful deploy would have been silent for exactly the
@@ -1399,8 +1408,8 @@ If a chunk crosses a boundary the sandbox still can't reach (push fanout; anythi
 - File or link a tracking issue (`#401` is the agent infra parent; #235 closed-as-subsumed by ADR-11 and should not be reopened — file a fresh issue scoped to the new gap).
 - In the chunk PR body, list each blocked step + the linked issue + which class of verification is missing.
 - Record the same on the tracking issue — work status lives in **GitHub Issues**, not in a
-  status doc ([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) rule 4,
-  [`GITHUB_PM.md`](GITHUB_PM.md)).
+  status doc ([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) § Where a fact
+  lives — "work status is not a doc"; [`GITHUB_PM.md`](GITHUB_PM.md)).
 
 ### Sandbox-blocked tooling — known list
 

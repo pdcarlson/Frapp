@@ -15,14 +15,16 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - If workflow/job names change, update:
      - `scripts/ci/lib/required-checks.mjs` (the rosters; the applying script is
        `scripts/configure-branch-protection.mjs`)
-     - `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
-     - `CONTRIBUTING.md`
+     - `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Required Status Checks — the one
+       doc that restates the roster, and since the docs gates were deleted, a copy **no check
+       asserts**. It can only drift from the arrays, so update it in the same PR and treat the
+       arrays as the answer whenever the two disagree.
+   - Do not add a third place. A roster copy no gate watches is the one that drifts.
 4. **No required workflow-level `paths` filters**
    - Required checks must always report a result on protected-branch PRs.
-5. **Docs/spec delta is mandatory for every non-doc change**
-   - Any PR that changes files outside `docs/` or `spec/` must also touch at least one path under those prefixes in the same PR (usually **`docs/`** — e.g. [`docs/guides/`](../../guides/README.md) — and/or **`spec/`**).
-   - This is enforced by `scripts/check-docs-impact.mjs` in the Docs workflow and local CI gate. Rationale: [`DOCS_CI.md`](../ci-cd/DOCS_CI.md).
-   - No local bypass is allowed for this check.
+5. **A changed documented fact is updated where it lives**
+   - No check requires a doc edit; the one that did was deleted in #1597 for producing filler. Most PRs alter no documented fact and need no doc change.
+   - When one does, it goes in the doc that owns the fact — usually **`docs/`** (e.g. [`docs/guides/`](../../guides/README.md)) and/or **`spec/`** — never a stray file or an unrelated doc. Rationale: [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md).
 
 ## Reviewer workflow
 
@@ -35,15 +37,20 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
 2. **Automation pass**
    - Required checks pass.
    - Code review happens **before the push**, locally: the pre-push review-gate hook
-     (`.claude/hooks/pre-push-review-gate.sh`) requires one review pass on the diff before the branch
-     is pushed — `/diff-review` (always agent-invocable) or `/code-review` (richer; model-invocable
-     only when the turn's prompt carries `/code-review` whitespace-delimited on both sides).
-     There is no CI Claude
-     review or `claude-review-gate` check (removed 2026-06-04;
-     see `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`).
-3. **Human review pass**
-   - At least one approval from a write-access reviewer.
-   - All review threads resolved.
+     (`.claude/hooks/pre-push-review-gate.sh`) requires one review pass on the branch HEAD before it
+     is pushed. There is no CI Claude review or `claude-review-gate` check (removed 2026-06-04).
+     Which skill, and the rules for each: [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md) § Which review skill.
+3. **Human review pass** — a convention, **not a merge gate**. Branch protection sets
+   `required_pull_request_reviews: null` and `required_conversation_resolution: false`
+   (`scripts/configure-branch-protection.mjs`, applied to `main` only), so GitHub blocks neither an
+   unapproved merge nor one with open threads. That script is *intent*; confirm live state with
+   `npm run configure:branch-protection:verify` — use that script name, not the `-- --verify` form:
+   one dropped separator turns it into a live `PUT` of the whole protection payload.
+   Seek an approval and resolve your threads because the work is better for it — nothing downstream
+   will stop you. Step 2's local gate is **not** a backstop for this: it is a Claude Code
+   `PreToolUse` hook, so it sees agent tool calls only and never a plain terminal `git push`, it
+   releases the push after 4 blocked attempts with a stderr warning, and `FRAPP_SKIP_REVIEW_GATE=1`
+   bypasses it. A diff can reach `main` with no review pass of any kind.
 4. **Merge**
    - Feature work: squash merge into `main`.
    - Production: no PR. Dispatch **Deploy production** with the SHA you want live (#1340).
@@ -59,7 +66,6 @@ Use this order so each PR has a single failure domain:
    - `.github/workflows/ci.yml`
 3. **PR C — Docs workflow/check behavior only**
    - `.github/workflows/docs.yml`
-   - `scripts/check-docs-impact.mjs` (if needed)
 4. **PR D — Deploy workflow only**
    - `.github/workflows/deploy-api.yml`
 5. **PR E — Release workflow only**

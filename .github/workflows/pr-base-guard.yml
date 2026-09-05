@@ -52,13 +52,13 @@ jobs:
           set -euo pipefail
           case "$BASE_REF" in
             main)
-              echo "Base branch is 'main' — CI, Docs spec sync, and Links all run on this PR."
+              echo "Base branch is 'main' — CI, Docs checks, and Links all run on this PR."
               ;;
             *)
               echo "::error title=PR targets the wrong base::Base is '$BASE_REF', not 'main'."
               cat <<'MSG'
 
-          This PR does not target `main`, so CI, Docs spec sync, and Links are
+          This PR does not target `main`, so CI, Docs checks, and Links are
           ALL skipped on it — their `on.pull_request.branches` filter matches the
           PR base, and `main` is the only base in that list.
 

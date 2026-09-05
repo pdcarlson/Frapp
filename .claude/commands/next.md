@@ -459,20 +459,20 @@ follow-up issue's lifecycle.
 
 ## Phase 4 — ship and sync
 
-Update the related real spec/docs **in this same PR** — doc-sync requires it, and the §1.2 drift items
-are the minimum list. Put files in their canonical home per
+If the unit changed a fact a doc asserts, update that doc **in this same PR** — the §1.2 drift items
+are the minimum list. Nothing requires a doc edit otherwise. Put files in their canonical home per
 [`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md); **never drop a
-stray file, or append an unrelated note, to satisfy the gate.** If the unit genuinely changed nothing
-a doc describes, label the PR `no-doc-change-needed` — that is the expected path, not a failure
-([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md#the-no-doc-change-needed-waiver)).
+stray file, or append an unrelated note, to make a change look documented.** If the unit genuinely
+changed nothing a doc describes, change no doc — inventing one is the failure
+([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)).
 
 Push and open the PR with **`Fixes #N`** in the PR **body** — the literal magic word, not a prose
 mention, and the body specifically: **GitHub ignores closing keywords in the PR title** — **one
 line per batch member**. GitHub's close-on-merge handles multiple `Fixes` lines natively; each
 named issue closes as `completed` when the PR merges. Body: what changed, why, which
-acceptance criteria **each member** satisfies, and the *Flagged for review* list. Doc-sync is per
-member too: the gate is PR-level and binary, so nothing mechanical catches a batch that documents
-only one of its issues — each member's §1.2 drift items get their docs touch.
+acceptance criteria **each member** satisfies, and the *Flagged for review* list. Docs are per member
+too: nothing mechanical catches a batch that documents only one of its issues, so each member's §1.2
+drift items get their own fix or an explicit note that none was needed.
 
 **Never `Fixes` a parent with open children.** Before writing the line, `issue_read get` each
 member. When it reports `has_children: true` and any child is still open, write **`Part of #N`**

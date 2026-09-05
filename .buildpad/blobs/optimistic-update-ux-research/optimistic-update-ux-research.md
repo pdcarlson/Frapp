@@ -1,3 +1,0 @@
-# Optimistic update UX research
-
-Verdict: toggles, task completion, chat send/reactions/pins, poll voting, event RSVP should all become optimistic (flip instantly, silent success, revert+toast on failure). Points/task adjustments (has required audit reason) and QR check-in stay "pessimistic-lite" (spinner scoped to button only, not full-page gray-out). Stripe dues payment stays fully blocking per Stripe's own guidance. TanStack Query gives two patterns: Pattern A (mutation variables, no rollback code, use for single-surface changes) and Pattern B (onMutate/onError cache snapshot+rollback, use when the change shows in 2+ places).

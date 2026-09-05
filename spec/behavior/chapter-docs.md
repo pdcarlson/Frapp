@@ -43,15 +43,9 @@ There is no separate download endpoint: `GET /v1/documents/{id}` returns the doc
 
 ## Upload allowlist
 
-Chapter documents share the `document` kind in `@repo/validation` (`packages/validation/src/upload-allowlists.ts`) with Backwork and chat attachments. That single list is what the API, the web Documents page, the Backwork page, the chat composer, and the `documents` / `backwork` / `chat` buckets must agree on.
+Chapter documents share the `document` kind in `@repo/validation` (`packages/validation/src/upload-allowlists.ts`) with Backwork and chat attachments. That single list is what the API, the web Documents page, the Backwork page, the chat composer, and the `documents` / `backwork` / `chat` buckets must agree on. The membership of that list, the 25 MB `MAX_UPLOAD_BYTES` cap, the never-SVG rule, and why `image/gif` and legacy `.doc` / `.xls` / `.ppt` are on it are owned by [`docs/internal/security/content-validation.md`](../../docs/internal/security/content-validation.md) § Validations Required — do not restate them here.
 
-Allowed: JPEG, PNG, GIF, WebP, PDF, Open XML Office (`.docx` / `.xlsx` / `.pptx`), **legacy Office** (`.doc` / `.xls` / `.ppt`), plain text, and CSV. Size cap: 25 MB (`MAX_UPLOAD_BYTES`). SVG and executables are rejected.
-
-GIF belongs on this list. A private copy on the Backwork page previously omitted it while Documents, the Backwork API service, and the `backwork` bucket all accepted `image/gif` — the client refused the file before the API was called.
-
-Legacy `.doc` / `.xls` / `.ppt` stay allowed. The API and buckets already accepted them; the web clients had omitted them from `accept`/maps. Completing the client is the decision — dropping them server-side would reject files the buckets still store.
-
-Clients check type and size via `inspectUploadFile` before requesting a signed URL. The signed-URL request does not carry a byte length; the bucket `file_size_limit` remains the server-side size gate.
+Clients check type and size via `inspectUploadFile` before requesting a signed URL. `POST /v1/documents/upload-url` also accepts an optional `size_bytes`, checked with `isWithinUploadSizeLimit` before the URL is issued; because that field is optional and client-declared, the bucket `file_size_limit` stays the only server-side size gate.
 
 ## Edge Cases
 

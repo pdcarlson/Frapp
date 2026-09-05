@@ -21,6 +21,12 @@ Naming: spec prose says **Signet**. Code identifiers, package names, domains, an
 
 ## Per-surface rules
 
+This table is kept for the **Status** column — which surface is Signet-active and which is frozen.
+The frozen list is also stated below and in `.claude/skills/signet-cutover/SKILL.md`, which is the
+one an agent loads before touching UI; change it there in the same edit. Where a UI change belongs is settled by
+[`docs/internal/DOCUMENTATION_CONVENTIONS.md` § Where things go](../../docs/internal/DOCUMENTATION_CONVENTIONS.md#where-things-go),
+not by the Governs column here. No CI check asserts this table is complete or its statuses current.
+
 | Spec | Governs | Status |
 | ---- | ------- | ------ |
 | [`design-system/`](design-system/README.md) | Tokens and rules shared by every Signet surface: foundations (color, type, radius, spacing), components, iconography, writing, chapter accent engine | Active |

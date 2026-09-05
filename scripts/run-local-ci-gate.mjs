@@ -24,7 +24,7 @@ function getMergeBase(baseRef) {
   return execSync(`git merge-base ${baseRef} HEAD`, { encoding: "utf8" }).trim();
 }
 
-function resolveDocsSyncBase(baseRef) {
+function resolveDiffBase(baseRef) {
   try {
     runCommand(`git fetch origin ${baseRef.replace("origin/", "")}`, "Fetch base branch");
   } catch {
@@ -39,30 +39,6 @@ function resolveDocsSyncBase(baseRef) {
     const fallbackRef = baseRef.replace("origin/", "");
     return getMergeBase(fallbackRef);
   }
-}
-
-function runDocsSyncCheck(baseSha, headSha) {
-  runCommand(
-    `node scripts/check-docs-impact.mjs --base "${baseSha}" --head "${headSha}"`,
-    "Run docs/spec sync check",
-  );
-}
-
-function runDocsStructureCheck(baseSha, headSha) {
-  // Whole-tree, so it can fail on a file this branch never touched — the same
-  // property the required doc-paths gate has. Passing the range only labels
-  // which violations this branch introduced.
-  //
-  // Ordered AFTER the secret scan on purpose. runCommand throws on a nonzero
-  // exit and runLocalGate exits on it, so putting a whole-tree check earlier
-  // would let an inherited structure violation stop gitleaks from ever running
-  // — and `PR_LABELS_JSON='["no-doc-change-needed"]'` does not waive this one
-  // (only check-docs-impact.mjs reads that variable), so the documented waiver
-  // would not get the developer past it either.
-  runCommand(
-    `node scripts/check-docs-structure.mjs --base "${baseSha}" --head "${headSha}"`,
-    "Run docs/spec structure check",
-  );
 }
 
 function runSecretScan(baseSha, headSha) {
@@ -81,18 +57,21 @@ function runLocalGate() {
   console.log("Running local CI gate...");
   console.log(`Base ref: ${baseRef}`);
 
-  const baseSha = resolveDocsSyncBase(baseRef);
+  const baseSha = resolveDiffBase(baseRef);
   const headSha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
-  runDocsSyncCheck(baseSha, headSha);
   runSecretScan(baseSha, headSha);
-  runDocsStructureCheck(baseSha, headSha);
 
+  // This gate previews what CI will run, and nothing more. The docs/spec
+  // structure check that used to run above was deleted with the rest of the
+  // docs gates. Never add a local-only check here: the gate then stops
+  // predicting the thing it exists to predict, and a green run stops meaning
+  // anything.
   const gateChecks = [
     ["npm run lint", "Run monorepo lint"],
     ["npm run check-types", "Run monorepo type-check"],
     ["npm run test -w apps/api", "Run API unit tests"],
     ["npm run check:api-contract", "Run API contract freshness check"],
-    // Thread the SHAs, as the docs-sync and secret-scan calls above already do.
+    // Thread the SHAs, as the secret-scan call above already does.
     // Bare, `getChangedFiles` sees no range and returns `[]`, so
     // `validatePromotionDocs` early-returns and the "a migration needs a
     // promotion/rollback doc" half of the check never runs — the local gate goes
@@ -121,5 +100,10 @@ try {
   if (error instanceof Error && error.message) {
     console.error(error.message);
   }
-  process.exit(1);
+  // Propagate the failing check's own code rather than flattening every
+  // failure to 1. The audit gate distinguishes 1 (the repo violates the rule)
+  // from 2 (the gate reached no verdict), and collapsing them here made that
+  // split invisible to anyone running the gate locally — sending them to hunt
+  // an allowlist entry for an advisory that was never found.
+  process.exit(typeof error?.status === "number" && error.status !== 0 ? error.status : 1);
 }

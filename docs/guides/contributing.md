@@ -4,24 +4,11 @@ This guide defines how we work on Frapp: branch workflow, commit messages, and s
 
 ## 1. Branching model
 
-One long-lived branch, two environments:
-
-- `main` — the integration branch (every merge deploys to Render staging infrastructure; the
-  **Vercel half ended 2026-09-02** — `frapp-landing` was unlinked from Git 2026-09-01 and
-  `frapp-web` 2026-09-02, so no merge deploys web or landing and both hosts serve frozen builds.
-  Canonical record: ADR-21 in [`spec/architecture/README.md`](../../spec/architecture/README.md))
-- `feature/*` — short-lived branches for individual features and fixes
-
-Production is not a branch. It is deployed from a **named commit on `main`** by the
-**Deploy production** workflow, which refuses any commit that is not an ancestor of `main`
-with green CI. The `production` branch was retired in #1340.
-
-Typical flow:
-
-1. Branch from `main` into `feature/*`.
-2. Open a PR from `feature/*` to `main`.
-3. Validate behavior in staging/preview environments.
-4. To release, dispatch the **Deploy production** workflow with the commit SHA you want live.
+The branch model — `main` as the only long-lived branch and what a merge to it deploys,
+`feature/*` and `hotfix/*` off it, the `production` branch retired in #1340, and the flow
+from feature PR to a named-commit production deploy — lives in
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md) § Branch Model. The gates that deploy passes
+through: [`docs/internal/ops/DEPLOYMENT.md`](../internal/ops/DEPLOYMENT.md) § How Deployments Are Gated.
 
 Example feature branch names:
 
@@ -43,12 +30,16 @@ Examples:
 - `refactor: switch api auth to supabase`
 - `docs(guides): add docker guide`
 
-Types:
+Types — this list is canonical; `CONTRIBUTING.md` points here rather than
+restating it:
 
 - `feat` — new user-visible feature
 - `fix` — bug fix
 - `refactor` — code change that doesn't alter behavior
 - `docs` — documentation only
+- `test` — adding or changing tests
+- `ci` — workflows, CI scripts, and gates
+- `style` — formatting only, no behavior change
 - `chore` — tooling, config, or misc maintenance
 
 ## 3. Spec-first development
@@ -163,8 +154,8 @@ In CI, we also run:
 
 > **Warning:** Out-of-date documentation is a real bug. Spec-vs-code disagreement is a tracked bug, not silent discretion — file it or fix the stale side in the same PR. When in doubt, fix the docs in the same PR as the implementation change.
 
-### CI enforcement (`scripts/check-docs-impact.mjs`)
+### What CI checks
 
-PRs that change files **outside** `docs/` and `spec/` must also change **at least one** file under **`docs/`** or **`spec/`**. Prefer updating **`docs/`** (e.g. `docs/guides/`) and **`spec/`** together when behavior changes.
+No check requires you to touch a doc — the one that did was deleted in #1597 because it could only see that *some* doc moved, not whether it was the right one, so it was cheapest to satisfy with filler. What CI does check is narrow: `link-check` resolves markdown links and heading anchors, and `env-slugs` catches an Infisical environment slug that does not exist. Whether a doc's claims are *true* is reviewed, not gated — by the docs angle in [`diff-review`](../../.claude/skills/diff-review/SKILL.md), against the standard.
 
-See also [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md) for rationale and optional future tightening of the gate.
+See [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md).

@@ -13,6 +13,12 @@ import { cn } from "@/lib/utils"
  * table usually sits in), and `hover:bg-accent/50` for the row hover, which
  * half-mixed the elevated step into the row underneath it.
  *
+ * Two of those three are footer facts, and this file no longer ships a footer:
+ * `TableFooter` and `TableCaption` were deleted as unimported. They are kept in
+ * the record here because a later slice that needs a totals row must re-derive
+ * both corrections rather than paste shadcn's stock `<tfoot className="border-t
+ * bg-muted/50 font-medium">`, which reships exactly the two defects above.
+ *
  * ── Row states, and why they are three classes rather than one ──────────────
  *
  * The full `hover:bg-accent` that replaced that half-mix had the same defect at
@@ -95,21 +101,6 @@ const TableBody = React.forwardRef<
 ))
 TableBody.displayName = "TableBody"
 
-const TableFooter = React.forwardRef<
-  HTMLTableSectionElement,
-  React.HTMLAttributes<HTMLTableSectionElement>
->(({ className, ...props }, ref) => (
-  <tfoot
-    ref={ref}
-    className={cn(
-      "border-t border-border bg-card font-semibold [&>tr]:last:border-b-0",
-      className
-    )}
-    {...props}
-  />
-))
-TableFooter.displayName = "TableFooter"
-
 const TableRow = React.forwardRef<
   HTMLTableRowElement,
   React.HTMLAttributes<HTMLTableRowElement>
@@ -158,25 +149,11 @@ const TableCell = React.forwardRef<
 ))
 TableCell.displayName = "TableCell"
 
-const TableCaption = React.forwardRef<
-  HTMLTableCaptionElement,
-  React.HTMLAttributes<HTMLTableCaptionElement>
->(({ className, ...props }, ref) => (
-  <caption
-    ref={ref}
-    className={cn("mt-4 text-sm text-muted-foreground", className)}
-    {...props}
-  />
-))
-TableCaption.displayName = "TableCaption"
-
 export {
   Table,
   TableHeader,
   TableBody,
-  TableFooter,
   TableHead,
   TableRow,
   TableCell,
-  TableCaption,
 }

@@ -68,25 +68,6 @@ export function useChannel(id: string) {
   });
 }
 
-export function useMessages(
-  channelId: string,
-  options?: { limit?: number; before?: string },
-) {
-  const client = useFrappClient();
-  return useQuery({
-    queryKey: ["channels", channelId, "messages", options],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/{id}/messages", {
-        params: { path: { id: channelId }, query: options },
-      });
-      if (error) throw error;
-      return data;
-    },
-    staleTime: 0,
-    enabled: !!channelId,
-  });
-}
-
 export function usePinnedMessages(channelId: string) {
   const client = useFrappClient();
   return useQuery({
@@ -100,23 +81,6 @@ export function usePinnedMessages(channelId: string) {
     },
     staleTime: 0,
     enabled: !!channelId,
-  });
-}
-
-export function useReactions(messageId: string) {
-  const client = useFrappClient();
-  return useQuery({
-    queryKey: ["messages", messageId, "reactions"],
-    queryFn: async () => {
-      const { data, error } = await client.GET(
-        "/v1/channels/messages/{messageId}/reactions",
-        { params: { path: { messageId } } },
-      );
-      if (error) throw error;
-      return data;
-    },
-    staleTime: 0,
-    enabled: !!messageId,
   });
 }
 
@@ -343,135 +307,6 @@ export function useGetOrCreateDm() {
   });
 }
 
-export function useCreateGroupDm() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (body: { member_ids: string[]; name?: string }) => {
-      const { data, error } = await client.POST("/v1/channels/group-dm", {
-        body,
-      });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
-      // The effective-level response is a function of the channel SET and each
-      // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
-      // delete can change it. Lifting the prefs key out of the ["channels"]
-      // prefix removed the incidental coupling that used to cover this, so the
-      // channel-set mutations name it explicitly. Message-level and
-      // read-receipt mutations deliberately do NOT.
-      queryClient.invalidateQueries({
-        queryKey: ["channel-notification-preferences"],
-      });
-    },
-  });
-}
-
-export function useSendMessage() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      channelId,
-      body,
-    }: {
-      channelId: string;
-      body: {
-        client_message_id: string;
-        content: string;
-        kind?:
-          | "text"
-          | "event"
-          | "task"
-          | "poll"
-          | "dues"
-          | "points"
-          | "hours"
-          | "system_audit"
-          | "loading"
-          | "announcement";
-        payload?: Record<string, never>;
-        reply_to_id?: string;
-        metadata?: Record<string, never>;
-      };
-    }) => {
-      const { data, error } = await client.POST("/v1/channels/{id}/messages", {
-        params: { path: { id: channelId } },
-        body,
-      });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["channels", variables.channelId, "messages"],
-      });
-    },
-  });
-}
-
-export function useEditMessage() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      messageId,
-      body,
-    }: {
-      messageId: string;
-      body: { content: string };
-    }) => {
-      const { data, error } = await client.PATCH(
-        "/v1/channels/messages/{messageId}",
-        { params: { path: { messageId } }, body },
-      );
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
-    },
-  });
-}
-
-export function useDeleteMessage() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (messageId: string) => {
-      const { data, error } = await client.DELETE(
-        "/v1/channels/messages/{messageId}",
-        { params: { path: { messageId } } },
-      );
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
-    },
-  });
-}
-
-export function usePinMessage() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (messageId: string) => {
-      const { data, error } = await client.POST(
-        "/v1/channels/messages/{messageId}/pin",
-        { params: { path: { messageId } } },
-      );
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
-    },
-  });
-}
-
 export function useUnpinMessage() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
@@ -486,32 +321,6 @@ export function useUnpinMessage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["channels"] });
-    },
-  });
-}
-
-export function useToggleReaction() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      messageId,
-      body,
-    }: {
-      messageId: string;
-      body: { emoji: string };
-    }) => {
-      const { data, error } = await client.POST(
-        "/v1/channels/messages/{messageId}/reactions",
-        { params: { path: { messageId } }, body },
-      );
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["messages", variables.messageId, "reactions"],
-      });
     },
   });
 }

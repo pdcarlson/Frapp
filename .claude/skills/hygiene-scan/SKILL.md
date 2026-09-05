@@ -66,7 +66,7 @@ design question** — do not ship the mechanical half.
 | | |
 | --- | --- |
 | **May edit** | `apps/**` and `packages/**` product code and their tests; under `scripts/**`, dead code and stale allowlist entries only — the check, CI and deploy scripts there *are* the gates, so their logic is never in scope; the gate baselines, downward only (`.dependency-cruiser-known-violations.json` via `--update-baseline` after a clean run, the `.jscpd.json` threshold); **path citations** in any doc — `spec/behavior/**` included — when a fix moves or renames a file (that is doc-sync, not intent), and the **relevant** `docs/` file when a fact it states moved; this skill directory (self-maintenance) |
-| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (frozen — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); dead code and correctness there are fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · the legacy `@repo/theme` exports landing consumes · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · ADRs (append-only) · `.buildpad/**` · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `FRAPP_SKIP_REVIEW_GATE` |
+| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (frozen — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); dead code and correctness there are fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · the legacy `@repo/theme` exports landing consumes · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `FRAPP_SKIP_REVIEW_GATE` |
 | **Volume** | at most **one** PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that branch exists); at most **one open** Hygiene Scan PR at a time; at most **~3** net-new issues per run. Never merge — a human does. |
 
 **Behaviour change is out of scope**, with one exception. Observable behaviour is anything a test,
@@ -105,9 +105,10 @@ In this order, and actually read them — the run's findings are only as good as
    the slice touches `packages/chat-core` or a realtime subscription.
 5. [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md) — which gate is required,
    which is advisory, and why posture is not yours to change.
-6. [`check-our-docs`](../check-our-docs/SKILL.md) — the habit for the moment a doc you are relying
-   on turns out to be wrong. Fix the doc in the same PR when it is small and in scope; report it
-   otherwise. A stale doc is never a licence to skip the check it describes.
+6. [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) — the
+   standard for the moment a doc you are relying on turns out to be wrong. Fix the doc in the same
+   PR when it is small and in scope; report it otherwise. A stale doc is never a licence to skip
+   the check it describes.
 
 ### 0.2 Name today's slice — deterministically, carrying no state
 
@@ -268,8 +269,8 @@ thing is the tree-walking ledger spec, so extend one rather than inventing a new
 
 **L7 · The gates themselves.** A stale baseline entry (the file moved and the violation is gone —
 #1539 left two); a jscpd threshold that can drop after a consolidation; an allowlist entry in
-`scripts/doc-paths-allowlist.json` or `scripts/npm-audit-allowlist.json` past its stated expiry.
-Ratchets only move one way, and moving them is in scope.
+`scripts/npm-audit-allowlist.json` past its stated expiry. Ratchets only move one way, and moving
+them is in scope.
 
 ### What a finding looks like
 
@@ -331,17 +332,16 @@ decision" and says why is a pass; a run that manufactures a change to show work 
    percentage did not rise; lower the `.jscpd.json` threshold to just above the new number when a
    consolidation moved it, never below it); `npm run check:api-contract` when any file under
    `apps/api/src` changed (a changed artifact means the contract changed — back the fix out);
-   `npm run test:ci-scripts` when `scripts/` changed; `npm run check:doc-paths` when anything a
-   doc cites moved. `npm run ci:local-gate` runs lint, types, API tests, the contract check, the
-   docs-sync and secret scans, migration safety and the audit gate in one go and is the parity
-   run to do last.
+   `npm run test:ci-scripts` when `scripts/` changed; `npm run check:links` when a heading or a
+   linked file moved. `npm run ci:local-gate` runs lint, types, API tests, the contract check, the
+   secret scan, migration safety and the audit gate in one go and is the parity run to do last.
 3. **A check you could not run is reported as not run**, never as passed — the same honesty rule
    every routine carries. If the sandbox cannot run a suite, say so in the PR body and the report.
-4. **Doc-sync.** A moved or renamed file that a doc cites gets the doc fixed in the same PR
-   (`check:doc-paths` is whole-tree and required). Otherwise a mechanical PR carries the
-   `no-doc-change-needed` label — never a filler line in an unrelated doc
-   ([`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)). Confirm with
-   `node scripts/check-docs-impact.mjs --base "$(git merge-base origin/main HEAD)" --head HEAD`.
+4. **Docs.** A moved or renamed file that a doc cites gets the doc fixed in the same PR. Only a
+   markdown link is caught for you, by `check:links`; a path in backticks is caught by nothing, so
+   grep the old name yourself before you move it. Otherwise a mechanical PR changes no doc at all —
+   nothing requires one, and a filler line in an unrelated doc is a review finding
+   ([`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md)).
 5. End with the **"debt spotted"** note `AGENTS.md` requires — one line per item you saw and did
    not take, with its issue or ledger reference.
 
@@ -360,7 +360,7 @@ decision" and says why is a pass; a run that manufactures a change to show work 
    template. The body must carry, per fix: **the rule restored** (cited), **the consumers
    checked**, and **the verification that ran** (commands and outcomes, including what could not
    run). Any behaviour change sits under its own heading. Close tracked work with `Fixes #N`. Label
-   `release:patch` (and `no-doc-change-needed` when that is honest). If the GitHub MCP is
+   `release:patch`. If the GitHub MCP is
    unavailable, push the branch, report its name, and stop — there is no sanctioned fallback.
 3. **Fix your own CI, then stop — do not subscribe.** `AGENTS.md` § Autonomous PR lifecycle
    (`doneMeansMerged`, subscribe, babysit) is written for interactive sessions and does not apply
@@ -393,7 +393,8 @@ mode this routine replaces. Everything past the cap goes to the ledger, where a 
 promote it.
 
 **Ledger.** Append **one comment** to the "Hygiene Scan — ledger" issue per run, in this shape,
-and never rewrite its body (no MCP read returns a body faithfully — `ROUTINES.md` § Tracker access):
+and never rewrite its body — that body is append-only by design and run state lives in the comments,
+so the rule holds regardless of what the read is doing (`ROUTINES.md` § Tracker access):
 
 ```text
 hygiene-scan run: v1 date=YYYY-MM-DD slice=<0-4> pr=#<N>|none filed=#<a>,#<b>|none
@@ -415,7 +416,7 @@ run entry never restates. Keep it to the facts the next run needs.
 - **Whole-pattern or file it.** Never leave a pattern half-migrated.
 - **Net simpler, always.** A fix that adds a copy, a shim, or a parallel path is the wrong fix.
 - **Frozen means frozen.** `apps/landing` visuals, the seven mobile hotspot files, the legacy
-  theme exports landing consumes, ADRs, `.buildpad/`.
+  theme exports landing consumes.
 - **Spec is intent; code is current.** A spec-vs-code contradiction is filed, never resolved by
   editing either side to match the other (`AGENTS.md` § Spec vs code).
 - **Never print secret values.** Names and presence only.

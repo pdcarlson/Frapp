@@ -12,13 +12,12 @@ The tracker routines keep the **tracker** honest. This one keeps the **docs** ho
 the first routine that fixes what it finds instead of filing it — [`hygiene-scan`](../hygiene-scan/SKILL.md)
 (routine 5) now does the same for code.
 
-It exists because the repo's docs gates are all structural. `check-docs-impact.mjs` asserts that
-*some* doc changed, `check-docs-structure.mjs` that every doc sits in a declared home, and
-`check-doc-paths.mjs` that cited paths resolve. [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md)
-says the quiet part itself: none of them check *whether a doc's claims are still true*. The
-[`check-our-docs`](../check-our-docs/SKILL.md) skill covers that, but only for whatever a session
-happened to read — so debt pools in exactly the low-traffic runbooks a cold session needs most.
-This routine is the scheduled sweep that reaches them.
+It exists because a doc's claims decay quietly: a reader finds out by acting on one, and by then the
+wrong turn is already taken. The standard in
+[`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) says what a doc
+owes a reader, but it binds only where a session happened to look — so debt pools in exactly the
+low-traffic runbooks a cold session needs most. This routine is the scheduled sweep that reaches
+them.
 
 **Ownership, tracker, and the product-code ban** —
 [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines),
@@ -28,9 +27,9 @@ whose rule 3 carries this routine's wider path allowlist and rule 4 its MCP exce
 
 ## Fix, don't file (read this first — it inverts the other routines)
 
-[`check-our-docs`](../check-our-docs/SKILL.md) tells a scheduled routine to file `area:docs` issues
-rather than edit docs, and [`audit`](../audit/SKILL.md) says the same for findings. **That rule does
-not apply to this routine, and the inversion is the entire point** (ADR-16 amendment 6).
+[`audit`](../audit/SKILL.md) tells a scheduled routine to file findings as GitHub issues rather than
+fix them in place. **That rule does not apply to this routine, and the inversion is the entire
+point** (ADR-16 amendment 6).
 
 Filing docs debt does not work here. Of the `area:docs` issues ever opened, well over half are still
 open; roughly a third of the open ones were five-minute fixes on the day they were filed; several
@@ -65,44 +64,38 @@ a wider allowlist:
 | | |
 | --- | --- |
 | **May edit** | `docs/**`, `spec/**`, `.claude/skills/**/*.md`, every `AGENTS.md` (including `apps/web/AGENTS.md`), root `CONTRIBUTING.md` / `README.md` — i.e. exactly the corpus below |
-| **Never** | product code, `apps/**` *except* its `AGENTS.md`, `packages/**`, `scripts/**`, `.github/**`, migrations, `.buildpad/**` (overwritten by the next sync), `REFACTOR-PLAN.md` / `REFACTOR-PROGRESS.md` (scratch) |
+| **Never** | product code, `apps/**` *except* its `AGENTS.md`, `packages/**`, `scripts/**`, `.github/**`, migrations |
 | **Volume** | at most **one** PR per run, on `claude/docs-upkeep-YYYY-MM-DD` (append `-2` if that branch exists). Never merge it — a human does. |
-
-> **ADRs are append-only.** `spec/architecture/README.md` holds ADRs and their amendments. Never
-> rewrite one to make it match today's code, even when it is factually overtaken — that is what
-> `AGENTS.md` § ADR discipline forbids. A superseded ADR claim goes in the run report, or becomes a
-> new dated amendment if the owner asks for one. Historical records are *supposed* to read as stale.
 
 ---
 
 ## Scope and the rotation
 
-**The corpus is exactly what `check-doc-paths.mjs` already sweeps** — that gate deliberately covers
-`.claude/skills/**` and every `AGENTS.md` because "a wrong path there misroutes an agent before a
-human ever reads it", and the same reasoning applies to a wrong claim. Get it with:
+**The corpus is every tracked doc an agent can be misrouted by** — `.claude/skills/**` and every
+`AGENTS.md` included, because a wrong claim there misroutes an agent before a human ever reads it.
+Get it with:
 
 ```sh
 git ls-files 'docs/*.md' 'spec/*.md' '.claude/skills/*.md' '*AGENTS.md' CONTRIBUTING.md README.md
 ```
 
-136 tracked files as of 2026-08-27, and the count `check-doc-paths` reports — if the two disagree,
-one of them has drifted and that is itself a finding. Tracked files only; never `find`, which would
-sweep untracked scratch no gate will ever see. `.buildpad/`, `spec/ui/design-system/reference/`
-(no markdown in it) and the `REFACTOR-*.md` scratch files fall outside the include set already —
-listed here only so nobody re-adds them.
+Take the count from that command each run; do not write one down here, because a count in prose has
+no mechanism to stay true. Tracked files only — never `find`, which would sweep untracked scratch.
+`spec/ui/design-system/reference/` has no markdown in it, so it falls outside the include set
+already, listed here only so nobody re-adds it.
 
 **Pick the slice deterministically — carry no state.** Sessions are fresh per run and there is no
 tracker memory here, so derive the slice from the calendar and the corpus alone:
 
 1. Take the command's output **in its own order** (that is byte-order already — do not re-sort).
 2. Number the files `0 … n-1`. File `i` is in group `floor(i * 5 / n)`, so groups are numbered
-   **0–4** and come out within one file of each other (28/27/27/27/27 at n=136).
+   **0–4** and come out within one file of each other.
 3. Sweep the group whose index is `$(date -u +%V) mod 5`.
 
 Each step is exact on purpose. `%V` is **ISO** week — `%W` and `%U` differ from it for most of the
-year (today: `%V`=34, `%W`=33), and picking the wrong one silently sweeps the wrong fifth. `-u`
-keeps a manual re-run near a Sunday boundary on the same answer as the scheduled firing. `%V` is
-zero-padded, so parse it base 10 (`10#$V` in bash) or `08` and `09` throw.
+year (`date -u +'%V %W %U'` if you doubt it), and picking the wrong one silently sweeps the wrong
+fifth. `-u` keeps a manual re-run near a Sunday boundary on the same answer as the scheduled firing.
+`%V` is zero-padded, so parse it base 10 (`10#$V` in bash) or `08` and `09` throw.
 
 **Two honest imperfections, neither worth correcting:**
 
@@ -121,17 +114,17 @@ zero-padded, so parse it base 10 (`10#$V` in bash) or `08` and `09` throw.
 Work the slice file by file. The job is not to proofread — it is to find claims that are **wrong**
 or **unmaintainable**.
 
-**1. Claims a machine can settle.** Highest-yield and cheapest. Use
-[`check-our-docs`](../check-our-docs/SKILL.md) § "classify the claim" for the mapping, and compose
-with [`infrastructure-research`](../infrastructure-research/SKILL.md) for provider truth rather than
-reimplementing it.
+**1. Claims a machine can settle.** Highest-yield and cheapest. Size the check to the claim and
+escalate cheapest-first — the table below is the mapping — and compose with
+[`infrastructure-research`](../infrastructure-research/SKILL.md) for provider truth rather than
+reimplementing it. Act on what you verified, not on what the doc said.
 
 | Claim in a doc | Settled by |
 | --- | --- |
 | A command (`npm run …`) | the `scripts` blocks in `package.json` / the workspace manifests |
 | A CI job or required check | `.github/workflows/*.yml`, and `CI_CHECKS` / `DOCS_CHECKS` in `scripts/ci/lib/required-checks.mjs` |
 | An env var name | the codebase, and `docs/internal/environment/ENV_REFERENCE.md` |
-| A file path | `npm run check:doc-paths` — run it, don't eyeball it |
+| A file path | `git ls-files --error-unmatch <path>` — resolve it, don't eyeball it. A markdown *link* is covered by `npm run check:links`; a path in backticks is covered by nothing. |
 | Provider state (deploys, secrets, migrations) | the provider API, per `infrastructure-research` |
 | Intent, rationale, an ADR's reasoning | **nothing** — do not "verify" these against code |
 
@@ -158,7 +151,9 @@ doc more misleading, not less.
 
 ## How to fix
 
-The preference ladder from [`check-our-docs`](../check-our-docs/SKILL.md), strongest first:
+The fix ladder from
+[`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md), strongest
+first, with this routine's own rung 4:
 
 1. **Correct the claim** in its canonical home.
 2. **Delete the duplicate and link to the canonical home.** The strongest available fix, because it
@@ -185,17 +180,12 @@ true corpus is.
 
 Otherwise, in order:
 
-1. **Verify.** `npm run check:doc-paths`, and the two diff-scoped gates with real arguments —
-   `node scripts/check-docs-impact.mjs --base "$(git merge-base origin/main HEAD)" --head HEAD` and
-   the same for `check-docs-structure.mjs`, which since 2026-09 is **whole-tree**: it accepts
-   `--base`/`--head` but no longer needs them, and a rename of a `LEGACY_NAMES` file — this
-   routine's literal job — fails until that entry is deleted too. Its **exit 2 now means the gate
-   did not run** (wrong working directory), so never wave it through. `check-docs-impact.mjs` exits 2
-   with no `--base`/`--head`, which reads
-   like a failure and is not. `npm run ci:local-gate` runs the set but also lint, typecheck and API
-   tests — heavier than a docs run needs.
-   `check-doc-paths` is **whole-tree**: deleting a doc or renaming a heading can turn it red on a
-   file this run never opened. Read its output past the slice.
+1. **Verify.** `npm run check:links` (install the binary first with `npm run install:lychee`). It
+   runs the same lychee invocation CI runs and is the one check that validates a markdown link and
+   its heading **anchor** — renaming a heading and collapsing a duplicate are this routine's literal
+   job, and either can red a link in a file this run never opened, so read its output past the
+   slice. A path written in backticks is validated by nothing, so resolve every one you write or
+   move. `npm run ci:local-gate` previews the code gates and is heavier than a docs run needs.
 2. **Review.** Run [`/diff-review`](../diff-review/SKILL.md). The pre-push hook **denies `git push`**
    without its marker for the current HEAD — retrying does not help, and after four denials the
    livelock guard pushes anyway, labelled UNREVIEWED. This is the gate that actually blocks you.
@@ -204,20 +194,18 @@ Otherwise, in order:
    paths (`AGENTS.md` § Work tracking), so there is no fallback that opens a PR.
 4. **Fix your own CI, then stop.** `AGENTS.md` § Autonomous PR lifecycle tells an interactive
    session to babysit a PR all the way to merge; that does **not** apply here — merging is
-   forbidden and subscribing is optional. But a failure *this sweep caused* is yours: deleting a
-   doc that held an allowlisted dead citation reds `doc-paths`, and renaming a heading reds
-   `link-check`. Those are docs problems in your own scope, and handing them back as a red PR
-   contradicts the point of repairing rather than filing. Fix and push.
+   forbidden and subscribing is optional. But a failure *this sweep caused* is yours: renaming a
+   heading or moving a file reds `link-check`, on a doc this sweep may never have opened. That is a
+   docs problem in your own scope, and handing it back as a red PR contradicts the point of
+   repairing rather than filing. Fix and push.
    Anything else — a failure in code you did not touch, a flake, an infra error — is a run-report
    finding, not a reason to keep pushing. Never widen the PR to chase a red check outside the
    allowlist.
 
-> **A PR touching only `.claude/` cannot merge.** `check-docs-impact.mjs` counts `docs/` and `spec/`
-> only, and `docs-spec-sync` is required under `enforce_admins: true`. So a run whose only changes
-> are to a `SKILL.md` — including this one, via self-maintenance below — must pair them with a
-> `docs/` or `spec/` file. `ROUTINES.md` is inside the allowlist and is usually the right pair.
-> Sweeps that touch `docs/`/`spec/` anyway are unaffected. Same trap, same fix, as
-> [`ROUTINES.md` § Self-maintenance](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract).
+> **A PR touching only `.claude/` merges on its own.** It could not before #1597, when
+> `docs-spec-sync` was required and counted `docs/` and `spec/` only — which is why every skill
+> change up to then was paired with a `docs/` file. Pair with `ROUTINES.md` when the rule genuinely
+> lives in both, not to get a check green.
 
 ---
 
@@ -253,8 +241,8 @@ End every run with:
 
 Same contract as the other routines
 ([`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#self-maintenance-the-update-themselves-contract)),
-with this routine's own inversion: verify your own claims each run — the corpus command and its
-count, the commands in the table above, the paths you cite — and fix mechanical drift in this file
+with this routine's own inversion: verify your own claims each run — the corpus command, the
+commands in the table above, the paths you cite — and fix mechanical drift in this file
 in the same PR, since this skill's directory is inside the allowlist. Mind the `.claude/`-only trap
 above when that is the *only* thing you changed. Judgement-laden drift — a change to what this
 routine is *for* — goes in the run report for the owner, never a self-authored rewrite, and never an

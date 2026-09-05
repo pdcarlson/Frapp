@@ -254,10 +254,19 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- Measured when this landed: **4.37%** duplicated lines (556 clones across 845 files).
-- Threshold: **4.5%**, just above it.
+- **Current measurement: 4.27%** duplicated lines (843 clones, 10,434 duplicated lines, across
+  1,114 files analysed) — measured 2026-09-05.
+- **Threshold: 4.4%**, just above it.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
-  make a red run green.
+  make a red run green. Set the new value from a *measured* run, never from a guess, and leave
+  enough headroom that ordinary drift does not redden it.
+- History: the gate landed with a **recorded** 4.37% (556 clones across 845 files) and a 4.5%
+  threshold. **Those recorded figures do not reproduce** — re-running jscpd at `df7c667`, the
+  commit that added `.jscpd.json`, against its own committed config measures 4.27% / 801 clones /
+  1,096 files (checked 2026-09-05). Why they differ has not been established, so treat the 4.37%
+  pair as a historical note and **never as a baseline to compare a current run against**. The
+  2026-09-05 ratchet to 4.4% was set from a fresh measurement of both sides — 4.30% on `main`,
+  4.27% after deleting the unconsumed `@repo/hooks` / `@repo/chat-core` exports.
 
 That mechanism is why this gate is advisory. A repo-wide percentage cannot distinguish one bad
 copy-paste from ordinary drift, which is too coarse to block a merge on.
@@ -350,20 +359,3 @@ directive — a warning, which `--max-warnings 0` turns into a failure. Without 
 file `git status` never shows.
 
 ---
-
-## `.buildpad/` is excluded from all of this
-
-The Buildpad canvas export is planning data — research notes and markdown, synced periodically. It
-holds no code, so every tool that scans the tree must skip it, and a canvas sync must never fail a
-gate.
-
-| Tool | How |
-|---|---|
-| dependency-cruiser | `NOT_SOURCE` in [`.dependency-cruiser.cjs`](../../../.dependency-cruiser.cjs) (`doNotFollow` + `exclude`) |
-| jscpd | `ignore` in [`.jscpd.json`](../../../.jscpd.json) |
-| ESLint | Unreachable by construction — `apps/api`'s lint script globs `{src,apps,libs,test}/**/*.ts` relative to the workspace, and there is no repo-root ESLint config |
-| Prettier | `.buildpad/` in [`.prettierignore`](../../../.prettierignore) |
-| docs/spec sync | `NON_CODE_PREFIXES` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) — see [`DOCS_CI.md`](DOCS_CI.md) |
-
-The docs/spec gate treats `.buildpad/` paths as **ignored**, not as documentation: a PR that edits
-code *and* `.buildpad/` still owes a `docs/` or `spec/` edit.

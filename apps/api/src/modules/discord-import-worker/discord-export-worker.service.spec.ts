@@ -4,7 +4,14 @@ import {
   DiscordExportWorkerService,
   EXPORT_PAGE_SIZE,
 } from './discord-export-worker.service';
-import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
+import {
+  MAX_ARCHIVE_CHAPTER_BYTES,
+  MAX_ARCHIVE_IMPORT_BYTES,
+} from '@repo/validation';
+import {
+  ArchiveQuotaExceededError,
+  DISCORD_IMPORT_REPOSITORY,
+} from '../../domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '../../domain/repositories/discord-connection.repository.interface';
 import { DISCORD_BOT_GATEWAY } from '../../domain/adapters/discord.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
@@ -139,16 +146,22 @@ async function build(
         if (target) Object.assign(target, patch);
       },
     ),
-    createFiles: jest.fn(async (rows: Record<string, unknown>[]) => {
-      const created = rows.map((row, index) => ({
-        id: `file-${files.length + index}`,
-        created_at: NOW.toISOString(),
-        uploaded_at: null,
-        ...row,
-      })) as DiscordImportFile[];
-      files.push(...created);
-      return created;
-    }),
+    registerFiles: jest.fn(
+      async (
+        _chapterId: string,
+        _importId: string,
+        rows: Record<string, unknown>[],
+      ) => {
+        const created = rows.map((row, index) => ({
+          id: `file-${files.length + index}`,
+          created_at: NOW.toISOString(),
+          uploaded_at: null,
+          ...row,
+        })) as DiscordImportFile[];
+        files.push(...created);
+        return created;
+      },
+    ),
     markFilesUploaded: jest.fn(async () => 1),
   };
 
@@ -584,7 +597,7 @@ describe('DiscordExportWorkerService — attachments', () => {
     const harness = await build({ pages: [[withAttachment('1')]] });
     await harness.worker.runSlice(runArgs(harness));
 
-    const created = harness.repo.createFiles.mock.invocationCallOrder[0];
+    const created = harness.repo.registerFiles.mock.invocationCallOrder[0];
     const uploaded = harness.storage.uploadFile.mock.invocationCallOrder[0];
     const marked = harness.repo.markFilesUploaded.mock.invocationCallOrder[0];
     // A row with a null `uploaded_at` is exactly "a transfer that did not
@@ -597,13 +610,22 @@ describe('DiscordExportWorkerService — attachments', () => {
     const harness = await build({ pages: [[withAttachment('1')]] });
     await harness.worker.runSlice(runArgs(harness));
 
-    expect(harness.repo.createFiles).toHaveBeenCalledWith([
-      expect.objectContaining({
-        relative_path: 'att-1/photo.png',
-        chapter_id: CHAPTER,
-        kind: 'media',
-      }),
-    ]);
+    expect(harness.repo.registerFiles).toHaveBeenCalledWith(
+      CHAPTER,
+      expect.any(String),
+      [
+        expect.objectContaining({
+          relative_path: 'att-1/photo.png',
+          chapter_id: CHAPTER,
+          kind: 'media',
+        }),
+      ],
+      // The bot path carries the same ceilings as the upload path (#1243).
+      {
+        importBytes: MAX_ARCHIVE_IMPORT_BYTES,
+        chapterBytes: MAX_ARCHIVE_CHAPTER_BYTES,
+      },
+    );
   });
 
   it('does not re-fetch an attachment an earlier slice already stored', async () => {
@@ -666,6 +688,30 @@ describe('DiscordExportWorkerService — attachments', () => {
     expect(warnings.join(' ')).toContain('no longer available from Discord');
     // The message itself still imported — it still has its text.
     expect(args.importBatch).toHaveBeenCalled();
+  });
+
+  it('fails the import when the bot path crosses an archive ceiling, and never uploads', async () => {
+    // The bot path writes to the same bucket as the upload path, so it carries
+    // the same ceilings (#1243). Enforced BEFORE the transfer, because that is
+    // the only point at which refusing still saves the storage — after
+    // `uploadFile` the bytes are already in the bucket.
+    //
+    // It fails the job rather than skipping the attachment: a partial archive
+    // that reports success would tell the admin their history imported when it
+    // did not.
+    const harness = await build({ pages: [[withAttachment('1')]] });
+    harness.repo.registerFiles.mockRejectedValue(
+      new ArchiveQuotaExceededError(
+        'chapter',
+        MAX_ARCHIVE_CHAPTER_BYTES + 1,
+        MAX_ARCHIVE_CHAPTER_BYTES,
+      ),
+    );
+
+    await expect(harness.worker.runSlice(runArgs(harness))).rejects.toThrow(
+      /archive would hold .* past its .* limit/,
+    );
+    expect(harness.storage.uploadFile).not.toHaveBeenCalled();
   });
 
   it('skips a file type the archive bucket refuses, and says which', async () => {

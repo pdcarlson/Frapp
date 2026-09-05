@@ -31,8 +31,8 @@ unavailable, stop and report — no fallback**: no `gh`, no REST, no scratch fil
 substitute for the MCP on tracker work, read or write** — reachability is route-dependent, not
 session-dependent, and that changes nothing. The carve-out is only for provider settings the MCP
 exposes no tool for (branch protection, environments, rulesets, repo visibility,
-`vulnerability-alerts`) and the raw-`body` verification read under the escape hatch below — never
-issues, PRs or comments. The label roster and shared routine config live in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
+`vulnerability-alerts`) and the raw-`body` verification read the read-fidelity section below
+licenses — never issues, PRs or comments. The label roster and shared routine config live in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
 ## Ownership boundary (read first — hard invariant)
 
@@ -72,7 +72,7 @@ per issue, grounded in **current code and `spec/`** (not a hunch):
 | Referenced behavior now **exists / implemented** — the suggestion is **done** | Close as **`completed`** + comment citing the proving file/path (and PR if known) |
 | Code/spec **moved on** so it's **moot / superseded** | Close as **`not_planned`** + comment why it's obsolete |
 | **Duplicate** of another `suggestion` issue | **Close the newer/worse-specified one** as `duplicate` with `duplicate_of` the canonical, comment the link. Never edit the canonical beyond a back-link |
-| Intent **still valid** but file/line refs or context **drifted** | **Comment the correction** (the drifted paths/snippet/spec quote, and an [Agent brief](#agent-brief) if missing) — a comment is lossless, and re-bodying means round-tripping the body through a lossy read. Rewrite the description only when you author the whole replacement, or under the escape hatch; if you do, keep the `fp=` marker. Leave open |
+| Intent **still valid** but file/line refs or context **drifted** | **Correct the body** when the fidelity probe is green (it is, as of 2026-09-05) — a drifted body is what wastes the next reader's run, and a stack of correcting comments is a poor substitute for an accurate issue. **Comment instead when the probe is red**, or when you cannot re-run it. Either way keep the `fp=` marker, and include an [Agent brief](#agent-brief) if one is missing. Leave open |
 | **Aging / uncertain** — you **cannot prove** resolved/duplicate/obsolete | Add the **`stale`** label + a short comment ("no longer matches X as of <date>; confirm or close"). **Leave it open** |
 | Still accurate and active | **Skip** — leave untouched |
 
@@ -82,22 +82,18 @@ makes it so. Otherwise mark **`stale`** and leave it open. When in doubt, do not
 **Label writes replace the whole set.** `issue_write`'s `labels` field overwrites — always send
 the union of the existing labels plus your change, never just the addition.
 
-**Reading a body you intend to rewrite.** **No MCP read path returns a body faithfully — not
-`issue_read`, not `list_issues`, and no longer `search_issues`.** All three corrupt a body three
-ways on read: HTML comments deleted (a legacy `fp=` marker), unrecognised tags deleted (including
-JSX inside ` ```tsx ` fences), and `'`/`"`/`&`/`>` entity-escaped. `search_issues` was the lossless
-exception until it regressed on all three vectors, confirmed 2026-08-20. Refreshing or splitting
-from that text silently destroys content — a dropped code snippet is **unrecoverable**, unlike a
-marker you could rebuild from `fp=<area>/<slug>`.
+**Reading a body you intend to rewrite.** Whether an MCP read is safe to rewrite from is a
+**measurement that has flipped four times**, not a fixed property. The fidelity table, the probe,
+the operative rule, and the fallback when the probe is red are in
+[`GITHUB_PM.md` → Reading a body you intend to rewrite (MCP read fidelity)](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
+— **read it there; this skill deliberately does not restate it.** As of **2026-09-05** all three
+read paths measured faithful. This routine refreshes and splits bodies, so it is the routine most
+exposed to a regression: **re-run the probe against fixture #1736 before a refresh pass**, and note
+in the run log that you did.
 
-**So: prefer a comment over a rewrite.** Anything additive — a note, a finding, an Agent brief —
-goes in `add_issue_comment`, which is lossless. Rewrite only when you author the replacement body
-yourself, or under the narrow escape hatch — confirm the body has no HTML comment and no tags via a
-**direct REST read of the raw `body`** (`GET /repos/pdcarlson/Frapp/issues/<n>` on the direct route,
-node's built-in `fetch` with `GITHUB_PAT`), then un-escape entities. `WebFetch` cannot satisfy it: it
-reads rendered HTML, so it can never prove a comment's *absence*. That read is a verification read of
-an issue's raw text, not a tracker path — the procedure and its limits are in
-[`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+**Even so, prefer a comment over a rewrite.** Anything additive — a note, a finding, an Agent brief
+— goes in `add_issue_comment`. That preference is about keeping an issue readable rather than about
+read fidelity, so it survives whatever the table says. Rewrite when the body is *wrong*.
 
 Whenever you *do* write a body, **confirm the `fp=` marker is present in what you sent** — it is a
 visible line now, so it reads back, and a missing one makes the next run re-file the issue as
@@ -110,8 +106,8 @@ Start each run with the marker-count guard in `GITHUB_PM.md`.
 
 **Legacy markers.** Older suggestions carry a `<!-- cursor-suggestion: v1 fp=… -->` or
 `<!-- agent-suggestion: v1 fp=… -->` marker as an **HTML comment**. Those are still stored and still
-valid — they are merely unreadable through the MCP, so **a marker you cannot see is "unknown", never
-"absent"**; never re-file on that basis alone. New filings use the visible-line form below. When you
+valid, and as of 2026-09-05 readable again — but the rule stands whatever the current measurement:
+**a marker you cannot see is "unknown", never "absent"**; never re-file on that basis alone. New filings use the visible-line form below. When you
 refresh a body for any other reason, promote the marker to the visible form; never rewrite a body
 *only* to change the marker.
 
@@ -224,8 +220,8 @@ against `[human]` titles** — if an open `fp=human/` blocker already tracks the
 (dashboard toggles and advisor findings are the usual overlap), skip: filing a promotable twin
 would route `/next` into a wall the held issue already documents. Embed the marker:
 a visible `` `agent-suggestion: v1 fp=<area>/<slug> file=<path>` `` line — **a visible line, not an
-HTML comment**, because every MCP read deletes comments and that hides the marker from the search
-index too.
+HTML comment**. The read has repeatedly deleted comments, hiding the marker from the search index
+too; it currently does not, and the form stays regardless because it costs nothing.
 
 ### Agent brief
 
@@ -277,7 +273,7 @@ cross-cutting, architectural, security-sensitive, or subtle-correctness work; `m
 `agent-suggestion: v1 fp=<area>/<slug> file=<primary-path>`
 
 _Filed by the Issue Curator routine. Edit freely; keep the `fp=` line above — it is the dedup key,
-and it must stay a visible line (an HTML comment is invisible to every MCP read)._
+and it must stay a visible line (an HTML comment has repeatedly been invisible to the MCP read)._
 ```
 
 Title format: `[suggestion] <imperative title>`. `type:` is body metadata, not a label.

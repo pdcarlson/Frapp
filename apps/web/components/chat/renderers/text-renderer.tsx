@@ -2,6 +2,7 @@
 
 import type { ChatMessage } from "@repo/chat-core/types";
 import { cn } from "@/lib/utils";
+import { DELETED_MESSAGE_PLACEHOLDER } from "../message-placeholders";
 import { MessageMarkdown } from "./message-markdown";
 
 interface TextRendererProps {
@@ -40,7 +41,9 @@ interface TextRendererProps {
 export function TextRenderer({ message, isSelf }: TextRendererProps) {
   if (message.is_deleted) {
     return (
-      <div className="mt-1 text-base italic text-muted-foreground">[message deleted]</div>
+      <div className="mt-1 text-base italic text-muted-foreground">
+        {DELETED_MESSAGE_PLACEHOLDER}
+      </div>
     );
   }
 
