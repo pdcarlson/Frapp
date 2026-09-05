@@ -230,6 +230,25 @@ describe("ChannelList category grouping", () => {
     ]);
   });
 
+  it("names each list with its section header for screen readers", () => {
+    const { container } = renderList(
+      [general, exec, dm],
+      undefined,
+      CATEGORIES,
+    );
+
+    // Every rendered list must resolve to a label, and it must be the right
+    // one — an `aria-labelledby` pointing at a missing id announces nothing.
+    const lists = Array.from(container.querySelectorAll("ul"));
+    expect(lists.length).toBe(3);
+    expect(
+      lists.map((ul) => {
+        const id = ul.getAttribute("aria-labelledby");
+        return id ? (container.querySelector(`#${CSS.escape(id)}`)?.textContent ?? null) : null;
+      }),
+    ).toEqual(["Channels", "Executive", "Direct messages"]);
+  });
+
   it("sorts by title inside a category, not by arrival order", () => {
     const zulu: ChatChannel = {
       id: "c-z",

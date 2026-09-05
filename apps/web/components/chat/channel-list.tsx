@@ -61,12 +61,18 @@ const NO_UNREAD: ChannelUnread = { unreadCount: 0, mentionCount: 0 };
  * Deliberately narrower than the API row, which also carries `chapter_id`,
  * `created_at` and `display_order`. **`display_order` is absent on purpose: the
  * rail never sorts by it.** `SupabaseChatCategoryRepository.findByChapter`
- * already returns the rows `.order('display_order', { ascending: true })`, so
- * the array arrives in the order it should render, and re-sorting here would be
- * a second implementation of the same rule — free to disagree with the server's
- * the moment either changes. The chat-admin screen reads the list the same way.
+ * returns the rows already ordered — `display_order` first, then `created_at`
+ * to break ties deterministically — so the array arrives in the order it should
+ * render, and re-sorting here would be a second implementation of the same rule,
+ * free to disagree with the server's the moment either changes.
  *
  * So: **order is the caller's array order.**
+ *
+ * Note this is *not* how the chat-admin screen reads it — `chat-admin-page.tsx`
+ * re-sorts by `display_order` client-side. That is a real divergence and not the
+ * pattern to copy here: it predates the server's tie-break, and while
+ * `Array.sort` is stable enough that the two agree today, only one of them is
+ * reading the order the server actually decided.
  */
 export interface ChannelCategory {
   id: string;
@@ -261,13 +267,7 @@ export function ChannelList({
       }
     }
 
-    const byTitle = (a: ChatChannel, b: ChatChannel) =>
-      titleFor(a).localeCompare(titleFor(b));
-    for (const list of [uncategorized, dms, system, ...byCategory.values()]) {
-      list.sort(byTitle);
-    }
-
-    return [
+    const result: Section[] = [
       { key: "channels", label: "Channels", channels: uncategorized },
       ...categories.map((category) => ({
         // Prefixed so a category whose id ever collided with a literal key
@@ -279,6 +279,14 @@ export function ChannelList({
       { key: "dms", label: "Direct messages", channels: dms },
       { key: "system", label: "System", channels: system },
     ];
+
+    // Sorted off the assembled list rather than a hand-written enumeration of
+    // the buckets: a section added above but forgotten in a second list would
+    // render unsorted, and nothing would catch the omission.
+    for (const section of result) {
+      section.channels.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
+    }
+    return result;
   }, [filtered, titleFor, categories]);
 
   if (channels.length === 0) {
@@ -315,10 +323,22 @@ export function ChannelList({
       {sections.map((section) =>
         section.channels.length === 0 ? null : (
           <div key={section.key}>
-            <p className="px-3 pb-1 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            {/*
+              The header names the list rather than just sitting above it. With
+              three fixed, memorizable groups a bare label was survivable; the
+              rail now has one section per chapter category, so a screen-reader
+              member navigating by list or by button — the common mode, not
+              linear reading — would otherwise hear "exec-board, button" with no
+              indication of which group it belongs to, and the grouping this
+              component exists to provide would be inaudible.
+            */}
+            <p
+              id={`channel-section:${section.key}`}
+              className="px-3 pb-1 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground"
+            >
               {section.label}
             </p>
-            <ul>
+            <ul aria-labelledby={`channel-section:${section.key}`}>
               {section.channels.map((channel) => {
                 const isActive = channel.id === activeChannelId;
                 const countsKnown = unreadByChannelId !== undefined;

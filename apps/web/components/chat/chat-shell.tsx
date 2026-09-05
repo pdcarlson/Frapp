@@ -189,7 +189,15 @@ export function ChatShell({
 
   // The rail groups plain channels under these. Passed through in the order the
   // API returned them — `SupabaseChatCategoryRepository.findByChapter` orders by
-  // `display_order` server-side, so there is nothing to re-sort here.
+  // `display_order` and then `created_at` server-side, so there is nothing to
+  // re-sort here.
+  //
+  // **A failed categories fetch degrades to the flat list on purpose.** Unlike
+  // `channelsQuery` below, there is no error branch: `asArray` turns the absent
+  // payload into `[]` and every channel falls into the default "Channels" group,
+  // which is exactly the pre-category rail. Blocking chat behind an error state
+  // because a display-only grouping could not load would cost far more than the
+  // grouping is worth.
   const categories = useMemo(
     () => asArray<ChannelCategory>(categoriesQuery.data),
     [categoriesQuery.data],
