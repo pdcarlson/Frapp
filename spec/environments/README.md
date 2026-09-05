@@ -36,7 +36,7 @@ with green CI. The `production` branch that used to occupy this table was retire
 
 ### Prerequisites
 
-- Node.js v18+
+- Node.js v20+ (CI, `apps/api/Dockerfile` and the root `engines` field all pin the same floor)
 - npm v10+
 - Docker available to your shell (Docker Desktop with **WSL integration** on Windows/WSL, or Docker Engine on Linux)
 - Supabase CLI (`npx supabase`)
