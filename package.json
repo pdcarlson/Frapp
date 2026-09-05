@@ -22,12 +22,8 @@
     "check:api-contract": "node scripts/check-api-contract-drift.mjs",
     "check:migration-safety": "node scripts/check-migration-safety.mjs",
     "check:migration-lock-safety": "node scripts/check-migration-lock-safety.mjs",
-    "check:docs-structure": "node scripts/check-docs-structure.mjs",
-    "check:doc-paths": "node scripts/check-doc-paths.mjs",
-    "check:doc-refs": "node scripts/check-doc-refs.mjs",
     "check:links": "node scripts/check-links.mjs",
     "install:lychee": "bash scripts/install-lychee.sh",
-    "check:doc-tables": "node scripts/check-doc-tables.mjs",
     "check:env-slugs": "node scripts/check-env-slugs.mjs",
     "check:pglite-migrations": "node scripts/check-pglite-migrations.mjs",
     "check:secrets": "node scripts/scan-secrets.mjs",
@@ -78,7 +74,7 @@
     "@typescript/old": "npm:typescript@6.0.3"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "packageManager": "npm@11.6.2",
   "workspaces": [

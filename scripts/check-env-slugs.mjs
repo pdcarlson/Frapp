@@ -190,12 +190,13 @@ function main() {
   }
 
   // ── 4. Docs and spec — any `--env=<slug>` a reader would copy/paste ─────────────
-  // Deliberately broad: it matches `--env=` regardless of the surrounding command, on the
-  // same reasoning DOCS_CI.md gives for the other gates — breadth is cheap to explain and
-  // hard to defeat by accident. Infisical is currently the only tool we document with this
-  // flag (eas takes --profile, vercel --environment), so there is nothing else to hit. If
-  // a second `--env=` tool ever shows up in docs, scope this match to lines mentioning
-  // infisical rather than widening INFISICAL_ENV_SLUGS — widening disarms the gate.
+  // Deliberately broad: it matches `--env=` regardless of the surrounding command, because
+  // breadth is cheap to explain and hard to defeat by accident — a narrower pattern keyed to
+  // the command name is defeated by any rephrasing of the example. Infisical is currently the
+  // only tool we document with this flag (eas takes --profile, vercel --environment), so
+  // there is nothing else to hit. If a second `--env=` tool ever shows up in docs, scope
+  // this match to lines mentioning infisical rather than widening INFISICAL_ENV_SLUGS —
+  // widening disarms the gate.
   for (const doc of [
     ...walk("docs", (f) => f.endsWith(".md")),
     ...walk("spec", (f) => f.endsWith(".md")),

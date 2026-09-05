@@ -42,10 +42,9 @@
 // So the expected set is intersected with the jobs the deployed commit's own
 // workflows define (`jobIdsAtRef`). A check the tree never defined is reported
 // as NOT APPLICABLE rather than missing. The extraction is a deliberate
-// SUPERSET of job ids — it matches any two-space-indented YAML key, the same
-// approximation `scripts/check-doc-tables.mjs` makes — because erring toward
-// "defined" keeps a real gate fatal, while erring the other way would excuse
-// one. A check whose job IS in the tree and did not report stays fatal.
+// SUPERSET of job ids — it matches any two-space-indented YAML key rather than
+// parsing the YAML — because erring toward "defined" keeps a real gate fatal,
+// while erring the other way would excuse one. A check whose job IS in the tree and did not report stays fatal.
 //
 // Semantics are the pure functions below. Unit tests:
 // `scripts/ci/__tests__/validate-deploy-sha.test.mjs`.
@@ -276,9 +275,8 @@ export function checkAncestry({ sha, mainRef = "origin/main", git = defaultGit }
 /**
  * Every job id defined by the workflows in the tree at `ref`.
  *
- * A check-run's name is its job id in this repo (the convention
- * `check-doc-tables.mjs` also relies on), so this answers "could this commit
- * have produced a check run called X at all?".
+ * A check-run's name is its job id in this repo, so this answers "could this
+ * commit have produced a check run called X at all?".
  *
  * Returns null when the workflow directory cannot be read at that ref. Null
  * means "do not narrow anything" — every required check stays expected, which

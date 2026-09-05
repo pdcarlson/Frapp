@@ -117,10 +117,14 @@ they are the two `area:product` pricing decisions that *block* the reskin, not t
 along with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed).
 
 **`packages/theme` is the shared token package for every surface, not a web-only one.** It already
-serves `apps/web` and `apps/landing` (Tailwind preset + CSS variables) and `apps/mobile` (typed
-Signet tokens via **`@repo/theme/signet`** — 58 files, plus `@repo/theme/accent` at one call site;
-mobile does not import `@repo/theme/tokens` at all, and nothing outside `packages/theme` does), and
-the Signet tokens live there too (`src/signet.css`, `src/signet.ts`) — as an **additive
+serves `apps/web` and `apps/landing` (Tailwind preset + CSS variables) and `apps/mobile` — typed
+Signet tokens via **`@repo/theme/signet`** in 61 files at last count
+(`grep -rl "@repo/theme/signet" apps/mobile | wc -l`), plus `@repo/theme/accent` at **exactly one
+call site**, `apps/mobile/lib/chapter-branding.ts` (`grep -rn "@repo/theme/accent" apps/mobile`).
+That one-site bound is what keeps the accent engine's blast radius auditable: re-run the grep rather
+than trusting this line, and treat a second importer as a change to argue for, not a detail. Mobile
+does not import `@repo/theme/tokens` at all, and nothing outside `packages/theme` does. The Signet
+tokens live in `packages/theme` too (`src/signet.css`, `src/signet.ts`) — as an **additive
 entrypoint**, leaving the legacy exports that landing still consumes untouched. Two things are
 defects:
 Signet values replacing or bleeding into those legacy exports, and Signet tokens duplicated into

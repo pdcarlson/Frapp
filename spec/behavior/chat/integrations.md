@@ -10,7 +10,7 @@ Slash commands turn chat into the dispatcher for every ops module. The catalog i
 | --- | --- | --- | --- | --- |
 | `/poll "Q?" Opt1 Opt2 [closes=<mins>]` | yes | `polls` | chapter member | current channel |
 | `/announce <message>` | yes | always-on | `announcements:post` (or `*`) via `canAccessChannel({ operation:'post' })` | `#announcements` |
-| `/points grant\|deduct @member <amount> for <reason>` | yes | `points` | `points:adjust`, re-checked on `POST /v1/points/adjust` (no self-adjust, 50/hr rate limit) | current channel |
+| `/points grant\|deduct @member <amount> for <reason>` | yes | `points` | `points:adjust`, re-checked on `POST /v1/points/adjust` (no self-adjust, plus the rate limit in [`points.md`](../points.md) § Anti-Fraud) | current channel |
 | `/task "<title>" @assignee <YYYY-MM-DD> [points]` | yes | `tasks` | `tasks:manage`, re-checked on `POST /v1/tasks` (assignee must be a chapter member) | current channel |
 | `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points]` | yes | `events` | `events:create`, re-checked on `POST /v1/events` | current channel |
 | `/dues`, `/hours` | no | per-module | n/a | n/a (palette stub) |
@@ -25,7 +25,7 @@ Parsing rules live in `packages/chat-integrations/src/parsers.ts` (`parsePollArg
 
 ## Server-originated kinds (anti-forgery)
 
-A `points`, `task`, `event`, or `system_audit` card asserts that a server-side side effect happened (a committed ledger row, a created task or event, an audit entry). A client therefore **cannot** post these kinds directly: `chat.service.sendMessage` rejects any send whose `kind` is in `SERVER_ONLY_KINDS` (`event`, `points`, `task`, `system_audit`) unless the trusted internal caller sets `system_originated: true` (never exposed on `SendMessageDto`). `PointsService.adjustPoints` is the only writer of `points` cards; `TaskService.create` is the only writer of `task` cards; `EventService.create` is the only writer of `event` cards; the `#chapter-audit` bridge worker is the only writer of `system_audit`. The optimistic `loading` placeholder stays client-postable — it carries no assertion until the server's real card replaces it.
+A `points`, `task`, `event`, or `system_audit` card asserts that a server-side side effect happened (a committed ledger row, a created task or event, an audit entry). A client therefore **cannot** post these kinds directly: `chat.service.sendMessage` rejects any send whose `kind` is in `SERVER_ONLY_KINDS` (`event`, `points`, `task`, `system_audit`, `imported`) unless the trusted internal caller sets `system_originated: true` (never exposed on `SendMessageDto`). `PointsService.adjustPoints` is the only writer of `points` cards; `TaskService.create` is the only writer of `task` cards; `EventService.create` is the only writer of `event` cards; `system_audit` has four server-side writers — the `#chapter-audit` bridge worker, plus `PollService` (expiry notices), `InviteService` (acceptance notices) and `ChapterOnboardingService` (the one-time welcome message into `#general`). **None of the four goes through `sendMessage`** — each writes on the service-role path instead (`PollService` and `InviteService` say why in comments). So `SERVER_ONLY_KINDS` is what stops a *client* posting the kind; it is not what gates these four. The optimistic `loading` placeholder stays client-postable — it carries no assertion until the server's real card replaces it.
 
 ## Announcement gating
 

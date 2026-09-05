@@ -5,14 +5,14 @@ suites, both in the **required** `web-responsive-floor` job:
 
 | Suite | Covers |
 | --- | --- |
-| `responsive-floor.spec.ts` | the fifteen `DASHBOARD_ROUTES` at 375px |
+| `responsive-floor.spec.ts` | every `DASHBOARD_ROUTES` entry at 375px |
 | `pre-auth-floor.spec.ts` | the four `PRE_AUTH_ROUTES` at 375px, plus one guard |
 
 Both read `routes.ts`. Add a screen there and the matching spec picks it up.
 
 **Why two suites and not one list.** The dashboard suite asserts each route did
 *not* end up on `/sign-in` — the guard that stops a regressed
-`SUPABASE_AUTH_BYPASS` from turning all fifteen tests into green measurements
+`SUPABASE_AUTH_BYPASS` from turning every one of those tests into green measurements
 of the sign-in card. For a pre-auth route that assertion is backwards, so those
 carry a per-route expected URL instead.
 
@@ -38,7 +38,8 @@ that with two specs in this directory, deleting or renaming the floor spec lets
 the run pass on the survivor and exit 0 with the floor silently unmeasured.
 `pre-auth-floor.spec.ts` closes that: it reads `responsive-floor.spec.ts` off
 disk and asserts both that the file exists and that `DASHBOARD_ROUTES` still
-holds fifteen entries. That is strictly stronger than the guard it replaces,
+holds its exact entry count — the number lives in that assertion, so adding a
+screen is a deliberate one-line edit. That is strictly stronger than the guard it replaces,
 which only fired when the directory collected no tests at all.
 
 ## There used to be a snapshot suite here
@@ -157,4 +158,4 @@ defaults only fill gaps.
 
 `responsive-floor.spec.ts` asserts the landed URL still matches the route it
 requested, which is what stops a regressed bypass from silently turning the whole
-suite into fifteen green measurements of the sign-in card.
+suite into green measurements of the sign-in card, one per dashboard route.

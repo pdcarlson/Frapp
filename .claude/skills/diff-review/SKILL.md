@@ -95,18 +95,47 @@ failure mode, not a hypothetical.
 - **Migration safety.** Migrations must pass `npm run check:migration-safety` and replay under
   PGlite (`npm run check:pglite-migrations`). Flag anything that breaks the PGlite path — a
   `create extension` is the known trap. Flag destructive DDL without a stated backfill or rollback.
-- **Doc placement and duplication.** No check requires a doc edit — the gate that did was deleted in
-  #1597 for producing filler — so do **not** flag a PR for lacking one. Flag the opposite. Two shapes
-  of filler are findings, and the second is the common one:
-  - A new **stray file** added so the change looks documented.
-  - A new **stray section or bullet appended to an existing doc** whose subject does not match the
-    doc it landed in — a "Maintenance Log", a "Notes" list, a changelog entry in a reference doc.
-    Test it by asking what the doc is *for*: would a reader who came for that topic want this
-    paragraph? If not, it is an unowned claim in someone's canonical doc, and the next reader will
-    believe it.
-  - A fact **restated** in a second doc rather than linked. One canonical place per fact
-    (`docs/internal/DOCUMENTATION_CONVENTIONS.md` hard rule 5); a duplicate is how a wrong one
-    spreads. If the PR states something a doc already says, that is a finding.
+- **Docs — the reviewer.** The standard is
+  [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md); this angle
+  reads a diff against it. No check requires a doc edit — the gate that did was deleted in #1597 for
+  producing filler — so never flag a PR for lacking one. Flag these. Every search below is the
+  `Grep` tool — `git grep` is not in this skill's `allowed-tools`, so do not reach for it.
+  - **Section references.** For every heading the diff renames or removes — including a
+    `* ## Heading` inside a block comment, since source files carry headings too — take the *old*
+    text off the diff's `-` side and search the tree for it: the bare heading, the section-symbol
+    forms (`§ Heading`, `§ "Heading"`), and the `#heading-slug` anchor. Search the whole tree, not
+    only `docs/` and `spec/` — such references live in source comments, and in tests that key on a
+    doc's section titles, where a renamed heading fails a suite. A prose `§` reference is validated
+    by nothing; a markdown link with an `#anchor` under the trees `.github/workflows/links.yml`
+    walks is validated by that checker, so prefer the link in anything you write.
+  - **Deletion sweep.** For every file, exported symbol, npm script, workflow job id or command the
+    diff deletes, search the corpus for prose naming it. A deletion is not finished while a doc
+    still gives instructions about the deleted thing. Separate a live instruction from a
+    deliberately historical reference: a removals table or a dated amendment *needs* the dead name
+    and is not a finding; a step someone will try to follow is. When you cannot tell, treat it as
+    live.
+  - **Roster drift.** For every array, job id, workspace list, table or version constant the diff
+    changes, search for a doc that restates it by hand. This is the case that reads as a pure code
+    change while the breakage sits in a doc nobody on the PR opened.
+  - **Placement and duplication.** A new or moved fact belongs in the home the standard names — not
+    a stray file added so the change looks documented, and not an unowned section appended to
+    whichever doc was open; the test is what that doc is *for*. Two homes for one fact is a defect:
+    merge them and link, rather than syncing both.
+  - **The two rewrite defects.** Flag a rewrite that states more than the original verified — one
+    case widened into a claim about all of them. Flag an edit that drops a dated stamp, a run link,
+    a run id, a PR number, or the command behind a figure: that is evidence, not narration.
+
+  **What this angle dropped.** CI used to scan the whole corpus every run: cited paths resolve,
+  filename references resolve, hand-copied rosters match their source, and every doc sits in a
+  declared home under a conforming name. This angle inherits only the slice of each that the
+  diff makes visible, and doc naming and placement are now conventions the standard states rather
+  than rules a machine enforces. **It cannot catch drift between two files when neither is in the
+  diff.** Nor does CI close that gap: what still runs and over which trees — including the fixed
+  `SCAN_ROOTS` list the env-slug check reads, which is narrower than the corpus and does not include
+  `.claude/` — is in [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md), which is its one home;
+  read it there rather than restating it here. That is the accepted cost of deleting the gates: a
+  clean review here is not evidence that the corpus is clean, and must never be reported as if it
+  were.
 - **Blast radius, not diff radius.** "Pre-existing" is not grounds to drop a candidate, and a finder
   that drops one for that reason is under-reporting. Judge every such candidate against
   [`spec/engineering.md`](../../../spec/engineering.md#changing-existing-code) § Changing existing
@@ -134,7 +163,9 @@ Discard everything `REFUTED`. Run verifiers in parallel where there are several.
 
 ## Phase 3 — Synthesize and report
 
-Rank: correctness and security above cleanups; `CONFIRMED` above `PLAUSIBLE`. Merge findings that
+Rank: correctness and security above cleanups; `CONFIRMED` above `PLAUSIBLE`. A docs finding that
+names a concrete broken pointer, an orphaned section reference, or a removed dated stamp is a
+**correctness** finding, not a cleanup, and is not dropped to fit the cap. Merge findings that
 share one root cause into a single entry. Cap at the effort level's limit.
 
 Report with **one `ReportFindings` call**, most severe first, setting `level` to the effort used and
