@@ -13,11 +13,11 @@ import type { PollVote } from '../../../domain/entities/poll-vote.entity';
  * PostgREST default `max-rows` is often 1000; page through to avoid silent
  * truncation.
  *
- * A request size, not an assumption about the server's cap. This value sitting
- * exactly at the common default used to make this the most exposed loop in the
- * repo (#1628): the old code stopped on the first *short* page, so any cap at
- * or below 1000 ended the read early and under-counted vote aggregates. The
- * shared `fetchAllPages` stops only on an empty page and advances by the rows
+ * A request size, not an assumption about the server's cap. This value sits
+ * exactly at the common default, which is what made the old loop here fail on
+ * the *first* page (#1628): it stopped on any short page, so a cap at or below
+ * 1000 ended the read early and under-counted vote aggregates. The shared
+ * `fetchAllPages` stops only on an empty page and advances by the rows
  * actually returned, so the value is now a throughput choice rather than a
  * correctness one.
  */

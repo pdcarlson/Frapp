@@ -115,6 +115,18 @@ describe('fetchAllPages', () => {
     });
   });
 
+  it('fails loudly instead of hanging when the backend ignores the window', async () => {
+    // A backend that ignores `from` re-serves a full page forever, so the
+    // empty-page rule never fires. Two of the four callers run inside a cron:
+    // an error they can log beats a tick that never returns.
+    const fixed = rows(1000);
+    const page = () => Promise.resolve({ data: fixed, error: null });
+
+    await expect(fetchAllPages(page, { pageSize: 1000 })).rejects.toThrow(
+      /refusing to page further/,
+    );
+  });
+
   describe('with a limit', () => {
     it('never asks for a window past the ceiling', async () => {
       const { page, ranges } = pager([

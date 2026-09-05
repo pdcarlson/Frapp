@@ -72,13 +72,11 @@ interface QueryResult<T> {
 /**
  * Rows requested per round-trip.
  *
- * This is a request size, not an assumption about the server's cap. The loop
- * advances by however many rows actually came back, so a server whose
- * `max_rows` is lower than this still reads correctly — it just takes more
- * trips. That matters because `supabase/config.toml` governs the *local*
- * stack only; the hosted project's "Max rows" is a dashboard setting this file
- * cannot see. `scheduled-jobs.repository.ts` reaches the same conclusion from
- * the other direction, by holding its page size deliberately below the cap.
+ * A request size, not an assumption about the server's cap — see
+ * `fetchAllPages` in `infrastructure/supabase/supabase.utils.ts`, which is the
+ * one home for why that holds. Every paged read in the API now shares that
+ * rule; the "hold the page size below the cap instead" reasoning that used to
+ * be cited here was #1628's bug, not a second safe strategy.
  */
 const REPORT_PAGE_SIZE = 1000;
 

@@ -27,6 +27,13 @@ export interface PagedQueryResult<T> {
 }
 
 /**
+ * Runaway guard for {@link fetchAllPages}. Far above any legitimate read here —
+ * the largest is a Discord import manifest — so crossing it means the backend
+ * is not honouring the window, not that a chapter got big.
+ */
+const MAX_PAGED_ROWS = 1_000_000;
+
+/**
  * Read a query's full result set, one `pageSize` page at a time.
  *
  * `page` must apply a **total** order. Offset paging over a non-unique sort key
@@ -69,6 +76,17 @@ export async function fetchAllPages<T>(
   const rows: T[] = [];
 
   for (let from = 0; from < ceiling;) {
+    // Terminating only on an empty page means a backend that ignored the
+    // window would hand back a full page forever, so the loop is bounded too —
+    // the same guard, for the same reason, as `listEntries` in
+    // `infrastructure/storage/supabase-storage.service.ts`. Three of the four
+    // callers pass no `limit`, and two of them run inside a cron; failing
+    // loudly at an absurd row count beats hanging a tick.
+    if (rows.length > MAX_PAGED_ROWS) {
+      throw new Error(
+        `Paged read exceeded ${MAX_PAGED_ROWS} rows; refusing to page further`,
+      );
+    }
     const to = Math.min(from + pageSize, ceiling) - 1;
     const { data, error } = await page(from, to);
     // Rethrown verbatim, not wrapped: a PostgREST error is a plain object

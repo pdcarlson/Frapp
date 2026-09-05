@@ -24,16 +24,24 @@ import type {
 /**
  * PostgREST caps a response at `max_rows` (1000 — `supabase/config.toml`) and
  * signals truncation with a plain 200 and a null error, so an unpaged read
- * drops rows silently. Every batch here stays comfortably below the cap, and
- * with headroom rather than at it: a short page then unambiguously means the
- * rows ran out. Same reasoning as `SupabaseScheduledJobsRepository`.
+ * drops rows silently. Paged reads here go through the shared `fetchAllPages`
+ * (`infrastructure/supabase/supabase.utils.ts`), which stops only on an *empty*
+ * page and advances by the rows actually returned.
+ *
+ * For the *paged* reads the batch sizes below are therefore throughput choices
+ * rather than correctness ones. An earlier version of this note argued they had
+ * to keep headroom below the cap because "a short page then unambiguously means
+ * the rows ran out" — that rule was the bug (#1628), not the safeguard, and it
+ * also named a class (`SupabaseScheduledJobsRepository`) that does not exist.
+ *
+ * `MESSAGE_BATCH_SIZE` is the narrower case and still carries a real
+ * assumption: besides chunking inserts it bounds the `.in()` slice in
+ * `findExistingExternalIds`, which is *not* paged, so its result is silently
+ * truncated if `max_rows` ever drops below it. Tracked separately (#1722).
  */
 const MESSAGE_BATCH_SIZE = 200;
 
-/**
- * Manifest rows read per round trip. Below `max_rows` for the same reason
- * everything else in this file is — see the note above.
- */
+/** Manifest rows read per round trip. See the note above. */
 const FILE_PAGE_SIZE = 500;
 
 /**

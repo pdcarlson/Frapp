@@ -219,16 +219,6 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
   });
 });
 
-/**
- * The archive quota (#1243).
- *
- * The arithmetic lives in SQL and is exercised against a real Postgres — the
- * tenant harness records queries without executing them, so it cannot answer
- * what the monotonic `greatest(...)` upsert or the advisory lock do. What is
- * worth pinning here is the wrapper's own contract: the payload it sends, and
- * that it turns the function's raised ceiling into the domain error rather than
- * letting a raw PostgREST error reach a caller that would report it as a 500.
- */
 describe('SupabaseDiscordImportRepository — findFiles paging', () => {
   /** Mirrors `FILE_PAGE_SIZE` in the repository under test. */
   const PAGE_SIZE = 500;
@@ -296,6 +286,16 @@ describe('SupabaseDiscordImportRepository — findFiles paging', () => {
   });
 });
 
+/**
+ * The archive quota (#1243).
+ *
+ * The arithmetic lives in SQL and is exercised against a real Postgres — the
+ * tenant harness records queries without executing them, so it cannot answer
+ * what the monotonic `greatest(...)` upsert or the advisory lock do. What is
+ * worth pinning here is the wrapper's own contract: the payload it sends, and
+ * that it turns the function's raised ceiling into the domain error rather than
+ * letting a raw PostgREST error reach a caller that would report it as a 500.
+ */
 describe('SupabaseDiscordImportRepository — registerFiles', () => {
   const ROW = {
     import_id: IMPORT_A,
