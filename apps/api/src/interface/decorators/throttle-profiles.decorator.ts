@@ -29,7 +29,7 @@ import { Throttle } from '@nestjs/throttler';
  * {@link ThrottleExpensiveWrite}, and 20 searches a minute is faster than
  * anyone types. They are plain constants rather than chapter configuration
  * because nothing in the product exposes a knob for them — see
- * `spec/behavior/README.md` § Rate Limiting.
+ * `spec/behavior/README.md` § Per-route rate limits.
  *
  * Overriding a bucket does not change *which* bucket a route lands in, so a
  * `read` profile on a POST route (or vice versa) is silently inert. Match the
