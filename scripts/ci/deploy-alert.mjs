@@ -411,8 +411,19 @@ export function buildAlertIssueBody({
     "",
     "This issue is **opened and closed automatically** by the `deploy-outcome` job in",
     `\`${config.workflowFile}\` (\`scripts/ci/deploy-alert.mjs\`). While it is open, the`,
-    `deploy path is broken: the most recent \`${config.workflowLabel}\` run that actually tried to deploy did`,
-    "not succeed. It closes itself as soon as a later run deploys successfully.",
+    // The ordinary sentence asserts a run TRIED to deploy. For an escalated
+    // no-op that is exactly false — no run tried, and that is the defect being
+    // reported — so saying it would send the reader looking for a failed build
+    // that does not exist.
+    ...(escalated
+      ? [
+          `deploy path is broken: the most recent \`${config.workflowLabel}\` run did not even attempt a`,
+          "deploy. It closes itself as soon as a later run deploys successfully.",
+        ]
+      : [
+          `deploy path is broken: the most recent \`${config.workflowLabel}\` run that actually tried to deploy did`,
+          "not succeed. It closes itself as soon as a later run deploys successfully.",
+        ]),
     "",
     "Do not claim this issue as backlog work — it carries `routine-state` and tracks live state,",
     "not a unit of work. Fix the underlying failure and it resolves on its own.",
@@ -426,6 +437,11 @@ export function buildAlertIssueBody({
     "",
     "### Why this issue exists",
     "",
+    // The DIAGNOSIS belongs here, not only on the run page. This issue is the
+    // durable artifact — linked from ALERT_ROUTING.md, and it outlives log
+    // retention — so a responder who never opens the run still needs the
+    // sentence naming what actually drifted.
+    ...(escalated ? [config.noOpNote, ""] : []),
     ...config.whyLines,
   ]
     .filter((line) => line !== "")
@@ -612,7 +628,20 @@ export async function runDeployAlert({
       needs?.[config.gateJob]?.outputs?.[output] === "true",
     ]),
   );
-  const headline = buildHeadline({ outcome, failed, deployed, headBranch, config });
+  // `escalated` matters here, not only in the summary: this headline is what
+  // the annotation and the ALERT ISSUE carry. Omitting it put the escalated
+  // sentence on the step summary alone — the one surface this script's own
+  // header calls invisible — and left the run page contradicting itself, with
+  // the annotation saying "did not succeed" above a summary saying "did not
+  // run at all".
+  const headline = buildHeadline({
+    outcome,
+    failed,
+    deployed,
+    headBranch,
+    escalated,
+    config,
+  });
 
   writeSummary(
     buildRunSummary({

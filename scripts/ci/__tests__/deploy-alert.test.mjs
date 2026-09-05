@@ -1078,3 +1078,91 @@ test("an escalated alert issue does not call a job that never ran a failed job",
   );
   assert.match(realFailure.body.body, /Failed jobs: `deploy`/);
 });
+
+test("an escalated run says 'did not run' on EVERY surface, not just the summary", async () => {
+  // This goes through runDeployAlert on purpose. The earlier escalated test
+  // called buildHeadline directly with `escalated` hand-passed, so it asserted
+  // a property of a headline it had constructed correctly itself — and was
+  // structurally unable to catch the real defect, which was runDeployAlert
+  // failing to pass the flag to its own buildHeadline call. The result: the
+  // annotation and the alert issue said "did not succeed" while the summary
+  // three lines away said "did not run at all".
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
+  const { logger, lines } = capturingLogger();
+  let summary = "";
+
+  await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: { deploy: { result: "skipped" } },
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
+    logger,
+    config,
+  });
+
+  const annotation = lines.find((line) => line.startsWith("::"));
+  const issueBody = calls.find(
+    (c) => c.method === "POST" && c.path === "/repos/o/r/issues",
+  ).body.body;
+
+  // All three surfaces, checked together — a fix applied to one only is the
+  // defect this replaces.
+  for (const [surface, text] of [
+    ["annotation", annotation],
+    ["issue body", issueBody],
+    ["step summary", summary],
+  ]) {
+    assert.match(text, /did not run|did not even attempt/, `${surface} must say nothing ran`);
+    assert.doesNotMatch(text, /did not succeed/, `${surface} must not claim a failed attempt`);
+  }
+
+  // The diagnosis has to reach the durable artifact, not only the run page:
+  // the issue outlives log retention and is what ALERT_ROUTING.md links to.
+  assert.match(issueBody, /those two have drifted apart/);
+});
+
+test("a genuine failure still reads as a failure on every surface", async () => {
+  // The other side of the switch — the escalated copy must not leak into an
+  // ordinary failed deploy, which really did try and really did fail.
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
+  const { logger, lines } = capturingLogger();
+  let summary = "";
+
+  await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: vercelFailedNeeds(),
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
+    logger,
+    config,
+  });
+
+  const annotation = lines.find((line) => line.startsWith("::"));
+  const issueBody = calls.find(
+    (c) => c.method === "POST" && c.path === "/repos/o/r/issues",
+  ).body.body;
+
+  for (const [surface, text] of [
+    ["annotation", annotation],
+    ["issue body", issueBody],
+    ["step summary", summary],
+  ]) {
+    assert.match(text, /did not succeed/, `${surface} must report a real failure`);
+    assert.doesNotMatch(text, /did not even attempt/, `${surface} must not claim nothing ran`);
+  }
+  assert.doesNotMatch(issueBody, /those two have drifted apart/);
+});

@@ -79,17 +79,19 @@ close a live Vercel outage's alert. Renaming either title orphans whatever alert
 one — it could never be found again, and so would never self-close.
 
 `production-guardrails.mjs` is also `deploy-production.yml`'s preflight, but that invocation
-(`--preflight`) **files nothing** — it exits non-zero on a violation and lets the deploy fail. Only
-the scheduled run raises or clears the alert issue, so an open one always means the daily check
-found drift, never that someone's deploy was blocked.
+(`--preflight`) **files nothing** — it exits non-zero on a violation and lets the deploy fail. So an
+open alert never means someone's deploy was blocked. It does **not** follow that a scheduled run
+raised it: the early exit is gated on the `--preflight` flag, not on the trigger, so a
+`workflow_dispatch` of the workflow raises and clears exactly as the cron does. Read the alert's run
+link rather than assuming the 07:15 window.
 
 **The scheduled watchdogs own disjoint concerns, and are staggered.** `check-migration-drift.yml`
 (07:00 UTC) owns migration parity for *every* environment; `production-guardrails.yml` (07:15) owns
 provider-side production settings; `staging-conformance.yml` (07:30) owns everything else about
 staging and deliberately does **not** re-run the drift comparison, so one real drift raises exactly
 one alert. If several of these alerts are open at once they are telling you about different
-problems. The staggering is so they do not all report in the same minute — the full schedule is
-[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance.
+problems. The staggering has more than one reason — the full schedule and its rationale are
+[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance, which owns that fact.
 
 **Read the conformance alert's clearing condition literally — an open issue does not always mean
 "broken right now."** It closes only when the specific assertions it names pass, not merely when
