@@ -87,10 +87,17 @@ opening a browser.
 rule, which governs glyphs on these surfaces and does not admit emoji
 ([`design-system/iconography.md`](design-system/iconography.md)), and the semantic
 tint already carries the severity they stood in for. The strings are otherwise
-verbatim and mobile ships them exactly. `apps/web` still ships a **third** variant —
-`"You're offline. Showing cached data. Changes will sync when you reconnect."` with
-lucide `WifiOff` / `Zap` icons (`apps/web/components/shared/offline-banner.tsx`) —
-left alone for the web reskin rather than changed from a mobile slice.
+verbatim and mobile ships them exactly. `apps/web` shipped a **third** variant until
+#1707 — `"You're offline. Showing cached data. Changes will sync when you reconnect."`
+— and now ships the string above, because the trailing clause became false rather
+than merely divergent. Web mutations no longer pause-and-resume offline; they reject
+(see [`web-dashboard/README.md`](web-dashboard/README.md) § Surviving data contracts),
+so a global banner promising a sync would have contradicted principle 1, "actions must
+never appear to succeed when they haven't". The queue promise belongs at the one
+control that has a queue — the composer's own label — not in page chrome that renders
+on every route. The lucide `WifiOff` / `Zap` icons
+(`apps/web/components/shared/offline-banner.tsx`) are still web-only, left for the
+reskin.
 
 **Write gating is "labeled, never blocked, wherever an outbox exists."** The
 disabled-with-tooltip rule holds only where a failed write is *lost*. It must not be
