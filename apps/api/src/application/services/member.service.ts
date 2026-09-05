@@ -318,8 +318,13 @@ export class MemberService {
    * That does open a lost-update window, and it is **reachable**, not theoretical:
    * dismissing one nudge falls the next one through immediately, putting a fresh
    * dismiss control under the cursor, so two writes can overlap and the later one
-   * erases the earlier key. The client closes the realistic path by blocking a
-   * second dismissal while one is in flight (`OpsSetupNudgeCard`'s `isDismissing`).
+   * erases the earlier key. The client closes that path by serializing the
+   * writes: `useDismissOpsNudge` carries `scope: { id: 'ops-nudge-dismiss' }`,
+   * so TanStack will not start a second dismissal while one with that scope is
+   * pending, and the second read therefore sees the first write. Pinned by
+   * `packages/hooks/src/use-ops-nudges.spec.tsx`. (An earlier revision disabled
+   * the dismiss control instead; that greys out the successor card for the whole
+   * retry window and indefinitely offline, which is a dead-end control.)
    * A cross-tab or cross-device race can still lose one, and that is accepted
    * rather than fixed with an RPC: the entire cost is that one already-dismissed
    * card reappears on the next load and is dismissed again. If this column ever

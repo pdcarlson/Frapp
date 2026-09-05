@@ -266,9 +266,12 @@ export function useUpdateOnboarding() {
  *
  * Chosen over disabling the control while `isPending`: mutations here retry
  * with backoff and pause outright while offline (`networkMode` is the default
- * `"online"`), so a disabled control would grey out the successor card for
- * ~12s on a flaky connection and indefinitely offline — a dead-end control,
- * which `spec/ui/design-system/README.md` bans.
+ * `"online"`). `query-provider.tsx` sets `retry: 2` with
+ * `min(1000 * 2 ** attempt, 10_000)`, so a disabled control would grey out the
+ * successor card for ~3s of backoff across three attempts — plus however long
+ * each request itself hangs — and indefinitely while offline, since a paused
+ * mutation reports `pending` forever. That is a dead-end control, which
+ * `spec/ui/design-system/README.md` bans.
  */
 export function useDismissOpsNudge() {
   const client = useFrappClient();
