@@ -3,6 +3,7 @@ import {
   defaultNotificationCategoryState,
   isNotificationCategoryKey,
   NOTIFICATION_CATEGORIES,
+  rowsToNotificationCategoryState,
 } from "./notification-categories";
 
 describe("NOTIFICATION_CATEGORIES", () => {
@@ -97,5 +98,83 @@ describe("defaultNotificationCategoryState", () => {
     const first = defaultNotificationCategoryState();
     first.chat = false;
     expect(defaultNotificationCategoryState().chat).toBe(true);
+  });
+});
+
+describe("rowsToNotificationCategoryState", () => {
+  // The load-bearing one. An absent row means enabled — that is what
+  // `notifyUser` does with it — so the fold must return every key, not only
+  // the ones the server had something to say about. A surface rendering only
+  // the returned keys would otherwise draw no switch for an untouched
+  // category.
+  it("returns every catalog key, defaulting the ones with no row", () => {
+    expect(
+      rowsToNotificationCategoryState([{ category: "points", is_enabled: false }]),
+    ).toEqual({
+      chat: true,
+      events: true,
+      points: false,
+      billing: true,
+      tasks: true,
+      service: true,
+    });
+  });
+
+  it("applies an explicit false and an explicit true", () => {
+    const state = rowsToNotificationCategoryState([
+      { category: "chat", is_enabled: false },
+      { category: "billing", is_enabled: true },
+      { category: "service", is_enabled: false },
+    ]);
+    expect(state.chat).toBe(false);
+    expect(state.billing).toBe(true);
+    expect(state.service).toBe(false);
+    expect(state.events).toBe(true);
+  });
+
+  // `notification_preferences.category` is unconstrained `text`, so the server
+  // can hand back rows for categories no surface draws. Folding one in would
+  // widen the state past the switches that exist.
+  it("drops rows for categories outside the catalog", () => {
+    const state = rowsToNotificationCategoryState([
+      { category: "announcements", is_enabled: false },
+      { category: "admin", is_enabled: false },
+      { category: "whatever-was-patched", is_enabled: false },
+    ]);
+    expect(state).toEqual(defaultNotificationCategoryState());
+    expect(Object.keys(state)).toHaveLength(NOTIFICATION_CATEGORIES.length);
+  });
+
+  // The endpoint declares no response schema, so a caller cannot lean on the
+  // SDK's type to guarantee the shape — the fold is the narrowing.
+  it("falls back to defaults for anything that is not an array of rows", () => {
+    const defaults = defaultNotificationCategoryState();
+    expect(rowsToNotificationCategoryState(undefined)).toEqual(defaults);
+    expect(rowsToNotificationCategoryState(null)).toEqual(defaults);
+    expect(rowsToNotificationCategoryState({})).toEqual(defaults);
+    expect(rowsToNotificationCategoryState("nope")).toEqual(defaults);
+    expect(rowsToNotificationCategoryState([])).toEqual(defaults);
+  });
+
+  it("skips malformed rows without discarding the good ones", () => {
+    const state = rowsToNotificationCategoryState([
+      null,
+      "chat",
+      { category: "tasks" },
+      { category: "events", is_enabled: "false" },
+      { is_enabled: false },
+      { category: "points", is_enabled: false },
+    ]);
+    expect(state.points).toBe(false);
+    expect(state.tasks).toBe(true);
+    expect(state.events).toBe(true);
+  });
+
+  // Same reason `defaultNotificationCategoryState` is asserted fresh: two
+  // surfaces call this, and a shared object would cross-contaminate them.
+  it("returns a fresh object each call", () => {
+    const first = rowsToNotificationCategoryState([]);
+    first.chat = false;
+    expect(rowsToNotificationCategoryState([]).chat).toBe(true);
   });
 });
