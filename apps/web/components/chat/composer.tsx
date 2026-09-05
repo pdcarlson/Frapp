@@ -42,6 +42,7 @@ import {
   inspectUploadFile,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
+import { QuotedMessage } from "./reply-quote";
 import { SlashPalette } from "./slash-palette";
 import {
   createMentionSuggestion,
@@ -53,7 +54,43 @@ import {
   type SlashCommand,
 } from "@repo/chat-integrations";
 
-interface ComposerProps {
+/**
+ * The message the next send replies to, already resolved to a label and a
+ * one-line preview by the shell (#489).
+ *
+ * Resolved rather than a `ChatMessage`, because the shell is the only place
+ * that holds the viewer id and the name resolver the label needs, and because
+ * the composer must not grow a second opinion about how a message is
+ * summarised — `replyPreviewText` in `./reply-quote` is the one definition and
+ * the timeline's quote uses it too.
+ *
+ * `author: null` means the target is staged but outside the loaded window. The
+ * strip still renders, in `QuotedMessage`'s unavailable variant, because the
+ * alternative is a staged reply the member can neither see nor dismiss while it
+ * silently attaches to their next message.
+ */
+export interface ComposerReplyTarget {
+  id: string;
+  author: string | null;
+  preview: string | null;
+}
+
+/**
+ * The reply half of the composer's contract, as a discriminated union so a
+ * caller cannot offer a strip with no way to dismiss it.
+ *
+ * Written as a union rather than two optional props because that pairing is
+ * unenforceable: `replyTo` set with `onCancelReply` forgotten typechecks
+ * cleanly and ships a × and an Escape that both silently no-op, leaving no way
+ * to unstage a reply short of switching channels. The panel this file's sibling
+ * documents as "the place a composer is missing" is exactly the kind of second
+ * caller that would hit it.
+ */
+type ComposerReplyProps =
+  | { replyTo?: undefined; onCancelReply?: undefined }
+  | { replyTo: ComposerReplyTarget | null; onCancelReply: () => void };
+
+interface ComposerBaseProps {
   channelId: string;
   channelName: string;
   /**
@@ -114,6 +151,14 @@ interface ComposerProps {
    */
   isOffline?: boolean;
 }
+
+/**
+ * The composer does **not** pass the reply target back on send: the shell owns
+ * the state, so it reads its own target when it calls `channel.send`. A
+ * `replyToId` threaded back out through `onSend` would be a second copy of the
+ * same fact, free to disagree with the strip the member can see.
+ */
+type ComposerProps = ComposerBaseProps & ComposerReplyProps;
 
 /**
  * Submit on Enter; let Shift+Enter fall through to StarterKit's default
@@ -183,6 +228,8 @@ export function Composer({
   slashCommandsStatus = "ready",
   onRetrySlashCommands,
   isOffline,
+  replyTo,
+  onCancelReply,
 }: ComposerProps) {
   const { toast } = useToast();
   const requestUploadUrl = useRequestChatUploadUrl();
@@ -310,6 +357,55 @@ export function Composer({
   // lifetime of one Composer instance — nothing here needs to react to it
   // changing, because it never does.
 
+  /**
+   * Why a slash command cannot be dispatched right now, or `null` when it can.
+   *
+   * One definition for **both** invocation paths — typing `/poll …` and hitting
+   * Enter (`submit`), and picking the command out of the palette
+   * (`onPaletteSelect`). They were separate code, and the palette path silently
+   * skipped every one of these checks: it dispatched with a staged reply, which
+   * `dispatchSlash` takes no `replyToId` for, so the reply was dropped AND left
+   * standing to attach itself to the member's next message.
+   *
+   * Every branch refuses *before* anything is cleared, which is the load-bearing
+   * half — the member's text and their staged context all survive to be re-sent.
+   */
+  const slashRefusal = useCallback(
+    (command: SlashCommand): { title: string; description: string } | null => {
+      // A slash command is NOT a queued write. `/points`, `/task` and `/event`
+      // POST straight to their controllers from
+      // `packages/chat-core/src/dispatch.ts` with no outbox behind them, so
+      // resilience.md §2's split applies within this one control: the text path
+      // is labelled and stays live because it queues, and the queueless path
+      // refuses and says why.
+      if (isOffline) {
+        return {
+          title: `/${command.name} needs a connection`,
+          description:
+            "Slash commands aren't queued. Your text is still here — send it when you're back online.",
+        };
+      }
+      // A slash command posts a card, which has nowhere to hang a file.
+      if (pending.length > 0) {
+        return {
+          title: `/${command.name} can't carry attachments`,
+          description:
+            "Remove the attached file, or send it as its own message first.",
+        };
+      }
+      // Same shape, same reason, for a staged reply (#489).
+      if (replyTo) {
+        return {
+          title: `/${command.name} can't reply to a message`,
+          description:
+            "Dismiss the reply first, or send your reply as an ordinary message.",
+        };
+      }
+      return null;
+    },
+    [isOffline, pending.length, replyTo],
+  );
+
   const submit = useCallback(() => {
     if (!editor) return;
     const text = editor.getText().trim();
@@ -324,32 +420,9 @@ export function Composer({
     if (parsed.isSlash && parsed.command && onSlashDispatch) {
       const command = getSlashCommand(parsed.command);
       if (command?.implemented) {
-        // A slash command is NOT a queued write. `/points`, `/task` and
-        // `/event` POST straight to their controllers from
-        // `packages/chat-core/src/dispatch.ts` with no outbox behind them, so
-        // resilience.md §2's split applies within this one control: the text
-        // path is labelled and stays live because it queues, and the queueless
-        // path refuses and says why. Refusing *before* `clearContent` is the
-        // load-bearing half — the command text survives to be re-sent.
-        if (isOffline) {
-          toast({
-            title: `/${command.name} needs a connection`,
-            description:
-              "Slash commands aren't queued. Your text is still here — send it when you're back online.",
-            variant: "destructive",
-          });
-          return;
-        }
-        // A slash command posts a card, which has nowhere to hang a file. Refuse
-        // rather than dispatch and drop the staged attachments on the floor —
-        // the same reason the offline branch above refuses instead of clearing.
-        if (pending.length > 0) {
-          toast({
-            title: `/${command.name} can't carry attachments`,
-            description:
-              "Remove the attached file, or send it as its own message first.",
-            variant: "destructive",
-          });
+        const refusal = slashRefusal(command);
+        if (refusal) {
+          toast({ ...refusal, variant: "destructive" });
           return;
         }
         editor.commands.clearContent(true);
@@ -370,7 +443,7 @@ export function Composer({
     // Only clear when a send was actually issued.
     editor.commands.clearContent(true);
     setPending([]);
-  }, [editor, isOffline, onSend, onSlashDispatch, pending, toast]);
+  }, [editor, onSend, onSlashDispatch, pending, slashRefusal, toast]);
   useLayoutEffect(() => {
     sendRef.current = submit;
   }, [submit]);
@@ -444,13 +517,58 @@ export function Composer({
     [channelId, requestUploadUrl, toast, uploadSignedUrl],
   );
 
-  // Cmd+/ globally inside the composer opens the palette.
-  const handleHostKey = useCallback((event: React.KeyboardEvent) => {
-    if (event.key === "/" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      setPalette({ open: true, query: "" });
-    }
-  }, []);
+  /*
+   * Staging a reply moves focus to the editor, so the member can type
+   * immediately after clicking Reply on a row several screens up — the control
+   * they used is in the timeline, and leaving focus there would mean a second
+   * deliberate move to reach the input the strip just appeared above.
+   *
+   * Keyed on the target's **id**, not on the object: the shell derives
+   * `replyTo` from `channel.messages`, so an unrelated edit or reaction lands a
+   * fresh object on every render of an already-staged reply, and re-focusing on
+   * each of those would fight a member who has clicked away — the same hazard
+   * `thread-panel.tsx` documents for its own focus effect.
+   */
+  const replyTargetId = replyTo?.id ?? null;
+  useEffect(() => {
+    if (replyTargetId) editor?.commands.focus();
+  }, [replyTargetId, editor]);
+
+  /**
+   * Dismissing the strip unmounts the × the member is standing on, so focus
+   * would fall to `<body>` and their next Tab would restart from the top of the
+   * page. Hand it back to the editor, the same thing the palette-close effect
+   * above does for the same reason.
+   *
+   * Escape reaches this too, harmlessly: focus is already in the editor there,
+   * so the call is a no-op rather than a jump.
+   */
+  const cancelReply = useCallback(() => {
+    onCancelReply?.();
+    editor?.commands.focus();
+  }, [editor, onCancelReply]);
+
+  // Cmd+/ opens the palette; Escape drops a staged reply.
+  const handleHostKey = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key === "/" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setPalette({ open: true, query: "" });
+        return;
+      }
+      // `defaultPrevented` for the same reason `thread-panel.tsx` checks it:
+      // a Radix `DismissableLayer` (the emoji popover mounted from this
+      // toolbar) closes itself on Escape by calling `preventDefault()` without
+      // `stopPropagation()`, so that keydown still arrives here. Without the
+      // guard, dismissing the emoji picker would also silently discard the
+      // reply the member had staged.
+      if (event.key === "Escape" && !event.defaultPrevented && replyTo) {
+        event.preventDefault();
+        cancelReply();
+      }
+    },
+    [cancelReply, replyTo],
+  );
 
   const onPaletteSelect = useCallback(
     async (command: SlashCommand) => {
@@ -464,6 +582,15 @@ export function Composer({
             "This command will ship in a later chunk. The catalog is gated by your chapter's enabled modules.",
         });
         if (editor) editor.commands.clearContent(true);
+        return;
+      }
+      // The same refusals the typed path applies. Without this the palette was
+      // a way around all three: picking `/poll` while offline, with a file
+      // staged, or with a reply staged dispatched anyway and dropped whichever
+      // context could not ride along.
+      const refusal = slashRefusal(command);
+      if (refusal) {
+        toast({ ...refusal, variant: "destructive" });
         return;
       }
       const text = editor?.getText() ?? "";
@@ -482,7 +609,7 @@ export function Composer({
         });
       }
     },
-    [editor, onSlashDispatch, toast],
+    [editor, onSlashDispatch, slashRefusal, toast],
   );
 
   // `canPost` is the single source of truth for whether *this caller* may
@@ -543,6 +670,34 @@ export function Composer({
           FOCUS_RING_WITHIN,
         )}
       >
+        {/*
+          The staged reply, above the input and above the attachment chips —
+          it is context for everything below it, not another attachment. Same
+          `QuotedMessage` the timeline uses, so what a member stages looks like
+          what they are about to send.
+        */}
+        {replyTo ? (
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="shrink-0 text-[12.5px] text-muted-foreground">
+              Replying to
+            </span>
+            <QuotedMessage
+              className="flex-1"
+              author={replyTo.author}
+              preview={replyTo.preview}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5 shrink-0"
+              aria-label="Cancel reply"
+              onClick={cancelReply}
+            >
+              <span aria-hidden="true">×</span>
+            </Button>
+          </div>
+        ) : null}
         {pending.length > 0 ? (
           <ul
             className="mb-2 flex flex-wrap gap-1.5"
