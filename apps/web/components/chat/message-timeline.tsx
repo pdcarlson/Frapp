@@ -84,6 +84,9 @@ export interface MessageTimelineProps {
   onRetryLoad?: () => void;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
+  /** Stages an inline reply in the composer — the row's Reply control (#489). */
+  onReply?: (message: ChatMessage) => void;
+  /** Opens the expanded thread view — now reached from a reply's quote. */
   onOpenThread?: (message: ChatMessage) => void;
   onRetry?: (clientMessageId: string) => void;
   onDiscard?: (clientMessageId: string) => void;
@@ -132,6 +135,7 @@ export const MessageTimeline = forwardRef<
     onRetryLoad,
     onReact,
     onUnreact,
+    onReply,
     onOpenThread,
     onRetry,
     onDiscard,
@@ -155,6 +159,16 @@ export const MessageTimeline = forwardRef<
   // tapping a second row dismisses the first's, matching the reference
   // affordance (#1193). Same key basis as `computeItemKey` below.
   const tapRevealed = useTapRevealedMessage();
+
+  // Parent lookup for reply quotes (#489), built once per message list rather
+  // than scanned per row: the timeline is virtualized but `decorated` is mapped
+  // over the whole window, so a `find` inside it would be O(n²) on a long
+  // channel. Only messages that are actually replied to occupy the map.
+  const byId = useMemo(() => {
+    const index = new Map<string, ChatMessage>();
+    for (const message of messages) index.set(message.id, message);
+    return index;
+  }, [messages]);
 
   // Precompute "showHeader" so we don't recompute per render in the renderer.
   const decorated = useMemo(() => {
@@ -268,7 +282,18 @@ export const MessageTimeline = forwardRef<
               showHeader={entry.showHeader}
               onReact={onReact}
               onUnreact={onUnreact}
+              onReply={onReply}
               onOpenThread={onOpenThread}
+              // `undefined` when this is not a reply at all; `null` when it is
+              // one whose parent is outside the loaded window. `MessageItem`
+              // draws a different thing for each, so the distinction has to
+              // survive the lookup — `Map.get` returning `undefined` for a
+              // missing key is exactly the case that must read as `null` here.
+              replyParent={
+                entry.message.reply_to_id
+                  ? (byId.get(entry.message.reply_to_id) ?? null)
+                  : undefined
+              }
               onRetry={onRetry}
               onDiscard={onDiscard}
               onAct={onAct}

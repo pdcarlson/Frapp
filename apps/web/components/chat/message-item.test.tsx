@@ -303,13 +303,112 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
     // re-toggle the cluster in the same gesture (review finding).
     const user = userEvent.setup();
     const onToggleTapReveal = vi.fn();
-    const onOpenThread = vi.fn();
-    renderItemWithProps({ onToggleTapReveal, onOpenThread, isTapRevealed: true });
+    // Reply stages an inline reply now rather than opening the thread panel
+    // (#489). The control is the same chip in the same cluster, so it is still
+    // the right representative nested button for this guard — only the handler
+    // it fires changed.
+    const onReply = vi.fn();
+    renderItemWithProps({ onToggleTapReveal, onReply, isTapRevealed: true });
 
     await user.click(screen.getByRole("button", { name: /reply/i }));
 
-    expect(onOpenThread).toHaveBeenCalledTimes(1);
+    expect(onReply).toHaveBeenCalledTimes(1);
     expect(onToggleTapReveal).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #489. `spec/behavior/chat/README.md` § Reply threads: "The UI shows the
+ * replied-to message as a quote/preview above the reply… Discord-style
+ * reply-with-quote, not Slack-style nested threads."
+ *
+ * Before this, the row's **Reply** control opened `ThreadPanel`, which has no
+ * composer — so no web surface could author a reply at all — and nothing in the
+ * timeline read `reply_to_id`.
+ */
+describe("MessageItem reply-with-quote (#489)", () => {
+  const PARENT = message({ id: "parent-1", content: "the original" });
+
+  it("stages an inline reply from the Reply control, not a thread panel", async () => {
+    const user = userEvent.setup();
+    const onReply = vi.fn();
+    const onOpenThread = vi.fn();
+    renderItemWithProps({ onReply, onOpenThread, isTapRevealed: true });
+
+    await user.click(screen.getByRole("button", { name: /reply/i }));
+
+    expect(onReply).toHaveBeenCalledTimes(1);
+    // The whole defect: this control used to lead to a read-only panel.
+    expect(onOpenThread).not.toHaveBeenCalled();
+  });
+
+  it("offers no Reply control when the surface does not wire one", () => {
+    // `ThreadPanel` renders `MessageItem` without `onReply`. A chip that calls
+    // nothing is worse than no chip.
+    renderItemWithProps({ isTapRevealed: true });
+    expect(
+      screen.queryByRole("button", { name: /reply/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the parent's author and body above a reply", () => {
+    renderItemWithProps({
+      message: message({ id: "child-1", reply_to_id: "parent-1", content: "agreed" }),
+      replyParent: PARENT,
+    });
+    expect(screen.getByText("the original")).toBeInTheDocument();
+    expect(screen.getByText("agreed")).toBeInTheDocument();
+  });
+
+  it("opens the thread from the quote — the panel's new entry point", async () => {
+    const user = userEvent.setup();
+    const onOpenThread = vi.fn();
+    renderItemWithProps({
+      message: message({ id: "child-1", reply_to_id: "parent-1" }),
+      replyParent: PARENT,
+      onOpenThread,
+    });
+
+    await user.click(screen.getByRole("button", { name: /the original/i }));
+
+    expect(onOpenThread).toHaveBeenCalledWith(PARENT);
+  });
+
+  it("renders no quote at all on a message that is not a reply", () => {
+    renderItemWithProps({ message: message({ reply_to_id: null }) });
+    expect(screen.queryByText(/isn’t loaded/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("the original")).not.toBeInTheDocument();
+  });
+
+  it("still marks a reply as one when its parent is outside the loaded window", () => {
+    // `undefined` (not a reply) and `null` (a reply whose parent is not loaded)
+    // must stay distinguishable. Keyed on `reply_to_id`, not on `replyParent`,
+    // so a missing parent cannot silently downgrade the row to a plain message.
+    renderItemWithProps({
+      message: message({ id: "child-1", reply_to_id: "gone" }),
+      replyParent: null,
+    });
+    expect(screen.getByText(/isn’t loaded/i)).toBeInTheDocument();
+  });
+
+  it("drops the quote on a deleted reply, as it drops the reactions", () => {
+    // A tombstone is not something anyone said, so it must not keep asserting
+    // what it was answering.
+    renderItemWithProps({
+      message: message({ id: "child-1", reply_to_id: "parent-1", is_deleted: true }),
+      replyParent: PARENT,
+    });
+    expect(screen.queryByText("the original")).not.toBeInTheDocument();
+  });
+
+  it("quotes a deleted PARENT as a tombstone rather than hiding the quote", () => {
+    // The opposite case, and it must not be folded into the one above: the
+    // reply is still real and still needs to say what it answered.
+    renderItemWithProps({
+      message: message({ id: "child-1", reply_to_id: "parent-1" }),
+      replyParent: message({ id: "parent-1", is_deleted: true, content: "" }),
+    });
+    expect(screen.getByText("[message deleted]")).toBeInTheDocument();
   });
 });
 

@@ -26,6 +26,15 @@ const {
 const CHANNELS = [
   { id: "chan-general", name: "general", type: "PUBLIC", member_ids: [] },
   { id: "chan-random", name: "random", type: "PUBLIC", member_ids: [] },
+  // Read-only, so the reply-with-quote suite (#489) can check that the shell
+  // withholds Reply where `ChatService` would refuse the send.
+  {
+    id: "chan-announcements",
+    name: "announcements",
+    type: "PUBLIC",
+    member_ids: [],
+    is_read_only: true,
+  },
 ];
 
 /**
@@ -186,7 +195,17 @@ vi.mock("./channel-list", () => ({
 // Keyed off `channelId` rather than `channelName` because this file's
 // `directChannelDisplayName` stub always returns `""`.
 vi.mock("./composer", () => ({
-  Composer: ({ channelId }: { channelId: string }) => {
+  Composer: ({
+    channelId,
+    onSend,
+    replyTo,
+    onCancelReply,
+  }: {
+    channelId: string;
+    onSend?: (body: string, attachments: unknown[]) => void;
+    replyTo?: { id: string; author: string; preview: string } | null;
+    onCancelReply?: () => void;
+  }) => {
     // Deliberately mount-only: the assertion below needs "did this
     // component get a fresh instance", which an exhaustive `[channelId]`
     // dep array would defeat by firing on every prop update too.
@@ -194,7 +213,24 @@ vi.mock("./composer", () => ({
       mockComposerMount(channelId);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    return <div data-testid="composer">{channelId}</div>;
+    return (
+      <div data-testid="composer">
+        {channelId}
+        {/* The staged-reply seam (#489). The real Composer cannot be driven
+            here (jsdom renders no ProseMirror view), so these expose the two
+            things the SHELL owns: what it says is staged, and what it sends. */}
+        <span data-testid="composer-reply-to">{replyTo?.id ?? "none"}</span>
+        <span data-testid="composer-reply-preview">
+          {replyTo?.preview ?? ""}
+        </span>
+        <button data-testid="composer-send" onClick={() => onSend?.("hi", [])}>
+          send
+        </button>
+        <button data-testid="composer-cancel-reply" onClick={onCancelReply}>
+          cancel reply
+        </button>
+      </div>
+    );
   },
 }));
 vi.mock("./thread-panel", () => ({
@@ -248,11 +284,15 @@ vi.mock("./message-timeline", async () => {
   const MessageTimeline = React.forwardRef<
     { scrollToMessage: (id: string) => boolean },
     {
-      messages?: Array<{ id: string }>;
+      messages?: Array<{ id: string; reply_to_id?: string | null }>;
       onDelete?: (messageId: string) => void;
+      onReply?: (message: { id: string; reply_to_id?: string | null }) => void;
       canManageChannel?: boolean;
     }
-  >(function MessageTimeline({ messages, onDelete, canManageChannel }, ref) {
+  >(function MessageTimeline(
+    { messages, onDelete, onReply, canManageChannel },
+    ref,
+  ) {
     // Models the REAL contract: the timeline can only scroll to a message it
     // has, and reports which happened. A mock that always returned `undefined`
     // asserted a timeline that silently succeeds at everything — the fixture
@@ -268,7 +308,23 @@ vi.mock("./message-timeline", async () => {
     return (
       <div data-testid="message-timeline">
         <span data-testid="can-manage-channel">{String(canManageChannel)}</span>
+        {/* Whether the shell offered a Reply handler at all — the read-only
+            rule (#489 AC 4) is expressed by withholding the prop, so it is
+            invisible without this echo. */}
+        <span data-testid="reply-offered">{String(!!onReply)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+        {/* One Reply control per message, so a test can stage a reply against
+            a top-level message and against a reply — the two cases AC 3's
+            root-normalization rule distinguishes. */}
+        {(messages ?? []).map((m) => (
+          <button
+            key={m.id}
+            data-testid={`trigger-reply-${m.id}`}
+            onClick={() => onReply?.(m)}
+          >
+            reply to {m.id}
+          </button>
+        ))}
       </div>
     );
   });
@@ -878,5 +934,217 @@ describe("ChatShell bookmark write failure (#462)", () => {
       expect(mockBookmarkReset).toHaveBeenCalled();
     });
     expect(mockUnbookmarkReset).toHaveBeenCalled();
+  });
+});
+
+/**
+ * #489 — Discord-style reply-with-quote.
+ *
+ * The shell owns the staged reply, so it owns the two facts nothing else can
+ * check: that a `reply_to_id` reaches `channel.send`, and that it is the
+ * **root** message per `spec/behavior/chat/README.md` ("Replying to a reply
+ * references the root message (no deep nesting)").
+ *
+ * These live here rather than in `composer.test.tsx` because jsdom renders no
+ * ProseMirror view — `useEditor` is stubbed to `null` there, so `Composer`'s
+ * own `submit()` returns on its first line and no test can drive a real send
+ * through it. The seam that *is* drivable is this one.
+ */
+describe("ChatShell reply-with-quote (#489)", () => {
+  const ROOT = {
+    id: "msg-1",
+    content: "the original",
+    created_at: "2026-01-01T00:00:00Z",
+    reply_to_id: null,
+  };
+  const REPLY = {
+    id: "msg-3",
+    content: "a reply to it",
+    created_at: "2026-01-01T00:02:00Z",
+    reply_to_id: "msg-1",
+  };
+
+  function withMessages(messages: unknown[]) {
+    const result = {
+      ...chatChannelResult(),
+      messages: messages as typeof MESSAGES,
+      send: vi.fn(),
+    };
+    mockUseChatChannel.mockReturnValue(result);
+    return result;
+  }
+
+  it("sends nothing in reply_to_id when no reply is staged", () => {
+    // The pre-#489 behaviour, pinned so a regression that always sends a reply
+    // is as visible as one that never does.
+    const channel = withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("composer-send"));
+
+    expect(channel.send).toHaveBeenCalledWith("hi", {
+      replyToId: null,
+      attachments: [],
+    });
+  });
+
+  it("carries the staged message's id through to channel.send", () => {
+    // The whole defect this issue names: `chat-shell.tsx` used to call
+    // `channel.send(body, { attachments })` with no third field, so the
+    // `replyToId` option — plumbed all the way from `chat-client.ts` — was
+    // reachable by nothing on web.
+    const channel = withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-send"));
+
+    expect(channel.send).toHaveBeenCalledWith("hi", {
+      replyToId: "msg-1",
+      attachments: [],
+    });
+  });
+
+  it("normalizes a reply-to-a-reply onto the root message (AC 3)", () => {
+    // Client-side on purpose: `ChatService.createMessage` validates only
+    // same-channel, and must keep doing so — the Discord importer writes
+    // genuinely nested `reply_to_id` values that a server-side root rule
+    // would rewrite.
+    const channel = withMessages([ROOT, REPLY]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-3"));
+
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+
+    fireEvent.click(screen.getByTestId("composer-send"));
+
+    expect(channel.send).toHaveBeenCalledWith("hi", {
+      replyToId: "msg-1",
+      attachments: [],
+    });
+  });
+
+  it("stages the target's own preview, derived from the live message", () => {
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+
+    expect(screen.getByTestId("composer-reply-preview")).toHaveTextContent(
+      "the original",
+    );
+  });
+
+  it("clears the staged reply after a send, so it cannot attach to the next message", () => {
+    // `channel.send` enqueues to the Dexie outbox and resolves on its own
+    // schedule. A strip left standing would silently ride along on whatever
+    // the member typed next.
+    const channel = withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-send"));
+    fireEvent.click(screen.getByTestId("composer-send"));
+
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none");
+    expect(channel.send).toHaveBeenLastCalledWith("hi", {
+      replyToId: null,
+      attachments: [],
+    });
+  });
+
+  it("drops the staged reply when the member cancels it", () => {
+    const channel = withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-cancel-reply"));
+    fireEvent.click(screen.getByTestId("composer-send"));
+
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none");
+    expect(channel.send).toHaveBeenCalledWith("hi", {
+      replyToId: null,
+      attachments: [],
+    });
+  });
+
+  it("drops the staged reply on a channel switch", async () => {
+    // `chat.service.ts` 400s a `reply_to_id` from another channel, and the
+    // Composer is remounted by its `key` on a switch — so the strip the member
+    // could have dismissed is already gone. Their first message in the new
+    // channel would fail for a reason nothing on screen explains.
+    const channel = withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+
+    fireEvent.click(screen.getByTestId("pick-random"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent("chan-random");
+    });
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none");
+
+    fireEvent.click(screen.getByTestId("composer-send"));
+    expect(channel.send).toHaveBeenCalledWith("hi", {
+      replyToId: null,
+      attachments: [],
+    });
+  });
+
+  it("offers no Reply control in a read-only channel (AC 4)", async () => {
+    // `spec/behavior/chat/README.md`: "Announcement messages cannot be replied
+    // to in-thread… it holds regardless of permissions." `ChatService` 400s
+    // such a send. Two ways this fails if the control is offered anyway: a
+    // member has no composer there at all (`can_post` false), so Reply visibly
+    // does nothing; a holder of `announcements:post` does get one, so Reply
+    // stages a strip that then fails on send.
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-announcements" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("composer")).toHaveTextContent(
+        "chan-announcements",
+      );
+    });
+    expect(screen.getByTestId("reply-offered")).toHaveTextContent("false");
+  });
+
+  it("offers Reply in an ordinary channel", () => {
+    // The other half of the pair: without this, withholding it everywhere
+    // would pass the case above and ship a Reply control nobody can reach.
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("reply-offered")).toHaveTextContent("true");
+  });
+
+  it("stages nothing when the target is not in the loaded window", () => {
+    // The strip and the send read the SAME derivation, so a target that cannot
+    // be shown cannot be sent either. Nothing backfills older history (#1571),
+    // so this is reachable, not hypothetical.
+    const channel = withMessages([ROOT]);
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
+
+    // The window turns over — the staged parent is no longer in it.
+    mockUseChatChannel.mockReturnValue({
+      ...chatChannelResult(),
+      messages: [] as typeof MESSAGES,
+      send: channel.send,
+    });
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none");
+    fireEvent.click(screen.getByTestId("composer-send"));
+
+    expect(channel.send).toHaveBeenCalledWith("hi", {
+      replyToId: null,
+      attachments: [],
+    });
   });
 });

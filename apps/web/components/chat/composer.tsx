@@ -42,6 +42,7 @@ import {
   inspectUploadFile,
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
+import { QuotedMessage } from "./reply-quote";
 import { SlashPalette } from "./slash-palette";
 import {
   createMentionSuggestion,
@@ -113,6 +114,24 @@ interface ComposerProps {
    * pressing Enter offline silently discarded what you had typed.
    */
   isOffline?: boolean;
+  /**
+   * The message the next send replies to, already resolved to a label and a
+   * one-line preview by the shell (#489).
+   *
+   * Resolved rather than a `ChatMessage`, because the shell is the only place
+   * that holds the viewer id and the name resolver the label needs, and because
+   * the composer must not grow a second opinion about how a message is
+   * summarised — `replyPreviewText` in `./reply-quote` is the one definition
+   * and the timeline's quote uses it too.
+   *
+   * The composer does **not** pass this back on send: the shell owns the state,
+   * so it reads its own target when it calls `channel.send`. A `replyToId`
+   * threaded back out through `onSend` would be a second copy of the same fact,
+   * free to disagree with the strip the member can see.
+   */
+  replyTo?: { id: string; author: string; preview: string } | null;
+  /** Clears the staged reply. Required whenever `replyTo` can be non-null. */
+  onCancelReply?: () => void;
 }
 
 /**
@@ -183,6 +202,8 @@ export function Composer({
   slashCommandsStatus = "ready",
   onRetrySlashCommands,
   isOffline,
+  replyTo,
+  onCancelReply,
 }: ComposerProps) {
   const { toast } = useToast();
   const requestUploadUrl = useRequestChatUploadUrl();
@@ -352,6 +373,20 @@ export function Composer({
           });
           return;
         }
+        // Same shape, same reason, for a staged reply (#489). `dispatchSlash`
+        // posts its card through its own controller and takes no `replyToId`,
+        // so dispatching here would silently drop the reply the member can see
+        // staged above the input — the quiet data loss the two refusals above
+        // exist to prevent. Refusing before `clearContent` keeps their text.
+        if (replyTo) {
+          toast({
+            title: `/${command.name} can't reply to a message`,
+            description:
+              "Dismiss the reply first, or send your reply as an ordinary message.",
+            variant: "destructive",
+          });
+          return;
+        }
         editor.commands.clearContent(true);
         void (async () => {
           const result = await onSlashDispatch(command, parsed.args);
@@ -370,7 +405,7 @@ export function Composer({
     // Only clear when a send was actually issued.
     editor.commands.clearContent(true);
     setPending([]);
-  }, [editor, isOffline, onSend, onSlashDispatch, pending, toast]);
+  }, [editor, isOffline, onSend, onSlashDispatch, pending, replyTo, toast]);
   useLayoutEffect(() => {
     sendRef.current = submit;
   }, [submit]);
@@ -444,13 +479,44 @@ export function Composer({
     [channelId, requestUploadUrl, toast, uploadSignedUrl],
   );
 
-  // Cmd+/ globally inside the composer opens the palette.
-  const handleHostKey = useCallback((event: React.KeyboardEvent) => {
-    if (event.key === "/" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      setPalette({ open: true, query: "" });
-    }
-  }, []);
+  /*
+   * Staging a reply moves focus to the editor, so the member can type
+   * immediately after clicking Reply on a row several screens up — the control
+   * they used is in the timeline, and leaving focus there would mean a second
+   * deliberate move to reach the input the strip just appeared above.
+   *
+   * Keyed on the target's **id**, not on the object: the shell derives
+   * `replyTo` from `channel.messages`, so an unrelated edit or reaction lands a
+   * fresh object on every render of an already-staged reply, and re-focusing on
+   * each of those would fight a member who has clicked away — the same hazard
+   * `thread-panel.tsx` documents for its own focus effect.
+   */
+  const replyTargetId = replyTo?.id ?? null;
+  useEffect(() => {
+    if (replyTargetId) editor?.commands.focus();
+  }, [replyTargetId, editor]);
+
+  // Cmd+/ opens the palette; Escape drops a staged reply.
+  const handleHostKey = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key === "/" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setPalette({ open: true, query: "" });
+        return;
+      }
+      // `defaultPrevented` for the same reason `thread-panel.tsx` checks it:
+      // a Radix `DismissableLayer` (the emoji popover mounted from this
+      // toolbar) closes itself on Escape by calling `preventDefault()` without
+      // `stopPropagation()`, so that keydown still arrives here. Without the
+      // guard, dismissing the emoji picker would also silently discard the
+      // reply the member had staged.
+      if (event.key === "Escape" && !event.defaultPrevented && replyTo) {
+        event.preventDefault();
+        onCancelReply?.();
+      }
+    },
+    [onCancelReply, replyTo],
+  );
 
   const onPaletteSelect = useCallback(
     async (command: SlashCommand) => {
@@ -543,6 +609,34 @@ export function Composer({
           FOCUS_RING_WITHIN,
         )}
       >
+        {/*
+          The staged reply, above the input and above the attachment chips —
+          it is context for everything below it, not another attachment. Same
+          `QuotedMessage` the timeline uses, so what a member stages looks like
+          what they are about to send.
+        */}
+        {replyTo ? (
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="shrink-0 text-[12.5px] text-muted-foreground">
+              Replying to
+            </span>
+            <QuotedMessage
+              className="flex-1"
+              author={replyTo.author}
+              preview={replyTo.preview}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5 shrink-0"
+              aria-label="Cancel reply"
+              onClick={() => onCancelReply?.()}
+            >
+              <span aria-hidden="true">×</span>
+            </Button>
+          </div>
+        ) : null}
         {pending.length > 0 ? (
           <ul
             className="mb-2 flex flex-wrap gap-1.5"

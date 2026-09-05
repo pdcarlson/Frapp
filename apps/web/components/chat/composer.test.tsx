@@ -133,3 +133,89 @@ describe("Composer mention wiring", () => {
     expect(typeof mention!.options.suggestion.items).toBe("function");
   });
 });
+
+/**
+ * #489 — the staged-reply strip.
+ *
+ * Only the strip and its controls are reachable here: `useEditor` is stubbed to
+ * `null` above (jsdom renders no ProseMirror view), so `submit()` returns on
+ * its first line and no send can be driven through this component. That the
+ * shell actually carries `replyToId` into `channel.send` is pinned in
+ * `chat-shell.test.tsx`, at the seam where it is drivable.
+ */
+describe("Composer staged reply (#489)", () => {
+  const REPLY_TO = { id: "msg-1", author: "Alice Chen", preview: "the original" };
+
+  it("renders nothing when no reply is staged", () => {
+    render(<Composer {...baseProps()} />);
+    expect(screen.queryByText(/replying to/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /cancel reply/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows who is being replied to and what they said", () => {
+    render(<Composer {...baseProps({ replyTo: REPLY_TO })} />);
+    expect(screen.getByText(/replying to/i)).toBeInTheDocument();
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+    expect(screen.getByText("the original")).toBeInTheDocument();
+  });
+
+  it("cancels from the × control", async () => {
+    const user = userEvent.setup();
+    const onCancelReply = vi.fn();
+    render(<Composer {...baseProps({ replyTo: REPLY_TO, onCancelReply })} />);
+
+    await user.click(screen.getByRole("button", { name: /cancel reply/i }));
+
+    expect(onCancelReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels on Escape", async () => {
+    const user = userEvent.setup();
+    const onCancelReply = vi.fn();
+    render(<Composer {...baseProps({ replyTo: REPLY_TO, onCancelReply })} />);
+
+    await user.click(screen.getByRole("button", { name: /cancel reply/i }));
+    onCancelReply.mockClear();
+    await user.keyboard("{Escape}");
+
+    expect(onCancelReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cancel on Escape when nothing is staged", async () => {
+    // Escape is a shared key on this surface — the emoji popover and the slash
+    // palette both use it. It must only mean "drop the reply" when there is one.
+    const user = userEvent.setup();
+    const onCancelReply = vi.fn();
+    render(<Composer {...baseProps({ onCancelReply })} />);
+
+    await user.click(screen.getByRole("button", { name: /attach file/i }));
+    await user.keyboard("{Escape}");
+
+    expect(onCancelReply).not.toHaveBeenCalled();
+  });
+
+  it("leaves a staged reply alone when Escape was already handled", async () => {
+    // Radix's `DismissableLayer` (the emoji popover mounted from this toolbar)
+    // closes itself on Escape by calling `preventDefault()` without
+    // `stopPropagation()`, so that keydown still arrives at the wrapper.
+    // Without the `defaultPrevented` guard, dismissing the picker would also
+    // silently discard the reply the member had staged.
+    const onCancelReply = vi.fn();
+    const { container } = render(
+      <Composer {...baseProps({ replyTo: REPLY_TO, onCancelReply })} />,
+    );
+    const host = container.firstElementChild as HTMLElement;
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    event.preventDefault();
+    host.dispatchEvent(event);
+
+    expect(onCancelReply).not.toHaveBeenCalled();
+  });
+});

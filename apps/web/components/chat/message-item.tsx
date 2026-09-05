@@ -9,6 +9,7 @@ import { CHIP, CHIP_HIT_AREA } from "./chip";
 import { BookmarkGlyph, PinGlyph, ThreadGlyph } from "./chat-glyphs";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { MessageAttachments } from "./message-attachments";
+import { ReplyQuote } from "./reply-quote";
 import { MessageRenderer, rendersAsBubble } from "./renderers";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
@@ -38,7 +39,31 @@ export interface MessageItemProps {
   nameFor: (userId: string) => string | null;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
+  /**
+   * Stages an inline reply to this message in the composer — the Discord-style
+   * reply-with-quote `spec/behavior/chat/README.md` § Reply threads specifies.
+   *
+   * This is what the row's **Reply** control does now. It used to call
+   * `onOpenThread`, which opened a Slack-style side panel that has no composer
+   * in it (`thread-panel.tsx`), so "Reply" led to a read-only dead end and no
+   * web surface could author a reply at all (#489).
+   */
+  onReply?: (message: ChatMessage) => void;
+  /**
+   * Opens the expanded thread view for a message. No longer reached from the
+   * Reply control — it is now what the **quote** on a reply opens, so the panel
+   * keeps a real entry point as the optional expanded view rather than being
+   * deleted.
+   */
   onOpenThread?: (message: ChatMessage) => void;
+  /**
+   * The message this one replies to, when `message.reply_to_id` is set and that
+   * parent is inside the loaded window. `null` means "is a reply, parent not
+   * loaded" — the quote says so; `undefined` means "not a reply" and renders
+   * no quote at all. The two must stay distinguishable, or every reply to an
+   * old message would silently render as an ordinary one.
+   */
+  replyParent?: ChatMessage | null;
   onRetry?: (clientMessageId: string) => void;
   onDiscard?: (clientMessageId: string) => void;
   /**
@@ -116,7 +141,9 @@ export function MessageItem({
   nameFor,
   onReact,
   onUnreact,
+  onReply,
   onOpenThread,
+  replyParent,
   onRetry,
   onDiscard,
   onAct,
@@ -256,8 +283,41 @@ export function MessageItem({
     onToggleTapReveal();
   }
 
+  /*
+   * The quoted parent, above the body — `spec/behavior/chat/README.md`: "The UI
+   * shows the replied-to message as a quote/preview above the reply."
+   *
+   * Hidden on a deleted row, for the same reason the reaction chips and the
+   * attachment list are: a tombstone is not something anyone said, so hanging
+   * "replying to Alice" above "[message deleted]" would keep asserting context
+   * for content that is gone. Note `is_deleted` on the *parent* is different and
+   * is NOT hidden — that quote renders the tombstone as its preview, because the
+   * reply is still real and still needs to say what it answered.
+   *
+   * `reply_to_id` is checked rather than `replyParent`, so a reply whose parent
+   * fell outside the loaded window still renders the unavailable line instead of
+   * silently looking like an ordinary message.
+   */
+  const replyQuote =
+    message.reply_to_id && !message.is_deleted ? (
+      <ReplyQuote
+        parent={replyParent ?? null}
+        author={
+          replyParent
+            ? resolveAuthorLabel(replyParent, nameFor, viewerId)
+            : ""
+        }
+        onOpen={
+          replyParent && onOpenThread
+            ? () => onOpenThread(replyParent)
+            : undefined
+        }
+      />
+    ) : null;
+
   const renderer = (
     <>
+      {replyQuote}
       <MessageRenderer
         message={message}
         viewerId={viewerId}
@@ -345,11 +405,17 @@ export function MessageItem({
         onReact={(emoji) => onReact(message.id, emoji)}
         onUnreact={(emoji) => onUnreact(message.id, emoji)}
       />
-      {onOpenThread ? (
+      {/*
+        Same glyph, same chip, same cluster — `iconography.md:233` maps "Reply
+        in thread" to `ThreadGlyph` and `components.md` § 11 places the control
+        here, so only the handler changed. It stages an inline reply now rather
+        than opening the side panel.
+      */}
+      {onReply ? (
         <button
           type="button"
           className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
-          onClick={() => onOpenThread(message)}
+          onClick={() => onReply(message)}
         >
           <ThreadGlyph className="h-3.5 w-3.5" />
           Reply
