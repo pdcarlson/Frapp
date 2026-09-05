@@ -448,6 +448,31 @@ After any rollback event:
   `points` key in its `diff`, so the last known value per chapter can be read back
   out of the audit trail.
 
+## Rollback the points ledger idempotency key
+
+* **Migration**: `20260905020000_point_transactions_client_message_id.sql`
+* **Action**:
+  ```sql
+  ALTER TABLE point_transactions DROP COLUMN client_message_id;
+  ```
+  Dropping the column also drops `idx_point_transactions_dedupe`, which is
+  defined on it — no separate `DROP INDEX` needed.
+* **Order**: **roll the API back first, then the migration.** This is the one
+  coordination point, and it is the opposite of a purely additive column: a
+  build from after this migration names `client_message_id` — both in
+  `findByClientMessageId` and, unconditionally, in the insert payload
+  `adjustPoints` sends — so it errors once the column is gone, where an older
+  build never mentions it and is unaffected. Reverting the code first costs
+  nothing; reverting the schema first breaks **every** manual point adjustment
+  until the deploy catches up, not only the chat-originated ones: the insert
+  carries the column name whether or not a key was supplied, so the dashboard
+  dialog fails identically and is **not** a working fallback.
+* **Data caveat**: rolling back does not corrupt the ledger — the key is
+  metadata about *how* a row arrived, never part of the balance — but it
+  restores the duplicate-grant exposure of #1719 for as long as it is off. Any
+  keys recorded in the meantime are lost, so a retry spanning the rollback
+  would be able to double-grant.
+
 ## Rollback the `chapter_documents` metadata columns
 
 * **Migration**: `20260831220000_chapter_documents_metadata.sql`

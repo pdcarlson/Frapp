@@ -40,13 +40,25 @@
  * 3. `Math.random()` — where neither global exists, which is React Native today.
  *
  * **Tier 3 is not cryptographically secure, and that is sound here** because a
- * `client_message_id` is not a secret or a capability. The uniqueness index it
- * feeds is scoped by `channel_id` *and* `sender_id`, so guessing another
- * member's id grants nothing — the worst case of a collision is one of the
- * colliding sends deduplicating against the other, within a single sender's own
- * channel. Nothing in this repo derives auth, ordering, or addressing from it.
- * A value from this module MUST NOT be used for a token, nonce, or any other
- * security-bearing identifier.
+ * `client_message_id` is not a secret or a capability. Nothing in this repo
+ * derives auth, ordering, or addressing from it. A value from this module MUST
+ * NOT be used for a token, nonce, or any other security-bearing identifier.
+ *
+ * What a collision costs depends on which index the id lands in, and the two
+ * are scoped differently — so this is stated per consumer rather than once:
+ *
+ * - `chat_messages` (`idx_chat_messages_dedupe`) is scoped by `channel_id`
+ *   *and* `sender_id`, so the blast radius is one sender's own channel: the
+ *   worst case is one of two colliding sends deduplicating against the other.
+ * - `point_transactions` (`idx_point_transactions_dedupe`, #1719) is scoped by
+ *   `chapter_id` alone — the ledger carries neither a channel nor a sender
+ *   column. A collision therefore reaches across officers within one chapter.
+ *   It is contained not by the index but by `PointsService.resolveReplay`,
+ *   which returns the stored row **only** when the target, amount, category,
+ *   reason and acting admin all match the incoming request, and answers 409
+ *   otherwise. So a collided or guessed id cannot suppress a grant or hand a
+ *   caller another member's transaction; it can only refuse, loudly, and the
+ *   next dispatch mints a fresh id.
  */
 
 type CryptoLike = {
