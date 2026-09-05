@@ -45,10 +45,14 @@ count regardless of age — they don't expire.
 | Open PRs | `list_pull_requests state:open` | Awaiting his review, red CI with no session driving it, merge conflicts, a review thread asking him a question |
 | Recent sessions | `list_sessions mine:true limit:20` (claude-code-remote) | Only titles and status are visible — a stalled session is a **pointer** to check, never a finding on its own. Optional: if the server isn't connected, note it and sweep the rest |
 
-> **The two `fp=… in:body` rows miss any marker written as an HTML comment.** Every MCP read path
-> deletes HTML comments, so a pre-2026-08-20 `fp=human/` or `fp=pr-followup/` marker is invisible to
-> the search index as well ([`GITHUB_PM.md` → Reading a body you intend to
-> rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)).
+> **Treat the two `fp=… in:body` rows as possibly missing any marker written as an HTML comment.**
+> Read fidelity recovered on 2026-09-05 — comments now come back on every read path
+> ([`GITHUB_PM.md` → Reading a body you intend to
+> rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)) —
+> but whether the **search index** matches text *inside* a comment was not re-measured with it, and
+> a pre-2026-08-20 `fp=human/` or `fp=pr-followup/` marker is comment-form. So this row's coverage is
+> **unknown rather than broken**, which lands in the same place for this sweep: don't rely on it
+> alone.
 > The `[human]` / `[pr-followup]` **title** prefixes are visible and reliable — lean on the Human
 > Action List and the triage-inbox rows to cover what the body queries drop, and never conclude
 > from an empty `fp=` result that nothing is waiting.
