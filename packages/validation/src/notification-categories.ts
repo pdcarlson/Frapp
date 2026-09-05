@@ -153,3 +153,44 @@ export function defaultNotificationCategoryState(): Record<
   }
   return state;
 }
+
+/** Every switch's position, complete — never a patch over some other state. */
+export type NotificationCategoryState = Record<
+  NotificationCategoryKey,
+  boolean
+>;
+
+/**
+ * Fold `GET /v1/notifications/preferences` rows over the catalog defaults.
+ *
+ * A category with no row is enabled, because that is what the server does with
+ * an absent row (`notification.service.ts` suppresses only on an explicit
+ * `is_enabled: false`, and no migration seeds rows) — so this returns a
+ * **complete** state rather than a patch, and a category the member has never
+ * touched reads here exactly as it behaves in delivery.
+ *
+ * Takes `unknown` on purpose. `GET /v1/notifications/preferences` declares no
+ * response schema, so the SDK types the body loosely and every caller is
+ * narrowing anyway; doing it here once means no surface hand-rolls the checks.
+ * Rows for categories outside the catalog are dropped per
+ * {@link isNotificationCategoryKey} — the column is unconstrained `text`, so a
+ * stale `announcements` row or anything else previously `PATCH`ed must not
+ * widen a surface's state beyond the switches it draws.
+ *
+ * Shared rather than per-surface for the reason in this module's docblock: web
+ * and mobile fold the same rows onto the same catalog, and a second copy is how
+ * the two drift into disagreeing about what a member's switches say.
+ */
+export function rowsToNotificationCategoryState(
+  rows: unknown,
+): NotificationCategoryState {
+  const state = defaultNotificationCategoryState();
+  if (!Array.isArray(rows)) return state;
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const { category, is_enabled: isEnabled } = row as Record<string, unknown>;
+    if (typeof isEnabled !== "boolean") continue;
+    if (isNotificationCategoryKey(category)) state[category] = isEnabled;
+  }
+  return state;
+}

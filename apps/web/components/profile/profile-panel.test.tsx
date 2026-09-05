@@ -58,6 +58,20 @@ const mocks = vi.hoisted(() => {
       isPending: false,
     },
     signOutCurrentSession: vi.fn(() => Promise.resolve()),
+    // #564's Notifications card. `chapterId` is separate from the query fixture
+    // because the no-active-chapter branch is reached by the ID being null
+    // while the query never runs — the exact pairing that would spin a
+    // skeleton forever if the branches were ordered the other way.
+    chapterId: "chap-1" as string | null,
+    preferencesQuery: {
+      data: undefined as unknown,
+      isPending: false,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "idle" as string,
+      refetch: vi.fn(),
+    },
+    updatePreferenceMutate: vi.fn(),
   };
 });
 
@@ -68,6 +82,11 @@ vi.mock("@repo/hooks", () => ({
   useUpdateUserSettings: () => mocks.updateSettings,
   useUpdateOnboarding: () => mocks.noopMutation,
   useDeleteAccount: () => mocks.deleteAccount,
+  useActiveChapterId: () => mocks.chapterId,
+  useNotificationPreferences: () => mocks.preferencesQuery,
+  useUpdateNotificationPreference: () => ({
+    mutate: mocks.updatePreferenceMutate,
+  }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -78,6 +97,7 @@ vi.mock("@/lib/auth/session", () => ({
 }));
 vi.mock("@/lib/providers/network-provider", () => networkMock(mockOffline));
 
+import { NOTIFICATION_CATEGORIES } from "@repo/validation";
 import { networkMock } from "@/tests/network";
 import { ProfilePanel } from "./profile-panel";
 
@@ -627,5 +647,176 @@ describe("ProfilePanel — delete account (#713)", () => {
     await waitFor(() => {
       expect(locationAssign).toHaveBeenCalledWith("/sign-in");
     });
+  });
+});
+
+/**
+ * The Notifications card (#564) — web's half of the shared catalog.
+ *
+ * These assert the *states* mobile already solved, per the issue's brief. The
+ * grid itself is deliberately not pinned row-by-row: it renders straight from
+ * `NOTIFICATION_CATEGORIES`, and `packages/validation`'s spec is what pins the
+ * catalog's contents. Asserting them again here would be a second copy of the
+ * list — the exact thing sharing the catalog exists to prevent.
+ */
+describe("ProfilePanel — notification categories (#564)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    mocks.chapterId = "chap-1";
+    mocks.preferencesQuery.data = [];
+    mocks.preferencesQuery.isPending = false;
+    mocks.preferencesQuery.isLoading = false;
+    mocks.preferencesQuery.isError = false;
+    mocks.preferencesQuery.fetchStatus = "idle";
+    mocks.settingsQuery.data = { quiet_hours_tz: "America/New_York" };
+    mocks.updateSettings.mutateAsync = mocks.updateSettingsMutateAsync;
+    mocks.updateSettings.isPending = false;
+    mocks.updateSettings.isError = false;
+  });
+
+  function categorySwitch(name: RegExp) {
+    return screen.getByRole("switch", { name });
+  }
+
+  it("renders a switch for every catalog category", () => {
+    render(<ProfilePanel />);
+    expect(screen.getAllByRole("switch")).toHaveLength(
+      NOTIFICATION_CATEGORIES.length,
+    );
+    for (const category of NOTIFICATION_CATEGORIES) {
+      expect(
+        screen.getByRole("switch", {
+          name: new RegExp(`^${category.label}$`, "i"),
+        }),
+      ).toBeTruthy();
+    }
+  });
+
+  // The hydrate case. An absent row means enabled — that is what the server
+  // does with one — so a member who has never touched a category must see its
+  // switch ON, not off-by-default.
+  it("shows a category with no stored row as enabled", () => {
+    mocks.preferencesQuery.data = [{ category: "points", is_enabled: false }];
+    render(<ProfilePanel />);
+    expect(categorySwitch(/^points$/i)).toHaveAttribute(
+      "data-state",
+      "unchecked",
+    );
+    expect(categorySwitch(/^chat$/i)).toHaveAttribute("data-state", "checked");
+  });
+
+  // A row for a category the catalog does not draw must not leak into the
+  // grid: `notification_preferences.category` is unconstrained `text`.
+  it("ignores stored rows for categories outside the catalog", () => {
+    mocks.preferencesQuery.data = [
+      { category: "announcements", is_enabled: false },
+    ];
+    render(<ProfilePanel />);
+    expect(screen.getAllByRole("switch")).toHaveLength(
+      NOTIFICATION_CATEGORIES.length,
+    );
+    for (const element of screen.getAllByRole("switch")) {
+      expect(element).toHaveAttribute("data-state", "checked");
+    }
+  });
+
+  it("PATCHes the toggled category against the active chapter", async () => {
+    render(<ProfilePanel />);
+    await userEvent.click(categorySwitch(/^billing$/i));
+
+    await waitFor(() => {
+      expect(mocks.updatePreferenceMutate).toHaveBeenCalled();
+    });
+    expect(mocks.updatePreferenceMutate.mock.calls[0]?.[0]).toEqual({
+      chapter_id: "chap-1",
+      category: "billing",
+      is_enabled: false,
+    });
+  });
+
+  // The toggle-failure affordance. The hook reverts the cache itself (#312);
+  // what the card owes the member is the sentence saying why the switch moved
+  // back — otherwise the revert reads as the control being broken.
+  it("toasts when a toggle fails, naming the category and the direction", async () => {
+    mocks.updatePreferenceMutate.mockImplementation((_body, options) => {
+      options?.onError?.(new Error("boom"));
+    });
+    render(<ProfilePanel />);
+    await userEvent.click(categorySwitch(/^tasks$/i));
+
+    await waitFor(() => {
+      expect(mocks.toast).toHaveBeenCalled();
+    });
+    const toasted = mocks.toast.mock.calls.at(-1)?.[0];
+    expect(toasted.variant).toBe("destructive");
+    expect(toasted.title).toMatch(/tasks/i);
+    expect(toasted.title).toMatch(/off/i);
+  });
+
+  // The branch that has no counterpart on the card above it. With no chapter
+  // the query never runs, so it sits pending-and-idle forever; a loading
+  // branch checked first would spin a skeleton with nothing on the way.
+  it("explains the no-active-chapter case instead of spinning forever", () => {
+    mocks.chapterId = null;
+    mocks.preferencesQuery.data = undefined;
+    mocks.preferencesQuery.isPending = true;
+    mocks.preferencesQuery.isLoading = true;
+    render(<ProfilePanel />);
+
+    expect(screen.getByText(/no active chapter/i)).toBeTruthy();
+    expect(screen.queryAllByRole("switch")).toHaveLength(0);
+    expect(
+      screen.queryByText(/loading your notification settings/i),
+    ).toBeNull();
+  });
+
+  it("offers a retry rather than switches when the load failed", () => {
+    mocks.preferencesQuery.data = undefined;
+    mocks.preferencesQuery.isError = true;
+    render(<ProfilePanel />);
+
+    expect(
+      screen.getByText(/couldn't load your notification settings/i),
+    ).toBeTruthy();
+    expect(screen.queryAllByRole("switch")).toHaveLength(0);
+  });
+
+  // Same rule the screen-scale block follows: TanStack keeps `data` through a
+  // background refetch failure, and switches drawn from a still-held cache
+  // beat a card that vanishes when a focus refetch blips.
+  it("keeps the switches when a refetch fails but the cache still holds rows", () => {
+    mocks.preferencesQuery.data = [{ category: "chat", is_enabled: false }];
+    mocks.preferencesQuery.isError = true;
+    render(<ProfilePanel />);
+
+    expect(categorySwitch(/^chat$/i)).toHaveAttribute(
+      "data-state",
+      "unchecked",
+    );
+    expect(
+      screen.queryByText(/couldn't load your notification settings/i),
+    ).toBeNull();
+  });
+
+  it("shows the offline state only when nothing is cached", () => {
+    mockOffline.value = true;
+    mocks.preferencesQuery.data = undefined;
+    render(<ProfilePanel />);
+
+    expect(
+      screen.getByText(/notification settings unavailable offline/i),
+    ).toBeTruthy();
+    expect(screen.queryAllByRole("switch")).toHaveLength(0);
+  });
+
+  // The one piece of copy that is not decorative: `announcements` is the
+  // category with real traffic and no switch, so the grid would otherwise read
+  // as a complete list of what can arrive.
+  it("says announcements are not switchable", () => {
+    render(<ProfilePanel />);
+    expect(
+      screen.getByText(/chapter announcements always arrive/i),
+    ).toBeTruthy();
   });
 });

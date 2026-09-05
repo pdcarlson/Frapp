@@ -3,14 +3,22 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
+  useActiveChapterId,
   useCurrentUser,
   useDeleteAccount,
+  useNotificationPreferences,
+  useUpdateNotificationPreference,
   useUpdateOnboarding,
   useUpdateUser,
   useUpdateUserSettings,
   useUserSettings,
 } from "@repo/hooks";
-import { normalizeTimeZoneInput } from "@repo/validation";
+import {
+  normalizeTimeZoneInput,
+  NOTIFICATION_CATEGORIES,
+  rowsToNotificationCategoryState,
+  type NotificationCategoryKey,
+} from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,10 +39,12 @@ import {
   OfflineState,
 } from "@/components/shared/async-states";
 import {
+  NestedEmpty,
   NestedError,
   NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
+import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { getErrorMessage, initials } from "@/lib/utils";
@@ -71,6 +81,13 @@ export function ProfilePanel() {
   const updateOnboarding = useUpdateOnboarding();
   const deleteAccount = useDeleteAccount();
   const { confirm, confirmDialog } = useConfirmDialog();
+  // The notification categories are per-chapter — `notification_preferences` is
+  // keyed `(user_id, chapter_id, category)` — so this card, unlike the rest of
+  // /profile, has a tenant. With no active chapter there is nothing to read and
+  // the query stays disabled; see the `chapterId` branch below.
+  const chapterId = useActiveChapterId();
+  const preferencesQuery = useNotificationPreferences(chapterId ?? "");
+  const updatePreference = useUpdateNotificationPreference();
 
   const [profileDraft, setProfileDraft] = useState<CurrentUser>({});
   const [settingsDraft, setSettingsDraft] = useState<UserSettings>({});
@@ -344,6 +361,93 @@ export function ProfilePanel() {
     );
   }
 
+  /*
+   * ...and a *third* query is a third set, by the same rule (#564).
+   *
+   * The branch order differs from the card above by one rung, and the extra
+   * one is not optional. `useNotificationPreferences` passes
+   * `enabled: !!chapterId`, so with no active chapter the query sits
+   * `isPending` with `fetchStatus: "idle"` forever — a loading branch checked
+   * first would spin a skeleton at a member who has no chapter, with nothing
+   * on the way to replace it. Mobile answers the same case in words
+   * ("Category switches sync once you choose a chapter"), and this is that
+   * sentence on the surface that also has a route for fixing it.
+   *
+   * `data === undefined` guards the offline and error rungs for the reason the
+   * screen-scale block above spells out: TanStack keeps `data` through a
+   * background refetch failure, and switches drawn from a still-held cache are
+   * better than a card that vanishes when a focus refetch blips.
+   */
+  const preferencesPaused =
+    preferencesQuery.isPending && preferencesQuery.fetchStatus === "paused";
+  let categoriesState: React.ReactNode = null;
+  if (!chapterId) {
+    categoriesState = (
+      <NestedEmpty
+        title="No active chapter"
+        description="Category switches sync once you join or select a chapter."
+      />
+    );
+  } else if (isOffline && preferencesQuery.data === undefined) {
+    categoriesState = (
+      <NestedOffline
+        title="Notification settings unavailable offline"
+        description="Reconnect to load which categories you receive."
+        onRetry={() => void preferencesQuery.refetch()}
+      />
+    );
+  } else if (preferencesQuery.isLoading || preferencesPaused) {
+    categoriesState = (
+      <NestedLoading message="Loading your notification settings..." lines={6} />
+    );
+  } else if (
+    preferencesQuery.isError &&
+    preferencesQuery.data === undefined
+  ) {
+    categoriesState = (
+      <NestedError
+        title="Couldn't load your notification settings"
+        description="These couldn't be read, so a switch here would report a change that never saved. Retry in a moment."
+        onRetry={() => void preferencesQuery.refetch()}
+      />
+    );
+  }
+
+  /*
+   * A complete state for every catalog key, folded from whatever rows came
+   * back — never a patch, and never keyed off the response's own keys. The
+   * fold lives in `@repo/validation` beside the catalog because mobile's s16
+   * grid performs exactly the same one; see that module's docblock for why a
+   * per-surface copy is the failure mode rather than a convenience.
+   */
+  const categories = rowsToNotificationCategoryState(preferencesQuery.data);
+
+  function handleCategoryToggle(
+    category: NotificationCategoryKey,
+    label: string,
+    isEnabled: boolean,
+  ) {
+    if (!chapterId) return;
+    // `useUpdateNotificationPreference` writes the cache optimistically and
+    // reverts just this category on failure (#312), so the switch moves at
+    // once and un-moves itself if the PATCH loses. All this callback owes the
+    // member is the sentence explaining why it moved back.
+    updatePreference.mutate(
+      { chapter_id: chapterId, category, is_enabled: isEnabled },
+      {
+        onError: (error) =>
+          toast({
+            title: `Couldn't turn ${label} notifications ${isEnabled ? "on" : "off"}`,
+            description: getErrorMessage(
+              error,
+              "The switch has been put back. Try again or check your connection.",
+            ),
+            variant: "destructive",
+          }),
+      },
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/*
@@ -565,6 +669,68 @@ export function ProfilePanel() {
                 </Button>
               </div>
             </form>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Notifications</CardTitle>
+          <CardDescription>
+            Choose what you hear about. These apply to this chapter on every
+            device you use.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {categoriesState ?? (
+            <div className="space-y-4">
+              {NOTIFICATION_CATEGORIES.map((category) => {
+                const switchId = `notification-category-${category.key}`;
+                const descriptionId = `${switchId}-description`;
+                return (
+                  <div
+                    key={category.key}
+                    className="flex items-center justify-between gap-4"
+                  >
+                    <div className="grid gap-1">
+                      <Label htmlFor={switchId}>{category.label}</Label>
+                      <p
+                        id={descriptionId}
+                        className="text-sm text-muted-foreground"
+                      >
+                        {category.description}
+                      </p>
+                    </div>
+                    <Switch
+                      id={switchId}
+                      checked={categories[category.key]}
+                      aria-describedby={descriptionId}
+                      onCheckedChange={(checked) =>
+                        handleCategoryToggle(
+                          category.key,
+                          category.label,
+                          checked,
+                        )
+                      }
+                    />
+                  </div>
+                );
+              })}
+              {/*
+                Mobile carries this sentence too, and it is load-bearing rather
+                than decorative: `announcements` is the one category with real
+                traffic and no switch, so without saying so the grid reads as a
+                complete list of what can arrive. It is absent because both of
+                its emitters send URGENT, which bypasses the preference gate
+                entirely (#1041) — a switch would suppress nothing. It ships
+                once routine announcements are distinguishable from emergency
+                ones (#1323).
+              */}
+              <p className="text-sm text-muted-foreground">
+                Chapter announcements always arrive — they can carry
+                emergencies, so they are not switchable here.
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>
