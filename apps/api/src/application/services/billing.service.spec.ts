@@ -1088,7 +1088,7 @@ describe('BillingService', () => {
           // `process.env.X = undefined` stores the *string* "undefined", which
           // `pseudonymsAvailable()` reads as a real salt — that would leak a
           // working pseudonymizer into every later spec in this jest worker.
-          // Same guarded form the four other specs touching this var use.
+          // Same guarded form the other specs touching this var use.
           restoreSalt(priorSalt);
         }
       });

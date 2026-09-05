@@ -468,8 +468,9 @@ export class BillingService {
    *
    * Both are properties of *this* handler, which resolves the chapter from
    * `metadata.chapter_id` written at checkout creation. They do **not**
-   * generalise to the subscription-resolved handlers, where an unknown
-   * reference is genuinely transient — see `findChapterBySubscription`.
+   * generalise to the subscription-resolved handlers, whose unknown-reference
+   * branch mixes an expected case with a transient one and is deliberately left
+   * quiet — see `findChapterBySubscription` and #1738.
    *
    * The spec's old remedy ("upsert logic … retry naturally") was never built
    * and would be wrong here if it were: upserting would mint a chapter row out
@@ -503,8 +504,14 @@ export class BillingService {
   }
 
   /**
-   * The one reporting seam for "a live Stripe object names a chapter this
-   * database cannot resolve", shared by the checkout and subscription paths.
+   * The reporting seam for "a live Stripe object names a chapter this database
+   * cannot resolve".
+   *
+   * **Only the checkout path reports today.** `findChapterBySubscription`
+   * deliberately does not call this — see its docblock and #1738 — so do not
+   * read this as covering the subscription-resolved handlers. It is written as
+   * a seam rather than inlined because #1738 is expected to add the second
+   * caller once that branch can tell its two causes apart.
    *
    * **The cooldown is load-bearing, not tidiness.** Local dev and staging share
    * a Stripe test-mode account *and* a Sentry DSN (`ENV_REFERENCE.md`: both are
@@ -533,7 +540,14 @@ export class BillingService {
     event: WebhookEvent;
     kind: 'checkout_unknown_chapter';
     refKey: string;
-    chapterId?: string;
+    /**
+     * Required, not optional: the chapter tag is what keeps occurrences from
+     * collapsing into one Sentry issue keyed on the constant message, and the
+     * one caller that legitimately had no chapter to name is gone. A future
+     * caller without one should make that explicit rather than silently
+     * dropping the tag.
+     */
+    chapterId: string;
     detail: string;
     benignCause: string;
     realCause: string;
