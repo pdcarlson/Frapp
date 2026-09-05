@@ -170,7 +170,6 @@ describe('ChatService', () => {
     };
 
     mockReadReceiptRepo = {
-      findByChannelAndUser: jest.fn(),
       upsert: jest.fn(),
       getUnreadCounts: jest.fn().mockResolvedValue([]),
     };

@@ -22,7 +22,8 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
     return this.findByMessages([messageId]);
   }
 
-  async findByMessages(messageIds: string[]): Promise<PollVote[]> {
+  /** Internal batch read backing {@link findByMessage}; not part of the port. */
+  private async findByMessages(messageIds: string[]): Promise<PollVote[]> {
     if (messageIds.length === 0) {
       return [];
     }
@@ -123,20 +124,6 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       .delete()
       .eq('message_id', messageId)
       .eq('user_id', userId);
-    if (error) throw error;
-  }
-
-  async deleteByMessageUserAndOption(
-    messageId: string,
-    userId: string,
-    optionIndex: number,
-  ): Promise<void> {
-    const { error } = await this.supabase
-      .from('poll_votes')
-      .delete()
-      .eq('message_id', messageId)
-      .eq('user_id', userId)
-      .eq('option_index', optionIndex);
     if (error) throw error;
   }
 }

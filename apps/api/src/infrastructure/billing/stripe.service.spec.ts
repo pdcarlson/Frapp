@@ -187,40 +187,6 @@ describe('StripeBillingService', () => {
     });
   });
 
-  describe('getSubscriptionStatus', () => {
-    it('should retrieve a subscription and return its status', async () => {
-      const subscriptionId = 'sub_123';
-      const expectedStatus = 'active';
-
-      stripeMock.subscriptions = {
-        retrieve: jest.fn().mockResolvedValue({ status: expectedStatus }),
-      } as any;
-
-      const result = await service.getSubscriptionStatus(subscriptionId);
-
-      expect(result).toBe(expectedStatus);
-      expect(stripeMock.subscriptions.retrieve).toHaveBeenCalledWith(
-        subscriptionId,
-      );
-    });
-  });
-
-  describe('cancelSubscription', () => {
-    it('should cancel a subscription', async () => {
-      const subscriptionId = 'sub_123';
-
-      stripeMock.subscriptions = {
-        cancel: jest.fn().mockResolvedValue({}),
-      } as any;
-
-      await service.cancelSubscription(subscriptionId);
-
-      expect(stripeMock.subscriptions.cancel).toHaveBeenCalledWith(
-        subscriptionId,
-      );
-    });
-  });
-
   describe('createPaymentIntent', () => {
     it('should create a payment intent with automatic payment methods and map the result', async () => {
       const params = {

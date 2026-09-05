@@ -14,20 +14,6 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async findByChannelAndUser(
-    channelId: string,
-    userId: string,
-  ): Promise<ChannelReadReceipt | null> {
-    const { data, error } = await this.supabase
-      .from('channel_read_receipts')
-      .select('*')
-      .eq('channel_id', channelId)
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
-  }
-
   async upsert(
     channelId: string,
     userId: string,

@@ -100,14 +100,12 @@ describe('PollService', () => {
 
     mockVoteRepo = {
       findByMessage: jest.fn(),
-      findByMessages: jest.fn(),
       aggregateOptionTotalsByMessages: jest.fn(),
       findUserVotesByMessagesForUser: jest.fn(),
       findByMessageAndUser: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
       deleteByMessageAndUser: jest.fn(),
-      deleteByMessageUserAndOption: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -352,7 +350,6 @@ describe('PollService', () => {
         'user-2',
       );
       expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
-      expect(mockVoteRepo.deleteByMessageUserAndOption).not.toHaveBeenCalled();
       expect(mockVoteRepo.createMany).toHaveBeenCalledWith([
         {
           message_id: 'msg-1',

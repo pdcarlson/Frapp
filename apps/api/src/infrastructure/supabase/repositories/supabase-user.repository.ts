@@ -69,16 +69,6 @@ export class SupabaseUserRepository implements IUserRepository {
     return data;
   }
 
-  async findByEmail(email: string): Promise<User | null> {
-    const { data, error } = await this.supabase
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .maybeSingle();
-    if (error) throw error;
-    return data;
-  }
-
   async create(userData: TablesInsert<'users'>): Promise<User> {
     const { data, error } = await this.supabase
       .from('users')

@@ -750,31 +750,6 @@ describe('TaskService', () => {
     });
   });
 
-  describe('listByChapter', () => {
-    it('should return all tasks for chapter', async () => {
-      mockTaskRepo.findByChapter.mockResolvedValue([baseTask]);
-
-      const result = await service.listByChapter('ch-1');
-
-      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-      expect(result).toEqual([asView(baseTask)]);
-    });
-  });
-
-  describe('listByAssignee', () => {
-    it('should return tasks for assignee', async () => {
-      mockTaskRepo.findByAssignee.mockResolvedValue([baseTask]);
-
-      const result = await service.listByAssignee('ch-1', 'user-1');
-
-      expect(mockTaskRepo.findByAssignee).toHaveBeenCalledWith(
-        'ch-1',
-        'user-1',
-      );
-      expect(result).toEqual([asView(baseTask)]);
-    });
-  });
-
   describe('findById', () => {
     it('should return task by id', async () => {
       mockTaskRepo.findById.mockResolvedValue(baseTask);

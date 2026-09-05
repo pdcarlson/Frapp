@@ -151,8 +151,6 @@ describe('BillingService', () => {
       createCustomer: jest.fn(),
       createCheckoutSession: jest.fn(),
       createCustomerPortalSession: jest.fn(),
-      getSubscriptionStatus: jest.fn(),
-      cancelSubscription: jest.fn(),
       createPaymentIntent: jest.fn(),
       getPaymentIntent: jest.fn(),
       cancelPaymentIntent: jest.fn(),

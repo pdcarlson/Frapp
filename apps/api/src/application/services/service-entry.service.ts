@@ -60,11 +60,6 @@ export interface RequestProofUploadUrlInput {
   sizeBytes?: number;
 }
 
-export interface ReviewServiceEntryInput {
-  status: 'APPROVED' | 'REJECTED';
-  review_comment?: string | null;
-}
-
 @Injectable()
 export class ServiceEntryService {
   constructor(

@@ -90,16 +90,6 @@ export class StripeBillingService implements IBillingProvider {
     return session.url;
   }
 
-  async getSubscriptionStatus(subscriptionId: string): Promise<string> {
-    const subscription =
-      await this.stripe.subscriptions.retrieve(subscriptionId);
-    return subscription.status;
-  }
-
-  async cancelSubscription(subscriptionId: string): Promise<void> {
-    await this.stripe.subscriptions.cancel(subscriptionId);
-  }
-
   async createPaymentIntent(
     params: CreatePaymentIntentParams,
   ): Promise<PaymentIntentResult> {

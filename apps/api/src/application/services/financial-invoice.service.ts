@@ -421,10 +421,6 @@ export class FinancialInvoiceService {
     } catch {}
   }
 
-  async getTransactions(chapterId: string) {
-    return this.transactionRepo.findByChapter(chapterId);
-  }
-
   async getInvoiceTransactions(invoiceId: string, chapterId: string) {
     await this.findById(invoiceId, chapterId);
     return this.transactionRepo.findByInvoice(invoiceId);

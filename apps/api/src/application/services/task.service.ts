@@ -66,10 +66,6 @@ export interface CreateTaskInput {
   client_message_id?: string;
 }
 
-export interface UpdateTaskStatusInput {
-  status: TaskStatus;
-}
-
 @Injectable()
 export class TaskService {
   private readonly logger = new Logger(TaskService.name);
@@ -98,19 +94,6 @@ export class TaskService {
     const tasks = isAdmin
       ? await this.taskRepo.findByChapter(chapterId)
       : await this.taskRepo.findByAssignee(chapterId, userId);
-    return toDisplayStatusList(tasks);
-  }
-
-  async listByChapter(chapterId: string): Promise<TaskView[]> {
-    const tasks = await this.taskRepo.findByChapter(chapterId);
-    return toDisplayStatusList(tasks);
-  }
-
-  async listByAssignee(
-    chapterId: string,
-    assigneeId: string,
-  ): Promise<TaskView[]> {
-    const tasks = await this.taskRepo.findByAssignee(chapterId, assigneeId);
     return toDisplayStatusList(tasks);
   }
 

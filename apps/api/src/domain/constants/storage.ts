@@ -80,10 +80,7 @@ export function archiveExportPrefix(
 }
 
 /** The uploaded media (attachments, avatars) for one import. */
-export function archiveMediaPrefix(
-  chapterId: string,
-  importId: string,
-): string {
+function archiveMediaPrefix(chapterId: string, importId: string): string {
   return `${archiveImportPrefix(chapterId, importId)}/media`;
 }
 

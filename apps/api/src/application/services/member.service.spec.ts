@@ -51,7 +51,6 @@ describe('MemberService', () => {
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
-      findByEmail: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       anonymize: jest.fn(),

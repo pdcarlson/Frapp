@@ -65,8 +65,6 @@ describe('FinancialInvoiceService', () => {
       createCustomer: jest.fn(),
       createCheckoutSession: jest.fn(),
       createCustomerPortalSession: jest.fn(),
-      getSubscriptionStatus: jest.fn(),
-      cancelSubscription: jest.fn(),
       createPaymentIntent: jest.fn(),
       getPaymentIntent: jest.fn(),
       cancelPaymentIntent: jest.fn().mockResolvedValue(undefined),
@@ -1209,14 +1207,6 @@ describe('FinancialInvoiceService', () => {
           chargeId: 'ch_charge_1',
         }),
       ).resolves.toBeUndefined();
-    });
-  });
-
-  describe('getTransactions', () => {
-    it('should return chapter financial transactions', async () => {
-      mockTransactionRepo.findByChapter.mockResolvedValue([]);
-      const result = await service.getTransactions('ch-1');
-      expect(result).toEqual([]);
     });
   });
 
