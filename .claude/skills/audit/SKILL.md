@@ -173,7 +173,7 @@ PY
 ### Input validation
 
 - DTOs must use `class-validator` decorators (`@IsString`, `@MaxLength`, `@IsUUID`, etc.)
-- `ValidationPipe` is configured globally in `main.ts` with `whitelist: true` (strips unknown fields) and `forbidNonWhitelisted: true`
+- `ValidationPipe` is configured globally in `configureApp()` (`apps/api/src/bootstrap.ts`), not in `main.ts`, with `whitelist: true` (strips unknown fields) and `forbidNonWhitelisted: true`
 
 ### Secret exposure
 
@@ -277,7 +277,8 @@ For each migration:
 | Deploy (production) | `.github/workflows/deploy-production.yml` | SHA validation (ancestor of `main` + CI green), the replay/apply fence, provider guardrail preflight (currently red — see next row), deploy-by-commit, strict CANCELED handling |
 | Production guardrails | `.github/workflows/production-guardrails.yml` | Render auto-deploy off and tracking `main` — dashboard-only and fails open; the Vercel half is red as of 2026-09-02 and is to be **inverted, not dropped** — see below |
 | Release | `.github/workflows/release.yml` | Version bump logic, tag creation, `workflow_call` input plumbing |
-| Docs | `.github/workflows/docs.yml` | Structure, citations, references, rosters |
+| Docs | `.github/workflows/docs.yml` | One job, `env-slugs` — Infisical environment slugs resolve, over the fixed `SCAN_ROOTS` list in `scripts/check-env-slugs.mjs`, not the repo. **Not a documentation gate** |
+| Links | `.github/workflows/links.yml` | One job, `link-check` — lychee, offline: markdown links and heading anchors resolve. External URLs are never fetched |
 
 Both Vercel projects were unlinked from Git (landing 2026-09-01, web 2026-09-02). The old
 `assertVercelProductionBranch` read an absent `project.link.productionBranch` and treated it as a
@@ -293,6 +294,15 @@ re-derive it here.
 the assertion rather than deleting it. So audit the invariant that replaced it: **both
 projects are still unlinked** — Vercel `list_projects` reports `link: null` for `frapp-web` and
 `frapp-landing`, and a **present** Git link is now the finding.
+
+**Do not audit for documentation coverage that no longer exists.** The `docs.yml` and `links.yml`
+rows above are the whole of what reads the docs corpus. Neither is a required check, and neither
+validates a doc's **claims**. The gates that checked cited paths, filename references, hand-copied
+rosters and doc placement were deleted, and are not to be proposed back — the replacement is
+[`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the docs
+angle in [`diff-review`](../diff-review/SKILL.md). What still runs, over which trees, and what
+nothing checks: [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md) — read it there rather than
+restating it here.
 
 ### Secret exposure in workflows
 
@@ -317,8 +327,12 @@ npm run configure:branch-protection:verify
 
 (`configure-branch-protection` reads `GITHUB_PAT` first, with aliases tolerated (`GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`) — export it per [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
 
-`:verify` exits non-zero on any divergence and names it, so compare its output against the roster in
-`CONTRIBUTING.md` rather than eyeballing a dry run.
+`:verify` exits non-zero on any divergence and names it, so read that output rather than eyeballing a
+dry run. It diffs against `CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS` in
+[`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs), which is the
+comparand; the human-readable roster is
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
+§ Required Status Checks.
 
 ---
 

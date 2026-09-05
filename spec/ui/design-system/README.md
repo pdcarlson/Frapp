@@ -25,6 +25,9 @@ Visual truth and precedence (references beat docs, Canvas beats the system panel
 
 ### The family
 
+One row per doc in this folder and its `reference/` subfolder. No CI check asserts this table is
+complete, so add the row in the same change that adds the file.
+
 | Doc | Owns |
 | --- | --- |
 | [`foundations.md`](foundations.md) | Neutral ladder, semantic colors, type scale, radius map, spacing grid |

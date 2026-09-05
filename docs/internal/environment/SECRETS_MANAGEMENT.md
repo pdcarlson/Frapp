@@ -34,8 +34,8 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 │    NEXT_PUBLIC_API_URL = ${API_URL}                               │
 │    ...                                                            │
 │                                                                   │
-│  3 environments: local, staging, production                       │
-│  7 syncs: Vercel ×4, Render ×2, GitHub Actions ×1                │
+│  3 environments: dev, staging, prod                               │
+│  6 syncs: Vercel ×4, Render ×2                                    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -45,7 +45,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | ------------ | ----- | ------------------------------ |
 | Identities   | 5     | 1 (admin)                      |
 | Projects     | 3     | 1 (Frapp)                      |
-| Environments | 3     | 3 (local, staging, production) |
+| Environments | 3     | 3 (dev, staging, prod)         |
 | Integrations | 10    | 6 secret syncs — see §5        |
 
 The integration count is derived from the sync inventory in §5, not tracked independently — this row
@@ -74,42 +74,20 @@ The **slug** is what every tool takes — `infisical run --env=`, the workflows'
 
 ### 3. Add Canonical Values
 
-For each environment, add the canonical values from the table in [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#canonical-variables--the-complete-grid). Start with staging:
-
-| Variable                    | Staging value                                      |
-| --------------------------- | -------------------------------------------------- |
-| `SUPABASE_URL`              | `https://<staging-ref>.supabase.co`                |
-| `SUPABASE_SERVICE_ROLE_KEY` | From Supabase staging dashboard                    |
-| `SUPABASE_ANON_KEY`         | From Supabase staging dashboard                    |
-| `STRIPE_SECRET_KEY`         | `sk_test_...` from Stripe test mode                |
-| `STRIPE_WEBHOOK_SECRET`     | `whsec_...` from Stripe                            |
-| `STRIPE_PRICE_ID`           | `price_...` from Stripe                            |
-| `API_URL`                   | `https://api-staging.frapp.live` (bare origin — no `/v1`) |
-| `APP_URL`                   | `https://app.staging.frapp.live`                   |
-| `RENDER_DEPLOY_HOOK_URL`    | From Render staging service dashboard              |
-| `API_HEALTHCHECK_URL`       | `https://api-staging.frapp.live/health`            |
-| `SUPABASE_PROJECT_REF`      | Staging project reference ID                       |
-| `SUPABASE_ACCESS_TOKEN`     | From https://supabase.com/dashboard/account/tokens |
-| `SUPABASE_DB_PASSWORD`      | Staging database password (per-project — production differs). **Required for migrations**; see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#cd-secrets-deploy-workflows-only) |
-
-Repeat for `prod` with production values, and `dev` with local-development values.
+For each environment, add the canonical values from
+[`ENV_REFERENCE.md` § "Canonical Variables — The Complete Grid"](./ENV_REFERENCE.md#canonical-variables--the-complete-grid),
+together with its § "API-Only Settings" and § "CD Secrets (Deploy Workflows Only)" subsections. That grid
+has a column per slug and is the only complete list — work it whole rather than a subset. The partial table
+this section used to carry omitted `STRIPE_PUBLISHABLE_KEY`, which §4 below then references as a `${…}`
+value. Start with `staging`, then repeat for `prod` and `dev`.
 
 ### 4. Add References
 
-In **all three environments**, add these references (they're the same in every environment — the canonical value they resolve to changes per environment):
-
-| Variable                        | Value (Infisical reference syntax) |
-| ------------------------------- | ---------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | `${SUPABASE_URL}`                  |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}`             |
-| `NEXT_PUBLIC_API_URL`           | `${API_URL}`                       |
-| `NEXT_PUBLIC_APP_URL`           | `${APP_URL}`                       |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}`   |
-| `EXPO_PUBLIC_SUPABASE_URL`      | `${SUPABASE_URL}`                  |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}`             |
-| `EXPO_PUBLIC_API_URL`           | `${API_URL}`                       |
-| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}`   |
-| `EXPO_PUBLIC_APP_URL`           | `${APP_URL}`                       |
+In **all three environments**, add the reference rows from
+[`ENV_REFERENCE.md` § "References — Framework-Specific Names"](./ENV_REFERENCE.md#references--framework-specific-names)
+— the value string you type is identical in every environment; only the canonical value it resolves to
+changes. That table also flags the one `NEXT_PUBLIC_*` name that is a **literal**, not a `${…}` reference
+(`NEXT_PUBLIC_SENTRY_DSN`), and this list never carried it.
 
 `EXPO_PUBLIC_LANDING_URL` and `EXPO_PUBLIC_ASK_ENABLED` are **not** Infisical references — they are
 direct-set client flags/URLs (see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § apps/mobile). There is
@@ -173,13 +151,23 @@ fresh org, first authenticate the provider under **App Connections** (Vercel, Re
 
 #### GitHub Actions is not a sync
 
-There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. `deploy-api.yml`
-**pulls** at job time instead, via `Infisical/secrets-action@v1.0.12` with `method: "universal"`,
-authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_CLIENT_SECRET` repository
-secrets. This is universal auth, not OIDC.
+There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. The workflows
+that need secrets **pull** at job time instead, via `Infisical/secrets-action@v1.0.12` with
+`method: "universal"`, authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and
+`INFISICAL_CLIENT_SECRET` repository secrets. This is universal auth, not OIDC. Six workflows do
+this — `deploy-api.yml`, `deploy-production.yml`, `db-backup.yml`, `check-migration-drift.yml`,
+`migration-drift-gate.yml` and `staging-conformance.yml` — not `deploy-api.yml` alone.
 
-Each injection step selects its source with `env-slug`. Note the production slug is **`prod`**, not
-`production` — the Infisical environment slug and the GitHub environment name differ.
+That call is written once, in the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml)
+composite action, which every workflow needing secrets calls; no workflow spells out
+`Infisical/secrets-action` itself. The credentials reach it as `with:` inputs because a composite
+action cannot read the `secrets` context.
+
+Each call site selects its source with `env-slug`. Note the production slug is **`prod`**, not
+`production` — the Infisical environment slug and the GitHub environment name differ. **Pass that
+slug as a quoted literal, never an expression:** `scripts/check-env-slugs.mjs` validates slugs by
+matching `env-slug: "<slug>"` in `.github/workflows` and `.github/actions`, so an expression is
+invisible to it and the gate would go green having checked nothing.
 
 Because the action exports every secret in the resolved environment as a job env var, **adding a
 secret to the right Infisical environment is sufficient to make it available to CI** — no workflow
@@ -299,7 +287,7 @@ works. Provisioning it is what makes a green run mean much.
 
 **Transitional (until Infisical GitHub Action injection is wired):**
 
-The deploy workflow (`deploy-api.yml`) injects these from Infisical at runtime via `Infisical/secrets-action`, so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
+The deploy workflows inject these from Infisical at runtime through [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml), so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
 
 | Secret                   | Staging value                           | Production value                |
 | ------------------------ | --------------------------------------- | ------------------------------- |
@@ -312,7 +300,9 @@ Once the `@infisical/secrets-action` is integrated into the deploy workflow, the
 
 #### Troubleshooting: `Deploy API` fails with `401 Invalid credentials`
 
-`Infisical/secrets-action` reports the same `401 Invalid credentials` whether the bootstrap secrets are **absent** or **rejected**. To tell those apart, `deploy-api.yml` runs a `Verify Infisical credentials are configured` preflight step before each injection:
+`Infisical/secrets-action` reports the same `401 Invalid credentials` whether the bootstrap secrets are **absent** or **rejected**. To tell those apart, every injection runs a `Verify Infisical credentials are configured` preflight first. That preflight is no longer written in the workflow: it is the first step of the [`infisical-secrets`](../../../.github/actions/infisical-secrets/action.yml) composite action, so it now runs at **all eleven** injection sites rather than the nine that happened to carry a copy.
+
+The table below describes the ten sites that **fail** on a missing credential. **`staging-conformance.yml` is the exception** and reads differently: it passes `on-missing-credentials: warn`, because that workflow exists to *report* credential drift rather than die of it. There the preflight step stays green and emits a `::warning::` naming the missing secret, so a missing credential shows up as a **warning above an otherwise-normal 401**, not as a failed step. Read the warning before concluding from row 3 that the credentials were rejected.
 
 | Preflight result                       | Meaning                                                                                          | Fix                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
@@ -374,7 +364,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 ## Audit
 
 - Infisical dashboard → Audit Log for all secret access
-- Verify sync health periodically for all 7 integrations
+- Verify sync health periodically for all six syncs (§5 — GitHub Actions is not one of them)
 - Review no unexpected access patterns
 
 ## Provider API token sanity checks (operations)

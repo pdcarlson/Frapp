@@ -97,7 +97,9 @@ curl -sS --noproxy '*' -H "Authorization: Bearer $GITHUB_PAT" \
 
 What that route returned on 2026-09-02 (full record in
 [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md)): `branches/main/protection` **200**
-with 21 required contexts, `strict: true`, `enforce_admins: true`, `required_linear_history: true`,
+with 21 required contexts (the roster as it then stood; it has shrunk since — read
+`ALL_REQUIRED_CHECKS`, never a count quoted here), `strict: true`, `enforce_admins: true`,
+`required_linear_history: true`,
 `required_pull_request_reviews: null`; `environments` **200** listing nine; `environments/production`
 **200** with `protection_rules: ["required_reviewers"]` — the required-reviewer gate is now read off
 the API rather than inferred from approval timing; `rulesets` **200** with one; the repo **200** with
@@ -151,9 +153,13 @@ Both read through node's global `fetch` (`ghRequest` in `scripts/ci/lib/github.m
 the direct route: **`:verify` exits 0 from a cloud sandbox**, confirmed 2026-09-02. That is a real
 ground-truth check on live `main` rather than a check of declared intent, but only over the fields
 `buildProtectionPayload` manages on `main`: `allow_fork_syncing` is excluded while `lock_branch` is
-false (GitHub honours it only on a locked branch, so comparing it would fail forever) and live `main`
-is in fact `false` against a desired `true`; rulesets and environments are not covered at all. A
-green `:verify` is therefore not proof that live protection matches the roster in every field.
+false (GitHub honours it only on a locked branch, so comparing it would fail forever); rulesets and
+environments are not covered at all. A green `:verify` is therefore not proof that live protection
+matches the roster in every field — a divergence on that excluded key stays invisible
+([#1580](https://github.com/pdcarlson/Frapp/issues/1580) closed the one that existed). Canonical
+state, including the current context count, lives in
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md) —
+read it rather than the counts quoted above, which are dated observations.
 
 Applying — the bare `npm run configure:branch-protection` — remains a human step with an admin PAT
 by policy; the script reads `GITHUB_PAT` first, with `GITHUB_TOKEN` / `GH_PAT` / `GH_TOKEN`
@@ -236,8 +242,11 @@ curl -s https://api.frapp.live/health           # Production
 > the per-job failure boundaries in `verify-deployments.yml`, what else is broken, and what is only
 > presumed broken. **#1579 landed 2026-09-02**: the guardrail now asserts the *absence* of a Git
 > link (`assertVercelNoGitLink`) and `verify-deployments.yml`'s two Vercel jobs were removed, so a
-> red daily guardrails run once again means real drift. **#1578** (the replacement CI-driven
-> deploys) is still designed, not built — nothing runs them today.
+> red daily guardrails run once again means real drift. **#1578 landed 2026-09-04**: the
+> replacement CI-driven deploys are built — `deploy-vercel-staging.yml` after green CI on `main`,
+> and `deploy-production.yml` on a dispatched SHA, both through `scripts/ci/deploy-vercel.mjs`. A
+> Vercel deployment with no `meta.githubCommitSha` is now the anomaly worth reporting, since every
+> deployment CI creates is stamped with the commit it built.
 
 ### List deployments
 
@@ -381,27 +390,29 @@ done
 2. Cross-reference with `supabase/migrations/` on `main` — there is no separate
    production branch since #1340 (`GET /repos/pdcarlson/Frapp/branches/production` reads 404);
    production is deployed from a named commit on `main` by
-   `.github/workflows/deploy-production.yml`. As of 2026-09-02 that workflow's guardrail preflight
-   is failing on the retired Vercel Git integration, so nothing new can land in production until
-   that is repaired — see the Vercel note above
+   `.github/workflows/deploy-production.yml`. That workflow's guardrail preflight briefly blocked
+   production deploys on 2026-09-02 — it read the retired Vercel Git link as a violation — but
+   #1579 inverted the assertion the same day, so it passes against the unlinked state and
+   production deploys are **not** blocked; a *present* Git link is now the violation. Gate list:
+   [`docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md) § How Deployments Are Gated
 3. Check [`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md) for promotion status
 
 ### "Are secrets in sync?"
 
 1. List secret keys in each Infisical environment (see above)
 2. Compare against [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)
-3. Verify Infisical syncs are active for each destination (Render, Vercel, GitHub)
+3. Verify Infisical syncs are active for each destination (Render, Vercel — there is no GitHub sync; `deploy-api.yml` pulls at job time with `Infisical/secrets-action`, universal auth, not OIDC)
 
 ---
 
 ## Infisical sync map
 
-The canonical sync map (which Infisical environment feeds which Render/Vercel/GitHub Actions destination) lives in [`docs/internal/ci-cd/AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md) under "Infisical sync map" — check it there rather than relying on a copy here.
+The canonical sync map (which Infisical environment feeds which Render/Vercel destination — GitHub Actions is not a sync, it pulls at job time) lives in [`docs/internal/environment/SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEMENT.md) under "5. Configure Secret Syncs" — check it there rather than relying on a copy here. It is a dated convenience copy of live dashboard state, so treat a disagreement with the Infisical dashboard as the doc being wrong, and re-stamp its date when you correct it.
 
 ---
 
 ## Updating this skill
 
 - Add research patterns for new provider integrations (e.g., Sentry API, Expo EAS).
-- If the Infisical sync map changes, update [`docs/internal/ci-cd/AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md); if credentials change, update [`docs/internal/environment/AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md) — this skill only points at them.
+- If the Infisical sync map changes, update [`docs/internal/environment/SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEMENT.md) §5 — and only there; if credentials change, update [`docs/internal/environment/AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md) — this skill only points at them.
 - For Infisical `workspaceId` in curl examples: set **`INFISICAL_PROJECT_ID`** to the project ID from Infisical (same value as GitHub secret `INFISICAL_PROJECT_ID` in [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)), or keep **`.infisical.json`** `workspaceId` in sync and `export INFISICAL_PROJECT_ID=…` before running the snippets.

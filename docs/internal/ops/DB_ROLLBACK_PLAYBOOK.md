@@ -293,9 +293,42 @@ table-by-table, exiting non-zero on any drift.
 After any rollback event:
 
 - file the incident notes as a **GitHub issue** — work status is not a doc
-  ([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) rule 4)
+  ([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives) § Where a fact lives)
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
+
+## Rollback the chat-archive upload quota
+
+* **Migration**: `20260905010000_discord_import_archive_quota.sql`
+* **Action**: `DROP FUNCTION IF EXISTS discord_import_register_files(uuid, uuid, jsonb, bigint, bigint);` and, if you want the index gone too,
+  `DROP INDEX IF EXISTS public.idx_discord_import_files_chapter_bytes;`.
+  **Redeploy the API at the pre-#1243 revision first, and understand that this one is
+  not optional.** The function does not merely *check* the quota, it performs the
+  manifest upsert — both import paths register through it and there is no unguarded
+  insert left in the repository. With it gone, `POST /v1/discord-imports/{id}/upload-urls`
+  500s and the bot worker fails every slice, so **no Discord import can register a file
+  at all** by either route. Dropping the index alone is safe at any time and only costs
+  the quota sum a heap fetch per row.
+* **Note**: Purely additive — one new function, one new index. No table, column, row,
+  policy, or existing function body is touched, so nothing that predates the migration
+  can be lost, and rolling back cannot corrupt anything. What it removes is the ceiling
+  itself: with no quota, one chapter can again register unbounded bytes into
+  `chat-archive`, which has no reaper other than the admin's own per-import purge
+  (#1246). Prefer raising `MAX_ARCHIVE_IMPORT_BYTES` / `MAX_ARCHIVE_CHAPTER_BYTES` in
+  `packages/validation/src/upload-allowlists.ts` — a one-line application change, no
+  migration — over rolling this back.
+* **Data caveat**: the function writes, so this is not a pure read to drop. It upserts
+  `discord_import_files` rows with a **monotonic** `byte_size` (a re-registered path may
+  raise its recorded size, never lower it). Rolling back to a plain upsert makes that
+  column writable downward again, which is what let a caller erase the accounting for
+  objects still in the bucket. No snapshot is needed before dropping and nothing needs
+  restoring on re-apply — the totals are recomputed from the manifest on every call —
+  but any row whose size was lowered while the old path was live stays lowered.
+* **If the quota misfires in production**, the fast forward-fix is the constants, not
+  this migration. A chapter wrongly refused reads either `limit for one import` or
+  `Delete an old import` in the 400; the first names `MAX_ARCHIVE_IMPORT_BYTES` and the
+  second `MAX_ARCHIVE_CHAPTER_BYTES`. Both ship with the API, so the fix is a normal
+  deploy.
 
 ## Rollback the orphan-president claim flow
 
@@ -380,6 +413,31 @@ After any rollback event:
   written to `chapter_audit_log` under `action = 'chapter_config_updated'` with a
   `points` key in its `diff`, so the last known value per chapter can be read back
   out of the audit trail.
+
+## Rollback the points ledger idempotency key
+
+* **Migration**: `20260905020000_point_transactions_client_message_id.sql`
+* **Action**:
+  ```sql
+  ALTER TABLE point_transactions DROP COLUMN client_message_id;
+  ```
+  Dropping the column also drops `idx_point_transactions_dedupe`, which is
+  defined on it — no separate `DROP INDEX` needed.
+* **Order**: **roll the API back first, then the migration.** This is the one
+  coordination point, and it is the opposite of a purely additive column: a
+  build from after this migration names `client_message_id` — both in
+  `findByClientMessageId` and, unconditionally, in the insert payload
+  `adjustPoints` sends — so it errors once the column is gone, where an older
+  build never mentions it and is unaffected. Reverting the code first costs
+  nothing; reverting the schema first breaks **every** manual point adjustment
+  until the deploy catches up, not only the chat-originated ones: the insert
+  carries the column name whether or not a key was supplied, so the dashboard
+  dialog fails identically and is **not** a working fallback.
+* **Data caveat**: rolling back does not corrupt the ledger — the key is
+  metadata about *how* a row arrived, never part of the balance — but it
+  restores the duplicate-grant exposure of #1719 for as long as it is off. Any
+  keys recorded in the meantime are lost, so a retry spanning the rollback
+  would be able to double-grant.
 
 ## Rollback the `chapter_documents` metadata columns
 
@@ -1107,7 +1165,7 @@ After any rollback event:
   ALTER TABLE chapters DROP COLUMN IF EXISTS default_invite_role_id;
   ```
 * **Note**: Additive nullable FK to `roles(id)`; dropping it loses only each chapter's chosen default invite role. No invite data is affected — `invites.role` stores the resolved role **name**, so tokens already issued keep the role they were created with. Drop the index first: `on delete set null` uses it on role deletes.
-* **⚠ Roll the API back first.** `ChapterConfigService.getConfig` names the column in its `select` and maps any error to `NotFoundException`, so dropping the column under a deployed API turns `GET /v1/chapters/:id/config` into a 404 for **every** chapter — taking the whole web dashboard's settings surface with it, and masking the real `42703` (undefined column). Deploy an API build that predates this change before running the DDL, or run both together in a maintenance window.
+* **⚠ Roll the API back first.** `ChapterConfigService.getConfig` names the column in its `select`, so dropping it under a deployed API breaks `GET /v1/chapters/:id/config` for **every** chapter, taking the whole web dashboard's settings surface with it. Since [#1626](https://github.com/pdcarlson/Frapp/issues/1626) that surfaces as a **500** carrying the real `42703` (undefined column), with an error log and a Sentry capture — before that fix it was a 404 that masked the cause, so on-call notes predating this may tell you to watch for the wrong status. Deploy an API build that predates this change before running the DDL, or run both together in a maintenance window.
 * **Invites are not affected by the drop.** `InviteService.resolveInviteRole` reads the chapter through `IChapterRepository.findById`, which is `select('*')` and never names the column, so after the drop `default_invite_role_id` simply reads `undefined → null` and invites fall back to the seeded Member role — the pre-#422 behavior. Only the config route breaks, which is why the rollback is a settings-surface outage rather than an invite outage.
 
 ## Rollback `confirm_task_completion` RPC
@@ -1355,12 +1413,25 @@ DROP TABLE IF EXISTS chapter_service_config;
 ```
 
 **Order matters for the function and the table**: drop them only alongside (or
-after) deploying an API build without #273. `ServiceEntryService.approve` reads
-`chapter_service_config` on every approval and
-`GET /v1/service-entries/leaderboard` calls the function, so dropping either
-while the current build is serving turns those into 500s. The read path
-tolerates a *failed* read (it falls back to the default rate and logs a
-warning), but not a missing relation on the leaderboard route.
+after) deploying an API build without #273. `GET /v1/service-entries/leaderboard`
+calls the function and does not tolerate a missing relation, so dropping the
+function while the current build is serving turns that route into a 500.
+
+The **table** is read by two paths, and they do not degrade the same way — the
+same split the points-config rollback above spells out:
+
+* `ServiceEntryService.approve` reads through `ChapterServiceConfigService.getConfig`,
+  which **fails open** — it logs a warning and applies the default 60 min/point.
+  Approvals keep working through the drop, at the wrong rate.
+* `GET /chapters/:id/config` reads `chapter_service_config` inline and **fails
+  closed** since [#1626](https://github.com/pdcarlson/Frapp/issues/1626) (it is
+  also the baseline a config PATCH merges onto, so it must not invent a prior
+  state). A dropped table is a read error, so that endpoint returns **500** —
+  and it backs the whole web Settings page, not just service hours.
+
+So dropping the table under a running *post*-migration API leaves approvals
+working (at the wrong rate) and Settings broken. **Redeploy the API first**, to
+a build from before the migration, exactly as for `chapter_points_config`.
 
 **Data caveat — rolling back silently changes point awards.** Any chapter that
 configured a non-default rate loses it: approvals revert to 60 minutes per

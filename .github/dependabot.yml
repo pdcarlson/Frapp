@@ -44,12 +44,14 @@ updates:
           - patch
 
     # ── The React pin ────────────────────────────────────────────────────
-    # React is pinned to an EXACT 19.1.0 in every workspace plus a root
-    # `overrides` entry. React Native 0.81.5 bundles react-native-renderer
-    # 19.1.0, which asserts exact version equality with `react` at runtime;
-    # its peer range (^19.1.0) does not express that, so npm would accept a
-    # newer React silently, hoist it, and kill apps/mobile on first render
-    # with "Invalid hook call". Only booting the app on a device catches it.
+    # React is pinned to an EXACT version in every workspace plus a root
+    # `overrides` entry. React Native bundles a react-native-renderer that
+    # asserts exact version equality with `react` at runtime; its peer range
+    # is a caret and does not express that, so npm would accept a newer React
+    # silently, hoist it, and kill apps/mobile on first render with "Invalid
+    # hook call". Only booting the app on a device catches it.
+    # The versions themselves live in AGENTS.md § Gotchas — deliberately not
+    # repeated here, because this comment carried a stale pair for months.
     # See AGENTS.md § Gotchas and PR #842.
     #
     # These families therefore move only as a version-locked set, via a
@@ -65,8 +67,8 @@ updates:
     ignore:
       - dependency-name: "react"
       - dependency-name: "react-dom"
-      # Pinned to a bare 19.1.0 in apps/mobile alongside react itself — the
-      # same exact-equality constraint, so it belongs to the same locked set.
+      # Pinned to a bare exact version in apps/mobile alongside react itself —
+      # the same exact-equality constraint, so it joins the same locked set.
       - dependency-name: "react-test-renderer"
       - dependency-name: "react-native"
       - dependency-name: "react-native-*"

@@ -219,46 +219,51 @@ jobs:
             node scripts/ci/production-guardrails.mjs --preflight
           fi
 
+      # ── Both local composite actions run BEFORE the detach, deliberately ──
+      #
+      # `uses: ./…` resolves from the runner WORKSPACE at step-execution time,
+      # so a local action called after `git checkout --detach "$DEPLOY_SHA"`
+      # below is loaded from the DEPLOYED COMMIT's tree rather than from the
+      # trusted ref. Two consequences, both bad, and neither visible until a
+      # production dispatch:
+      #
+      #   * Deploying any commit from before these actions existed dies with
+      #     "Can't find 'action.yml'". That is the ROLLBACK path
+      #     (DB_ROLLBACK_PLAYBOOK.md § Deploying an OLDER commit), so it would
+      #     break at exactly the moment it is reached for.
+      #   * For a newer commit it still runs, but off THAT commit's copy of
+      #     `supabase-cli/action.yml` — so the pin the production apply uses is
+      #     whatever was recorded at `DEPLOY_SHA`, silently diverging from the
+      #     one `migration-replay` rehearsed with. That is the drift the action
+      #     exists to remove, reintroduced at the one site that matters most.
+      #
+      # Running them here also matches this job's existing trust argument: the
+      # validator above deliberately runs from already-trusted code, and so now
+      # do these. Both steps are tree-independent — one exports environment
+      # variables, the other puts a binary on PATH — so neither cares that the
+      # workspace moves underneath it afterwards.
+      #
+      # NOTE: the Infisical slug for production is `prod`, not `production`.
+      - name: Inject production secrets from Infisical
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "prod"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Setup Supabase CLI
+        uses: ./.github/actions/supabase-cli
+
       # Proven to be an ancestor of main, so this is already-reviewed code.
+      #
+      # Nothing after this point may call a local `./.github/actions/…` action —
+      # see the block above. `infisical-secrets-action.test.mjs` enforces it.
       - name: Check out the commit being deployed
         env:
           DEPLOY_SHA: ${{ inputs.sha }}
         run: |
           git checkout --detach "$DEPLOY_SHA"
           git --no-pager log -1 --format='Deploying %H%n%s'
-
-      - name: Verify Infisical credentials are configured
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured for the production environment. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-          case "$CLIENT_ID$CLIENT_SECRET" in
-            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
-          esac
-
-      # NOTE: the Infisical slug for production is `prod`, not `production`.
-      - name: Inject production secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.12
-        with:
-          method: "universal"
-          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "prod"
-          secret-path: "/"
-          include-imports: true
-
-      - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v2
-        with:
-          version: 2.77.0
 
       # Only what the migrations need a real server for. The exclusion list is
       # copied verbatim from migration-drift-gate.yml — a different list is a
@@ -273,8 +278,8 @@ jobs:
       #
       # REPLAY_SUPABASE_CLI is not optional. Without it the script falls back to
       # `npx --yes supabase` and fetches whatever is latest, while the apply
-      # below uses the pinned 2.77.0 from PATH — and "the same CLI code path" is
-      # the entire premise of the rehearsal.
+      # below uses the pinned CLI on PATH (`.github/actions/supabase-cli`) — and
+      # "the same CLI code path" is the entire premise of the rehearsal.
       - name: Rehearse the migration against production's applied state
         id: replay
         env:
@@ -347,6 +352,35 @@ jobs:
       # silently retarget, so a failure to tear down stops the deploy.
       - name: Stop the disposable Supabase stack
         run: supabase stop --no-backup
+
+      # ── Installed BEFORE anything is applied, deliberately ───────────────
+      # `vercel build` runs each app's own build, which needs the workspace's
+      # dependencies present: this is a monorepo and both apps import from
+      # `packages/`. Nothing else in this job needs `node_modules` — the
+      # migration half runs through the Supabase CLI and `node scripts/…`.
+      #
+      # So the natural place for these was next to the Vercel step at the end of
+      # the job. That is the wrong place. Both steps can fail for reasons that
+      # have nothing to do with this commit — a registry 5xx, a lockfile/registry
+      # mismatch, a full disk — and down there a failure lands AFTER the
+      # production migration has applied and the Render API has shipped, leaving
+      # a migrated database and a half-updated production with no tag naming
+      # what is live. Up here the same failure costs nothing: nothing has been
+      # applied yet.
+      #
+      # Placed after the rehearsal's disposable stack has been torn down, so the
+      # install never competes with it for disk or CPU, and skipped entirely on
+      # the paths that never reach a Vercel build.
+      - name: Install dependencies for the Vercel build
+        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
+        run: npm ci
+
+      # Pinned, exactly like the Supabase CLI above. An unpinned `@latest` would
+      # make the only path to production depend on whatever Vercel published
+      # this morning.
+      - name: Install Vercel CLI
+        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
+        run: npm install --global vercel@59.11.7
 
       # Always runs, including when this is not a dry run: the log then records
       # what WAS pending immediately before the apply, so a failure in the next
@@ -438,10 +472,17 @@ jobs:
           echo "::error::Production health check failed after 6 attempts (2 min)."
           exit 1
 
-      # A fresh production BUILD of this commit, not a promotion of its main
-      # preview: NEXT_PUBLIC_* are inlined at build time, so promoting a preview
+      # A fresh production BUILD of this commit, not a promotion of its staging
+      # build: NEXT_PUBLIC_* are inlined at build time, so promoting a preview
       # would put the production dashboard on the staging API and staging
-      # Supabase keys. See the header of deploy-vercel-production.mjs.
+      # Supabase keys. See the header of deploy-vercel.mjs.
+      #
+      # Since ADR-21 the build happens HERE, on this runner, rather than on
+      # Vercel from a git source — the Git integration that made `gitSource`
+      # mean anything is gone (#1578). `vercel pull --environment=production`
+      # fetches the Production environment variables so the bundle is compiled
+      # against them, and the script asserts the resulting deployment's `target`
+      # is `production` before calling it a release.
       - name: Deploy the commit to Vercel production (web + landing)
         if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
         env:
@@ -449,9 +490,9 @@ jobs:
           VERCEL_WEB_PROJECT_ID: ${{ env.VERCEL_WEB_PROJECT_ID }}
           VERCEL_LANDING_PROJECT_ID: ${{ env.VERCEL_LANDING_PROJECT_ID }}
           VERCEL_TEAM_ID: ${{ env.VERCEL_TEAM_ID }}
-          GITHUB_REPO_ID: ${{ github.event.repository.id }}
+          DEPLOY_TARGET: production
           DEPLOY_SHA: ${{ inputs.sha }}
-        run: node scripts/ci/deploy-vercel-production.mjs
+        run: node scripts/ci/deploy-vercel.mjs
 
   # Tagging is a separate job only because `workflow_call` cannot be a step. It
   # carries no `environment:`, so it costs no second approval click.

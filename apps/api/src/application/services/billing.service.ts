@@ -6,6 +6,7 @@ import {
   BadRequestException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import {
   BILLING_PROVIDER,
   chargeIdFromLatestCharge,
@@ -32,6 +33,7 @@ import type { IStripeWebhookEventRepository } from '#domain/repositories/stripe-
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
+import { pseudonymizeChapterId } from '../../infrastructure/observability/pseudonyms';
 
 export interface CreateCheckoutInput {
   chapterId: string;
@@ -70,9 +72,26 @@ const HANDLED_WEBHOOK_EVENT_TYPES: ReadonlySet<string> = new Set([
  */
 const WEBHOOK_CLAIM_STALE_SECONDS = 300;
 
+/**
+ * Silence after reporting one unresolvable chapter reference, so routine
+ * cross-environment webhook traffic cannot bury the occurrence that means money
+ * moved. Matches `auth-failure-spike.ts`'s window for the same reason.
+ */
+const UNKNOWN_REF_REPORT_COOLDOWN_MS = 15 * 60_000;
+
+/**
+ * Hard cap on tracked references. Unbounded, this map would grow with every
+ * distinct unknown id a foreign account sends — the detector becoming the leak
+ * it exists to report, exactly as `auth-failure-spike.ts` warns.
+ */
+const MAX_TRACKED_UNKNOWN_REFS = 500;
+
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
+
+  /** Last Sentry report per unresolvable reference — see `shouldReportUnknownRef`. */
+  private readonly unknownRefReportedAt = new Map<string, number>();
 
   constructor(
     @Inject(BILLING_PROVIDER)
@@ -357,9 +376,7 @@ export class BillingService {
 
     const chapter = await this.chapterRepo.findById(chapterId);
     if (!chapter) {
-      this.logger.warn(
-        `checkout.session.completed for non-existent chapter: ${chapterId}`,
-      );
+      this.reportUnknownChapterCheckout(event, chapterId, session);
       return;
     }
 
@@ -424,6 +441,175 @@ export class BillingService {
     await this.activation.record(chapterId, 'activation-checkout-completed');
 
     this.logger.log(`Chapter ${chapterId} activated via checkout`);
+  }
+
+  /**
+   * Report a `checkout.session.completed` whose chapter this database does not
+   * have (#1710).
+   *
+   * **Why this still acks instead of throwing.** Throwing is what buys a Stripe
+   * retry — `handleWebhookEvent`'s catch arm says so in as many words — and a
+   * retry is useless *on this path*, because both ways it is reachable are
+   * terminal:
+   *
+   *  - **Cross-environment delivery, the reachable one.** Local dev and staging
+   *    share one Stripe test-mode account (`ENV_REFERENCE.md` § `STRIPE_SECRET_KEY`:
+   *    *"Same as staging"*), and Stripe fans every test-mode event out to every
+   *    registered endpoint in that account. So a staging checkout reaches a
+   *    developer's `stripe listen`, and a local checkout reaches the staging
+   *    endpoint. The `chapter_id` is a real UUID from the *other* environment's
+   *    database, so the non-UUID guard above cannot catch it, and the row will
+   *    never appear here however many times Stripe redelivers.
+   *  - **A row removed out of band.** There is no delete path to reach it with —
+   *    `IChapterRepository` has no `delete`, nothing in `apps/api/src` deletes
+   *    from `chapters`, and no migration drops the table — so this can only come
+   *    from manual database intervention, which a redelivery cannot repair
+   *    either.
+   *
+   * Both are properties of *this* handler, which resolves the chapter from
+   * `metadata.chapter_id` written at checkout creation. They do **not**
+   * generalise to the subscription-resolved handlers, whose unknown-reference
+   * branch mixes an expected case with a transient one and is deliberately left
+   * quiet — see `findChapterBySubscription` and #1738.
+   *
+   * The spec's old remedy ("upsert logic … retry naturally") was never built
+   * and would be wrong here if it were: upserting would mint a chapter row out
+   * of a foreign environment's event.
+   *
+   * **Why it is louder than the `warn` it replaces.** Acking is right; being
+   * *quiet* about it was the defect. The same branch also covers "a paid
+   * checkout completed and the chapter was never activated", and at `warn` that
+   * was indistinguishable from the benign cross-environment case. This follows
+   * `discord-oauth.service.ts`'s `captureSwallowed`: *"a swallowed failure has
+   * to report itself."*
+   */
+  private reportUnknownChapterCheckout(
+    event: WebhookEvent,
+    chapterId: string,
+    session: CheckoutSessionWebhookObject,
+  ): void {
+    this.reportUnknownChapterRef({
+      event,
+      kind: 'checkout_unknown_chapter',
+      refKey: `checkout:${chapterId}`,
+      chapterId,
+      detail:
+        `chapter ${chapterId} (subscription ${session.subscription ?? 'none'}, ` +
+        `customer ${session.customer ?? 'none'}) — nothing was activated`,
+      benignCause:
+        'this event belongs to another environment sharing this Stripe account',
+      realCause:
+        'a checkout was paid for a chapter this database cannot see — reconcile it in Stripe',
+    });
+  }
+
+  /**
+   * The reporting seam for "a live Stripe object names a chapter this database
+   * cannot resolve".
+   *
+   * **Only the checkout path reports today.** `findChapterBySubscription`
+   * deliberately does not call this — see its docblock and #1738 — so do not
+   * read this as covering the subscription-resolved handlers. It is written as
+   * a seam rather than inlined because #1738 is expected to add the second
+   * caller once that branch can tell its two causes apart.
+   *
+   * **The cooldown is load-bearing, not tidiness.** Local dev and staging share
+   * a Stripe test-mode account *and* a Sentry DSN (`ENV_REFERENCE.md`: both are
+   * "Same as staging"), so routine local billing work reports into the same
+   * `frapp-api` project as the real thing. Without a cooldown a developer's
+   * afternoon of test checkouts buries the one occurrence that means money
+   * moved, and an operator who mutes the issue mutes the signal this exists to
+   * raise. Same reasoning, and the same 15-minute window, as
+   * `auth-failure-spike.ts`: *"one sustained attack reports once rather than
+   * thousands of times."*
+   *
+   * The per-chapter Sentry tag is what makes distinct chapters distinguishable
+   * rather than collapsing into one issue keyed on a constant message. It is
+   * hashed **here**, for the reason `AllExceptionsFilter.reportToSentry` gives:
+   * the scrubber drops a raw UUID in `event.user.id` rather than hashing it, so
+   * hashing at the source is what keeps the tag correlatable with the 5xx
+   * events already tagged `chapter`.
+   *
+   * Inherits `auth-failure-spike.ts`'s limits, and they are acceptable for the
+   * same reason: the map is in-memory, so it is per-instance and lost on
+   * restart, and it is bounded, so a churn of unknown references evicts rather
+   * than growing without limit. Under-reporting a duplicate is fine; the log
+   * line below is the complete record and is emitted every time.
+   */
+  private reportUnknownChapterRef(params: {
+    event: WebhookEvent;
+    kind: 'checkout_unknown_chapter';
+    refKey: string;
+    /**
+     * Required, not optional: the chapter tag is what keeps occurrences from
+     * collapsing into one Sentry issue keyed on the constant message, and the
+     * one caller that legitimately had no chapter to name is gone. A future
+     * caller without one should make that explicit rather than silently
+     * dropping the tag.
+     */
+    chapterId: string;
+    detail: string;
+    benignCause: string;
+    realCause: string;
+  }): void {
+    const { event, kind, refKey, chapterId, detail } = params;
+
+    // Emitted on every occurrence — this is the forensic record, and only the
+    // Sentry alert is rate-limited. "marked processed" rather than "Stripe will
+    // not redeliver": `markProcessed` runs after this returns and can itself
+    // fail, in which case Stripe does retry.
+    this.logger.error(
+      `${event.type} names a chapter this database does not have: ${detail} ` +
+        `(event ${event.id}). The event is marked processed, so Stripe will ` +
+        `not retry it once this response returns 2xx. If ${params.benignCause}, ` +
+        `that is expected and no action is needed. Otherwise ${params.realCause}.`,
+    );
+
+    if (!this.shouldReportUnknownRef(refKey)) return;
+
+    // Never let a reporting failure change the webhook's outcome: the ack is
+    // the correct result with or without Sentry. Same posture as the
+    // security-event emitter in AllExceptionsFilter.
+    try {
+      const tags: Record<string, string> = {
+        billing_event: kind,
+        stripe_event_type: event.type,
+        stripe_event_id: event.id,
+      };
+      const chapterHash = pseudonymizeChapterId(chapterId);
+      if (chapterHash) tags.chapter = chapterHash;
+
+      Sentry.captureMessage(
+        `${event.type} for a chapter this database does not have`,
+        { level: 'error', tags },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Sentry report failed for ${kind} ${event.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /** True when this reference has not been reported inside the cooldown. */
+  private shouldReportUnknownRef(refKey: string): boolean {
+    const now = Date.now();
+    const last = this.unknownRefReportedAt.get(refKey);
+    if (last !== undefined && now - last < UNKNOWN_REF_REPORT_COOLDOWN_MS) {
+      return false;
+    }
+
+    // Re-insert so iteration order stays least-recently-reported first, which
+    // is what makes the eviction below drop the coldest entry rather than an
+    // arbitrary one.
+    this.unknownRefReportedAt.delete(refKey);
+    if (this.unknownRefReportedAt.size >= MAX_TRACKED_UNKNOWN_REFS) {
+      const oldest = this.unknownRefReportedAt.keys().next();
+      if (!oldest.done) this.unknownRefReportedAt.delete(oldest.value);
+    }
+    this.unknownRefReportedAt.set(refKey, now);
+    return true;
   }
 
   private async handleSubscriptionUpdated(event: WebhookEvent): Promise<void> {
@@ -595,6 +781,30 @@ export class BillingService {
     });
   }
 
+  /**
+   * Resolve the chapter a subscription-shaped event belongs to.
+   *
+   * **This miss is a different problem from the checkout one, and it is not
+   * fixed here — see #1738.** `chapters.subscription_id` is written *only* by
+   * `handleCheckoutCompleted`, and Stripe guarantees no ordering between
+   * `checkout.session.completed` and the subscription events for the same
+   * checkout, so an event that overtakes its own checkout finds no row and its
+   * caller acks — losing that status transition permanently. That miss is
+   * **transient**, so the checkout path's terminal reasoning does not carry
+   * over and neither does its answer.
+   *
+   * **This deliberately stays at `warn` rather than joining the `error` +
+   * Sentry reporting above**, which an earlier draft of #1710 did and which
+   * review caught as wrong. An unresolvable subscription here is *routinely*
+   * expected: `handleCheckoutCompleted` overwrites `subscription_id` when a
+   * canceled chapter resubscribes, and its own log tells the operator to go
+   * cancel the superseded subscription in Stripe. Doing so emits
+   * `customer.subscription.deleted` for a subscription no chapter references —
+   * so alerting on this branch would fire, at critical, on an expected flow the
+   * product itself instructs. Separating "superseded reference" from "lost
+   * transition" needs the resolution work in #1738; until then a false alert
+   * every resubscribe would be worse than the quiet this leaves.
+   */
   private async findChapterBySubscription(
     subscriptionId: string,
   ): Promise<Chapter | null> {

@@ -90,6 +90,7 @@ describe('StudyService', () => {
 
     mockPointTxnRepo = {
       create: jest.fn(),
+      findByClientMessageId: jest.fn().mockResolvedValue(null),
       findByUser: jest.fn(),
       findByChapter: jest.fn(),
       findByChapterFiltered: jest.fn(),

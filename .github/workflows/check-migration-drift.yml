@@ -68,15 +68,11 @@ jobs:
       # injection runs twice and each ref is captured before being overwritten.
       # NOTE: the Infisical slug for production is `prod`, not `production`.
       - name: Inject staging secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "staging"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "staging"
-          secret-path: "/"
-          include-imports: true
 
       - name: Capture staging project ref
         run: |
@@ -87,15 +83,11 @@ jobs:
           echo "STAGING_PROJECT_REF=$SUPABASE_PROJECT_REF" >> "$GITHUB_ENV"
 
       - name: Inject production secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "prod"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "prod"
-          secret-path: "/"
-          include-imports: true
 
       - name: Capture production project ref
         run: |

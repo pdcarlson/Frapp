@@ -16,13 +16,13 @@
 | **Stripe**   | Test mode (`sk_test_`)            | Test mode (`sk_test_`)                  | Live mode (`sk_live_`)                |
 | **Push**     | Expo Go (dev)                     | EAS internal builds                     | Production builds                     |
 
-Each Supabase project (local, staging, production) is fully isolated: separate database, auth users, storage buckets, and API keys. The staging Landing and Web App cells describe the intended model: as of 2026-09-02 both Vercel projects are unlinked from Git (ADR-21), so those two hosts are frozen at their last Git build — see §6 **Web and Landing (Vercel)**.
+Each Supabase project (local, staging, production) is fully isolated: separate database, auth users, storage buckets, and API keys. Both Vercel projects are unlinked from Git (ADR-21), so the staging Landing and Web App hosts are deployed by CI rather than by a push — see §6 **Web and Landing (Vercel)**.
 
 ### Branch-to-environment mapping
 
 | Branch      | Purpose                              | Deployment behavior                                    |
 | ----------- | ------------------------------------ | ------------------------------------------------------ |
-| `main`      | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments — Vercel Preview retired (ADR-21; landing 2026-09-01, web 2026-09-02), see §6 |
+| `main`      | Pre-production / staging integration | Green CI on `main` triggers the Render staging deploy and the Vercel staging deploys (`deploy-vercel-staging.yml`, #1578). Push-triggered Vercel Previews were retired with the Git unlink (ADR-21) — see §6 |
 | `feature/*` | Short-lived feature work             | No automatic Vercel deployments; merged into `main`    |
 
 Production is **not** mapped to a branch. It is deployed by running the **Deploy
@@ -36,7 +36,7 @@ with green CI. The `production` branch that used to occupy this table was retire
 
 ### Prerequisites
 
-- Node.js v18+
+- Node.js v20+ (CI, `apps/api/Dockerfile` and the root `engines` field all pin the same floor)
 - npm v10+
 - Docker available to your shell (Docker Desktop with **WSL integration** on Windows/WSL, or Docker Engine on Linux)
 - Supabase CLI (`npx supabase`)
@@ -95,13 +95,7 @@ npx infisical run --env=dev -- npm run start:dev -w apps/api
 
 ### Accessing Services
 
-| Service          | URL                        |
-| ---------------- | -------------------------- |
-| Web App          | http://localhost:3000      |
-| API              | http://localhost:3001      |
-| API Swagger Docs | http://localhost:3001/docs |
-| Landing          | http://localhost:3002      |
-| Supabase Studio  | http://127.0.0.1:54323     |
+Ports and URLs for web, API, Swagger, landing and Supabase Studio: [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md) § Ports and URLs.
 
 ### Running Mobile
 
@@ -114,12 +108,7 @@ Scan the QR code with Expo Go. Phone and PC must be on the same network.
 
 ### Updating the API Contract
 
-After changing an API endpoint:
-
-```bash
-npm run openapi:export -w apps/api
-npm run generate -w packages/api-sdk
-```
+After changing an API endpoint, regenerate and commit both contract artifacts. Commands, the committed artifacts, and the CI freshness check: [`../architecture/README.md`](../architecture/README.md) § 10 API Contract Strategy.
 
 ---
 
@@ -128,7 +117,7 @@ npm run generate -w packages/api-sdk
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
 - **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`), filtered to the `main` branch. **Not running as of 2026-09-02:** both Vercel projects are unlinked from Git (ADR-21), so no push produces a preview and both staging hosts are frozen at their last Git build — see §6 **Web and Landing (Vercel)**.
+- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`). Both projects are unlinked from Git (ADR-21), so no push produces a preview; `deploy-vercel-staging.yml` builds and uploads them after CI succeeds on `main`, then aliases both hostnames (#1578) — see §6 **Web and Landing (Vercel)**.
 - **API:** Render staging service (`frapp-api-staging`), auto-deploys from `main`, pointing at Supabase staging.
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
@@ -142,11 +131,11 @@ npm run generate -w packages/api-sdk
   `.github/workflows/deploy-production.yml` (`workflow_dispatch`, typed confirmation,
   and the `production` environment's Required reviewers).
 - **Supabase:** Dedicated production project. Fully isolated users, database, storage.
-- **Web App:** `app.frapp.live` (Vercel, production deployment created by the workflow
-  through the API with `target: production`) — the guardrail preflight no longer blocks the
-  dispatch (#1579, 2026-09-02), but the workflow's Vercel step still passes a `gitSource` that
-  needs the retired integration, so the production Vercel deploy is expected to fail until #1578.
-  See §6 **Web and Landing (Vercel)**, 2026-09-02.
+- **Web App:** `app.frapp.live` (Vercel, production deployment created by the workflow, which
+  builds the named commit on the runner with `vercel build --prod` and uploads it with
+  `vercel deploy --prebuilt --prod`). The guardrail preflight stopped blocking the dispatch with
+  #1579, and #1578 replaced the `gitSource` call the retired integration used to serve. See §6
+  **Web and Landing (Vercel)**.
 - **Landing:** `frapp.live` (Vercel, same).
 - **API:** Render production service (`frapp-api-prod`), deployed by commit id through
   the Render API, pointing at Supabase production + Stripe live keys. Render-side
@@ -165,32 +154,22 @@ CI runs as domain-specific parallel jobs on every PR to `main`. Each job is an i
 
 ### CI Job Matrix
 
-| Job                  | What it validates                                                                                    | Blocker?   |
-| -------------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
-| `packages-build`     | Shared packages compile                                                                              | Yes        |
-| `lint-and-typecheck` | ESLint + TypeScript across all workspaces; `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests | Yes        |
-| `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                     | Yes        |
-| `api-tests`          | API Jest unit tests                                                                                  | Yes (hard) |
-| `api-contract-check` | `openapi.json` and `packages/api-sdk/src/types.ts` freshness                                                      | Yes        |
-| `migration-safety`   | Migration filename validation + promotion docs                                                       | Yes        |
-| `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                    | Yes        |
-| `ci-scripts-tests`   | `node --test` over `scripts/ci/__tests__/`, covering the gate and deploy scripts under both `scripts/` and `scripts/ci/` — mostly pure-function tests, several spawning real git repos and shell hooks | Yes        |
-| `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                          | Yes        |
-| `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)      | Yes        |
-| `dependency-audit`   | npm audit gate — non-allowlisted high/critical advisories fail (`scripts/check-npm-audit.mjs`, #618) | Yes |
-| `chapter-directory-seed` | `supabase/seed/chapter_directory.csv` — canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (#840) | Yes |
-| `web-tests`          | `apps/web` unit tests plus the shared packages nothing else covers — `packages/hooks`, `packages/chat-core`, `packages/chat-integrations` | Yes |
-| `changes`            | Path filter deciding whether `web-tests` and `web-responsive-floor` run; asserts nothing itself      | Yes |
-| `web-responsive-floor` | Every dashboard route holds the 375px floor — no horizontal scroll (`apps/web/tests/visual/responsive-floor.spec.ts`, #1152) | Yes |
-| `dependency-cruiser` | Architectural boundaries — API layer direction, package/app separation, cycles — against a committed baseline | Yes |
-| `web-production-build` | Vercel parity — builds web and landing with devDependencies pruned, the shape a production deploy uses | Yes |
-| `duplicate-detection` | jscpd against a repo-wide duplication threshold                                                     | **No — advisory** |
+The roster is not restated here. Every check name, what it validates, and whether it blocks a merge
+or only reports are in
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
+**§ Required Status Checks** — the single hand-kept copy of the `CI_CHECKS` / `DOCS_CHECKS` /
+`DRIFT_CHECKS` arrays in
+[`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs). **Nothing asserts
+that copy.** `npm run check:doc-tables` used to compare the two; it was deleted along with the other
+docs gates, so the roster now stays true only because whoever edits the arrays remembers to edit the
+runbook in the same change. Where they disagree, `required-checks.mjs` is the source and the runbook
+is the stale one. What follows is the CI *model* those checks implement.
 
 `web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
 
-The **Blocker?** column states the *intended* set — every `Yes` above is an entry in `CI_CHECKS` /
-`DOCS_CHECKS` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs),
-with no exceptions — `buildProtectionPayload` appends nothing to the roster, it PUTs the arrays as
+The runbook's roster states the *intended* set — every entry in it is a line in `CI_CHECKS` /
+`DOCS_CHECKS` / `DRIFT_CHECKS` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs),
+with no exceptions in that direction — `buildProtectionPayload` appends nothing to the roster, it PUTs the arrays as
 they stand. (`branch-policy` was the exception this paragraph used to name. It was deleted with the
 `production` branch in #1340.)
 Live branch protection is whatever an admin last applied and can lag the script, so no doc claims
@@ -222,26 +201,37 @@ Two consequences worth holding together:
 - **`check-migration-drift.yml` deliberately still reads its refs from Infisical.** Pointing it at the
   committed file too would make the pair agree by construction, and the fence would assert nothing.
 
-### Additional Docs Checks
+### Additional checks outside `ci.yml`
 
-All three run in `.github/workflows/docs.yml`. **Required?** below is the *intended* set — what
-`DOCS_CHECKS` lists — not live branch protection, which is whatever an admin last applied. See
-[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) for the rollout each one goes through:
+`.github/workflows/docs.yml` has exactly one job, `env-slugs`, running
+[`scripts/check-env-slugs.mjs`](../../scripts/check-env-slugs.mjs) — it asserts that every Infisical
+environment slug it reads names a slug that exists, over the files and directories the script's own
+`SCAN_ROOTS` lists and nowhere else. `.github/workflows/links.yml` has exactly one job,
+`link-check` — lychee, offline, internal markdown links and heading anchors.
+`migration-order`, `migration-drift` and `migration-replay` run in
+`.github/workflows/migration-drift-gate.yml`. Which of them are required, what each validates, and
+why `migration-drift` was demoted out of `DRIFT_CHECKS` are in
+[`GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)
+**§ Required Status Checks**; what each surviving job does is in
+[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md).
 
-| Check            | Provider       | What it validates                               | Required?  |
-| ---------------- | -------------- | ----------------------------------------------- | ---------- |
-| `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Yes — listed in `DOCS_CHECKS`. Whole-tree, so it can block a PR over a citation in a doc that PR never touched; that trade was taken deliberately ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
-| `migration-order` | GitHub Actions | No migration this change **introduces** sorts before a version staging or production has already applied (`check-migration-order.mjs`, read-only against the Supabase Management API) | Yes — listed in `DRIFT_CHECKS`. Reads head-minus-base, so a change touching no migrations makes zero network calls and cannot block a PR over unrelated state, and a PR that fixes an ordering fault turns its own check green. Checks **both** environments: #1373 was invisible to `migration-replay` because the replay rebuilds *production's* state and production had not applied the newer migration; staging had |
-| `migration-drift` | GitHub Actions | Staging holds every migration on `main` (`check-migration-drift-gate.mjs`, read-only against the Supabase Management API) | **No — demoted from `DRIFT_CHECKS`.** It measures whether *staging* is behind *main*, which no PR can answer, so as a required check it was a repo-wide merge-freeze switch — #1373 used it as one and made every open PR unmergeable. It still runs and reports on every PR, and the scheduled [`check-migration-drift.yml`](../../.github/workflows/check-migration-drift.yml) covers the same ground daily across staging *and* production with a self-closing P1 issue |
-| `migration-replay` | GitHub Actions | Pending migrations apply cleanly to a disposable Supabase stack rebuilt at production's applied state (`check-migration-replay.mjs`; production access is one read-only Management API call) | Yes — listed in `DRIFT_CHECKS`. Runs the replay only when the PR touches `supabase/migrations/**` and passes in seconds otherwise, so it cannot block a PR over unrelated state. A pending migration that sorts before production's newest applied version is a hard failure here too: the CLI refuses rather than reordering. A migration applied on production but missing from the repo is a hard failure: the state cannot be reconstructed, and `db push` would refuse anyway |
-| `doc-tables`     | GitHub Actions | Hand-copied required-check rosters and per-job suite lists match `CI_CHECKS` / `DOCS_CHECKS` and `ci.yml` (`check-doc-tables.mjs`, whole-tree) | Not yet — reports only, pending the same promotion step |
+Four docs gates used to run here — `docs-structure`, `doc-paths`, `doc-refs` and `doc-tables` — and
+all four are **deleted**, with their scripts, their allowlists and their `check:doc-*` npm scripts.
+`doc-paths` was the only one ever promoted to required, which is why `DOCS_CHECKS` is now an empty
+array; the comment on that array in
+[`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs) records the trade,
+and what replaced them is the standard in
+[`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md) plus the docs
+angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus for documentation
+defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
+`.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
-`.claude/hooks/pre-push-review-gate.sh` hook blocks the first `git push` of each branch HEAD and requires
-one review pass on the diff before the branch is pushed — **`/diff-review`**, which any agent can always
-invoke, or the richer bundled `/code-review`, which is model-invocable only when the turn's prompt carries
-`/code-review` whitespace-delimited on both sides (backticks and trailing punctuation defeat it) and
-does not write the gate marker. Review sub-agents inherit the
+`.claude/hooks/pre-push-review-gate.sh` hook gates `git push` on *evidence* that a review ran for the
+current HEAD — evidence, not an attempt, so retrying a denied push does not satisfy it. A push that
+publishes no objects (a dry run, or a `--delete` ref deletion) is exempt, having no diff to review.
+Which review to run, how the evidence is recorded, and the livelock release are the runbook's to
+state, not this roster's. Review sub-agents inherit the
 session model (Opus). There is no `claude-review-gate` required check, no `claude-review.yml` workflow, and no
 `CLAUDE_CODE_OAUTH_TOKEN` secret.
 
@@ -253,7 +243,7 @@ session model (Opus). There is no `claude-review-gate` required check, no `claud
 
 - **The frontend build gate is production-shaped, not preview-shaped.** `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install, because nothing in CI ran `next build` before #1374 and that gap took production down twice (#1331, #1372). Staging frontends are still verified through Vercel preview deployments off `main`; production deployments are created by `deploy-production.yml`. The build-shape difference between the two is a recorded trade-off — ADR-20 decision 3. **The staging half of that has not run since the unlink** (landing 2026-09-01, web 2026-09-02): with both Vercel projects unlinked from Git (ADR-21) no push produces a preview, so no Vercel build of either frontend happens on merge any more — see §6 **Web and Landing (Vercel)**.
 - **No placeholder secrets.** CI never sets `NEXT_PUBLIC_SUPABASE_URL` or similar to dummy values. All env-dependent builds happen in the provider (Vercel/Render).
-- **API contract check uses git-diff.** The `openapi.json` is committed as a source-of-truth artifact. CI checks freshness via `git diff` — it does not bootstrap the NestJS application, avoiding the need for Supabase/Stripe credentials in CI.
+- **The API contract check regenerates; it is not a git-diff heuristic.** `npm run check:api-contract` (`scripts/check-api-contract-drift.mjs`) builds the shared packages, rebuilds `apps/api/openapi.json` and `packages/api-sdk/src/types.ts`, and fails on any difference from the committed copies — the git-diff heuristic it replaced false-positived on contract-neutral controller edits. The Swagger export does bootstrap NestJS, but only to build the document, so placeholder credentials suffice and no Supabase/Stripe secrets are needed in CI. Details: [`../architecture/README.md`](../architecture/README.md) § 10 API Contract Strategy.
 - **Mobile CI is lint + typecheck only.** EAS builds are expensive and slow; they run on-demand, not per-PR.
 
 If any required check fails, the PR cannot be merged. Branch protection rules enforce this for all users, including admins.
@@ -262,27 +252,28 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 
 ## 6. Continuous Deployment (CD)
 
-> **Current state (2026-09-02) — the Vercel half of this section is not running.** Both Vercel
-> projects were deliberately unlinked from Git (landing 2026-09-01, web 2026-09-02), so no push
-> deploys web or landing. The guardrails preflight inside `deploy-production.yml` briefly blocked
-> production deploys of every service; **#1579 repaired that the same day** by inverting the Vercel
-> assertion to require the *absence* of a Git link, and removed `verify-deployments.yml`'s two
-> Vercel verify jobs, which had nothing left to verify. Render **staging** (the `deploy-api.yml`
-> push path) and EAS were unaffected throughout. What follows stays written as intended. **ADR-21**
-> in [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
-> the freeze points and the live breakages, with a 2026-09-02 amendment recording what #1579
-> changed; the remaining repair work is **#1578** (CI-driven Vercel deploys).
+> **Current state (2026-09-04) — Vercel deploys run from CI.** Both Vercel projects were
+> deliberately unlinked from Git (landing 2026-09-01, web 2026-09-02), so no push produces a
+> deployment and nothing about this section depends on the Git integration any more. The three
+> repairs that took: **#1579** (2026-09-02) inverted the production-guardrails Vercel assertion to
+> require the *absence* of a Git link and removed `verify-deployments.yml`'s two Vercel verify jobs;
+> **#1578** (2026-09-04) built the replacement deploys — `vercel build` on the runner, then
+> `vercel deploy --prebuilt`, for both staging and production. Render **staging** (the
+> `deploy-api.yml` push path) and EAS were unaffected throughout. **ADR-21** in
+> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> the freeze points and the repairs.
 
-Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-api.yml` runs database migrations and triggers the Render staging deploy, and Vercel produces a Preview deployment from the same push. Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
+Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-api.yml` runs database migrations and triggers the Render staging deploy, and `deploy-vercel-staging.yml` builds and uploads web and landing. Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
 
 ### Deploy Pipeline (on merge)
 
 ```text
 staging:     merge to main → CI passes → DB migration (dry-run then apply) → API deploy (Render)
-             Vercel preview deployments are push-triggered from `main` and proceed in parallel
+             → in parallel, deploy-vercel-staging.yml: vercel build + deploy --prebuilt
+               (web then landing), then alias the staging hostnames
 production:  dispatch a SHA → validate (ancestor of main + CI green) → provider preflight
-             → migration replay → apply → Render deploy by commit → Vercel production
-             build → tag
+             → migration replay → apply → Render deploy by commit → vercel build --prod
+             + deploy --prebuilt --prod → tag
 ```
 
 Production deployments run only when a human dispatches **Deploy production** with a
@@ -295,34 +286,36 @@ secrets.
 
 ### Web and Landing (Vercel)
 
-> **Current state (2026-09-02) — both projects are unlinked from Git** (Vercel reports
-> `link: null` for both), so nothing below that depends on the Git integration is running: no push
-> produces a preview, and both staging hosts are frozen at their last Git build — landing `2bf143b`
-> (2026-09-01T20:19Z) and web `0372c6d` (2026-09-02T02:41:42Z). The bullets below are kept as the
-> intended model, and the `git.deploymentEnabled` and `ignoreCommand` keys stay in both
-> `vercel.json` files: they are the versioned form of settings that are otherwise dashboard-only, so
-> re-linking Git must not find them missing. **ADR-21** in
+> **Current state (2026-09-04) — both projects are unlinked from Git** (Vercel reports
+> `link: null` for both) and **all deploys come from CI**. **ADR-21** in
 > [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
-> the per-project freeze points and the live breakages. **#1579** landed 2026-09-02 — the
-> production-guardrails assertion now requires the *absence* of a Git link, and the two
-> `verify-deployments.yml` Vercel verify jobs were removed. The remaining repair work is
-> **#1578** (CI/CD stage 7 — `vercel build` plus `vercel deploy --prebuilt --prod` from Actions,
-> designed but not built).
+> the per-project freeze points and the repairs; **#1579** (2026-09-02) fixed the guardrails half
+> and **#1578** (2026-09-04) built the deploys described below.
 
-- Push to `main` triggers **preview** Vercel deployments (staging domains).
-- Production deployments are **created by the workflow**, not by a push: a fresh build of
-  the named commit with `target: production`, so it compiles against Production
-  environment variables. Promoting a `main` preview instead would ship a bundle with the
+- **Staging:** `deploy-vercel-staging.yml` runs after CI succeeds on `main` (a `workflow_run`
+  trigger, like `deploy-api.yml` — a push trigger would deploy before CI finished). It runs
+  `vercel pull --environment=preview`, `vercel build`, then `vercel deploy --prebuilt` for web
+  and then landing, and finally points `app.staging.frapp.live` and `staging.frapp.live` at the
+  new deployments. Nothing is push-triggered on Vercel any more.
+- **Production** deployments are **created by the workflow**, not by a push: a fresh build of
+  the named commit with `vercel build --prod`, so it compiles against Production
+  environment variables. Promoting a staging build instead would ship a bundle with the
   staging API URL and staging Supabase keys inlined at build time.
-- Feature/PR branches do not auto-deploy on Vercel.
-- Neither app skips builds. Both pin `ignoreCommand: "exit 1"` in `vercel.json` — an
-  explicit *always build*, since Vercel reads exit 0 as "ignore this build" and exit 1 as
-  "continue". This replaced `npx turbo-ignore <app>`, which skipped a production release
-  by diffing it against the `main` preview of the same commit (run 33275321347). The key is
-  set rather than removed: `ignoreCommand` overrides the project's dashboard Ignored Build
-  Step, so deleting it would hand the decision back to unversioned dashboard state.
-- Branch filtering is controlled with `git.deploymentEnabled` in each app's `vercel.json` (`main` enabled, all others disabled). Production deployments bypass branch triggers entirely: `deploy-production.yml` creates them through the Vercel API with `target: production`.
-- Vercel detects the monorepo structure and builds the appropriate app via `vercel.json` build commands.
+- Every deployment CI creates is stamped `--meta githubCommitSha=<sha>`. A `--prebuilt`
+  upload carries no git metadata of its own, and the named-commit guarantee (ADR-19), the
+  staging-alias lookup and the observer's per-branch supersession test all read it back.
+- Web and landing build **sequentially** in one job: `vercel build` writes `.vercel/output`
+  into the working tree, so two concurrent builds in one checkout would overwrite each other.
+- Feature/PR branches do not deploy on Vercel.
+- **`git.deploymentEnabled` and `ignoreCommand: "exit 1"` in both `vercel.json` files are now
+  inert** — they govern the Git integration's build pipeline, and there is no integration.
+  They are **kept deliberately** (ADR-21: *do not delete either key*): they are the versioned
+  form of settings that are otherwise dashboard-only, so re-linking Git must not find them
+  missing. `ignoreCommand` originally replaced `npx turbo-ignore <app>`, which skipped a
+  production release by diffing it against the `main` preview of the same commit
+  (run 33275321347); that reasoning governs again the moment the integration is restored.
+- Vercel detects the monorepo structure from each project's Root Directory, which
+  `vercel pull` fetches into `.vercel/` before the build.
 
 ### API (Render)
 
@@ -342,7 +335,7 @@ secrets.
 
 ### Deploy Ordering
 
-**Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge — the Vercel half of this default has not run since the unlink (ADR-21; landing 2026-09-01, web 2026-09-02); see §6 **Web and Landing (Vercel)**. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
+**Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge — as two workflows both gated on CI success (`deploy-vercel-staging.yml` and `deploy-api.yml`) since #1578 restored the Vercel half; see §6 **Web and Landing (Vercel)**. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
 
 **Exception — breaking API changes:** Use the split-PR flow in `docs/internal/quality/PR_REVIEW_PROCESS.md` when compatibility is not maintained:
 
@@ -350,7 +343,7 @@ secrets.
 2. Verify the API health check passes.
 3. Merge frontend follow-up PRs only after API verification.
 
-Because Vercel deploys are push-triggered, hold frontend merges until the API is confirmed healthy. **Since 2026-09-02 no Vercel deploy is push-triggered at all** — both projects are unlinked from Git (ADR-21), so a frontend merge currently reaches no deployed host and this ordering rule describes what must hold once CI/CD stage 7 (#1578) restores an automatic path, not anything running today. Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
+Because a merge to `main` deploys the frontends once CI passes, hold frontend merges until the API is confirmed healthy. No Vercel deploy is push-*triggered* since the ADR-21 unlink, but #1578 restored the automatic path through `deploy-vercel-staging.yml`, so this ordering rule governs again: the gap between merge and deployed frontend is now CI plus a build, not indefinite. Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
 
 ### Release labels for version tags
 
@@ -377,8 +370,8 @@ Secrets are centrally managed in **Infisical** (free tier) with automatic syncs 
 | Property         | Value                                                  |
 | ---------------- | ------------------------------------------------------ |
 | **Project**      | Frapp                                                  |
-| **Environments** | `local`, `staging`, `production`                       |
-| **Syncs**        | Vercel (×3 apps), Render (×2 services), GitHub Actions |
+| **Environments** | `dev`, `staging`, `prod` — slugs, not display names. Owned by [`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) § Infisical Environments |
+| **Syncs**        | Not restated here — the live inventory is [`SECRETS_MANAGEMENT.md`](../../docs/internal/environment/SECRETS_MANAGEMENT.md) § 5. **There is no GitHub Actions sync**; CI pulls at job time via Universal Auth |
 
 ### How It Works
 
@@ -392,7 +385,7 @@ Three secrets live directly in GitHub — these bootstrap the Infisical connecti
 
 | Secret                          | Purpose                                           |
 | ------------------------------- | ------------------------------------------------- |
-| `INFISICAL_MACHINE_IDENTITY_ID` | OIDC auth to Infisical                            |
+| `INFISICAL_MACHINE_IDENTITY_ID` | Universal-auth machine identity for Infisical      |
 | `INFISICAL_CLIENT_SECRET`       | Client Secret for Infisical machine identity auth |
 | `INFISICAL_PROJECT_ID`          | Project identifier                                |
 

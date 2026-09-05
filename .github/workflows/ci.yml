@@ -850,8 +850,10 @@ jobs:
   # ── Secret scanning (gitleaks; ADR-13 push-protection replacement) ──────
   # Fast, standalone gate: no `npm ci` (gitleaks is a single pinned binary). Scans
   # only the PR/push commit range against .gitleaks.toml. The pre-commit hook is the
-  # local primary; this is the enforced server-side net that replaces the secret
-  # push-protection lost when the repo went private. See docs/internal/ci-cd/SECRET_SCANNING.md.
+  # local primary; this is the enforced server-side net. It was adopted to replace the
+  # secret push-protection lost when the repo went private — the repo is public again, so
+  # that premise has lapsed and the gitleaks-vs-GHAS choice is unmade rather than settled.
+  # See docs/internal/ci-cd/SECRET_SCANNING.md.
   secret-scan:
     runs-on: ubuntu-latest
     permissions:

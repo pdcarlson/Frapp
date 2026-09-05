@@ -15,17 +15,15 @@ description: >
 > Local-stack work: [`testing`](../testing/SKILL.md). Provider runtime truth via MCP:
 > [`infrastructure-research`](../infrastructure-research/SKILL.md).
 
-> **2026-09-02 — the web and landing staging hosts are frozen; the API and Supabase halves are
-> not.** Both Vercel projects were unlinked from Git (`frapp-landing` 2026-09-01, `frapp-web`
-> 2026-09-02), so **nothing deploys staging web or landing on merge**: those hosts still serve
-> their last Git builds — landing `2bf143b`, web `0372c6d` — until the CI-driven replacement in
-> [#1578](https://github.com/pdcarlson/Frapp/issues/1578) lands. A web or landing check against
-> staging therefore tests an **old build**, not your change, so it can neither confirm nor refute
-> a claim about a commit merged since. The **API (Render staging) and hosted Supabase** halves of
-> this skill are unaffected and remain the reason to use it. Canonical record: **ADR-21** in
-> [`spec/architecture/README.md`](../../../spec/architecture/README.md). The Vercel verify jobs
-> that were failing on this are gone — [#1579](https://github.com/pdcarlson/Frapp/issues/1579)
-> removed them on 2026-09-02, so a red `main` is once again a real signal.
+> **2026-09-04 — all four staging halves are live again.** Both Vercel projects are unlinked from
+> Git (`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so no *push* deploys them — but
+> [#1578](https://github.com/pdcarlson/Frapp/issues/1578) landed the CI-driven replacement:
+> `deploy-vercel-staging.yml` builds and uploads web and landing after CI succeeds on `main`, then
+> aliases both hostnames. A web or landing check against staging therefore tests the current build
+> again, as it did before the unlink; between 2026-09-01 and 2026-09-04 it did not, because those
+> hosts were frozen at landing `2bf143b` and web `0372c6d`. Allow for the deploy to finish — CI
+> then a two-project build — before reading a host as stale. Canonical record: **ADR-21** in
+> [`spec/architecture/README.md`](../../../spec/architecture/README.md).
 
 Sandbox sessions can reach **deployed staging** when the cloud environment's network
 allowlist carries the live-egress lines

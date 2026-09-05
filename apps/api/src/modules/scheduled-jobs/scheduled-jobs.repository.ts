@@ -4,6 +4,9 @@ import type {
   FrappSupabaseClient,
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
+// Aliased: the private method below wraps this one to swallow errors, and the
+// alias keeps which of the two is which readable at the call site.
+import { fetchAllPages as fetchAllPagesOrThrow } from '../../infrastructure/supabase/supabase.utils';
 import { TaskStatus } from '#domain/entities';
 
 // Re-exported from the entity so the sweep signatures and the typed
@@ -19,15 +22,16 @@ const UNIQUE_VIOLATION = '23505';
 /**
  * PostgREST caps responses at `max_rows` (1000 — `supabase/config.toml`) and
  * signals truncation with a plain 200 and a null error, so an unpaged sweep
- * query would drop rows silently and permanently. Page through instead, as
- * `SupabasePollVoteRepository` already does.
+ * query would drop rows silently and permanently. Page through instead, via
+ * the shared `fetchAllPages` in `infrastructure/supabase/supabase.utils.ts`.
  *
- * Deliberately **below** `max_rows`, not equal to it. Paging stops on the
- * first short page, so a page size at the cap only works while the two
- * numbers happen to match: lower `max_rows` and every first page comes back
- * short, which reads as "end of results" and silently truncates the sweep —
- * the exact failure the paging exists to prevent. With headroom, a short page
- * unambiguously means the rows ran out.
+ * This is a request size, not an assumption about the server's cap. An earlier
+ * version of this comment argued the value had to sit **below** `max_rows`
+ * because "a short page unambiguously means the rows ran out" — that rule was
+ * the bug (#1628), not the safeguard. The shared helper stops only on an
+ * *empty* page and advances by the rows actually returned, so a cap at or
+ * below this value now costs extra round-trips rather than dropped rows, and
+ * the headroom is no longer load-bearing.
  */
 const SWEEP_PAGE_SIZE = 500;
 
@@ -390,6 +394,11 @@ export class ScheduledJobsRepository {
    * Read every page of a sweep query. Returns `[]` on error: a sweep that
    * cannot read its candidates must not send a partial batch, and the next
    * tick retries.
+   *
+   * The paging itself is the shared `fetchAllPages`, which throws. Swallowing
+   * that throw here is what keeps this repository's contract — the rows read
+   * before the failure are discarded with them, exactly as when this loop was
+   * hand-rolled.
    */
   private async fetchAllPages<T>(
     errorMessage: string,
@@ -398,19 +407,11 @@ export class ScheduledJobsRepository {
       to: number,
     ) => PromiseLike<{ data: T[] | null; error: unknown }>,
   ): Promise<T[]> {
-    const all: T[] = [];
-
-    for (let from = 0; ; from += SWEEP_PAGE_SIZE) {
-      const { data, error } = await page(from, from + SWEEP_PAGE_SIZE - 1);
-
-      if (error) {
-        this.logger.error(errorMessage, error);
-        return [];
-      }
-
-      const rows = data ?? [];
-      all.push(...rows);
-      if (rows.length < SWEEP_PAGE_SIZE) return all;
+    try {
+      return await fetchAllPagesOrThrow<T>(page, { pageSize: SWEEP_PAGE_SIZE });
+    } catch (error) {
+      this.logger.error(errorMessage, error);
+      return [];
     }
   }
 }

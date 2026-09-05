@@ -95,18 +95,71 @@ failure mode, not a hypothetical.
 - **Migration safety.** Migrations must pass `npm run check:migration-safety` and replay under
   PGlite (`npm run check:pglite-migrations`). Flag anything that breaks the PGlite path — a
   `create extension` is the known trap. Flag destructive DDL without a stated backfill or rollback.
-- **Doc placement and duplication.** No check requires a doc edit — the gate that did was deleted in
-  #1597 for producing filler — so do **not** flag a PR for lacking one. Flag the opposite. Two shapes
-  of filler are findings, and the second is the common one:
-  - A new **stray file** added so the change looks documented.
-  - A new **stray section or bullet appended to an existing doc** whose subject does not match the
-    doc it landed in — a "Maintenance Log", a "Notes" list, a changelog entry in a reference doc.
-    Test it by asking what the doc is *for*: would a reader who came for that topic want this
-    paragraph? If not, it is an unowned claim in someone's canonical doc, and the next reader will
-    believe it.
-  - A fact **restated** in a second doc rather than linked. One canonical place per fact
-    (`docs/internal/DOCUMENTATION_CONVENTIONS.md` hard rule 5); a duplicate is how a wrong one
-    spreads. If the PR states something a doc already says, that is a finding.
+- **Docs — the reviewer.** The standard is
+  [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md); this angle
+  reads a diff against it. No check requires a doc edit — the gate that did was deleted in #1597 for
+  producing filler — so never flag a PR for lacking one. Flag these. Every search below is the
+  `Grep` tool — `git grep` is not in this skill's `allowed-tools`, so do not reach for it.
+  - **Section references.** For every heading the diff renames or removes — including a
+    `* ## Heading` inside a block comment, since source files carry headings too — take the *old*
+    text off the diff's `-` side and search the tree for it: the bare heading, the section-symbol
+    forms (`§ Heading`, `§ "Heading"`), and the `#heading-slug` anchor. Search the whole tree, not
+    only `docs/` and `spec/` — such references live in source comments, and in tests that key on a
+    doc's section titles, where a renamed heading fails a suite. A prose `§` reference is validated
+    by nothing; a markdown link with an `#anchor` under the trees `.github/workflows/links.yml`
+    walks is validated by that checker, so prefer the link in anything you write.
+  - **Deletion sweep.** For every file, exported symbol, npm script, workflow job id or command the
+    diff deletes, search the corpus for prose naming it. A deletion is not finished while a doc
+    still gives instructions about the deleted thing. Separate a live instruction from a
+    deliberately historical reference: a removals table or a dated amendment *needs* the dead name
+    and is not a finding; a step someone will try to follow is. When you cannot tell, treat it as
+    live.
+  - **Roster drift.** For every array, job id, workspace list, table or version constant the diff
+    changes, search for a doc that restates it by hand. This is the case that reads as a pure code
+    change while the breakage sits in a doc nobody on the PR opened.
+
+    The semantic sweep in [#1635](https://github.com/pdcarlson/Frapp/issues/1635) adjudicated 57
+    duplicated facts and found **52 already had a false copy in the tree**. These are the sources
+    whose rosters that sweep found restated in prose — when the diff touches one, search the corpus
+    before you approve it. The list is the useful residue of that sweep's per-fact analysis, not an
+    exhaustive inventory; treat a source not named here the same way.
+
+    | Source of truth | Search these when it changes |
+    | --- | --- |
+    | `scripts/ci/lib/required-checks.mjs` (`CI_CHECKS` / `DOCS_CHECKS` / `DRIFT_CHECKS`) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `spec/environments/README.md`, `QUALITY_GATES.md`, `docs/README.md`, `docs/hooks/README.md` |
+    | `.github/workflows/ci.yml` job steps (esp. which workspaces `web-tests` runs) | `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`, `docs/hooks/README.md` |
+    | `CHAT_MESSAGE_KINDS` (declared in **three** files: `@repo/validation`, `chat.entity.ts`, `@repo/chat-core`) | `spec/behavior/chat/README.md`, `spec/architecture/README.md` |
+    | `push-rules.ts:defaultLevelFor` | `spec/behavior/notifications.md`, `spec/architecture/README.md` |
+    | `packages/validation/src/upload-allowlists.ts` (`MAX_UPLOAD_BYTES`, kinds) — **per-bucket caps differ**; `config.toml` is not the same number | `content-validation.md`, `spec/architecture/README.md` § 7, `AUTHORIZATION_MODEL.md` |
+    | `buildChapterConfigFromArchetype` (which seeds are `structuredClone`d) | `spec/engineering.md`, `spec/architecture/README.md` |
+    | `DEFAULT_SYSTEM_ROLES` / `DEFAULT_CHANNELS` / `SystemPermissions` | `spec/behavior/rbac.md`, `spec/behavior/chat/README.md`, `spec/product/modules.md`, `AUTHORIZATION_MODEL.md` |
+    | `scripts/check-env-slugs.mjs:INFISICAL_ENV_SLUGS` | `ENV_REFERENCE.md`, `SECRETS_MANAGEMENT.md`, `docs/guides/env-config.md`, `spec/environments/README.md` |
+    | Storage bucket declarations in `supabase/migrations/` | `spec/architecture/README.md` § 7, `AUTHORIZATION_MODEL.md` |
+    | `apps/web/tests/visual/routes.ts` | `apps/web/tests/visual/README.md` |
+    | The exact React pin — every `package.json` naming it, root `overrides` included (`git ls-files '*package.json' \| xargs grep -ln '"react": "19'`) | `AGENTS.md`, `MOBILE_TESTING.md`, `SECURITY_FIXES.md` |
+
+    **A hand-maintained count is the highest-risk form.** Prefer deleting it and linking over
+    syncing it — that is what the standard says, and a count with no mechanism behind it is a future
+    contradiction whether or not it is true today.
+  - **Placement and duplication.** A new or moved fact belongs in the home the standard names — not
+    a stray file added so the change looks documented, and not an unowned section appended to
+    whichever doc was open; the test is what that doc is *for*. Two homes for one fact is a defect:
+    merge them and link, rather than syncing both.
+  - **The two rewrite defects.** Flag a rewrite that states more than the original verified — one
+    case widened into a claim about all of them. Flag an edit that drops a dated stamp, a run link,
+    a run id, a PR number, or the command behind a figure: that is evidence, not narration.
+
+  **What this angle dropped.** CI used to scan the whole corpus every run: cited paths resolve,
+  filename references resolve, hand-copied rosters match their source, and every doc sits in a
+  declared home under a conforming name. This angle inherits only the slice of each that the
+  diff makes visible, and doc naming and placement are now conventions the standard states rather
+  than rules a machine enforces. **It cannot catch drift between two files when neither is in the
+  diff.** Nor does CI close that gap: what still runs and over which trees — including the fixed
+  `SCAN_ROOTS` list the env-slug check reads, which is narrower than the corpus and does not include
+  `.claude/` — is in [`DOCS_CI.md`](../../../docs/internal/ci-cd/DOCS_CI.md), which is its one home;
+  read it there rather than restating it here. That is the accepted cost of deleting the gates: a
+  clean review here is not evidence that the corpus is clean, and must never be reported as if it
+  were.
 - **Blast radius, not diff radius.** "Pre-existing" is not grounds to drop a candidate, and a finder
   that drops one for that reason is under-reporting. Judge every such candidate against
   [`spec/engineering.md`](../../../spec/engineering.md#changing-existing-code) § Changing existing
@@ -134,7 +187,9 @@ Discard everything `REFUTED`. Run verifiers in parallel where there are several.
 
 ## Phase 3 — Synthesize and report
 
-Rank: correctness and security above cleanups; `CONFIRMED` above `PLAUSIBLE`. Merge findings that
+Rank: correctness and security above cleanups; `CONFIRMED` above `PLAUSIBLE`. A docs finding that
+names a concrete broken pointer, an orphaned section reference, or a removed dated stamp is a
+**correctness** finding, not a cleanup, and is not dropped to fit the cap. Merge findings that
 share one root cause into a single entry. Cap at the effort level's limit.
 
 Report with **one `ReportFindings` call**, most severe first, setting `level` to the effort used and

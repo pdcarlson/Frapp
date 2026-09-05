@@ -31,28 +31,60 @@
  * hand-synced rosters drift" — and #1378 instead fixed the backward-looking
  * problem structurally, by intersecting the expected set with the job ids the
  * deployed commit's own workflows define (`jobIdsAtRef`, with a narrowing
- * floor). One roster, read two ways, is the shape that survives.
+ * floor). One roster, read two ways, is the shape that survives. (The
+ * doc-table checker that quote names was itself deleted later, for the reason
+ * in the next paragraph. The argument against a second roster is unaffected —
+ * it is the same argument, applied once more.)
  *
- * `scripts/check-doc-tables.mjs` parses this file as SOURCE TEXT to police the
- * doc tables that document these checks. Keep the three arrays as top-level
- * `export const NAME = [` declarations with one quoted string per line.
+ * This file is the ONE home for these names and for what each check validates.
+ * A prose table restating them is a second home, and the two drift: keep the
+ * one-line description beside its array entry, where it lands in the diff of
+ * any change that edits the entry, and point docs here instead of copying.
  */
 
 // ── Required status checks ──────────────────────────────────────────────────
 // These must match check-run names exactly as reported on PRs.
 
 export const CI_CHECKS = [
+  // Shared packages compile.
   "packages-build",
+  // ESLint + TypeScript (all workspaces); `npm run build -w apps/api`
+  // (`nest build`, Render parity); landing plus `@repo/validation`,
+  // `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`
+  // and `@repo/api-sdk` unit tests; plus `npm run check:brand-assets`.
   "lint-and-typecheck",
+  // `docker build -f apps/api/Dockerfile .` — the API image compile path.
   "api-docker-build",
+  // API Jest suites: `test`, `test:e2e` and `test:ai-evals`, all three
+  // unconditional (`.github/workflows/ci.yml`). Not unit tests alone.
   "api-tests",
+  // openapi.json + api-sdk freshness.
   "api-contract-check",
+  // Migration filename + promotion/rollback doc validation.
   "migration-safety",
+  // Mobile lint + typecheck + Vitest unit tests.
   "mobile-validate",
+  // `node --test` over `scripts/ci/__tests__/` (`npm run test:ci-scripts`),
+  // covering the gate and deploy scripts under both `scripts/` and
+  // `scripts/ci/`.
   "ci-scripts-tests",
   // Secret scanning (gitleaks; ADR-13 push-protection replacement). ROLLOUT: this is
   // required only once the secret-scan job exists on the target branch and has run
   // green — otherwise every PR blocks on a missing required check.
+  //
+  // Every other ROLLOUT note below says "same caveat as secret-scan" and inherits
+  // this clause with it: promoting a roster entry means APPLYING branch protection,
+  // which is a human step with an admin PAT. An agent session runs
+  // `npm run configure:branch-protection:verify`, which writes nothing. The bare
+  // `npm run configure:branch-protection` is a live PUT of the whole payload, and
+  // `--dry-run` without the `--` separator is swallowed by npm and applies anyway.
+  //
+  // Inheritance covers the notes that only point here. A note that NAMES the bare
+  // command spells the guard out itself, because a reader who stops at that note
+  // never reaches this one — `branch-protection-diff.test.mjs` enforces exactly
+  // that rule, so deleting this paragraph fails the suite rather than silently
+  // orphaning the nine notes that delegate to it. (Eleven ROLLOUT notes in all:
+  // this one and web-production-build carry the guard; the other nine delegate.)
   "secret-scan",
   // Clean-checkout guard: runs `npm ci && npm run check-types && npm run lint` with
   // no prebuilt shared packages, so a regression in turbo.json's `^build` dependency
@@ -128,7 +160,7 @@ export const CI_CHECKS = [
   // Chromium revisions and font rendering, so blocking merges on them was the worse
   // trade. This suite stores no baseline and compares no pixels — it reads one integer
   // per route and compares it to 375 — so it has none of those failure modes and
-  // inherited the exemption purely by sharing a directory. #1153 split it into its own
+  // inherited the exemption purely by sharing a directory. #1152 split it into its own
   // job; the snapshot job has since been deleted, and this one now runs the whole
   // `apps/web/tests/visual/` directory rather than a tagged slice of it.
   //
@@ -162,9 +194,13 @@ export const CI_CHECKS = [
   // unrecorded until the production deploy failed on it.
   //
   // ROLLOUT: same caveat as secret-scan — required only once the
-  // web-production-build job exists on the target branch and has run green. Run
-  // `npm run configure:branch-protection` AFTER the PR adding the job merges, not
-  // before, or every open PR blocks on a check that does not exist yet.
+  // web-production-build job exists on the target branch and has run green. The
+  // apply must happen AFTER the PR adding the job merges, not before, or every
+  // open PR blocks on a check that does not exist yet. Applying is a human step
+  // with an admin PAT — ask for `npm run configure:branch-protection` to be run;
+  // an agent session runs `npm run configure:branch-protection:verify`, which
+  // writes nothing. See the secret-scan note above for why the bare command and
+  // the missing-`--` form are both hazards.
   "web-production-build",
   // NOT here on purpose: `duplicate-detection` (jscpd). jscpd has no clone-level
   // baseline, so the only lever is a repo-wide duplication percentage — too coarse
@@ -190,25 +226,24 @@ export const DOCS_CHECKS = [
   // 619 merged PRs carried the waiver label — and the waiver did not exist for
   // the gate's first 174 days.
   //
-  // The gate, its script and its label are gone as of #1597. What replaced it
-  // is not another gate: the surviving docs checks are ASSERTIVE — they check
-  // that a pointer resolves or a roster matches, cost nothing when you are
-  // right, and cannot be satisfied by noise. Do not add a mandatory-write gate
-  // back. If a fact needs one home, give it one home; a check that a doc was
-  // *touched* can never tell you it was the right doc.
-
-  // Doc path citations: fails when a doc cites a repo path that resolves
-  // nowhere, covering the gap the `Links` gate leaves (lychee validates
-  // markdown links and heading anchors, never `` `inline/code.ts` `` paths).
-  // ROLLOUT: same caveat as secret-scan — required only once the doc-paths job
-  // exists on the target branch and has run green. Deliberately its own job:
-  // this check is whole-tree, so as a required check it can block a PR over a
-  // citation in a doc that PR never touched. Keep it
-  // reporting-only until that trade is accepted knowingly. Promoted 2026-08-21:
-  // the trade is accepted — a stale citation blocking an unrelated PR is the
-  // cheaper failure, since the alternative is citations rotting silently, which
-  // is what the 40-entry allowlist and the drift this gate found both attest to.
-  "doc-paths",
+  // The gate, its script and its label went in #1597. Do not add a
+  // mandatory-write gate back. If a fact needs one home, give it one home; a
+  // check that a doc was *touched* can never tell you it was the right doc.
+  //
+  // This array is EMPTY, and that is the current state rather than a gap
+  // waiting to be filled. `doc-paths` was here — promoted 2026-08-21 after a
+  // year of reporting only, and the only one of the four docs gates ever made
+  // required — `docs-spec-sync` above was required too, which is the case
+  // against re-adding one. It was retired along with the three advisory docs gates
+  // (structure, references, rosters) when the repo chose to state the
+  // documentation standard once and review a diff against it, rather than run
+  // four whole-tree scanners over the corpus. What that trade gives up is
+  // named where the standard lives, not hidden here: a whole-tree scanner sees
+  // a reference in a file the diff never touches, and a reviewer does not.
+  //
+  // Keep the array exported and keep this comment on it. An empty array still
+  // feeds `ALL_REQUIRED_CHECKS`, and this is the exact site where the
+  // temptation to add a coercive check gets acted on.
 ];
 
 // Checks emitted by .github/workflows/migration-drift-gate.yml.

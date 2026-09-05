@@ -1,0 +1,231 @@
+name: Deploy Vercel staging
+
+# STAGING web + landing. Triggered ONLY after the CI workflow completes
+# successfully on `main`, so broken code never reaches a staging host.
+#
+# ── Why this workflow exists (2026-09-04, #1578) ────────────────────────────
+# Until ADR-21 there was no workflow here at all: Vercel's Git integration
+# watched `main` and built a preview for every push, and `verify-deployments.yml`
+# observed the result. The owner unlinked both projects (landing 2026-09-01, web
+# 2026-09-02), so no push produces a deployment and both staging hosts froze at
+# their last Git build — landing `2bf143b`, web `0372c6d`. This is the
+# replacement ADR-21 named: CI builds the commit and uploads it.
+#
+# ── Why `workflow_run` and not `push` ───────────────────────────────────────
+# `verify-deployments.yml` triggers on push, and #1578's acceptance criteria
+# name it as the place staging verification lives. Deploying from there would
+# mean deploying BEFORE CI has passed, because a push-triggered workflow starts
+# immediately — which is the one property `deploy-api.yml`'s header calls out as
+# non-negotiable ("This ensures broken code never deploys"). So the deploy lives
+# here, gated on CI exactly as the API's staging deploy is, and it VERIFIES ITS
+# OWN deployments inline.
+#
+# That is a better fit for the criterion than re-adding jobs to
+# `verify-deployments.yml` would have been. A post-push observer has to go
+# looking for a deployment by SHA and guess whether a missing one is a problem;
+# this workflow is handed the deployment id by the thing that created it, and
+# polls that. `verify-deployments.yml` stays as it is — the Render staging
+# observer — and stays green.
+#
+# ── The one job, two projects ───────────────────────────────────────────────
+# Web and landing deploy in ONE job, sequentially, not as a matrix. `vercel
+# build` writes `.vercel/output` into the working tree, so two builds in one
+# checkout would overwrite each other; a matrix would give each its own runner
+# and its own `npm ci`, which is several minutes of duplicated install to avoid
+# a sequencing constraint the script already handles. See the header of
+# `scripts/ci/deploy-vercel.mjs`.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialise against ITSELF. Two merges close together would otherwise race two
+  # uploads at the same staging hostnames, and the alias steps would point them
+  # at whichever finished last rather than at the newer commit.
+  #
+  # A STATIC group, so this is not the #1379 bug `workflow-concurrency.test.mjs`
+  # pins: that one is a `github.ref`-keyed group on a push-to-main workflow,
+  # where every merge shares one group and cancelling reds the previous commit's
+  # required checks. This group is one bucket by construction and the workflow
+  # emits no required check.
+  #
+  # `cancel-in-progress: false` because this job deploys web and landing
+  # SEQUENTIALLY. Cancelling between the two leaves the staging hosts split
+  # across commits — web on the newer, landing on the older — which is a state
+  # no one would think to look for. Queuing instead costs staging wall-clock and
+  # nothing else, and it is the same reasoning the `db-migrate-production` group
+  # in `deploy-production.yml` applies to a half-run migration.
+  group: deploy-vercel-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # `head_repository` guards against a fork's CI run triggering a deploy with
+    # this repo's secrets — `workflow_run` fires in the base repo's context.
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 45
+    env:
+      VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
+      VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
+      VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+    steps:
+      # The commit CI actually verified, not the tip of `main`. On a busy branch
+      # those differ, and deploying the tip would ship a commit whose CI has not
+      # finished — the exact gap this workflow's trigger exists to close.
+      - name: Checkout the commit CI verified
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # `vercel build` runs the app's own build, which needs the workspace's
+      # dependencies present — this is a monorepo and both apps import from
+      # `packages/`.
+      - name: Install dependencies
+        run: npm ci
+
+      # Pinned, like every other CLI this repo installs in CI (the Supabase CLI
+      # pin lives in `.github/actions/supabase-cli`). An unpinned `@latest`
+      # makes the deploy path depend on whatever Vercel published this morning.
+      - name: Install Vercel CLI
+        run: npm install --global vercel@59.11.7
+
+      # The deployment ids are captured from stdout, the same shape
+      # `deploy-production.yml` uses for `render_deploy_id=`. They are what the
+      # alias step below keys on — see its comment.
+      - name: Build and deploy web + landing to staging
+        id: deploy
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          DEPLOY_TARGET: preview
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/deploy-vercel.mjs | tee "${RUNNER_TEMP:-/tmp}/vercel.log"
+          {
+            echo "web_id=$(grep -oP '^vercel_deployment_id\[frapp-web\]=\K.*' "${RUNNER_TEMP:-/tmp}/vercel.log" | tail -n1)"
+            echo "landing_id=$(grep -oP '^vercel_deployment_id\[frapp-landing\]=\K.*' "${RUNNER_TEMP:-/tmp}/vercel.log" | tail -n1)"
+          } >> "$GITHUB_OUTPUT"
+
+      # Vercel does not always attach the custom hostname to a new deployment,
+      # so the staging domain can lag a READY build.
+      #
+      # Keyed on the deployment ID the step above created, NOT on a search by
+      # commit SHA. The search answers "no match" for reasons unrelated to the
+      # deployment being wrong (a list index that has not caught up, a lost
+      # `--meta` flag) and then exits 0, which would leave the hostname on the
+      # previous build with this job green — the exact symptom #1578 exists to
+      # end. It also has no channel filter, so for a commit deployed to both
+      # channels it could alias the staging hostname to the PRODUCTION build.
+      # An id has neither problem. See the header of the alias script.
+      #
+      # An empty id here is a failure, not a skip — and the explicit `-z` check
+      # below is the ONLY thing that makes it one, so do not trim it as
+      # redundant. `set -u` does not help: the vars are set by the `env:` block,
+      # to the empty string, so they are never *unset*. Nor does the deploy step
+      # fail on its own: under `set -euo pipefail` a `$(grep … | tail -n1)` that
+      # matches nothing still leaves `echo` exiting 0, so an absent id is
+      # written as `web_id=` and the step stays green. Without the check the
+      # alias script would fall back to its SHA-search path and could exit 0
+      # having aliased nothing.
+      - name: Point the staging hostnames at the new deployments
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          WEB_DEPLOYMENT_ID: ${{ steps.deploy.outputs.web_id }}
+          LANDING_DEPLOYMENT_ID: ${{ steps.deploy.outputs.landing_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WEB_DEPLOYMENT_ID:-}" ] || [ -z "${LANDING_DEPLOYMENT_ID:-}" ]; then
+            echo "::error::The deploy step reported no deployment id for one or both projects (web='${WEB_DEPLOYMENT_ID:-}', landing='${LANDING_DEPLOYMENT_ID:-}'). Refusing to alias a staging hostname without knowing what to point it at."
+            exit 1
+          fi
+          VERCEL_DEPLOYMENT_ID="$WEB_DEPLOYMENT_ID" \
+            VERCEL_STAGING_ALIAS=app.staging.frapp.live \
+            SERVICE_LABEL=frapp-web \
+            node scripts/ci/ensure-vercel-staging-alias.mjs
+          VERCEL_DEPLOYMENT_ID="$LANDING_DEPLOYMENT_ID" \
+            VERCEL_STAGING_ALIAS=staging.frapp.live \
+            SERVICE_LABEL=frapp-landing \
+            node scripts/ci/ensure-vercel-staging-alias.mjs
+
+  # ── Deploy outcome: alert on failure ────────────────────────────────────────
+  # Terminal reporting job (#1674). This workflow shipped in #1578 with no
+  # alerting of any kind: a `workflow_run` failure lands on no commit and no PR,
+  # so a failed staging deploy produced no commit status, no PR check and no
+  # notification. Staging web and landing would then quietly stay on the last
+  # commit that did deploy — which is exactly how ADR-21's Git unlink froze both
+  # staging hosts for days before anyone noticed.
+  #
+  # Shares `scripts/ci/deploy-alert.mjs` with `deploy-api.yml` rather than
+  # copying it; `ALERT_CONFIG` selects which workflow's jobs and alert issue to
+  # use. An unknown value there is a hard error, not a silent fallback.
+  deploy-outcome:
+    needs: [deploy]
+    # `always()` alone is NOT enough, and this is the subtle part: a skipped
+    # dependency does not stop a job that uses always(), so on every CI-failed
+    # run `deploy` would be skipped and this would still run and report
+    # "deployed NOTHING". That is true but actively misleading — CI failing is
+    # not a deploy failure, and CI is already red where a human looks. Repeating
+    # the `deploy` job's own conditions means this job runs exactly when a
+    # deploy was genuinely attempted, which is also what makes the script's
+    # "no-op" outcome unreachable for this configuration.
+    #
+    # Keep these three conditions in sync with the `deploy` job above. They are
+    # duplicated because GitHub Actions has no way to share a job-level `if:`,
+    # and `deploy-vercel-staging-workflow.test.mjs` fails if they drift.
+    #
+    # `always()` rather than `!cancelled()`, deliberately: a CANCELLED deploy
+    # does raise the alert, because `FAILED_RESULTS` in deploy-alert.mjs counts
+    # `cancelled` as a failure on purpose ("a cancelled deploy is not a deploy,
+    # and treating it as benign is precisely the green-history failure this
+    # script exists to end"). The visible cost is specific to this workflow:
+    # `cancel-in-progress: false` means merges QUEUE, so cancelling a
+    # superseded queued run by hand is routine, and it will file a P2. That
+    # alert self-closes as soon as the run behind it deploys, so the window is
+    # minutes — accepted rather than silenced, since the alternative suppresses
+    # a real cancelled-mid-deploy case that leaves the two hosts split.
+    if: |
+      always() &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The ONLY job here with any write scope, and it is job-scoped so the
+      # workflow-level `contents: read` above stays exactly as narrow as it was.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # deploy-alert.mjs is dependency-free (global fetch + node:fs on the
+      # runner's preinstalled Node) — no setup-node, no npm ci, matching the
+      # same step in deploy-api.yml.
+      - name: Report deploy outcome and alert on failure
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALERT_CONFIG: deploy-vercel-staging
+          DEPLOY_NEEDS: ${{ toJSON(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/ci/deploy-alert.mjs

@@ -256,9 +256,15 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    amendment).
 7. The shared-package and landing unit suites → `CI / lint-and-typecheck`. The job runs
    `npm run test -w apps/landing` plus `-w @repo/validation`, `@repo/color`, `@repo/formatting`,
-   `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` — the gate-validated roster is the
-   `lint-and-typecheck` row in `CONTRIBUTING.md` (checked by `npm run check:doc-tables`, which
-   does **not** scan this file — trust that row over this one). Run the suites for whatever you
+   `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` — the canonical roster is the
+   `lint-and-typecheck` entry in
+   [`scripts/ci/lib/required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs), the one home
+   for the check names and for what each one validates, kept as a comment beside its array entry so
+   it lands in the diff of any change that edits the entry. The `lint-and-typecheck` row in
+   `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Required Status Checks is a hand-kept
+   copy that nothing asserts — `check:doc-tables` used to compare copies like it, and was deleted
+   with the other docs gates — so read `required-checks.mjs` over that row, and
+   `.github/workflows/ci.yml` when you need the exact step. Run the suites for whatever you
    touched. Not covered by items 1–2: the root has no `test` script and `turbo.json` declares no
    `test` task, so nothing else runs them.
 8. `npm run test -w apps/mobile` → `CI / mobile-validate` (Vitest; likewise not

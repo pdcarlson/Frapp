@@ -65,12 +65,12 @@ composed with **B** or **C** for per-row reads.
 | `alumni` | `GET /` | A+C+P `members:view` | A — chapter-scoped list |
 | `backwork` | `POST /upload-url`, `POST /`, `GET /`, `GET /departments`, `PATCH /departments/:id`, `GET /professors`, `GET /:id`, `DELETE /:id` | A+C+P, `backwork:upload` / `backwork:admin` on writes | B — `resourceRepo.findById(id, chapterId)` (`backwork.service.ts:201,222`) |
 | `billing` | `GET /status`, `POST /checkout`, `POST /portal` | A+C+P `billing:view` / `billing:manage`; `@SubscriptionExempt` | A — chapter is the subject |
-| `chapters/:id/config` | `GET`, `PATCH`, `POST /:id/theme-palette` | A+C+P `chapter_config:view` / `…:manage`\|`*` | A — data always comes from the guard-resolved chapter; `:id` disagreeing with it is rejected with `403 chapter.context.mismatch` (`chapter-config.controller.ts:45,64,80`, `assertMatchesActiveChapter`). See §5.1 |
+| `chapters/:id/config` | `GET`, `PATCH`, `POST /:id/theme-palette` | A+C+P `chapter-config:view` / `…:manage`\|`*` | A — data always comes from the guard-resolved chapter; `:id` disagreeing with it is rejected with `403 chapter.context.mismatch` (`chapter-config.controller.ts:45,64,80`, `assertMatchesActiveChapter`). See §5.1 |
 | `documents` | `POST /upload-url`, `POST /`, `GET /`, `GET /folders`, `POST /folders`, `PATCH /folders/:id`, `DELETE /folders/:id`, `GET /:id`, `DELETE /:id` | A+C+P `members:view`, `chapter_docs:upload` / `…:manage` | B — `findById(id, chapterId)` |
 | `channels` (chat) | 23 routes incl. `GET/POST /:id/messages`, `PATCH/DELETE /messages/:messageId`, pins, reactions, `POST /:id/upload-url` | A+C+P `members:view`, `channels:create` / `channels:manage` | B for categories; **C** for channels and messages — the list filters through `filterAccessibleChannels` and `GET /:id` through `assertChannelAccess` (`chat.service.ts:263-290`), messages via `assertMessageAccess` → `assertChannelAccess` (`chat.service.ts:702-753`). The `channels:manage` mutations resolve chapter-scoped only, by design |
-| `custom-fields` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter_config:view` | B |
-| `custom-roles` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter_config:view` | B — `findByIds(ids, chapterId)` |
-| `audit-log` | `GET` | A+C+P `chapter_config:view` **and** `members:view` (route-level, merged via `PermissionsGuard`'s AND) | A — chapter is the subject; read-only, `chapter_audit_log`'s RLS carries no SELECT policy so only this service-role-backed query can ever return rows |
+| `custom-fields` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter-config:view` on `GET`; the three writes override to `…:manage`\|`*` | B |
+| `custom-roles` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter-config:view` on `GET`; the three writes override to `…:manage`\|`*` | B — `findByIds(ids, chapterId)` |
+| `audit-log` | `GET` | A+C+P `chapter-config:view` **and** `members:view` (route-level, merged via `PermissionsGuard`'s AND) | A — chapter is the subject; read-only, `chapter_audit_log`'s RLS carries no SELECT policy so only this service-role-backed query can ever return rows |
 | `events` | `GET`, `GET /:id`, `POST`, `PATCH /:id`, `GET /:id/ics`, `DELETE /:id` | A+C+P `members:view`, `events:create/update/delete` | B — `eventRepo.findById(id, chapterId)`. The three read routes (`GET`, `GET /:id`, `GET /:id/ics`) additionally filter out a role-targeted event (`required_role_ids` non-empty) unless the caller's `member.role_ids` intersects it — `event.service.ts`'s `isVisibleToViewer`, keyed on the optional `viewerId` param the controller passes only on reads; `update`/`delete`/series internals omit it and are unfiltered, since those already require `events:update`/`events:delete` (#1463). **`findByChapter` has a fourth, non-controller caller:** `ActivityFeedService.eventItems` passes the viewer too, because a feed row carries the event's name and location — its `members:view` gate is the same one `GET /v1/events` carries and is not a substitute for the filter (#1469). Any new caller of `findByChapter` that omits `viewerId` reopens this |
 | `events/:eventId/attendance` | `POST /check-in`, `GET /`, `PATCH /:userId`, `POST /auto-absent` | A+C (+P `events:update` on writes) | B — event fetched as `findById(eventId, chapterId)` first (`attendance.service.ts:43,136,152,176`); `:userId` only ever writes inside that event |
 | `invoices` | `GET`, `GET /overdue`, `GET /:id`, `POST`, `PATCH /:id`, `POST /:id/status`, `POST /:id/payment-intent`, `GET /:id/transactions` | A+C+P `members:view`, `billing:view` / `billing:manage` | B — `invoiceRepo.findById(id, chapterId)` |
@@ -130,9 +130,15 @@ The residual items in §5 are contract/robustness concerns, not data leaks.
 
 ## 4. RLS truth table
 
-**Every one of the 44 tables has `enable row level security`.** 42 of them carry **zero policies**,
+**Every base table has `enable row level security`.** All but a handful carry **zero policies**,
 which under Postgres means *default deny* — no `anon` or `authenticated` client can read or write
 them at all. The API reaches them with the **service-role key, which bypasses RLS**.
+
+Exact counts are not restated in this paragraph — they move with every migration, and the numbers
+it used to give had drifted by eight tables. The inventory in § "Enforcing layer per table" is the
+table count; the policy count and its counting convention belong to § "The policies that do exist",
+which is reconciled against `pg_policies`. Do not substitute a grep over `supabase/migrations/` for
+either: it counts *history*, so a `drop policy` / `create policy` pair reads as two live policies.
 
 That is deliberate, not an oversight, and the design is stated in
 `supabase/migrations/20260803150000_chat_message_actions_membership_rls.sql:14-17`:
@@ -149,11 +155,12 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 41 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_message_attachments`, `chat_message_bookmarks`, `discord_connections`, `discord_import_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 48 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
-| **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences` | 1 |
+| **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences`, `chapter_audit_log`‡ | 2 |
 
 \* carries a non-widening policy — see the notes below.
+‡ `audit_log_no_update` / `audit_log_no_delete` are deny-only (`using (false)`), making the log append-only for any non-service role.
 
 † emits a **contentless change ping** over private Realtime broadcast (`notif:<user_id>`,
 `events:<chapter_id>`, `attendance:<event_id>`) so the web dashboard can invalidate its caches.

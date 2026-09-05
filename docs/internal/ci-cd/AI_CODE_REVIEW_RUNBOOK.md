@@ -99,8 +99,12 @@ knowledge of.
 **Prefer `/code-review` when it is available.** If the turn's prompt carries the token, run it instead
 — it ships per-model-tuned effort cells and, at `high`/`xhigh`/`max` with dynamic workflows enabled
 (including under the **Ultracode** session setting, which pins xhigh), a workflow-backed path with an
-independent verifier per distinct `file:line`. It does **not** write the gate marker, so follow it
-with `FRAPP_SKIP_REVIEW_GATE=1` on the push, or write the marker by hand.
+independent verifier per distinct `file:line`. It does **not** write the gate marker, so once you
+have acted on its findings, record the evidence by hand:
+`mkdir -p "$(git rev-parse --show-toplevel)/.cache/diff-review" && touch "$(git rev-parse --show-toplevel)/.cache/diff-review/$(git rev-parse HEAD)"`.
+Do **not** reach for `FRAPP_SKIP_REVIEW_GATE=1` instead: that leaves a push you *did* review
+indistinguishable from one that skipped review entirely, and it is for emergencies only. The hook's
+own deny message says exactly this.
 
 `/diff-review` reproduces the bundled workflow (scope → parallel finder subagents per angle → one
 independent verifier subagent per candidate → a single `ReportFindings` call) and additionally encodes
@@ -138,8 +142,9 @@ acted on findings, and the hook allows the push only when that marker exists for
   same HEAD (counter under the transcript directory, `${TMPDIR:-/tmp}` fallback), the push is allowed
   through with a loud `WARNING … This diff is UNREVIEWED` on stderr. Four, not two, so a reflexive
   immediate retry — the old passing behaviour — no longer gets through.
-- **Deliberate bypass:** `FRAPP_SKIP_REVIEW_GATE=1`. This is also the path after a human runs
-  `/code-review`, which does not write the marker.
+- **Deliberate bypass:** `FRAPP_SKIP_REVIEW_GATE=1` — **emergencies only.** It is *not* the path
+  after `/code-review`: that review really happened, so write the marker by hand (the command is in
+  § The `/code-review` invocation rule above) rather than labelling a reviewed push unreviewed.
 - The `git push` match is a heuristic over a free-form shell string, but a deliberately narrow one:
   `git` must be in **command position** (start of string, or after `;` `&&` `||` `|` or a newline —
   newlines are normalised to `;` before matching), and only git's own **global options**
@@ -149,6 +154,17 @@ acted on findings, and the hook allows the push only when that marker exists for
   `git push --dry-run … && git push …` all do. The accepted gap is an env-prefixed invocation
   (`env FOO=1 git push`): a missed push costs one unreviewed branch, whereas over-matching burns the
   livelock budget and then auto-allows a real one, which is strictly worse.
+- **Exempt: pushes that publish nothing.** A dry run (`--dry-run` / `-n`) and a ref deletion in its
+  **flag** form (`--delete` / `-d`) upload no objects, so there is no diff to review. Both are decided
+  on the command's *tokens*, never by searching the string: the whole command must be one plain `git`
+  invocation of inert tokens, so a comment, a quote, a command substitution, a second chained command,
+  or the flag text inside a ref name each keep the gate on. The colon refspec is **not** exempt —
+  `git push origin :old main` deletes one ref while publishing another. The attacks these rules defeat
+  are enumerated in the hook itself; do not restate them here.
+- **The gate is not deletion protection.** It reviews code, and it is the *only* thing in the path of a
+  ref deletion: branch protection sets `allow_deletions: false` for **`main` alone**
+  ([runbook](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#main)), so every other branch and tag can be
+  deleted with nothing server-side refusing it.
 
 The hook is a tool-level Claude Code hook and is **independent of git's own hooks**: it does not run git,
 does not touch `--no-verify`, and does not interfere with the git-level
@@ -180,10 +196,11 @@ does not touch `--no-verify`, and does not interfere with the git-level
 
 ## Testing the gate
 
-`npm run test:ci-scripts` (or `node --test scripts/ci/__tests__/review-gate.test.mjs`) — 25 cases
-covering command-position matching, the `--dry-run` compound case, marker present / absent / stale,
-both forms of `FRAPP_SKIP_REVIEW_GATE`, the livelock release, and the fail-closed paths for a
-malformed payload, a missing interpreter, and a broken `grep`. Needs no network and no running stack.
+`npm run test:ci-scripts` (or `node --test scripts/ci/__tests__/review-gate.test.mjs`, which prints
+the case count) covers command-position matching, the `--dry-run` compound case, the ref-deletion
+exemption and the colon-refspec form it excludes, marker present / absent / stale, both forms of
+`FRAPP_SKIP_REVIEW_GATE`, the livelock release, and the fail-closed paths for a malformed payload, a
+missing interpreter, and a broken `grep`. Needs no network and no running stack.
 
 It lives under `scripts/ci/__tests__/` **so that something actually runs it** — the `test:ci-scripts`
 glob picks it up and the `ci-scripts-tests` CI job runs it on every PR. An earlier revision shipped
