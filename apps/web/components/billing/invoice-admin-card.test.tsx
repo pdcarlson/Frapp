@@ -3,6 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
+const overdueQuery: {
+  data: unknown;
+  isError: boolean;
+  isFetching: boolean;
+} = { data: [], isError: false, isFetching: false };
+
 const { mockCurrentChapter, mockTransitionMutate } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockTransitionMutate: vi.fn().mockResolvedValue({}),
@@ -32,7 +38,7 @@ vi.mock("@repo/hooks", () => ({
     isPending: false,
     isError: false,
   }),
-  useOverdueInvoices: () => ({ data: [], isError: false }),
+  useOverdueInvoices: () => overdueQuery,
   useMembers: () => ({ data: [] }),
   useCreateInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTransitionInvoiceStatus: () => ({
@@ -71,6 +77,57 @@ function setChapterLoading() {
 function trigger() {
   return screen.getByRole("button", { name: /create invoice/i });
 }
+
+beforeEach(() => {
+  overdueQuery.data = [];
+  overdueQuery.isError = false;
+  overdueQuery.isFetching = false;
+});
+
+/**
+ * #1621 — the overdue read feeds two claims with different thresholds, and
+ * conflating them is a defect in each direction.
+ *
+ * Degrading the badges and the OVERDUE filter only has to mean "we do not
+ * know". The destructive card says the read *failed*, past tense, in
+ * `--destructive` — and `GET /invoices/overdue` applies the chapter's grace
+ * policy, so it is routinely the slowest read on the page. Gating the card on
+ * the weaker flag flashes a red failure notice on ordinary cold loads.
+ */
+describe("InvoiceAdminCard overdue availability (#1621)", () => {
+  const FAILURE_COPY = "Overdue status unavailable";
+
+  it("does not claim failure while the overdue read is still in flight", () => {
+    overdueQuery.data = undefined;
+    overdueQuery.isFetching = true;
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
+  });
+
+  it("claims failure when the overdue read errors", () => {
+    overdueQuery.data = undefined;
+    overdueQuery.isError = true;
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(screen.getByText(FAILURE_COPY)).toBeInTheDocument();
+  });
+
+  it("claims failure when the read holds nothing and is not in flight", () => {
+    // The paused-offline shape: `isPending && !isFetching`.
+    overdueQuery.data = undefined;
+    overdueQuery.isFetching = false;
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(screen.getByText(FAILURE_COPY)).toBeInTheDocument();
+  });
+});
 
 describe("InvoiceAdminCard subscription gating", () => {
   beforeEach(() => vi.clearAllMocks());

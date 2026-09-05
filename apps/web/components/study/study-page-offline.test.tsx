@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { chapterSubscription } from "@/tests/chapter-subscription";
 
 /**
  * #1621 — the study surface's offline gate, which is the only three-way one on
@@ -17,15 +18,26 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  */
 
 const networkState = { isOffline: false };
-const geofencesQuery: { data: unknown; isPending: boolean; isError: boolean } = {
-  data: [],
-  isPending: false,
-  isError: false,
+type StubQuery = {
+  data: unknown;
+  isPending: boolean;
+  isError: boolean;
+  refetch: () => void;
 };
-const sessionsQuery: { data: unknown; isPending: boolean; isError: boolean } = {
+// `refetch` is stubbed even though no case clicks Retry: the branch under test
+// *renders* that control, so omitting it would make the one path this file
+// exists to cover throw the moment anyone exercised it.
+const geofencesQuery: StubQuery = {
   data: [],
   isPending: false,
   isError: false,
+  refetch: vi.fn(),
+};
+const sessionsQuery: StubQuery = {
+  data: [],
+  isPending: false,
+  isError: false,
+  refetch: vi.fn(),
 };
 
 const ZONE = {
@@ -55,11 +67,7 @@ const PAST_SESSION = {
 };
 
 const { mockCurrentChapter } = vi.hoisted(() => ({
-  mockCurrentChapter: vi.fn(() => ({
-    data: { subscription_status: "active" },
-    isPending: false,
-    isError: false,
-  })),
+  mockCurrentChapter: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -86,8 +94,14 @@ vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 const { StudyPage } = await import("./study-page");
 
+// The shared payload shape (#841) rather than a hand-rolled literal: the helper
+// exists because two test files grew incompatible versions of this object, and
+// a third would reintroduce exactly that drift.
+const chapter = chapterSubscription(mockCurrentChapter);
+
 beforeEach(() => {
   vi.clearAllMocks();
+  chapter.active();
   networkState.isOffline = false;
   geofencesQuery.data = [ZONE];
   geofencesQuery.isPending = false;

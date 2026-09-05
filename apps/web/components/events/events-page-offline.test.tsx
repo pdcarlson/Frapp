@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { chapterSubscription } from "@/tests/chapter-subscription";
 
 /**
  * #1621 — the events surface must keep cached rows on screen when it goes
@@ -33,11 +34,7 @@ const EVENTS = [
 ];
 
 const { mockCurrentChapter } = vi.hoisted(() => ({
-  mockCurrentChapter: vi.fn(() => ({
-    data: { subscription_status: "active" },
-    isPending: false,
-    isError: false,
-  })),
+  mockCurrentChapter: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -77,8 +74,14 @@ vi.mock("@/lib/realtime/use-realtime-table", () => ({
 
 const { EventsPage } = await import("./events-page");
 
+// The shared payload shape (#841) rather than a hand-rolled literal: the helper
+// exists because two test files grew incompatible versions of this object, and
+// a third would reintroduce exactly that drift.
+const chapter = chapterSubscription(mockCurrentChapter);
+
 beforeEach(() => {
   vi.clearAllMocks();
+  chapter.active();
   networkState.isOffline = false;
   eventsQuery.data = EVENTS;
   eventsQuery.isLoading = false;
@@ -108,6 +111,12 @@ describe("EventsPage offline read path (#1621)", () => {
     ).toBeInTheDocument();
   });
 
+  /*
+   * This one pins the `isOffline` conjunct, not the cache half — it would pass
+   * with `hasNoCachedData` deleted from the gate, and that is the point. The
+   * two cases above pin the cache half; between them the whole conjunction is
+   * covered, and dropping either term fails something.
+   */
   it("does not show the offline card while online with no data yet", () => {
     eventsQuery.data = undefined;
     eventsQuery.isLoading = true;

@@ -105,13 +105,25 @@ export function InvoiceAdminCard() {
   // dues grace policy), so badges and the OVERDUE filter derive from that
   // list rather than re-deriving `due_date < now` locally — a local check
   // would contradict the banner for invoices inside the grace window.
-  // The same "we do not know" flag the page header derives (`billing/page.tsx`).
-  // Without it this card and that header disagree on one screen: the header
-  // says "Overdue: —" while every badge here silently vanishes and the OVERDUE
-  // filter cheerfully returns nothing. `isError` alone misses both the paused
-  // offline read and the still-in-flight online one.
+  // Two thresholds, because this card makes two different claims.
+  //
+  // Degrading the badges and the OVERDUE filter is the weak one: it only has to
+  // mean "we do not know", which is honest whether the read failed, is paused,
+  // or simply has not answered. Without it this card and the page header
+  // disagree on one screen — the header reads "Overdue: —" while every badge
+  // here silently vanishes and the filter cheerfully returns nothing.
   const overdueUnavailable =
     overdueQuery.isError || hasNoCachedData(overdueQuery);
+  // The destructive card is the strong one: it says the read *failed*, in the
+  // past tense, in `--destructive`. A query that has not answered yet has not
+  // failed, and `GET /invoices/overdue` applies the chapter's grace policy so it
+  // is routinely the slowest read on the page — gating the card on the weak
+  // flag would flash a red failure notice on ordinary cold loads, which is this
+  // family's own confidently-wrong signal with the sign flipped. So: failed, or
+  // holding nothing with no request in flight (i.e. paused offline).
+  const overdueReadFailed =
+    overdueQuery.isError ||
+    (hasNoCachedData(overdueQuery) && !overdueQuery.isFetching);
   const overdueIds = useMemo(
     () => new Set(overdue.map((inv) => inv.id)),
     [overdue],
@@ -239,7 +251,7 @@ export function InvoiceAdminCard() {
       )}
     >
       <div className="space-y-6">
-        {overdueUnavailable ? (
+        {overdueReadFailed ? (
           <Card className="border-destructive/[.28] bg-destructive/[.13]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-destructive-text">
@@ -247,8 +259,8 @@ export function InvoiceAdminCard() {
                 Overdue status unavailable
               </CardTitle>
               <CardDescription>
-                We couldn&apos;t read the overdue list, so overdue badges and
-                the OVERDUE filter are unavailable until it recovers.
+                Couldn&apos;t load the overdue list — overdue badges and the
+                OVERDUE filter are unavailable until it recovers.
               </CardDescription>
             </CardHeader>
           </Card>
