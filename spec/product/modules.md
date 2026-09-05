@@ -131,7 +131,7 @@
 
 ## Activity Feed
 
-- Unified feed showing recent chapter activity: new events, Backwork uploads, point milestones, new members, latest announcement. **Specified, not built on any surface today** — the web home screen was removed in the chat-first redesign and the mobile Home tab is still a static prototype (#253). Web's chat catch-up surfaces a separate, action-oriented pulse card instead ([`spec/behavior/chat/catch-up.md`](../behavior/chat/catch-up.md)).
+- Unified feed showing recent chapter activity — the item set is owned by [`../behavior/activity-feed.md`](../behavior/activity-feed.md) and not restated here. **Specified, not built on any surface today** — the web home screen was removed in the chat-first redesign, and mobile's `(tabs)/index.tsx` is no longer a Home tab at all: the Signet rebuild ([#937](https://github.com/pdcarlson/Frapp/issues/937)) made it `ChatHomeScreen`, chat's own home route. Web's chat catch-up surfaces a separate, action-oriented pulse card instead ([`spec/behavior/chat/catch-up.md`](../behavior/chat/catch-up.md)).
 - Read-only aggregation from existing data sources.
 
 ## Global Search

@@ -42,7 +42,7 @@ The member experience (`apps/mobile`). Expo with Expo Router.
 **Screens:**
 
 - **First-run (s03)** — Mobile's onboarding surface (`app/(auth)/welcome.tsx`), reached when the auth gate reads `has_completed_onboarding` as false. It is a single first-run screen, **not** the web modal slideshow; both are owned by [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § Onboarding Tutorial, which is where the per-surface split is stated.
-- **Home / Activity Feed** — Unified feed: upcoming events, recent announcements, new Backwork uploads, point milestones, new members. Point balance summary at the top.
+- **Home / Activity Feed** — Unified feed: upcoming events, recent announcements, new Backwork uploads, own point changes, new members. Point balance summary at the top.
 - **Chat** — Channel list organized by categories (respecting permission gates). Direct Messages tab (1-on-1 and group DMs). Real-time messaging with reactions, replies, file/image uploads, typing indicators, online presence. Pinned messages panel. Full-text search within and across channels.
 - **Backwork** — Browse by department, course, professor, semester/year, assignment type, document variant, and tags. Upload flow: select file, fill metadata (all optional), optionally redact (v2), confirm. Download with signed URL. Full-text search.
 - **Events** — Upcoming events list with calendar view. Self-service check-in (during event time window). Past events with attendance status. "Add to Calendar" action generating .ics file. Recurring event indicators.
