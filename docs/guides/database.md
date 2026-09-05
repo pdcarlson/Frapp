@@ -8,7 +8,10 @@ Frapp uses **Supabase Cloud** for staging/production and **Supabase CLI** + Dock
 
 - Postgres is the single source of truth.
 - Supabase provides **Auth**, **Storage**, and **Realtime** on top of Postgres.
-- The schema lives in `supabase/migrations/` and is applied via `npx supabase db reset` locally.
+- The schema lives in `supabase/migrations/`. A new migration is applied locally with
+  `npx supabase db push --local` (see [`CONTRIBUTING.md`](../../CONTRIBUTING.md) § Database
+  Migrations); `npx supabase db reset` is the full rebuild-from-scratch path described below,
+  not the way a single migration is applied.
 
 ## 2. Schema location
 
@@ -143,8 +146,11 @@ alter table public.polls enable row level security;
 3. Apply the migration locally:
 
 ```bash
-npx supabase db reset
+npx supabase db push --local
 ```
+
+   Use `npx supabase db reset` only when you want the full rebuild described in
+   § 2 Schema location — it drops the reference data with it.
 
 4. Update:
 
