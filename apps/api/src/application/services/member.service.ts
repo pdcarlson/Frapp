@@ -305,6 +305,31 @@ export class MemberService {
     });
   }
 
+  /**
+   * Record that this member has dismissed `moduleKey`'s ops-setup nudge in this
+   * chapter (#492). Idempotent: re-dismissing an already-dismissed nudge is a
+   * no-op write rather than a duplicate array entry, so a double-click or a
+   * retried request cannot grow the column without bound.
+   *
+   * Read-then-write rather than a Postgres `array_append`, because the repository
+   * boundary takes whole column values and the array is at most four entries —
+   * the width of `OPS_NUDGE_MODULES`. The lost-update window that read-modify-write
+   * normally opens is not reachable here: the two writers would have to be the
+   * same member in the same chapter dismissing two different nudges within one
+   * round trip, and only one nudge is ever rendered at a time.
+   */
+  async dismissOpsNudge(memberId: string, moduleKey: string): Promise<Member> {
+    const member = await this.memberRepo.findById(memberId);
+    if (!member) throw new NotFoundException('Member not found');
+
+    const dismissed = member.dismissed_ops_nudges ?? [];
+    if (dismissed.includes(moduleKey)) return member;
+
+    return this.memberRepo.update(memberId, {
+      dismissed_ops_nudges: [...dismissed, moduleKey],
+    });
+  }
+
   async remove(
     memberId: string,
     chapterId: string,

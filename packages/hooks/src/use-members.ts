@@ -7,6 +7,7 @@ import {
   useQueryClient,
   keepPreviousData,
 } from "@tanstack/react-query";
+import type { OpsNudgeModuleKey } from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { resolveDisplayName, type DisplayNameMap } from "./display-names";
 
@@ -240,6 +241,34 @@ export function useUpdateOnboarding() {
       // The mobile first-run gate (and the web tutorial) read this flag off
       // `GET /v1/chapters`. Leaving that cache standing would re-send a member
       // who just finished s03 back to s03.
+      queryClient.invalidateQueries({ queryKey: ["chapters"] });
+    },
+  });
+}
+
+/**
+ * Dismiss one ops-module setup nudge for the caller in the active chapter
+ * (#492).
+ *
+ * Invalidates `["chapters"]` for the same reason `useUpdateOnboarding` does:
+ * the dismissed set is read off the membership summary from `GET /v1/chapters`,
+ * so leaving that cache standing would re-show the card the member just closed.
+ * Not scoped to the active chapter id — the summary list is one cache entry
+ * covering every membership, and the dismissal changed a row inside it.
+ */
+export function useDismissOpsNudge() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { module_key: OpsNudgeModuleKey }) => {
+      const { data, error } = await client.PATCH(
+        "/v1/members/me/ops-nudges/dismiss",
+        { body },
+      );
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
     },
   });

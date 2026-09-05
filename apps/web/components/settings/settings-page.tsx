@@ -55,7 +55,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
-import { can } from "@repo/validation";
+import { can, isOpsNudgeModuleKey } from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
@@ -216,6 +216,18 @@ function SettingsPageContent() {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
+
+  /**
+   * `?module=` narrows a `?tab=modules` deep link to one row, so chat's
+   * ops-setup nudge (#492) can land an officer on the module it named rather
+   * than at the top of a fourteen-row list. Validated against the nudge catalog
+   * rather than passed through: an unrecognised value should be an unfocused
+   * Modules tab, not a `querySelector` for an id that does not exist.
+   */
+  const moduleParam = searchParams.get("module");
+  const focusModuleKey = isOpsNudgeModuleKey(moduleParam)
+    ? moduleParam
+    : undefined;
 
   const [accentDraft, setAccentDraft] = useState("");
   // The server's own §8 disclosure from the last successful save — distinct
@@ -862,6 +874,7 @@ function SettingsPageContent() {
                 enabledModules={enabledModules}
                 canManage={canManage}
                 pendingModuleKeys={pendingConfigKeys}
+                focusModuleKey={focusModuleKey}
                 onToggle={(key, enabled) =>
                   patchConfig(
                     { enabled_modules: { [key]: enabled } },

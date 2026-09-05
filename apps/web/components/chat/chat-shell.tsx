@@ -46,6 +46,7 @@ import {
 } from "./message-timeline";
 import { Composer } from "./composer";
 import { ThreadPanel } from "./thread-panel";
+import { OpsSetupNudge } from "./ops-setup-nudge";
 import { PinsPopover } from "./pins-popover";
 import { ChatSearchPopover, type ChatSearchHit } from "./chat-search-popover";
 import { BookmarksPopover, type BookmarkEntry } from "./bookmarks-popover";
@@ -977,6 +978,15 @@ export function ChatShell({
             </p>
           ) : null}
         </header>
+        {/*
+          Between the channel header and the timeline: "a dismissible inline
+          nudge in chat" (`spec/product/modules.md` § Ops-setup nudges) without
+          being *inside* the virtualized log, which would make it a row
+          `react-virtuoso` can unmount. Renders `null` for everyone but an
+          officer of a chapter with a nudge-eligible module switched off, so it
+          costs the common case one early return.
+        */}
+        <OpsSetupNudge />
         {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making

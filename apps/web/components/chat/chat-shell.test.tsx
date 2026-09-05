@@ -99,6 +99,14 @@ vi.mock("@repo/hooks", () => ({
   }),
   useChapterRoster: () => ({ data: [] }),
   useMyPermissions: () => mockUseMyPermissions(),
+  // Read by `OpsSetupNudge`, which the shell renders above the timeline
+  // (#492). Left deliberately inert: `useOrgConfig` above returns no
+  // `enabled_modules`, so `selectOpsNudge` gets `undefined` and the card is
+  // never eligible. These cases are about the shell, and a nudge that never
+  // renders keeps it out of their way — `ops-setup-nudge.test.tsx` is where
+  // its own behaviour is pinned.
+  useAccessibleChapters: () => ({ data: [] }),
+  useDismissOpsNudge: () => ({ mutate: vi.fn() }),
   directChannelDisplayName: () => "",
   // The channel header now carries `ChatSearchPopover`, which reads these.
   // Idle by default: these cases are about the shell, and a search that never

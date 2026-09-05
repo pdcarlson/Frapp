@@ -825,6 +825,20 @@ export type {
   NotificationCategoryKey,
 } from "./notification-categories";
 
+// ── Ops-setup nudges (issue #492) ────────────────────────────────────────────
+// Shared for the same reason as the categories above: each `key` is written
+// verbatim into `members.dismissed_ops_nudges`, the column is an unconstrained
+// `text[]`, and `DismissOpsNudgeDto` validates against this catalog — so a
+// per-surface copy would drift into dismissal entries that suppress nothing.
+// `selectOpsNudge` carries the spec's priority order, which is behavior rather
+// than presentation, so it is shared too rather than re-derived per surface.
+export {
+  OPS_NUDGE_MODULES,
+  isOpsNudgeModuleKey,
+  selectOpsNudge,
+} from "./ops-nudges";
+export type { OpsNudgeModule, OpsNudgeModuleKey } from "./ops-nudges";
+
 // ── Poll vote rules ──────────────────────────────────────────────────────────
 // Shared by the two paths that accept a vote, which are NOT the same code path
 // and cannot be merged into one: `PollService.vote` writes `poll_votes` keyed by

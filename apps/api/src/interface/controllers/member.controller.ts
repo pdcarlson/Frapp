@@ -26,7 +26,11 @@ import {
   CurrentMember,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { UpdateMemberRolesDto, UpdateOnboardingDto } from '../dtos/member.dto';
+import {
+  DismissOpsNudgeDto,
+  UpdateMemberRolesDto,
+  UpdateOnboardingDto,
+} from '../dtos/member.dto';
 import {
   MemberProfileDto,
   MemberRosterEntryDto,
@@ -119,6 +123,26 @@ export class MemberController {
       member.id,
       dto.has_completed_onboarding,
     );
+  }
+
+  /**
+   * Dismiss one ops-setup nudge for the caller in the active chapter (#492).
+   *
+   * Carries no `@RequirePermissions`, matching `me/onboarding` directly above:
+   * both write a member's own row through `@CurrentMember()`, which is already
+   * resolved for the active chapter, so there is no id to authorize against and
+   * nothing a caller could reach beyond their own membership. Whether the member
+   * can act on the nudge is a separate question the *client* answers — the card
+   * only renders behind `chapter-config:manage` — and dismissing a card one
+   * cannot act on is a legitimate thing to want.
+   */
+  @Patch('me/ops-nudges/dismiss')
+  @ApiOperation({ summary: 'Dismiss an ops-module setup nudge' })
+  async dismissOpsNudge(
+    @CurrentMember() member: { id: string },
+    @Body() dto: DismissOpsNudgeDto,
+  ) {
+    return this.memberService.dismissOpsNudge(member.id, dto.module_key);
   }
 
   @Delete(':id')
