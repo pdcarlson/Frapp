@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
+import type { CustomFieldEntry } from '@repo/org-archetypes';
 import { buildChapterPalette } from './chapter-palette';
+import { buildCustomFieldRows } from './custom-field-provisioning';
 import { LEGAL_POLICY_VERSION } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
@@ -21,8 +23,9 @@ type Branding = Record<string, unknown>;
  *  1. materialize the chapter config from the archetype seed,
  *  2. create the chapter (+ default roles / membership / channels via
  *     ChapterService.create),
- *  3. post a one-time welcome system_audit message into #general,
- *  4. for manual-entry chapters (no directory match), record a
+ *  3. seed the archetype's default custom fields into chapter_custom_fields,
+ *  4. post a one-time welcome system_audit message into #general,
+ *  5. for manual-entry chapters (no directory match), record a
  *     chapter_directory_requests row so the curated seed can be backfilled.
  */
 @Injectable()
@@ -91,8 +94,13 @@ export class ChapterOnboardingService {
       { archetype: seed.archetype },
     );
 
-    // Best-effort: a failed welcome / directory-request write must not roll
-    // back an otherwise successfully created chapter.
+    // Best-effort: a failed custom-field / welcome / directory-request write
+    // must not roll back an otherwise successfully created chapter.
+    await this.provisionCustomFields(chapter.id, seed.customFields).catch(
+      (err) =>
+        this.logger.warn('Failed to provision archetype custom fields', err),
+    );
+
     await this.postWelcomeMessage(chapter.id, branding).catch((err) =>
       this.logger.warn('Failed to post onboarding welcome message', err),
     );
@@ -145,6 +153,46 @@ export class ChapterOnboardingService {
     }
 
     return build.palette;
+  }
+
+  /**
+   * Seed the archetype's default custom fields (#572). Without this a freshly
+   * onboarded chapter opens Settings → Fields on an empty table, even though
+   * `buildChapterConfigFromArchetype` already materialized the defaults.
+   *
+   * Written directly rather than through `CustomFieldService.create` on
+   * purpose: that path appends a `chapter_audit_log` row per field, which the
+   * ChatBridgeWorker mirrors into #chapter-audit — so routing 8 seed fields
+   * through it would open every new chapter with 8 audit messages before a
+   * human has touched anything. The two guarantees that matter (a per-chapter
+   * `options` structure, and select-requires-choices) are kept by
+   * `buildCustomFieldRows`; the audit trail is not, matching how default roles
+   * and channels are seeded.
+   *
+   * `ignoreDuplicates` makes re-running provisioning a no-op instead of a
+   * unique-violation on `(chapter_id, key)`.
+   */
+  private async provisionCustomFields(
+    chapterId: string,
+    entries: readonly CustomFieldEntry[],
+  ) {
+    const { rows, skipped } = buildCustomFieldRows(chapterId, entries);
+
+    // A malformed seed entry is a repo bug, not a chapter's problem — the rest
+    // still seeds, but it must not disappear silently.
+    if (skipped.length > 0) {
+      this.logger.warn(
+        `Skipped malformed custom-field seed entries: ${skipped.join(', ')}`,
+      );
+    }
+    if (rows.length === 0) return;
+
+    const { error } = await this.supabase
+      .from('chapter_custom_fields')
+      .upsert(rows, { onConflict: 'chapter_id,key', ignoreDuplicates: true });
+    if (error) {
+      this.logger.warn('chapter_custom_fields seed insert failed', error);
+    }
   }
 
   private async postWelcomeMessage(chapterId: string, branding: Branding) {

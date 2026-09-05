@@ -41,6 +41,7 @@ jest.mock('@repo/chapter-theme', () => ({
 jest.mock('@repo/validation', () => ({ LEGAL_POLICY_VERSION: 'test-version' }));
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import { ChapterOnboardingService } from './chapter-onboarding.service';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
@@ -79,6 +80,7 @@ describe('ChapterOnboardingService', () => {
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let messageInsert: jest.Mock;
   let requestInsert: jest.Mock;
+  let fieldsUpsert: jest.Mock;
   let from: jest.Mock;
 
   beforeEach(async () => {
@@ -94,11 +96,13 @@ describe('ChapterOnboardingService', () => {
     };
     messageInsert = jest.fn().mockResolvedValue({ error: null });
     requestInsert = jest.fn().mockResolvedValue({ error: null });
+    fieldsUpsert = jest.fn().mockResolvedValue({ error: null });
     from = jest.fn((table: string) => {
       if (table === 'chat_channels') return channelQuery;
       if (table === 'chat_messages') return { insert: messageInsert };
       if (table === 'chapter_directory_requests')
         return { insert: requestInsert };
+      if (table === 'chapter_custom_fields') return { upsert: fieldsUpsert };
       return {};
     });
 
@@ -318,5 +322,138 @@ describe('ChapterOnboardingService', () => {
     await expect(
       service.onboard('user-1', directoryDto),
     ).resolves.toMatchObject({ id: 'ch-1' });
+  });
+
+  describe('archetype custom-field seeding (#572)', () => {
+    // The module-level archetype mock returns `customFields: []`, which is the
+    // right default for the other tests (they assert nothing about fields).
+    // These override it so the provisioning path has something to write.
+    function seedFields(customFields: unknown[]) {
+      (buildChapterConfigFromArchetype as jest.Mock).mockReturnValueOnce({
+        archetype: 'nphc',
+        modules: { chat: true },
+        rolePack: 'test_pack',
+        vocabulary: { recruitment: 'Rush', pledge: 'NM', class: 'Class' },
+        customFields,
+        workflows: [],
+        dues: {},
+      });
+    }
+
+    it('seeds the archetype default fields into chapter_custom_fields', async () => {
+      seedFields([
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+        {
+          id: 'cf_4',
+          label: 'T-shirt size',
+          type: 'select',
+          required: false,
+          visibleTo: 'chapter',
+          options: ['XS', 'S'],
+        },
+      ]);
+
+      await service.onboard('user-1', directoryDto);
+
+      expect(fieldsUpsert).toHaveBeenCalledTimes(1);
+      const [rows] = fieldsUpsert.mock.calls[0];
+      expect(rows).toEqual([
+        {
+          chapter_id: 'ch-1',
+          key: 'major',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibility: 'chapter',
+          sensitive: false,
+          options: null,
+          sort: 0,
+        },
+        {
+          chapter_id: 'ch-1',
+          key: 't_shirt_size',
+          label: 'T-shirt size',
+          type: 'select',
+          required: false,
+          visibility: 'chapter',
+          sensitive: false,
+          options: { choices: ['XS', 'S'] },
+          sort: 1,
+        },
+      ]);
+    });
+
+    it('is idempotent — re-provisioning skips existing (chapter_id, key) rows', async () => {
+      seedFields([
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+      ]);
+
+      await service.onboard('user-1', directoryDto);
+
+      // Skip-existing rather than read-then-write: no unique-violation crash,
+      // and no lost update race between the read and the insert.
+      const [, options] = fieldsUpsert.mock.calls[0];
+      expect(options).toEqual({
+        onConflict: 'chapter_id,key',
+        ignoreDuplicates: true,
+      });
+    });
+
+    it('writes nothing when the archetype seeds no fields', async () => {
+      // The module-level mock already returns `customFields: []`.
+      await service.onboard('user-1', directoryDto);
+      expect(fieldsUpsert).not.toHaveBeenCalled();
+    });
+
+    it('does not fail onboarding when the field seed insert errors', async () => {
+      // An officer can add fields by hand; losing the chapter over a failed
+      // convenience seed would be strictly worse than an empty Fields tab.
+      seedFields([
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+      ]);
+      fieldsUpsert.mockResolvedValueOnce({ error: { message: 'boom' } });
+
+      await expect(
+        service.onboard('user-1', directoryDto),
+      ).resolves.toMatchObject({ id: 'ch-1' });
+    });
+
+    it('still creates the chapter when the field seed throws outright', async () => {
+      seedFields([
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+      ]);
+      fieldsUpsert.mockRejectedValueOnce(new Error('network down'));
+
+      await expect(
+        service.onboard('user-1', directoryDto),
+      ).resolves.toMatchObject({ id: 'ch-1' });
+      // The later best-effort writes must still run — a thrown seed must not
+      // swallow the welcome message.
+      expect(messageInsert).toHaveBeenCalled();
+    });
   });
 });
