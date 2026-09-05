@@ -44,7 +44,8 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    `required_pull_request_reviews: null` and `required_conversation_resolution: false`
    (`scripts/configure-branch-protection.mjs`, applied to `main` only), so GitHub blocks neither an
    unapproved merge nor one with open threads. That script is *intent*; confirm live state with
-   `npm run configure:branch-protection -- --verify`.
+   `npm run configure:branch-protection:verify` — use that script name, not the `-- --verify` form:
+   one dropped separator turns it into a live `PUT` of the whole protection payload.
    Seek an approval and resolve your threads because the work is better for it — nothing downstream
    will stop you. Step 2's local gate is **not** a backstop for this: it is a Claude Code
    `PreToolUse` hook, so it sees agent tool calls only and never a plain terminal `git push`, it

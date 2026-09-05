@@ -15,7 +15,7 @@ We maintain three main environments:
 
 ## 2. Secrets management
 
-All staging and production secrets are centrally managed in **Infisical** and automatically synced to deployment targets (Vercel, Render, and GitHub Actions). For the full per-app/per-environment mapping, see [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
+All non-local secrets are centrally managed in **Infisical** and synced to Vercel and Render. **GitHub Actions is not a sync target** — CI pulls from Infisical at job time via Universal Auth; see [`SECRETS_MANAGEMENT.md`](../internal/environment/SECRETS_MANAGEMENT.md) § 5. For the full per-app/per-environment mapping, see [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
 
 > **Note:** For the complete list of every environment variable, per app, per environment, see [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
 
@@ -24,7 +24,7 @@ Key principles:
 - **Infisical is the single source of truth** for all non-local secrets.
 - **No `.env.example` files** — the centralized `ENV_REFERENCE.md` replaces them.
 - **No placeholder secrets in CI** — CI only runs lint, typecheck, and tests (no runtime secrets needed).
-- **Provider-native syncs** — Infisical pushes secrets to Vercel, Render, and GitHub Actions automatically; mobile EAS credentials are managed in Expo/EAS.
+- **Provider-native syncs** — Infisical pushes secrets to Vercel and Render automatically. It does **not** push to GitHub Actions; CI pulls at job time. Mobile EAS credentials are managed in Expo/EAS.
 
 ## 3. Local development setup
 
@@ -59,7 +59,7 @@ The NestJS API uses `@nestjs/config` to load environment variables:
 When adding new env vars:
 
 1. Add to the config module / validation.
-2. Add to Infisical (staging and production environments).
+2. Add the canonical value to Infisical. The environments are `dev`, `staging`, `prod` — those are the **slugs**; the UI shows them as Development / Staging / Production, and a display name is never a valid slug. Which of the three a given variable needs is per-variable, not "all three": [`ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md) is the grid, and it marks plenty of `dev` cells "leave empty" and a few `prod` cells "not yet created". Fill the cells that doc says to fill, and do not invent a placeholder to make a row look complete.
 3. Update `docs/internal/environment/ENV_REFERENCE.md`.
 4. Update this guide if it matters to other developers.
 
