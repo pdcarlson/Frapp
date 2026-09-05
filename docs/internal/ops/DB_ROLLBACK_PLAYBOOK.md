@@ -297,6 +297,34 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the chat-archive upload quota
+
+* **Migration**: `20260905010000_discord_import_archive_quota.sql`
+* **Action**: `DROP FUNCTION IF EXISTS discord_import_projected_archive_bytes(uuid, uuid, text[], bigint[]);` and, if you want the index gone too,
+  `DROP INDEX IF EXISTS public.idx_discord_import_files_chapter;`.
+  **Redeploy the API at the pre-#1243 revision first.** With the function gone,
+  `DiscordImportService.requestUploadUrls` calls a missing RPC on every mint request, so
+  `POST /v1/discord-imports/{id}/upload-urls` 500s and **no Discord import can upload
+  anything at all**. Dropping the index alone is safe at any time and only costs the
+  quota read a seq scan.
+* **Note**: Purely additive — one new function, one new index. No table, column, row,
+  policy, or existing function body is touched, so nothing that predates the migration
+  can be lost, and rolling back cannot corrupt anything. What it removes is the ceiling
+  itself: with no quota, one chapter can again register unbounded bytes into
+  `chat-archive`, which has no reaper other than the admin's own per-import purge
+  (#1246). Prefer raising `MAX_ARCHIVE_IMPORT_BYTES` / `MAX_ARCHIVE_CHAPTER_BYTES` in
+  `packages/validation/src/upload-allowlists.ts` — a one-line application change, no
+  migration — over rolling this back.
+* **Data caveat**: none. The function is `stable` and reads only
+  `discord_import_files` and `discord_imports`; it writes nothing and backfills nothing.
+  No snapshot is needed before dropping, and nothing needs restoring on re-apply — the
+  projection is recomputed from the manifest on every call.
+* **If the quota misfires in production**, the fast forward-fix is the constants, not
+  this migration. A chapter wrongly refused reads either `limit for one import` or
+  `Delete an old import` in the 400; the first names `MAX_ARCHIVE_IMPORT_BYTES` and the
+  second `MAX_ARCHIVE_CHAPTER_BYTES`. Both ship with the API, so the fix is a normal
+  deploy.
+
 ## Rollback the orphan-president claim flow
 
 * **Migration**: `20260901183000_orphan_president_claim.sql`
