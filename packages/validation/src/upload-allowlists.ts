@@ -30,7 +30,13 @@
  *
  * Bucket policies in `supabase/migrations/*.sql` must keep mirroring these
  * MIME lists (comment cross-references only on shipped migrations). Size is
- * `MAX_UPLOAD_BYTES` (26214400), matching `supabase/config.toml`.
+ * **not** one number, and `supabase/config.toml`'s `[storage] file_size_limit`
+ * is not `MAX_UPLOAD_BYTES`: it caps the **local stack** and overrides a higher
+ * per-bucket column there. What the hosted projects enforce per object is not
+ * measured here, and so is not claimed. See `MAX_ARCHIVE_UPLOAD_BYTES` below
+ * for the one kind deliberately held off this cap; the per-bucket values are
+ * owned by
+ * `spec/architecture/README.md` § 7 (Storage).
  *
  * ## What the bucket allowlist actually enforces
  *

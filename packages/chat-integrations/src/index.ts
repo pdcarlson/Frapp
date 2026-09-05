@@ -2,10 +2,12 @@
  * Chat-integrations registry.
  *
  * This package holds the slash-command catalog, the input parsers, and the
- * payload shapes shared across web, mobile, and the Edge Functions. Rich
+ * payload shapes. `apps/web` and `@repo/chat-core` are the dependents. Rich
  * renderers themselves live in the apps (they're framework-bound — React for
- * web, Expo for mobile), but every renderer reads from the same contract
- * declared here so a wire change cannot drift across surfaces.
+ * web, Expo for mobile). Only web's read the contract declared here: mobile
+ * cannot depend on this package at all (its `require` condition points at an
+ * unbuilt `dist/`, #989), so its card components redeclare the wire shapes off
+ * `@repo/chat-core`. A wire change therefore has to be carried to both.
  *
  * Chunk 04 shipped the catalog scaffold (all commands `implemented: false`);
  * Chunk 05 flips `/poll` and `/announce` to `implemented: true` and adds the
