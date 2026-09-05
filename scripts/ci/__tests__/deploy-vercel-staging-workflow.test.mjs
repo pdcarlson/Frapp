@@ -141,4 +141,77 @@ describe("deploy-vercel-staging.yml", () => {
     assert.ok(npmCi > 0, "must run npm ci");
     assert.ok(npmCi < deploy, "npm ci must come before the deploy step");
   });
+
+  // ── The deploy-outcome alert job (#1674) ────────────────────────────────
+  // Before this, a failed staging deploy produced no commit status, no PR
+  // check and no notification — a `workflow_run` failure lands on nothing a
+  // human looks at.
+
+  it("reports its outcome through the shared deploy-alert script", () => {
+    assert.match(uncommented, /^ {2}deploy-outcome:$/m, "must have a deploy-outcome job");
+    assert.match(uncommented, /run: node scripts\/ci\/deploy-alert\.mjs/);
+    assert.match(uncommented, /needs: \[deploy\]/);
+  });
+
+  it("selects the Vercel alert configuration, not the Deploy API one", () => {
+    // Without ALERT_CONFIG the script defaults to `deploy-api`, which would
+    // read job names this workflow does not emit (reporting them all as
+    // "skipped" → a permanent no-op) and, worse, write its findings into the
+    // DEPLOY API alert issue. Wrong watchdog, wrong incident thread.
+    assert.match(uncommented, /ALERT_CONFIG: deploy-vercel-staging/);
+  });
+
+  it("grants issues: write to the alert job only", () => {
+    // The workflow-level default is `contents: read`. The alert job is the only
+    // one that needs to write, and scoping it to that job is what keeps the
+    // deploy job — the one handling Vercel credentials — read-only.
+    assert.match(uncommented, /issues: write/);
+    assert.equal(
+      (uncommented.match(/issues: write/g) ?? []).length,
+      1,
+      "exactly one job may hold issues: write",
+    );
+  });
+
+  it("keeps the alert job's trigger conditions in sync with the deploy job's", () => {
+    // The real hazard, and the reason this is a test. `needs: [deploy]` does
+    // NOT stop a job that uses `always()` when its dependency is skipped, so
+    // the alert job's `if:` is the ONLY thing keeping it from running on every
+    // CI-failed run and reporting "deployed NOTHING" — true, but noise, since
+    // CI is already red where a human looks.
+    //
+    // Worse in the other direction: if someone tightens the deploy job's
+    // conditions and not the alert job's, the two silently disagree about when
+    // a deploy was attempted. Comparing the condition SETS catches both.
+    const conditions = (block) =>
+      new Set(
+        (
+          block.match(
+            /github\.event\.workflow_run\.[A-Za-z_.]+ ==\s*'?[^\s'&|]+'?|head_repository\.full_name == github\.repository/g,
+          ) ?? []
+        ).map((line) => line.trim()),
+      );
+
+    const deployIf = uncommented.slice(
+      uncommented.indexOf("  deploy:"),
+      uncommented.indexOf("    runs-on", uncommented.indexOf("  deploy:")),
+    );
+    const outcomeIf = uncommented.slice(
+      uncommented.indexOf("  deploy-outcome:"),
+      uncommented.indexOf("    runs-on", uncommented.indexOf("  deploy-outcome:")),
+    );
+
+    const deployConditions = conditions(deployIf);
+    const outcomeConditions = conditions(outcomeIf);
+
+    assert.ok(deployConditions.size >= 3, "expected the deploy job's three guards");
+    assert.deepEqual(
+      [...outcomeConditions].sort(),
+      [...deployConditions].sort(),
+      "deploy-outcome's `if:` must carry exactly the deploy job's conditions",
+    );
+    // …plus always(), which is what makes it report on a FAILED deploy at all.
+    assert.match(outcomeIf, /always\(\)/);
+    assert.doesNotMatch(deployIf, /always\(\)/);
+  });
 });

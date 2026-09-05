@@ -2,8 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  ALERT_CONFIGS,
   ALERT_ISSUE_LABELS,
   ALERT_ISSUE_TITLE,
+  DEPLOY_API_CONFIG,
+  DEPLOY_VERCEL_STAGING_CONFIG,
+  alertJobNames,
+  buildAlertIssueBody,
   buildHeadline,
   buildRunSummary,
   classifyDeployOutcome,
@@ -11,6 +16,7 @@ import {
   raiseAlert,
   readJobResults,
   resolveAlert,
+  resolveAlertConfig,
   runDeployAlert,
 } from "../deploy-alert.mjs";
 
@@ -539,4 +545,197 @@ test("a network-level throw is absorbed, not propagated", async () => {
     logger: silentLogger,
   });
   assert.equal(result.alert.action, "failed");
+});
+
+// ── The Vercel staging configuration (#1674) ────────────────────────────────
+// `deploy-alert.mjs` watches two workflows now. These cover the second one and,
+// more importantly, the two ways the generalisation could quietly break the
+// first: a shared alert title (which would make the two watchdogs close each
+// other's issues) and a gate job the second workflow does not have.
+
+/** `toJSON(needs)` for a failed `Deploy Vercel staging` run. */
+function vercelFailedNeeds() {
+  return { deploy: { result: "failure", outputs: {} } };
+}
+
+/** `toJSON(needs)` for a successful one. */
+function vercelDeployedNeeds() {
+  return { deploy: { result: "success", outputs: {} } };
+}
+
+test("resolveAlertConfig defaults to deploy-api and throws on an unknown name", () => {
+  assert.equal(resolveAlertConfig(undefined), DEPLOY_API_CONFIG);
+  assert.equal(resolveAlertConfig("deploy-api"), DEPLOY_API_CONFIG);
+  assert.equal(
+    resolveAlertConfig("deploy-vercel-staging"),
+    DEPLOY_VERCEL_STAGING_CONFIG,
+  );
+  // A typo'd ALERT_CONFIG must be loud. Falling back to the default would let
+  // the Vercel workflow's job results write the Deploy API alert's issue.
+  assert.throws(() => resolveAlertConfig("deploy-vercel"), /Unknown ALERT_CONFIG/);
+});
+
+test("the two configurations never share an alert issue identity", () => {
+  // Title is the lookup key. If these two ever matched, a green Vercel deploy
+  // would close a live Deploy API outage's alert, and vice versa.
+  assert.notEqual(
+    DEPLOY_API_CONFIG.alertTitle,
+    DEPLOY_VERCEL_STAGING_CONFIG.alertTitle,
+  );
+  const titles = Object.values(ALERT_CONFIGS).map((config) => config.alertTitle);
+  assert.equal(new Set(titles).size, titles.length);
+  // Both must carry the lookup label, or findAlertIssues can never find them.
+  for (const config of Object.values(ALERT_CONFIGS)) {
+    assert.ok(config.alertLabels.includes("routine-state"), `${config.name} lookup label`);
+  }
+});
+
+test("a gateless config reports only its deploy jobs", () => {
+  assert.equal(DEPLOY_VERCEL_STAGING_CONFIG.gateJob, null);
+  assert.deepEqual(alertJobNames(DEPLOY_VERCEL_STAGING_CONFIG), ["deploy"]);
+  assert.deepEqual(alertJobNames(DEPLOY_API_CONFIG), [
+    "check-changes",
+    "migrate-staging",
+    "deploy-staging",
+  ]);
+});
+
+test("a gateless config treats its succeeding deploy job as a deploy, not a gate", () => {
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const jobResults = readJobResults(vercelDeployedNeeds(), config);
+  assert.deepEqual(jobResults, { deploy: "success" });
+
+  const { outcome, deployed, failed } = classifyDeployOutcome({ jobResults, config });
+  assert.equal(outcome, "deployed");
+  assert.deepEqual(deployed, ["deploy"]);
+  assert.deepEqual(failed, []);
+});
+
+test("a failed Vercel staging run classifies as failed and names the job", () => {
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const jobResults = readJobResults(vercelFailedNeeds(), config);
+  const { outcome, failed } = classifyDeployOutcome({ jobResults, config });
+  assert.equal(outcome, "failed");
+  assert.deepEqual(failed, ["deploy"]);
+
+  const headline = buildHeadline({ outcome, failed, deployed: [], headBranch: "main", config });
+  assert.match(headline, /^Deploy Vercel staging FAILED on `main`/);
+  // It must not claim to be the other watchdog.
+  assert.doesNotMatch(headline, /Deploy API/);
+});
+
+test("a cancelled Vercel deploy is a failure, not a benign skip", () => {
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const jobResults = readJobResults({ deploy: { result: "cancelled" } }, config);
+  assert.equal(classifyDeployOutcome({ jobResults, config }).outcome, "failed");
+});
+
+test("a gateless config's summary renders no changed-path rows", () => {
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const jobResults = readJobResults(vercelFailedNeeds(), config);
+  const summary = buildRunSummary({
+    outcome: "failed",
+    failed: ["deploy"],
+    deployed: [],
+    jobResults,
+    headBranch: "main",
+    headSha: "4de96af",
+    runUrl: "https://example.test/run/1",
+    gateOutputs: {},
+    gateSucceeded: false,
+    config,
+  });
+
+  assert.match(summary, /^## Deploy Vercel staging outcome/);
+  assert.match(summary, /\| `deploy` \| failure \|/);
+  // The whole point of gateOutputRows being empty: a workflow with no path gate
+  // must not print "unknown" for a question it never asks.
+  assert.doesNotMatch(summary, /paths changed/);
+  assert.doesNotMatch(summary, /check-changes/);
+});
+
+test("the Vercel alert issue body names its own workflow and issue numbers", () => {
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const body = buildAlertIssueBody({
+    headline: "Deploy Vercel staging FAILED on `main` — deploy did not succeed.",
+    failed: ["deploy"],
+    headBranch: "main",
+    headSha: "4de96af",
+    runUrl: "https://example.test/run/1",
+    config,
+  });
+
+  assert.match(body, /## Deploy Vercel staging is failing/);
+  assert.match(body, /\.github\/workflows\/deploy-vercel-staging\.yml/);
+  assert.match(body, /ADR-21/);
+  assert.match(body, /#1578/);
+  // Must not inherit the Deploy API alert's prose or its workflow file.
+  assert.doesNotMatch(body, /deploy-api\.yml/);
+  assert.doesNotMatch(body, /#763/);
+  // Still tells a reader not to claim it as backlog work.
+  assert.match(body, /routine-state/);
+});
+
+test("runDeployAlert files the Vercel alert under the Vercel title", async () => {
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
+  let summary = "";
+
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: vercelFailedNeeds(),
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
+    logger: silentLogger,
+    config,
+  });
+
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.alert.action, "created");
+
+  const created = calls.find((call) => call.method === "POST" && call.path === "/repos/o/r/issues");
+  assert.equal(created.body.title, DEPLOY_VERCEL_STAGING_CONFIG.alertTitle);
+  assert.notEqual(created.body.title, ALERT_ISSUE_TITLE);
+  assert.ok(created.body.labels.includes("routine-state"));
+  assert.ok(created.body.labels.includes("P2"));
+  assert.match(summary, /Deploy Vercel staging/);
+});
+
+test("a recovered Vercel deploy closes only the Vercel alert", async () => {
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const openVercelAlert = {
+    number: 950,
+    state: "open",
+    title: DEPLOY_VERCEL_STAGING_CONFIG.alertTitle,
+  };
+  const openApiAlert = { number: 951, state: "open", title: ALERT_ISSUE_TITLE };
+  const { fetchImpl, calls } = makeFetchStub({
+    issues: [openVercelAlert, openApiAlert],
+  });
+
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: vercelDeployedNeeds(),
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+    config,
+  });
+
+  assert.equal(result.outcome, "deployed");
+  assert.deepEqual(result.alert.closed, [950]);
+  // The Deploy API alert must be untouched — this is the cross-watchdog
+  // regression the shared title check above exists to prevent.
+  const patched = calls.filter((call) => call.method === "PATCH").map((call) => call.path);
+  assert.deepEqual(patched, ["/repos/o/r/issues/950"]);
 });
