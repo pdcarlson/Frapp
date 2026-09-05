@@ -141,8 +141,3 @@ export function getSupabaseClient(): SupabaseClient | null {
 
   return cachedClient;
 }
-
-/** Test seam — drops the memoized client so env changes take effect. */
-export function resetSupabaseClientForTests(): void {
-  cachedClient = undefined;
-}

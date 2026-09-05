@@ -266,28 +266,10 @@ export function applyReactionDelete(
   };
 }
 
-/** Records a server reaction id so a later realtime DELETE can resolve it. */
-export function indexReactionAction(
-  cache: ChannelCache,
-  action: RawChatMessageAction,
-): ChannelCache {
-  return applyReactionInsert(cache, action);
-}
-
 /** Materializes the cache into a created_at-ascending message array for rendering. */
 export function selectMessages(cache: ChannelCache | undefined): ChatMessage[] {
   if (!cache) return [];
   return cache.order
     .map((key) => cache.byId[key])
     .filter((m): m is ChatMessage => m != null);
-}
-
-/** Newest confirmed message id, for the reconnect last-seen cursor. */
-export function lastConfirmedId(cache: ChannelCache | undefined): string | null {
-  if (!cache) return null;
-  for (let i = cache.order.length - 1; i >= 0; i--) {
-    const message = cache.byId[cache.order[i]!];
-    if (message && message._status === "confirmed") return message.id;
-  }
-  return null;
 }
