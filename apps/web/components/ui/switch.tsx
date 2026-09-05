@@ -44,6 +44,14 @@ const Switch = React.forwardRef<
       "enabled:data-[state=unchecked]:border-input enabled:data-[state=unchecked]:bg-accent",
       FOCUS_RING_OFFSET,
       "disabled:cursor-not-allowed disabled:border-border disabled:bg-card",
+      // Soft-disabled: `aria-disabled` without the attribute, for a control
+      // that is refused rather than inert. Deliberately NOT the `disabled:`
+      // rules above — those repaint the track and (via `group-data-[disabled]`)
+      // the thumb, which erases the on/off state this control's whole
+      // appearance carries. `spec/ui/resilience.md` § UI Indicators requires
+      // the two presentations to agree, so the cursor and a dimming that
+      // preserves hue say "unavailable" while state stays readable.
+      "aria-disabled:cursor-not-allowed aria-disabled:opacity-60",
       className
     )}
     {...props}

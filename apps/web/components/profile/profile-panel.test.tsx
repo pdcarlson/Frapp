@@ -917,6 +917,36 @@ describe("ProfilePanel — notification categories (#564)", () => {
     expect(mocks.toast.mock.calls.at(-1)?.[0].title).toMatch(/offline/i);
   });
 
+  // `resilience.md`'s queueless rule wires the reason to the control itself,
+  // not to a sentence beside it. Without this a screen-reader member hears
+  // "unavailable" with no explanation — and a dangling `aria-describedby` id
+  // fails silently, so the reference is resolved here rather than asserted to
+  // merely exist.
+  it("puts the offline reason on each switch, not only under the grid", () => {
+    mockOffline.value = true;
+    mocks.preferencesQuery.data = [];
+    render(<ProfilePanel />);
+
+    const described = categorySwitch(/^chat$/i)
+      .getAttribute("aria-describedby")
+      ?.split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ");
+    expect(described).toMatch(/offline/i);
+    // The category blurb must survive alongside it, not be replaced by it.
+    expect(described).toMatch(/mentions/i);
+  });
+
+  it("drops the offline reference from the switches once back online", () => {
+    mockOffline.value = false;
+    mocks.preferencesQuery.data = [];
+    render(<ProfilePanel />);
+
+    expect(
+      categorySwitch(/^chat$/i).getAttribute("aria-describedby"),
+    ).toBe("notification-category-chat-description");
+  });
+
   // The store initialises to `activeChapterId: null`, so before rehydration —
   // and in the server-rendered HTML — a member WITH a chapter is
   // indistinguishable from one without. The copy must therefore not assert

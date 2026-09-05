@@ -72,6 +72,13 @@ type UserSettings = {
   quiet_hours_tz?: string | null;
 };
 
+/**
+ * The offline note under the notification switches, referenced by every one of
+ * them through `aria-describedby` while OFFLINE. Named once so the paragraph
+ * and its referrers cannot drift apart into a dangling id.
+ */
+const OFFLINE_NOTE_ID = "notification-categories-offline";
+
 export function ProfilePanel() {
   const { toast } = useToast();
   const { isOffline } = useNetwork();
@@ -752,7 +759,19 @@ export function ProfilePanel() {
                     <Switch
                       id={switchId}
                       checked={categories[category.key]}
-                      aria-describedby={descriptionId}
+                      // The offline reason belongs on the control, not only in
+                      // the paragraph after the last row — `resilience.md`'s
+                      // queueless rule is explicit that it wires to the control
+                      // itself. Without this a screen-reader member offline
+                      // hears "Points, switch, on, unavailable" and nothing
+                      // about why, with the explanation sitting six rows below
+                      // and the toast arriving only after they activate a
+                      // control their AT has just called unavailable.
+                      aria-describedby={
+                        isOffline
+                          ? `${descriptionId} ${OFFLINE_NOTE_ID}`
+                          : descriptionId
+                      }
                       /*
                        * Soft-disabled offline, NOT `disabled`.
                        *
@@ -798,7 +817,10 @@ export function ProfilePanel() {
                 // paused mid-flight, so a switch can be showing a value the
                 // server never received. Claiming the displayed state is
                 // authoritative would be most wrong precisely when it matters.
-                <p className="text-sm text-muted-foreground">
+                <p
+                  id={OFFLINE_NOTE_ID}
+                  className="text-sm text-muted-foreground"
+                >
                   You&apos;re offline, so these can&apos;t be changed right now.
                 </p>
               ) : null}
