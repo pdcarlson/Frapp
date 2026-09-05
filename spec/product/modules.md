@@ -5,7 +5,7 @@
 **Auth provider:** Supabase Auth (email/password, magic link, OAuth).
 
 - **Multi-tenancy:** Every user belongs to one or more chapters (tenants). All data access is strictly scoped by `chapter_id`.
-- **RBAC:** Permissions are open-ended strings. Frapp publishes a system permissions catalog that the API enforces; chapters can define additional custom permission strings for channel gating and organizational use. **Custom permission strings are chapter-scoped — they cannot grant system-level or cross-chapter capabilities.** A chapter's custom `admin:all` (or any other string) applies only inside that chapter; the API never consults a chapter's custom permissions when authorizing platform or cross-chapter operations. Roles are chapter-scoped and fully customizable. System roles (President, Treasurer, Member, New Member, Alumni) are seeded on chapter creation with sensible defaults. Full permission catalog and check algorithm: [`spec/behavior/rbac.md`](../behavior/rbac.md).
+- **RBAC:** Permissions are open-ended strings. Frapp publishes a system permissions catalog that the API enforces; chapters can define additional custom permission strings for channel gating and organizational use. **Custom permission strings are chapter-scoped — they cannot grant system-level or cross-chapter capabilities.** A chapter's custom `admin:all` (or any other string) applies only inside that chapter; the API never consults a chapter's custom permissions when authorizing platform or cross-chapter operations. Roles are chapter-scoped and fully customizable. Seven system roles are seeded on chapter creation with sensible defaults; [`spec/behavior/rbac.md`](../behavior/rbac.md) § Role Lifecycle names them and their exact seeded permission sets. Full permission catalog and check algorithm: [`spec/behavior/rbac.md`](../behavior/rbac.md).
 - **Permissions guard:** API middleware fetches the user's roles for the active chapter, flattens permissions, and checks against the `@RequirePermissions()` decorator on each endpoint.
 - **Fail-safe:** A user with no roles has zero permissions. The President system role holds the wildcard (`*`) granting all permissions.
 - **Presidency transfer:** Atomic operation — current President assigns the role to another member and removes it from themselves in a single transaction.
@@ -38,14 +38,14 @@
 
 - **Customer:** The chapter (organization).
 - **Provider:** Stripe.
-- **Model:** Fixed monthly subscription (e.g. $150/mo flat).
-- **Enforcement:** Subscription state gates **writes**, applied by `ChapterGuard` at the request boundary. Its refusals are **403** — the API returns no 402 anywhere — though `BillingService` layers its own **400** refusals on top (a duplicate checkout while a live subscription exists, or a portal session for a chapter with no Stripe customer yet). A free-tier wedge (ten controllers, chat / members / **invites** among them) keeps writing while a chapter is `incomplete`, so a chapter fresh out of the onboarding wizard can invite before it has ever paid. A `past_due` chapter gets a 3-day grace window in which invite _minting_ is blocked while its other free-tier writes continue; after that window, and for `canceled`, **guarded** writes are blocked. Two things deliberately survive that lock, so "read-only" describes the guarded surface rather than the whole API: `@SubscriptionExempt()` billing-recovery routes, so a lapsed chapter can pay its way back; and routes carrying no `ChapterGuard` at all — invite redeem, notification preferences, analytics events — which were never subscription-gated in the first place. Full matrix, including the exact codes and the `GET`/`HEAD`/`OPTIONS` definition of a read: [`docs/guides/api-architecture.md`](../../docs/guides/api-architecture.md) § Subscription enforcement (ChapterGuard).
+- **Model:** Fixed monthly subscription, flat per chapter. The price is a commercial commitment pinned in [`spec/product/positioning.md`](positioning.md) § Paid tier (Chapter Pro), which the public site sells; it is not restated here.
+- **Enforcement:** Subscription state gates **writes**, applied by `ChapterGuard` at the request boundary. Its refusals are **403** — the API returns no 402 anywhere — though `BillingService` layers its own **400** refusals on top (a duplicate checkout while a live subscription exists, or a portal session for a chapter with no Stripe customer yet). A free-tier wedge (the `@FreeTier()` routes — chat / members / **invites** among them) keeps writing while a chapter is `incomplete`, so a chapter fresh out of the onboarding wizard can invite before it has ever paid. A `past_due` chapter gets a 3-day grace window in which invite _minting_ is blocked while its other free-tier writes continue; after that window, and for `canceled`, **guarded** writes are blocked. Two things deliberately survive that lock, so "read-only" describes the guarded surface rather than the whole API: `@SubscriptionExempt()` billing-recovery routes, so a lapsed chapter can pay its way back; and routes carrying no `ChapterGuard` at all — invite redeem, notification preferences, analytics events — which were never subscription-gated in the first place. Full matrix, including the exact codes and the `GET`/`HEAD`/`OPTIONS` definition of a read: [`docs/guides/api-architecture.md`](../../docs/guides/api-architecture.md) § Subscription enforcement (ChapterGuard).
 
 ### Internal Ledger (House Points)
 
 - Every point change is recorded as a transaction in `point_transactions`. The web dashboard **Audit** tab loads a chapter-wide, cursor-paginated slice of those rows for officers with `points:view_all` (API: `GET /v1/points/transactions`; full rules in [`spec/behavior/points.md`](../behavior/points.md)).
 - Positive amount = reward; negative amount = fine/correction.
-- Categories: ATTENDANCE, ACADEMIC, SERVICE, FINE, MANUAL.
+- Categories: ATTENDANCE, ACADEMIC, SERVICE, FINE, MANUAL, STUDY.
 - A member's balance is the sum of their transactions.
 - Admins can manually adjust points with a required reason. Audit trail tracks which admin made the adjustment.
 - Anti-fraud: rate limiting on adjustments, anomaly flagging for large transactions, no self-award (enforced on `points:adjust`, task confirmation and service-hour approval — see [`points.md`](../behavior/points.md) § Anti-Fraud).
@@ -67,7 +67,7 @@
 - Realtime delivery via Supabase Realtime (Postgres changes subscription).
 - **Channels:** PUBLIC, PRIVATE, ROLE_GATED (gated by any permission string, including custom), DM (1-on-1), GROUP_DM (up to 10 members).
 - **Channel categories:** Named groups for organizing channels (display-only, like Discord).
-- **Default channels:** #general (public), #announcements (admin-post, all-read), #alumni (role-gated to Alumni + active members).
+- **Default channels:** #general (public), #announcements (admin-post, all-read), #chapter-audit (public, read-only — the system-write audit feed), #alumni (role-gated to Alumni + active members). Full seeded definitions: [`spec/behavior/chat/README.md`](../behavior/chat/README.md) § Channels.
 - **Messages support:** Markdown formatting, emoji reactions, file/image uploads (25MB limit), reply threads (reply-with-quote), edit, delete (soft), pinned messages (up to 50 per channel).
 - **Typing indicators** and **online/offline presence** via Supabase Realtime.
 - **Read receipts:** Last-read timestamp per channel per user.
@@ -188,7 +188,7 @@
 
 - Chapters upload a logo (displayed in app header, directory, PDF reports, onboarding).
 - Chapters set a custom accent color (hex) for buttons, links, and highlights.
-- Default accent: Frapp Royal Blue `#2563EB`.
+- Default accent: several distinct "defaults" are in play and they are **not** interchangeable — the value a chapter *holds* until an accent is chosen (the `chapters.accent_color` column default), the value a client *paints* when the stored one is absent or illegible, and the seed a no-accent chapter's palette is generated from. [`spec/behavior/branding.md`](../behavior/branding.md) owns the first two and [`spec/ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md) owns the seed; this file restates none of them.
 - Chapter branding applies only within the chapter context; Frapp branding is unaffected.
 
 ---
