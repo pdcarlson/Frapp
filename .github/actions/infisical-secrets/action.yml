@@ -14,9 +14,10 @@ inputs:
       `scripts/check-env-slugs.mjs` § 3 is what stops this repo naming an
       Infisical environment that does not exist, and it finds those names by
       scanning `.github/workflows` AND `.github/actions` for the literal
-      pattern `env-slug: "<slug>"`. Inside this file the value is
-      `${{ inputs.env-slug }}`, which that pattern cannot match and is not meant
-      to -- the real literals survive as the `with:` values at each call site,
+      pattern `env-slug: "<slug>"`. Inside this file the value is an
+      `inputs.env-slug` template expression, which that pattern cannot match and
+      is not meant to -- the real literals survive as the `with:` values at each
+      call site,
       where the gate still reads them. Rename this input to anything else and
       all eleven literals move out of its reach at once: the gate then scans
       zero bytes and passes, which is the vacuous-green failure its own section
@@ -30,8 +31,9 @@ inputs:
     description: >
       `secrets.INFISICAL_MACHINE_IDENTITY_ID`, passed in from the call site.
 
-      Composite actions cannot read the `secrets` context -- `${{ secrets.X }}`
-      resolves to empty here, not to the secret -- so the credentials have to
+      Composite actions cannot read the `secrets` context -- a `secrets.*`
+      expression resolves to empty here, not to the secret, and a manifest that
+      writes one does not even load -- so the credentials have to
       arrive as inputs. That is also why the check below is worth keeping: a
       call site that forgets to pass them fails on this step with a named cause,
       rather than several steps later on an unexplained 401.

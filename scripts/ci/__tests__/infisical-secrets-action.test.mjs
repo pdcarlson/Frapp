@@ -233,6 +233,35 @@ describe("infisical-secrets composite action", () => {
   });
 });
 
+describe("composite action manifests", () => {
+  it("carries no template expression above `runs:`", () => {
+    // The runner evaluates an action manifest as a template, and the metadata
+    // above `runs:` — `name`, `description`, and every `inputs.*.description` —
+    // is evaluated with almost no contexts available. A `${…}` naming `inputs`
+    // or `secrets` there is not inert prose: the manifest FAILS TO LOAD, with
+    // "Unrecognized named-value: 'inputs'", and every job calling the action
+    // dies before its first step.
+    //
+    // This is invisible to YAML parsing — the file is perfectly valid YAML —
+    // and it shipped, because describing the expression is the natural way to
+    // document the input. CI caught it; nothing local did. Hence this check.
+    const OPEN = "$" + "{{";
+    for (const { name, text } of otherActions) {
+      if (!text) continue;
+      const runsAt = text.search(/^runs:/m);
+      assert.ok(runsAt > 0, `${name}/action.yml has no top-level runs: key`);
+      const metadata = text.slice(0, runsAt);
+      const line = metadata.slice(0, metadata.indexOf(OPEN)).split("\n").length;
+      assert.ok(
+        !metadata.includes(OPEN),
+        `${name}/action.yml line ~${line}: a template expression appears in the ` +
+          `action's metadata (above \`runs:\`). The runner evaluates it there and the ` +
+          `manifest will fail to load. Describe it in words, or move it under \`runs:\`.`,
+      );
+    }
+  });
+});
+
 describe("Infisical call sites", () => {
   const callSites = workflows.filter((w) => USES_INFISICAL.test(w.text) ||
     codeLines(w.text).some((l) => USES_INFISICAL.test(l)));
