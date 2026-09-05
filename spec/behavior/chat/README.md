@@ -556,6 +556,6 @@ These are the user-observable guarantees of the chat client (web and mobile), in
 
 The mobile (Expo) chat experience is held to **parity** with web: reactions, inline rich-message cards, presence, and the offline composer queue all behave the same across platforms. Differences that are canonical:
 
-- **Voice memos** are mobile-native: recorded in the composer, uploaded to Storage, and sent as `kind="audio"` with waveform metadata. Web clients play them back.
+- **Voice memos** are mobile-native *in the target state*: recorded in the composer, uploaded to Storage, and sent as `kind="audio"` with waveform metadata, with web clients playing them back. **Not built** — `audio` is not in `CHAT_MESSAGE_KINDS`, as § Message Kinds and Actions above records, so no send of that kind is accepted today.
 - **Presence lifecycle on mobile** maps app state to presence: backgrounded → `idle`, force-quit → `offline` (consistent with the Idle/Offline statuses tracked via Realtime Presence above).
 - The authenticated entry point on mobile lands directly on chat, with the channel list as the default tab.

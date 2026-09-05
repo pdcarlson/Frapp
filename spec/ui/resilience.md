@@ -618,7 +618,7 @@ For files > 5MB, consider chunked upload for resumability. Not in v1 scope, but 
 | Roles | 60s | 10min | Changes very rarely |
 | Events | 30s | 5min | New events / check-ins moderately frequent |
 | Points / Leaderboard | 30s | 5min | Points change frequently during events |
-| Chat messages | `Infinity` | _(default)_ | Realtime is the freshness mechanism, so the cache deliberately never goes stale and never refetches on mount or focus — the opposite of `0s`, which would refetch constantly *because* Realtime already holds it current. `useChatChannel` sets only `staleTime`, so `gcTime` is the global 10-minute default ([`web-dashboard/README.md`](./web-dashboard/README.md) § Surviving data contracts owns the global defaults) |
+| Chat messages | `Infinity` | _(inherited — see below)_ | Realtime is the freshness mechanism, so the cache deliberately never goes stale and never refetches on mount or focus — the opposite of `0s`, which would refetch constantly *because* Realtime already holds it current. Both `useChatChannel`s set only `staleTime` |
 | Chat channels | 60s | 10min | Channel list changes rarely |
 | Notifications | 10s | 5min | Time-sensitive, refresh often |
 | Backwork | 60s | 10min | Content changes infrequently |
@@ -627,7 +627,15 @@ For files > 5MB, consider chunked upload for resumability. Not in v1 scope, but 
 | Service entries | 30s | 5min | Approval queue is time-sensitive |
 | Tasks | 30s | 5min | Status changes are frequent |
 | Study sessions | 30s | 5min | The **live** session is not served from this cache at all — s10 holds it in screen state and refreshes it from each mutation's own response, because a session can end by returning 200 and a 30s window would keep a dead timer ticking. The cached list backs the history and the recovery-on-mount read |
-| Study zones | 60s | _(default)_ | A chapter's zones change about as often as its roles. `useGeofences` sets only `staleTime`, so `gcTime` is TanStack's 5-minute default — recorded as-is rather than as an intent nothing implements |
+| Study zones | 60s | _(inherited — see below)_ | A chapter's zones change about as often as its roles. `useGeofences` sets only `staleTime` — recorded as-is rather than as an intent nothing implements |
+
+**An unset `gcTime` does not mean one number — it differs by platform, and this table is both.**
+Web's `QueryClient` ([`apps/web/lib/providers/query-provider.tsx`](../../apps/web/lib/providers/query-provider.tsx))
+sets `gcTime: 10 * 60_000`, so any web query that sets only `staleTime` inherits **10 minutes**.
+Mobile's ([`apps/mobile/lib/query-client.ts`](../../apps/mobile/lib/query-client.ts)) sets no
+`gcTime` at all, so the same query on device inherits **TanStack's own 5-minute default**. Budget
+cache retention against the platform you are on; the web defaults in full are owned by
+[`web-dashboard/README.md`](./web-dashboard/README.md) § Surviving data contracts.
 
 ### Cache Invalidation Triggers
 
@@ -639,7 +647,7 @@ For files > 5MB, consider chunked upload for resumability. Not in v1 scope, but 
 | User changes roles | `['members', chapterId]`, `['roles']` |
 | Supabase Realtime event | Relevant query key (auto-updated) |
 | Window focus (tab switch) | All stale queries (TanStack built-in) |
-| Network reconnect | All queries (forced refetch) |
+| Network reconnect | Web: **all** queries — `refetchOnReconnect: "always"` forces even a fresh one. Mobile: **stale** queries only, since it leaves the TanStack default (`true`), so a `staleTime: Infinity` cache such as chat is *not* refetched and relies on the subscribe-then-backfill `?since=` path instead |
 
 **Those last two rows are delivered on mobile, not merely specified.** They depend on
 TanStack's `onlineManager` and `focusManager`, which nothing wired until

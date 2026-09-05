@@ -173,7 +173,7 @@ PY
 ### Input validation
 
 - DTOs must use `class-validator` decorators (`@IsString`, `@MaxLength`, `@IsUUID`, etc.)
-- `ValidationPipe` is configured globally in `main.ts` with `whitelist: true` (strips unknown fields) and `forbidNonWhitelisted: true`
+- `ValidationPipe` is registered globally by `configureApp` in `apps/api/src/bootstrap.ts` (**not** `main.ts`, which only calls it) with `whitelist: true` (strips unknown fields) and `forbidNonWhitelisted: true`, from `VALIDATION_PIPE_OPTIONS` in `apps/api/src/interface/pipes/validation-pipe.options.ts`. Every boot path including the test factory goes through `configureApp`, so a second `useGlobalPipes` anywhere is a fork, not a fix
 
 ### Secret exposure
 
