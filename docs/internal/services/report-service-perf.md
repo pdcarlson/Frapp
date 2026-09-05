@@ -51,8 +51,11 @@ Five consequences worth remembering when editing these queries:
   round-trips instead of silently losing rows. This matters because
   `supabase/config.toml` governs the local stack only — the hosted project's
   Max rows is a dashboard setting the code cannot read. The price is one extra
-  empty request per report. (`scheduled-jobs.repository.ts` reaches the same
-  safety from the other side, by holding its page size below the cap.)
+  empty request per report. Since #1628 this is the *only* sanctioned rule:
+  `fetchAllPages` moved to `apps/api/src/infrastructure/supabase/supabase.utils.ts`
+  and every paged read in the API shares it. Holding a page size below the cap
+  is **not** a second safe strategy — that was the bug #1628 fixed, and the
+  loops that relied on it silently dropped rows.
 - **Paged reads need a total order.** Every one sorts on the table's `id`,
   which is used for ordering and need not be projected. Offset paging over a
   non-unique sort key has no guaranteed order between statements, so rows
