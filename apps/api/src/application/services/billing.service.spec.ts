@@ -7,19 +7,7 @@ import {
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 
-// One shared scope object rather than a fresh one per `withScope`, so a test can
-// assert the tags the unknown-chapter report sets (#1710). `mock`-prefixed names
-// are the ones jest's hoisting lets a factory close over.
-const mockSentryScope = {
-  setLevel: jest.fn(),
-  setTag: jest.fn(),
-};
-jest.mock('@sentry/nestjs', () => ({
-  captureMessage: jest.fn(),
-  withScope: jest.fn((callback: (scope: unknown) => void) =>
-    callback(mockSentryScope),
-  ),
-}));
+jest.mock('@sentry/nestjs', () => ({ captureMessage: jest.fn() }));
 const captureMessage = Sentry.captureMessage as jest.Mock;
 
 import { BillingService } from './billing.service';
@@ -164,12 +152,15 @@ describe('BillingService', () => {
   const checkoutChapter: Chapter = { ...baseChapter, id: CHECKOUT_CHAPTER_ID };
 
   beforeEach(async () => {
-    // Every other mock here is rebuilt below; the Sentry ones live at module
-    // scope because jest.mock's factory owns them, so they need clearing by
-    // hand or call counts leak between tests.
-    captureMessage.mockClear();
-    mockSentryScope.setLevel.mockClear();
-    mockSentryScope.setTag.mockClear();
+    // The Sentry mock lives at module scope because jest.mock's factory owns
+    // it, and the jest config sets neither `resetMocks` nor `restoreMocks`.
+    // `mockReset` rather than `mockClear`: clear leaves a queued
+    // `mockImplementationOnce` in place, so a one-shot throw set by one test
+    // would survive into the next if its own test stopped reaching it.
+    // `jest.clearAllMocks()` is the file-level convention in
+    // all-exceptions.filter.spec.ts and covers anything added later.
+    jest.clearAllMocks();
+    captureMessage.mockReset();
 
     mockBillingProvider = {
       createCustomer: jest.fn(),
@@ -817,9 +808,47 @@ describe('BillingService', () => {
           },
         },
       };
+      jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
       await service.handleWebhookEvent(event);
       expect(mockChapterRepo.update).not.toHaveBeenCalled();
+    });
+
+    // #1710/#1738. These are the paths where revenue *recurs*, so a chapter that
+    // becomes unresolvable here keeps being billed monthly while nothing in the
+    // app can see it. The bare `logger.warn` this replaced made that
+    // indistinguishable from a foreign-account no-op.
+    it('reports a subscription webhook whose chapter cannot be resolved', async () => {
+      const loggerErrorSpy = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
+
+      await service.handleWebhookEvent({
+        id: 'evt_sub_unknown_chapter',
+        type: 'customer.subscription.updated',
+        created: Date.now(),
+        data: { object: { id: 'sub_orphaned', status: 'past_due' } },
+      });
+
+      expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
+      expect(loggerErrorSpy.mock.calls[0][0]).toContain('sub_orphaned');
+
+      expect(captureMessage).toHaveBeenCalledTimes(1);
+      const [, context] = captureMessage.mock.calls[0];
+      expect(context.level).toBe('error');
+      expect(context.tags).toMatchObject({
+        billing_event: 'subscription_unknown_chapter',
+        stripe_event_type: 'customer.subscription.updated',
+        stripe_event_id: 'evt_sub_unknown_chapter',
+      });
+      // No chapter is resolvable by definition on this path, so there is no
+      // chapter to tag — the reporter must not invent one.
+      expect(context.tags.chapter).toBeUndefined();
+
+      loggerErrorSpy.mockRestore();
     });
 
     it('should ignore invoice.paid for missing subscription', async () => {
@@ -963,6 +992,9 @@ describe('BillingService', () => {
       });
 
       it('looks the chapter up, then changes nothing', async () => {
+        jest
+          .spyOn(service['logger'], 'error')
+          .mockImplementation(() => undefined);
         mockChapterRepo.findById.mockResolvedValue(null);
 
         await service.handleWebhookEvent(unknownChapterEvent());
@@ -981,6 +1013,9 @@ describe('BillingService', () => {
         // test-mode Stripe account, or a row removed out of band — so a retry
         // could never succeed. If someone later makes this throw, the event
         // stays unprocessed and Stripe retries a foreign event for days.
+        jest
+          .spyOn(service['logger'], 'error')
+          .mockImplementation(() => undefined);
         mockChapterRepo.findById.mockResolvedValue(null);
 
         await expect(
@@ -1006,14 +1041,21 @@ describe('BillingService', () => {
         const message = loggerErrorSpy.mock.calls[0][0] as string;
         expect(message).toContain(MISSING_CHAPTER_ID);
         expect(message).toContain('evt_no_chapter_exist');
-        // The two things an operator cannot reconstruct from the id alone.
-        expect(message).toContain('will not redeliver');
         expect(message).toContain('reconcile it in Stripe');
+        // Deliberately "marked processed … will not retry once this response
+        // returns 2xx", never a flat "Stripe will not redeliver":
+        // `markProcessed` runs after the handler returns and can itself fail,
+        // in which case Stripe does retry.
+        expect(message).toContain('marked processed');
+        expect(message).not.toContain('will not redeliver');
 
         loggerErrorSpy.mockRestore();
       });
 
-      it('reports to Sentry, tagged so it can be routed', async () => {
+      it('reports to Sentry, tagged and with the chapter hashed for correlation', async () => {
+        // `pseudonymizeChapterId` needs the salt; see the fail-closed case below.
+        const priorSalt = process.env.ANALYTICS_HMAC_SALT;
+        process.env.ANALYTICS_HMAC_SALT = 'billing-spec-salt';
         jest
           .spyOn(service['logger'], 'error')
           .mockImplementation(() => undefined);
@@ -1022,15 +1064,65 @@ describe('BillingService', () => {
         await service.handleWebhookEvent(unknownChapterEvent());
 
         expect(captureMessage).toHaveBeenCalledTimes(1);
-        expect(mockSentryScope.setLevel).toHaveBeenCalledWith('error');
-        expect(mockSentryScope.setTag).toHaveBeenCalledWith(
-          'billing_event',
-          'checkout_unknown_chapter',
-        );
-        expect(mockSentryScope.setTag).toHaveBeenCalledWith(
-          'stripe_event_id',
-          'evt_no_chapter_exist',
-        );
+        const [message, context] = captureMessage.mock.calls[0];
+        expect(message).toContain('checkout.session.completed');
+        expect(context.level).toBe('error');
+        expect(context.tags).toMatchObject({
+          billing_event: 'checkout_unknown_chapter',
+          stripe_event_type: 'checkout.session.completed',
+          stripe_event_id: 'evt_no_chapter_exist',
+        });
+        // Without a chapter dimension every occurrence collapses into one issue
+        // keyed on the constant message, and the real one cannot be told from
+        // the cross-environment noise. Hashed at the source, per
+        // AllExceptionsFilter.reportToSentry.
+        expect(context.tags.chapter).toEqual(expect.any(String));
+        expect(context.tags.chapter).not.toContain(MISSING_CHAPTER_ID);
+
+        process.env.ANALYTICS_HMAC_SALT = priorSalt;
+      });
+
+      it('omits the chapter tag rather than sending a raw id when the salt is unset', async () => {
+        // `pseudonymizeChapterId` is fail-closed by design: no salt means drop
+        // the value, never fall back to the raw UUID. Pinned because the tag
+        // was added for correlation, and "make it correlatable" is exactly the
+        // pressure that would later turn this into a raw id.
+        const priorSalt = process.env.ANALYTICS_HMAC_SALT;
+        delete process.env.ANALYTICS_HMAC_SALT;
+        jest
+          .spyOn(service['logger'], 'error')
+          .mockImplementation(() => undefined);
+        mockChapterRepo.findById.mockResolvedValue(null);
+
+        await service.handleWebhookEvent(unknownChapterEvent());
+
+        const [, context] = captureMessage.mock.calls[0];
+        expect(context.tags.chapter).toBeUndefined();
+        expect(JSON.stringify(context.tags)).not.toContain(MISSING_CHAPTER_ID);
+
+        if (priorSalt !== undefined) {
+          process.env.ANALYTICS_HMAC_SALT = priorSalt;
+        }
+      });
+
+      it('reports the same chapter once per cooldown, but logs every time', async () => {
+        // Local dev and staging share both a Stripe test-mode account and a
+        // Sentry DSN, so an afternoon of local checkouts would otherwise bury
+        // the occurrence that means money moved.
+        const loggerErrorSpy = jest
+          .spyOn(service['logger'], 'error')
+          .mockImplementation(() => undefined);
+        mockChapterRepo.findById.mockResolvedValue(null);
+
+        await service.handleWebhookEvent(unknownChapterEvent('evt_dup_1'));
+        await service.handleWebhookEvent(unknownChapterEvent('evt_dup_2'));
+        await service.handleWebhookEvent(unknownChapterEvent('evt_dup_3'));
+
+        expect(captureMessage).toHaveBeenCalledTimes(1);
+        // The log is the forensic record and is never rate-limited.
+        expect(loggerErrorSpy).toHaveBeenCalledTimes(3);
+
+        loggerErrorSpy.mockRestore();
       });
 
       it('still acks when Sentry itself fails', async () => {

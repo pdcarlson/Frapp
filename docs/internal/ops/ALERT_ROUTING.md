@@ -118,6 +118,19 @@ Source: the `security_event` structured log records the API emits on every 401, 
 
 Only the first is currently **implemented**, as an in-process counter that emits a `warning`-level Sentry event tagged `security_event: auth_failure_spike`. The other two rows are the intended thresholds, not live rules — they need a provider-side query over the log stream.
 
+### Billing webhooks
+
+Source: `error`-level Sentry events the API emits when a Stripe webhook names a chapter it cannot resolve (#1710). Emitted by `BillingService`, tagged `billing_event`, and carrying a pseudonymized `chapter` tag when `ANALYTICS_HMAC_SALT` is set.
+
+| Alert | Condition | Routing |
+| ------------------------------ | ------------------------------------------------------------------------------------------- | ------------ |
+| Checkout paid, chapter unknown | a `billing_event: checkout_unknown_chapter` event **in live mode** | critical |
+| Subscription event, chapter unknown | a `billing_event: subscription_unknown_chapter` event **in live mode** | critical |
+
+**Both are noisy in test mode by design, and that is the whole reason they need a rule rather than the default stream.** Local dev and staging share one Stripe test-mode account *and* one Sentry DSN (`ENV_REFERENCE.md` — both are "Same as staging"), so every developer checkout fans out to the staging endpoint and reports there, and vice versa. A rule that does not scope to the production environment will fire on routine local billing work, get muted, and take the real signal with it. The API applies a 15-minute per-reference cooldown so one repeatedly-redelivered reference reports once, but that does not separate the environments — the alert rule must.
+
+Per the note above, Sentry alert rules are dashboard-only and cannot be asserted in CI, so **these rows describe rules a human still has to create**; until then both land in the default unresolved stream.
+
 The in-process counter is per-instance, reset by deploys, and evadable by origin rotation (reasoning in the spec section linked above). It is a first-alert mechanism, not a complete count, and a provider-side rule over the same records is the layer that closes those gaps.
 
 **A denial spike is not automatically an attack.** A botched deploy that invalidates sessions, an expired signing key, or a client shipping a bad token all present as an auth-failure spike. Check whether the failures share one `originHash` (an attacker) or fan out across many (something of ours broke) before escalating.
