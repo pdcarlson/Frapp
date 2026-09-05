@@ -173,7 +173,7 @@ PY
 ### Input validation
 
 - DTOs must use `class-validator` decorators (`@IsString`, `@MaxLength`, `@IsUUID`, etc.)
-- `ValidationPipe` is registered globally by `configureApp` in `apps/api/src/bootstrap.ts` (**not** `main.ts`, which only calls it) with `whitelist: true` (strips unknown fields) and `forbidNonWhitelisted: true`, from `VALIDATION_PIPE_OPTIONS` in `apps/api/src/interface/pipes/validation-pipe.options.ts`. Every boot path including the test factory goes through `configureApp`, so a second `useGlobalPipes` anywhere is a fork, not a fix
+- `ValidationPipe` is registered globally by `configureApp` in `apps/api/src/bootstrap.ts` (**not** `main.ts`, which only calls it) with `whitelist: true` (strips unknown fields) and `forbidNonWhitelisted: true`, from `VALIDATION_PIPE_OPTIONS` in `apps/api/src/interface/pipes/validation-pipe.options.ts`. Every **serving** boot path including the test factory goes through `configureApp`, so a second `useGlobalPipes` on one of those is a fork, not a fix. `apps/api/src/export-openapi.ts` is the deliberate exception — it builds an app only to emit the contract and never serves a request, so finding no pipe there is expected, not a gap
 
 ### Secret exposure
 
