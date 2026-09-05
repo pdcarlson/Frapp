@@ -14,6 +14,7 @@ import {
   useUserSettings,
 } from "@repo/hooks";
 import {
+  isNotificationCategoryKey,
   normalizeTimeZoneInput,
   NOTIFICATION_CATEGORIES,
   rowsToNotificationCategoryState,
@@ -46,6 +47,7 @@ import {
 } from "@/components/shared/nested-states";
 import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { useChapterStore } from "@/lib/stores/chapter-store";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { getErrorMessage, initials } from "@/lib/utils";
 
@@ -86,6 +88,9 @@ export function ProfilePanel() {
   // /profile, has a tenant. With no active chapter there is nothing to read and
   // the query stays disabled; see the `chapterId` branch below.
   const chapterId = useActiveChapterId();
+  // Read straight from the store, not through `useActiveChapterId`, because the
+  // question is whether that hook's `null` means "none" or "not read yet".
+  const hasHydratedChapter = useChapterStore((s) => s.hasHydrated);
   const preferencesQuery = useNotificationPreferences(chapterId ?? "");
   const updatePreference = useUpdateNotificationPreference();
 
@@ -364,14 +369,27 @@ export function ProfilePanel() {
   /*
    * ...and a *third* query is a third set, by the same rule (#564).
    *
-   * The branch order differs from the card above by one rung, and the extra
-   * one is not optional. `useNotificationPreferences` passes
-   * `enabled: !!chapterId`, so with no active chapter the query sits
-   * `isPending` with `fetchStatus: "idle"` forever — a loading branch checked
-   * first would spin a skeleton at a member who has no chapter, with nothing
-   * on the way to replace it. Mobile answers the same case in words
-   * ("Category switches sync once you choose a chapter"), and this is that
-   * sentence on the surface that also has a route for fixing it.
+   * Two rungs here have no counterpart on the cards above, and the reason is
+   * NOT that a disabled query spins a skeleton — it does not. v5 derives
+   * `isLoading = isPending && isFetching`, and a disabled query never fetches,
+   * so `isLoading` is false and the loading rung is simply never reached. An
+   * earlier version of this comment claimed otherwise; the rungs earn their
+   * place for a different and more serious reason.
+   *
+   * Without them the card falls through every branch to `null` and renders six
+   * live-looking switches whose clicks `handleCategoryToggle` silently drops at
+   * its own `!chapterId` guard — a control that looks operable and does
+   * nothing, which is the dead-control failure the shared catalog exists to
+   * prevent.
+   *
+   * `hasHydratedChapter` is the first rung because `activeChapterId` comes from
+   * a persisted zustand store that initializes to `null` (`chapter-store.ts`),
+   * so "no chapter yet" and "no chapter at all" are the same value for the
+   * first paint and through a chapter switch — `subscription-gate.tsx` records
+   * the same window. Telling a member with a chapter that they have none, and
+   * shipping that sentence in the server-rendered HTML, is worse than a
+   * skeleton. `hasHydrated` exists on the store for exactly this and had no
+   * reader until now.
    *
    * `data === undefined` guards the offline and error rungs for the reason the
    * screen-scale block above spells out: TanStack keeps `data` through a
@@ -381,7 +399,11 @@ export function ProfilePanel() {
   const preferencesPaused =
     preferencesQuery.isPending && preferencesQuery.fetchStatus === "paused";
   let categoriesState: React.ReactNode = null;
-  if (!chapterId) {
+  if (!hasHydratedChapter) {
+    categoriesState = (
+      <NestedLoading message="Loading your notification settings..." lines={6} />
+    );
+  } else if (!chapterId) {
     categoriesState = (
       <NestedEmpty
         title="No active chapter"
@@ -428,24 +450,37 @@ export function ProfilePanel() {
     isEnabled: boolean,
   ) {
     if (!chapterId) return;
-    // `useUpdateNotificationPreference` writes the cache optimistically and
-    // reverts just this category on failure (#312), so the switch moves at
-    // once and un-moves itself if the PATCH loses. All this callback owes the
-    // member is the sentence explaining why it moved back.
-    updatePreference.mutate(
-      { chapter_id: chapterId, category, is_enabled: isEnabled },
-      {
-        onError: (error) =>
-          toast({
-            title: `Couldn't turn ${label} notifications ${isEnabled ? "on" : "off"}`,
-            description: getErrorMessage(
-              error,
-              "The switch has been put back. Try again or check your connection.",
-            ),
-            variant: "destructive",
-          }),
-      },
-    );
+    /*
+     * `useUpdateNotificationPreference` writes the cache optimistically and
+     * reverts just this category on failure (#312), so the switch moves at
+     * once and un-moves itself if the PATCH loses. All this owes the member is
+     * the sentence explaining why it moved back.
+     *
+     * `mutateAsync().catch()`, NOT `mutate(…, { onError })`. All six switches
+     * share one mutation observer, and v5's `MutationObserver.mutate` detaches
+     * the observer from the previous mutation and overwrites its stored
+     * per-call options — so a superseded mutation's `onError` never fires, and
+     * if it did it would carry the *later* toggle's closure and name the wrong
+     * category. That window is seconds wide, not a race: `query-provider.tsx`
+     * sets `mutations: { retry: 2 }` with backoff, so a failing PATCH takes
+     * ~6-7s to surface. Flip two switches inside that and the first would
+     * revert silently — the exact "revert reads as the control being broken"
+     * outcome this exists to prevent. `mutateAsync`'s promise belongs to the
+     * call, so supersession and unmount cannot swallow it.
+     * `packages/hooks/src/use-notifications.ts` documents the same asymmetry.
+     */
+    updatePreference
+      .mutateAsync({ chapter_id: chapterId, category, is_enabled: isEnabled })
+      .catch((error: unknown) =>
+        toast({
+          title: `Couldn't turn ${label} notifications ${isEnabled ? "on" : "off"}`,
+          description: getErrorMessage(
+            error,
+            "The switch has been put back. Try again or check your connection.",
+          ),
+          variant: "destructive",
+        }),
+      );
   }
 
   return (
@@ -705,6 +740,19 @@ export function ProfilePanel() {
                       id={switchId}
                       checked={categories[category.key]}
                       aria-describedby={descriptionId}
+                      // Offline, a toggle would be a lie rather than a delay.
+                      // `networkMode` is left at the default `"online"`, so
+                      // query-core runs `onMutate` — the optimistic write lands
+                      // and the switch moves — then pauses the retryer before
+                      // the request goes out. No error, no revert, no toast.
+                      // Web has no mutation persister (see `handleDeleteAccount`
+                      // below), so closing the tab loses the PATCH and the
+                      // member is never told: they believe they muted a
+                      // category that is still on. Mobile answers this with a
+                      // pending/retry sync indicator; the honest web answer
+                      // until #1707 settles queued writes generally is to not
+                      // accept the toggle at all.
+                      disabled={isOffline}
                       onCheckedChange={(checked) =>
                         handleCategoryToggle(
                           category.key,
@@ -716,20 +764,45 @@ export function ProfilePanel() {
                   </div>
                 );
               })}
+              {isOffline ? (
+                <p className="text-sm text-muted-foreground">
+                  You&apos;re offline, so these can&apos;t be changed right now.
+                  Your current settings are still in force.
+                </p>
+              ) : null}
               {/*
-                Mobile carries this sentence too, and it is load-bearing rather
-                than decorative: `announcements` is the one category with real
-                traffic and no switch, so without saying so the grid reads as a
-                complete list of what can arrive. It is absent because both of
-                its emitters send URGENT, which bypasses the preference gate
-                entirely (#1041) — a switch would suppress nothing. It ships
-                once routine announcements are distinguishable from emergency
-                ones (#1323).
+                Rendered only while `announcements` is genuinely absent from the
+                catalog, rather than hard-coded as mobile's copy is. When #1323
+                lands and adds the key, this card would otherwise show an
+                "Announcements" switch and, directly beneath it, a sentence
+                denying that switch exists — a control and its own denial in one
+                card. Deriving the condition from the catalog makes that
+                contradiction unrepresentable instead of leaving it to whoever
+                ships #1323 to remember two surfaces' prose.
+
+                Asked through `isNotificationCategoryKey` rather than a literal
+                comparison against `category.key`: the catalog is `as const`, so
+                `key !== "announcements"` is a type error today ("no overlap")
+                and would only start compiling once the key exists. The
+                predicate takes `unknown`, which is what lets the question be
+                asked before the answer changes.
+
+                Why it is absent at all is the catalog's own docblock, not
+                restated here: both emitters send URGENT, which bypasses the
+                preference gate (#1041), so a switch would suppress nothing.
+
+                Deliberately NOT claiming this is the only unswitchable
+                category — `admin` ("New Member Joined", `invite.service.ts`)
+                is NORMAL priority with no catalog entry either. This names the
+                one a member is most likely to go looking for, and does not
+                pretend the grid is exhaustive.
               */}
-              <p className="text-sm text-muted-foreground">
-                Chapter announcements always arrive — they can carry
-                emergencies, so they are not switchable here.
-              </p>
+              {isNotificationCategoryKey("announcements") ? null : (
+                <p className="text-sm text-muted-foreground">
+                  Chapter announcements always arrive — they can carry
+                  emergencies, so they are not switchable here.
+                </p>
+              )}
             </div>
           )}
         </CardContent>

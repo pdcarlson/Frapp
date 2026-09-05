@@ -63,6 +63,7 @@ const mocks = vi.hoisted(() => {
     // while the query never runs — the exact pairing that would spin a
     // skeleton forever if the branches were ordered the other way.
     chapterId: "chap-1" as string | null,
+    hasHydratedChapter: true,
     preferencesQuery: {
       data: undefined as unknown,
       isPending: false,
@@ -71,7 +72,7 @@ const mocks = vi.hoisted(() => {
       fetchStatus: "idle" as string,
       refetch: vi.fn(),
     },
-    updatePreferenceMutate: vi.fn(),
+    updatePreferenceMutateAsync: vi.fn(),
   };
 });
 
@@ -85,8 +86,15 @@ vi.mock("@repo/hooks", () => ({
   useActiveChapterId: () => mocks.chapterId,
   useNotificationPreferences: () => mocks.preferencesQuery,
   useUpdateNotificationPreference: () => ({
-    mutate: mocks.updatePreferenceMutate,
+    mutateAsync: mocks.updatePreferenceMutateAsync,
   }),
+}));
+
+// Only `hasHydrated` is read from the store; `activeChapterId` reaches the panel
+// through the mocked `useActiveChapterId` above.
+vi.mock("@/lib/stores/chapter-store", () => ({
+  useChapterStore: (selector: (state: { hasHydrated: boolean }) => unknown) =>
+    selector({ hasHydrated: mocks.hasHydratedChapter }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -661,9 +669,18 @@ describe("ProfilePanel — delete account (#713)", () => {
  */
 describe("ProfilePanel — notification categories (#564)", () => {
   beforeEach(() => {
+    // `mockReset`, not just `clearAllMocks`: the failure test below installs an
+    // implementation that rejects, and `vi.clearAllMocks()` clears calls but
+    // NOT implementations (this project sets neither `restoreMocks` nor
+    // `mockReset` in `vitest.config.ts`). Without this, every test appended
+    // after that one inherits a forced failure and silently asserts a path
+    // that never ran.
     vi.clearAllMocks();
+    mocks.updatePreferenceMutateAsync.mockReset();
+    mocks.updatePreferenceMutateAsync.mockResolvedValue({});
     mockOffline.value = false;
     mocks.chapterId = "chap-1";
+    mocks.hasHydratedChapter = true;
     mocks.preferencesQuery.data = [];
     mocks.preferencesQuery.isPending = false;
     mocks.preferencesQuery.isLoading = false;
@@ -726,22 +743,40 @@ describe("ProfilePanel — notification categories (#564)", () => {
     await userEvent.click(categorySwitch(/^billing$/i));
 
     await waitFor(() => {
-      expect(mocks.updatePreferenceMutate).toHaveBeenCalled();
+      expect(mocks.updatePreferenceMutateAsync).toHaveBeenCalled();
     });
-    expect(mocks.updatePreferenceMutate.mock.calls[0]?.[0]).toEqual({
+    expect(mocks.updatePreferenceMutateAsync.mock.calls[0]?.[0]).toEqual({
       chapter_id: "chap-1",
       category: "billing",
       is_enabled: false,
     });
   });
 
+  // Found by mutating the card rather than by writing the test first: two
+  // different corruptions of the `.catch` chain left every assertion green
+  // because nothing pinned the quiet path. A toggle that works must say
+  // nothing — a success toast on every switch flip is its own defect.
+  it("says nothing when a toggle succeeds", async () => {
+    render(<ProfilePanel />);
+    await userEvent.click(categorySwitch(/^events$/i));
+
+    await waitFor(() => {
+      expect(mocks.updatePreferenceMutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
   // The toggle-failure affordance. The hook reverts the cache itself (#312);
   // what the card owes the member is the sentence saying why the switch moved
   // back — otherwise the revert reads as the control being broken.
+  //
+  // Driven by a REJECTING promise rather than by calling an `onError` callback
+  // the test itself supplies. The earlier version did the latter, which only
+  // proved the card passes a function with the right copy — it could not fail
+  // when that function is never invoked, which is precisely the defect review
+  // found here.
   it("toasts when a toggle fails, naming the category and the direction", async () => {
-    mocks.updatePreferenceMutate.mockImplementation((_body, options) => {
-      options?.onError?.(new Error("boom"));
-    });
+    mocks.updatePreferenceMutateAsync.mockRejectedValue(new Error("boom"));
     render(<ProfilePanel />);
     await userEvent.click(categorySwitch(/^tasks$/i));
 
@@ -752,6 +787,35 @@ describe("ProfilePanel — notification categories (#564)", () => {
     expect(toasted.variant).toBe("destructive");
     expect(toasted.title).toMatch(/tasks/i);
     expect(toasted.title).toMatch(/off/i);
+  });
+
+  // The supersession guard. All six switches share one mutation observer, and
+  // v5 drops a superseded mutation's per-`mutate()` callbacks — so a card wired
+  // with `mutate(…, { onError })` loses the first toast entirely and mislabels
+  // the second. Two failures in flight together must produce two correctly
+  // named toasts, which is what `mutateAsync`'s per-call promise guarantees.
+  it("reports both failures when two toggles are in flight at once", async () => {
+    let rejectFirst!: (error: Error) => void;
+    mocks.updatePreferenceMutateAsync
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockRejectedValueOnce(new Error("second"));
+
+    render(<ProfilePanel />);
+    await userEvent.click(categorySwitch(/^points$/i));
+    await userEvent.click(categorySwitch(/^billing$/i));
+    rejectFirst(new Error("first"));
+
+    await waitFor(() => {
+      expect(mocks.toast).toHaveBeenCalledTimes(2);
+    });
+    const titles = mocks.toast.mock.calls.map((call) => call[0].title).join("\n");
+    expect(titles).toMatch(/points/i);
+    expect(titles).toMatch(/billing/i);
   });
 
   // The branch that has no counterpart on the card above it. With no chapter
@@ -807,6 +871,43 @@ describe("ProfilePanel — notification categories (#564)", () => {
     expect(
       screen.getByText(/notification settings unavailable offline/i),
     ).toBeTruthy();
+    expect(screen.queryAllByRole("switch")).toHaveLength(0);
+  });
+
+  // The "only when" half, which the test above cannot pin on its own. Review
+  // proved the gap by mutation: relaxing the rung to a bare `isOffline` left
+  // every test green, so a blip in `navigator.onLine` would have vanished the
+  // whole card for every member holding cached rows.
+  it("keeps the switches offline when rows are cached, but refuses writes", async () => {
+    mockOffline.value = true;
+    mocks.preferencesQuery.data = [{ category: "chat", is_enabled: false }];
+    render(<ProfilePanel />);
+
+    expect(
+      screen.queryByText(/notification settings unavailable offline/i),
+    ).toBeNull();
+    expect(categorySwitch(/^chat$/i)).toHaveAttribute(
+      "data-state",
+      "unchecked",
+    );
+    // Disabled rather than optimistically accepted: an offline PATCH pauses
+    // before it is sent, so accepting the toggle would move the switch, save
+    // nothing, and say nothing.
+    expect(categorySwitch(/^points$/i)).toBeDisabled();
+    await userEvent.click(categorySwitch(/^points$/i));
+    expect(mocks.updatePreferenceMutateAsync).not.toHaveBeenCalled();
+  });
+
+  // The store initialises to `activeChapterId: null`, so before rehydration a
+  // member WITH a chapter is indistinguishable from one without. Asserting "no
+  // active chapter" at them — and shipping that in the server-rendered HTML —
+  // would be a confident falsehood.
+  it("does not claim a hydrating member has no chapter", () => {
+    mocks.hasHydratedChapter = false;
+    mocks.chapterId = null;
+    render(<ProfilePanel />);
+
+    expect(screen.queryByText(/no active chapter/i)).toBeNull();
     expect(screen.queryAllByRole("switch")).toHaveLength(0);
   });
 
