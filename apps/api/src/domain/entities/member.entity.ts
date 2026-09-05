@@ -6,6 +6,13 @@ export interface Member {
   /** Assigned `chapter_custom_roles` ids; capabilities flatten into the permission set alongside `role_ids`. */
   custom_role_ids: string[];
   has_completed_onboarding: boolean;
+  /**
+   * `MODULE_CATALOG` keys whose ops-setup nudge this member has dismissed in
+   * this chapter. Per-user-per-chapter by virtue of living on the member row
+   * (`unique (user_id, chapter_id)`), which is what `spec/product/modules.md`
+   * § "Ops-setup nudges" requires — see #492.
+   */
+  dismissed_ops_nudges: string[];
   created_at: string;
   updated_at: string;
 }

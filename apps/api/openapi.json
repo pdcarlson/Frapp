@@ -1361,6 +1361,36 @@
         ]
       }
     },
+    "/v1/members/me/ops-nudges/dismiss": {
+      "patch": {
+        "operationId": "MemberController_dismissOpsNudge_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissOpsNudgeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Dismiss an ops-module setup nudge",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
     "/v1/alumni": {
       "get": {
         "operationId": "AlumniController_list_v1",
@@ -7921,6 +7951,24 @@
         },
         "required": [
           "has_completed_onboarding"
+        ]
+      },
+      "DismissOpsNudgeDto": {
+        "type": "object",
+        "properties": {
+          "module_key": {
+            "type": "string",
+            "enum": [
+              "dues",
+              "events",
+              "tasks",
+              "points"
+            ],
+            "description": "Module whose ops-setup nudge to dismiss for the caller in the active chapter. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing."
+          }
+        },
+        "required": [
+          "module_key"
         ]
       },
       "CreateInviteDto": {

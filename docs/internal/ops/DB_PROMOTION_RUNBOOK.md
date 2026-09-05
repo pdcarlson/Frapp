@@ -409,6 +409,42 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-05: Ops-setup nudge dismissals (#492)
+
+One additive migration. Adds a single `text[]` column with a literal default to
+an existing table; no backfill, no rewrite, no RLS change, no new policy. Safe to
+apply ahead of the code — the column is simply unread until the API that writes
+it ships, and its `'{}'` default means every existing row reads as "nothing
+dismissed" rather than null.
+
+Promoted alongside `20260905020000_point_transactions_client_message_id.sql`
+above. The two are independent — different tables, no shared object — so either
+order works; the prefixes differ only because this one was renamed off a
+collision with that one before merge.
+
+### 20260905030000_member_dismissed_ops_nudges.sql
+* **Purpose**: Gives `members` the `dismissed_ops_nudges` array that records
+  which ops-setup nudges a member has closed, per `spec/product/modules.md`
+  § "Ops-setup nudges". It lives on `members` rather than `user_settings`
+  because the spec requires the state **per user per chapter** and `members` is
+  `unique (user_id, chapter_id)` — that grain by construction — while
+  `user_settings` is `unique (user_id)` and cannot express it. Same placement as
+  `has_completed_onboarding`, the existing per-member UI-dismissal flag.
+* **Checks**: After `db push`, confirm the column exists with the right type and
+  default —
+  `select column_name, data_type, column_default, is_nullable from information_schema.columns where table_name = 'members' and column_name = 'dismissed_ops_nudges';`
+  should return one row reading `ARRAY` / `'{}'::text[]` / `NO`. The default and
+  the NOT NULL both matter: a null here would reach `selectOpsNudge` through the
+  API's `?? []` and read as "nothing dismissed", so a member's dismissals would
+  silently stop persisting rather than fail loudly.
+  Confirm no rows were left behind by the default —
+  `select count(*) from members where dismissed_ops_nudges is null;` must be 0.
+* **No data migration**: the column starts empty for every member by design.
+  Dismissals accrue only as officers close cards; there is nothing to backfill
+  and no prior state to preserve.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the ops-setup nudge dismissals.
+
 ## 2026-09-05: Points ledger idempotency key (#1719)
 
 One additive migration. Adds a nullable column and a partial unique index to an
