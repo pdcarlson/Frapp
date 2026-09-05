@@ -227,7 +227,7 @@ export function LocationGlyph({ className, active }: ChatGlyphProps) {
   );
 }
 
-/** Reply in thread. */
+/** Reply to a message. Stages an inline reply-with-quote, not a side thread. */
 export function ThreadGlyph({ className }: ChatGlyphProps) {
   return (
     <Svg className={className}>
