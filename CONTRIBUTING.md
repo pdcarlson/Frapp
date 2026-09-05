@@ -119,7 +119,7 @@ type(scope): description
 
 The canonical type list lives in [`docs/guides/contributing.md`](docs/guides/contributing.md)
 § Commit messages. It is not restated here — this file and that one carried two
-divergent tables until #1635.
+divergent lists until #1635.
 
 ### 3. Open a PR targeting `main`
 
