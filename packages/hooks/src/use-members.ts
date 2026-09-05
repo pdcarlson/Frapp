@@ -264,14 +264,26 @@ export function useUpdateOnboarding() {
  * A shared scope id makes TanStack run them in series instead, so the second
  * read sees the first write.
  *
- * Chosen over disabling the control while `isPending`: mutations here retry
- * with backoff and pause outright while offline (`networkMode` is the default
- * `"online"`). `query-provider.tsx` sets `retry: 2` with
- * `min(1000 * 2 ** attempt, 10_000)`, so a disabled control would grey out the
- * successor card for ~3s of backoff across three attempts — plus however long
- * each request itself hangs — and indefinitely while offline, since a paused
- * mutation reports `pending` forever. That is a dead-end control, which
- * `spec/ui/design-system/README.md` bans.
+ * Chosen over disabling the control while `isPending`. `query-provider.tsx`
+ * sets `retry: 2` with `min(1000 * 2 ** attempt, 10_000)`, so a disabled
+ * control would grey out the *successor* card — a different nudge the member
+ * has not acted on — for ~3s of backoff across three attempts, plus however
+ * long each request itself takes. `scope` costs that nothing: the second write
+ * simply queues, and its control stays pressable throughout.
+ *
+ * That reasoning originally leaned on offline pausing *indefinitely*, which is
+ * no longer true: #1754 set `networkMode: "always"` so an offline mutation now
+ * runs its retries and rejects in ~3s rather than parking until reconnect. The
+ * conclusion survives its premise — a needlessly inert control is still worse
+ * than a queued write — but the "forever" case is gone, so it is not claimed
+ * here.
+ *
+ * One consequence of that same change is worth knowing at this call site: an
+ * offline dismissal now **fails** instead of resuming on reconnect. `onError`
+ * below is a deliberate no-op, so the card stays gone for the session and the
+ * next `GET /v1/chapters` re-offers it. That is the documented behaviour for a
+ * failed dismissal either way — the member closes it again — and #1754 accepts
+ * the same trade repo-wide rather than keeping an accidental queue with no UI.
  */
 export function useDismissOpsNudge() {
   const client = useFrappClient();
