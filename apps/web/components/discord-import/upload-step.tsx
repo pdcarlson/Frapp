@@ -7,7 +7,7 @@ import {
 } from "@/components/shared/meter";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { getErrorMessage, isClientError } from "@/lib/utils";
 import {
   PREAMBLE_READ_BYTES,
   isMediaFile,
@@ -191,7 +191,18 @@ export function UploadStep({
                 part_index: entry.partIndex,
               })),
             });
-          } catch {
+          } catch (error) {
+            // A 4xx here is a decision about the whole archive, not bad luck on
+            // one batch: the archive quota (#1243), a rejected file type, an
+            // import that is no longer mutable. Every remaining batch would be
+            // refused for the same reason, so grinding through hundreds more
+            // only buys a "done" screen listing every file as failed with no
+            // reason given. Rethrow so the handler's toast shows the server's
+            // sentence, which is written to say what to do about it.
+            if (isClientError(error)) throw error;
+
+            // A transport blip, by contrast, is per-batch: keep going and let
+            // the admin re-pick the folder to resume the stragglers.
             failed.push(...batch.map((entry) => entry.relativePath));
             setFailures((prev) => [
               ...prev,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { downloadBlob, getErrorMessage } from "./utils";
+import { downloadBlob, getErrorMessage, isClientError } from "./utils";
 
 /**
  * Dashboard toasts use this helper so openapi-fetch's thrown body (a plain
@@ -29,6 +29,41 @@ describe("getErrorMessage", () => {
     expect(
       getErrorMessage({ message: ["lat must be a number", "lng too"] }, fallback),
     ).toBe(fallback);
+  });
+});
+
+/**
+ * The Discord import wizard mints upload URLs in a loop and decides per batch
+ * whether to keep going. A 4xx there is a decision about the whole archive (the
+ * archive quota, a rejected type, an import that is no longer mutable) and
+ * repeats identically, so it must stop the loop and show the server's sentence;
+ * anything else may well succeed on the next batch.
+ */
+describe("isClientError", () => {
+  it("is true for a 4xx the server chose to return", () => {
+    expect(isClientError({ statusCode: 400, message: "past the 20 GB limit" })).toBe(
+      true,
+    );
+    expect(isClientError({ statusCode: 409 })).toBe(true);
+    expect(isClientError({ statusCode: 499 })).toBe(true);
+  });
+
+  it("is false for 5xx and other statuses, which may succeed on a retry", () => {
+    expect(isClientError({ statusCode: 500 })).toBe(false);
+    expect(isClientError({ statusCode: 503 })).toBe(false);
+    expect(isClientError({ statusCode: 200 })).toBe(false);
+    expect(isClientError({ statusCode: 399 })).toBe(false);
+  });
+
+  it("is false for anything carrying no numeric status", () => {
+    // A network drop or an abort arrives as a bare Error. Treating that as a
+    // client error would stop a resumable upload on one flaky batch.
+    expect(isClientError(new Error("network down"))).toBe(false);
+    expect(isClientError({ statusCode: "400" })).toBe(false);
+    expect(isClientError({})).toBe(false);
+    expect(isClientError(null)).toBe(false);
+    expect(isClientError(undefined)).toBe(false);
+    expect(isClientError("nope")).toBe(false);
   });
 });
 

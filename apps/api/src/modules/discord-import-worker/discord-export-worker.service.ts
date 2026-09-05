@@ -1,8 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
+  ArchiveQuotaExceededError,
   DISCORD_IMPORT_REPOSITORY,
   type IDiscordImportRepository,
 } from '../../domain/repositories/discord-import.repository.interface';
+import { archiveQuotaMessage } from '../../application/services/discord-import.service';
 import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
@@ -21,6 +23,8 @@ import {
   archiveMediaObjectPath,
 } from '../../domain/constants/storage';
 import {
+  MAX_ARCHIVE_CHAPTER_BYTES,
+  MAX_ARCHIVE_IMPORT_BYTES,
   isAllowedUploadMime,
   isWithinArchiveUploadSizeLimit,
 } from '@repo/validation';
@@ -645,7 +649,39 @@ export class DiscordExportWorkerService {
       byte_size: typeof attachment.size === 'number' ? attachment.size : null,
     }));
 
-    const created = await this.importRepo.createFiles(rows);
+    // The same archive ceilings the upload path enforces (#1243). The bot path
+    // needs them at least as much: it writes to the identical bucket, and it is
+    // the path where the chapter never sees the bytes go by, so an oversized
+    // guild would otherwise import silently until storage filled.
+    //
+    // Enforced here, before the objects are streamed, because that is the only
+    // point where refusing still saves the storage — the attachments are pulled
+    // from Discord's CDN and written by `uploadFile` in the loop below.
+    let created;
+    try {
+      created = await this.importRepo.registerFiles(
+        job.chapter_id,
+        job.id,
+        rows,
+        {
+          importBytes: MAX_ARCHIVE_IMPORT_BYTES,
+          chapterBytes: MAX_ARCHIVE_CHAPTER_BYTES,
+        },
+      );
+    } catch (error) {
+      if (error instanceof ArchiveQuotaExceededError) {
+        // Fails the job rather than skipping the page, and the sweeper's catch
+        // puts this sentence on `discord_imports.error` where the admin reads
+        // it. Skipping would be worse than failing: a partial archive that
+        // reports success is the exact failure this importer works hardest to
+        // avoid elsewhere (see the manifest-paging note in the repository), and
+        // quietly dropping attachments once a chapter is full would tell the
+        // admin their history imported when it did not.
+        throw new Error(archiveQuotaMessage(error));
+      }
+      throw error;
+    }
+
     const createdByPath = new Map(
       created.map((file) => [file.relative_path, file]),
     );

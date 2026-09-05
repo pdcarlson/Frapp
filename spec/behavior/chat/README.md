@@ -420,16 +420,18 @@ channel that reports a different one fails the import rather than being skipped.
   Signet cannot verify it, and says so — but
   `discord_imports.consent_acknowledged_at` is NOT NULL, so no import exists
   anywhere in the system that skipped the question.
-- **An import is bounded, and so is a chapter's archive.** 20 GB per import and
-  50 GB per chapter (`MAX_ARCHIVE_IMPORT_BYTES` / `MAX_ARCHIVE_CHAPTER_BYTES`),
-  refused at the point upload URLs are minted so nothing is registered and no
-  URL is handed back. Both clear a real DiscordChatExporter run over an active
-  server with `--media` by a wide margin — they exist to stop a runaway, not to
+- **An import is bounded, and so is a chapter's archive.** Both import paths
+  refuse a batch that would cross a per-import or per-chapter byte ceiling, at
+  the moment files are registered — so nothing is recorded, no upload URL is
+  handed back on the upload path, and on the bot path nothing is fetched from
+  Discord. The ceilings clear a real DiscordChatExporter run over an active
+  server with `--media` by a wide margin: they stop a runaway, they do not
   ration a legitimate import. A chapter at its ceiling deletes an old import to
   continue, which is the only thing that releases the bytes (see the next
-  bullet). The check reads the sizes the client declared, so it is a guard
-  rather than a byte-level control: the browser PUTs straight to storage and the
-  API never sees the bytes.
+  bullet) and which finishes in the background rather than instantly. The
+  numbers, and what the check does and does not enforce, are owned by
+  [`docs/internal/security/content-validation.md`](../../../docs/internal/security/content-validation.md)
+  § 3.
 - **Deleting an import removes what it brought in**: its messages (cascading to
   attachments and reactions) and its objects in the `chat-archive` bucket. Scoped
   by `metadata->>'discord_import_id'`, so purging one import that merged into a

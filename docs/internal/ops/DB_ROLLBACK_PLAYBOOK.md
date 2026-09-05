@@ -300,13 +300,15 @@ After any rollback event:
 ## Rollback the chat-archive upload quota
 
 * **Migration**: `20260905010000_discord_import_archive_quota.sql`
-* **Action**: `DROP FUNCTION IF EXISTS discord_import_projected_archive_bytes(uuid, uuid, text[], bigint[]);` and, if you want the index gone too,
-  `DROP INDEX IF EXISTS public.idx_discord_import_files_chapter;`.
-  **Redeploy the API at the pre-#1243 revision first.** With the function gone,
-  `DiscordImportService.requestUploadUrls` calls a missing RPC on every mint request, so
-  `POST /v1/discord-imports/{id}/upload-urls` 500s and **no Discord import can upload
-  anything at all**. Dropping the index alone is safe at any time and only costs the
-  quota read a seq scan.
+* **Action**: `DROP FUNCTION IF EXISTS discord_import_register_files(uuid, uuid, jsonb, bigint, bigint);` and, if you want the index gone too,
+  `DROP INDEX IF EXISTS public.idx_discord_import_files_chapter_bytes;`.
+  **Redeploy the API at the pre-#1243 revision first, and understand that this one is
+  not optional.** The function does not merely *check* the quota, it performs the
+  manifest upsert — both import paths register through it and there is no unguarded
+  insert left in the repository. With it gone, `POST /v1/discord-imports/{id}/upload-urls`
+  500s and the bot worker fails every slice, so **no Discord import can register a file
+  at all** by either route. Dropping the index alone is safe at any time and only costs
+  the quota sum a heap fetch per row.
 * **Note**: Purely additive — one new function, one new index. No table, column, row,
   policy, or existing function body is touched, so nothing that predates the migration
   can be lost, and rolling back cannot corrupt anything. What it removes is the ceiling
@@ -315,10 +317,13 @@ After any rollback event:
   (#1246). Prefer raising `MAX_ARCHIVE_IMPORT_BYTES` / `MAX_ARCHIVE_CHAPTER_BYTES` in
   `packages/validation/src/upload-allowlists.ts` — a one-line application change, no
   migration — over rolling this back.
-* **Data caveat**: none. The function is `stable` and reads only
-  `discord_import_files` and `discord_imports`; it writes nothing and backfills nothing.
-  No snapshot is needed before dropping, and nothing needs restoring on re-apply — the
-  projection is recomputed from the manifest on every call.
+* **Data caveat**: the function writes, so this is not a pure read to drop. It upserts
+  `discord_import_files` rows with a **monotonic** `byte_size` (a re-registered path may
+  raise its recorded size, never lower it). Rolling back to a plain upsert makes that
+  column writable downward again, which is what let a caller erase the accounting for
+  objects still in the bucket. No snapshot is needed before dropping and nothing needs
+  restoring on re-apply — the totals are recomputed from the manifest on every call —
+  but any row whose size was lowered while the old path was live stays lowered.
 * **If the quota misfires in production**, the fast forward-fix is the constants, not
   this migration. A chapter wrongly refused reads either `limit for one import` or
   `Delete an old import` in the 400; the first names `MAX_ARCHIVE_IMPORT_BYTES` and the

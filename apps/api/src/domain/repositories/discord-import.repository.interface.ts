@@ -11,6 +11,30 @@ import type {
 
 export const DISCORD_IMPORT_REPOSITORY = 'DISCORD_IMPORT_REPOSITORY';
 
+/** Which of the two archive ceilings a batch crossed. */
+export type ArchiveQuotaScope = 'import' | 'chapter';
+
+/**
+ * A batch was refused because it would cross an archive ceiling (#1243).
+ *
+ * A domain error rather than an HTTP one: the same refusal has to reach an
+ * admin as a 400 on the upload path and stop the job with a readable reason on
+ * the bot path, and only the callers know which. It carries the measured
+ * numbers so neither caller has to re-derive them.
+ */
+export class ArchiveQuotaExceededError extends Error {
+  constructor(
+    readonly scope: ArchiveQuotaScope,
+    readonly wouldHoldBytes: number,
+    readonly capBytes: number,
+  ) {
+    super(
+      `Discord archive ${scope} quota exceeded: ${wouldHoldBytes} bytes against a ${capBytes} byte ceiling`,
+    );
+    this.name = 'ArchiveQuotaExceededError';
+  }
+}
+
 /** What a claimed job hands the worker: the row plus the token it must hold. */
 export interface ClaimedDiscordImport {
   job: DiscordImport;
@@ -123,8 +147,32 @@ export interface IDiscordImportRepository {
   ): Promise<void>;
 
   // ── uploaded files ────────────────────────────────────────────────────────
-  createFiles(
+  /**
+   * Register manifest rows, refusing the whole batch if it would take the
+   * import or the chapter past its archive ceiling (#1243).
+   *
+   * Registration and enforcement are ONE call because they have to be one
+   * transaction. Splitting them — measure, then write — let ten concurrent mint
+   * requests all pass the same pre-batch total, which multiplied the ceiling by
+   * the concurrency; `CustomThrottlerGuard` bounds request rate, not in-flight
+   * concurrency, so nothing else closed that. There is deliberately no
+   * unchecked "just insert the rows" method left on this interface: the bot
+   * importer writes to the same bucket and needs the same ceiling, and an
+   * unguarded door here is how it would keep bypassing one.
+   *
+   * Recorded sizes are **monotonic** — a re-registered path may raise its
+   * `byte_size`, never lower it. Without that the upsert was a way to erase the
+   * accounting for objects already in the bucket, which is a cheaper bypass
+   * than under-declaring in the first place.
+   *
+   * Throws {@link ArchiveQuotaExceededError} when a ceiling is hit; the batch
+   * is then fully rolled back, so a refused request registers nothing.
+   */
+  registerFiles(
+    chapterId: string,
+    importId: string,
     rows: Omit<DiscordImportFile, 'id' | 'created_at' | 'uploaded_at'>[],
+    caps: { importBytes: number; chapterBytes: number },
   ): Promise<DiscordImportFile[]>;
   findFiles(importId: string, chapterId: string): Promise<DiscordImportFile[]>;
   markFilesUploaded(
@@ -133,27 +181,6 @@ export interface IDiscordImportRepository {
     storagePaths: string[],
     at: string,
   ): Promise<number>;
-
-  /**
-   * What this import and this chapter would weigh once `files` are registered.
-   *
-   * The read behind the archive quota (#1243). Two subtleties it owns so no
-   * caller has to, both documented in full in the migration:
-   *
-   * - `purged` imports are excluded. The purge sweeps their storage objects but
-   *   leaves their manifest rows, so counting them would make the quota ratchet
-   *   one way and never release.
-   * - Rows `files` will upsert over are not counted twice, so a resumed upload
-   *   is measured against what it actually adds rather than against itself.
-   *
-   * Returns bytes, not a verdict: the ceilings live in `@repo/validation` with
-   * the rest of the archive limits, and the service decides.
-   */
-  projectedArchiveBytes(
-    chapterId: string,
-    importId: string,
-    files: { relative_path: string; byte_size: number }[],
-  ): Promise<{ importBytes: number; chapterBytes: number }>;
 
   // ── the worker's lease ────────────────────────────────────────────────────
   /**

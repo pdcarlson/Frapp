@@ -3,10 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
+  ArchiveQuotaScope,
   ClaimedDiscordImport,
   DiscordImportProgressPatch,
   IDiscordImportRepository,
 } from '../../../domain/repositories/discord-import.repository.interface';
+import { ArchiveQuotaExceededError } from '../../../domain/repositories/discord-import.repository.interface';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -32,6 +34,32 @@ const MESSAGE_BATCH_SIZE = 200;
  * everything else in this file is — see the note above.
  */
 const FILE_PAGE_SIZE = 500;
+
+/**
+ * The message `discord_import_register_files` raises on a ceiling, parsed back
+ * into the domain error.
+ *
+ * The numbers travel in the message because PostgREST surfaces a raised
+ * exception as `{ code, message, details, hint }` and gives no structured
+ * channel for them. Matching is anchored on a literal prefix the function owns,
+ * so an unrelated `check_violation` from a table constraint cannot be mistaken
+ * for a quota refusal and reported to an admin as one.
+ */
+const ARCHIVE_QUOTA_MESSAGE =
+  /^discord_import_archive_quota: (import|chapter) \S+ would hold (\d+) bytes, past its (\d+) byte ceiling/;
+
+function parseArchiveQuotaError(error: {
+  message?: string | null;
+}): ArchiveQuotaExceededError | null {
+  const match = ARCHIVE_QUOTA_MESSAGE.exec(error?.message ?? '');
+  if (!match) return null;
+  const [, scope, wouldHold, cap] = match;
+  return new ArchiveQuotaExceededError(
+    scope as ArchiveQuotaScope,
+    Number(wouldHold),
+    Number(cap),
+  );
+}
 
 @Injectable()
 export class SupabaseDiscordImportRepository implements IDiscordImportRepository {
@@ -193,21 +221,56 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
 
   // ── uploaded files ────────────────────────────────────────────────────────
 
-  async createFiles(
+  async registerFiles(
+    chapterId: string,
+    importId: string,
     rows: Omit<DiscordImportFile, 'id' | 'created_at' | 'uploaded_at'>[],
+    caps: { importBytes: number; chapterBytes: number },
   ): Promise<DiscordImportFile[]> {
     if (rows.length === 0) return [];
-    // Upsert on the manifest's natural key so re-requesting an upload URL for a
-    // file the admin already registered is a no-op rather than a 23505. That is
-    // the normal path when an interrupted upload is resumed.
-    const { data, error } = await this.supabase
-      .from('discord_import_files')
-      .upsert(rows as TablesInsert<'discord_import_files'>[], {
-        onConflict: 'import_id,relative_path',
-      })
-      .select();
-    if (error) throw error;
-    return data ?? [];
+
+    // One RPC rather than an upsert here, because the quota check and the write
+    // have to share a transaction — see the migration for the concurrent-mint
+    // and ledger-rewrite failures that shape forecloses. The upsert on the
+    // manifest's natural key still happens, inside the function, so
+    // re-requesting a URL for an already-registered file remains the ordinary
+    // resume path rather than a 23505.
+    const { data, error } = await this.supabase.rpc(
+      'discord_import_register_files',
+      {
+        p_chapter_id: chapterId,
+        p_import_id: importId,
+        p_rows: rows.map((row) => ({
+          relative_path: row.relative_path,
+          kind: row.kind,
+          part_index: row.part_index,
+          bucket: row.bucket,
+          storage_path: row.storage_path,
+          content_type: row.content_type,
+          byte_size: row.byte_size,
+        })),
+        p_import_cap: caps.importBytes,
+        p_chapter_cap: caps.chapterBytes,
+      },
+    );
+
+    if (error) {
+      const quota = parseArchiveQuotaError(error);
+      if (quota) throw quota;
+      throw error;
+    }
+
+    // An empty result for a non-empty batch means the function returned no
+    // rows, which it cannot do on success — never read that as "registered
+    // nothing and that's fine", because the caller would then mint URLs for
+    // files with no manifest row and the worker would skip every one of them.
+    const created = data ?? [];
+    if (created.length === 0) {
+      throw new Error(
+        'discord_import_register_files returned no rows for a non-empty batch.',
+      );
+    }
+    return created;
   }
 
   async findFiles(
@@ -266,49 +329,6 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
       .select('id');
     if (error) throw error;
     return (data ?? []).length;
-  }
-
-  async projectedArchiveBytes(
-    chapterId: string,
-    importId: string,
-    files: { relative_path: string; byte_size: number }[],
-  ): Promise<{ importBytes: number; chapterBytes: number }> {
-    // The two arrays are paired positionally by `unnest … with ordinality` in
-    // SQL, so they must be built in one pass over the same list — a `.map` each
-    // would pair correctly today and silently mis-pair the moment either side
-    // grew a filter.
-    const relativePaths: string[] = [];
-    const byteSizes: number[] = [];
-    for (const file of files) {
-      relativePaths.push(file.relative_path);
-      byteSizes.push(file.byte_size);
-    }
-
-    const { data, error } = await this.supabase.rpc(
-      'discord_import_projected_archive_bytes',
-      {
-        p_chapter_id: chapterId,
-        p_import_id: importId,
-        p_relative_paths: relativePaths,
-        p_byte_sizes: byteSizes,
-      },
-    );
-    if (error) throw error;
-
-    // A `returns table` function comes back as an array. It is always one row
-    // here — the body is a bare aggregate select — but an empty result must
-    // read as "no answer", never as zero: zero is the one value that would let
-    // an over-quota import through.
-    const row = data?.[0];
-    if (!row) {
-      throw new Error(
-        'discord_import_projected_archive_bytes returned no row; refusing to treat that as zero bytes.',
-      );
-    }
-    return {
-      importBytes: Number(row.import_bytes ?? 0),
-      chapterBytes: Number(row.chapter_bytes ?? 0),
-    };
   }
 
   // ── the worker's lease ────────────────────────────────────────────────────

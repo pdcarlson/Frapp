@@ -1,4 +1,5 @@
 import { SupabaseDiscordImportRepository } from './supabase-discord-import.repository';
+import { ArchiveQuotaExceededError } from '../../../domain/repositories/discord-import.repository.interface';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -219,15 +220,28 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
 });
 
 /**
- * The archive quota read (#1243).
+ * The archive quota (#1243).
  *
- * The projection arithmetic itself lives in SQL and is exercised against a real
- * Postgres — the tenant harness records queries without executing them, so it
- * cannot answer what `unnest … with ordinality` does. What is worth pinning
- * here is the wrapper's own two jobs: pairing the parallel arrays in one pass,
- * and refusing to invent a zero when the function answers nothing.
+ * The arithmetic lives in SQL and is exercised against a real Postgres — the
+ * tenant harness records queries without executing them, so it cannot answer
+ * what the monotonic `greatest(...)` upsert or the advisory lock do. What is
+ * worth pinning here is the wrapper's own contract: the payload it sends, and
+ * that it turns the function's raised ceiling into the domain error rather than
+ * letting a raw PostgREST error reach a caller that would report it as a 500.
  */
-describe('SupabaseDiscordImportRepository — projectedArchiveBytes', () => {
+describe('SupabaseDiscordImportRepository — registerFiles', () => {
+  const ROW = {
+    import_id: IMPORT_A,
+    chapter_id: CHAPTER_A,
+    kind: 'media' as const,
+    part_index: null,
+    relative_path: 'a.png',
+    bucket: 'chat-archive',
+    storage_path: 'p/2',
+    content_type: 'image/png',
+    byte_size: 50,
+  };
+
   function repoWithRpc(result: {
     data: unknown;
     error: unknown;
@@ -239,46 +253,104 @@ describe('SupabaseDiscordImportRepository — projectedArchiveBytes', () => {
     return [new SupabaseDiscordImportRepository(client), rpc];
   }
 
-  it('pairs paths to sizes positionally and binds both scopes', async () => {
+  it('sends the batch and both ceilings in one call', async () => {
     const [repo, rpc] = repoWithRpc({
-      data: [{ import_bytes: 300, chapter_bytes: 900 }],
+      data: [{ ...ROW, id: 'f1', created_at: 'now', uploaded_at: null }],
       error: null,
     });
 
-    const result = await repo.projectedArchiveBytes(CHAPTER_A, IMPORT_A, [
-      { relative_path: 'part-000.json', byte_size: 100 },
-      { relative_path: 'a.png', byte_size: 200 },
-    ]);
+    await repo.registerFiles(CHAPTER_A, IMPORT_A, [ROW], {
+      importBytes: 20,
+      chapterBytes: 50,
+    });
 
-    expect(result).toEqual({ importBytes: 300, chapterBytes: 900 });
-    expect(rpc).toHaveBeenCalledWith('discord_import_projected_archive_bytes', {
+    expect(rpc).toHaveBeenCalledWith('discord_import_register_files', {
       p_chapter_id: CHAPTER_A,
       p_import_id: IMPORT_A,
-      // Index-aligned: SQL joins these two on ordinality, so a reordering on
-      // either side would silently price a file at another file's size.
-      p_relative_paths: ['part-000.json', 'a.png'],
-      p_byte_sizes: [100, 200],
+      p_rows: [
+        {
+          relative_path: 'a.png',
+          kind: 'media',
+          part_index: null,
+          bucket: 'chat-archive',
+          storage_path: 'p/2',
+          content_type: 'image/png',
+          byte_size: 50,
+        },
+      ],
+      p_import_cap: 20,
+      p_chapter_cap: 50,
     });
   });
 
-  it('throws rather than reading an empty result as zero bytes', async () => {
-    // Zero is the one wrong answer that fails OPEN: it would clear every
-    // ceiling and let an over-quota import straight through.
+  it('translates a raised ceiling into ArchiveQuotaExceededError with its numbers', async () => {
+    const [repo] = repoWithRpc({
+      data: null,
+      error: {
+        code: '23514',
+        message:
+          'discord_import_archive_quota: chapter 1234 would hold 900 bytes, past its 850 byte ceiling',
+      },
+    });
+
+    const caught = await repo
+      .registerFiles(CHAPTER_A, IMPORT_A, [ROW], {
+        importBytes: 1,
+        chapterBytes: 850,
+      })
+      .catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(ArchiveQuotaExceededError);
+    const quota = caught as ArchiveQuotaExceededError;
+    expect(quota.scope).toBe('chapter');
+    expect(quota.wouldHoldBytes).toBe(900);
+    expect(quota.capBytes).toBe(850);
+  });
+
+  it('does not mistake an unrelated check_violation for a quota refusal', async () => {
+    // The prefix match is what keeps a table constraint from being reported to
+    // an admin as "your archive is full".
+    const [repo] = repoWithRpc({
+      data: null,
+      error: {
+        code: '23514',
+        message:
+          'new row for relation "discord_import_files" violates check constraint "discord_import_files_kind_check"',
+      },
+    });
+
+    const caught = await repo
+      .registerFiles(CHAPTER_A, IMPORT_A, [ROW], {
+        importBytes: 1,
+        chapterBytes: 1,
+      })
+      .catch((error: unknown) => error);
+
+    expect(caught).not.toBeInstanceOf(ArchiveQuotaExceededError);
+  });
+
+  it('refuses to report success when the function returns no rows', async () => {
+    // A silent empty result would mint upload URLs for files that have no
+    // manifest row, and the worker skips every one of those.
     const [repo] = repoWithRpc({ data: [], error: null });
 
     await expect(
-      repo.projectedArchiveBytes(CHAPTER_A, IMPORT_A, []),
-    ).rejects.toThrow(/refusing to treat that as zero bytes/);
+      repo.registerFiles(CHAPTER_A, IMPORT_A, [ROW], {
+        importBytes: 1000,
+        chapterBytes: 1000,
+      }),
+    ).rejects.toThrow(/returned no rows/);
   });
 
-  it('propagates the RPC error instead of answering zero', async () => {
-    const [repo] = repoWithRpc({
-      data: null,
-      error: new Error('rpc exploded'),
-    });
+  it('is a no-op for an empty batch', async () => {
+    const [repo, rpc] = repoWithRpc({ data: [], error: null });
 
     await expect(
-      repo.projectedArchiveBytes(CHAPTER_A, IMPORT_A, []),
-    ).rejects.toThrow('rpc exploded');
+      repo.registerFiles(CHAPTER_A, IMPORT_A, [], {
+        importBytes: 1,
+        chapterBytes: 1,
+      }),
+    ).resolves.toEqual([]);
+    expect(rpc).not.toHaveBeenCalled();
   });
 });

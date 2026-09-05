@@ -42,6 +42,25 @@ export function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * Did the server refuse this on purpose (4xx), as opposed to failing (5xx) or
+ * never arriving?
+ *
+ * The distinction matters wherever a caller retries or loops: a 4xx is a
+ * decision about the request that will repeat identically next time, so
+ * retrying it only hides the sentence the server wrote. A transport error or a
+ * 5xx may well succeed on the next attempt. Errors from the API client carry
+ * `statusCode`; anything without one (a network drop, an abort) is deliberately
+ * NOT a client error, so the retrying caller keeps retrying.
+ */
+export function isClientError(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("statusCode" in error)) {
+    return false;
+  }
+  const status = (error as { statusCode?: unknown }).statusCode;
+  return typeof status === "number" && status >= 400 && status < 500;
+}
+
 /** Escape one CSV cell per RFC 4180 (quote when it contains a comma, quote, or newline). */
 export function quoteCsvCell(value: string): string {
   if (/[",\n\r]/.test(value)) {

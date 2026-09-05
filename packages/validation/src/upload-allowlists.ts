@@ -122,6 +122,11 @@ export const MAX_ARCHIVE_EXPORT_PART_BYTES = 8 * 1024 * 1024;
  * plausibly single-digit GB, so 20 GiB clears any real export by a wide margin
  * and only ever catches a runaway or a deliberate loop.
  *
+ * Binary, like every other ceiling in this file — 20 GiB is ~21.5 GB decimal.
+ * Admin-facing messages render it through `formatBytes`, which labels binary
+ * units the way a file browser does, so the copy reads "20 GB" and the constant
+ * stays exact. Do not "correct" one to match the other.
+ *
  * **This is not a capacity plan for the hosted project.** It is an abuse
  * ceiling. What the shared Supabase project can actually hold is a separate,
  * still-open question — see #1235 (the hosted per-object limit) and #1403 (the

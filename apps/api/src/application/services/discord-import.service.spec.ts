@@ -10,7 +10,10 @@ import {
   MAX_ARCHIVE_IMPORT_BYTES,
 } from '@repo/validation';
 import { DiscordImportService } from './discord-import.service';
-import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
+import {
+  ArchiveQuotaExceededError,
+  DISCORD_IMPORT_REPOSITORY,
+} from '../../domain/repositories/discord-import.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { DISCORD_BOT_GATEWAY } from '../../domain/adapters/discord.interface';
@@ -78,7 +81,10 @@ async function build(current: DiscordImport = job()) {
     replaceChannels: jest.fn(async (_id, _chapter, rows) => rows),
     findChannels: jest.fn(async () => []),
     updateChannel: jest.fn(),
-    createFiles: jest.fn(async (rows) =>
+    // Registration enforces the archive ceilings itself now, so the default
+    // admits everything and the quota tests make it throw. That mirrors the
+    // real contract: the service never decides, it translates.
+    registerFiles: jest.fn(async (_chapterId, _importId, rows) =>
       rows.map((row: Record<string, unknown>, i: number) => ({
         ...row,
         id: `file-${i}`,
@@ -88,18 +94,6 @@ async function build(current: DiscordImport = job()) {
     ),
     findFiles: jest.fn(async () => []),
     markFilesUploaded: jest.fn(async () => 1),
-    // Default: the chapter's archive is empty, so the projection is just the
-    // batch in front of it. The quota tests override this per case.
-    projectedArchiveBytes: jest.fn(
-      async (
-        _chapterId: string,
-        _importId: string,
-        files: { relative_path: string; byte_size: number }[],
-      ) => {
-        const total = files.reduce((sum, file) => sum + file.byte_size, 0);
-        return { importBytes: total, chapterBytes: total };
-      },
-    ),
     claimNextRunnable: jest.fn(),
     renewLease: jest.fn(),
     releaseLease: jest.fn(),
@@ -288,80 +282,96 @@ describe('DiscordImportService — upload URLs', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('refuses a batch that would take the import past its byte ceiling', async () => {
+  it('surfaces an import-ceiling refusal as a 400 naming what to do', async () => {
     await build();
-    repo.projectedArchiveBytes.mockResolvedValue({
-      importBytes: MAX_ARCHIVE_IMPORT_BYTES + 1,
-      chapterBytes: MAX_ARCHIVE_IMPORT_BYTES + 1,
-    });
+    repo.registerFiles.mockRejectedValue(
+      new ArchiveQuotaExceededError(
+        'import',
+        MAX_ARCHIVE_IMPORT_BYTES + 1,
+        MAX_ARCHIVE_IMPORT_BYTES,
+      ),
+    );
 
     await expect(
       service.requestUploadUrls(IMPORT_ID, CHAPTER, [file()]),
     ).rejects.toThrow(/limit for one import/);
   });
 
-  it('refuses a batch that would take the chapter past its byte ceiling', async () => {
+  it('surfaces a chapter-ceiling refusal as a 400, and says deletion is not instant', async () => {
+    // The advice has to be honest: `requestPurge` only flips the status to
+    // `purging`, and the sweep finishes in the background — an admin told to
+    // "delete an old import" who retries immediately would otherwise be
+    // refused again with the same sentence.
     await build();
-    // Under the per-import ceiling, over the chapter's — the second import that
-    // would tip a chapter which never purged its first.
-    repo.projectedArchiveBytes.mockResolvedValue({
-      importBytes: 1024,
-      chapterBytes: MAX_ARCHIVE_CHAPTER_BYTES + 1,
-    });
+    repo.registerFiles.mockRejectedValue(
+      new ArchiveQuotaExceededError(
+        'chapter',
+        MAX_ARCHIVE_CHAPTER_BYTES + 1,
+        MAX_ARCHIVE_CHAPTER_BYTES,
+      ),
+    );
 
     await expect(
       service.requestUploadUrls(IMPORT_ID, CHAPTER, [file()]),
-    ).rejects.toThrow(/Delete an old import/);
+    ).rejects.toThrow(/Delete an old import.*background/s);
   });
 
-  it('registers nothing and mints nothing when the quota refuses', async () => {
-    // The ordering that makes this a quota rather than a report: a refused
-    // batch must not leave manifest rows behind, and must not hand back a
-    // signed URL the caller could still PUT to.
+  it('mints no signed URL when registration refuses the batch', async () => {
+    // The property that makes this a quota rather than a report. Registration
+    // and enforcement share a transaction, so a refusal means no manifest row
+    // exists — and this asserts the service does not hand back a URL the
+    // caller could still PUT to regardless.
     await build();
-    repo.projectedArchiveBytes.mockResolvedValue({
-      importBytes: MAX_ARCHIVE_IMPORT_BYTES + 1,
-      chapterBytes: MAX_ARCHIVE_IMPORT_BYTES + 1,
-    });
+    repo.registerFiles.mockRejectedValue(
+      new ArchiveQuotaExceededError('chapter', 2, 1),
+    );
 
     await expect(
       service.requestUploadUrls(IMPORT_ID, CHAPTER, [file()]),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(repo.createFiles).not.toHaveBeenCalled();
     expect(storage.getSignedUploadUrl).not.toHaveBeenCalled();
   });
 
-  it('allows a batch that lands exactly on the ceiling', async () => {
-    // `>` not `>=`: a chapter whose archive is precisely at the limit has not
-    // exceeded it, and an off-by-one here would refuse a legitimate final file.
+  it('renders ceiling sizes with the shared formatter, not a hard-coded GB unit', async () => {
+    // The rollback playbook names constant-tuning as the fast forward-fix for a
+    // misfiring quota, so a lowered ceiling has to render as itself. A GB-only
+    // helper turned a 50 MB ceiling into "0 GB".
     await build();
-    repo.projectedArchiveBytes.mockResolvedValue({
-      importBytes: MAX_ARCHIVE_IMPORT_BYTES,
-      chapterBytes: MAX_ARCHIVE_CHAPTER_BYTES,
-    });
+    repo.registerFiles.mockRejectedValue(
+      new ArchiveQuotaExceededError(
+        'import',
+        60 * 1024 * 1024,
+        50 * 1024 * 1024,
+      ),
+    );
 
     await expect(
       service.requestUploadUrls(IMPORT_ID, CHAPTER, [file()]),
-    ).resolves.toHaveLength(1);
+    ).rejects.toThrow(/60 MB of files, past the 50 MB limit/);
   });
 
-  it('projects the batch it is about to register, declared sizes and all', async () => {
-    // The projection has to see this batch — a quota computed from stored rows
-    // alone would let every single request through, because the bytes it is
-    // deciding about have not been written yet.
+  it('hands registration the caller scope, the batch, and both ceilings', async () => {
+    // The service never decides the verdict — it passes the ceilings down and
+    // translates what comes back. If this drifts, the quota silently stops
+    // being enforced with no test failing on the arithmetic.
     await build();
     await service.requestUploadUrls(IMPORT_ID, CHAPTER, [
       file({ relative_path: 'part-000.json', byte_size: 111 }),
-      file({ relative_path: 'part-001.json', part_index: 1, byte_size: 222 }),
     ]);
 
-    expect(repo.projectedArchiveBytes).toHaveBeenCalledWith(
+    expect(repo.registerFiles).toHaveBeenCalledWith(
       CHAPTER,
       IMPORT_ID,
       [
-        { relative_path: 'part-000.json', byte_size: 111 },
-        { relative_path: 'part-001.json', byte_size: 222 },
+        expect.objectContaining({
+          relative_path: 'part-000.json',
+          byte_size: 111,
+        }),
       ],
+      {
+        importBytes: MAX_ARCHIVE_IMPORT_BYTES,
+        chapterBytes: MAX_ARCHIVE_CHAPTER_BYTES,
+      },
     );
   });
 
