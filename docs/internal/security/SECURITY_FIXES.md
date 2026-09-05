@@ -112,7 +112,7 @@ What the bump actually resolved, against the four allowlisted highs it was filed
 
 Two gotchas worth not re-learning:
 
-- **The React pin moves with the SDK.** SDK 57 requires React `19.2.3` exactly. Because the root `overrides` entry is global, mobile cannot take it while the override holds the old version — so all six manifests move in one commit. The pin stays *exact*; see [`AGENTS.md`](../../../AGENTS.md) § gotchas.
+- **The React pin moves with the SDK.** SDK 57 requires React `19.2.3` exactly. Because the root `overrides` entry is global, mobile cannot take it while the override holds the old version — so all five pin sites move in one commit. The pin stays *exact*, and the roster of sites is owned by [`AGENTS.md`](../../../AGENTS.md) § Gotchas.
 - **`npm install` alone silently keeps the old SDK.** `@expo/vector-icons` declares `expo-font: ">=14.0.4"` as a peer, and the previous SDK's `expo-font` still satisfies it, so npm leaves the whole SDK 54 chain hoisted at the root beside SDK 57 — with its vulnerabilities. Audit numbers taken in that state are wrong (they read *worse*: 28 findings / 7 advisories). Confirm a single `node_modules/expo` at the expected version before trusting any measurement. A blanket `rm -rf package-lock.json` fixes it but floats ~212 unrelated packages including silent majors; prune and re-resolve just the Expo/React/Metro entries instead.
 
 ### The gate (`dependency-audit`, issue #618)

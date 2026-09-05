@@ -618,7 +618,7 @@ For files > 5MB, consider chunked upload for resumability. Not in v1 scope, but 
 | Roles | 60s | 10min | Changes very rarely |
 | Events | 30s | 5min | New events / check-ins moderately frequent |
 | Points / Leaderboard | 30s | 5min | Points change frequently during events |
-| Chat messages | 0s (always fresh via Realtime) | 30min | Real-time primary, cache for history |
+| Chat messages | `Infinity` | _(default)_ | Realtime is the freshness mechanism, so the cache deliberately never goes stale and never refetches on mount or focus — the opposite of `0s`, which would refetch constantly *because* Realtime already holds it current. `useChatChannel` sets only `staleTime`, so `gcTime` is the global 10-minute default ([`web-dashboard/README.md`](./web-dashboard/README.md) § Surviving data contracts owns the global defaults) |
 | Chat channels | 60s | 10min | Channel list changes rarely |
 | Notifications | 10s | 5min | Time-sensitive, refresh often |
 | Backwork | 60s | 10min | Content changes infrequently |
