@@ -200,6 +200,20 @@ jobs:
       # calls one already had a checkout for its own reasons; this one did not.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # The SAME ref check-changes uses, and for the same reason: on a
+          # `workflow_run` event GitHub defaults the checkout to the default
+          # branch's tip, not the commit that triggered the run. This job runs
+          # last, behind migrate-staging's serialized `db push`, so the window
+          # in which `main` can move is the widest in the workflow — and if it
+          # moved over the local action below, this deploy would fail for a
+          # commit whose own tree is fine.
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # Nothing here talks to git after checkout; it only needs the action
+          # file on disk. A third-party action runs next (via the composite),
+          # and this job holds staging secrets — same reasoning as
+          # deploy-outcome below and staging-conformance.yml.
+          persist-credentials: false
 
       - name: Inject staging deploy secrets from Infisical
         uses: ./.github/actions/infisical-secrets

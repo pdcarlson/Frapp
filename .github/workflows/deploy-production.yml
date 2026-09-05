@@ -219,14 +219,30 @@ jobs:
             node scripts/ci/production-guardrails.mjs --preflight
           fi
 
-      # Proven to be an ancestor of main, so this is already-reviewed code.
-      - name: Check out the commit being deployed
-        env:
-          DEPLOY_SHA: ${{ inputs.sha }}
-        run: |
-          git checkout --detach "$DEPLOY_SHA"
-          git --no-pager log -1 --format='Deploying %H%n%s'
-
+      # ── Both local composite actions run BEFORE the detach, deliberately ──
+      #
+      # `uses: ./…` resolves from the runner WORKSPACE at step-execution time,
+      # so a local action called after `git checkout --detach "$DEPLOY_SHA"`
+      # below is loaded from the DEPLOYED COMMIT's tree rather than from the
+      # trusted ref. Two consequences, both bad, and neither visible until a
+      # production dispatch:
+      #
+      #   * Deploying any commit from before these actions existed dies with
+      #     "Can't find 'action.yml'". That is the ROLLBACK path
+      #     (DB_ROLLBACK_PLAYBOOK.md § Deploying an OLDER commit), so it would
+      #     break at exactly the moment it is reached for.
+      #   * For a newer commit it still runs, but off THAT commit's copy of
+      #     `supabase-cli/action.yml` — so the pin the production apply uses is
+      #     whatever was recorded at `DEPLOY_SHA`, silently diverging from the
+      #     one `migration-replay` rehearsed with. That is the drift the action
+      #     exists to remove, reintroduced at the one site that matters most.
+      #
+      # Running them here also matches this job's existing trust argument: the
+      # validator above deliberately runs from already-trusted code, and so now
+      # do these. Both steps are tree-independent — one exports environment
+      # variables, the other puts a binary on PATH — so neither cares that the
+      # workspace moves underneath it afterwards.
+      #
       # NOTE: the Infisical slug for production is `prod`, not `production`.
       - name: Inject production secrets from Infisical
         uses: ./.github/actions/infisical-secrets
@@ -237,6 +253,17 @@ jobs:
 
       - name: Setup Supabase CLI
         uses: ./.github/actions/supabase-cli
+
+      # Proven to be an ancestor of main, so this is already-reviewed code.
+      #
+      # Nothing after this point may call a local `./.github/actions/…` action —
+      # see the block above. `infisical-secrets-action.test.mjs` enforces it.
+      - name: Check out the commit being deployed
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+        run: |
+          git checkout --detach "$DEPLOY_SHA"
+          git --no-pager log -1 --format='Deploying %H%n%s'
 
       # Only what the migrations need a real server for. The exclusion list is
       # copied verbatim from migration-drift-gate.yml — a different list is a

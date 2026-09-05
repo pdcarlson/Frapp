@@ -65,13 +65,14 @@ inputs:
 runs:
   using: composite
   steps:
-    # This block had four spellings across nine call sites, differing only in
-    # how much they told you: two named the environment, two ran the whitespace
-    # check, one printed the "present, so a 401 means rejected" line. None of
-    # that variation was deliberate -- it is four people writing the same check
-    # on different days. The union is kept here, so every call site gains the
-    # diagnostics it happened to lack, and `env-slug` lets the message name the
-    # environment for free.
+    # This block had FIVE spellings across nine call sites, differing only in
+    # how much they told you: three named the environment, three ran the
+    # whitespace check, two printed the "present, so a 401 means rejected" line,
+    # and one (staging-conformance) warned instead of failing. Only that last
+    # difference was deliberate -- it is preserved as `on-missing-credentials`.
+    # The rest is four people writing the same check on different days, so the
+    # union is kept here and every call site gains the diagnostics it happened
+    # to lack, with `env-slug` naming the environment for free.
     - name: Verify Infisical credentials are configured
       shell: bash
       env:
@@ -89,17 +90,29 @@ runs:
           # input must not silently downgrade a hard gate to a warning.
           if [ "$ON_MISSING" = "warn" ]; then
             echo "::warning::$DETAIL"
+            echo "Continuing anyway — this call site reports credential problems rather than failing on them. A 401 from the next step is explained by the warning above, NOT by a rejected credential."
           else
             echo "::error::$DETAIL"
             exit 1
           fi
+        else
+          # Both lines below are in the `else` on purpose: they describe a
+          # credential that IS present, and this preflight exists to tell
+          # "absent" apart from "rejected" (#696/#763). In the inline originals
+          # `exit 1` made that structural -- nothing after the check ran unless
+          # the credentials existed. Adding the warn path removed that
+          # guarantee, and an unconditional "a 401 means rejected, not missing"
+          # would then assert the exact opposite of the warning printed three
+          # lines earlier, at the one call site whose job is reporting which of
+          # the two it was.
+          #
+          # Whitespace in a pasted secret is the most common cause of a 401 that
+          # reads as "revoked". Worth saying before the injection, not after.
+          case "$CLIENT_ID$CLIENT_SECRET" in
+            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
+          esac
+          echo "Preflight complete; a 401 from the next step means the credentials were rejected (revoked, rotated, or expired), not missing. See issue #696."
         fi
-        # Whitespace in a pasted secret is the most common cause of a 401 that
-        # reads as "revoked". Worth saying before the injection, not after.
-        case "$CLIENT_ID$CLIENT_SECRET" in
-          *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
-        esac
-        echo "Preflight complete; a 401 from the next step means the credentials were rejected (revoked, rotated, or expired), not missing. See issue #696."
 
     # `secrets-action` exports through `$GITHUB_ENV`, which the runner applies to
     # every LATER step in the calling job, not only to the rest of this action --

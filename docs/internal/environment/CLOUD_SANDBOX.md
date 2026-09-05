@@ -226,8 +226,10 @@ platform binary is ~200 MB, so as a root devDependency every `npm ci` in CI and 
 image's dev-deps stage would download it for a tool only these two scripts call.
 
 > **Known version skew:** the sandbox pin is **not** the CLI version that applies
-> migrations in CI — [`deploy-api.yml`](../../../.github/workflows/deploy-api.yml) pins
-> `supabase/setup-cli` to **2.77.0** for the staging and production migration steps. The
+> migrations in CI — [`.github/actions/supabase-cli`](../../../.github/actions/supabase-cli/action.yml)
+> holds the single `supabase/setup-cli` pin (**2.77.0**) that every migration step in CI,
+> staging and production, installs from. It lived inline in `deploy-api.yml` until the
+> composite-action extraction; that file names no version now. The
 > gap predates the pin (the scripts previously ran unpinned `npx supabase`, i.e. whatever
 > `latest` was that day), and the sandbox cannot simply match 2.77.0 — it fails to start
 > here because the realtime container aborts with `:listen_error, :eafnosupport` (IPv6
