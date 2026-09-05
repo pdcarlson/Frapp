@@ -254,7 +254,24 @@ Two other refusals, both deliberate:
       (`check:migration-safety` requires touching this doc or the rollback
       playbook — it cannot tell which one you owed)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
-- [ ] Supabase backups/snapshots confirmed before a **production** promotion
+- [ ] For a **production** promotion, a backup **taken by you**, with the dump path
+      or object key recorded on the PR — or an explicit, written acceptance that
+      there is no recovery path for this promotion. Nothing takes one for you:
+      `db-backup.yml` runs against `frapp-staging` only, and the free plan offers
+      neither a snapshot nor PITR
+      ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality),
+      so this box cannot be ticked by having read it. This replaced an older item
+      that asked you to *confirm* Supabase backups: there were none to confirm, so
+      it could only ever be ticked falsely.
+      `scripts/db-backup.sh` can dump any project. It always needs a reachable
+      Docker daemon (`supabase db dump` runs pg_dump in a container). Prefer
+      `--db-url` for a one-off — nothing is left behind **in the tree**, unlike
+      `--linked`, which needs `supabase link` and leaves the link under
+      `supabase/.temp`, so re-link before running anything else from it. (The URL
+      still carries the password on the command line, so it reaches your shell
+      history and the process table like any other argv.) Either way it captures
+      the **database** only; Storage objects need `scripts/storage-backup-run.mjs`,
+      which is what `db-backup.yml`'s second job runs for staging.
 
 ## Local validation
 
@@ -445,7 +462,7 @@ enabled with no client policies).
 ### 20260831220000_chapter_documents_metadata.sql
 * **Purpose**: Adds `content_type`, `byte_size`, `document_type`, `effective_date`
   to `chapter_documents`, prerequisite work for the AI corpus retrieval design
-  (ADR-13 §13, #720) which needs a currency signal distinct from upload time and
+  (`spec/architecture/README.md` § 13 AI Corpus Architecture — not ADR-13, which is Repository visibility; #720) which needs a currency signal distinct from upload time and
   provenance metadata beyond a title. `content_type`/`byte_size` are populated
   from what the client already knows about the file (`file.type` / `file.size`);
   `document_type`/`effective_date` are optional form fields, user-supplied and

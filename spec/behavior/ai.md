@@ -34,8 +34,8 @@ It also follows directly from the non-goal below: structured data already *is* c
 should query canon rather than keep a stale copy of it.
 
 > **The mobile s17 mock flattens this split, deliberately and mock-only.**
-> `apps/mobile/lib/ask/corpus.ts` answers from a single keyword table that mixes events,
-> dues amounts and rosters in with the indexed prose, because there is no `ai` module in
+> `apps/mobile/lib/ask/corpus.ts` answers from a single keyword table that mixes events
+> and dues amounts in with the indexed prose, because there is no `ai` module in
 > the API to route a tool call through. It exists so the *screen* — citation chips, the
 > refusal path, the in-flight state — is real and reviewable against the drawing, and it
 > is unreachable in any shipped build: `EXPO_PUBLIC_ASK_ENABLED` is off by default and no
