@@ -255,7 +255,10 @@ no way to grandfather individual clones. The only lever is a repo-wide duplicati
 that fails when exceeded. So the ratchet is:
 
 - Measured when this landed: **4.37%** duplicated lines (556 clones across 845 files).
-- Threshold: **4.5%**, just above it.
+- Threshold: **4.4%**. It started at 4.5% — the same ~0.13pp above whatever the current
+  measurement is — and ratcheted down on 2026-09-05, when deleting the unconsumed
+  `@repo/hooks` / `@repo/chat-core` exports took the measurement to **4.27%** (843 clones,
+  10,434 duplicated lines). Set the new value from a *measured* run, never from a guess.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
   make a red run green.
 

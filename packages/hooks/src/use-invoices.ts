@@ -38,23 +38,6 @@ export function useInvoices(
   });
 }
 
-export function useInvoice(id: string) {
-  const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-  return useQuery({
-    queryKey: ["invoices", chapterId, id],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/invoices/{id}", {
-        params: { path: { id } },
-      });
-      if (error) throw error;
-      return data;
-    },
-    staleTime: 30_000,
-    enabled: !!id,
-  });
-}
-
 export function useOverdueInvoices() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
@@ -67,24 +50,6 @@ export function useOverdueInvoices() {
     },
     staleTime: 30_000,
     enabled: !!chapterId,
-  });
-}
-
-export function useInvoiceTransactions(invoiceId: string) {
-  const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-  return useQuery({
-    queryKey: ["invoices", chapterId, invoiceId, "transactions"],
-    queryFn: async () => {
-      const { data, error } = await client.GET(
-        "/v1/invoices/{id}/transactions",
-        { params: { path: { id: invoiceId } } },
-      );
-      if (error) throw error;
-      return data;
-    },
-    staleTime: 30_000,
-    enabled: !!invoiceId,
   });
 }
 
@@ -101,36 +66,6 @@ export function useCreateInvoice() {
       due_date: string;
     }) => {
       const { data, error } = await client.POST("/v1/invoices", { body });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoices", chapterId] });
-    },
-  });
-}
-
-export function useUpdateInvoice() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  const chapterId = useActiveChapterId();
-  return useMutation({
-    mutationFn: async ({
-      id,
-      body,
-    }: {
-      id: string;
-      body: {
-        title?: string;
-        description?: string;
-        amount?: number;
-        due_date?: string;
-      };
-    }) => {
-      const { data, error } = await client.PATCH("/v1/invoices/{id}", {
-        params: { path: { id } },
-        body,
-      });
       if (error) throw error;
       return data;
     },
