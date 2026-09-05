@@ -791,9 +791,11 @@ staggered daily cadence.
 - Legacy `<!-- cursor-suggestion: … -->` dedup markers in existing issue bodies stay valid (dedup
   matches on the `fp=` string); new filings embed `agent-suggestion`, and old bodies upgrade
   opportunistically when refreshed. *(Superseded 2026-08-20 on form only: the marker is now a
-  **visible line** rather than an HTML comment, because every GitHub MCP read path deletes
-  comments — which hid the marker from the search index too. The `fp=` grammar and the dedup rule
-  are unchanged, and comment-form markers remain valid. See [`GITHUB_PM.md` → Reading a body you
+  **visible line** rather than an HTML comment, because the GitHub MCP read has repeatedly deleted
+  comments — hiding the marker from the search index too. That has since recovered (2026-09-05) but
+  the visible-line form stays, because the defect has flipped four times and a visible line costs
+  nothing. The `fp=` grammar and the dedup rule are unchanged, and comment-form markers remain
+  valid. See [`GITHUB_PM.md` → Reading a body you
   intend to rewrite](../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).)*
 
 #### ADR-16 amendment 5 — Linear retired; GitHub Issues becomes canonical (2026-08-08)
