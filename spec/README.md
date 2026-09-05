@@ -9,30 +9,18 @@ tracking and delivery sequencing live in **GitHub Issues** (see
 workflows and runbooks live under **`docs/`** — start at [`docs/README.md`](../docs/README.md) and
 [`docs/guides/README.md`](../docs/guides/README.md).
 
-**This file is machine-checked.** Every declared child of `spec/` needs a row in a table
-here, and a row may not name a child that is not declared — `npm run check:doc-tables`, against
-`DIRECTORIES` in [`scripts/ci/lib/docs-structure.mjs`](../scripts/ci/lib/docs-structure.mjs). Add or retire a directory in
-the manifest and here in the same commit; the rule itself is described in
-[`DOCS_CI.md`](../docs/internal/ci-cd/DOCS_CI.md) § Rosters.
-
 ## Core
 
-| Document | Purpose |
-| -------- | ------- |
-| [`product/`](product/README.md) | Features, flows, surfaces, positioning, modules |
-| [`behavior/`](behavior/README.md) | Rules, edge cases, invariants (per topic) |
-| [`architecture/`](architecture/README.md) | Stack, data model, auth, API patterns, ADRs |
-| [`environments/`](environments/README.md) | Local, staging, production; CI/CD |
-| [`engineering.md`](engineering.md) | Canonical engineering principles |
+Which spec directory owns which kind of change is stated once, in
+[`docs/internal/DOCUMENTATION_CONVENTIONS.md` § Where things go](../docs/internal/DOCUMENTATION_CONVENTIONS.md#where-things-go).
+This index does not restate it: every topic tree under `spec/` routes from its own `README.md` —
+[`product/`](product/README.md), [`behavior/`](behavior/README.md),
+[`architecture/`](architecture/README.md), [`environments/`](environments/README.md),
+[`ui/`](ui/README.md).
 
-## UI
-
-| Document | Purpose |
-| -------- | ------- |
-| [`ui/`](ui/README.md) | Signet design system, brand identity, mobile, web dashboard, landing, assets, resilience |
+Canonical engineering principles are a file rather than a tree: [`engineering.md`](engineering.md).
 
 Security implementation notes live under [`docs/internal/security/`](../docs/internal/security/README.md).
-Documentation-placement conventions: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](../docs/internal/DOCUMENTATION_CONVENTIONS.md).
 
 ---
 
