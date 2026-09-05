@@ -1069,8 +1069,11 @@ the ones a later reader would otherwise re-litigate.
   no branch-protection tool. Step 4 of any rollout is evidenced only by a human's own run output.
   This is why #813, #1166 and #1138 recur.
 - **A `frapp-prod` data-loss event is unrecoverable until stage 5.** `frapp-prod` is
-  `ACTIVE_HEALTHY` and holds all 54 migrations — the same set as staging — so this is a live
-  exposure, not a hypothetical about a paused project.
+  `ACTIVE_HEALTHY` and held 54 migrations when the Management API was last read (2026-08-29) — so
+  this is a live exposure, not a hypothetical about a paused project. **The "same set as staging"
+  and "all" in this line are superseded:** `main` carries 70 migrations as of 2026-09-05, so the
+  applied set is behind the tree. The applied counts have not been re-read; #1620 tracks refreshing
+  this and the matching block in `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
 - **Staging and production build differently on purpose.** Staging is verified through preview
   deployments; production is built through the API with `target: production`. `web-production-build`
   closes the type-check half of that gap in CI, not the deployment half.

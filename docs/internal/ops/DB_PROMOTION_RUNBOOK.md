@@ -103,6 +103,16 @@ The workflow holds the `db-migrate-production` concurrency group with
 > The hand-applied `20260228000000_enable_rls_on_remaining_tables` that used to
 > block `supabase db push` outright is gone from the history (#832).
 >
+> **⚠️ Correction 2026-09-05 — the "nothing pending" half is superseded.** The
+> **54** above is a real Management API read and is left as recorded, but `main`
+> now carries **70** migrations, newest `20260905010000`. So the applied set no
+> longer matches `supabase/migrations/`, and there are migrations pending for
+> both projects. **The applied counts have not been re-read** — this correction
+> is derived from the repository alone, which is enough to falsify "nothing
+> pending" but not to state what either project holds today. Re-read before any
+> promotion, and do not skip the dry run on the strength of the ✅ above. (#1620
+> tracks refreshing this and the matching claim in `spec/architecture/README.md`.)
+>
 > This block previously warned that production was ~49 migrations behind and
 > that both paths above would fail on the dry run. That was true on 2026-08-24
 > and is not true now — left here as a correction rather than deleted, because
@@ -377,17 +387,20 @@ promoter must do by hand.
 `check:migration-safety` asserts **per-migration** coverage here *and* in
 [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — both, not either. It
 reads the entry **shape**, so a filename mentioned in prose does not count.
-Write one of:
+Either of these counts, anywhere in the file:
 
 ```
 ### <migration>.sql
 ```
 
-or, under a dated heading (`## 2026-08-09: Activation funnel (#267)`):
-
 ```
 * **Migration**: `<migration>.sql`
 ```
+
+The bullet form conventionally sits under a dated heading
+(`## 2026-08-09: Activation funnel (#267)`), and that is the shape to copy for a
+new entry — but the gate reads the line, not its position. The list marker may
+be `*` or `-`.
 
 Migrations that predate the gate are grandfathered in `UNLEDGERED` in
 [`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs).

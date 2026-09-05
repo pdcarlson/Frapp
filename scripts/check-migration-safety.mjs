@@ -143,13 +143,18 @@ function validateMigrationFiles(migrationFiles) {
  * directly and NONE was carried by that prefix alone — so dropping it costs no
  * existing workflow. Do not read more into its removal than that.
  *
- * The ledger hole it was blamed for is still open, and it is this list's own
- * shape: either entry satisfies the gate, so a migration PR that updates only
- * the rollback playbook never touches the promotion log. That is what actually
- * happened — of those 28, nineteen touched the rollback playbook alone and two
- * the promotion runbook alone, which is how the promotion log came to hold 28
- * dated entries against 69 migrations on disk. Closing it needs per-migration
- * coverage asserted both ways, not a shorter list; #1598 tracks that.
+ * The ledger hole it was blamed for was this list's own shape: either entry
+ * satisfies the gate, so a migration PR that updates only the rollback playbook
+ * never touched the promotion log. Of the 28 migration commits measured,
+ * nineteen touched the rollback playbook alone and two the promotion runbook
+ * alone, which is how the promotion log fell behind the tree.
+ *
+ * That hole is CLOSED, below: `validateLedgerCoverage` asserts per-migration
+ * coverage in both docs by entry shape, whole-tree. This predicate remains as
+ * the cheap PR-time half — it catches "you changed a migration and touched
+ * neither runbook" with a diff instead of a parse — but it is no longer what
+ * proves the ledger complete. Do not restore an "either doc is enough" reading
+ * from this comment alone.
  */
 export const MIGRATION_DOCS = [
   "docs/internal/ops/DB_PROMOTION_RUNBOOK.md",
@@ -512,8 +517,9 @@ function validateLedgerManifest() {
  * rollback recipe and nothing else passes while the promotion log never learns
  * the migration exists. Measured over the last 400 commits: nineteen migration
  * commits touched the rollback playbook alone and two the promotion runbook
- * alone, which is how the promotion log came to hold 21 entries against 70
- * migrations on disk. The most recent migration on `main` exhibits it exactly —
+ * alone, which is how the promotion log came to hold 35 entries against 70
+ * migrations on disk (55 of 70 have a rollback recipe; only 25 have both). The
+ * most recent migration on `main` exhibits it exactly —
  * `20260905010000_discord_import_archive_quota.sql` has a rollback recipe and
  * no promotion entry.
  *

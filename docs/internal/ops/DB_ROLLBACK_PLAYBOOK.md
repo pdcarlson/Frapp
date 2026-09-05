@@ -5,14 +5,20 @@
 `check:migration-safety` asserts **per-migration** coverage in this file *and*
 in [`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md) — both, not either. It
 reads the entry **shape**, so naming a migration in prose does not satisfy it.
-A recipe declares its subject as the first line under its `## Rollback <what>`
-heading:
+Either of these counts, anywhere in the file:
 
 ```
 * **Migration**: `<migration>.sql`
 ```
 
-The list marker may be `*` or `-`. A migration with no reversible DDL still
+```
+## Rollback <what> (<migration>.sql)
+```
+
+The bullet is the usual form and conventionally opens a `## Rollback <what>`
+recipe, but neither the heading nor the position is required — the line shape
+alone is what is read. The list marker may be `*` or `-`. A migration with no
+reversible DDL still
 gets a recipe — say so in an `* **Action**:` bullet; "not reversible, restore
 from backup" is a legitimate recipe and the honest one.
 

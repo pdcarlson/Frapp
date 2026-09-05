@@ -184,10 +184,19 @@ npm run generate -w packages/api-sdk
 
 ### Migration safety (`check:migration-safety`)
 
-Validates migration filenames match `{14-digit-timestamp}_{snake_case}.sql` and that promotion docs
+Validates migration filenames match `{14-digit-timestamp}_{snake_case}.sql`, that version prefixes
+are unique, and that a migration change also touches one of the promotion docs
 ([`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md),
-[`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md))
-are updated alongside migration changes.
+[`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md)).
+
+Separately and more strictly, it asserts **per-migration ledger coverage in both docs**, whole-tree,
+on every run — including the bare push invocation, not just PRs. Coverage is matched by entry
+**shape**, so naming a migration in prose does not count; each runbook states the shapes it accepts.
+Migrations predating the gate are grandfathered in `UNLEDGERED` in
+[`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs), which is
+**shrink-only**: `RATCHET_VERSION_CEILING` rejects any entry newer than the gate, so a new migration
+must carry a real entry in both docs rather than an allowlist line. Adding one exits **2**
+("UNLEDGERED grew"), not 1.
 
 ---
 
