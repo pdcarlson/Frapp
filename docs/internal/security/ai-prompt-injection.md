@@ -32,8 +32,12 @@ forgets to scope itself.
 > ones — there is no `AS RESTRICTIVE` anywhere in `supabase/migrations/`. The distinction matters: a
 > permissive `using (false)` is a no-op that any later permissive `FOR UPDATE` policy on
 > `chapter_audit_log` would silently override, whereas a restrictive policy could not be overridden.
-> The audit log's append-only guarantee is therefore an application-layer convention too, and should
-> not be cited as a database-enforced backstop for agent actions.
+> The audit log's append-only guarantee is therefore not a database-enforced backstop **against the
+> principal an agent action runs as**. Two different facts sit under one name here, and only the
+> second one is this document's: against `authenticated` the denial is real and enforced by RLS, as
+> [`AUTHORIZATION_MODEL.md`](AUTHORIZATION_MODEL.md) § 4 states; but the API holds the
+> `service_role` key, which bypasses RLS entirely, so nothing in the database stops an agent-driven
+> write path from updating or deleting a row. Do not read this bullet as contradicting that section.
 
 **The corpus is attacker-writable — but not uniformly, and the differences matter.** Per spec §13 the
 corpus is uploaded chapter documents, meeting minutes, and `#announcements`. Each has its own write

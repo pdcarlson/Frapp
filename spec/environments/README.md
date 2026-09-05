@@ -370,8 +370,8 @@ Secrets are centrally managed in **Infisical** (free tier) with automatic syncs 
 | Property         | Value                                                  |
 | ---------------- | ------------------------------------------------------ |
 | **Project**      | Frapp                                                  |
-| **Environments** | `local`, `staging`, `production`                       |
-| **Syncs**        | Vercel (×3 apps), Render (×2 services), GitHub Actions |
+| **Environments** | `dev`, `staging`, `prod` — slugs, not display names. Owned by [`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) § Infisical Environments |
+| **Syncs**        | Not restated here — the live inventory is [`SECRETS_MANAGEMENT.md`](../../docs/internal/environment/SECRETS_MANAGEMENT.md) § 5. **There is no GitHub Actions sync**; CI pulls at job time via Universal Auth |
 
 ### How It Works
 

@@ -5,11 +5,11 @@
  * from Supabase makes the rules testable without spinning up the realtime
  * subscription.
  *
- * Default tier (channel name → level) is applied only when the user has no
- * stored preference for the channel or its kind:
- *   - `announcements` → `all`
- *   - `chapter-audit` → `off`
- *   - everything else → `mentions`
+ * The default tier is applied only when the user has no stored preference for
+ * the channel or its kind. `defaultLevelFor` below is the whole rule and its
+ * precedence order — kind first, then channel name — so read it rather than a
+ * summary here; the summary this comment used to carry listed three of the five
+ * branches and omitted both kind rules.
  */
 
 import type {

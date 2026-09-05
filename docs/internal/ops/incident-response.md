@@ -12,7 +12,7 @@ Database rollback and restore are their own procedures:
 
 ### Detection signals
 
-- Uptime monitor fails `/health`
+- Uptime monitor fails `/health/ready` — **not `/health`**, which is Render's own `healthCheckPath` and is specified to always return 2xx while the process is up, so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency — or read the body, not the status
 - Render service marked unhealthy
 - Elevated 5xx alerts
 
@@ -37,7 +37,7 @@ Database rollback and restore are their own procedures:
 - [ ] Validate required env vars are present
 - [ ] Verify DB connectivity from API
 - [ ] Re-run post-deploy smoke checks
-- [ ] Confirm uptime monitor is green for 10+ minutes
+- [ ] Confirm the uptime monitor is green on `/health/ready` for 10+ minutes — green on `/health` alone does not clear a degraded dependency
 
 ### Communication
 
