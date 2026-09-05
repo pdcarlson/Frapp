@@ -251,8 +251,8 @@ Two other refusals, both deliberate:
       repo excludes and why
 - [ ] PR includes migration SQL + rollback plan (`DB_ROLLBACK_PLAYBOOK.md`)
 - [ ] PR appends an entry to the promotion log at the bottom of this file
-      (`check:migration-safety` requires touching this doc or the rollback
-      playbook — it cannot tell which one you owed)
+      (`check:migration-safety` now requires a per-migration entry in **both**
+      this doc and the rollback playbook — see the entry shapes below)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
 - [ ] Supabase backups/snapshots confirmed before a **production** promotion
 
@@ -372,10 +372,29 @@ Post-apply production checks:
 ## Promotion log
 
 Every migration below records what it does, how it was promoted, and anything a
-promoter must do by hand. `check:migration-safety` requires a migration PR to
-touch this file **or** [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — it
-backs the habit, it does not prove the log complete. Appending here stays the
-promoter's job.
+promoter must do by hand.
+
+`check:migration-safety` asserts **per-migration** coverage here *and* in
+[`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — both, not either. It
+reads the entry **shape**, so a filename mentioned in prose does not count.
+Write one of:
+
+```
+### <migration>.sql
+```
+
+or, under a dated heading (`## 2026-08-09: Activation funnel (#267)`):
+
+```
+* **Migration**: `<migration>.sql`
+```
+
+Migrations that predate the gate are grandfathered in `UNLEDGERED` in
+[`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs).
+That list is **shrink-only** and enforced by a version ceiling: a migration
+created after the gate cannot be added to it, so new work needs a real entry.
+Backfilling an old one — deleting its line once you know the real promotion
+date — is welcome; inventing a date to turn the gate green is not.
 
 ## 2026-08-31: `chapter_documents` metadata — mime type, size, document type, effective date (#716)
 

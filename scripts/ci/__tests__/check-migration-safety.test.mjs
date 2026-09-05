@@ -15,7 +15,9 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, readdirSync } from "node:fs";
 
 import {
+  LEDGER_ENTRY_PATTERNS,
   MIGRATION_DOCS,
+  RATCHET_VERSION_CEILING,
   UNLEDGERED,
   ledgerCoverageProblems,
   ledgerEntries,
@@ -192,12 +194,39 @@ test("a superseded migration in a parenthetical is NOT credited", () => {
   ]);
 });
 
-test("ledgerEntries is not stateful across calls", () => {
-  // A shared /g regex carries lastIndex, so the second call would start
-  // mid-file and silently drop entries — a fail-open that only shows up on the
-  // second doc parsed, which is exactly how CI would see it.
-  const text = "### 20260831220000_chapter_documents_metadata.sql\n";
-  assert.deepEqual(ledgerEntries(PROMOTION, text), ledgerEntries(PROMOTION, text));
+test("the promotion runbook's SECOND entry shape counts", () => {
+  // The defect this file shipped with: reading only `###` headings scored the
+  // runbook at 21/70 and marked 14 migrations as having no recoverable
+  // promotion history — while their dated records sat on the page in this
+  // shape. A doc may record an entry more than one way.
+  const entries = ledgerEntries(
+    PROMOTION,
+    "## 2026-08-09: Activation funnel — `chapter_activation_milestones` (#267)\n" +
+      "* **Migration**: `20260809001500_chapter_activation_milestones.sql`\n",
+  );
+  assert.deepEqual([...entries], ["20260809001500_chapter_activation_milestones.sql"]);
+});
+
+test("the rollback playbook's heading entry shape counts", () => {
+  const entries = ledgerEntries(
+    ROLLBACK,
+    "## Rollback Chunk 05 migration (20260527120000_chat_notification_preferences.sql)\n",
+  );
+  assert.deepEqual([...entries], ["20260527120000_chat_notification_preferences.sql"]);
+});
+
+test("a `-` list marker is read the same as `*`", () => {
+  // Prettier normalizes unordered list markers to `-`, and nothing in this repo
+  // stops it running over a .md. Pinning only `* ` meant one format-on-save
+  // would zero every rollback entry and turn a REQUIRED check red repo-wide,
+  // telling 55 authors their migration "needs an entry" that was never removed.
+  for (const doc of [PROMOTION, ROLLBACK]) {
+    assert.deepEqual(
+      [...ledgerEntries(doc, "- **Migration**: `20260901183000_orphan_president_claim.sql`\n")],
+      ["20260901183000_orphan_president_claim.sql"],
+      doc,
+    );
+  }
 });
 
 // ── Ledger coverage: the ratchet ────────────────────────────────────────────
@@ -206,14 +235,10 @@ test("a migration with no entry and no allowlist line fails", () => {
   const problems = ledgerCoverageProblems(
     ["20260906000000_brand_new.sql"],
     new Map([[PROMOTION, new Set()], [ROLLBACK, new Set()]]),
+    new Map([[PROMOTION, []], [ROLLBACK, []]]),
   );
-  // Scoped to the migration under test: the fixture's migration list omits the
-  // real allowlisted files, so they correctly report `absent` here and would
-  // drown the assertion.
   assert.deepEqual(
-    problems
-      .filter((p) => p.migration === "20260906000000_brand_new.sql")
-      .map((p) => [p.kind, p.doc]),
+    problems.map((p) => [p.kind, p.doc]),
     [["missing", PROMOTION], ["missing", ROLLBACK]],
     "a new migration owes BOTH ledgers",
   );
@@ -231,64 +256,94 @@ test("a migration covered in only one ledger still fails for the other", () => {
       [PROMOTION, new Set()],
       [ROLLBACK, new Set(["20260906000000_brand_new.sql"])],
     ]),
+    new Map([[PROMOTION, []], [ROLLBACK, []]]),
   );
   assert.deepEqual(
-    problems
-      .filter((p) => p.migration === "20260906000000_brand_new.sql")
-      .map((p) => [p.kind, p.doc]),
+    problems.map((p) => [p.kind, p.doc]),
     [["missing", PROMOTION]],
   );
 });
 
 test("an allowlisted migration that is now covered must lose its line", () => {
-  const allowlisted = UNLEDGERED.get(PROMOTION)[1];
+  // Uses a synthetic allowlist-shaped fixture rather than indexing the real
+  // list positionally: the real list is designed to shrink to zero, and a test
+  // that reads [0]/[1] fails on the ratchet's own success.
+  const migration = "20260101000000_fixture.sql";
   const problems = ledgerCoverageProblems(
-    [allowlisted],
-    new Map([[PROMOTION, new Set([allowlisted])], [ROLLBACK, new Set([allowlisted])]]),
+    [migration],
+    new Map([[PROMOTION, new Set([migration])], [ROLLBACK, new Set([migration])]]),
+    new Map([[PROMOTION, [migration]], [ROLLBACK, []]]),
   );
   assert.deepEqual(
-    problems
-      .filter((p) => p.doc === PROMOTION && p.migration === allowlisted)
-      .map((p) => p.kind),
-    ["covered"],
+    problems.filter((p) => p.migration === migration).map((p) => [p.kind, p.doc]),
+    [["covered", PROMOTION]],
     "without this the allowlist only ever goes stale — it is the ratchet's teeth",
   );
 });
 
 test("an allowlist line for a migration not on disk is stale", () => {
-  const allowlisted = UNLEDGERED.get(PROMOTION)[0];
   const problems = ledgerCoverageProblems(
     [],
     new Map([[PROMOTION, new Set()], [ROLLBACK, new Set()]]),
+    new Map([[PROMOTION, ["20260101000000_renamed_away.sql"]], [ROLLBACK, []]]),
   );
-  assert.equal(
-    problems.some((p) => p.kind === "absent" && p.migration === allowlisted),
-    true,
+  assert.deepEqual(
+    problems.map((p) => [p.kind, p.migration]),
+    [["absent", "20260101000000_renamed_away.sql"]],
   );
 });
 
-test("a ledger entry naming a migration not on disk is an orphan", () => {
+test("a rollback recipe for a migration not on disk is an orphan", () => {
   const problems = ledgerCoverageProblems(
     [],
-    new Map([
-      [PROMOTION, new Set(["20260906000000_deleted.sql"])],
-      [ROLLBACK, new Set()],
-    ]),
+    new Map([[PROMOTION, new Set()], [ROLLBACK, new Set(["20260906000000_deleted.sql"])]]),
+    new Map([[PROMOTION, []], [ROLLBACK, []]]),
   );
-  assert.equal(
-    problems.some((p) => p.kind === "orphan" && p.migration === "20260906000000_deleted.sql"),
-    true,
+  assert.deepEqual(
+    problems.map((p) => [p.kind, p.doc]),
+    [["orphan", ROLLBACK]],
   );
+});
+
+test("a promotion entry for a migration not on disk is NOT an orphan", () => {
+  // The promotion runbook is a dated record of what was actually promoted. A
+  // squash or a revert removes the file but not the fact, and demanding the
+  // entry be deleted to get CI green would destroy the operational history this
+  // gate exists to protect.
+  const problems = ledgerCoverageProblems(
+    [],
+    new Map([[PROMOTION, new Set(["20260906000000_deleted.sql"])], [ROLLBACK, new Set()]]),
+    new Map([[PROMOTION, []], [ROLLBACK, []]]),
+  );
+  assert.deepEqual(problems, []);
 });
 
 // ── Ledger coverage: the shipped state ──────────────────────────────────────
 
-test("every declared doc declares an allowlist", () => {
-  // A doc in MIGRATION_DOCS with no UNLEDGERED key reads as "nothing is
-  // exempt", which fails closed and loudly — but the reverse, a doc whose
-  // pattern is missing, reads as "nothing is covered". Pin both.
+test("every declared doc declares at least one entry shape", () => {
+  // A doc with no pattern makes ledgerEntries return the empty set, so every
+  // migration in the tree reports `missing` — loud, but it blames every author
+  // in the repo for a manifest mistake.
   for (const doc of MIGRATION_DOCS) {
-    assert.equal(UNLEDGERED.has(doc), true, `${doc} has no UNLEDGERED entry`);
+    const patterns = LEDGER_ENTRY_PATTERNS.get(doc);
+    assert.ok(patterns?.length > 0, `${doc} declares no entry shape`);
+    for (const pattern of patterns) {
+      assert.ok(pattern.flags.includes("g"), `${pattern} must be global for matchAll`);
+    }
+  }
+});
+
+test("no allowlist entry is newer than the ratchet ceiling", () => {
+  // The shrink-only rule, enforced rather than asserted in a comment. Without
+  // it an author blocked by the gate can append their new migration to
+  // UNLEDGERED and go green — satisfying a REQUIRED check by adding debt.
+  for (const [doc, allowed] of UNLEDGERED) {
+    for (const migration of allowed) {
+      assert.ok(
+        migration.slice(0, 14) <= RATCHET_VERSION_CEILING,
+        `${migration} (${doc}) is newer than ${RATCHET_VERSION_CEILING} and cannot be grandfathered`,
+      );
+    }
   }
 });
 

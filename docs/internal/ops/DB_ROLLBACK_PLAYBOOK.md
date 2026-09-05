@@ -1,5 +1,26 @@
 # DB Rollback Playbook
 
+## Every migration owes a recipe here
+
+`check:migration-safety` asserts **per-migration** coverage in this file *and*
+in [`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md) — both, not either. It
+reads the entry **shape**, so naming a migration in prose does not satisfy it.
+A recipe declares its subject as the first line under its `## Rollback <what>`
+heading:
+
+```
+* **Migration**: `<migration>.sql`
+```
+
+The list marker may be `*` or `-`. A migration with no reversible DDL still
+gets a recipe — say so in an `* **Action**:` bullet; "not reversible, restore
+from backup" is a legitimate recipe and the honest one.
+
+Migrations that predate the gate are grandfathered in `UNLEDGERED` in
+[`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs).
+That list is **shrink-only** and enforced by a version ceiling, so a migration
+created after the gate cannot be added to it.
+
 ## Automated Migration Context
 
 Migrations are now applied automatically in the deploy pipeline (see `.github/workflows/deploy-api.yml`):

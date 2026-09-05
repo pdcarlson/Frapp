@@ -688,10 +688,12 @@ jobs:
 
       # Deliberately bare (no --base/--head) on push: the promotion-docs half
       # of this check is a PR-time review gate, not a merge-time one — by the
-      # time a commit reaches `main` via merge, the PR run above (line 738)
-      # already enforced it. Filename/version
-      # validation (validateMigrationFiles) still runs unconditionally either
-      # way, so a malformed migration filename is still caught on push (#980).
+      # time a commit reaches `main` via merge, the PR run above already
+      # enforced it. Everything that does NOT need a commit range still runs
+      # unconditionally here: filename/version validation (#980), and the
+      # whole-tree ledger-coverage ratchet, which is deliberately checked on
+      # push too because the change that breaks it (deleting an allowlist line)
+      # is often a docs edit rather than a migration PR.
       - name: Check migration safety (push)
         if: github.event_name == 'push'
         run: npm run check:migration-safety

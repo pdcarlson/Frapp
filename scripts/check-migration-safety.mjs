@@ -75,11 +75,14 @@ function getChangedFiles(base, head) {
   );
 }
 
-function validateMigrationFiles() {
-  const migrationFiles = readdirSync(MIGRATIONS_DIR)
+/** The migrations on disk, listed once and shared by every validator below. */
+function readMigrationFilenames() {
+  return readdirSync(MIGRATIONS_DIR)
     .filter((file) => file.endsWith(".sql"))
     .sort();
+}
 
+function validateMigrationFiles(migrationFiles) {
   const invalid = migrationFiles.filter((file) => !MIGRATION_FILENAME.test(file));
   if (invalid.length > 0) {
     console.error("Migration safety check failed: invalid migration filename(s).");
@@ -161,47 +164,80 @@ export function satisfiesPromotionDocs(changedFiles) {
 /**
  * Where each ledger actually records a migration — as a SHAPE, not a substring.
  *
- * This distinction is the whole reason the ledger hole survived being measured
- * twice. A `grep -F <filename>` over the promotion runbook answers 37 of 70;
- * the runbook only holds 21 promotion entries. The other sixteen are prose
- * cross-references — "`20260824120000_discord_import.sql` gave the importer its
- * own..." — narrative asides inside somebody else's entry. A mention is not a
- * promotion record, and a gate that accepts one grades the wrong thing.
+ * This distinction is why the hole survived being measured twice. A
+ * `grep -F <filename>` over the promotion runbook answers 37 of 70, but a
+ * filename also appears in prose cross-references — "`2026...discord_import.sql`
+ * gave the importer its own..." — narrative asides inside somebody else's
+ * entry. A mention is not a promotion record, and a gate that accepts one
+ * grades the wrong thing.
  *
- * So each doc declares the one line shape that constitutes an entry:
+ * A doc may record an entry in MORE THAN ONE shape, and the promotion runbook
+ * does. Reading only the first shape is the mistake this list was written with:
+ * 21 entries are `### <migration>.sql` headings, but 14 more are real, dated
+ * promotion records written the other way — `## 2026-08-09: Activation funnel`
+ * followed by a `* **Migration**: `<file>.sql`` bullet. Missing them understated
+ * coverage as 21/70 when it is 35/70, and wrongly marked 14 migrations as
+ * having no recoverable promotion history when their dates are on the page. So
+ * each doc declares a LIST of shapes, and a match on any of them is an entry.
  *
- * - promotion runbook: an `### <migration>.sql` log heading.
- * - rollback playbook: a `* **Migration**: `<migration>.sql`` recipe subject.
- *
- * Capture group 1 is the migration filename. The rollback pattern deliberately
- * anchors to the FIRST backtick after the label, because two recipes carry a
- * `(supersedes `<older>.sql`)` parenthetical — the recipe's subject is what the
- * playbook covers, and the superseded migration must not be credited by sitting
- * in someone else's parentheses.
+ * Capture group 1 is the migration filename in every pattern. The bullet
+ * patterns deliberately anchor to the FIRST backtick after the label, because
+ * two rollback recipes carry a `(supersedes `<older>.sql`)` parenthetical — the
+ * subject is what the doc covers, and the superseded migration must not be
+ * credited by sitting in someone else's parentheses.
  */
-const LEDGER_ENTRY_PATTERNS = new Map([
+export const LEDGER_ENTRY_PATTERNS = new Map([
   [
     "docs/internal/ops/DB_PROMOTION_RUNBOOK.md",
-    /^### (\d{14}_[a-z0-9_]+\.sql)[ \t]*$/gm,
+    [
+      /^### (\d{14}_[a-z0-9_]+\.sql)[ \t]*$/gm,
+      /^[*-] \*\*Migration\*\*: `(\d{14}_[a-z0-9_]+\.sql)`/gm,
+    ],
   ],
   [
     "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md",
-    /^\* \*\*Migration\*\*: `(\d{14}_[a-z0-9_]+\.sql)`/gm,
+    [
+      /^[*-] \*\*Migration\*\*: `(\d{14}_[a-z0-9_]+\.sql)`/gm,
+      /^## Rollback .*\((\d{14}_[a-z0-9_]+\.sql)\)[ \t]*$/gm,
+    ],
   ],
 ]);
 
 /**
- * Migrations that predate this coverage gate and carry no entry in the named
- * doc. A SHRINK-ONLY ratchet: entries may leave, none may be added.
+ * The version prefix at which this ratchet was installed. No allowlist entry
+ * may name a migration newer than this.
  *
- * Why an allowlist and not a backfill. The promotion runbook is a record of
- * what was actually promoted to a hosted database, on what date, by whom.
- * Forty-nine of those promotions happened before anything required the entry,
- * and their real history is not reconstructible from the repository. Inventing
- * plausible dates to turn a gate green would corrupt an operational record —
- * strictly worse than an honest, visibly-shrinking gap. Backfilling one of
- * these is human work, done when someone actually knows the answer; deleting
- * its line here is how the ratchet records that.
+ * This is what makes "shrink-only" a rule rather than a comment. Every
+ * migration filename carries a sortable 14-digit version, so a migration
+ * created after the ratchet cannot be exempted: the only way past the gate for
+ * new work is a real ledger entry. Without it the escape hatch is two lines in
+ * a list nobody re-reads — an author blocked by the gate appends their new
+ * filename here and CI goes green, which is the gate being satisfied by adding
+ * debt.
+ *
+ * Raising this constant re-opens that hatch, so treat it as a decision, not a
+ * fix. It is pinned by test, and there is no legitimate reason to move it.
+ */
+export const RATCHET_VERSION_CEILING = "20260905010000";
+
+/**
+ * Migrations that predate this coverage gate and carry no entry in the named
+ * doc. A SHRINK-ONLY ratchet: entries may leave, none may be added — enforced
+ * by RATCHET_VERSION_CEILING above, not merely asserted here.
+ *
+ * Why an allowlist and not a backfill. The promotion runbook records what was
+ * actually promoted to a hosted database and when. These promotions happened
+ * before anything required the entry, and the repository does not carry the
+ * dates. Inventing plausible ones to turn a gate green would corrupt an
+ * operational record — strictly worse than an honest, visibly-shrinking gap.
+ * Backfilling one is human work, done when someone actually knows the answer;
+ * deleting its line here is how the ratchet records that.
+ *
+ * This list was initially 49 entries because the parser read only the
+ * runbook's `###` shape and missed 14 dated records written as a `## <date>:`
+ * heading plus a `* **Migration**:` bullet. Those 14 are NOT here: their
+ * history was on the page the whole time. If this list grows again, suspect the
+ * parser before believing the gap.
  *
  * The rollback list is shorter for a structural reason worth keeping: a
  * rollback recipe is derivable from the migration's own DDL, so those gaps are
@@ -212,32 +248,18 @@ export const UNLEDGERED = new Map([
     "docs/internal/ops/DB_PROMOTION_RUNBOOK.md",
     [
       "00000000000000_initial_schema.sql",
-      "20250226120000_add_get_points_report_rpc.sql",
-      "20260417120000_point_transactions_chapter_created_at_idx.sql",
-      "20260417140000_backfill_polls_view_all_system_roles.sql",
-      "20260417150000_backfill_members_view_vp_secretary.sql",
-      "20260417180000_add_poll_list_vote_aggregate_rpcs.sql",
       "20260531120000_member_custom_field_values.sql",
       "20260602210000_add_confirm_task_completion_rpc.sql",
       "20260603120000_add_approve_service_entry_rpc.sql",
       "20260603140000_add_check_in_event_rpc.sql",
-      "20260604120000_add_transfer_presidency_rpc.sql",
       "20260604121000_chapter_last_stripe_webhook_at.sql",
-      "20260604140000_get_points_report_window_filter.sql",
-      "20260802120000_active_chapter_jwt_claim.sql",
-      "20260803120000_invoice_payment_rpc_and_indexes.sql",
-      "20260803140000_account_deletion_anonymize_user_rpc.sql",
-      "20260803150000_chat_message_actions_membership_rls.sql",
-      "20260803231500_service_proof_bucket.sql",
       "20260804230000_member_custom_role_ids.sql",
       "20260805133000_reports_bucket.sql",
       "20260805140000_scheduled_notification_dispatches.sql",
-      "20260805150000_stripe_webhook_events.sql",
       "20260806220000_role_system_key.sql",
       "20260807150000_study_session_pause_grace.sql",
       "20260807220000_role_gated_required_permissions.sql",
       "20260808204500_declare_dashboard_created_buckets.sql",
-      "20260809001500_chapter_activation_milestones.sql",
       "20260809120000_chapter_document_folders.sql",
       "20260809124500_service_hours_config_and_leaderboard.sql",
       "20260816140000_realtime_carrier_repair.sql",
@@ -271,8 +293,6 @@ export const UNLEDGERED = new Map([
       "20260523130000_audit_log.sql",
       "20260523140000_chapter_directory.sql",
       "20260523150000_chat_hotpath.sql",
-      "20260524120000_chapter_directory_requests.sql",
-      "20260527120000_chat_notification_preferences.sql",
       "20260803120000_invoice_payment_rpc_and_indexes.sql",
       "20260803140000_account_deletion_anonymize_user_rpc.sql",
       "20260809120000_chapter_document_folders.sql",
@@ -286,18 +306,36 @@ export const UNLEDGERED = new Map([
   ],
 ]);
 
-/** Migration filenames the given doc text records as ledger entries. */
+/**
+ * Migration filenames the given doc text records as ledger entries, under any
+ * of the shapes that doc declares.
+ *
+ * `matchAll` clones its regex internally and never advances the source's
+ * `lastIndex`, so reusing these `/g` literals across calls and docs is safe —
+ * no defensive copy needed. (It does throw on a non-global regex, which is why
+ * every pattern above carries `g`.)
+ */
 export function ledgerEntries(doc, text) {
-  const pattern = LEDGER_ENTRY_PATTERNS.get(doc);
-  if (!pattern) return new Set();
-  // Fresh regex per call: a /g literal carries mutable lastIndex, so sharing
-  // one across calls makes the second call start mid-file and drop entries.
-  return new Set(
-    [...text.matchAll(new RegExp(pattern.source, pattern.flags))].map(
-      (match) => match[1],
-    ),
-  );
+  const patterns = LEDGER_ENTRY_PATTERNS.get(doc) ?? [];
+  const found = new Set();
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) found.add(match[1]);
+  }
+  return found;
 }
+
+/**
+ * Ledgers whose entries are a HISTORICAL record and may outlive the file on
+ * disk, so an entry naming an absent migration is correct rather than orphaned.
+ *
+ * The promotion runbook is a dated log of what was actually promoted to a
+ * hosted database. Squash a baseline or revert a bad migration and its file
+ * leaves the tree, but the promotion still happened — demanding the entry be
+ * deleted to get CI green would destroy the operational record this gate exists
+ * to protect. The rollback playbook is the opposite: a recipe for a migration
+ * that no longer exists is dead weight, and worth reporting.
+ */
+const HISTORICAL_LEDGERS = new Set(["docs/internal/ops/DB_PROMOTION_RUNBOOK.md"]);
 
 /**
  * The whole-tree ledger contract, as a pure function so the tests can drive it
@@ -312,15 +350,20 @@ export function ledgerEntries(doc, text) {
  *                   stale and stops describing anything.
  * 3. `absent`     — an allowlist line naming a migration not on disk (a rename).
  * 4. `orphan`     — a ledger entry naming a migration not on disk. Zero today,
- *                   which is why it is cheap to start asserting now.
+ *                   which is why it is cheap to start asserting now. Skipped for
+ *                   HISTORICAL_LEDGERS, where it is not a defect.
  */
-export function ledgerCoverageProblems(migrations, entriesByDoc) {
+export function ledgerCoverageProblems(
+  migrations,
+  entriesByDoc,
+  unledgered = UNLEDGERED,
+) {
   const onDisk = new Set(migrations);
   const problems = [];
 
   for (const doc of MIGRATION_DOCS) {
     const entries = entriesByDoc.get(doc) ?? new Set();
-    const allowed = new Set(UNLEDGERED.get(doc) ?? []);
+    const allowed = new Set(unledgered.get(doc) ?? []);
 
     for (const migration of migrations) {
       if (entries.has(migration) || allowed.has(migration)) continue;
@@ -334,6 +377,8 @@ export function ledgerCoverageProblems(migrations, entriesByDoc) {
         problems.push({ kind: "absent", doc, migration });
       }
     }
+
+    if (HISTORICAL_LEDGERS.has(doc)) continue;
 
     for (const migration of entries) {
       if (!onDisk.has(migration)) {
@@ -401,31 +446,60 @@ function validateDocManifest() {
 }
 
 /**
- * Every declared doc must also declare how it records an entry.
+ * Every declared doc must declare how it records an entry, and no allowlist may
+ * exempt a migration created after the ratchet was installed.
  *
- * Without this, adding a third doc to MIGRATION_DOCS — or renaming one — leaves
- * `ledgerEntries` with no pattern for it, so it returns the empty set and the
- * coverage check reads "nothing is covered". That direction is loud, not
- * silent, so it self-reports; the genuinely dangerous half is UNLEDGERED, whose
- * missing key would be read as "no migration is exempt". Either way the gate is
- * grading a doc it does not understand, which is the thing this file keeps
- * relearning. Exit 2: the gate cannot do its job, and no author caused it.
+ * The first half: a doc in MIGRATION_DOCS with no LEDGER_ENTRY_PATTERNS entry
+ * makes `ledgerEntries` return the empty set, so the coverage check reports
+ * every migration in the tree as `missing` — loud, but it blames every author
+ * in the repo for a manifest mistake. Naming the real cause is the whole job of
+ * this family of checks. A missing UNLEDGERED key is NOT an error: it reads as
+ * "this doc exempts nothing", which is both correct and the desired end state.
+ *
+ * The second half is what makes "shrink-only" enforceable. Filenames sort by
+ * their 14-digit version, so anything newer than RATCHET_VERSION_CEILING was
+ * created after the rule existed and cannot be grandfathered. Without it the
+ * allowlist is an open door: the gate's own `missing` message points at it, and
+ * an author blocked at 2am will take it.
+ *
+ * Exit 2 throughout: the gate cannot do its job, and no single author caused it.
  */
 function validateLedgerManifest() {
   const undeclared = MIGRATION_DOCS.filter(
-    (doc) => !LEDGER_ENTRY_PATTERNS.has(doc) || !UNLEDGERED.has(doc),
+    (doc) => !LEDGER_ENTRY_PATTERNS.has(doc),
   );
-  if (undeclared.length === 0) return;
+  if (undeclared.length > 0) {
+    console.error(
+      "Migration safety check failed: a declared doc has no ledger contract.",
+    );
+    for (const doc of undeclared) {
+      console.error(
+        `- ${doc} is in MIGRATION_DOCS but missing from LEDGER_ENTRY_PATTERNS.`,
+      );
+    }
+    console.error(
+      "Declare the entry shape(s) for it in scripts/check-migration-safety.mjs, " +
+        "in the same change set.",
+    );
+    process.exit(2);
+  }
 
-  console.error(
-    "Migration safety check failed: a declared doc has no ledger contract.",
+  const grown = [...UNLEDGERED].flatMap(([doc, allowed]) =>
+    allowed
+      .filter((migration) => migration.slice(0, 14) > RATCHET_VERSION_CEILING)
+      .map((migration) => ({ doc, migration })),
   );
-  for (const doc of undeclared) {
-    console.error(`- ${doc} is in MIGRATION_DOCS but missing from LEDGER_ENTRY_PATTERNS and/or UNLEDGERED.`);
+  if (grown.length === 0) return;
+
+  console.error("Migration safety check failed: UNLEDGERED grew.");
+  for (const { doc, migration } of grown) {
+    console.error(
+      `- ${migration} is newer than the ratchet ceiling ${RATCHET_VERSION_CEILING}, so it cannot be exempted for ${doc}.`,
+    );
   }
   console.error(
-    "Declare the entry shape and the allowlist for it in " +
-      "scripts/check-migration-safety.mjs, in the same change set.",
+    "UNLEDGERED is shrink-only: it grandfathers migrations that predate this " +
+      "gate, not new ones. Write the ledger entry instead.",
   );
   process.exit(2);
 }
@@ -448,39 +522,61 @@ function validateLedgerManifest() {
  * migration PR at all (deleting an allowlist line is a docs edit), and a
  * ratchet only checked on the PRs it constrains is not a ratchet.
  */
-function validateLedgerCoverage() {
-  const migrations = readdirSync(MIGRATIONS_DIR)
-    .filter((file) => file.endsWith(".sql"))
-    .sort();
-
+function validateLedgerCoverage(migrations) {
   const entriesByDoc = new Map(
-    MIGRATION_DOCS.map((doc) => [
-      doc,
-      ledgerEntries(doc, readFileSync(join(REPO_ROOT, doc), "utf8")),
-    ]),
+    MIGRATION_DOCS.map((doc) => {
+      const path = join(REPO_ROOT, doc);
+      let text;
+      try {
+        text = readFileSync(path, "utf8");
+      } catch (error) {
+        // validateDocManifest asks git what is TRACKED, so a doc in the index
+        // but missing from the worktree reaches here. A raw ENOENT relabelled
+        // as exit 1 tells the author their change broke a rule; it did not.
+        console.error(
+          "Migration safety check failed: a declared ledger is unreadable.",
+        );
+        console.error(`- ${doc}: ${error instanceof Error ? error.message : error}`);
+        console.error(
+          "The file is tracked but could not be read. Restore it (or repoint " +
+            "MIGRATION_DOCS if it moved) — this REQUIRED check cannot grade " +
+            "ledger coverage without it.",
+        );
+        process.exit(2);
+      }
+      return [doc, ledgerEntries(doc, text)];
+    }),
   );
 
   const problems = ledgerCoverageProblems(migrations, entriesByDoc);
   if (problems.length === 0) return;
 
   const remedy = {
-    missing: (doc) =>
-      `needs an entry in ${doc} (or, if its history is genuinely unrecoverable, a line in UNLEDGERED — which is shrink-only, so expect to justify it)`,
+    missing: (doc) => `needs an entry in ${doc}`,
     covered: (doc) =>
       `is now recorded in ${doc}: delete its line from UNLEDGERED in scripts/check-migration-safety.mjs`,
     absent: (doc) =>
       `is listed in UNLEDGERED for ${doc} but is not on disk: delete the stale line`,
-    orphan: (doc) => `is recorded in ${doc} but is not on disk: the entry names a migration that no longer exists`,
+    orphan: (doc) => `is recorded in ${doc} but is not on disk`,
   };
+  // An unmapped kind must not throw: main()'s catch would relabel a gate crash
+  // as the author's rule violation and swallow every real problem in the list.
+  const describe = (kind, doc) =>
+    (remedy[kind] ?? ((d) => `has ledger problem "${kind}" in ${d}`))(doc);
 
   console.error("Migration safety check failed: ledger coverage.");
   for (const { kind, doc, migration } of problems) {
-    console.error(`- ${migration} ${remedy[kind](doc)}.`);
+    console.error(`- ${migration} ${describe(kind, doc)}.`);
   }
   console.error(
-    "Every migration owes BOTH a promotion-log entry and a rollback recipe. " +
-      "See docs/internal/ops/DB_PROMOTION_RUNBOOK.md and " +
-      "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md for the entry shapes.",
+    "\nEvery migration owes BOTH a promotion-log entry and a rollback recipe.\n" +
+      "Write one of these lines, exactly (the marker may be * or -):\n" +
+      "  DB_PROMOTION_RUNBOOK.md   ### <migration>.sql\n" +
+      "                            (or, under a `## <date>: <what>` heading)\n" +
+      "                            * **Migration**: `<migration>.sql`\n" +
+      "  DB_ROLLBACK_PLAYBOOK.md   * **Migration**: `<migration>.sql`\n" +
+      "                            (under a `## Rollback <what>` heading)\n" +
+      "A filename mentioned in prose does not count — the shape is what is read.",
   );
   process.exit(1);
 }
@@ -519,10 +615,11 @@ function validatePromotionDocs(base, head) {
 
 function main() {
   try {
-    validateMigrationFiles();
+    const migrations = readMigrationFilenames();
+    validateMigrationFiles(migrations);
     validateDocManifest();
     validateLedgerManifest();
-    validateLedgerCoverage();
+    validateLedgerCoverage(migrations);
     validatePromotionDocs(getArg("--base"), getArg("--head"));
     console.log("Migration safety check passed.");
   } catch (error) {
