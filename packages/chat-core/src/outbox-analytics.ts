@@ -29,6 +29,3 @@ export const OUTBOX_ANALYTICS_EVENTS = {
   /** A member discarded a failed row instead of retrying it. */
   discarded: "outbox-discarded",
 } as const;
-
-export type OutboxAnalyticsEvent =
-  (typeof OUTBOX_ANALYTICS_EVENTS)[keyof typeof OUTBOX_ANALYTICS_EVENTS];
