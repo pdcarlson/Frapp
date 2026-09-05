@@ -25,7 +25,7 @@
 ### The reservation
 
 - Frapp reserves the right to delete data for chapters that have been inactive (canceled subscription, no logins) for more than 2 years.
-- **This is not yet documented in the Terms of Service.** `apps/landing/app/terms/page.tsx` carries no inactivity clause, no two-year window and no 30-day warning — only a general line that data "remains preserved according to retention terms". The reservation above is therefore an intent with no disclosed basis, and publishing it is a prerequisite for acting on it, not a follow-up.
+- It is **not** documented in the Terms of Service — see **The shipped Terms of Service do not currently carry this reservation** below, which owns that gap (#1562).
 - Before deletion, an email notification is sent to the last known admin email with a 30-day warning.
 
 **Nothing implements this, and nothing should until the questions below are answered.** No eligibility

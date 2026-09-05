@@ -43,14 +43,14 @@
 ## Attendance Management
 
 - Admins with `events:update` permission can view full attendance for any event.
-- **Excuse workflow (admin-only):** Admins mark members as EXCUSED with an optional reason string. Members cannot self-submit excuses. Excused members are not penalized for mandatory events and do not appear as ABSENT in reports.
+- **Excuse workflow (admin-only):** Admins mark members as EXCUSED with an optional reason string. This edits an existing `event_attendance` row — `updateStatus` 404s when the member has none — so an excuse cannot be entered before a check-in or the auto-absent sweep has created one. Members cannot self-submit excuses. Excused members are not penalized for mandatory events and do not appear as ABSENT in reports.
 - Admins can also manually mark members as ABSENT or LATE after the event.
 - Marking a member ABSENT who previously checked in (PRESENT) does NOT reverse the points already awarded. The admin must separately create a point adjustment if needed.
 - **Auto-absent:** For mandatory or role-targeted events, members who are required to attend but did not check in and were not marked EXCUSED are auto-marked ABSENT after the grace period ends. Alumni-role members are excluded on non-targeted events — they can neither check in nor self-excuse, so marking them would guarantee an ABSENT record they have no way to avoid. A role-targeted event keeps whoever it names, alumni included. This runs automatically: an hourly scheduled sweep processes every event whose grace period closed in the preceding 24 hours, so no officer action is required. The admin-triggered endpoint remains available for immediate marking. Re-running is harmless — members who already hold an attendance record are skipped.
 
 ## Edge Cases
 
-- If a role referenced in `required_role_ids` is deleted, that role is effectively ignored for attendance purposes (members who previously held it are no longer required).
+- Deleting a role does **not** release its holders. `RoleRepository.delete` is a bare `delete from roles` with no cleanup of `members.role_ids` or `events.required_role_ids`, and no trigger does it either — so the dangling id still matches, and a member who held the deleted role stays required, stays able to check in, and stays eligible for the auto-absent sweep.
 - If an event's point value is changed after some members have already checked in, only future check-ins use the new value. Already-awarded points are not retroactively adjusted.
 
 ## Calendar Integration
@@ -70,7 +70,7 @@
 
 ## Chat Integration
 
-The `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points]` slash command creates an event
+The `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points=<n>]` slash command creates an event
 (`events:create`, re-checked on `POST /v1/events`) and posts a server-originated **event card** to the
 current channel — an immutable snapshot (name, when, location, point value). Every member sees a
 **Check-in** action during the event window (start → end + grace), so the chat card is an *additional*

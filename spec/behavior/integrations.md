@@ -11,11 +11,11 @@ Each module is delivered as a consistent set of surfaces:
 - **System channel** — `#<module>` (e.g. `#events`, `#dues`) where the module's system messages land.
 - **Optional dashboard surface** — a longer-form view (calendar, kanban, leaderboard) only when it materially adds value. The dashboard is always secondary to chat.
 
-Chat-side actions go through Edge Functions; heavy compute goes through NestJS RPC, which posts a `kind="loading"` placeholder that is reconciled when the result returns.
+Chat-side actions go through the NestJS chat routes (`POST /v1/channels/:id/messages`, `POST /v1/channels/messages/:messageId/actions`) — the Edge Functions this section once named were retired by ADR-11 and `supabase/functions/` no longer exists. Heavy compute goes through NestJS RPC; the **client** posts a cache-only `kind="loading"` placeholder, which the Realtime echo of the server's card reconciles in place by `client_message_id`.
 
 ## Module Gating
 
-- A module is enabled per chapter via the `enabled_modules` boolean map on chapter config. Free-tier modules are always-on; paid modules default off.
+- A module is enabled per chapter via the `enabled_modules` boolean map on chapter config. Free-tier modules are always-on and cannot be toggled off. Every other module is enabled **unless** `enabled_modules[key]` is explicitly `false` — absence is not disablement — and archetype seeds turn most paid modules on at chapter creation.
 - Module state is **always read from chapter config, never from a `window.*` global**. Renderers, dashboards, and RPC payloads import their state and helpers from ES modules — no module state is hung off `window`.
 - Disabling a module immediately hides its nav item (gated on `isModuleEnabled`), removes its slash commands from the chat palette, and mutes (does not delete) its system channel, so re-enabling restores it.
 - On module enable, its system channel `#<module>` is created if not already present. Member notification preferences for the channel default per chapter policy.
