@@ -81,7 +81,7 @@ opening a browser.
 |-------|--------|--------------|--------------|
 | ONLINE | None | Enabled | Enabled (live data) |
 | DEGRADED | "Slow connection. Some features may be delayed." (amber) | Enabled (with extended timeouts) | Enabled (from cache + refetch) |
-| OFFLINE | "You're offline. Showing cached data." (red/amber) | **Labeled where a queue exists; refused with "Reconnect to make changes." where none does** — see below | Enabled (from cache) |
+| OFFLINE | "You're offline. Showing cached data." (red/amber) | **Labeled where a queue exists; refused with "Reconnect to make changes." where none does — usually by disabling the control, but not where its appearance carries state** — see below | Enabled (from cache) |
 
 **The copy above lost its leading ⚡ / 📡.** Those predate Signet's iconography
 rule, which governs glyphs on these surfaces and does not admit emoji
@@ -114,15 +114,17 @@ other surfaces. The text path queues, so it stays live and is labelled. The
 their controllers from `packages/chat-core/src/dispatch.ts` with no outbox
 behind them, so an offline dispatch is a queueless write and refuses — before
 clearing the composer, so the typed command survives to be re-sent. One control,
-both halves of this rule, decided per action rather than per screen. Queueless surfaces refuse and
+both halves of this rule, decided per action rather than per screen. Queueless surfaces disable and
 say why: service hours (s20) and check-in (s18) both take
 `writeBlockedReason` and wire it to the control's `accessibilityHint`, not merely to
 a sentence beside it. Dues is already gated by its own Stripe guard. The rule lives
 in `apps/mobile/lib/connection/state.ts` (`writeBlockedReason`) so the split is one
 decision rather than a per-screen judgement call.
 
-**"Refuse" is not always "disable", and on a control whose appearance carries
-state it must not be.** The web Profile notification switches (#564) are
+**Disabling is the usual form of that refusal and is right above** — a mobile
+submit button carries no state of its own, so `disabled` costs nothing beyond
+the press. **On a control whose appearance carries state, it is wrong.** The web
+Profile notification switches (#564) are
 queueless — `networkMode` is `"online"`, so an offline toggle writes
 optimistically, pauses before sending and is lost on tab close — so they refuse.
 They refuse with **`aria-disabled` plus a guard in the handler**, not the
@@ -139,12 +141,25 @@ The obligations that come with soft-disabling, all three required together:
 the handler must actually refuse (an `aria-disabled` control that still writes
 is a lie); the reason must reach the control itself via `aria-describedby`, per
 the `accessibilityHint` rule above — a sentence after the last row is not on the
-control; and the visual presentation must agree with the accessibility tree, so
-`switch.tsx` carries `aria-disabled:` styling rather than leaving a control that
-announces "unavailable" while looking and behaving like a live one. Activating
-it anyway is answered out loud rather than swallowed, since a control that
+control; and the visual presentation must not contradict the accessibility tree, so
+`switch.tsx` carries an `aria-disabled:` cursor rather than leaving a control
+that announces "unavailable" while behaving like a live one. Activating it
+anyway is answered out loud rather than swallowed, since a control that
 silently ignores a click is the dead control this whole section exists to
 prevent.
+
+**That third obligation stops at the cursor, and the reason is measured.** An
+`opacity` dim is the obvious way to make the two agree and is wrong twice over,
+because `opacity` composites the whole element. It dims the focus ring — and
+soft-disabling is exactly the case where the control keeps its place in the tab
+order, so that ring is the entire focus indicator: across all 19 seeds,
+ring-vs-`--background` falls from 3.05–4.07 to 1.78–2.17, and **none** still
+clears [§6](design-system/README.md)'s 3:1. And it flattens the on/off cue this
+whole carve-out exists to protect, dropping checked-vs-unchecked below 3:1 on
+six accents — the same erasure, at the same magnitude, that disqualified the
+real `disabled` attribute. `button.tsx` and `label.tsx` already record the
+system's ban on that idiom. So the visual signal here is the cursor, and the
+*explanation* is carried by `aria-describedby` and the note, not by dimming.
 
 Banner behavior:
 - Appears at the top of the content area (below header bar). **Mobile deviates,
