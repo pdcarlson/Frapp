@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -270,17 +271,17 @@ export class PointsService {
     // cannot tell the officer whether the grant landed, so a retry must be a
     // no-op rather than a second grant into an append-only ledger.
     //
-    // Checked HERE, before the rate-limit read below, deliberately: a replay is
-    // the same adjustment, so it must not consume a second slot of the
-    // adjustments/hour budget. Racing replays that both miss this read are
-    // still caught by `idx_point_transactions_dedupe` at the insert.
-    if (input.clientMessageId) {
-      const existing = await this.pointTxnRepo.findByClientMessageId(
-        input.chapterId,
-        input.clientMessageId,
-      );
-      if (existing) return existing;
-    }
+    // Checked HERE, before the rate-limit read below, deliberately — but NOT
+    // to protect the adjustments/hour budget, which is derived from committed
+    // rows and so is unaffected either way (a replay writes none). The reason
+    // is that an officer at the ceiling whose grant already landed must not be
+    // told it was refused: reaching the limit check first would answer 429 for
+    // an adjustment that committed. See the re-check on that refusal path.
+    //
+    // Racing replays that both miss this read are still caught by
+    // `idx_point_transactions_dedupe` at the insert.
+    const replay = await this.resolveReplay(input);
+    if (replay) return this.completeReplay(input, replay);
 
     // Both anti-fraud limits are chapter-configurable (spec/behavior/points.md
     // § Anti-Fraud). A chapter with no `chapter_points_config` row gets the
@@ -298,6 +299,13 @@ export class PointsService {
       since,
     );
     if (recentCount >= rateLimit) {
+      // A racing replay whose twin committed between the pre-check above and
+      // this count would otherwise be refused 429 for an adjustment that DID
+      // land — telling the officer it was rate-limited when it succeeded. One
+      // extra read, only on the refusal path, buys the honest answer.
+      const raced = await this.resolveReplay(input);
+      if (raced) return this.completeReplay(input, raced);
+
       throw new HttpException(
         `Rate limit exceeded: maximum ${rateLimit} point adjustments per hour`,
         HttpStatus.TOO_MANY_REQUESTS,
@@ -329,23 +337,19 @@ export class PointsService {
       // unique index arbitrated. The loser returns the winner's row: the caller
       // asked for one adjustment and got exactly one.
       if (error instanceof PointTransactionDuplicateError) {
-        const existing = await this.pointTxnRepo.findByClientMessageId(
-          error.chapter_id,
-          error.client_message_id,
-        );
+        const raced = await this.resolveReplay(input);
         // A duplicate with no readable original would mean the index fired on a
         // row this chapter cannot see. Nothing sane to return, so surface it.
-        if (!existing) throw error;
-        return existing;
+        if (!raced) throw error;
+        return this.completeReplay(input, raced);
       }
       throw error;
     }
 
-    // Everything below is a side effect of a NEW grant — the member's push
-    // notification and the chat card. A replay returns above without reaching
-    // any of it, which is the point: idempotency that re-notified the member on
-    // every retry would just move the duplicate from the ledger to their phone.
-    const isFine = input.category === 'FINE' || input.amount < 0;
+    // The member's push notification fires only for a NEW grant. It is the one
+    // side effect that is NOT idempotent — re-sending it on every replay would
+    // just move the duplicate from the ledger to their phone.
+    const isFine = PointsService.isFine(input);
 
     try {
       await this.notificationService.notifyUser(
@@ -363,24 +367,99 @@ export class PointsService {
       );
     } catch {}
 
-    // The `/points` slash command asks us to surface an append-only card in
-    // chat. The card is server-originated (a client cannot forge `kind:"points"`
-    // — see ChatService.SERVER_ONLY_KINDS) and best-effort: the ledger row is the
-    // source of truth, so a failed post is logged and never rolls the txn back.
-    if (input.channelId && input.clientMessageId) {
-      try {
-        await this.postPointsCard(input, txn, isFine);
-      } catch (error) {
-        this.logger.warn('Failed to post points card to chat', {
-          transactionId: txn.id,
-          channelId: input.channelId,
-          chapterId: input.chapterId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    await this.tryPostPointsCard(input, txn);
 
     return txn;
+  }
+
+  private static isFine(input: AdjustPointsInput): boolean {
+    return input.category === 'FINE' || input.amount < 0;
+  }
+
+  /**
+   * Resolve a request carrying an idempotency key against the ledger.
+   *
+   * Returns the original transaction when this key already committed **the
+   * same adjustment**, `null` when the key is unused (or absent), and throws
+   * 409 when the key was used for a *different* adjustment.
+   *
+   * That last case is the one worth being strict about. The key is
+   * client-supplied and validated only as a UUID, and the index is scoped
+   * `(chapter_id, client_message_id)` — so a colliding or reused key names a
+   * row that may belong to another member entirely. Returning it would answer
+   * "granted" while writing nothing and silently discarding the adjustment the
+   * caller actually asked for. A loud 409 is recoverable; a 200 carrying
+   * someone else's row is not.
+   */
+  private async resolveReplay(
+    input: AdjustPointsInput,
+  ): Promise<PointTransaction | null> {
+    if (!input.clientMessageId) return null;
+
+    const existing = await this.pointTxnRepo.findByClientMessageId(
+      input.chapterId,
+      input.clientMessageId,
+    );
+    if (!existing) return null;
+
+    const metadata = (existing.metadata ?? {}) as { adjusted_by?: unknown };
+    const sameAdjustment =
+      existing.user_id === input.targetUserId &&
+      existing.amount === input.amount &&
+      existing.category === input.category &&
+      existing.description === input.reason &&
+      metadata.adjusted_by === input.adminUserId;
+
+    if (!sameAdjustment) {
+      throw new ConflictException(
+        'This idempotency key was already used for a different point adjustment. Retry with the original request, or a new client_message_id for a new adjustment.',
+      );
+    }
+
+    return existing;
+  }
+
+  /**
+   * Finish a replay: re-attempt the chat card, then return the original row.
+   *
+   * The card post is re-attempted rather than skipped because it is the one
+   * side effect that IS idempotent — `ChatService.sendMessage` dedupes on the
+   * same `client_message_id` via `idx_chat_messages_dedupe` — and because the
+   * first attempt's post is best-effort and may have failed after the ledger
+   * row committed. Skipping it would make that card permanently unrecoverable:
+   * a real transaction with no audit card, and an optimistic client placeholder
+   * that no Realtime echo ever reconciles.
+   */
+  private async completeReplay(
+    input: AdjustPointsInput,
+    existing: PointTransaction,
+  ): Promise<PointTransaction> {
+    await this.tryPostPointsCard(input, existing);
+    return existing;
+  }
+
+  /**
+   * The `/points` slash command asks us to surface an append-only card in chat.
+   * The card is server-originated (a client cannot forge `kind:"points"` — see
+   * ChatService.SERVER_ONLY_KINDS) and best-effort: the ledger row is the
+   * source of truth, so a failed post is logged and never rolls the txn back.
+   */
+  private async tryPostPointsCard(
+    input: AdjustPointsInput,
+    txn: PointTransaction,
+  ): Promise<void> {
+    if (!input.channelId || !input.clientMessageId) return;
+
+    try {
+      await this.postPointsCard(input, txn, PointsService.isFine(input));
+    } catch (error) {
+      this.logger.warn('Failed to post points card to chat', {
+        transactionId: txn.id,
+        channelId: input.channelId,
+        chapterId: input.chapterId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**

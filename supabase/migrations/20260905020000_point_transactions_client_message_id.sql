@@ -39,5 +39,7 @@ create unique index if not exists idx_point_transactions_dedupe
   on point_transactions (chapter_id, client_message_id)
   where client_message_id is not null;
 
+-- The comment points at the contract rather than restating it: this rule already
+-- has a canonical home, and a copy in the catalog is one nobody updates.
 comment on column point_transactions.client_message_id is
-  'Client-minted idempotency key (UUIDv4) for chat-originated adjustments. A replay carrying the same (chapter_id, client_message_id) returns the original transaction instead of writing a second ledger row. NULL for dashboard adjustments, which carry no key and are not deduplicated. See spec/behavior/points.md § Anti-Fraud.';
+  'Client-minted idempotency key (UUIDv4); NULL on every non-chat award path. Contract: spec/behavior/points.md § Anti-Fraud.';

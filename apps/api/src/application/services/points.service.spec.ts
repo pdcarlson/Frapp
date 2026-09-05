@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   NotFoundException,
@@ -749,20 +750,134 @@ describe('PointsService', () => {
 
         expect(result).toBe(original);
         expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+        // Pin the argument ORDER, not just the call. Both parameters are
+        // strings, so swapping them typechecks; in production every pre-check
+        // would then miss, the dedupe would silently never fire, and duplicate
+        // grants would come straight back with every test still green.
+        expect(mockPointTxnRepo.findByClientMessageId).toHaveBeenCalledWith(
+          'ch-1',
+          'cmid-replay',
+        );
       });
 
-      it('a replay re-notifies nobody and posts no second card', async () => {
+      it('a replay does not re-send the non-idempotent push notification', async () => {
         mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
 
         await replay();
 
-        // Idempotency that still fired the side effects would just move the
-        // duplicate from the ledger to the member's phone and the channel.
+        // Re-notifying would just move the duplicate from the ledger to the
+        // member's phone.
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('a replay DOES re-attempt the chat card, which is idempotent', async () => {
+        // The first attempt's card post is best-effort and may have failed
+        // after the ledger row committed. Skipping it on the replay would make
+        // that card permanently unrecoverable — a real transaction with no
+        // audit card, and a client placeholder no echo ever reconciles.
+        // `sendMessage` dedupes on the same key, so this cannot double-post.
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        await replay();
+
+        expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
+        expect(mockChatService.sendMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: 'points',
+            client_message_id: 'cmid-replay',
+            payload: expect.objectContaining({ transaction_id: 'pt-original' }),
+          }),
+        );
+      });
+
+      it('a dashboard replay posts no card (no channel to post into)', async () => {
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        await service.adjustPoints({
+          chapterId: 'ch-1',
+          targetUserId: 'user-2',
+          adminUserId: 'admin-1',
+          amount: 5,
+          category: 'MANUAL',
+          reason: 'great work',
+          clientMessageId: 'cmid-replay',
+        });
+
         expect(mockChatService.sendMessage).not.toHaveBeenCalled();
       });
 
-      it('a replay does not consume a slot of the adjustments/hour budget', async () => {
+      describe('a key reused for a DIFFERENT adjustment is refused, never answered', () => {
+        // The index is chapter-scoped and the key is client-supplied, so a
+        // colliding or replayed key can name another member's row. Returning it
+        // would report "granted" while writing nothing and discarding the
+        // adjustment actually requested — a 200 carrying someone else's data.
+        beforeEach(() => {
+          mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+        });
+
+        const withOverrides = (overrides: Record<string, unknown>) =>
+          service.adjustPoints({
+            chapterId: 'ch-1',
+            targetUserId: 'user-2',
+            adminUserId: 'admin-1',
+            amount: 5,
+            category: 'MANUAL',
+            reason: 'great work',
+            channelId: 'chan-1',
+            clientMessageId: 'cmid-replay',
+            ...overrides,
+          });
+
+        it.each([
+          ['a different target member', { targetUserId: 'user-3' }],
+          ['a different amount', { amount: 50 }],
+          ['a different category', { category: 'FINE' as const }],
+          ['a different reason', { reason: 'something else' }],
+          ['a different acting admin', { adminUserId: 'admin-9' }],
+        ])('409s on %s', async (_label, overrides) => {
+          await expect(withOverrides(overrides)).rejects.toBeInstanceOf(
+            ConflictException,
+          );
+          expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+          expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+        });
+      });
+
+      it('a racing replay is not refused 429 for an adjustment that committed', async () => {
+        // The twin committed between the pre-check and the rate-limit count, so
+        // the count now reads at the ceiling. Reporting 429 would tell the
+        // officer the grant was refused when it had in fact landed.
+        mockChapterPointsConfig.getConfig.mockResolvedValue({
+          adjustment_rate_limit_per_hour: 50,
+          anomaly_threshold: 100,
+        });
+        mockPointTxnRepo.countRecentAdjustments.mockResolvedValue(50);
+        mockPointTxnRepo.findByClientMessageId
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(original);
+
+        const result = await replay();
+
+        expect(result).toBe(original);
+        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('still refuses 429 when the ceiling is real and no replay exists', async () => {
+        mockChapterPointsConfig.getConfig.mockResolvedValue({
+          adjustment_rate_limit_per_hour: 50,
+          anomaly_threshold: 100,
+        });
+        mockPointTxnRepo.countRecentAdjustments.mockResolvedValue(50);
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(null);
+
+        await expect(replay()).rejects.toMatchObject({ status: 429 });
+      });
+
+      it('a replay short-circuits before the rate-limit read', async () => {
+        // Not because a replay would otherwise consume budget — the budget is
+        // counted from committed rows and a replay writes none either way — but
+        // because reaching the limit check first lets an officer at the ceiling
+        // be told 429 for a grant that already landed.
         mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
 
         await replay();

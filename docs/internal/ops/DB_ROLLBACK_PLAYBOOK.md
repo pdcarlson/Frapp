@@ -425,11 +425,14 @@ After any rollback event:
   defined on it — no separate `DROP INDEX` needed.
 * **Order**: **roll the API back first, then the migration.** This is the one
   coordination point, and it is the opposite of a purely additive column: a
-  build from after this migration calls `findByClientMessageId`, which selects
-  `client_message_id` by name and errors once the column is gone — where an
-  older build never mentions it and is unaffected. Reverting the code first
-  costs nothing; reverting the schema first breaks every chat-originated
-  adjustment until the deploy catches up.
+  build from after this migration names `client_message_id` — both in
+  `findByClientMessageId` and, unconditionally, in the insert payload
+  `adjustPoints` sends — so it errors once the column is gone, where an older
+  build never mentions it and is unaffected. Reverting the code first costs
+  nothing; reverting the schema first breaks **every** manual point adjustment
+  until the deploy catches up, not only the chat-originated ones: the insert
+  carries the column name whether or not a key was supplied, so the dashboard
+  dialog fails identically and is **not** a working fallback.
 * **Data caveat**: rolling back does not corrupt the ledger — the key is
   metadata about *how* a row arrived, never part of the balance — but it
   restores the duplicate-grant exposure of #1719 for as long as it is off. Any
