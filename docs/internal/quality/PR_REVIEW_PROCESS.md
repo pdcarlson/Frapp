@@ -16,15 +16,15 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
      - `scripts/ci/lib/required-checks.mjs` (the rosters; the applying script is
        `scripts/configure-branch-protection.mjs`)
      - `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md` § Required Status Checks — the one
-       doc that restates the roster, and the only roster copy `check:doc-tables` asserts (that
-       gate also asserts the directory structure against `DIRECTORIES`, which is a separate fact)
-     - `docs/internal/ci-cd/DOCS_CI.md`, which describes the docs-gate posture but is not asserted
-   - Do not add a fourth place. A roster copy no gate watches is the one that drifts.
+       doc that restates the roster, and since the docs gates were deleted, a copy **no check
+       asserts**. It can only drift from the arrays, so update it in the same PR and treat the
+       arrays as the answer whenever the two disagree.
+   - Do not add a third place. A roster copy no gate watches is the one that drifts.
 4. **No required workflow-level `paths` filters**
    - Required checks must always report a result on protected-branch PRs.
 5. **A changed documented fact is updated where it lives**
    - No check requires a doc edit; the one that did was deleted in #1597 for producing filler. Most PRs alter no documented fact and need no doc change.
-   - When one does, it goes in the doc that owns the fact — usually **`docs/`** (e.g. [`docs/guides/`](../../guides/README.md)) and/or **`spec/`** — never a stray file or an unrelated doc. Rationale: [`DOCS_CI.md`](../ci-cd/DOCS_CI.md).
+   - When one does, it goes in the doc that owns the fact — usually **`docs/`** (e.g. [`docs/guides/`](../../guides/README.md)) and/or **`spec/`** — never a stray file or an unrelated doc. Rationale: [`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md).
 
 ## Reviewer workflow
 
