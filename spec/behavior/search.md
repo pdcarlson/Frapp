@@ -25,8 +25,8 @@ A single search bar accessible from the top of the mobile and web app:
 ## Single-channel scope
 
 `GET /v1/search` takes an optional **`channelId`**. It serves the single-channel half of the
-chat search contract ([`chat/README.md`](chat/README.md) § Search: *"full-text search within a
-single channel or across all channels the user can access"*), which the cross-domain form
+chat search contract ([`chat/README.md`](chat/README.md#messages) § Messages, the **Search** block:
+*"Full-text search within a single channel or across all channels the user can access"*), which the cross-domain form
 alone could not express.
 
 - **Only the `messages` source runs**; `backwork`, `events` and `members` come back empty. The

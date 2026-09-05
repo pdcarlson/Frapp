@@ -160,7 +160,7 @@ export const CI_CHECKS = [
   // Chromium revisions and font rendering, so blocking merges on them was the worse
   // trade. This suite stores no baseline and compares no pixels — it reads one integer
   // per route and compares it to 375 — so it has none of those failure modes and
-  // inherited the exemption purely by sharing a directory. #1153 split it into its own
+  // inherited the exemption purely by sharing a directory. #1152 split it into its own
   // job; the snapshot job has since been deleted, and this one now runs the whole
   // `apps/web/tests/visual/` directory rather than a tagged slice of it.
   //

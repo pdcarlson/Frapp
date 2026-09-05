@@ -27,9 +27,10 @@ import { FrappClientProvider } from "./use-frapp-client";
  * default. The latter is handled by the `include` in `vitest.config.ts`, which
  * pins collection to `src`; don't remove it.
  *
- * `web-tests` reports but does not block: it is deliberately not a required
- * status check (ADR-15, `spec/architecture/README.md`), so a red run here has
- * to be read, not relied on to stop a merge.
+ * `web-tests` is a **required** status check, promoted by ADR-15's 2026-08-19
+ * amendment because this suite is the only one covering `packages/hooks`. A red
+ * run here blocks the merge; do not read it as advisory. The roster lives in
+ * `scripts/ci/lib/required-checks.mjs`.
  */
 describe("report hooks — truncation signalling", () => {
   let queryClient: QueryClient;
