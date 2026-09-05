@@ -31,7 +31,7 @@ The admin console (`apps/web`). Next.js App Router, Tailwind, ShadCN UI.
 - **Polls** — Chapter-wide poll list with aggregate tallies on the web app (`GET /v1/polls`, gated by `polls:view_all`; see [`spec/behavior/polls.md`](../behavior/polls.md) and [`spec/ui/web-dashboard/README.md`](../ui/web-dashboard/README.md)). Create polls and vote in channels per chat permissions.
 - **Tasks** — Create/assign tasks to members. Track status (TODO, IN_PROGRESS, COMPLETED, OVERDUE). Confirm completion and award points. Filter by assignee, status, due date.
 - **Service Hours** — Admin review queue for submitted service entries. Approve/reject with optional comments. Chapter-wide service report. Configure points-per-hour rate.
-- **Chapter Documents** — Upload, organize, and manage chapter files (bylaws, constitutions, agendas). Flat folder structure. All members can view/download.
+- **Chapter Documents** — Upload, organize, and manage chapter files (bylaws, constitutions, agendas). Flat folder structure. Reads are gated on `members:view` — every seeded role holds it or clears it via `*`, so in practice every member can view and download, but a custom role without it cannot; [`../behavior/chapter-docs.md`](../behavior/chapter-docs.md) owns the gate.
 - **Reports & Export** — Generate and download CSV/PDF reports: attendance, points, member roster, service hours. Select date range and scope. Branded PDF templates with chapter logo.
 - **Settings** — Chapter profile (name, university). Chapter branding (upload logo, set accent color). Default role configuration. Notification defaults. Semester rollover action ("Start New Semester"). Danger zone (cancel subscription, transfer presidency).
 
@@ -42,14 +42,14 @@ The member experience (`apps/mobile`). Expo with Expo Router.
 **Screens:**
 
 - **First-run (s03)** — Mobile's onboarding surface (`app/(auth)/welcome.tsx`), reached when the auth gate reads `has_completed_onboarding` as false. It is a single first-run screen, **not** the web modal slideshow; both are owned by [`spec/behavior/onboarding.md`](../behavior/onboarding.md) § Onboarding Tutorial, which is where the per-surface split is stated.
-- **Home / Activity Feed** — Unified feed: upcoming events, recent announcements, new Backwork uploads, point milestones, new members. Point balance summary at the top.
+- **Activity Feed** — **specified, no surface today**: mobile's `(tabs)/index.tsx` is `ChatHomeScreen`, and on web `/dashboard` redirects to `/chat` unconditionally while `/` does so once a session exists. The item set is owned by [`../behavior/activity-feed.md`](../behavior/activity-feed.md).
 - **Chat** — Channel list organized by categories (respecting permission gates). Direct Messages tab (1-on-1 and group DMs). Real-time messaging with reactions, replies, file/image uploads, typing indicators, online presence. Pinned messages panel. Full-text search within and across channels.
 - **Backwork** — Browse by department, course, professor, semester/year, assignment type, document variant, and tags. Upload flow: select file, fill metadata (all optional), optionally redact (v2), confirm. Download with signed URL. Full-text search.
 - **Events** — Upcoming events list with calendar view. Self-service check-in (during event time window). Past events with attendance status. "Add to Calendar" action generating .ics file. Recurring event indicators.
 - **Study Hours** — Select geofence, view map with polygon overlay. Start session — enters dedicated study mode screen (large timer, location status, progress toward next point, streak indicator). Foreground enforcement with pause/resume. Stop session. Session history with points earned.
 - **My Points** — Current balance, recent transactions (with reasons for adjustments), leaderboard (chapter rank). Time-window selector (all-time, semester, month).
 - **Notifications** — In-app notification center with deep linking. Mark as read. Filter by category. Quiet hours configuration.
-- **Profile** — Display name, profile photo, bio (editable). Push notification preferences (per-category). Quiet hours setting. Dark mode toggle. Account info. Sign out.
+- **Profile** — Display name, avatar, points/service stats, account details and bio. Read-only on mobile; the screen points to the web dashboard for editing. Push preferences, quiet hours and Sign out are on the Preferences tab, not here.
 - **Member Directory** — Searchable list of chapter members with profile cards. Tap to view profile or start DM.
 - **Tasks** — View tasks assigned to the user. Update status (IN_PROGRESS, COMPLETED). See due dates, point rewards, and confirmation status.
 - **Service Hours** — Log service entries (date, duration, description, optional proof upload). View own history and approval status. Chapter service leaderboard.
