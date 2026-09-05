@@ -82,6 +82,7 @@ lychee-*/
 *.tsbuildinfo
 
 # Generated demo/marketing screenshots (scripts/demo/capture-*.mjs).
-# Regenerate rather than commit: DOCUMENTATION_CONVENTIONS.md hard rule 1 has no
-# home for generated marketing binaries.
+# Regenerate rather than commit: DOCUMENTATION_CONVENTIONS.md forbids inventing a
+# new top-level folder, and no existing one is a home for generated marketing
+# binaries.
 screenshots/
