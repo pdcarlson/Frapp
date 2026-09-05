@@ -28,6 +28,21 @@ const CHANNELS = [
   { id: "chan-random", name: "random", type: "PUBLIC", member_ids: [] },
 ];
 
+/**
+ * Array order disagrees with **both** ways a caller might be tempted to re-sort:
+ * it is not alphabetical, and `display_order` descends rather than ascends.
+ *
+ * The second half matters more than it looks. `chat-admin-page.tsx` re-sorts by
+ * `display_order` client-side, and `channel-list.tsx` names that as the pattern
+ * the rail deliberately does not copy — so a fixture whose array order happened
+ * to match `display_order` ascending could not tell a faithful pass-through from
+ * exactly the divergence being warned about.
+ */
+const CATEGORIES = [
+  { id: "cat-exec", name: "Executive", display_order: 2 },
+  { id: "cat-comm", name: "Committees", display_order: 1 },
+];
+
 const MESSAGES = [
   { id: "msg-1", content: "hello", created_at: "2026-01-01T00:00:00Z" },
   { id: "msg-2", content: "world", created_at: "2026-01-01T00:01:00Z" },
@@ -61,7 +76,11 @@ vi.mock("@repo/hooks", () => ({
     isFetching: false,
     refetch: mockRefetch,
   }),
-  useCategories: () => ({ data: [], isPending: false }),
+  // Non-empty, and deliberately NOT in alphabetical order: the rail is
+  // contractually required to render categories in the order the API returned
+  // them, so a payload that is already sorted could not tell a faithful
+  // pass-through from a re-sort.
+  useCategories: () => ({ data: CATEGORIES, isPending: false }),
   useMemberDisplayNames: () => ({ byId: new Map(), nameFor: () => null }),
   useChannelNotificationPreferences: () => ({ data: [] }),
   useSetChannelNotificationLevel: () => ({
@@ -130,7 +149,13 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // doesn't provide) are stubbed — this test is about ChatShell's own
 // deep-link wiring, not their internals.
 vi.mock("./channel-list", () => ({
-  ChannelList: ({ onPick }: { onPick?: (ch: { id: string }) => void }) => (
+  ChannelList: ({
+    onPick,
+    categories,
+  }: {
+    onPick?: (ch: { id: string }) => void;
+    categories?: { id: string; name: string }[];
+  }) => (
     <div data-testid="channel-list">
       {/* Enough of the rail to drive a channel switch, which is a distinct
           path from a deep link or a search jump and clears different state. */}
@@ -140,6 +165,13 @@ vi.mock("./channel-list", () => ({
       >
         random
       </button>
+      {/* Echoed so the shell→rail category wiring is observable. Without this
+          the prop could be dropped entirely and every test here still passed —
+          the rail's own suite builds its inputs by hand, so nothing else
+          exercises the shell actually handing them over. */}
+      <span data-testid="channel-list-categories">
+        {(categories ?? []).map((c) => c.name).join(",")}
+      </span>
     </div>
   ),
 }));
@@ -280,6 +312,20 @@ beforeEach(() => {
   mockBookmarkIsError.mockReturnValue(false);
   mockBookmarkReset.mockClear();
   mockUnbookmarkReset.mockClear();
+});
+
+describe("ChatShell channel categories", () => {
+  it("hands the fetched categories to the rail, in the order the API returned them", () => {
+    // Regression guard: before this assertion existed, deleting
+    // `categories={categories}` from the shell left all 254 tests under
+    // components/chat/ passing, because the rail's own suite builds its inputs
+    // by hand and every shell test mocked the hook to an empty list.
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.getByTestId("channel-list-categories").textContent).toBe(
+      "Executive,Committees",
+    );
+  });
 });
 
 describe("ChatShell deep-link targets", () => {
