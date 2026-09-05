@@ -627,7 +627,7 @@ For files > 5MB, consider chunked upload for resumability. Not in v1 scope, but 
 | Service entries | 30s | 5min | Approval queue is time-sensitive |
 | Tasks | 30s | 5min | Status changes are frequent |
 | Study sessions | 30s | 5min | The **live** session is not served from this cache at all — s10 holds it in screen state and refreshes it from each mutation's own response, because a session can end by returning 200 and a 30s window would keep a dead timer ticking. The cached list backs the history and the recovery-on-mount read |
-| Study zones | 60s | _(default)_ | A chapter's zones change about as often as its roles. `useGeofences` sets only `staleTime`, so `gcTime` is TanStack's 5-minute default — recorded as-is rather than as an intent nothing implements |
+| Study zones | 60s | _(default)_ | A chapter's zones change about as often as its roles. `useGeofences` sets only `staleTime`, so `gcTime` falls through to each app's own default exactly as the Chat messages row above sets out — recorded as-is rather than as an intent nothing implements |
 
 ### Cache Invalidation Triggers
 
@@ -639,7 +639,7 @@ For files > 5MB, consider chunked upload for resumability. Not in v1 scope, but 
 | User changes roles | `['members', chapterId]`, `['roles']` |
 | Supabase Realtime event | Relevant query key (auto-updated) |
 | Window focus (tab switch) | All stale queries (TanStack built-in) |
-| Network reconnect | All queries (forced refetch) |
+| Network reconnect | Mounted, enabled queries. Web forces even fresh ones (`refetchOnReconnect: "always"`); mobile leaves the default, so only stale ones refetch. Separately, a fetch the drop left paused resumes regardless of observers |
 
 **Those last two rows are delivered on mobile, not merely specified.** They depend on
 TanStack's `onlineManager` and `focusManager`, which nothing wired until
