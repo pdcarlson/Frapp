@@ -9,6 +9,7 @@ import { PointsService } from './points.service';
 import {
   POINT_TRANSACTION_REPOSITORY,
   IPointTransactionRepository,
+  PointTransactionDuplicateError,
 } from '../../domain/repositories/point-transaction.repository.interface';
 import {
   SEMESTER_ARCHIVE_REPOSITORY,
@@ -82,6 +83,7 @@ describe('PointsService', () => {
   beforeEach(async () => {
     mockPointTxnRepo = {
       create: jest.fn(),
+      findByClientMessageId: jest.fn().mockResolvedValue(null),
       findByUser: jest.fn(),
       findByChapter: jest.fn(),
       findByChapterFiltered: jest.fn(),
@@ -365,6 +367,9 @@ describe('PointsService', () => {
           adjusted_by: 'admin-1',
           reason: 'Good work',
         }),
+        // No key was supplied (a dashboard adjustment), so the row is written
+        // with an explicit null and is not covered by the dedupe index.
+        client_message_id: null,
       });
       expect(result).toEqual(created);
     });
@@ -703,6 +708,128 @@ describe('PointsService', () => {
           expect.objectContaining({
             metadata: expect.objectContaining({ flagged: true }),
           }),
+        );
+      });
+    });
+
+    // #1719: the ledger is append-only, so a retried adjustment that writes a
+    // second row is unrecoverable through the API. These cover the two ways a
+    // replay can arrive — one after the first attempt finished, one racing it.
+    describe('idempotency on client_message_id', () => {
+      const original: PointTransaction = {
+        id: 'pt-original',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: 5,
+        category: 'MANUAL',
+        description: 'great work',
+        metadata: { adjusted_by: 'admin-1', reason: 'great work' },
+        client_message_id: 'cmid-replay',
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+
+      const replay = () =>
+        service.adjustPoints({
+          chapterId: 'ch-1',
+          targetUserId: 'user-2',
+          adminUserId: 'admin-1',
+          amount: 5,
+          category: 'MANUAL',
+          reason: 'great work',
+          channelId: 'chan-1',
+          clientMessageId: 'cmid-replay',
+        });
+
+      it('commit-then-lost-response: the replay writes exactly one ledger row', async () => {
+        // The first attempt committed; its 200 never reached the officer, who
+        // retried with the same key. The pre-check finds the original.
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        const result = await replay();
+
+        expect(result).toBe(original);
+        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('a replay re-notifies nobody and posts no second card', async () => {
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        await replay();
+
+        // Idempotency that still fired the side effects would just move the
+        // duplicate from the ledger to the member's phone and the channel.
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('a replay does not consume a slot of the adjustments/hour budget', async () => {
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        await replay();
+
+        expect(mockPointTxnRepo.countRecentAdjustments).not.toHaveBeenCalled();
+      });
+
+      it('racing replays: a unique-index violation returns the winner’s row', async () => {
+        // Both requests missed the pre-check, so the partial unique index
+        // arbitrated. The loser must return the committed row, not a 500.
+        mockPointTxnRepo.findByClientMessageId
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(original);
+        mockPointTxnRepo.create.mockRejectedValue(
+          new PointTransactionDuplicateError('ch-1', 'cmid-replay'),
+        );
+
+        const result = await replay();
+
+        expect(result).toBe(original);
+        expect(mockPointTxnRepo.create).toHaveBeenCalledTimes(1);
+      });
+
+      it('rethrows a duplicate whose original cannot be read back', async () => {
+        // The index fired on a row this chapter cannot see. There is nothing
+        // sane to return, so it must not be reported as a successful grant.
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(null);
+        mockPointTxnRepo.create.mockRejectedValue(
+          new PointTransactionDuplicateError('ch-1', 'cmid-replay'),
+        );
+
+        await expect(replay()).rejects.toBeInstanceOf(
+          PointTransactionDuplicateError,
+        );
+      });
+
+      it('persists the key on the ledger row so a later replay can find it', async () => {
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(null);
+        mockPointTxnRepo.create.mockResolvedValue(original);
+
+        await replay();
+
+        expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ client_message_id: 'cmid-replay' }),
+        );
+      });
+
+      it('a dashboard adjustment sends no key and is not deduplicated', async () => {
+        mockPointTxnRepo.create.mockResolvedValue({
+          ...original,
+          client_message_id: null,
+        });
+
+        await service.adjustPoints({
+          chapterId: 'ch-1',
+          targetUserId: 'user-2',
+          adminUserId: 'admin-1',
+          amount: 5,
+          category: 'MANUAL',
+          reason: 'great work',
+        });
+
+        // No key means no lookup — two deliberate identical grants from the
+        // dashboard are two legitimate rows, not a duplicate.
+        expect(mockPointTxnRepo.findByClientMessageId).not.toHaveBeenCalled();
+        expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ client_message_id: null }),
         );
       });
     });

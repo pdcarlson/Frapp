@@ -66,7 +66,7 @@ export class AdjustPointsDto {
 
   @ApiPropertyOptional({
     description:
-      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`.',
+      'Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the **ledger row** as well as the chat card: a replay carrying the same key returns the original transaction instead of granting a second time, so a request whose response was lost is safe to retry verbatim. A retry MUST reuse the id rather than mint a new one. Required alongside `channel_id`; omit both for dashboard adjustments, which are not deduplicated.',
   })
   @IsOptional()
   @IsUUID()

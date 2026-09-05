@@ -7,7 +7,10 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
+import {
+  POINT_TRANSACTION_REPOSITORY,
+  PointTransactionDuplicateError,
+} from '../../domain/repositories/point-transaction.repository.interface';
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
@@ -44,6 +47,12 @@ interface AdjustPointsInput {
    * command). Omitted for dashboard adjustments.
    */
   channelId?: string;
+  /**
+   * Client-minted idempotency key (UUIDv4). It is the dedupe key for **both**
+   * the ledger row and the chat card: a replay carrying the same key returns
+   * the original transaction rather than granting again (#1719). Absent for
+   * dashboard adjustments, which are not deduplicated.
+   */
   clientMessageId?: string;
 }
 
@@ -256,6 +265,23 @@ export class PointsService {
       throw new ForbiddenException('Admins cannot adjust their own points');
     }
 
+    // Idempotency (#1719). A `/points` dispatch whose response was lost — a
+    // gateway 502/504 arriving after the row committed is the commonest case —
+    // cannot tell the officer whether the grant landed, so a retry must be a
+    // no-op rather than a second grant into an append-only ledger.
+    //
+    // Checked HERE, before the rate-limit read below, deliberately: a replay is
+    // the same adjustment, so it must not consume a second slot of the
+    // adjustments/hour budget. Racing replays that both miss this read are
+    // still caught by `idx_point_transactions_dedupe` at the insert.
+    if (input.clientMessageId) {
+      const existing = await this.pointTxnRepo.findByClientMessageId(
+        input.chapterId,
+        input.clientMessageId,
+      );
+      if (existing) return existing;
+    }
+
     // Both anti-fraud limits are chapter-configurable (spec/behavior/points.md
     // § Anti-Fraud). A chapter with no `chapter_points_config` row gets the
     // defaults, which are the values this service used to hardcode — 50/hr and
@@ -287,15 +313,38 @@ export class PointsService {
       metadata.flagged = true;
     }
 
-    const txn = await this.pointTxnRepo.create({
-      chapter_id: input.chapterId,
-      user_id: input.targetUserId,
-      amount: input.amount,
-      category: input.category,
-      description: input.reason,
-      metadata,
-    });
+    let txn: PointTransaction;
+    try {
+      txn = await this.pointTxnRepo.create({
+        chapter_id: input.chapterId,
+        user_id: input.targetUserId,
+        amount: input.amount,
+        category: input.category,
+        description: input.reason,
+        metadata,
+        client_message_id: input.clientMessageId ?? null,
+      });
+    } catch (error) {
+      // Two requests carrying one key raced past the pre-check above and the
+      // unique index arbitrated. The loser returns the winner's row: the caller
+      // asked for one adjustment and got exactly one.
+      if (error instanceof PointTransactionDuplicateError) {
+        const existing = await this.pointTxnRepo.findByClientMessageId(
+          error.chapter_id,
+          error.client_message_id,
+        );
+        // A duplicate with no readable original would mean the index fired on a
+        // row this chapter cannot see. Nothing sane to return, so surface it.
+        if (!existing) throw error;
+        return existing;
+      }
+      throw error;
+    }
 
+    // Everything below is a side effect of a NEW grant — the member's push
+    // notification and the chat card. A replay returns above without reaching
+    // any of it, which is the point: idempotency that re-notified the member on
+    // every retry would just move the duplicate from the ledger to their phone.
     const isFine = input.category === 'FINE' || input.amount < 0;
 
     try {
