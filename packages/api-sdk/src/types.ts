@@ -3470,7 +3470,7 @@ export interface components {
             reason: string;
             /** @description When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments. */
             channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            /** @description Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud. */
             client_message_id?: string;
         };
         CreateCheckoutDto: {
