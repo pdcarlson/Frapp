@@ -37,10 +37,6 @@ export interface SystemAuditPayload {
   diff: Record<string, unknown>;
 }
 
-export interface PollVoteActionPayload {
-  option_id: string;
-}
-
 /**
  * Payload for a `kind:"points"` card. Built server-side from the committed
  * `point_transactions` row (after `PointsService.adjustPoints` succeeds) so the

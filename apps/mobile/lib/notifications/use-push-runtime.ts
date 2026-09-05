@@ -78,11 +78,6 @@ import type { PushNotificationResponse } from "./push-types";
 
 let handlerConfigured = false;
 
-/** Test seam, mirroring `resetChatAdapterBootForTests`. */
-export function resetPushRuntimeForTests(): void {
-  handlerConfigured = false;
-}
-
 export function usePushRuntime(): void {
   const router = useRouter();
   const isAuthenticated = useIsApiAuthenticated();

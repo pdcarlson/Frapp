@@ -59,11 +59,6 @@ export function bootChatAdapters(): Promise<void> {
   return bootPromise;
 }
 
-/** Test seam — lets a spec re-run boot against fresh fakes. */
-export function resetChatAdapterBootForTests(): void {
-  bootPromise = null;
-}
-
 export interface ChatRuntime {
   /** `null` until the viewer's app user resolves; no writes without identity. */
   ctx: ChatActionContext | null;
