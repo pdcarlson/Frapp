@@ -202,7 +202,8 @@ Recommended per-route pattern (applied in this order):
 ```text
 Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
              → AuthSyncInterceptor (syncs to users table, sets request.appUser)
-             → ChapterGuard (validates x-chapter-id + membership, sets request.member, request.chapterId)
+             → ChapterGuard (resolves the chapter from the JWT active_chapter_id claim, x-chapter-id
+               only as a fallback; validates membership, sets request.member, request.chapterId)
              → PermissionsGuard (checks @RequirePermissions against member's roles)
              → Controller
 ```
