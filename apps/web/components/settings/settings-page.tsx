@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import {
@@ -56,7 +56,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
-import { can } from "@repo/validation";
+import { can, isOpsNudgeModuleKey } from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
@@ -217,6 +217,50 @@ function SettingsPageContent() {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
+
+  /**
+   * `?module=` narrows a `?tab=modules` deep link to one row, so chat's
+   * ops-setup nudge (#492) can land an officer on the module it named rather
+   * than at the top of the full module list. Validated against the nudge
+   * catalog rather than passed through: an unrecognised value should be an
+   * unfocused Modules tab, not a `querySelector` for an id that does not exist.
+   *
+   * **Consumed once, not held for the visit.** `TabsContent` carries no
+   * `forceMount`, so Radix unmounts the inactive tab's content — and the tab is
+   * driven by local state without rewriting the URL, so `?module=` survives the
+   * whole visit. Without this latch, an officer who follows the nudge, enables
+   * the module, wanders to Theme and comes back to Modules gets focus yanked to
+   * the same switch and the list scrolled back to it, every single time.
+   */
+  const moduleParam = searchParams.get("module");
+  const requestedModuleKey = isOpsNudgeModuleKey(moduleParam)
+    ? moduleParam
+    : undefined;
+  const [consumedModuleKey, setConsumedModuleKey] = useState<string | null>(
+    null,
+  );
+  const focusModuleKey =
+    requestedModuleKey && consumedModuleKey !== requestedModuleKey
+      ? requestedModuleKey
+      : undefined;
+  /*
+    Latched by the row that actually took focus, NOT by an effect up here.
+    An effect on this component would fire on renders where the Modules panel
+    was never mounted — this function early-returns for "no active chapter"
+    below, and again for the loading / offline / error banner — so a cold load
+    (a pasted link, a refresh, open-in-new-tab, or just a slow first
+    `useCurrentChapter`) would consume `?module=` while there was nothing to
+    focus, and the officer would land at the top of the full module list. That
+    is the exact thing this param exists to prevent, so the latch has to mean
+    "focus was delivered", not "a render happened".
+
+    State rather than a ref because `focusModuleKey` is read during render, and
+    `react-hooks/refs` rightly forbids reading `ref.current` there.
+  */
+  const handleModuleFocused = useCallback(
+    (key: string) => setConsumedModuleKey(key),
+    [],
+  );
 
   const [accentDraft, setAccentDraft] = useState("");
   // The server's own §8 disclosure from the last successful save — distinct
@@ -863,6 +907,8 @@ function SettingsPageContent() {
                 enabledModules={enabledModules}
                 canManage={canManage}
                 pendingModuleKeys={pendingConfigKeys}
+                focusModuleKey={focusModuleKey}
+                onModuleFocused={handleModuleFocused}
                 onToggle={(key, enabled) =>
                   patchConfig(
                     { enabled_modules: { [key]: enabled } },
