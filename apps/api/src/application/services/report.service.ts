@@ -120,9 +120,10 @@ export const REPORT_MAX_ROWS = 5_000;
  * Higher than `REPORT_MAX_ROWS` because these rows never reach the renderer.
  * The pages are read sequentially, each waiting on the last, so the ceiling is
  * really a latency budget rather than a render cost: at 50,000 that is up to
- * 50 round-trips (~1.2 s by the measurement in the perf notes) before any
- * rendering starts. That arithmetic is unchanged by #567 — what changed is how
- * many rows it takes to get there.
+ * 50 round-trips (~1.2 s by the measurement in the perf notes), plus the one
+ * terminating empty request `fetchAllPages` always pays, before any rendering
+ * starts. That arithmetic is unchanged by #567 — what changed is how many rows
+ * it takes to get there.
  *
  * **It counts members, not transactions (#567).** Balances come from
  * `get_roster_point_balances`, which groups by `user_id` and emits one row per

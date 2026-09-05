@@ -2345,7 +2345,12 @@ console.log("\n=== Functional smoke: get_roster_point_balances (#567) ===");
   const U1 = "11111111-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
   const U2 = "22222222-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
   try {
+    // Inside a transaction that always rolls back, per this file's convention:
+    // a tier that leaves fixtures behind makes every later assertion depend on
+    // the order tiers happen to run in. This one is currently last, which is
+    // exactly the reason not to rely on staying last.
     await db.exec(`
+      begin;
       insert into chapters (id, name, university) values
         ('${CH_A}', 'Smoke A', 'U'), ('${CH_B}', 'Smoke B', 'U');
       insert into users (id, supabase_auth_id, email) values
@@ -2402,6 +2407,10 @@ console.log("\n=== Functional smoke: get_roster_point_balances (#567) ===");
     console.log(
       `ERR   get_roster_point_balances\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
     );
+  } finally {
+    // `finally`, not a trailing statement: a thrown assertion above must not
+    // leave the fixtures committed for whatever tier is appended after this one.
+    await db.exec("rollback;").catch(() => {});
   }
 }
 

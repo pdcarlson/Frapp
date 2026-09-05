@@ -98,10 +98,19 @@ difference between a bound no real chapter approaches and one an active chapter
 crossed in a semester. Before this, crossing it meant a roster of the right
 length carrying wrong balances.
 
-The aggregate is index-backed: `idx_point_transactions_chapter_user`
-(`chapter_id, user_id`) already covers both the filter and the grouping.
-Measured on the sandbox stack with `enable_seqscan = off`, the plan is a Bitmap
-Index Scan feeding a GroupAggregate — not a sequential scan of the ledger.
+The aggregate needs no new index: `point_transactions` already carries two
+`chapter_id`-leading btrees (`idx_point_transactions_chapter_user` and
+`idx_point_transactions_chapter_created_at`), either of which serves the
+`where chapter_id = ?` filter. The grouping is a separate cost — the observed
+plan sorts by `user_id` before a `GroupAggregate` rather than reading grouped
+order out of an index, so "index-backed" describes the filter, not the group.
+
+Do not read a forced plan as a measurement. Checking this on the sandbox
+required `enable_seqscan = off` against an empty table, which makes the result
+circular: the flag removes the very scan the plan is then said to avoid. On a
+small table a sequential scan is the planner being right. The claim worth making
+is the structural one — the read now returns one row per member instead of one
+per transaction — and that holds regardless of which scan the planner picks.
 
 A short balance read still does not shorten the roster; it leaves balances on it
 wrong. So it marks the report truncated but reports **its own** ceiling and a

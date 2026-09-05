@@ -36,9 +36,15 @@
 -- migration: #1698's signature is still reviewable and could change or close,
 -- and depending on it would block this fix behind someone else's PR and pin a
 -- merge order nothing enforces. So this ships standalone and correct, and the
--- collapse is tracked as its own follow-up once #1698 actually merges — at
+-- collapse is tracked in #1743, to be done once #1698 actually merges — at
 -- which point the roster can call the leaderboard function with null bounds and
 -- this one is dropped. Do not "fix" the duplication by reverting either PR.
+--
+-- Whatever survives the collapse must still return `user_id`. That is the
+-- requirement this function exists for: the roster keys balances by member, and
+-- an aggregate that returns only a display name (get_points_report, #747)
+-- cannot be joined to a roster at all. #1698's function does return it, which
+-- is what makes the collapse possible.
 
 create or replace function get_roster_point_balances(p_chapter_id uuid)
 returns table (
