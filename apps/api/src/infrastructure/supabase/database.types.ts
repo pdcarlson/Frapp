@@ -206,6 +206,24 @@ export interface Database {
           breakdown_by_category: Record<string, number>;
         }[];
       };
+      /**
+       * `20260905030000` — per-member point totals for one chapter, summed in
+       * Postgres. Bounds carry the same semantics as `get_points_report`:
+       * `p_since` exclusive, `p_until` inclusive, either null unbounded. Rows
+       * come back ordered by total descending, then `user_id` ascending.
+       */
+      get_points_leaderboard: {
+        Args: {
+          p_chapter_id: string;
+          p_since?: string | null;
+          p_until?: string | null;
+        };
+        Returns: {
+          user_id: string;
+          /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
+          total: number;
+        }[];
+      };
       /** `20260602210000` — `returns setof tasks`. */
       confirm_task_completion: {
         Args: { p_task_id: string; p_chapter_id: string };

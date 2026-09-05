@@ -8,7 +8,10 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
+import type {
+  IPointTransactionRepository,
+  PointsLeaderboardWindow,
+} from '../../domain/repositories/point-transaction.repository.interface';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
@@ -206,6 +209,60 @@ export class PointsService {
     });
   }
 
+  /**
+   * Translate the requested window into the `(since, until]` bounds the
+   * leaderboard aggregation applies in Postgres.
+   *
+   * Mirrors {@link filterByWindow} and {@link filterByArchiveRange} exactly,
+   * because those still serve `getUserSummary` and the two must agree on what a
+   * window means. Three cases produce *no* bounds at all, and conflating them
+   * with "bounded by now" would silently drop future-dated rows a chapter can
+   * see today: `all`, and `semester` on a chapter with no archive yet (where
+   * `filterByWindow` returns the list untouched because `since` is null).
+   *
+   * `now` is read once and used for both the month lower bound and the upper
+   * bound, so a leaderboard cannot be computed against two different instants.
+   */
+  private async resolveLeaderboardWindow(
+    chapterId: string,
+    window: PointsWindow,
+    semesterArchiveId?: string,
+  ): Promise<PointsLeaderboardWindow> {
+    if (semesterArchiveId) {
+      const range = await resolveSemesterArchiveRangeOrThrow(
+        this.semesterArchiveRepo,
+        semesterArchiveId,
+        chapterId,
+      );
+      return {
+        since: range.since.toISOString(),
+        until: range.until.toISOString(),
+      };
+    }
+
+    if (window === 'all') return {};
+
+    const now = new Date();
+    const since =
+      window === 'month'
+        ? resolveWindowSince('month', { now })
+        : ((await this.getSemesterRange(chapterId))?.after ?? null);
+
+    // No resolvable lower bound (a 'semester' window before the chapter's first
+    // rollover) means all-time, upper bound included — same as filterByWindow.
+    if (!since) return {};
+
+    return { since: since.toISOString(), until: now.toISOString() };
+  }
+
+  /**
+   * Per-member point totals for the chapter, ranked.
+   *
+   * The sum happens in Postgres (`get_points_leaderboard`), so this returns one
+   * row per member rather than loading the chapter's full transaction history
+   * into the API process (#522). Only the window boundaries are resolved here —
+   * see {@link resolveLeaderboardWindow} for why they are not re-derived in SQL.
+   */
   async getLeaderboard(
     chapterId: string,
     window: PointsWindow = 'all',
@@ -216,33 +273,13 @@ export class PointsService {
       total: number;
     }[]
   > {
-    const txns = await this.pointTxnRepo.findByChapter(chapterId);
+    const bounds = await this.resolveLeaderboardWindow(
+      chapterId,
+      window,
+      semesterArchiveId,
+    );
 
-    let filtered: PointTransaction[];
-    if (semesterArchiveId) {
-      const range = await resolveSemesterArchiveRangeOrThrow(
-        this.semesterArchiveRepo,
-        semesterArchiveId,
-        chapterId,
-      );
-      filtered = this.filterByArchiveRange(txns, range);
-    } else {
-      const semesterRange =
-        window === 'semester'
-          ? await this.getSemesterRange(chapterId)
-          : undefined;
-      filtered = this.filterByWindow(txns, window, semesterRange);
-    }
-
-    const totals = new Map<string, number>();
-    for (const txn of filtered) {
-      const prev = totals.get(txn.user_id) ?? 0;
-      totals.set(txn.user_id, prev + txn.amount);
-    }
-
-    return Array.from(totals.entries())
-      .map(([user_id, total]) => ({ user_id, total }))
-      .sort((a, b) => b.total - a.total);
+    return this.pointTxnRepo.leaderboard(chapterId, bounds);
   }
 
   private static readonly RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;

@@ -1,0 +1,77 @@
+-- #522: the points leaderboard loaded every transaction in the chapter into the
+-- API process and summed them in JavaScript, so work and memory grew with the
+-- chapter's whole history on one of the most-visited officer surfaces. Move the
+-- aggregation into Postgres: the API now receives one row per member instead of
+-- one row per transaction.
+--
+-- Deliberately mirrors get_points_report's signature shape (chapter, then an
+-- exclusive lower and inclusive upper timestamp bound) because the two answer
+-- the same question over the same table for the same window, and the API
+-- resolves both from the SAME helpers (points-window.ts / the semester-archive
+-- lookup). The window enum is NOT re-derived here: 'month' and 'semester' mean
+-- what resolveWindowSince says they mean, in one place, so the leaderboard and
+-- the points report cannot drift apart on what "this semester" is.
+--
+-- Bound semantics match get_points_report and the in-Node filter this replaces:
+-- created_at > p_since (exclusive) and created_at <= p_until (inclusive). A null
+-- bound is "unbounded on that side" — which is how the all-time window, and a
+-- 'semester' window on a chapter with no archive yet, both arrive here.
+--
+-- Every column reference is qualified with the `pt.` alias: the RETURNS TABLE
+-- OUT parameters are named `user_id` and `total`, so a bare `user_id` would be
+-- ambiguous against the column of the same name, and a bare `total` in ORDER BY
+-- would resolve to the OUT parameter rather than the aggregate.
+
+create or replace function get_points_leaderboard(
+  p_chapter_id uuid,
+  p_since timestamptz default null,
+  p_until timestamptz default null
+)
+returns table (
+  user_id uuid,
+  total bigint
+)
+language plpgsql
+security invoker
+as $$
+begin
+  return query
+  select
+    pt.user_id,
+    sum(pt.amount)::bigint as total
+  from point_transactions pt
+  where pt.chapter_id = p_chapter_id
+    and (p_since is null or pt.created_at > p_since)
+    and (p_until is null or pt.created_at <= p_until)
+  group by pt.user_id
+  -- Ties broken by user_id so the board is deterministic across calls. The
+  -- in-Node version this replaces resolved ties by whichever member's newest
+  -- in-window transaction came first out of `created_at desc`, which is
+  -- incidental rather than specified: spec/behavior/points.md fixes rank as
+  -- board-wide but says nothing about equal totals.
+  order by sum(pt.amount) desc, pt.user_id asc;
+end;
+$$;
+
+-- Postgres grants EXECUTE on a new function to PUBLIC by default, and Supabase's
+-- default privileges additionally grant it to anon/authenticated — the drift
+-- 20260901173000 closed for the existing read RPCs. Lock this one down at birth
+-- rather than shipping it broadly callable and fixing it later: the API is the
+-- only intended caller and connects as service_role.
+revoke execute on function get_points_leaderboard(uuid, timestamptz, timestamptz) from public;
+
+-- anon/authenticated/service_role are Supabase-managed roles and do not exist in
+-- a bare Postgres (the PGlite migration gate), so each grant is guarded.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke execute on function get_points_leaderboard(uuid, timestamptz, timestamptz) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke execute on function get_points_leaderboard(uuid, timestamptz, timestamptz) from authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function get_points_leaderboard(uuid, timestamptz, timestamptz) to service_role;
+  end if;
+end
+$$;
