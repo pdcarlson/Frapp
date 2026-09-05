@@ -141,4 +141,119 @@ describe("deploy-vercel-staging.yml", () => {
     assert.ok(npmCi > 0, "must run npm ci");
     assert.ok(npmCi < deploy, "npm ci must come before the deploy step");
   });
+
+  // ── The deploy-outcome alert job (#1674) ────────────────────────────────
+  // Before this, a failed staging deploy produced no commit status, no PR
+  // check and no notification — a `workflow_run` failure lands on nothing a
+  // human looks at.
+
+  it("reports its outcome through the shared deploy-alert script", () => {
+    assert.match(uncommented, /^ {2}deploy-outcome:$/m, "must have a deploy-outcome job");
+    assert.match(uncommented, /run: node scripts\/ci\/deploy-alert\.mjs/);
+    assert.match(uncommented, /needs: \[deploy\]/);
+  });
+
+  it("selects the Vercel alert configuration, not the Deploy API one", () => {
+    // Without ALERT_CONFIG the script defaults to `deploy-api`, which would
+    // read job names this workflow does not emit (reporting them all as
+    // "skipped" → a permanent no-op) and, worse, write its findings into the
+    // DEPLOY API alert issue. Wrong watchdog, wrong incident thread.
+    assert.match(uncommented, /ALERT_CONFIG: deploy-vercel-staging/);
+  });
+
+  it("grants issues: write to the alert job only", () => {
+    // The workflow-level default is `contents: read`. The alert job is the only
+    // one that needs to write, and scoping it to that job is what keeps the
+    // deploy job — the one handling Vercel credentials — read-only.
+    assert.match(uncommented, /issues: write/);
+    assert.equal(
+      (uncommented.match(/issues: write/g) ?? []).length,
+      1,
+      "exactly one job may hold issues: write",
+    );
+  });
+
+  it("keeps the alert job's trigger conditions in sync with the deploy job's", () => {
+    // The real hazard, and the reason this is a test. `needs: [deploy]` does
+    // NOT stop a job that uses `always()` when its dependency is skipped, so
+    // the alert job's `if:` is the ONLY thing keeping it from running on every
+    // CI-failed run and reporting "deployed NOTHING" — true, but noise, since
+    // CI is already red where a human looks.
+    //
+    // Worse in the other direction: if someone tightens the deploy job's
+    // conditions and not the alert job's, the two silently disagree about when
+    // a deploy was attempted. Comparing the condition SETS catches both.
+    //
+    // Compared as one NORMALISED EXPRESSION STRING, not as a set of extracted
+    // conditions. A set comparison is blind in two directions that both matter:
+    // it drops boolean structure (`A && B && C` and `A || B || C` compare
+    // equal), and it silently ignores any guard that does not match the
+    // extraction pattern — so adding `&& vars.STAGING_DEPLOYS_ENABLED == 'true'`
+    // to one job only would pass a set check while genuinely drifting the jobs.
+
+    /** The `if: |` block of a job, as one whitespace-normalised expression. */
+    const jobIf = (jobKey) => {
+      const lines = uncommented.split("\n");
+      // Allow a trailing comment on the job key, which is ordinary YAML.
+      const start = lines.findIndex((line) =>
+        new RegExp(`^ {2}${jobKey}:[ \\t]*(#.*)?$`).test(line),
+      );
+      assert.notEqual(start, -1, `job ${jobKey} not found`);
+
+      // BOUND the search to this job. An unbounded scan silently returns the
+      // NEXT job's if: when this one has none — so a `deploy` that lost its
+      // block scalar would be compared against `deploy-outcome`'s own if: and
+      // trivially "match" itself.
+      let end = lines.length;
+      for (let i = start + 1; i < lines.length; i += 1) {
+        if (/^ {2}\S/.test(lines[i])) {
+          end = i;
+          break;
+        }
+      }
+      const block = lines.slice(start, end);
+
+      const ifLine = block.findIndex((line) => /^ {4}if:/.test(line));
+      assert.notEqual(ifLine, -1, `job ${jobKey} has no if:`);
+      assert.match(
+        block[ifLine],
+        /^ {4}if: \|/,
+        `job ${jobKey}'s if: must stay a literal block scalar (\`if: |\`) — this guard compares the two jobs' conditions textually and cannot read a folded or inline form`,
+      );
+
+      const body = [];
+      for (let i = ifLine + 1; i < block.length; i += 1) {
+        // A blank line inside a block scalar is legal and must not truncate
+        // the expression — truncating both blocks symmetrically would let the
+        // equality below pass on two half-read strings.
+        if (block[i].trim() === "") continue;
+        if (!/^ {6}/.test(block[i])) break;
+        body.push(block[i].trim());
+      }
+      assert.ok(body.length > 0, `job ${jobKey}'s if: block is empty`);
+      return body.join(" ").replace(/\s+/g, " ").trim();
+    };
+
+    const deployIf = jobIf("deploy");
+    const outcomeIf = jobIf("deploy-outcome");
+
+    // always() is what makes the alert job report on a FAILED deploy at all,
+    // and it is the ONLY difference the two are allowed to have.
+    assert.ok(
+      outcomeIf.startsWith("always() && "),
+      `deploy-outcome's if: must lead with always() &&, got: ${outcomeIf}`,
+    );
+    assert.doesNotMatch(deployIf, /always\(\)/);
+
+    assert.equal(
+      outcomeIf.slice("always() && ".length),
+      deployIf,
+      "deploy-outcome's `if:` must be exactly `always() && ` + the deploy job's `if:`",
+    );
+
+    // Guards the comparison itself: if both blocks were somehow read as empty
+    // or as the same trivial string, the equality above would pass vacuously.
+    assert.match(deployIf, /workflow_run\.conclusion == 'success'/);
+    assert.ok(deployIf.split("&&").length >= 3, "expected the deploy job's three guards");
+  });
 });
