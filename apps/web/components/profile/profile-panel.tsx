@@ -27,6 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   ErrorState,
+  hasNoCachedData,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -129,7 +130,7 @@ export function ProfilePanel() {
    */
   const userPaused =
     userQuery.isPending && userQuery.fetchStatus === "paused";
-  if (isOffline && userQuery.data === undefined) {
+  if (isOffline && hasNoCachedData(userQuery)) {
     return (
       <OfflineState
         title="Your profile is unavailable offline"
@@ -322,7 +323,7 @@ export function ProfilePanel() {
   const settingsPaused =
     settingsQuery.isPending && settingsQuery.fetchStatus === "paused";
   let preferencesState: React.ReactNode = null;
-  if (isOffline && settingsQuery.data === undefined) {
+  if (isOffline && hasNoCachedData(settingsQuery)) {
     preferencesState = (
       <NestedOffline
         title="Quiet hours unavailable offline"

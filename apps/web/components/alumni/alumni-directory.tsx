@@ -18,6 +18,7 @@ import { EYEBROW } from "@/components/ui/typography";
 import {
   EmptyState,
   ErrorState,
+  hasNoCachedData,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -91,7 +92,13 @@ export function AlumniDirectory() {
     );
   }
 
-  if (isOffline) {
+  /*
+   * `useAlumni` sets `placeholderData: keepPreviousData`, so its `data` is
+   * never `undefined` after the first load — `hasNoCachedData` treats
+   * placeholder rows as uncached, which is what stops this screen rendering
+   * the previous filter's alumni under the new filter's chips.
+   */
+  if (isOffline && hasNoCachedData(query)) {
     return (
       <OfflineState
         title="Alumni directory unavailable offline"

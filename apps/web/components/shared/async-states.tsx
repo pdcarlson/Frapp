@@ -220,6 +220,57 @@ export function ErrorState({
   );
 }
 
+/**
+ * The shape `hasNoCachedData` reads. Structural rather than
+ * `UseQueryResult<unknown>` so a caller can pass a hook that exposes only the
+ * two fields — `useMemberDisplayNames` and friends hand back a projection, not
+ * the observer.
+ */
+type CachedRead = {
+  data: unknown;
+  isPlaceholderData?: boolean;
+};
+
+/**
+ * Whether a surface has nothing truthful left to render, and so must show
+ * `OfflineState` rather than its content.
+ *
+ * ## Why a predicate and not `isOffline` alone
+ *
+ * `spec/ui/resilience.md` § 2 puts OFFLINE's Read Actions at "Enabled (from
+ * cache)", and Principle 1.2 at "stale data is better than no data". A bare
+ * `if (isOffline) return <OfflineState/>` throws away rows TanStack is still
+ * holding — an officer taking attendance loses the roster on screen to a
+ * 90-second API hiccup.
+ *
+ * ## Why it is variadic, which is the part that is easy to get wrong
+ *
+ * `query-provider.tsx` sets no `networkMode`, so TanStack's `"online"` default
+ * **pauses** offline queries. A paused query is `isPending && !isFetching`,
+ * therefore neither `isLoading` nor `isError` — so every loading and error
+ * guard *below* an offline branch is dead while offline. Those guards are
+ * load-bearing: `members-directory.tsx` blocks on its roles and points reads
+ * precisely because "the directory still looks healthy while those features
+ * are quietly broken" without them.
+ *
+ * So a surface renders only when **every** read it needs to be truthful is
+ * cached — not merely the one it maps over. Pass them all; `some` is
+ * deliberate.
+ *
+ * ## `isPlaceholderData`
+ *
+ * `useAlumni` sets `placeholderData: keepPreviousData`, so its `data` is never
+ * `undefined` after the first load and a `data === undefined` test could never
+ * fire there — it would render the previous filter's rows under the new
+ * filter's chips as if they were its results. Placeholder data is by
+ * definition not this query's answer, so it counts as uncached.
+ */
+export function hasNoCachedData(...reads: ReadonlyArray<CachedRead>): boolean {
+  return reads.some(
+    (read) => read.data === undefined || read.isPlaceholderData === true,
+  );
+}
+
 export function OfflineState({
   title = "You're offline",
   description = "Reconnect to sync chapter data and retry this workflow.",

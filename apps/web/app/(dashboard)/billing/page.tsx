@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { LoadingState, OfflineState } from "@/components/shared/async-states";
+import { hasNoCachedData, LoadingState, OfflineState } from "@/components/shared/async-states";
 import { NestedEmpty } from "@/components/shared/nested-states";
 import {
   dashboardCheckboxCellClassName,
@@ -111,7 +111,14 @@ export default function BillingPage() {
   // `overdueIds` degrading to an empty set on error reads as "nothing is
   // overdue" rather than "we don't know" — silently reintroducing the exact
   // confidently-wrong signal #707 exists to fix, for most of the userbase.
-  const overdueUnavailable = overdueQuery.isError;
+  // `isError` alone stopped being sufficient the moment this page could render
+  // offline: TanStack pauses an offline query rather than failing it, so a
+  // never-fetched overdue list is `isPending`, not `isError`, and `overdueIds`
+  // would degrade to an empty set that reads as "nothing is overdue" — the
+  // confidently-wrong signal this flag exists to prevent, just reached by a
+  // different route.
+  const overdueUnavailable =
+    overdueQuery.isError || (isOffline && hasNoCachedData(overdueQuery));
   const filteredInvoices = useMemo(() => {
     const query = invoiceSearch.trim().toLowerCase();
     return visibleInvoices.filter((invoice) => {
@@ -178,7 +185,19 @@ export default function BillingPage() {
     downloadCsv(rows, "invoices");
   }
 
-  if (isOffline) {
+  /*
+   * `statusQuery` is deliberately **not** in this gate. `BillingController` is
+   * class-level `@RequirePermissions(billing:view)`, which most members do not
+   * hold, so its `data` is permanently `undefined` for them — conjoining it
+   * would fire this card for exactly the members `canPay` exists to serve.
+   * The fields it feeds already degrade honestly to "—".
+   *
+   * `currentUserQuery` is in it for the reason the `isLoading` comment above
+   * gives: Pay is gated on `invoice.user_id === currentUserId`, so without it
+   * a member sees their own OPEN invoice with no way to pay it and nothing
+   * saying why.
+   */
+  if (isOffline && hasNoCachedData(invoicesQuery, currentUserQuery)) {
     return (
       <OfflineState
         title="Billing workspace unavailable offline"
@@ -186,6 +205,7 @@ export default function BillingPage() {
         onRetry={() => {
           void statusQuery.refetch();
           void invoicesQuery.refetch();
+          void currentUserQuery.refetch();
         }}
       />
     );

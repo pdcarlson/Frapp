@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { ErrorState, hasNoCachedData, LoadingState, OfflineState } from "@/components/shared/async-states";
 import { NestedEmpty } from "@/components/shared/nested-states";
 import { amountToneClassName } from "@/components/points/amount-tone";
 import {
@@ -248,7 +248,14 @@ export default function PointsPage() {
     );
   }
 
-  if (isOffline) {
+  /*
+   * The roster is deliberately absent from this gate, matching the reasoning
+   * on `isLoading` above: it gates nothing, feeds one column, and its
+   * unresolved label is a real permanent state for a departed member rather
+   * than a broken-looking one. Only the two reads the board and the ledger are
+   * actually made of belong here.
+   */
+  if (isOffline && hasNoCachedData(leaderboardQuery, summaryQuery)) {
     return (
       <OfflineState
         title="Points ledger unavailable offline"

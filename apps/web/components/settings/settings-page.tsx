@@ -42,6 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   EmptyState,
   ErrorState,
+  hasNoCachedData,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -278,7 +279,7 @@ function SettingsPageContent() {
   const chapterPaused =
     chapterQuery.isPending && chapterQuery.fetchStatus === "paused";
   let stateBanner: React.ReactNode = null;
-  if (isOffline && chapterQuery.data === undefined) {
+  if (isOffline && hasNoCachedData(chapterQuery)) {
     stateBanner = (
       <OfflineState
         title="Chapter settings unavailable offline"

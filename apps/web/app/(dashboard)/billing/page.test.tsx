@@ -80,10 +80,16 @@ const invoicesQuery: { data: unknown; isLoading: boolean; isError: boolean; refe
   refetch: vi.fn(),
 };
 
-const currentUserQuery = {
+const currentUserQuery: {
+  data: unknown;
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
+} = {
   data: { id: "user-1" },
   isLoading: false,
   isError: false,
+  refetch: vi.fn(),
 };
 
 const useOverdueInvoices = vi.fn();
@@ -134,6 +140,7 @@ beforeEach(() => {
   invoicesQuery.isLoading = false;
   invoicesQuery.isError = false;
   networkState.isOffline = false;
+  currentUserQuery.data = { id: "user-1" };
   useOverdueInvoices.mockReturnValue({ data: [], isError: false });
 });
 
@@ -245,5 +252,87 @@ describe("billing page overdue derivation (#707)", () => {
 
     const overdueOption = screen.getByRole("option", { name: "Overdue" });
     expect(overdueOption).toBeEnabled();
+  });
+});
+
+/**
+ * #1621 — OFFLINE must not discard rows TanStack is still holding.
+ *
+ * Billing is the subtle member of that set, because two of its four reads are
+ * `billing:view`-gated and permanently `undefined` for most members. Which
+ * reads the gate names is therefore the whole of the behaviour here, so these
+ * cases pin the call site rather than the shared predicate.
+ */
+describe("BillingPage offline read path (#1621)", () => {
+  it("keeps rendering cached invoices when it goes offline", () => {
+    networkState.isOffline = true;
+
+    render(<BillingPage />);
+
+    expect(
+      screen.queryByText("Billing workspace unavailable offline"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Fall dues")).toBeInTheDocument();
+  });
+
+  it("still renders offline when the permission-gated status read is uncached", () => {
+    // The case that makes the naive gate wrong for most of the userbase:
+    // `BillingController` is class-level `@RequirePermissions(billing:view)`,
+    // so a member without it never has `statusQuery.data`. Conjoining it would
+    // withhold the page from exactly the members `canPay` exists to serve.
+    networkState.isOffline = true;
+    billingStatusQuery.data = undefined as never;
+
+    render(<BillingPage />);
+
+    expect(
+      screen.queryByText("Billing workspace unavailable offline"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Fall dues")).toBeInTheDocument();
+
+    billingStatusQuery.data = {
+      subscription_status: "active",
+      stripe_customer_id: null,
+      subscription_id: null,
+    };
+  });
+
+  it("shows the offline card when the invoices read is uncached", () => {
+    networkState.isOffline = true;
+    invoicesQuery.data = undefined;
+
+    render(<BillingPage />);
+
+    expect(
+      screen.getByText("Billing workspace unavailable offline"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the offline card when the caller's identity is uncached", () => {
+    // Pay is gated on `invoice.user_id === currentUserId`. Rendering without
+    // it shows a member their own OPEN invoice with no way to pay it and
+    // nothing saying why.
+    networkState.isOffline = true;
+    currentUserQuery.data = undefined;
+
+    render(<BillingPage />);
+
+    expect(
+      screen.getByText("Billing workspace unavailable offline"),
+    ).toBeInTheDocument();
+  });
+
+  it("reports overdue as unavailable, not zero, when offline with no cached overdue list", () => {
+    // A paused query is `isPending`, never `isError`, so the existing
+    // `isError` flag alone goes false here and `overdueIds` degrades to an
+    // empty set — "nothing is overdue" asserted from a read that never ran.
+    networkState.isOffline = true;
+    useOverdueInvoices.mockReturnValue({ data: undefined, isError: false });
+
+    render(<BillingPage />);
+
+    expect(screen.getByText("Overdue: —")).toBeInTheDocument();
+    expect(screen.queryByText(/^Overdue: \d/)).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Overdue" })).toBeDisabled();
   });
 });

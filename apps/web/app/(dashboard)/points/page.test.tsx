@@ -224,13 +224,59 @@ describe("PointsPage failure states", () => {
     expect(summaryRefetch).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the offline state without fabricated rows", () => {
-    setQueries({ offline: true, leaderboard: { isError: true } });
+  /*
+   * This case used to set `leaderboard: { isError: true }` while leaving
+   * `data` at `[]`, and passed only because the offline branch was
+   * unconditional — it was encoding the bug (#1621) rather than the rule.
+   * Reaching the card now means what it says: nothing cached to render.
+   */
+  it("shows the offline state when there is nothing cached to render", () => {
+    setQueries({
+      offline: true,
+      leaderboard: { data: undefined },
+      summary: { data: undefined },
+    });
 
     render(<PointsPage />);
 
     expect(screen.getByText("Points ledger unavailable offline")).toBeInTheDocument();
     expectNoFabricatedData();
+  });
+
+  it("keeps rendering the cached ledger when it goes offline", () => {
+    setQueries({
+      offline: true,
+      leaderboard: { data: [{ user_id: "u1", total_points: 42 }] },
+      summary: { data: { balance: 42, transactions: [] } },
+      roster: { names: { u1: "Ada Lovelace" } },
+    });
+
+    render(<PointsPage />);
+
+    expect(
+      screen.queryByText("Points ledger unavailable offline"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
+  });
+
+  /*
+   * The roster is deliberately not in the gate — it feeds one column and its
+   * unresolved label is a real state for a departed member. An uncached roster
+   * must not blank a board whose totals are in hand.
+   */
+  it("renders the cached board offline even when the roster is uncached", () => {
+    setQueries({
+      offline: true,
+      leaderboard: { data: [{ user_id: "u1", total_points: 42 }] },
+      summary: { data: { balance: 42, transactions: [] } },
+      roster: { names: {}, isPending: true },
+    });
+
+    render(<PointsPage />);
+
+    expect(
+      screen.queryByText("Points ledger unavailable offline"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the loading state while a read is in flight", () => {

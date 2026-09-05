@@ -17,7 +17,7 @@ import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { EmptyState, ErrorState, hasNoCachedData, LoadingState, OfflineState } from "@/components/shared/async-states";
 import {
   dashboardCheckboxCellClassName,
   dashboardCheckboxHitAreaClassName,
@@ -308,14 +308,33 @@ export function MembersDirectory() {
     }
   }
 
-  if (isOffline) {
+  /*
+   * Roles and points are in this gate, not just the member rows, because the
+   * two guards below that would otherwise catch them are dead while offline:
+   * a paused query is neither `isLoading` nor `isError`. Without them the
+   * directory renders every member at 0 points under a raw role UUID, with an
+   * empty role filter and meaningless points sorting — which is exactly the
+   * "looks healthy while quietly broken" state the comment on those guards
+   * exists to prevent.
+   */
+  if (isOffline && hasNoCachedData(activeQuery, rolesQuery, leaderboardQuery)) {
     return (
       <OfflineState
         title="Members directory unavailable offline"
         description="Reconnect to load live membership records and role updates."
         onRetry={() => {
+          /*
+           * Clearing the search is part of the retry, not a nicety. Typing
+           * offline swaps `activeQuery` to a search key that was never
+           * fetched, so this card replaces the directory — including the input
+           * that produced the term — while the query state survives. Without
+           * this the member has no control left to undo it.
+           */
+          setQuery("");
           void membersQuery.refetch();
           if (usingSearch) void searchQuery.refetch();
+          void rolesQuery.refetch();
+          void leaderboardQuery.refetch();
         }}
       />
     );
