@@ -39,10 +39,30 @@ test("every #-subpath resolves to source before it resolves to dist", () => {
   assert.ok(entries.length > 0, "apps/api declares no `imports` map");
 
   for (const [specifier, target] of entries) {
-    // A bare string target carries no conditions and cannot be reordered.
-    if (typeof target === "string") continue;
+    // A bare string target is the shape someone reaches for when "simplifying"
+    // the map, and it is the hazard in its purest form: one target, used by
+    // every consumer, with no way to send tsc to source and Node to dist. It is
+    // only safe if it points at source.
+    if (typeof target === "string") {
+      assert.ok(
+        !target.includes("dist/"),
+        `${specifier}: bare string target "${target}" points into dist/, so tsc and ` +
+          "dependency-cruiser would read compiled output. Use a conditions object.",
+      );
+      continue;
+    }
 
     const conditions = Object.keys(target);
+
+    // A conditions object carrying only `default` has the same effect as the
+    // bare string above — every consumer gets one answer — so require that at
+    // least one source-resolving condition exists to be ordered ahead of it.
+    assert.ok(
+      SOURCE_CONDITIONS.some((c) => conditions.includes(c)),
+      `${specifier}: declares none of ${SOURCE_CONDITIONS.join("/")}, so every ` +
+        `consumer resolves through "${conditions.join("/")}" — source-based tools included.`,
+    );
+
     const defaultAt = conditions.indexOf("default");
     if (defaultAt === -1) continue;
 
@@ -85,7 +105,13 @@ test("#test/* never claims a runtime target it cannot satisfy", () => {
   // build green, and die at first require() in the container. `null` makes Node
   // throw ERR_PACKAGE_IMPORT_NOT_DEFINED at resolve time instead.
   const target = manifest.imports?.["#test/*"];
-  if (!target || typeof target === "string") return;
+  if (!target) return;
+  assert.notEqual(
+    typeof target,
+    "string",
+    "#test/* must be a conditions object with `default: null`, not a bare string — " +
+      "a string target is a runtime promise this alias cannot keep.",
+  );
   assert.equal(
     target.default,
     null,
