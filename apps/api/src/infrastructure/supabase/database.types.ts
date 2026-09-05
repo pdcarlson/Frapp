@@ -206,6 +206,36 @@ export interface Database {
           breakdown_by_category: Record<string, number>;
         }[];
       };
+      /**
+       * `20260905010000` (#1243). Registers Discord-import manifest rows and
+       * enforces the two `chat-archive` byte ceilings in one transaction,
+       * returning the rows it wrote.
+       *
+       * Raises `check_violation` with a `discord_import_archive_quota:`-prefixed
+       * message when a ceiling is crossed, in which case the whole batch is
+       * rolled back. `p_rows` carries the same shape as a
+       * `discord_import_files` insert, minus the columns the function supplies
+       * itself (`import_id`, `chapter_id`).
+       */
+      discord_import_register_files: {
+        Args: {
+          p_chapter_id: string;
+          p_import_id: string;
+          p_rows: {
+            relative_path: string;
+            kind: string;
+            part_index: number | null;
+            bucket: string;
+            storage_path: string;
+            content_type: string | null;
+            byte_size: number | null;
+          }[];
+          /** `bigint` in SQL; sent and returned as a JSON number. */
+          p_import_cap: number;
+          p_chapter_cap: number;
+        };
+        Returns: DiscordImportFile[];
+      };
       /** `20260602210000` — `returns setof tasks`. */
       confirm_task_completion: {
         Args: { p_task_id: string; p_chapter_id: string };

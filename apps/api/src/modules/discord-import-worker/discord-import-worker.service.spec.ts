@@ -240,7 +240,7 @@ function makeRepo(initial: DiscordImport) {
     findById: jest.fn(async () => current),
     findByChapter: jest.fn(async () => [current]),
     replaceChannels: jest.fn(),
-    createFiles: jest.fn(),
+    registerFiles: jest.fn(),
     markFilesUploaded: jest.fn(),
   };
 }
