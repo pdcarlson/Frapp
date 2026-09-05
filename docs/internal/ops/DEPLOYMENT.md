@@ -151,7 +151,10 @@ You need **two** Supabase projects: one for staging, one for production.
 
 1. Go to https://supabase.com/dashboard → **New Project**.
 2. Create `frapp-staging` (region closest to you).
-3. Create `frapp-production` (same region).
+3. Create `frapp-prod` — that is the name [`ci/environments.json`](../../../ci/environments.json)
+   records, and the one `scripts/run-migration.mjs` prints when an injected ref does not match.
+   Region is per-project rather than shared; [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality)
+   § Backup reality records what the two live projects actually use.
 
 ### Apply Migrations
 
