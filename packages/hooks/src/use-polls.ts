@@ -65,37 +65,7 @@ export function usePoll(messageId: string) {
   });
 }
 
-export function useCreatePoll() {
-  const client = useFrappClient();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      channelId,
-      body,
-    }: {
-      channelId: string;
-      body: {
-        question: string;
-        options: string[];
-        expires_at?: string;
-        choice_mode: "single" | "multi";
-      };
-    }) => {
-      const { data, error } = await client.POST(
-        "/v1/channels/{channelId}/polls",
-        { params: { path: { channelId } }, body },
-      );
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["polls"] });
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
-    },
-  });
-}
-
-export function useVote() {
+export function useVoteOnPoll() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
@@ -121,9 +91,6 @@ export function useVote() {
     },
   });
 }
-
-// Alias so feature code reads naturally — mirrors the mobile naming.
-export const useVoteOnPoll = useVote;
 
 export function useRemoveVote() {
   const client = useFrappClient();

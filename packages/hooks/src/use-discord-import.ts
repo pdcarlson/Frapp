@@ -102,29 +102,6 @@ export function useDiscordImport(
   });
 }
 
-export function useDiscordImportChannels(
-  id: string | null,
-  options?: { enabled?: boolean },
-) {
-  const client = useFrappClient();
-  const chapterId = useActiveChapterId();
-
-  return useQuery({
-    queryKey: discordImportKeys.channels(chapterId, id ?? ""),
-    queryFn: async () => {
-      const { data, error } = await client.GET(
-        "/v1/discord-imports/{id}/channels",
-        { params: { path: { id: id as string } } },
-      );
-      if (error) throw error;
-      return data ?? [];
-    },
-    enabled: !!chapterId && !!id && (options?.enabled ?? true),
-    staleTime: 30_000,
-    retry: false,
-  });
-}
-
 /**
  * The uploaded-file manifest for one import.
  *

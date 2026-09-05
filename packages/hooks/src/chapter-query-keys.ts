@@ -40,7 +40,3 @@ export function createChapterQueryKeys<const TScope extends string>(
       [scope, chapterId, "detail", id] as const,
   };
 }
-
-export type ChapterQueryKeys<TScope extends string> = ReturnType<
-  typeof createChapterQueryKeys<TScope>
->;
