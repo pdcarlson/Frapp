@@ -183,35 +183,52 @@ describe("deploy-vercel-staging.yml", () => {
     // Worse in the other direction: if someone tightens the deploy job's
     // conditions and not the alert job's, the two silently disagree about when
     // a deploy was attempted. Comparing the condition SETS catches both.
-    const conditions = (block) =>
-      new Set(
-        (
-          block.match(
-            /github\.event\.workflow_run\.[A-Za-z_.]+ ==\s*'?[^\s'&|]+'?|head_repository\.full_name == github\.repository/g,
-          ) ?? []
-        ).map((line) => line.trim()),
+    //
+    // Compared as one NORMALISED EXPRESSION STRING, not as a set of extracted
+    // conditions. A set comparison is blind in two directions that both matter:
+    // it drops boolean structure (`A && B && C` and `A || B || C` compare
+    // equal), and it silently ignores any guard that does not match the
+    // extraction pattern — so adding `&& vars.STAGING_DEPLOYS_ENABLED == 'true'`
+    // to one job only would pass a set check while genuinely drifting the jobs.
+
+    /** The `if: |` block of a job, as one whitespace-normalised expression. */
+    const jobIf = (jobKey) => {
+      const lines = uncommented.split("\n");
+      const start = lines.findIndex((line) => line === `  ${jobKey}:`);
+      assert.notEqual(start, -1, `job ${jobKey} not found`);
+      const ifLine = lines.findIndex(
+        (line, i) => i > start && /^ {4}if: \|/.test(line),
       );
+      assert.notEqual(ifLine, -1, `job ${jobKey} has no block-scalar if:`);
+      const body = [];
+      for (let i = ifLine + 1; i < lines.length; i += 1) {
+        if (!/^ {6}\S/.test(lines[i])) break;
+        body.push(lines[i].trim());
+      }
+      assert.ok(body.length > 0, `job ${jobKey}'s if: block is empty`);
+      return body.join(" ").replace(/\s+/g, " ").trim();
+    };
 
-    const deployIf = uncommented.slice(
-      uncommented.indexOf("  deploy:"),
-      uncommented.indexOf("    runs-on", uncommented.indexOf("  deploy:")),
-    );
-    const outcomeIf = uncommented.slice(
-      uncommented.indexOf("  deploy-outcome:"),
-      uncommented.indexOf("    runs-on", uncommented.indexOf("  deploy-outcome:")),
-    );
+    const deployIf = jobIf("deploy");
+    const outcomeIf = jobIf("deploy-outcome");
 
-    const deployConditions = conditions(deployIf);
-    const outcomeConditions = conditions(outcomeIf);
-
-    assert.ok(deployConditions.size >= 3, "expected the deploy job's three guards");
-    assert.deepEqual(
-      [...outcomeConditions].sort(),
-      [...deployConditions].sort(),
-      "deploy-outcome's `if:` must carry exactly the deploy job's conditions",
+    // always() is what makes the alert job report on a FAILED deploy at all,
+    // and it is the ONLY difference the two are allowed to have.
+    assert.ok(
+      outcomeIf.startsWith("always() && "),
+      `deploy-outcome's if: must lead with always() &&, got: ${outcomeIf}`,
     );
-    // …plus always(), which is what makes it report on a FAILED deploy at all.
-    assert.match(outcomeIf, /always\(\)/);
     assert.doesNotMatch(deployIf, /always\(\)/);
+
+    assert.equal(
+      outcomeIf.slice("always() && ".length),
+      deployIf,
+      "deploy-outcome's `if:` must be exactly `always() && ` + the deploy job's `if:`",
+    );
+
+    // Guards the comparison itself: if both blocks were somehow read as empty
+    // or as the same trivial string, the equality above would pass vacuously.
+    assert.match(deployIf, /workflow_run\.conclusion == 'success'/);
+    assert.ok(deployIf.split("&&").length >= 3, "expected the deploy job's three guards");
   });
 });

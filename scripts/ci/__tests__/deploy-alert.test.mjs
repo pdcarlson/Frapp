@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 import {
   ALERT_CONFIGS,
@@ -563,16 +566,35 @@ function vercelDeployedNeeds() {
   return { deploy: { result: "success", outputs: {} } };
 }
 
-test("resolveAlertConfig defaults to deploy-api and throws on an unknown name", () => {
-  assert.equal(resolveAlertConfig(undefined), DEPLOY_API_CONFIG);
+test("resolveAlertConfig resolves both names and refuses everything else", () => {
   assert.equal(resolveAlertConfig("deploy-api"), DEPLOY_API_CONFIG);
   assert.equal(
     resolveAlertConfig("deploy-vercel-staging"),
     DEPLOY_VERCEL_STAGING_CONFIG,
   );
-  // A typo'd ALERT_CONFIG must be loud. Falling back to the default would let
-  // the Vercel workflow's job results write the Deploy API alert's issue.
-  assert.throws(() => resolveAlertConfig("deploy-vercel"), /Unknown ALERT_CONFIG/);
+
+  // A typo'd ALERT_CONFIG must be loud.
+  assert.throws(() => resolveAlertConfig("deploy-vercel"), /ALERT_CONFIG/);
+
+  // An ABSENT one must be loud too, and this is the likelier mistake: a third
+  // deploy workflow copying a deploy-outcome block and dropping the line.
+  // Resolving it to Deploy API would find none of that workflow's job names in
+  // `needs`, read them all as "skipped", and report a permanent no-op while
+  // looking correctly wired — or, if it owned a job named `deploy-staging`,
+  // comment on the live P1 Deploy API alert from an unrelated failure.
+  for (const absent of [undefined, null, ""]) {
+    assert.throws(() => resolveAlertConfig(absent), /ALERT_CONFIG/, `absent: ${absent}`);
+  }
+
+  // The lookup is `Object.hasOwn`, not a truthiness check: a bare object
+  // literal inherits these, and each would otherwise slip past the guard and
+  // die later without printing the known-configurations list.
+  for (const inherited of ["constructor", "toString", "valueOf", "__proto__"]) {
+    assert.throws(() => resolveAlertConfig(inherited), /ALERT_CONFIG/, inherited);
+  }
+
+  // The error names what is valid, or it is not actionable at 3am.
+  assert.throws(() => resolveAlertConfig("nope"), /deploy-api, deploy-vercel-staging/);
 });
 
 test("the two configurations never share an alert issue identity", () => {
@@ -584,7 +606,11 @@ test("the two configurations never share an alert issue identity", () => {
   );
   const titles = Object.values(ALERT_CONFIGS).map((config) => config.alertTitle);
   assert.equal(new Set(titles).size, titles.length);
-  // Both must carry the lookup label, or findAlertIssues can never find them.
+  // Both declare the lookup label. This asserts CONFIG SHAPE, not findability:
+  // `lib/alert-issue.mjs` forces `lookupLabel` into the created label set
+  // precisely so a caller cannot omit it, and that forcing — not this
+  // assertion — is what guarantees an alert can be found again. Do not read
+  // this test as making that belt-and-braces redundant.
   for (const config of Object.values(ALERT_CONFIGS)) {
     assert.ok(config.alertLabels.includes("routine-state"), `${config.name} lookup label`);
   }
@@ -705,6 +731,16 @@ test("runDeployAlert files the Vercel alert under the Vercel title", async () =>
   assert.ok(created.body.labels.includes("routine-state"));
   assert.ok(created.body.labels.includes("P2"));
   assert.match(summary, /Deploy Vercel staging/);
+
+  // The BODY too, not just the title. `raiseAlert` passes `config.alertTitle`
+  // to the library directly but builds the body through a closure, so those two
+  // can disagree: dropping `config` from the closure yields an issue titled
+  // "Deploy Vercel staging is failing…" whose body opens "## Deploy API is
+  // failing" and points at deploy-api.yml. Asserting the title alone did not
+  // catch that.
+  assert.match(created.body.body, /## Deploy Vercel staging is failing/);
+  assert.match(created.body.body, /deploy-vercel-staging\.yml/);
+  assert.doesNotMatch(created.body.body, /deploy-api\.yml/);
 });
 
 test("a recovered Vercel deploy closes only the Vercel alert", async () => {
@@ -738,4 +774,196 @@ test("a recovered Vercel deploy closes only the Vercel alert", async () => {
   // regression the shared title check above exists to prevent.
   const patched = calls.filter((call) => call.method === "PATCH").map((call) => call.path);
   assert.deepEqual(patched, ["/repos/o/r/issues/950"]);
+});
+
+test("a gateless config escalates 'nothing ran' to a failure, not a benign no-op", async () => {
+  // The regression: `needs: [deploy]` does not stop an always() job when its
+  // dependency is skipped. If the two `if:` blocks ever drift, every merge
+  // deploys nothing to staging while the run stays green — and the only signal
+  // would be an annotation on a `workflow_run` page, which lands on no commit
+  // and no PR. That is the ADR-21 frozen-staging failure verbatim, so it has to
+  // raise a real alert.
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const jobResults = readJobResults({ deploy: { result: "skipped" } }, config);
+  const { outcome, failed } = classifyDeployOutcome({ jobResults, config });
+
+  assert.equal(outcome, "failed");
+  assert.deepEqual(failed, ["deploy"]);
+
+  const { fetchImpl, calls } = makeFetchStub({ issues: [] });
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: { deploy: { result: "skipped" } },
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+    config,
+  });
+  assert.equal(result.alert.action, "created");
+  const created = calls.find((c) => c.method === "POST" && c.path === "/repos/o/r/issues");
+  assert.equal(created.body.title, DEPLOY_VERCEL_STAGING_CONFIG.alertTitle);
+});
+
+test("the gated config keeps a no-op benign, and never closes an open alert", async () => {
+  // The other half of the same switch. 46 of the 90 runs in #763 were
+  // green-because-empty; treating those as failures would have alerted on every
+  // docs-only push, and treating them as recoveries would have closed a live
+  // outage's alert. Both directions must stay wrong-proof.
+  assert.equal(DEPLOY_API_CONFIG.noOpIsUnexpected, false);
+  const { outcome } = classifyDeployOutcome({ jobResults: readJobResults(noOpNeeds()) });
+  assert.equal(outcome, "no-op");
+
+  const { fetchImpl, calls } = makeFetchStub({ issues: [OPEN_ALERT] });
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: noOpNeeds(),
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+  });
+  assert.equal(result.alert.action, "none");
+  assert.deepEqual(
+    calls.filter((c) => c.method !== "GET"),
+    [],
+    "a no-op must write nothing at all",
+  );
+});
+
+test("a SECOND Vercel failure comments as Vercel, not as Deploy API", async () => {
+  // The gap this closes: `config` is threaded into raiseAlert's buildCommentBody
+  // closure, and every other test here stubs `issues: []` — which only ever
+  // reaches the CREATE path. Deleting `config` from that closure left all tests
+  // green while, in production, the second and every later Vercel failure would
+  // comment "**Deploy API failed again.**" onto the Vercel alert issue: the
+  // wrong watchdog named in the wrong incident thread.
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const openVercelAlert = { number: 950, state: "open", title: config.alertTitle };
+  const { fetchImpl, calls } = makeFetchStub({ issues: [openVercelAlert] });
+
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: vercelFailedNeeds(),
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+    config,
+  });
+
+  assert.equal(result.alert.action, "commented");
+  const comment = calls.find(
+    (c) => c.method === "POST" && c.path === "/repos/o/r/issues/950/comments",
+  );
+  assert.match(comment.body.body, /\*\*Deploy Vercel staging failed again\.\*\*/);
+  assert.doesNotMatch(comment.body.body, /Deploy API/);
+});
+
+test("a reopened Vercel alert names Vercel in its reopen comment", async () => {
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const closedVercelAlert = { number: 950, state: "closed", title: config.alertTitle };
+  const { fetchImpl, calls } = makeFetchStub({ issues: [closedVercelAlert] });
+
+  const result = await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: vercelFailedNeeds(),
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+    config,
+  });
+
+  assert.equal(result.alert.action, "reopened");
+  const comment = calls.find(
+    (c) => c.method === "POST" && c.path === "/repos/o/r/issues/950/comments",
+  );
+  assert.match(comment.body.body, /\*\*Deploy Vercel staging is failing again\*\* — reopening\./);
+  assert.doesNotMatch(comment.body.body, /Deploy API/);
+});
+
+test("the Vercel recovery comment names Vercel, not Deploy API", async () => {
+  // Same hole on the resolve path: `a recovered Vercel deploy closes only the
+  // Vercel alert` asserts which issue was PATCHed but never reads the comment,
+  // so dropping `config` from buildRecoveryBody was invisible.
+  const config = DEPLOY_VERCEL_STAGING_CONFIG;
+  const openVercelAlert = { number: 950, state: "open", title: config.alertTitle };
+  const { fetchImpl, calls } = makeFetchStub({ issues: [openVercelAlert] });
+
+  await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs: vercelDeployedNeeds(),
+    runUrl: "https://example.test/run/1",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl,
+    writeSummary: () => {},
+    logger: silentLogger,
+    config,
+  });
+
+  const comment = calls.find(
+    (c) => c.method === "POST" && c.path === "/repos/o/r/issues/950/comments",
+  );
+  assert.match(comment.body.body, /\*\*Deploy Vercel staging recovered\.\*\* Closing\./);
+  assert.doesNotMatch(comment.body.body, /Deploy API/);
+});
+
+// ── Every caller names itself ───────────────────────────────────────────────
+
+test("every workflow running deploy-alert.mjs sets a known ALERT_CONFIG", () => {
+  // `main()` calls requireEnv("ALERT_CONFIG"), so a workflow that omits it
+  // fails at deploy time — loud, but only once a deploy actually runs. This
+  // catches it in CI instead, and covers workflows added later: it discovers
+  // callers by scanning, rather than listing the two that exist today.
+  const workflowDir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "..",
+    ".github",
+    "workflows",
+  );
+
+  const callers = readdirSync(workflowDir)
+    .filter((name) => name.endsWith(".yml"))
+    .map((name) => ({ name, text: readFileSync(join(workflowDir, name), "utf8") }))
+    .filter(({ text }) =>
+      text.split("\n").some((line) => !/^\s*#/.test(line) && line.includes("deploy-alert.mjs")),
+    );
+
+  // Guards the scan itself: a path typo would make the loop below vacuous.
+  assert.deepEqual(
+    callers.map((c) => c.name).sort(),
+    ["deploy-api.yml", "deploy-vercel-staging.yml"],
+    "expected exactly the two known callers — add the new one to this list deliberately",
+  );
+
+  for (const { name, text } of callers) {
+    const match = text.match(/^\s*ALERT_CONFIG:\s*(\S+)\s*$/m);
+    assert.ok(match, `${name} runs deploy-alert.mjs but sets no ALERT_CONFIG`);
+    assert.ok(
+      Object.hasOwn(ALERT_CONFIGS, match[1]),
+      `${name} sets ALERT_CONFIG: ${match[1]}, which is not a known configuration`,
+    );
+  }
+
+  // And the two must not both claim the same one, which would point two
+  // workflows at a single alert issue.
+  const configured = callers.map(({ text }) => text.match(/^\s*ALERT_CONFIG:\s*(\S+)\s*$/m)[1]);
+  assert.equal(new Set(configured).size, configured.length, "two workflows share an ALERT_CONFIG");
 });

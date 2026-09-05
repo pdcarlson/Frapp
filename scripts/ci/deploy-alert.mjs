@@ -49,8 +49,8 @@
 //   GITHUB_TOKEN       — required (issues: write)
 //   GITHUB_REPOSITORY  — required, owner/repo
 //   DEPLOY_NEEDS       — required, `toJSON(needs)` from the workflow
-//   ALERT_CONFIG       — which ALERT_CONFIGS entry to use; defaults to
-//                        "deploy-api" so the original call site is unchanged
+//   ALERT_CONFIG       — required, which ALERT_CONFIGS entry to use. There is
+//                        no default: every call site names itself
 //   RUN_URL            — required, html_url of this run
 //   HEAD_BRANCH        — the deployed ref (always `main` since #1340)
 //   HEAD_SHA           — the deployed commit
@@ -108,6 +108,12 @@ export const DEPLOY_API_CONFIG = {
   alertTitle: "Deploy API is failing — pushes are not reaching the environment",
   alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"],
   noOpReason: "the changed-path gate skipped every migrate and deploy job",
+  // Explicit: a no-op IS a legitimate outcome here. `check-changes` skipping
+  // the deploy jobs on a docs-only push is the gate doing its job, and 46 of
+  // the 90 runs in #763 were exactly that. It must stay reported-but-benign,
+  // and in particular must never close an open alert — skipping every job
+  // proves nothing about whether deploys work.
+  noOpIsUnexpected: false,
   noOpNote:
     "The changed-path gate (`check-changes`) found no changes under `apps/api/`, " +
     "`packages/validation/`, `packages/typescript-config/`, or `supabase/migrations/`, " +
@@ -147,10 +153,14 @@ export const DEPLOY_VERCEL_STAGING_CONFIG = {
     "Deploy Vercel staging is failing — web and landing are not reaching staging",
   alertLabels: [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P2"],
   noOpReason: "no deploy job ran",
-  // Unreachable in practice: the `deploy-outcome` job carries the same `if:`
-  // as the `deploy` job, so whenever it runs, `deploy` ran too. Kept honest
-  // rather than omitted — a config that cannot describe its own no-op would
-  // print "undefined" if that assumption ever stopped holding.
+  // This workflow has no path gate, so "nothing ran" is never a legitimate
+  // outcome: `deploy-outcome` carries the same `if:` as `deploy`, so whenever
+  // this job runs, `deploy` should have run too. Reaching a no-op means those
+  // two have drifted apart and every merge is now silently deploying nothing —
+  // the ADR-21 frozen-staging failure verbatim. So it is ESCALATED to a failure
+  // rather than annotated (see classifyDeployOutcome): an annotation on a
+  // `workflow_run` run page is exactly as invisible as the gap this closes.
+  noOpIsUnexpected: true,
   noOpNote:
     "No deploy job ran, so nothing was uploaded to Vercel. **A green run of this shape is not " +
     "evidence that deploys work.** This is not expected for this workflow — its `deploy-outcome` " +
@@ -173,17 +183,36 @@ export const ALERT_CONFIGS = {
   [DEPLOY_VERCEL_STAGING_CONFIG.name]: DEPLOY_VERCEL_STAGING_CONFIG,
 };
 
+// The default for the pure functions below, so a test or a caller reasoning
+// about the original watchdog need not thread a config through every call. It
+// is deliberately NOT a fallback for the CLI — see `resolveAlertConfig`.
 export const DEFAULT_ALERT_CONFIG = DEPLOY_API_CONFIG;
 
-/** Throws on an unknown name. A mis-wired workflow must be loud, not silent. */
+/**
+ * Throws on a missing OR unknown name. A mis-wired workflow must be loud.
+ *
+ * An ABSENT name throws for the same reason an unknown one does, and this is
+ * the more likely mistake: a third deploy workflow copying a `deploy-outcome`
+ * block and dropping the `ALERT_CONFIG:` line would otherwise silently resolve
+ * to Deploy API, find none of its job names in `needs`, read them all as
+ * "skipped", and report a permanent no-op while looking correctly wired. Worse,
+ * a workflow that happens to own a job called `deploy-staging` would reopen and
+ * comment on the live P1 Deploy API alert from an unrelated failure. Every
+ * call site names itself; there is no default.
+ *
+ * `Object.hasOwn` rather than a truthiness check on the lookup: a bare object
+ * literal inherits `constructor`, `toString` and friends, so `ALERT_CONFIG:
+ * toString` would otherwise pass the guard and die later inside
+ * `alertJobNames` without ever printing the known-configurations list.
+ */
 export function resolveAlertConfig(name) {
-  const config = ALERT_CONFIGS[name ?? DEFAULT_ALERT_CONFIG.name];
-  if (!config) {
+  if (!name || !Object.hasOwn(ALERT_CONFIGS, name)) {
     throw new Error(
-      `Unknown ALERT_CONFIG "${name}". Known configurations: ${Object.keys(ALERT_CONFIGS).join(", ")}.`,
+      `Unknown or missing ALERT_CONFIG ${JSON.stringify(name ?? null)}. ` +
+        `Known configurations: ${Object.keys(ALERT_CONFIGS).join(", ")}.`,
     );
   }
-  return config;
+  return ALERT_CONFIGS[name];
 }
 
 /**
@@ -195,14 +224,17 @@ export function alertJobNames(config = DEFAULT_ALERT_CONFIG) {
   return config.gateJob ? [config.gateJob, ...config.deployJobs] : [...config.deployJobs];
 }
 
-// Back-compat named exports for the Deploy API configuration. These are the
-// values this module exported before it was parameterised; keeping them is what
-// lets `deploy-alert.test.mjs` stay byte-identical across #1674, which is the
-// evidence that the Deploy API alert's behaviour did not change.
+// The Deploy API alert's identity, re-exported under the names this module used
+// before #1674 parameterised it. `deploy-alert.test.mjs` imports both to assert
+// that the two watchdogs never share an alert title — a shared one would let a
+// recovered Deploy API run close a live Vercel outage's alert.
+//
+// `GATE_JOB_NAME` and `DEPLOY_JOB_NAMES` were re-exported here too and are
+// gone: nothing imported them, and a dead export that looks like an API is how
+// a caller ends up reading the Deploy API's job names for a different workflow.
+// Read `DEPLOY_API_CONFIG.gateJob` / `.deployJobs` instead.
 export const ALERT_ISSUE_TITLE = DEPLOY_API_CONFIG.alertTitle;
 export const ALERT_ISSUE_LABELS = DEPLOY_API_CONFIG.alertLabels;
-export const GATE_JOB_NAME = DEPLOY_API_CONFIG.gateJob;
-export const DEPLOY_JOB_NAMES = DEPLOY_API_CONFIG.deployJobs;
 
 // Results that mean the job did not do its work. `cancelled` and `timed_out`
 // are included deliberately: a cancelled deploy is not a deploy, and treating it
@@ -234,6 +266,18 @@ export function classifyDeployOutcome({ jobResults, config = DEFAULT_ALERT_CONFI
 
   if (failed.length > 0) return { outcome: "failed", failed, deployed };
   if (deployed.length > 0) return { outcome: "deployed", failed, deployed };
+
+  // A no-op is benign for a config with a path gate — declining to deploy is
+  // what the gate is FOR. For a config without one it is a defect: nothing ran
+  // that could have, on a run that was eligible to deploy. Escalating it to
+  // `failed` is what makes it visible, because the alternative (an annotation)
+  // lands on a `workflow_run` run page — no commit, no PR — which is the exact
+  // invisibility this script exists to end. It self-closes on the next
+  // successful deploy like any other alert.
+  if (config.noOpIsUnexpected) {
+    return { outcome: "failed", failed: [...config.deployJobs], deployed };
+  }
+
   return { outcome: "no-op", failed, deployed };
 }
 
@@ -597,6 +641,16 @@ export async function runDeployAlert({
     });
     if (alert.action === "closed") {
       logger.log?.(`[deploy-alert] closed alert issue(s): ${alert.closed.join(", ")}`);
+    } else if (alert.action === "failed") {
+      // `lib/alert-issue.mjs` added this action precisely so a failed close
+      // could not be mistaken for a successful one, and dropping it here put
+      // the mistake back: the alert stays open claiming the deploy path is
+      // broken while it is healthy, and every later successful run posts
+      // another "recovered — Closing" comment on it. That is unbounded for a
+      // config with no path gate, where every merge reaches this branch.
+      logger.log?.(
+        "::warning::[deploy-alert] the deploy recovered but the alert issue could not be closed — it is still open and will re-post on the next run",
+      );
     }
     return { outcome, failed, deployed, alert };
   }
@@ -614,11 +668,11 @@ async function main() {
   const token = requireEnv("GITHUB_TOKEN");
   const repo = requireEnv("GITHUB_REPOSITORY");
   const needs = JSON.parse(requireEnv("DEPLOY_NEEDS"));
-  // Throws on an unknown name. This is the one place a mis-wired workflow can
-  // be caught, so it is deliberately the one place that is strict: falling back
-  // to the default would make a typo'd ALERT_CONFIG write the Deploy API
-  // alert's issue from the wrong workflow's job results.
-  const config = resolveAlertConfig(process.env.ALERT_CONFIG);
+  // Required, not optional. This is the one place a mis-wired workflow can be
+  // caught, so it is deliberately strict in both directions: a typo'd OR an
+  // absent ALERT_CONFIG would otherwise write the Deploy API alert's issue from
+  // the wrong workflow's job results.
+  const config = resolveAlertConfig(requireEnv("ALERT_CONFIG"));
   await runDeployAlert({
     token,
     repo,

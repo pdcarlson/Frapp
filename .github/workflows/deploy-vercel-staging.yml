@@ -186,7 +186,19 @@ jobs:
     # "no-op" outcome unreachable for this configuration.
     #
     # Keep these three conditions in sync with the `deploy` job above. They are
-    # duplicated because GitHub Actions has no way to share a job-level `if:`.
+    # duplicated because GitHub Actions has no way to share a job-level `if:`,
+    # and `deploy-vercel-staging-workflow.test.mjs` fails if they drift.
+    #
+    # `always()` rather than `!cancelled()`, deliberately: a CANCELLED deploy
+    # does raise the alert, because `FAILED_RESULTS` in deploy-alert.mjs counts
+    # `cancelled` as a failure on purpose ("a cancelled deploy is not a deploy,
+    # and treating it as benign is precisely the green-history failure this
+    # script exists to end"). The visible cost is specific to this workflow:
+    # `cancel-in-progress: false` means merges QUEUE, so cancelling a
+    # superseded queued run by hand is routine, and it will file a P2. That
+    # alert self-closes as soon as the run behind it deploys, so the window is
+    # minutes — accepted rather than silenced, since the alternative suppresses
+    # a real cancelled-mid-deploy case that leaves the two hosts split.
     if: |
       always() &&
       github.event.workflow_run.conclusion == 'success' &&
