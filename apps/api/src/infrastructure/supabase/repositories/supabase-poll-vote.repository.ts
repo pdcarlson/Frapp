@@ -34,8 +34,18 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
     return this.findByMessages([messageId]);
   }
 
-  /** Internal batch read backing {@link findByMessage}; not part of the port. */
-  private async findByMessages(messageIds: string[]): Promise<PollVote[]> {
+  /**
+   * Batch read backing {@link findByMessage}. Deliberately NOT on
+   * `IPollVoteRepository` — nothing outside this class calls it, and the port
+   * should not carry a method no consumer needs.
+   *
+   * Not `private`, though: its paging is the behaviour #1724 fixed, and this
+   * file's own spec pins that fix by calling it directly — including the
+   * empty-input short circuit, which `findByMessage` can never reach because it
+   * always passes exactly one id. Narrowing the port is what that cut was for;
+   * hiding the method from its own test only cost the coverage.
+   */
+  async findByMessages(messageIds: string[]): Promise<PollVote[]> {
     if (messageIds.length === 0) {
       return [];
     }
