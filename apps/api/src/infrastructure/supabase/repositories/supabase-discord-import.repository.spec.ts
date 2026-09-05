@@ -229,6 +229,73 @@ describe('SupabaseDiscordImportRepository — tenant scope', () => {
  * that it turns the function's raised ceiling into the domain error rather than
  * letting a raw PostgREST error reach a caller that would report it as a 500.
  */
+describe('SupabaseDiscordImportRepository — findFiles paging', () => {
+  /** Mirrors `FILE_PAGE_SIZE` in the repository under test. */
+  const PAGE_SIZE = 500;
+
+  function repoWithPages(pages: Array<{ data: unknown[] | null }>) {
+    const ranges: Array<[number, number]> = [];
+    let index = 0;
+    const builder: Record<string, unknown> = {};
+    for (const method of ['select', 'eq', 'order']) {
+      builder[method] = jest.fn(() => builder);
+    }
+    builder.range = jest.fn((from: number, to: number) => {
+      ranges.push([from, to]);
+      return Promise.resolve(pages[index++] ?? { data: [], error: null });
+    });
+    const client = { from: jest.fn(() => builder) };
+    const repo = new SupabaseDiscordImportRepository(
+      client as unknown as ConstructorParameters<
+        typeof SupabaseDiscordImportRepository
+      >[0],
+    );
+    return { repo, ranges };
+  }
+
+  const fileRows = (count: number) =>
+    Array.from({ length: count }, (_, i) => ({ id: `file-${i}` }));
+
+  // #1628. On the UPLOAD path a dropped manifest row is never re-created, so a
+  // short page read as end-of-data means `resolveAsset` returns null and the
+  // message lands with an under-counted `attachment_count` — on an import the
+  // admin was told succeeded.
+  it('does not end the read on a short-but-non-empty page', async () => {
+    const { repo, ranges } = repoWithPages([
+      // Asked for 500, capped at 150 by the server.
+      { data: fileRows(150) },
+      { data: fileRows(150) },
+      { data: fileRows(20) },
+      { data: [] },
+    ]);
+
+    const files = await repo.findFiles(IMPORT_A, CHAPTER_A);
+
+    expect(files).toHaveLength(320);
+    expect(ranges).toEqual([
+      [0, PAGE_SIZE - 1],
+      [150, 150 + PAGE_SIZE - 1],
+      [300, 300 + PAGE_SIZE - 1],
+      [320, 320 + PAGE_SIZE - 1],
+    ]);
+  });
+
+  it('confirms the end with one empty request after a full page', async () => {
+    const { repo, ranges } = repoWithPages([
+      { data: fileRows(PAGE_SIZE) },
+      { data: [] },
+    ]);
+
+    const files = await repo.findFiles(IMPORT_A, CHAPTER_A);
+
+    expect(files).toHaveLength(PAGE_SIZE);
+    expect(ranges).toEqual([
+      [0, PAGE_SIZE - 1],
+      [PAGE_SIZE, PAGE_SIZE * 2 - 1],
+    ]);
+  });
+});
+
 describe('SupabaseDiscordImportRepository — registerFiles', () => {
   const ROW = {
     import_id: IMPORT_A,

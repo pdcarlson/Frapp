@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import { fetchAllPages } from '../supabase.utils';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   ArchiveQuotaScope,
@@ -292,25 +293,23 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     // `resolveAsset` returns null, the attachment is silently absent, and the
     // message lands with an under-counted `attachment_count` on an import the
     // admin was told succeeded. That is the failure this paging removes.
-    const all: DiscordImportFile[] = [];
-    for (let from = 0; ; from += FILE_PAGE_SIZE) {
-      const { data, error } = await this.supabase
-        .from('discord_import_files')
-        .select('*')
-        .eq('import_id', importId)
-        .eq('chapter_id', chapterId)
-        .order('part_index', { ascending: true })
-        // The `id` tiebreaker is load-bearing, not cosmetic. `part_index` is
-        // null on every media row, so ordering by it alone leaves one enormous
-        // tie — and `.range()` over an unstable order can serve a row on two
-        // pages or on none, which is the very failure this loop exists to fix.
-        .order('id', { ascending: true })
-        .range(from, from + FILE_PAGE_SIZE - 1);
-      if (error) throw error;
-      const page = data ?? [];
-      all.push(...page);
-      if (page.length < FILE_PAGE_SIZE) return all;
-    }
+    return fetchAllPages<DiscordImportFile>(
+      (from, to) =>
+        this.supabase
+          .from('discord_import_files')
+          .select('*')
+          .eq('import_id', importId)
+          .eq('chapter_id', chapterId)
+          .order('part_index', { ascending: true })
+          // The `id` tiebreaker is load-bearing, not cosmetic. `part_index` is
+          // null on every media row, so ordering by it alone leaves one
+          // enormous tie — and `.range()` over an unstable order can serve a
+          // row on two pages or on none, which is the very failure this paging
+          // exists to fix.
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: FILE_PAGE_SIZE },
+    );
   }
 
   async markFilesUploaded(
