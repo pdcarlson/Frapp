@@ -302,9 +302,9 @@ it lands with the surface it measures, not before.
    all three carries all three); DM the officer sections to permission-holders; or accept a
    two-signal pulse. This decision should be made before #821 is promoted.
 2. **Cadence.** Weekly is proposed. Daily is too noisy for a digest; monthly is too slow to act on.
-3. **Surface parity.** Mobile has no chat timeline at all today (see #253) — `apps/mobile` reads no
-   `chat_messages` anywhere. So mobile parity is not "add a renderer"; it is blocked on the mobile
-   chat surface existing. Ship web-only first, or hold?
+3. **Surface parity.** The mobile chat surface exists — `(tabs)/chat-thread.tsx` is a live thread over
+   `useChatChannel` — so mobile pulse parity is a renderer question, not a blocked one. Ship web-only
+   first, or hold?
 4. **Is a dismissal private?** `chat_message_actions` makes every dismissal readable by the whole
    channel (see above), which conflicts with how bookmarks are treated. Options: accept it as public
    (dismissing a digest is low-stakes); add a private store; or drop dismissal from v1 and rely on
