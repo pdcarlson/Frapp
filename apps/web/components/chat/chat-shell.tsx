@@ -46,6 +46,7 @@ import {
   type MessageTimelineHandle,
 } from "./message-timeline";
 import { Composer } from "./composer";
+import { DELETED_MESSAGE_PLACEHOLDER } from "./message-placeholders";
 import { replyPreviewText } from "./reply-quote";
 import { ThreadPanel } from "./thread-panel";
 import { PinsPopover } from "./pins-popover";
@@ -449,7 +450,7 @@ export function ChatShell({
           title: "Delete this message?",
           description:
             "This can't be undone. Everyone in the channel will see " +
-            '"[message deleted]" in its place.',
+            `"${DELETED_MESSAGE_PLACEHOLDER}" in its place.`,
           confirmLabel: "Delete message",
           tone: "destructive",
         });

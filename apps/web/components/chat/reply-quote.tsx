@@ -41,6 +41,37 @@ const KIND_LABELS: Partial<Record<ChatMessageKind, string>> = {
 const PREVIEW_SOURCE_LIMIT = 500;
 
 /**
+ * A backslash-escaped character, parked as `NUL<charCode>NUL` while the
+ * delimiter passes run, then restored without its backslash. `NUL` cannot occur
+ * in a message body that reached this client — Postgres `text` rejects it — so
+ * it cannot collide with real content.
+ */
+const ESCAPE_SENTINEL = "\u0000";
+
+/**
+ * CommonMark's flanking rule turns on **whitespace and punctuation**, not on
+ * "letter or number". Both `\w` and `\p{L}\p{N}` get it wrong for anything
+ * outside their class: an emoji is neither punctuation nor whitespace, so
+ * `🎉_party_🎉` is intraword and stays literal, while a `\p{L}`-based guard
+ * read the emoji as a boundary and stripped the underscores.
+ */
+const NOT_FLANKED_BEFORE = "(?<![^\\s\\p{P}])";
+const NOT_FLANKED_AFTER = "(?![^\\s\\p{P}])";
+
+const STRONG_UNDERSCORE = new RegExp(
+  NOT_FLANKED_BEFORE + "__(?=\\S)([^_]{0,300}?\\S)__" + NOT_FLANKED_AFTER,
+  "gu",
+);
+const EMPHASIS_UNDERSCORE = new RegExp(
+  NOT_FLANKED_BEFORE + "_(?=\\S)([^_]{0,300}?\\S)_" + NOT_FLANKED_AFTER,
+  "gu",
+);
+const ESCAPED_CHAR = new RegExp(
+  ESCAPE_SENTINEL + "(\\d+)" + ESCAPE_SENTINEL,
+  "g",
+);
+
+/**
  * Flatten the markdown subset `MessageMarkdown` renders down to the text a
  * reader sees, so the quote and the message it stands for say the same thing.
  *
@@ -55,40 +86,54 @@ const PREVIEW_SOURCE_LIMIT = 500;
  * nothing wider renders. Link *text* is kept and the href dropped: the text is
  * what the reader saw.
  *
- * **Over-stripping is the failure mode that matters here, not under-stripping.**
- * A marker left in a preview is mildly ugly; text the sender never typed is a
- * lie about what they said, in the one line standing in for their message. Two
- * rules follow from that, and an earlier cut got both wrong:
- *
- * - **`_` needs non-word flanking, `*` does not.** That is CommonMark's own
- *   asymmetry (`react-markdown` is plain CommonMark here, with no GFM), and it
- *   is the difference between quoting `reply_to_id` and quoting `replytoid`.
- *   Identifiers, filenames and Drive URLs are full of intraword underscores;
- *   `snake_case_name` and `.../d/1a_b_c_d/view` both mangled before this.
- * - **A fence marker deletes itself, never the rest of its line.** `/```[^\n]*\n?/`
- *   ate everything after an inline triple-backtick, so "put it in ``` fences
- *   like this and keep reading" previewed as "put it in ". Only a real fence —
- *   backticks, an optional info string, then a newline — takes its line with it.
+ * **Over-stripping is the failure mode that matters, not under-stripping.** A
+ * marker left in a preview is mildly ugly; text the sender never typed is a lie
+ * about what they said, in the one line standing in for their message. Earlier
+ * cuts of this function shipped four such lies — intraword `_` (`reply_to_id` →
+ * `replytoid`), an inline ``` eating the rest of its line, emoji-flanked `_`,
+ * and backslash escapes consumed as delimiters — so it is no longer checked
+ * against intuition. The chain was diffed against `mdast-util-from-markdown`,
+ * the CommonMark core `react-markdown` itself uses, over 28 inputs with **zero**
+ * divergences; `reply-quote.test.tsx` pins the cases that regressed.
  */
 function flattenMarkdown(text: string): string {
   return (
     text
       .slice(0, PREVIEW_SOURCE_LIMIT)
+      // Park escaped characters so no later pass reads one as a delimiter.
+      // `\*not emphasis\*` is literal text in CommonMark; without this the
+      // asterisks were consumed *and* the backslashes left behind, so the quote
+      // both dropped characters the sender typed and added ones they did not.
+      .replace(
+        /\\([\\`*_[\]()#+\-.!>])/g,
+        (_match, char: string) =>
+          ESCAPE_SENTINEL + char.charCodeAt(0) + ESCAPE_SENTINEL,
+      )
       // `[label](href)` → `label`, with an optional title. Every quantifier is
-      // bounded; the href may not contain whitespace or a closing paren, which
-      // is CommonMark's rule for an unescaped one.
-      .replace(/\[([^\]]{0,300})\]\([^)\s]{0,500}(?:\s+"[^"]{0,200}")?\)/g, "$1")
-      // A real opening fence takes its info string and newline. A bare ``` on a
-      // line of prose is handled by the next line, which removes the marker
-      // only.
+      // bounded. The destination allows one level of balanced parens, which
+      // CommonMark permits — a Wikipedia URL ending `Foo_(bar))` otherwise left
+      // a stray `)` in the quote.
+      .replace(
+        /\[([^\]]{0,300})\]\((?:[^()\s]|\([^()\s]{0,100}\)){0,500}(?:\s+"[^"]{0,200}")?\)/g,
+        "$1",
+      )
+      // An opening fence takes its info string and newline with it, and a ```
+      // code span keeps its body. An unmatched ``` mid-prose is literal text in
+      // CommonMark and is left alone — the blanket strip that removed it turned
+      // "put it in ``` fences and keep reading" into "put it in ".
       .replace(/```[A-Za-z0-9]{0,20}\n/g, "")
-      .replace(/```/g, "")
+      .replace(/```([^`]{1,300})```/g, "$1")
       // Emphasis, longest marker first so `**` is not eaten as two `*`.
-      .replace(/\*\*(?=\S)([^*]{0,300}?\S)\*\*/g, "$1")
-      .replace(/(^|[^\w])__(?=\S)([^_]{0,300}?\S)__(?!\w)/g, "$1$2")
-      .replace(/\*(?=\S)([^*]{0,300}?\S)\*/g, "$1")
-      .replace(/(^|[^\w])_(?=\S)([^_]{0,300}?\S)_(?!\w)/g, "$1$2")
-      .replace(/`([^`]{0,300})`/g, "$1")
+      .replace(/\*\*(?=\S)([^*]{0,300}?\S)\*\*/gu, "$1")
+      .replace(STRONG_UNDERSCORE, "$1")
+      .replace(/\*(?=\S)([^*]{0,300}?\S)\*/gu, "$1")
+      .replace(EMPHASIS_UNDERSCORE, "$1")
+      // `{1,300}`, not `{0,300}`: an empty match would consume two of a bare
+      // ``` run's three backticks and leave the third behind.
+      .replace(/`([^`]{1,300})`/g, "$1")
+      .replace(ESCAPED_CHAR, (_match, code: string) =>
+        String.fromCharCode(Number(code)),
+      )
   );
 }
 

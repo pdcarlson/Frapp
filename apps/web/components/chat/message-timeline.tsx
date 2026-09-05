@@ -284,11 +284,11 @@ export const MessageTimeline = forwardRef<
               onUnreact={onUnreact}
               onReply={onReply}
               onOpenThread={onOpenThread}
-              // `undefined` when this is not a reply at all; `null` when it is
-              // one whose parent is outside the loaded window. `MessageItem`
-              // draws a different thing for each, so the distinction has to
-              // survive the lookup — `Map.get` returning `undefined` for a
-              // missing key is exactly the case that must read as `null` here.
+              // The parent, or `null` when it is outside the loaded window.
+              // `MessageItem` decides whether to draw a quote from
+              // `message.reply_to_id`, not from this prop, so `null` and
+              // `undefined` are equivalent to it — the `?? null` is here to say
+              // "looked up and absent" rather than to drive a branch.
               replyParent={
                 entry.message.reply_to_id
                   ? (byId.get(entry.message.reply_to_id) ?? null)

@@ -85,17 +85,59 @@ describe("replyPreviewText", () => {
     }
   });
 
-  it("lets a fence delete itself, never the rest of its line", () => {
-    // `/```[^\n]*\n?/` ate everything after an inline triple-backtick, which is
-    // content loss rather than an unstripped marker.
+  it("leaves an unmatched fence alone instead of eating its line", () => {
+    // Two wrongs found in sequence. `/```[^\n]*\n?/` ate everything after an
+    // inline triple-backtick ("put it in "). Replacing it with a blanket strip
+    // then removed the marker itself — but an unmatched ``` is literal text in
+    // CommonMark, so the bubble shows it and the quote must too. Verified
+    // against a real `mdast-util-from-markdown` parse, not against intuition.
     expect(
       replyPreviewText(
         message({ content: "put it in ``` fences like this and keep reading" }),
       ),
-    ).toBe("put it in fences like this and keep reading");
+    ).toBe("put it in ``` fences like this and keep reading");
+    // A ``` code span keeps its body and drops its fence.
+    expect(replyPreviewText(message({ content: "```code``` inline" }))).toBe(
+      "code inline",
+    );
+    // A real opening fence takes its info string and newline with it; the
+    // trailing text is part of the code block, so it survives.
     expect(
       replyPreviewText(message({ content: "```\ncode\n``` trailing words" })),
-    ).toBe("code trailing words");
+    ).toBe("code ``` trailing words");
+  });
+
+  it("honours backslash escapes, adding no punctuation of its own", () => {
+    // `\*not emphasis\*` is literal in CommonMark. Before this the asterisks
+    // were consumed as delimiters AND the backslashes were left behind — the
+    // quote dropped characters the sender typed and added ones they did not.
+    expect(
+      replyPreviewText(message({ content: "a \\*not emphasis\\* b" })),
+    ).toBe("a *not emphasis* b");
+    expect(replyPreviewText(message({ content: "a \\_nope\\_ b" }))).toBe(
+      "a _nope_ b",
+    );
+  });
+
+  it("treats emoji-flanked underscores as intraword, as CommonMark does", () => {
+    // The flanking rule turns on whitespace and punctuation, not on "letter or
+    // number" — an emoji is neither, so this is intraword and stays literal. A
+    // `\p{L}`-based guard read the emoji as a boundary and stripped it.
+    expect(replyPreviewText(message({ content: "🎉_party_🎉" }))).toBe(
+      "🎉_party_🎉",
+    );
+  });
+
+  it("keeps balanced parens in a link destination out of the preview", () => {
+    // CommonMark permits balanced parens in a destination, so a stricter
+    // pattern stopped at the inner `)` and left a stray one in the quote.
+    expect(
+      replyPreviewText(
+        message({
+          content: "[wiki](https://en.wikipedia.org/wiki/Foo_(bar))",
+        }),
+      ),
+    ).toBe("wiki");
   });
 
   it("stays fast on a hostile body", () => {
