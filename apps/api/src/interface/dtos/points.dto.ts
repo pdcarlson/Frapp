@@ -23,6 +23,18 @@ import {
   POINTS_REASON_MAX_LENGTH,
 } from '@repo/validation';
 
+// Declared above its first use so `AdjustPointsResponseDto`'s decorator can read
+// it — decorators evaluate at class-definition time, so a `const` declared
+// further down the file would be in the temporal dead zone.
+const TRANSACTION_CATEGORIES = [
+  'ATTENDANCE',
+  'ACADEMIC',
+  'SERVICE',
+  'FINE',
+  'MANUAL',
+  'STUDY',
+] as const;
+
 export class AdjustPointsDto {
   // UUID-validated for the reason UpdateMemberRolesDto.custom_role_ids is: the
   // ledger insert puts this straight into a uuid FK, so a malformed id fails in
@@ -73,6 +85,56 @@ export class AdjustPointsDto {
   client_message_id?: string;
 }
 
+/**
+ * Response contract for `POST /v1/points/adjust`.
+ *
+ * This route previously declared no response schema, which openapi-typescript
+ * renders as `content?: never` — so `data` reached the SDK typed `never` and no
+ * client could read a response field without an unchecked cast. Declaring it is
+ * what lets `/points` see `card_posted` (#544); the transaction fields are
+ * flattened at the top level exactly as the route already returned them, so
+ * this documents the existing body rather than changing it.
+ */
+export class AdjustPointsResponseDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  chapter_id: string;
+
+  /** The member the points were awarded to or deducted from. */
+  @ApiProperty({ format: 'uuid' })
+  user_id: string;
+
+  /** Signed: positive for a grant, negative for a fine. */
+  @ApiProperty()
+  amount: number;
+
+  @ApiProperty({ enum: TRANSACTION_CATEGORIES })
+  category: (typeof TRANSACTION_CATEGORIES)[number];
+
+  /** The adjustment reason, stored as the ledger row's description. */
+  @ApiProperty()
+  description: string;
+
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: true,
+    description:
+      'Adjustment metadata — `adjusted_by`, `reason`, and `flagged` when the amount met the chapter anomaly threshold.',
+  })
+  metadata: Record<string, unknown>;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether the accompanying chat card was posted. Present ONLY when `channel_id` + `client_message_id` were supplied. `false` means the ledger row committed but the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — the caller should drop it and warn. Absent for dashboard adjustments, which post no card.',
+  })
+  card_posted?: boolean;
+}
+
 export class PointsWindowQueryDto {
   @ApiPropertyOptional({ enum: [...POINTS_WINDOWS], default: 'all' })
   @IsOptional()
@@ -88,15 +150,6 @@ export class PointsWindowQueryDto {
   @IsUUID()
   semester_archive_id?: string;
 }
-
-const TRANSACTION_CATEGORIES = [
-  'ATTENDANCE',
-  'ACADEMIC',
-  'SERVICE',
-  'FINE',
-  'MANUAL',
-  'STUDY',
-] as const;
 
 export class ListPointTransactionsQueryDto {
   @ApiPropertyOptional({

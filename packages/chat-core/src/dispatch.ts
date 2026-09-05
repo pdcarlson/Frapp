@@ -29,6 +29,14 @@ import { randomClientId } from "./random-id";
 export interface DispatchResult {
   ok: boolean;
   error?: string;
+  /**
+   * Set when the command's side effect committed but something non-essential
+   * around it did not — today, a heavy command whose ledger row landed while its
+   * chat card failed to post (#544). Distinct from `error`: the write happened,
+   * so the caller must NOT present this as a failure or invite a retry that
+   * would duplicate it. Callers surface it as a non-destructive notice.
+   */
+  warning?: string;
 }
 
 /**
@@ -210,8 +218,9 @@ async function dispatchPoints(
     content: `${parsed.value.action === "grant" ? "Granting" : "Deducting"} ${parsed.value.amount} points…`,
   });
 
+  let cardPosted: boolean | undefined;
   try {
-    const { error } = await ctx.apiClient.POST("/v1/points/adjust", {
+    const { data, error } = await ctx.apiClient.POST("/v1/points/adjust", {
       body: {
         target_user_id: member.user_id,
         amount: signedAmount,
@@ -225,9 +234,29 @@ async function dispatchPoints(
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
       return { ok: false, error: apiErrorMessage(error, "Couldn't adjust points") };
     }
+    cardPosted = data?.card_posted;
   } catch {
     removeLocalPlaceholder(ctx, channelId, clientMessageId);
     return { ok: false, error: "Couldn't reach the points service" };
+  }
+
+  // The ledger row is committed either way — the card is best-effort and is
+  // never rolled back. But the placeholder is reconciled by the Realtime echo of
+  // that card, so when the card did not post the echo never arrives and the
+  // placeholder would sit on "Granting … points…" forever. Drop it ourselves and
+  // say what happened, without implying the grant failed: a retry here would
+  // write a second ledger row (#544).
+  //
+  // Only an explicit `false` counts. `undefined` means the server did not report
+  // an outcome, which is the pre-#544 contract — treat that as success rather
+  // than tearing down a placeholder the echo may still reconcile.
+  if (cardPosted === false) {
+    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    return {
+      ok: true,
+      warning:
+        "Points were recorded, but the chat card couldn't be posted. Check the points ledger to confirm — don't run the command again.",
+    };
   }
 
   // Success: the server posts the `points` card (same client_message_id); the

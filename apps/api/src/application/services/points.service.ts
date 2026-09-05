@@ -31,6 +31,19 @@ import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-r
 // the canonical definition now lives in domain/utils/points-window.
 export type { PointsWindow };
 
+/**
+ * The ledger row, plus whether the chat card that accompanies it was posted.
+ *
+ * `card_posted` is present ONLY when chat context was supplied (`channelId` +
+ * `clientMessageId`), so a dashboard adjustment's response shape is unchanged.
+ * The card stays best-effort — a failed post never rolls the ledger back — but
+ * the caller now learns it failed instead of inferring success from the 2xx and
+ * leaving its optimistic placeholder up forever (#544).
+ */
+export type AdjustPointsResult = PointTransaction & {
+  card_posted?: boolean;
+};
+
 interface AdjustPointsInput {
   chapterId: string;
   targetUserId: string;
@@ -247,7 +260,7 @@ export class PointsService {
 
   private static readonly RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
-  async adjustPoints(input: AdjustPointsInput): Promise<PointTransaction> {
+  async adjustPoints(input: AdjustPointsInput): Promise<AdjustPointsResult> {
     if (!input.reason || input.reason.trim().length === 0) {
       throw new BadRequestException('Reason is required for point adjustments');
     }
@@ -318,9 +331,16 @@ export class PointsService {
     // chat. The card is server-originated (a client cannot forge `kind:"points"`
     // — see ChatService.SERVER_ONLY_KINDS) and best-effort: the ledger row is the
     // source of truth, so a failed post is logged and never rolls the txn back.
+    // The outcome is reported to the caller (`card_posted`) rather than
+    // swallowed: the client renders an optimistic `loading` placeholder keyed on
+    // `clientMessageId` and waits for the Realtime echo of this card to
+    // reconcile it. When the post fails that echo never arrives, so without an
+    // explicit signal the placeholder is permanent and the officer cannot tell
+    // a committed grant from a lost one (#544).
     if (input.channelId && input.clientMessageId) {
       try {
         await this.postPointsCard(input, txn, isFine);
+        return { ...txn, card_posted: true };
       } catch (error) {
         this.logger.warn('Failed to post points card to chat', {
           transactionId: txn.id,
@@ -328,6 +348,7 @@ export class PointsService {
           chapterId: input.chapterId,
           error: error instanceof Error ? error.message : String(error),
         });
+        return { ...txn, card_posted: false };
       }
     }
 

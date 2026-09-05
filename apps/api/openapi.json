@@ -3554,7 +3554,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdjustPointsResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -8793,6 +8800,63 @@
           "amount",
           "category",
           "reason"
+        ]
+      },
+      "AdjustPointsResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "ATTENDANCE",
+              "ACADEMIC",
+              "SERVICE",
+              "FINE",
+              "MANUAL",
+              "STUDY"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Adjustment metadata — `adjusted_by`, `reason`, and `flagged` when the amount met the chapter anomaly threshold."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "card_posted": {
+            "type": "boolean",
+            "description": "Whether the accompanying chat card was posted. Present ONLY when `channel_id` + `client_message_id` were supplied. `false` means the ledger row committed but the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — the caller should drop it and warn. Absent for dashboard adjustments, which post no card."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "user_id",
+          "amount",
+          "category",
+          "description",
+          "metadata",
+          "created_at"
         ]
       },
       "CreateCheckoutDto": {

@@ -81,14 +81,14 @@ interface ComposerProps {
   ) => void | Promise<void>;
   /**
    * Invoked when the user picks a slash command from the palette. Returns a
-   * dispatch result so the composer can toast on failure. The args string is
-   * everything after the command token (already trimmed). The composer
-   * clears its own editor on success.
+   * dispatch result so the composer can toast on failure, or on a partial
+   * success (`warning`). The args string is everything after the command token
+   * (already trimmed). The composer clears its own editor on success.
    */
   onSlashDispatch?: (
     command: SlashCommand,
     args: string,
-  ) => Promise<{ ok: boolean; error?: string }>;
+  ) => Promise<{ ok: boolean; error?: string; warning?: string }>;
   onTyping: () => void;
   isModuleEnabled: (moduleKey: string) => boolean;
   /**
@@ -161,6 +161,37 @@ function buildDocFromPlainText(text: string): JSONContent {
 /** `#` only for an actual channel — a DM's name is a person's. */
 export function composerPlaceholder(channelName: string, isDirect?: boolean) {
   return isDirect ? `Message ${channelName}` : `Message #${channelName}`;
+}
+
+/**
+ * Toast the outcome of a slash dispatch. Shared by the two call sites (typed
+ * `/command` submit and palette pick) so they cannot drift — they previously
+ * held byte-identical failure branches.
+ *
+ * Three outcomes, not two. A `warning` on an `ok` result means the command's
+ * write COMMITTED but something around it did not (a heavy command whose chat
+ * card failed to post — #544). That gets a plain, non-destructive toast: styling
+ * it as a failure would invite a retry that writes a second ledger row.
+ */
+function notifyDispatchOutcome(
+  toast: ReturnType<typeof useToast>["toast"],
+  commandName: string,
+  result: { ok: boolean; error?: string; warning?: string },
+): void {
+  if (!result.ok) {
+    toast({
+      title: `/${commandName} failed`,
+      description: result.error ?? "Couldn't run that command.",
+      variant: "destructive",
+    });
+    return;
+  }
+  if (result.warning) {
+    toast({
+      title: `/${commandName} partly succeeded`,
+      description: result.warning,
+    });
+  }
 }
 
 /**
@@ -354,14 +385,11 @@ export function Composer({
         }
         editor.commands.clearContent(true);
         void (async () => {
-          const result = await onSlashDispatch(command, parsed.args);
-          if (!result.ok) {
-            toast({
-              title: `/${command.name} failed`,
-              description: result.error ?? "Couldn't run that command.",
-              variant: "destructive",
-            });
-          }
+          notifyDispatchOutcome(
+            toast,
+            command.name,
+            await onSlashDispatch(command, parsed.args),
+          );
         })();
         return;
       }
@@ -473,14 +501,11 @@ export function Composer({
       // through the same hot path as `onSend`, so the optimistic card appears
       // immediately and a toast surfaces any parse / authz failure.
       if (editor) editor.commands.clearContent(true);
-      const result = await onSlashDispatch(command, args);
-      if (!result.ok) {
-        toast({
-          title: `/${command.name} failed`,
-          description: result.error ?? "Couldn't run that command.",
-          variant: "destructive",
-        });
-      }
+      notifyDispatchOutcome(
+        toast,
+        command.name,
+        await onSlashDispatch(command, args),
+      );
     },
     [editor, onSlashDispatch, toast],
   );

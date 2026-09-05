@@ -803,8 +803,98 @@ describe('PointsService', () => {
         clientMessageId: 'cmid-1',
       });
 
-      expect(result).toEqual(created);
+      // The ledger row is returned intact — the card is still best-effort and is
+      // never rolled back. What changed (#544) is that the failure is now
+      // REPORTED rather than swallowed.
+      expect(result).toEqual({ ...created, card_posted: false });
       expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    // #544: the client renders an optimistic `loading` placeholder keyed on
+    // `clientMessageId` and waits for the Realtime echo of the card to reconcile
+    // it. A failed post means no echo ever arrives, so the caller has to be told
+    // — otherwise the placeholder is permanent and an officer cannot tell a
+    // committed grant from a lost one.
+    describe('card_posted (#544)', () => {
+      const baseTxn: PointTransaction = {
+        id: 'pt-flag',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: 5,
+        category: 'MANUAL',
+        description: 'great work',
+        metadata: { adjusted_by: 'admin-1', reason: 'great work' },
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+
+      const chatInput = {
+        chapterId: 'ch-1',
+        targetUserId: 'user-2',
+        adminUserId: 'admin-1',
+        amount: 5,
+        category: 'MANUAL' as const,
+        reason: 'great work',
+        channelId: 'chan-1',
+        clientMessageId: 'cmid-1',
+      };
+
+      it('reports card_posted: true when the card posts', async () => {
+        mockPointTxnRepo.create.mockResolvedValue(baseTxn);
+
+        const result = await service.adjustPoints(chatInput);
+
+        expect(result).toEqual({ ...baseTxn, card_posted: true });
+      });
+
+      it('reports card_posted: false when the card post throws', async () => {
+        mockPointTxnRepo.create.mockResolvedValue(baseTxn);
+        mockChatService.sendMessage.mockRejectedValue(
+          new Error('channel gone'),
+        );
+
+        const result = await service.adjustPoints(chatInput);
+
+        expect(result).toEqual({ ...baseTxn, card_posted: false });
+      });
+
+      // Absent, not `true`. A dashboard adjustment posts no card at all, so
+      // claiming one succeeded would be a lie — and the field's contract is
+      // "present only when chat context was supplied".
+      it('omits card_posted entirely for a dashboard adjustment', async () => {
+        mockPointTxnRepo.create.mockResolvedValue(baseTxn);
+
+        const result = await service.adjustPoints({
+          chapterId: 'ch-1',
+          targetUserId: 'user-2',
+          adminUserId: 'admin-1',
+          amount: 5,
+          category: 'MANUAL',
+          reason: 'great work',
+        });
+
+        expect(result).toEqual(baseTxn);
+        expect('card_posted' in result).toBe(false);
+      });
+
+      // `channel_id` without `client_message_id` (or vice versa) is not chat
+      // context — the service posts no card, so the field must stay absent
+      // rather than reporting a success that never happened.
+      it('omits card_posted when only one half of the chat context is given', async () => {
+        mockPointTxnRepo.create.mockResolvedValue(baseTxn);
+
+        const result = await service.adjustPoints({
+          chapterId: 'ch-1',
+          targetUserId: 'user-2',
+          adminUserId: 'admin-1',
+          amount: 5,
+          category: 'MANUAL',
+          reason: 'great work',
+          channelId: 'chan-1',
+        });
+
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+        expect('card_posted' in result).toBe(false);
+      });
     });
   });
 
