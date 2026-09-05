@@ -32,13 +32,14 @@ verify access at the start of the run. **If the GitHub MCP is unavailable, stop 
 fallback.** The label roster and shared routine config live in
 [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
-> **Never source a body edit from an MCP read — `search_issues` included.** All three read paths
-> (`issue_read`, `list_issues`, `search_issues`) corrupt the body they return. Rewriting from that
-> text silently destroys content — a dropped marker makes the curator re-file the issue as a
-> duplicate, and a dropped code snippet is **unrecoverable**. The corruption vectors, the fidelity
-> table, the probe, and the narrow escape hatch:
-> [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
-> The same hazard applies to every routine that re-bodies an issue.
+> **Whether a body edit may be sourced from an MCP read is a measurement that has flipped four
+> times — check it, don't remember it.** The fidelity table, the probe, the operative rule, and the
+> fallback when the probe is red:
+> [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
+> — the canonical statement, deliberately not restated here. As of **2026-09-05** all three read
+> paths measured faithful, so backfilling an Agent brief into an existing body is permitted; re-run
+> the probe against fixture #1736 before a bulk pass. The same hazard applies to every routine that
+> re-bodies an issue.
 >
 > **Agent-brief backfills are blocked again — and that is the correct behavior.** Runs on
 > 2026-08-10 and -08-12 refused to write briefs; 2026-08-14 unblocked them on the strength of

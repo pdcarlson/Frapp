@@ -83,14 +83,18 @@ comment at the end:
 If the issue or marker is missing, bootstrap: window = PRs updated in the last 8 days,
 `backfill-oldest` = the oldest PR in that window.
 
-> **No MCP read returns this issue's body faithfully — `search_issues` included.** Of the ways all
-> three read paths corrupt what they return, the one that bites here is that **HTML comments are
-> deleted** — a `pr-followups-state` marker written as a comment is invisible in every one of them,
-> even when it is there. Republishing the tracking issue from that text deletes the marker, and because a
-> missing marker is the bootstrap trigger, the next run silently resets to an 8-day window and
-> re-crawls history it had already audited, rather than failing loudly. Full table, probe, and the
-> narrow escape hatch:
-> [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+> **Read fidelity is a measurement that has flipped four times — check it, don't remember it.**
+> Full table, probe, operative rule and red-probe fallback:
+> [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
+> — canonical, deliberately not restated here. As of **2026-09-05** all three read paths measured
+> faithful.
+>
+> The vector that bites *this* routine is HTML comments, because the `pr-followups-state` marker was
+> historically written as one. When that vector fails the marker is invisible even though it is
+> there; republishing the tracking issue from that text deletes it, and since a missing marker is
+> the bootstrap trigger, the next run silently resets to an 8-day window and re-crawls history it
+> had already audited rather than failing loudly. **The mitigation does not depend on the current
+> measurement** — see the next paragraph.
 >
 > Because this routine **rebuilds the whole tracking-issue body from live issue state every run**,
 > it is on the safe side of that rule: it authors the replacement text rather than round-tripping

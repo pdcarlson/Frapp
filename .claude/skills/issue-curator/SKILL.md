@@ -82,16 +82,18 @@ makes it so. Otherwise mark **`stale`** and leave it open. When in doubt, do not
 **Label writes replace the whole set.** `issue_write`'s `labels` field overwrites — always send
 the union of the existing labels plus your change, never just the addition.
 
-**Reading a body you intend to rewrite.** **No MCP read path returns a body faithfully — not
-`issue_read`, not `list_issues`, and no longer `search_issues`.** Refreshing or splitting from that
-text silently destroys content — a dropped code snippet is **unrecoverable**, unlike a marker you
-could rebuild from `fp=<area>/<slug>`. The corruption vectors, the fidelity table, the probe, and the
-narrow escape hatch (a direct REST read of the raw `body` — a verification read, not a tracker path):
-[`GITHUB_PM.md` → Reading a body you intend to rewrite (MCP read fidelity)](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+**Reading a body you intend to rewrite.** Whether an MCP read is safe to rewrite from is a
+**measurement that has flipped four times**, not a fixed property. The fidelity table, the probe,
+the operative rule, and the fallback when the probe is red are in
+[`GITHUB_PM.md` → Reading a body you intend to rewrite (MCP read fidelity)](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
+— **read it there; this skill deliberately does not restate it.** As of **2026-09-05** all three
+read paths measured faithful. This routine refreshes and splits bodies, so it is the routine most
+exposed to a regression: **re-run the probe against fixture #1736 before a refresh pass**, and note
+in the run log that you did.
 
-**So: prefer a comment over a rewrite.** Anything additive — a note, a finding, an Agent brief —
-goes in `add_issue_comment`, which is lossless. Rewrite only when you author the replacement body
-yourself, or under that escape hatch.
+**Even so, prefer a comment over a rewrite.** Anything additive — a note, a finding, an Agent brief
+— goes in `add_issue_comment`. That preference is about keeping an issue readable rather than about
+read fidelity, so it survives whatever the table says. Rewrite when the body is *wrong*.
 
 Whenever you *do* write a body, **confirm the `fp=` marker is present in what you sent** — it is a
 visible line now, so it reads back, and a missing one makes the next run re-file the issue as
