@@ -6,12 +6,12 @@ A "Chapter Files" storage area for organizational documents (bylaws, constitutio
 
 - `chapter_docs:upload` — Upload new documents.
 - `chapter_docs:manage` — Delete documents, create/rename/delete folders.
-- All members can view and download documents regardless of permissions.
+- Reads are gated on `members:view`, which every seeded role either holds or clears via the `*` wildcard (President's seeded set is `['*']` alone) — so in practice every member can view and download, but the controller's class-level gate is a permission rather than an all-members bypass. Upload and management need their own `chapter_docs:*` permissions.
 
 ## Structure
 
 - Documents are organized into an optional flat folder structure (one level deep). A document belongs to zero or one folder.
-- Folders have a name and a sort order. Documents without a folder appear in a root "All Files" view.
+- Folders have a name and a sort order. Documents without a folder are filed at the root; the dashboard rail surfaces them under a **No folder** view, alongside an **All files** view that ignores the folder filter entirely.
 - A folder's name is unique within a chapter. Two chapters may each have a folder of the same name.
 - A folder exists independently of its contents: it can be created empty, and it survives having its last document removed.
 
@@ -31,15 +31,15 @@ Document listing accepts an optional case-insensitive substring match on the tit
 
 ## Metadata
 
-Each document has: a system-generated `id` (UUID, primary key — this is the `{document_id}` referenced in the storage path below), title, description (optional), folder (optional), storage path, uploaded_by (FK users), and created_at. No academic metadata (no department, professor, assignment type, etc.).
+Each document has: a system-generated `id` (UUID, primary key — **not** the `{document_id}` in the storage path below: that is a separate UUID minted by the upload-URL step and returned as `documentId`, so no storage path can be derived from a document's `id`), title, description (optional), folder (optional), storage path, uploaded_by (FK users), and created_at. No academic metadata (no department, professor, assignment type, etc.).
 
-Four additional fields, all optional and populated at confirm-upload time: `content_type` (MIME type, client-declared), `byte_size`, `document_type` (free text — no fixed taxonomy, unlike Backwork's checked `assignment_type`), and `effective_date` (the date the document took effect, distinct from `created_at` which is upload time — never inferred, only user-supplied). These exist for the AI corpus retrieval design (ADR-13 §13), which needs a currency signal distinct from upload time and provenance metadata beyond a title.
+Four additional fields, all optional and populated at confirm-upload time: `content_type` (MIME type, client-declared), `byte_size`, `document_type` (free text — no fixed taxonomy, unlike Backwork's checked `assignment_type`), and `effective_date` (the date the document took effect, distinct from `created_at` which is upload time — never inferred, only user-supplied). These exist for the AI corpus retrieval design ([`spec/architecture/README.md`](../architecture/README.md) § 13 AI Corpus Architecture — **not** ADR-13, which is Repository visibility), which needs a currency signal distinct from upload time and provenance metadata beyond a title.
 
 ## Storage
 
 Files are stored in Supabase Storage under `chapters/{chapter_id}/documents/{document_id}/{filename}`. The upload-URL step generates this chapter-scoped path server-side. On confirm, the API rejects any `storage_path` that does not start with `chapters/{chapter_id}/documents/` (the caller's active chapter) so a client cannot register metadata that points outside its own chapter folder. Signed download URLs are only issued for documents already scoped to the active chapter.
 
-There is no separate download endpoint: `GET /v1/documents/{id}` returns the document *with* a freshly signed URL, on the key **`downloadUrl`**. No case-transforming interceptor exists anywhere in the stack, so a client that reads `download_url` gets `undefined` — which is exactly what both web call sites did until #1040. Clients resolve it through `selectDownloadUrl` (`packages/hooks/src/document-download.ts`), a deliberately pure module — no `"use client"`, no react-query — so mobile's plain-node selectors and any server component can import it. It accepts either spelling so a server-side rename cannot break a client, and is the only place either spelling appears **for a document or backwork download**. Scope that carefully before any cleanup: `download_url` is the correct, live key for **chat attachments** — a different endpoint, which emits it at `chat.service.ts` and declares it on `ChatMessageAttachment` — so converging those onto `downloadUrl`, or routing them through this selector, breaks every attachment link and inline image. Nothing typed enforces any of this: none of these endpoints declares an OpenAPI response schema, so the SDK infers the body as `never` and any property access compiles.
+There is no separate download endpoint: `GET /v1/documents/{id}` returns the document *with* a freshly signed URL, on the key **`downloadUrl`**. No case-transforming interceptor exists anywhere in the stack, so a client that reads `download_url` gets `undefined` — which is exactly what both web call sites did until #1040. Clients resolve it through `selectDownloadUrl` (`packages/hooks/src/document-download.ts`), a deliberately pure module — no `"use client"`, no react-query — so mobile's plain-node selectors and any server component can import it. It accepts either spelling so a server-side rename cannot break a client, and is the only place either spelling appears **for a document or backwork download**. Scope that carefully before any cleanup: `download_url` is the correct, live key for **chat attachments** — a different endpoint, which emits it at `chat.service.ts` and declares it on `ChatMessageAttachmentWithUrl`, the subtype that adds the key — so converging those onto `downloadUrl`, or routing them through this selector, breaks every attachment link and inline image. Nothing typed enforces any of this: none of these endpoints declares an OpenAPI response schema, so the SDK infers the body as `never` and any property access compiles.
 
 ## Upload allowlist
 
