@@ -329,8 +329,12 @@ export function MembersDirectory() {
            * fetched, so this card replaces the directory — including the input
            * that produced the term — while the query state survives. Without
            * this the member has no control left to undo it.
+           *
+           * Only when the search is actually the uncached read, though: the
+           * gate covers three reads, and discarding what they typed to recover
+           * from an uncached *roles* fetch would lose their work for nothing.
            */
-          setQuery("");
+          if (usingSearch && hasNoCachedData(searchQuery)) setQuery("");
           void membersQuery.refetch();
           if (usingSearch) void searchQuery.refetch();
           void rolesQuery.refetch();

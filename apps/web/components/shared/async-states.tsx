@@ -221,10 +221,18 @@ export function ErrorState({
 }
 
 /**
- * The shape `hasNoCachedData` reads. Structural rather than
- * `UseQueryResult<unknown>` so a caller can pass a hook that exposes only the
- * two fields — `useMemberDisplayNames` and friends hand back a projection, not
- * the observer.
+ * The shape `hasNoCachedData` reads.
+ *
+ * Structural rather than `UseQueryResult<unknown>` only so the two fields it
+ * actually uses are the two it declares — every current caller passes a real
+ * query observer. **`data` is required on purpose.** A projection hook that
+ * exposes no `data` (`useMemberDisplayNames` returns
+ * `byId`/`nameFor`/`isPending`/`isError`/`refetch`) cannot be passed, and must
+ * not be made passable by widening `data` to optional: `read.data` would then
+ * be `undefined` for a read that has no such field at all, and — worse — the
+ * obvious workaround of passing a derived value like `byId` is
+ * `Object.fromEntries(data ?? [])`, i.e. always a defined `{}`, so the gate
+ * would silently never fire. Give the hook a `data` passthrough instead.
  */
 type CachedRead = {
   data: unknown;

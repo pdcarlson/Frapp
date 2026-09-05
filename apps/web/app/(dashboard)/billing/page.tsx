@@ -111,14 +111,17 @@ export default function BillingPage() {
   // `overdueIds` degrading to an empty set on error reads as "nothing is
   // overdue" rather than "we don't know" — silently reintroducing the exact
   // confidently-wrong signal #707 exists to fix, for most of the userbase.
-  // `isError` alone stopped being sufficient the moment this page could render
-  // offline: TanStack pauses an offline query rather than failing it, so a
-  // never-fetched overdue list is `isPending`, not `isError`, and `overdueIds`
-  // would degrade to an empty set that reads as "nothing is overdue" — the
-  // confidently-wrong signal this flag exists to prevent, just reached by a
-  // different route.
+  // `isError` alone was never sufficient, and this page rendering offline is
+  // only the second way to prove it. The flag has to mean "we do not know",
+  // and there are two ways not to know: the read failed, or it has not
+  // answered. `overdueQuery` is absent from `isLoading` above, so the second
+  // case is reachable *online* too — on every first paint the header asserted
+  // "Overdue: 0" for the duration of the request. Offline the read is paused
+  // rather than failed, so it is `isPending` and never `isError`, reaching the
+  // same wrong signal by the other route. `hasNoCachedData` covers both, and
+  // conditioning it on `isOffline` would have fixed only the new one.
   const overdueUnavailable =
-    overdueQuery.isError || (isOffline && hasNoCachedData(overdueQuery));
+    overdueQuery.isError || hasNoCachedData(overdueQuery);
   const filteredInvoices = useMemo(() => {
     const query = invoiceSearch.trim().toLowerCase();
     return visibleInvoices.filter((invoice) => {

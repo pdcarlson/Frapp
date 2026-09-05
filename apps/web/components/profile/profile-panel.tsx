@@ -142,7 +142,7 @@ export function ProfilePanel() {
   if (userQuery.isLoading || userPaused) {
     return <LoadingState message="Loading your profile..." />;
   }
-  if (userQuery.isError && userQuery.data === undefined) {
+  if (userQuery.isError && hasNoCachedData(userQuery)) {
     return (
       <ErrorState
         title="Couldn't load your profile"
@@ -335,7 +335,7 @@ export function ProfilePanel() {
     preferencesState = (
       <NestedLoading message="Loading your preferences..." lines={3} />
     );
-  } else if (settingsQuery.isError && settingsQuery.data === undefined) {
+  } else if (settingsQuery.isError && hasNoCachedData(settingsQuery)) {
     preferencesState = (
       <NestedError
         title="Couldn't load your preferences"

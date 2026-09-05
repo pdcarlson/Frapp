@@ -141,6 +141,14 @@ beforeEach(() => {
   invoicesQuery.isError = false;
   networkState.isOffline = false;
   currentUserQuery.data = { id: "user-1" };
+  // Reset here rather than at the end of the one test that mutates it: a
+  // failing assertion would skip an in-body restore and cascade into every
+  // later test in the file.
+  billingStatusQuery.data = {
+    subscription_status: "active",
+    stripe_customer_id: null,
+    subscription_id: null,
+  };
   useOverdueInvoices.mockReturnValue({ data: [], isError: false });
 });
 
@@ -289,12 +297,6 @@ describe("BillingPage offline read path (#1621)", () => {
       screen.queryByText("Billing workspace unavailable offline"),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Fall dues")).toBeInTheDocument();
-
-    billingStatusQuery.data = {
-      subscription_status: "active",
-      stripe_customer_id: null,
-      subscription_id: null,
-    };
   });
 
   it("shows the offline card when the invoices read is uncached", () => {

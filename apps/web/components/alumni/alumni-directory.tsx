@@ -103,7 +103,19 @@ export function AlumniDirectory() {
       <OfflineState
         title="Alumni directory unavailable offline"
         description="Reconnect to load alumni records and filters."
-        onRetry={() => void query.refetch()}
+        onRetry={() => {
+          /*
+           * Clearing the filters is the escape hatch, not a nicety. Committing
+           * a filter offline keys the query to something never fetched, and
+           * `keepPreviousData` makes that read `isPlaceholderData` — so this
+           * card replaces the directory *including the filter form and its
+           * Clear button*, and a paused `refetch()` can never dismiss it.
+           * Without this reset the member is stranded on the card with rows
+           * still in cache until the network returns.
+           */
+          clearFilters();
+          void query.refetch();
+        }}
       />
     );
   }

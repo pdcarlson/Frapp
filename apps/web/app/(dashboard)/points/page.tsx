@@ -261,6 +261,15 @@ export default function PointsPage() {
         title="Points ledger unavailable offline"
         description="Reconnect to refresh leaderboard standings and transaction history."
         onRetry={() => {
+          /*
+           * Both reads key on `window` and `semesterArchiveId`, and the
+           * controls that set them render *below* this card — so changing
+           * either offline swaps to a never-fetched key and this branch
+           * unmounts the only way back. Resetting to the default selection is
+           * what lets Retry reach cached rows; a paused refetch alone cannot.
+           */
+          setWindow("all");
+          setSemesterArchiveId("");
           void leaderboardQuery.refetch();
           void summaryQuery.refetch();
           // Names are refreshed alongside the reads that raised this card, so a

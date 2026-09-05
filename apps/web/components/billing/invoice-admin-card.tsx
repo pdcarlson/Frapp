@@ -45,7 +45,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PermissionsOfflineSurface } from "@/components/shared/async-states";
+import {
+  hasNoCachedData,
+  PermissionsOfflineSurface,
+} from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -102,6 +105,13 @@ export function InvoiceAdminCard() {
   // dues grace policy), so badges and the OVERDUE filter derive from that
   // list rather than re-deriving `due_date < now` locally — a local check
   // would contradict the banner for invoices inside the grace window.
+  // The same "we do not know" flag the page header derives (`billing/page.tsx`).
+  // Without it this card and that header disagree on one screen: the header
+  // says "Overdue: —" while every badge here silently vanishes and the OVERDUE
+  // filter cheerfully returns nothing. `isError` alone misses both the paused
+  // offline read and the still-in-flight online one.
+  const overdueUnavailable =
+    overdueQuery.isError || hasNoCachedData(overdueQuery);
   const overdueIds = useMemo(
     () => new Set(overdue.map((inv) => inv.id)),
     [overdue],
@@ -229,7 +239,7 @@ export function InvoiceAdminCard() {
       )}
     >
       <div className="space-y-6">
-        {overdueQuery.isError ? (
+        {overdueUnavailable ? (
           <Card className="border-destructive/[.28] bg-destructive/[.13]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-destructive-text">
@@ -237,8 +247,8 @@ export function InvoiceAdminCard() {
                 Overdue status unavailable
               </CardTitle>
               <CardDescription>
-                Couldn&apos;t load the overdue list — overdue badges and the
-                OVERDUE filter are unavailable until it recovers.
+                We couldn&apos;t read the overdue list, so overdue badges and
+                the OVERDUE filter are unavailable until it recovers.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -288,7 +298,9 @@ export function InvoiceAdminCard() {
                   <SelectItem value="OPEN">OPEN</SelectItem>
                   <SelectItem value="PAID">PAID</SelectItem>
                   <SelectItem value="VOID">VOID</SelectItem>
-                  <SelectItem value="OVERDUE">OVERDUE</SelectItem>
+                  <SelectItem value="OVERDUE" disabled={overdueUnavailable}>
+                    OVERDUE
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <Dialog {...createDialog.dialogProps}>
