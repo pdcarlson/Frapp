@@ -195,8 +195,9 @@ on every run — including the bare push invocation, not just PRs. Coverage is m
 Migrations predating the gate are grandfathered in `UNLEDGERED` in
 [`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs), which is
 **shrink-only**: `RATCHET_VERSION_CEILING` rejects any entry newer than the gate, so a new migration
-must carry a real entry in both docs rather than an allowlist line. Adding one exits **2**
-("UNLEDGERED grew"), not 1.
+must carry a real entry in both docs rather than an allowlist line. Missing an entry in either doc
+fails ledger coverage with exit **1**. Adding a post-ceiling migration to `UNLEDGERED` instead exits
+**2** ("UNLEDGERED grew").
 
 ---
 

@@ -29,6 +29,17 @@ import {
 const PROMOTION = MIGRATION_DOCS[0];
 const ROLLBACK = MIGRATION_DOCS[1];
 
+const exitCleanups = new Set();
+process.once("exit", () => {
+  for (const cleanup of exitCleanups) {
+    try {
+      cleanup();
+    } catch {
+      // Best-effort only: preserve the original test result during process exit.
+    }
+  }
+});
+
 // ── The base contract ───────────────────────────────────────────────────────
 
 test("touching either declared runbook satisfies the gate", () => {
@@ -433,19 +444,25 @@ test("the shipped gate exits 2, not 1, when a declared ledger cannot be read", (
   // job". validateDocManifest asks git what is TRACKED, so a doc present in the
   // index but absent from the worktree reaches the read and used to surface as
   // a raw ENOENT at exit 1, blaming a blameless author.
-  const moved = `${join(REPO_ROOT, MIGRATION_DOCS[1])}.moved`;
-  renameSync(join(REPO_ROOT, MIGRATION_DOCS[1]), moved);
+  const ledger = join(REPO_ROOT, MIGRATION_DOCS[1]);
+  const moved = `${ledger}.moved`;
+  const restoreLedger = () => renameSync(moved, ledger);
+  exitCleanups.add(restoreLedger);
+  renameSync(ledger, moved);
   try {
     const { status, out } = runGate();
     assert.equal(status, 2, out);
     assert.match(out, /declared ledger is unreadable/);
   } finally {
-    renameSync(moved, join(REPO_ROOT, MIGRATION_DOCS[1]));
+    restoreLedger();
+    exitCleanups.delete(restoreLedger);
   }
 });
 
 test("the shipped gate exits 1 when a migration has no ledger entry", () => {
   const probe = join(REPO_ROOT, "supabase", "migrations", "29990101000000_ledger_probe.sql");
+  const removeProbe = () => rmSync(probe, { force: true });
+  exitCleanups.add(removeProbe);
   writeFileSync(probe, "-- fixture\n");
   try {
     const { status, out } = runGate();
@@ -455,7 +472,8 @@ test("the shipped gate exits 1 when a migration has no ledger entry", () => {
     assert.match(out, /DB_PROMOTION_RUNBOOK\.md/);
     assert.match(out, /DB_ROLLBACK_PLAYBOOK\.md/);
   } finally {
-    rmSync(probe);
+    removeProbe();
+    exitCleanups.delete(removeProbe);
   }
 });
 

@@ -106,12 +106,13 @@ The workflow holds the `db-migrate-production` concurrency group with
 > **⚠️ Correction 2026-09-05 — the "nothing pending" half is superseded.** The
 > **54** above is a real Management API read and is left as recorded, but `main`
 > now carries **70** migrations, newest `20260905010000`. So the applied set no
-> longer matches `supabase/migrations/`, and there are migrations pending for
-> both projects. **The applied counts have not been re-read** — this correction
-> is derived from the repository alone, which is enough to falsify "nothing
-> pending" but not to state what either project holds today. Re-read before any
-> promotion, and do not skip the dry run on the strength of the ✅ above. (#1620
-> tracks refreshing this and the matching claim in `spec/architecture/README.md`.)
+> longer matches that historical snapshot; current pending status for either
+> project is unverified. **The applied counts have not been re-read** — this
+> correction is derived from the repository alone, which is enough to supersede
+> the old comparison but not to state what either project holds today. Re-read
+> before any promotion, and do not skip the dry run on the strength of the ✅
+> above. (#1620 tracks refreshing this and the matching claim in
+> `spec/architecture/README.md`.)
 >
 > This block previously warned that production was ~49 migrations behind and
 > that both paths above would fail on the dry run. That was true on 2026-08-24
