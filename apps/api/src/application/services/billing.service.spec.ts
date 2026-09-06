@@ -1987,18 +1987,18 @@ describe('BillingService', () => {
         expect(captureMessage).not.toHaveBeenCalled();
       });
 
-      it('resolves invoice.paid through the customer the same way', async () => {
+      it('resolves a first-checkout invoice.paid through the customer and activates the incomplete chapter', async () => {
+        // The ordering that matters most: the checkout's own first invoice is
+        // paid and delivered before `checkout.session.completed`. The claim
+        // advances the high-water mark past the checkout, so if this handler
+        // left activation to the checkout the chapter would stay `incomplete`
+        // under a paid subscription for good.
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
-        mockChapterRepo.findByCustomerId.mockResolvedValue({
+        mockChapterRepo.findByCustomerId.mockResolvedValue(preCheckoutChapter);
+        mockChapterRepo.update.mockResolvedValue({
           ...preCheckoutChapter,
-          subscription_status: 'past_due',
-        });
-        const claimed = {
-          ...preCheckoutChapter,
-          subscription_status: 'past_due' as const,
           subscription_id: 'sub_race',
-        };
-        mockChapterRepo.update.mockResolvedValue(claimed);
+        });
 
         await service.handleWebhookEvent({
           id: 'evt_inv_race',
@@ -2014,6 +2014,27 @@ describe('BillingService', () => {
           last_stripe_webhook_at: LATER_ISO,
           subscription_status: 'active',
           past_due_since: null,
+        });
+      });
+
+      it('leaves an active chapter active on a renewal invoice.paid (only the mark moves)', async () => {
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue({
+          ...preCheckoutChapter,
+          subscription_id: 'sub_race',
+          subscription_status: 'active',
+        });
+
+        await service.handleWebhookEvent({
+          id: 'evt_inv_renewal',
+          type: 'invoice.paid',
+          created: T_LATER,
+          data: { object: { subscription: 'sub_race', customer: 'cus_race' } },
+        });
+
+        expect(mockChapterRepo.findByCustomerId).not.toHaveBeenCalled();
+        expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+          last_stripe_webhook_at: LATER_ISO,
         });
       });
 

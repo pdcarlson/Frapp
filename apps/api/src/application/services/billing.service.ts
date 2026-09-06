@@ -751,7 +751,24 @@ export class BillingService {
     const update: Partial<Chapter> = {
       last_stripe_webhook_at: this.eventCreatedAt(event),
     };
-    if (chapter.subscription_status === 'past_due') {
+    // A paid invoice for the chapter's subscription means that subscription is
+    // live, so it lifts both non-live states this handler can meet:
+    //
+    //  - `past_due`: the dunning recovery this handler has always done.
+    //  - `incomplete`: the first invoice of a checkout whose `invoice.paid`
+    //    overtook its own `checkout.session.completed` (#1738). The resolver
+    //    above has just claimed `subscription_id` and this write advances the
+    //    high-water mark past the checkout's `created`, so the checkout will be
+    //    dropped as stale — if activation were left to it, the chapter would
+    //    stay `incomplete` under a paid subscription for good. The same rule
+    //    also covers a checkout that Stripe itself left `incomplete` (initial
+    //    payment failed) and the member then paid: `invoice.paid` and
+    //    `customer.subscription.updated` (`active`) both arrive, and it is
+    //    correct for either to activate.
+    if (
+      chapter.subscription_status === 'past_due' ||
+      chapter.subscription_status === 'incomplete'
+    ) {
       update.subscription_status = 'active';
       update.past_due_since = null;
     }
@@ -759,9 +776,9 @@ export class BillingService {
     await this.chapterRepo.update(chapter.id, update);
 
     if (update.subscription_status === 'active') {
-      // Reactivation via payment is expected and intentionally silent — president
+      // Activation via payment is expected and intentionally silent — president
       // status-change alerts are limited to the subscription updated/deleted paths.
-      this.logger.log(`Chapter ${chapter.id} reactivated via invoice payment`);
+      this.logger.log(`Chapter ${chapter.id} activated via invoice payment`);
     }
   }
 
