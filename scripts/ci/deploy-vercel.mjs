@@ -56,6 +56,21 @@
 // So on this path a cancel is a failure, always. A skipped release is a fact to
 // report, not a state to infer a no-op from.
 //
+// ── Why there is a `DEPLOY_PHASE` ──────────────────────────────────────────
+// On the production path the build is the step most likely to fail for reasons
+// that have nothing to do with the commit — the OOM killer, a Production env
+// var the sync never delivered, a registry blip — and it used to run last,
+// after the migration had applied and the Render API had shipped. Run
+// 33275321347 is what that looks like: a migrated database, a new API, old
+// frontends, no tag. `deploy-production.yml` therefore calls this script twice:
+// `DEPLOY_PHASE=build` before anything is applied, which pulls and builds both
+// projects and stashes each `.vercel` directory under `VERCEL_BUILD_STASH_DIR`,
+// and `DEPLOY_PHASE=upload` after Render reports healthy, which restores each
+// stash and uploads it. A build failure then costs nothing; only the upload —
+// a far smaller surface — can still fail after the apply. Staging leaves the
+// phase unset and does both at once, as before. See `lib/vercel-cli.mjs` for
+// why the whole `.vercel` directory is what moves.
+//
 // Env inputs:
 //   VERCEL_API_KEY            — required (used as the CLI's VERCEL_TOKEN)
 //   VERCEL_TEAM_ID            — required (used as the CLI's VERCEL_ORG_ID)
@@ -63,6 +78,14 @@
 //   VERCEL_LANDING_PROJECT_ID — required
 //   DEPLOY_SHA                — required, the commit being shipped
 //   DEPLOY_TARGET             — optional, `production` (default) or `preview`
+//   DEPLOY_PHASE              — optional, `build` | `upload` | `all` (default).
+//                               `build` and `upload` need
+//                               VERCEL_BUILD_STASH_DIR
+//   VERCEL_BUILD_STASH_DIR    — the directory the `build` phase stashes each
+//                               project's `.vercel` under and the `upload`
+//                               phase reads it back from (one subdirectory per
+//                               project label). Required for those two phases,
+//                               ignored by `all`
 //   DEPLOY_REF                — optional, the BRANCH stamped as
 //                               `meta.githubCommitRef` (default `main`). Both
 //                               current callers deploy `main` and leave it
@@ -73,6 +96,7 @@
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/deploy-vercel.test.mjs`.
 
+import path from "node:path";
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
 import {
   VERCEL_NEUTRAL_TERMINAL_STATES,
@@ -85,6 +109,8 @@ import {
   VERCEL_TARGET_PREVIEW,
   VERCEL_TARGET_PRODUCTION,
   buildAndDeployVercelProject,
+  buildVercelProject,
+  deployPrebuiltVercelProject,
 } from "./lib/vercel-cli.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
@@ -192,7 +218,9 @@ export async function createVercelDeployment({
   target,
   teamId,
   cwd,
+  stashDir = null,
   runCommand,
+  stashFs,
   fetchImpl = resilientFetch,
   logger = console,
 }) {
@@ -201,7 +229,10 @@ export async function createVercelDeployment({
   // The distinction is load-bearing for `deployVercel`'s fail-fast, so it is
   // marked on the error rather than left for a caller to guess at: see the
   // `uploaded` flag below.
-  const { host } = await buildAndDeployVercelProject({
+  //
+  // With a `stashDir` the build already happened in an earlier phase and only
+  // the upload runs here; without one, build and upload run back to back.
+  const cliOptions = {
     target,
     sha,
     ref,
@@ -212,7 +243,10 @@ export async function createVercelDeployment({
     cwd,
     runCommand,
     logger,
-  });
+  };
+  const { host } = stashDir
+    ? await deployPrebuiltVercelProject({ ...cliOptions, stashDir, stashFs })
+    : await buildAndDeployVercelProject(cliOptions);
 
   try {
     return await identifyVercelDeployment({
@@ -380,6 +414,77 @@ export async function pollVercelDeployment({
   });
 }
 
+/** Where one project's built `.vercel` directory lives between the two phases. */
+export function stashDirFor(stashRoot, label) {
+  return path.join(stashRoot, label);
+}
+
+/**
+ * The `build` phase: pull and build every project, stashing each output.
+ * Uploads nothing, so a failure here — in either project — has shipped nothing
+ * and the caller can simply stop.
+ *
+ * Sequential for the same reason the uploads are: `vercel build` writes into
+ * one `.vercel` in the working tree. The stash is what lets the second build
+ * start without destroying the first's output.
+ *
+ * @param {{projects: Array<{projectId: string, label: string}>}} input
+ */
+export async function buildVercelProjects({
+  apiKey,
+  projects,
+  target = VERCEL_TARGET_PRODUCTION,
+  teamId,
+  cwd,
+  stashRoot,
+  runCommand,
+  stashFs,
+  logger = console,
+}) {
+  if (!stashRoot) {
+    throw new Error(
+      "The build phase needs VERCEL_BUILD_STASH_DIR: without a stash the second project's " +
+        "build overwrites the first's output and the upload phase has nothing to read.",
+    );
+  }
+
+  const results = [];
+  for (const project of projects) {
+    const stashDir = stashDirFor(stashRoot, project.label);
+    try {
+      await buildVercelProject({
+        target,
+        token: apiKey,
+        orgId: teamId,
+        projectId: project.projectId,
+        label: project.label,
+        cwd,
+        stashDir,
+        runCommand,
+        stashFs,
+        logger,
+      });
+      results.push({ label: project.label, status: "success", stashDir });
+    } catch (error) {
+      results.push({ label: project.label, status: "failure", message: error.message });
+      // Nothing has been uploaded, so there is no half-updated state to complete.
+      // The remaining projects are reported as not attempted rather than built
+      // anyway: a build phase that is going to fail the run should fail it now.
+      for (const rest of projects.slice(projects.indexOf(project) + 1)) {
+        results.push({
+          label: rest.label,
+          status: "failure",
+          message: `Not attempted: ${project.label} failed to build earlier in this run.`,
+        });
+      }
+      break;
+    }
+  }
+
+  const failures = results.filter((r) => r.status !== "success");
+  return { ok: failures.length === 0, results, failures };
+}
+
 /**
  * Deploy every project, then poll them together.
  *
@@ -394,6 +499,10 @@ export async function pollVercelDeployment({
  * Polling still happens together, after both uploads, because that half has no
  * shared state.
  *
+ * With `stashRoot` set this is the `upload` phase: each project's output is
+ * expected to have been built and stashed by `buildVercelProjects` earlier, and
+ * only the upload runs here.
+ *
  * @param {{projects: Array<{projectId: string, label: string}>}} input
  */
 export async function deployVercel({
@@ -404,7 +513,9 @@ export async function deployVercel({
   target = VERCEL_TARGET_PRODUCTION,
   teamId,
   cwd,
+  stashRoot = null,
   runCommand,
+  stashFs,
   clock = createClock(),
   fetchImpl = resilientFetch,
   pollIntervalMs = VERCEL_POLL_INTERVAL_MS,
@@ -451,7 +562,9 @@ export async function deployVercel({
         target,
         teamId,
         cwd,
+        stashDir: stashRoot ? stashDirFor(stashRoot, project.label) : null,
         runCommand,
+        stashFs,
         fetchImpl,
         logger,
       });
@@ -515,23 +628,66 @@ export function parseDeployTarget(raw) {
   );
 }
 
+export const DEPLOY_PHASE_BUILD = "build";
+export const DEPLOY_PHASE_UPLOAD = "upload";
+export const DEPLOY_PHASE_ALL = "all";
+
+/**
+ * Read and validate `DEPLOY_PHASE`.
+ *
+ * Same posture as `parseDeployTarget`: unset means the single-phase behaviour
+ * every caller had before the phases existed, and anything unrecognised is a
+ * hard error. Defaulting a typo to `upload` would skip the build and upload
+ * whatever `.vercel` holds; defaulting it to `build` would make a production
+ * release build twice and ship nothing.
+ */
+export function parseDeployPhase(raw) {
+  if (!raw) return DEPLOY_PHASE_ALL;
+  if (raw === DEPLOY_PHASE_BUILD) return DEPLOY_PHASE_BUILD;
+  if (raw === DEPLOY_PHASE_UPLOAD) return DEPLOY_PHASE_UPLOAD;
+  if (raw === DEPLOY_PHASE_ALL) return DEPLOY_PHASE_ALL;
+  throw new Error(
+    `DEPLOY_PHASE must be '${DEPLOY_PHASE_BUILD}', '${DEPLOY_PHASE_UPLOAD}' or ` +
+      `'${DEPLOY_PHASE_ALL}', got '${raw}'. Refusing to guess which half to run.`,
+  );
+}
+
 // ── CLI entry ───────────────────────────────────────────────────────────────
 
 async function main() {
   const target = parseDeployTarget(process.env.DEPLOY_TARGET);
+  const phase = parseDeployPhase(process.env.DEPLOY_PHASE);
 
   const projects = [
     { projectId: requireEnv("VERCEL_WEB_PROJECT_ID"), label: "frapp-web" },
     { projectId: requireEnv("VERCEL_LANDING_PROJECT_ID"), label: "frapp-landing" },
   ];
 
+  const apiKey = requireEnv("VERCEL_API_KEY");
+  const teamId = requireEnv("VERCEL_TEAM_ID");
+  const stashRoot = phase === DEPLOY_PHASE_ALL ? null : requireEnv("VERCEL_BUILD_STASH_DIR");
+
+  if (phase === DEPLOY_PHASE_BUILD) {
+    const built = await buildVercelProjects({ apiKey, projects, target, teamId, stashRoot });
+    for (const result of built.results) {
+      if (result.status === "success") {
+        console.log(`✅ [${result.label}] Built for ${target}; output stashed at ${result.stashDir}.`);
+      } else {
+        console.error(`::error::${String(result.message).replaceAll("\n", "%0A")}`);
+      }
+    }
+    process.exitCode = built.ok ? 0 : 1;
+    return;
+  }
+
   const outcome = await deployVercel({
-    apiKey: requireEnv("VERCEL_API_KEY"),
+    apiKey,
     projects,
     sha: requireEnv("DEPLOY_SHA"),
     ref: process.env.DEPLOY_REF || "main",
     target,
-    teamId: requireEnv("VERCEL_TEAM_ID"),
+    teamId,
+    stashRoot,
   });
 
   for (const result of outcome.results) {

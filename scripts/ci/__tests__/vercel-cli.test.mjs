@@ -5,10 +5,13 @@ import {
   VERCEL_TARGET_PREVIEW,
   VERCEL_TARGET_PRODUCTION,
   buildAndDeployVercelProject,
+  buildVercelProject,
+  deployPrebuiltVercelProject,
   parseDeploymentHost,
   vercelBuildArgs,
   vercelCliEnv,
   vercelDeployArgs,
+  vercelDirFor,
   vercelEnvironmentFor,
   vercelPullArgs,
 } from "../lib/vercel-cli.mjs";
@@ -40,6 +43,37 @@ const READY_DEPLOY = {
   stdout: "https://frapp-web-abc123.vercel.app\n",
   stderr: "Inspect: https://vercel.com/paul/frapp-web/xyz\n",
 };
+
+/**
+ * An in-memory stand-in for the stash filesystem: a set of directory paths that
+ * exist, plus a log of every move and remove. `build` in a run stub can mark
+ * `.vercel` as created via `onBuild`.
+ */
+function makeStashFs(initial = []) {
+  const dirs = new Set(initial);
+  const ops = [];
+  return {
+    dirs,
+    ops,
+    fs: {
+      exists: async (p) => dirs.has(p),
+      remove: async (p) => {
+        ops.push(["remove", p]);
+        dirs.delete(p);
+      },
+      move: async (from, to) => {
+        ops.push(["move", from, to]);
+        if (!dirs.has(from)) throw new Error(`ENOENT: ${from}`);
+        dirs.delete(from);
+        dirs.add(to);
+      },
+    },
+  };
+}
+
+const CWD = "/work/repo";
+const VERCEL_DIR = vercelDirFor(CWD);
+const STASH = "/tmp/vercel-builds/frapp-web";
 
 describe("vercelEnvironmentFor", () => {
   // The load-bearing line: pulling the wrong environment produces a bundle
@@ -299,5 +333,162 @@ describe("buildAndDeployVercelProject", () => {
       }),
       /printed no deployment URL/,
     );
+  });
+});
+
+// The two-phase form used by the production path: build everything before the
+// migration applies, upload after Render is healthy. The stash is what carries
+// the built output across the gap and across the second project's build.
+describe("buildVercelProject", () => {
+  const base = {
+    target: VERCEL_TARGET_PRODUCTION,
+    token: TOKEN,
+    orgId: TEAM_ID,
+    projectId: PROJECT_ID,
+    label: "frapp-web",
+    cwd: CWD,
+    logger: quiet,
+  };
+
+  it("runs pull then build, and never deploy", async () => {
+    const { runCommand, calls } = makeRunStub();
+    await buildVercelProject({ ...base, runCommand });
+    assert.deepEqual(
+      calls.map((c) => c.args[0]),
+      ["pull", "build"],
+    );
+    assert.deepEqual(calls[1].args, ["build", "--prod"]);
+  });
+
+  it("stashes the whole .vercel directory after a successful build", async () => {
+    const stash = makeStashFs();
+    const { runCommand } = makeRunStub({
+      build: () => {
+        stash.dirs.add(VERCEL_DIR);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+
+    const result = await buildVercelProject({
+      ...base,
+      runCommand,
+      stashDir: STASH,
+      stashFs: stash.fs,
+    });
+
+    assert.equal(result.stashDir, STASH);
+    assert.ok(stash.dirs.has(STASH), "the stash exists");
+    assert.ok(!stash.dirs.has(VERCEL_DIR), ".vercel was moved, not copied — the next build starts clean");
+    // A stale stash from an earlier attempt is removed before the move, so two
+    // builds can never be merged into one upload.
+    assert.deepEqual(stash.ops, [
+      ["remove", STASH],
+      ["move", VERCEL_DIR, STASH],
+    ]);
+  });
+
+  it("fails when the build exited 0 but produced no .vercel to stash", async () => {
+    // Nothing would be uploaded later; this must not read as a built project.
+    const stash = makeStashFs();
+    const { runCommand } = makeRunStub();
+
+    await assert.rejects(
+      buildVercelProject({ ...base, runCommand, stashDir: STASH, stashFs: stash.fs }),
+      /left no .*\.vercel to stash/,
+    );
+    assert.equal(stash.ops.length, 0);
+  });
+
+  it("does not touch the stash when the build fails", async () => {
+    const stash = makeStashFs([STASH]);
+    const { runCommand } = makeRunStub({
+      build: { code: 1, stdout: "", stderr: "Type error" },
+    });
+
+    await assert.rejects(
+      buildVercelProject({ ...base, runCommand, stashDir: STASH, stashFs: stash.fs }),
+      /Type error/,
+    );
+    // The previous stash is left alone: the failure is reported on its own, not
+    // compounded by deleting output from an earlier phase.
+    assert.ok(stash.dirs.has(STASH));
+    assert.equal(stash.ops.length, 0);
+  });
+
+  it("leaves .vercel in place when no stash is requested", async () => {
+    const stash = makeStashFs();
+    const { runCommand } = makeRunStub({
+      build: () => {
+        stash.dirs.add(VERCEL_DIR);
+        return { code: 0, stdout: "", stderr: "" };
+      },
+    });
+    await buildVercelProject({ ...base, runCommand, stashFs: stash.fs });
+    assert.ok(stash.dirs.has(VERCEL_DIR));
+    assert.equal(stash.ops.length, 0);
+  });
+});
+
+describe("deployPrebuiltVercelProject", () => {
+  const base = {
+    target: VERCEL_TARGET_PRODUCTION,
+    sha: SHA,
+    token: TOKEN,
+    orgId: TEAM_ID,
+    projectId: PROJECT_ID,
+    label: "frapp-web",
+    cwd: CWD,
+    logger: quiet,
+  };
+
+  it("restores the stash over whatever .vercel holds, then deploys only", async () => {
+    // On the production path `.vercel` holds the OTHER project's leftovers at
+    // this point; uploading those would ship landing's bundle to the web
+    // project while every status page reported success.
+    const stash = makeStashFs([STASH, VERCEL_DIR]);
+    const { runCommand, calls } = makeRunStub({ deploy: READY_DEPLOY });
+
+    const result = await deployPrebuiltVercelProject({
+      ...base,
+      runCommand,
+      stashDir: STASH,
+      stashFs: stash.fs,
+    });
+
+    assert.equal(result.host, "frapp-web-abc123.vercel.app");
+    assert.deepEqual(
+      calls.map((c) => c.args[0]),
+      ["deploy"],
+    );
+    assert.deepEqual(stash.ops, [
+      ["remove", VERCEL_DIR],
+      ["move", STASH, VERCEL_DIR],
+    ]);
+    assert.deepEqual(calls[0].args.slice(0, 4), ["deploy", "--prebuilt", "--yes", "--prod"]);
+  });
+
+  it("refuses to upload when the stash is missing — never falls through to .vercel", async () => {
+    const stash = makeStashFs([VERCEL_DIR]);
+    const { runCommand, calls } = makeRunStub({ deploy: READY_DEPLOY });
+
+    await assert.rejects(
+      deployPrebuiltVercelProject({ ...base, runCommand, stashDir: STASH, stashFs: stash.fs }),
+      /No prebuilt output at .*build phase/,
+    );
+    assert.equal(calls.length, 0, "nothing was uploaded");
+    assert.ok(stash.dirs.has(VERCEL_DIR), "the existing .vercel was not destroyed either");
+  });
+
+  it("deploys in place when no stash is given (the single-phase path)", async () => {
+    const stash = makeStashFs([VERCEL_DIR]);
+    const { runCommand, calls } = makeRunStub({ deploy: READY_DEPLOY });
+
+    await deployPrebuiltVercelProject({ ...base, runCommand, stashFs: stash.fs });
+
+    assert.deepEqual(
+      calls.map((c) => c.args[0]),
+      ["deploy"],
+    );
+    assert.equal(stash.ops.length, 0);
   });
 });
