@@ -37,7 +37,7 @@ export class ChapterAuditLogController {
   @ApiOperation({
     summary: 'List chapter audit log entries',
     description:
-      'Officer-action history (config changes, role/field changes, member removal, and similar). Paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).',
+      'Officer-action history (config changes, role/field changes, member removal, and similar). Optional filters — `actor_user_id`, `action`, and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).',
   })
   @ApiOkResponse({ type: ChapterAuditLogEntryDto, isArray: true })
   async list(
@@ -46,6 +46,10 @@ export class ChapterAuditLogController {
   ) {
     return this.auditLogService.list(chapterId, {
       before: query.before,
+      actorUserId: query.actor_user_id,
+      action: query.action,
+      startDate: query.start_date,
+      endDate: query.end_date,
       limit: query.limit,
     });
   }

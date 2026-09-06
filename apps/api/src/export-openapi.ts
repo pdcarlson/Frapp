@@ -5,13 +5,14 @@ import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { AppModule } from './app.module';
 
-// Allow export without real env vars (only used to build Swagger doc)
-if (!process.env.SUPABASE_URL)
-  process.env.SUPABASE_URL = 'https://placeholder.supabase.co';
-if (!process.env.SUPABASE_SERVICE_ROLE_KEY)
-  process.env.SUPABASE_SERVICE_ROLE_KEY = 'placeholder-key';
-if (!process.env.SUPABASE_ANON_KEY)
-  process.env.SUPABASE_ANON_KEY = 'placeholder-anon-key';
+// No Supabase placeholders here, deliberately: assigning to `process.env` in this
+// file's body is always too late. `import { AppModule }` is hoisted above every
+// statement below, so `ConfigModule.forRoot({ validate: validateEnv })` in
+// app.module.ts has already read the environment by the time this line would run —
+// verified by running the export with SUPABASE_URL unset and getting
+// `Missing required environment variables: SUPABASE_URL` regardless. A caller that
+// needs the export to run without real credentials must put them in the environment
+// up front; scripts/check-api-contract-drift.mjs does exactly that, and says so.
 const requiredEnvVars = [
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',

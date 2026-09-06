@@ -47,9 +47,38 @@ describe('ChapterAuditLogController', () => {
 
       expect(service.list).toHaveBeenCalledWith('chapter-1', {
         before: '2026-01-01T00:00:00.000Z',
+        actorUserId: undefined,
+        action: undefined,
+        startDate: undefined,
+        endDate: undefined,
         limit: 25,
       });
       expect(result).toBe(expected);
+    });
+
+    // The wire names are snake_case and the service's are camelCase, so this
+    // mapping is hand-written and a rename on either side is silent without
+    // an assertion naming both.
+    it('maps every snake_case query param onto its service option', async () => {
+      service.list.mockResolvedValue([] as never);
+
+      await controller.list('chapter-1', {
+        actor_user_id: '00000000-0000-4000-8000-0000000000a1',
+        action: 'member_removed',
+        start_date: '2026-01-01T00:00:00.000Z',
+        end_date: '2026-02-01T00:00:00.000Z',
+        before: '2026-03-01T00:00:00.000Z',
+        limit: 10,
+      });
+
+      expect(service.list).toHaveBeenCalledWith('chapter-1', {
+        actorUserId: '00000000-0000-4000-8000-0000000000a1',
+        action: 'member_removed',
+        startDate: '2026-01-01T00:00:00.000Z',
+        endDate: '2026-02-01T00:00:00.000Z',
+        before: '2026-03-01T00:00:00.000Z',
+        limit: 10,
+      });
     });
 
     it('passes undefined query params through untouched', async () => {
@@ -59,6 +88,10 @@ describe('ChapterAuditLogController', () => {
 
       expect(service.list).toHaveBeenCalledWith('chapter-1', {
         before: undefined,
+        actorUserId: undefined,
+        action: undefined,
+        startDate: undefined,
+        endDate: undefined,
         limit: undefined,
       });
     });
