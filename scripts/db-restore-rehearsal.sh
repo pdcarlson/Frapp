@@ -82,15 +82,28 @@ echo "═══ 3. Destroy the application schema ═══"
 # copy the backup restores. It is enumerated dynamically rather than by name
 # because the CLI owns that schema: the rehearsal first failed on
 # schema_migrations, then on seed_files, which is a list that will keep growing.
+#
+# EVERY `auth` data table is truncated too, not just `auth.users`. The dump
+# carries the whole `auth` schema (minus GoTrue's own `schema_migrations`
+# ledger), and only some of those tables hang off `users` by FK — `sessions`,
+# `identities`, `refresh_tokens`, `mfa_*` cascade from the users truncate, but
+# `audit_log_entries`, `flow_state`, `instances` and the SSO/OAuth tables do
+# not. On 2026-09-06 the first rehearsal against a database that had actually
+# seen a sign-in died on `audit_log_entries_pkey` (the 2026-08-27 pass had an
+# empty auth schema, so it never exercised this). A fresh Supabase project has
+# every one of these tables empty, which is the state this step simulates.
+# `auth.schema_migrations` is deliberately kept: it is GoTrue's, excluded from
+# the dump, and populated on a fresh project too.
 psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
   -c "DROP SCHEMA public CASCADE;" \
   -c "CREATE SCHEMA public;" \
   -c "GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;" \
-  -c "TRUNCATE auth.users CASCADE;" \
+  -c "DO \$\$ DECLARE t record; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='auth' AND tablename <> 'schema_migrations' LOOP EXECUTE format('TRUNCATE auth.%I CASCADE', t.tablename); END LOOP; END \$\$;" \
   -c "DO \$\$ DECLARE t record; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='supabase_migrations' LOOP EXECUTE format('TRUNCATE supabase_migrations.%I', t.tablename); END LOOP; END \$\$;" >/dev/null 2>&1
 REMAINING="$(psql "$DB_URL" -tAc "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE';")"
 [ "$REMAINING" = "0" ] || { echo "Error: wipe left $REMAINING public tables; the rehearsal would not prove anything." >&2; exit 1; }
-echo "    public schema dropped, auth.users truncated"
+AUTH_ROWS="$(psql "$DB_URL" -tAc "select coalesce(sum(n_live_tup),0) from pg_stat_user_tables where schemaname='auth' and relname <> 'schema_migrations';")"
+echo "    public schema dropped, auth data tables truncated (approx ${AUTH_ROWS} rows left by stats), supabase_migrations truncated"
 
 echo "═══ 4. Restore from the backup alone ═══"
 ./scripts/db-restore.sh --backup-dir "$WORK/backups/rehearsal" --db-url "$DB_URL" >/dev/null
