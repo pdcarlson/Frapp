@@ -12,6 +12,7 @@ import { createHmac } from 'node:crypto';
 import {
   CustomThrottlerGuard,
   READ_THROTTLE_METHODS,
+  UNKNOWN_KID_ATTEMPT_INTERVAL_MS,
 } from './custom-throttler.guard';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { WebhookController } from '../controllers/webhook.controller';
@@ -389,6 +390,119 @@ describe('CustomThrottlerGuard', () => {
         ).resolves.toBe('ip:203.0.113.27');
       }
       expect(getClaims).not.toHaveBeenCalled();
+    });
+
+    // supabase-js re-fetches the JWKS over the network for every `kid` it has
+    // not cached, and this guard runs before authentication — so without a
+    // bound, a flood of ES256-shaped headers with random `kid`s is one
+    // outbound fetch each. The bound: a `kid` that never verified gets one
+    // attempt per interval, process-wide; a `kid` that has verified always
+    // goes through.
+    describe('JWKS fetch amplification is bounded', () => {
+      const withKid = (kid: string): string =>
+        `${b64url({ alg: 'ES256', typ: 'JWT', kid })}.${b64url({ sub: 'u', exp: futureExp() })}.opaque`;
+      const reqFor = (kid: string, ip: string) => ({
+        headers: { authorization: `Bearer ${withKid(kid)}` },
+        ip,
+      });
+
+      let nowSpy: jest.SpyInstance<number, []>;
+      let now: number;
+
+      beforeEach(() => {
+        now = 1_800_000_000_000;
+        nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+      });
+
+      afterEach(() => {
+        nowSpy.mockRestore();
+      });
+
+      it('sends an unknown kid to the verifier at most once per interval', async () => {
+        getClaims.mockResolvedValue({
+          data: null,
+          error: { message: 'no matching key' },
+        });
+        await expect(
+          jwksGuard.track(reqFor('random-1', '203.0.113.30')),
+        ).resolves.toBe('ip:203.0.113.30');
+        await expect(
+          jwksGuard.track(reqFor('random-2', '203.0.113.30')),
+        ).resolves.toBe('ip:203.0.113.30');
+        await expect(
+          jwksGuard.track(reqFor('random-3', '203.0.113.31')),
+        ).resolves.toBe('ip:203.0.113.31');
+        expect(getClaims).toHaveBeenCalledTimes(1);
+
+        now += UNKNOWN_KID_ATTEMPT_INTERVAL_MS;
+        await expect(
+          jwksGuard.track(reqFor('random-4', '203.0.113.30')),
+        ).resolves.toBe('ip:203.0.113.30');
+        expect(getClaims).toHaveBeenCalledTimes(2);
+      });
+
+      it('always sends a kid that has verified before, regardless of the interval', async () => {
+        getClaims.mockResolvedValue({
+          data: { claims: { sub: 'member-a', exp: futureExp() } },
+          error: null,
+        });
+        await expect(
+          jwksGuard.track(reqFor('rotated-key', '203.0.113.32')),
+        ).resolves.toBe('user:member-a');
+
+        // Same kid, immediately, from another member on the same network.
+        getClaims.mockResolvedValue({
+          data: { claims: { sub: 'member-b', exp: futureExp() } },
+          error: null,
+        });
+        await expect(
+          jwksGuard.track(reqFor('rotated-key', '203.0.113.32')),
+        ).resolves.toBe('user:member-b');
+        expect(getClaims).toHaveBeenCalledTimes(2);
+
+        // A forged token naming the known kid still reaches the verifier — a
+        // known kid is a local WebCrypto check, not a fetch — and still fails.
+        getClaims.mockResolvedValue({
+          data: null,
+          error: { message: 'invalid signature' },
+        });
+        await expect(
+          jwksGuard.track(reqFor('rotated-key', '203.0.113.33')),
+        ).resolves.toBe('ip:203.0.113.33');
+        expect(getClaims).toHaveBeenCalledTimes(3);
+      });
+
+      it('does not learn a kid from a failed verification', async () => {
+        getClaims.mockResolvedValueOnce({
+          data: null,
+          error: { message: 'invalid signature' },
+        });
+        await jwksGuard.track(reqFor('attacker-kid', '203.0.113.34'));
+        getClaims.mockResolvedValue({
+          data: { claims: { sub: 'u', exp: futureExp() } },
+          error: null,
+        });
+        // Still inside the interval: the failed kid is unknown, so it waits.
+        await expect(
+          jwksGuard.track(reqFor('attacker-kid', '203.0.113.34')),
+        ).resolves.toBe('ip:203.0.113.34');
+        expect(getClaims).toHaveBeenCalledTimes(1);
+      });
+
+      it('treats a header without a kid as unknown every time', async () => {
+        getClaims.mockResolvedValue({
+          data: { claims: { sub: 'u', exp: futureExp() } },
+          error: null,
+        });
+        const noKid = `${b64url({ alg: 'ES256', typ: 'JWT' })}.${b64url({ sub: 'u', exp: futureExp() })}.opaque`;
+        const req = {
+          headers: { authorization: `Bearer ${noKid}` },
+          ip: '203.0.113.35',
+        };
+        await expect(jwksGuard.track(req)).resolves.toBe('user:u');
+        await expect(jwksGuard.track(req)).resolves.toBe('ip:203.0.113.35');
+        expect(getClaims).toHaveBeenCalledTimes(1);
+      });
     });
 
     it('falls back to IP for an ES256 token when no Supabase client is wired', async () => {

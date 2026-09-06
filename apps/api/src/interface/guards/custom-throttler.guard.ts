@@ -22,6 +22,14 @@ import type { FrappSupabaseClient } from '../../infrastructure/supabase/database
 const JWKS_VERIFIED_ALGS: ReadonlySet<string> = new Set(['ES256', 'RS256']);
 
 /**
+ * How often a token whose `kid` has never verified may reach the JWKS
+ * verifier (see `jwksSubject`). Ten seconds bounds a random-`kid` flood to six
+ * outbound JWKS fetches a minute for the whole process, and delays a genuine
+ * key rotation's first per-user bucket by at most that long.
+ */
+export const UNKNOWN_KID_ATTEMPT_INTERVAL_MS = 10_000;
+
+/**
  * Methods counted against the `read` bucket; everything else is a `write`.
  * Exported so tests derive the expected bucket from the same set the guard
  * uses, rather than from a copy that could drift away from it.
@@ -146,22 +154,23 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     }
     const [headerSeg, payloadSeg, signatureSeg] = segments;
 
-    let alg: unknown;
+    let header: { alg?: unknown; kid?: unknown };
     try {
-      alg = (
-        JSON.parse(Buffer.from(headerSeg, 'base64url').toString('utf8')) as {
-          alg?: unknown;
-        }
-      ).alg;
+      header = JSON.parse(
+        Buffer.from(headerSeg, 'base64url').toString('utf8'),
+      ) as { alg?: unknown; kid?: unknown };
     } catch {
       return null;
     }
 
-    if (alg === 'HS256') {
+    if (header.alg === 'HS256') {
       return this.hs256Subject(headerSeg, payloadSeg, signatureSeg);
     }
-    if (typeof alg === 'string' && JWKS_VERIFIED_ALGS.has(alg)) {
-      return this.jwksSubject(token);
+    if (typeof header.alg === 'string' && JWKS_VERIFIED_ALGS.has(header.alg)) {
+      return this.jwksSubject(
+        token,
+        typeof header.kid === 'string' ? header.kid : undefined,
+      );
     }
     // `none`, an unknown alg, or no alg at all: nothing here can verify it.
     return null;
@@ -208,21 +217,54 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
    * wired, JWKS unreachable on a cold start, verification error — is a `null`
    * and therefore per-IP keying, never a rejected request: this guard limits
    * rates, `SupabaseAuthGuard` decides authentication.
+   *
+   * One thing supabase-js does not do is negative-cache: `fetchJwk` re-fetches
+   * the JWKS over the network whenever a token's `kid` is not in its cache,
+   * and this guard runs on every request *before* authentication. Unbounded,
+   * that is an amplifier — an unauthenticated flood of ES256-shaped headers
+   * with random `kid`s becomes one outbound fetch each. So a `kid` earns the
+   * verifier's attention once: a `kid` that has verified before is always
+   * sent (real members share one or two, and a key rotation is a single new
+   * one); any other `kid` gets at most one attempt per
+   * `UNKNOWN_KID_ATTEMPT_INTERVAL_MS`, process-wide, and everything in between
+   * keys on IP — the pre-existing, safe behaviour. A `kid` is added to the
+   * known set only on a successful verification, so an attacker cannot grow
+   * it.
    */
-  private async jwksSubject(token: string): Promise<string | null> {
+  private async jwksSubject(
+    token: string,
+    kid: string | undefined,
+  ): Promise<string | null> {
     if (!this.supabase) {
       return null;
+    }
+    const known = kid !== undefined && this.verifiedKids.has(kid);
+    if (!known) {
+      const now = Date.now();
+      if (now < this.nextUnknownKidAttemptAt) {
+        return null;
+      }
+      this.nextUnknownKidAttemptAt = now + UNKNOWN_KID_ATTEMPT_INTERVAL_MS;
     }
     try {
       const { data, error } = await this.supabase.auth.getClaims(token);
       if (error || !data?.claims) {
         return null;
       }
+      if (kid !== undefined) {
+        this.verifiedKids.add(kid);
+      }
       return subjectOfUnexpired(data.claims);
     } catch {
       return null;
     }
   }
+
+  /** `kid`s that have verified against the JWKS at least once. */
+  private readonly verifiedKids = new Set<string>();
+
+  /** Earliest time an unknown `kid` may next be sent to the verifier. */
+  private nextUnknownKidAttemptAt = 0;
 }
 
 /**
