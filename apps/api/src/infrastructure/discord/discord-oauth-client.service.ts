@@ -10,6 +10,7 @@ import {
   type DiscordUserGuild,
   type IDiscordOAuthClient,
 } from '#domain/adapters/discord.interface';
+import { asRecord, asString } from '#domain/utils/json-guards';
 
 const DISCORD_AUTHORIZE_URL = 'https://discord.com/oauth2/authorize';
 const DISCORD_TOKEN_URL = 'https://discord.com/api/v10/oauth2/token';
@@ -19,16 +20,6 @@ const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
 /** The handshake is interactive; a hung call is worse than a failed one. */
 const OAUTH_TIMEOUT_MS = 10_000;
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
 
 /**
  * The connecting admin's half of the Discord handshake.

@@ -58,14 +58,6 @@ describe('SupabaseFinancialTransactionRepository — tenant scope', () => {
     repo = new SupabaseFinancialTransactionRepository(harness.client);
   });
 
-  it('findByChapter returns only the caller chapter ledger', async () => {
-    const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.findByChapter(CHAPTER_B),
-    );
-
-    expect(rows.map((r) => r.id)).toEqual([TXN_B]);
-  });
-
   it('create writes the ledger row under the caller chapter', async () => {
     const created = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.create({

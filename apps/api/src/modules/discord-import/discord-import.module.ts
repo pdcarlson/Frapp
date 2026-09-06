@@ -65,6 +65,5 @@ import {
     { provide: DISCORD_BOT_GATEWAY, useClass: DiscordBotGatewayService },
     { provide: DISCORD_OAUTH_CLIENT, useClass: DiscordOAuthClientService },
   ],
-  exports: [DiscordImportService, DiscordOAuthService],
 })
 export class DiscordImportModule {}

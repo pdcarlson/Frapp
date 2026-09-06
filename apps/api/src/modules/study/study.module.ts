@@ -30,6 +30,5 @@ import { RbacModule } from '../rbac/rbac.module';
       useClass: SupabasePointTransactionRepository,
     },
   ],
-  exports: [StudyService],
 })
 export class StudyModule {}

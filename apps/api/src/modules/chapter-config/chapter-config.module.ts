@@ -42,7 +42,6 @@ import { ActivationModule } from '../activation/activation.module';
     },
   ],
   exports: [
-    ChapterConfigService,
     ChapterWorkflowsService,
     ChapterServiceConfigService,
     ChapterPointsConfigService,

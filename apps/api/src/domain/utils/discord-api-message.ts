@@ -28,6 +28,7 @@ import type {
   DiscordExportMessage,
   DiscordExportUser,
 } from './discord-export';
+import { asString } from './json-guards';
 
 /** A Discord API attachment, as much of it as we read. */
 export interface DiscordApiAttachment {
@@ -82,10 +83,6 @@ export interface DiscordApiMessage {
     channel_id?: string | null;
     guild_id?: string | null;
   } | null;
-}
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 /**

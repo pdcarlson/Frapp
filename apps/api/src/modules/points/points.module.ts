@@ -29,6 +29,6 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
       useClass: SupabaseSemesterArchiveRepository,
     },
   ],
-  exports: [PointsService, POINT_TRANSACTION_REPOSITORY],
+  exports: [PointsService],
 })
 export class PointsModule {}

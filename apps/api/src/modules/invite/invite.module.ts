@@ -26,6 +26,5 @@ import { ChatModule } from '../chat/chat.module';
     AuthSyncInterceptor,
     { provide: INVITE_REPOSITORY, useClass: SupabaseInviteRepository },
   ],
-  exports: [InviteService],
 })
 export class InviteModule {}

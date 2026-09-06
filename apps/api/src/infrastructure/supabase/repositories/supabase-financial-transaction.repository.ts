@@ -11,16 +11,6 @@ export class SupabaseFinancialTransactionRepository implements IFinancialTransac
     private readonly supabase: FrappSupabaseClient,
   ) {}
 
-  async findByChapter(chapterId: string): Promise<FinancialTransaction[]> {
-    const { data, error } = await this.supabase
-      .from('financial_transactions')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
-  }
-
   async findByInvoice(invoiceId: string): Promise<FinancialTransaction[]> {
     const { data, error } = await this.supabase
       .from('financial_transactions')
