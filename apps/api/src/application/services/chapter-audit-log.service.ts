@@ -8,7 +8,12 @@ import {
   CHAPTER_AUDIT_LOG_REPOSITORY,
   type IChapterAuditLogRepository,
 } from '#domain/repositories/chapter-audit-log.repository.interface';
+import {
+  ROLE_REPOSITORY,
+  type IRoleRepository,
+} from '#domain/repositories/role.repository.interface';
 import { ChapterAuditLog } from '#domain/entities/chapter-audit-log.entity';
+import { SystemRoleKeys } from '#domain/constants/permissions';
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import {
   ISO_INSTANT_MESSAGE,
@@ -37,6 +42,17 @@ export interface ListChapterAuditLogInput {
   startDate?: string;
   endDate?: string;
   limit?: number;
+}
+
+/**
+ * Who is reading. Only the seeded-role ids matter: exec-only rows are visible
+ * to the chapter's President and nobody else, and the President is identified
+ * by holding the chapter's `system_key = 'PRESIDENT'` role — the one role that
+ * may carry the wildcard — never by a permission a custom role could be minted
+ * with.
+ */
+export interface AuditLogViewer {
+  roleIds: readonly string[];
 }
 
 /**
@@ -76,6 +92,8 @@ export class ChapterAuditLogService {
   constructor(
     @Inject(CHAPTER_AUDIT_LOG_REPOSITORY)
     private readonly auditLogRepo: IChapterAuditLogRepository,
+    @Inject(ROLE_REPOSITORY)
+    private readonly roleRepo: IRoleRepository,
   ) {}
 
   // Append-only audit trail. A failed write must fail the request — settings
@@ -105,8 +123,28 @@ export class ChapterAuditLogService {
     }
   }
 
+  /**
+   * Read the chapter's history as one caller sees it.
+   *
+   * **Every caller who is not the President sees only `member_visible` rows.**
+   * This is the filter `20260523130000_audit_log.sql` says the API applies in
+   * place of a SELECT policy (#1773), and it is what makes the president-only
+   * `member_visible` toggle in `spec/behavior/settings/README.md` § Audit Rules
+   * mean something: toggling a row off retracts its `#chapter-audit` mirror for
+   * non-presidents, and it must retract the row from this read too, or a
+   * custom role holding `chapter-config:view` + `members:view` could ask
+   * `?action=member_removed` for exactly what was just hidden.
+   *
+   * "President" is the member holding the chapter's seeded President role,
+   * resolved by `system_key` against THIS chapter — a stale or cross-chapter
+   * role id on the member row resolves to nothing and reads as a member.
+   * A chapter with no President role (mid presidency-transfer, or an orphaned
+   * chapter) has no exec-only readers until one exists; failing closed is the
+   * right side of that edge.
+   */
   async list(
     chapterId: string,
+    viewer: AuditLogViewer,
     options: ListChapterAuditLogInput = {},
   ): Promise<ChapterAuditLog[]> {
     const limit = clampListLimit(options.limit);
@@ -129,13 +167,28 @@ export class ChapterAuditLogService {
       throw new BadRequestException('start_date must not be after end_date');
     }
 
+    const memberVisibleOnly = !(await this.isPresident(chapterId, viewer));
+
     return this.auditLogRepo.findByChapter(chapterId, {
       before: options.before,
       actorUserId: options.actorUserId,
       action: options.action,
       startDate: options.startDate,
       endDate: options.endDate,
+      memberVisibleOnly,
       limit,
     });
+  }
+
+  private async isPresident(
+    chapterId: string,
+    viewer: AuditLogViewer,
+  ): Promise<boolean> {
+    if (viewer.roleIds.length === 0) return false;
+    const presidentRole = await this.roleRepo.findByChapterAndSystemKey(
+      chapterId,
+      SystemRoleKeys.PRESIDENT,
+    );
+    return presidentRole !== null && viewer.roleIds.includes(presidentRole.id);
   }
 }
