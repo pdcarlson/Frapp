@@ -34,6 +34,5 @@ import { SupabaseAuthAdminService } from '../../infrastructure/supabase/supabase
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
     { provide: AUTH_ADMIN_PROVIDER, useClass: SupabaseAuthAdminService },
   ],
-  exports: [UserService],
 })
 export class UserModule {}

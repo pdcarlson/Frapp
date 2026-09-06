@@ -22,6 +22,5 @@ import { SupabaseStorageService } from '../../infrastructure/storage/supabase-st
     },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
-  exports: [ChapterDocumentService],
 })
 export class ChapterDocumentModule {}

@@ -20,6 +20,5 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
     },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
-  exports: [ServiceEntryService, SERVICE_ENTRY_REPOSITORY],
 })
 export class ServiceEntryModule {}
