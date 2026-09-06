@@ -113,21 +113,23 @@ The workflow holds the `db-migrate-production` concurrency group with
 > Deliberately no tree-side count here: this note has quoted one three times and
 > it went stale within a day each time, because every merge moves it. Re-derive
 > with `ls supabase/migrations/*.sql | wc -l` — the durable fact is that the tree
-> is past `20260829002000`, not any particular total. **The applied counts have not been re-read** — this
-> correction is derived from the repository alone, which is enough to supersede
-> the old comparison but not to state what either project holds today. Re-read
+> is past `20260829002000`, not any particular total. This correction was derived from the
+> repository alone; the block below is the read that followed. Re-read
 > before any promotion, and do not skip the dry run on the strength of the ✅
 > above.
 >
 > **Re-read 2026-09-06 (Management API, `select count(*), max(version) from
 > supabase_migrations.schema_migrations`):** `frapp-prod` **54**, newest
 > `20260829002000` — unchanged since the 2026-08-29 promotion; `frapp-staging`
-> **74**, newest `20260906120001`, equal to the tree that day. So production is
-> **twenty migrations behind** `main`, and the next `Deploy production` dispatch
-> will apply all twenty in one run — which is exactly what the rehearsal step
-> exists to prove out first, and why `scope: migrations-only` should go before a
-> `full` release. Like every number in this block, this one is a dated read, not
-> a live fact; the API of record is the Management API, not this page. (#1620.)
+> **74**, newest `20260906120001`, equal to the tree that day. The tree holds
+> **twenty files newer than production's high-water mark**, so those twenty are
+> certainly unapplied there; that the older 54 are the *same* 54 rests on the
+> 2026-08-29 exact-match read, not on the count. The next `Deploy production`
+> dispatch will therefore *attempt* those twenty after the rehearsal replays them
+> against production's applied history — which is exactly what that step exists
+> to prove out first, and why `scope: migrations-only` should go before a `full`
+> release. Like every number in this block, this one is a dated read, not a live
+> fact; the API of record is the Management API, not this page. (#1620.)
 >
 > This block previously warned that production was ~49 migrations behind and
 > that both paths above would fail on the dry run. That was true on 2026-08-24
