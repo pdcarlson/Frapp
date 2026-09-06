@@ -521,6 +521,160 @@ describe('InviteService', () => {
     );
   });
 
+  // #1546. `POST /v1/invites/redeem` carries no ChapterGuard (the chapter that
+  // matters is the invite's, not the caller's), so the subscription hard lock
+  // is evaluated here: a canceled chapter, or a past_due one past its grace
+  // window, cannot gain a member through a token minted before it lapsed.
+  describe('redeem into a chapter under the subscription hard lock (#1546)', () => {
+    const liveInvite = (): Invite => ({
+      id: 'inv-locked',
+      token: 'locked-token',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    });
+    const lockedChapter = (overrides: Partial<Chapter>): Chapter =>
+      ({
+        id: 'ch-1',
+        default_invite_role_id: null,
+        subscription_status: 'active',
+        past_due_since: null,
+        ...overrides,
+      }) as Chapter;
+
+    beforeEach(() => {
+      mockInviteRepo.findByToken.mockResolvedValue(liveInvite());
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+      mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+      mockRoleRepo.findByChapter.mockResolvedValue([]);
+      mockMemberRepo.create.mockResolvedValue({
+        id: 'member-x',
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        role_ids: [],
+        custom_role_ids: [],
+        has_completed_onboarding: false,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+    });
+
+    it('refuses a canceled chapter with 403 and leaves the token unconsumed', async () => {
+      mockChapterRepo.findById.mockResolvedValue(
+        lockedChapter({ subscription_status: 'canceled' }),
+      );
+
+      await expect(
+        service.redeem('locked-token', 'user-2'),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: expect.objectContaining({
+          code: 'chapter.subscription.canceled',
+        }),
+      });
+      // The token survives: the chapter may recover inside its lifetime.
+      expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+      expect(mockMemberRepo.create).not.toHaveBeenCalled();
+      expect(mockActivation.record).not.toHaveBeenCalled();
+      expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+    });
+
+    it('refuses a past_due chapter whose 3-day grace window has run out', async () => {
+      const fourDaysAgo = new Date(
+        Date.now() - 4 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      mockChapterRepo.findById.mockResolvedValue(
+        lockedChapter({
+          subscription_status: 'past_due',
+          past_due_since: fourDaysAgo,
+        }),
+      );
+
+      await expect(
+        service.redeem('locked-token', 'user-2'),
+      ).rejects.toMatchObject({
+        status: 403,
+        response: expect.objectContaining({
+          code: 'chapter.subscription.write_locked',
+        }),
+      });
+      expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+    });
+
+    it('still admits a past_due chapter inside its grace window — the same rule as the guard', async () => {
+      const oneDayAgo = new Date(
+        Date.now() - 24 * 60 * 60 * 1000,
+      ).toISOString();
+      mockChapterRepo.findById.mockResolvedValue(
+        lockedChapter({
+          subscription_status: 'past_due',
+          past_due_since: oneDayAgo,
+        }),
+      );
+
+      await expect(
+        service.redeem('locked-token', 'user-2'),
+      ).resolves.toMatchObject({ chapterId: 'ch-1' });
+      expect(mockMemberRepo.create).toHaveBeenCalled();
+    });
+
+    it('admits an incomplete (never-paid) chapter — minting is free-tier there too', async () => {
+      mockChapterRepo.findById.mockResolvedValue(
+        lockedChapter({ subscription_status: 'incomplete' }),
+      );
+
+      await expect(
+        service.redeem('locked-token', 'user-2'),
+      ).resolves.toMatchObject({ chapterId: 'ch-1' });
+    });
+
+    it('still answers 409 to an existing member of a locked chapter — their next action is different', async () => {
+      mockChapterRepo.findById.mockResolvedValue(
+        lockedChapter({ subscription_status: 'canceled' }),
+      );
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        id: 'member-existing',
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        role_ids: [],
+        custom_role_ids: [],
+        has_completed_onboarding: true,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+
+      await expect(
+        service.redeem('locked-token', 'user-2'),
+      ).rejects.toMatchObject({
+        status: 409,
+      });
+      expect(mockChapterRepo.findById).not.toHaveBeenCalled();
+    });
+
+    it('checks the lock only after the token itself is valid', async () => {
+      // A dead token is a 410 regardless of the chapter's state: the caller's
+      // next action ("ask for a new invite") is the same either way, and the
+      // chapter is never even loaded.
+      mockInviteRepo.findByToken.mockResolvedValue({
+        ...liveInvite(),
+        used_at: '2024-01-02',
+      });
+      mockChapterRepo.findById.mockResolvedValue(
+        lockedChapter({ subscription_status: 'canceled' }),
+      );
+
+      await expect(
+        service.redeem('locked-token', 'user-2'),
+      ).rejects.toMatchObject({
+        status: 410,
+      });
+      expect(mockChapterRepo.findById).not.toHaveBeenCalled();
+    });
+  });
+
   describe('notifyInviterOfAcceptance (#596)', () => {
     const invite: Invite = {
       id: 'inv-1',
