@@ -139,10 +139,13 @@ Supabase's guidance for the free tier is to do exactly what this repo now does:
 
 Two consequences worth stating plainly:
 
-- **The nightly offsite dump is not defence-in-depth. It is the only restorable
-  backup `frapp-staging` has, and `frapp-prod` has none at all.** If it is not
-  running, there is no recovery path from data loss beyond replaying migrations
-  into an empty database.
+- **The offsite dump is not defence-in-depth. It is the only restorable backup
+  either project has.** For `frapp-staging` it is nightly. For `frapp-prod` there
+  is, as of 2026-09-06, exactly **one**: `production/2026-09-06T22-22-57Z/`, taken by hand from
+  an agent session (§ Backups: what exists) — a scheduled production job does not
+  exist yet (#1794). Anything written to production after that label is not
+  backed up anywhere. If the workflow is not running, there is no recovery path
+  from data loss beyond replaying migrations into an empty database.
 - Free-tier projects may have up to 7 daily backups taken internally, but
   Supabase makes them accessible **only on upgrade**, and states it "might no
   longer make daily backups for free projects in the future". That is not
