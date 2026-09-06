@@ -782,10 +782,52 @@ export function createTenantHarness(
     return readColumn(row, column.includes('.') ? 'chapter_id' : column);
   };
 
-  /** Every object anywhere in `value` that carries a `chapter_id`. */
-  const collectTenantBearing = (value: unknown, found: Row[] = []): Row[] => {
+  /**
+   * Every object anywhere in `value` that carries a `chapter_id`.
+   *
+   * `Map` and `Set` are walked explicitly, and the branches must stay ABOVE the
+   * plain-object one. Their contents are not own enumerable properties, so
+   * `Object.values()` on them returns `[]` and traversal stops dead — a
+   * repository that groups its rows into a `Map` (the push worker's batched
+   * preference read does) would otherwise sail through
+   * `assertReturnedRowsScoped` with nothing inspected at all, and the harness
+   * would report "scoped" while its read-side net was silently gone.
+   *
+   * A `Map`'s keys are walked as well as its values, but only an OBJECT key can
+   * ever be collected: this function gathers objects carrying `chapter_id`, so
+   * a plain identifier key — the usual shape, `Map<userId, rows>` — is
+   * invisible to it. A foreign chapter's id sitting in a key is **not** caught,
+   * and no spec should be written as though it were.
+   *
+   * `seen` guards cycles. Walking Maps and Sets removed what used to be an
+   * accidental barrier: before this branch existed, a Map in a cyclic structure
+   * terminated the walk by returning no values, and now it recurses. A parent
+   * ↔ child back-reference would otherwise turn a tenancy assertion into a
+   * `RangeError`, which reads as an unrelated bug — the exact confusion
+   * `expectTenantScoped`'s ordering is designed to avoid.
+   */
+  const collectTenantBearing = (
+    value: unknown,
+    found: Row[] = [],
+    seen: WeakSet<object> = new WeakSet(),
+  ): Row[] => {
+    if (value && typeof value === 'object') {
+      if (seen.has(value)) return found;
+      seen.add(value);
+    }
     if (Array.isArray(value)) {
-      for (const item of value) collectTenantBearing(item, found);
+      for (const item of value) collectTenantBearing(item, found, seen);
+      return found;
+    }
+    if (value instanceof Map) {
+      for (const [key, item] of value) {
+        collectTenantBearing(key, found, seen);
+        collectTenantBearing(item, found, seen);
+      }
+      return found;
+    }
+    if (value instanceof Set) {
+      for (const item of value) collectTenantBearing(item, found, seen);
       return found;
     }
     if (value && typeof value === 'object') {
@@ -793,7 +835,7 @@ export function createTenantHarness(
       if ('chapter_id' in row) found.push(row);
       for (const nested of Object.values(row)) {
         if (nested && typeof nested === 'object')
-          collectTenantBearing(nested, found);
+          collectTenantBearing(nested, found, seen);
       }
     }
     return found;
@@ -939,6 +981,36 @@ export function createTenantHarness(
     }
   };
 
+  /**
+   * `JSON.stringify` with the cycles dropped.
+   *
+   * The `seen` guard in `collectTenantBearing` gets the *walk* through a cyclic
+   * result, but the walk is not the only thing that touches one: the leak
+   * message below serializes the offending rows, and those rows come from
+   * whatever the call under test returned. A parent ↔ child back-reference
+   * among them makes a plain `JSON.stringify` throw `TypeError: Converting
+   * circular structure to JSON`, which is the same failure the walk's guard
+   * exists to prevent — a tenancy violation reported as an unrelated crash —
+   * moved one line further down. Dropping the repeated reference keeps the row
+   * that matters, `chapter_id` and all, legible in the message.
+   *
+   * The guard is per-serialization, not per-ancestor-chain, so the *same* row
+   * object appearing twice in `leaked` collapses to the marker on its second
+   * occurrence even though nothing about it is cyclic. That is the right trade
+   * here: this string exists to show a reader which rows leaked, and the first
+   * occurrence carries every field. It is a diagnostic, not a wire format.
+   */
+  const safeStringify = (value: unknown): string => {
+    const seen = new WeakSet<object>();
+    return JSON.stringify(value, (_key, val: unknown) => {
+      if (val && typeof val === 'object') {
+        if (seen.has(val)) return '[Circular]';
+        seen.add(val);
+      }
+      return val;
+    });
+  };
+
   const assertReturnedRowsScoped = (result: unknown, chapterId: string) => {
     const leaked = collectTenantBearing(result).filter(
       (row) => row.chapter_id !== chapterId,
@@ -946,7 +1018,7 @@ export function createTenantHarness(
     if (leaked.length > 0) {
       throw new Error(
         `tenant-scope: returned ${leaked.length} row(s) from another chapter ` +
-          `while scoped to ${chapterId}: ${JSON.stringify(leaked)}`,
+          `while scoped to ${chapterId}: ${safeStringify(leaked)}`,
       );
     }
   };
