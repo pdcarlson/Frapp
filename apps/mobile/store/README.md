@@ -24,7 +24,7 @@ across the store. Decide the name first; everything below is written for
 | Bundle id / package | `live.frapp.mobile` |
 | Category | Productivity (primary); Social Networking (secondary, iOS) |
 | Age rating | 4+ / Everyone — no user-generated content is public; chat is private to a chapter |
-| Price | Free (chapters pay a subscription through the web dashboard; the app sells nothing and has no in-app purchases) |
+| Price | Free (chapters pay a subscription through the web dashboard; the app has no in-app purchases — the only payment in the app is a member paying their own chapter's dues by card, a real-world service) |
 | Privacy policy URL | https://frapp.live/privacy |
 | Terms URL | https://frapp.live/terms |
 | Support URL | https://frapp.live/support |
@@ -42,13 +42,13 @@ Officers get the tools to run the chapter without a spreadsheet: invite members 
 Frapp is invite-only. Your chapter's officers create the chapter on the web and send you an invite link; open it on your phone and you are in.
 
 Features
-- Chapter channels and direct messages, with quiet hours and per-channel mute
+- Chapter channels and direct messages
 - Events with QR check-in and attendance
 - Study hours with chapter study zones
 - Points, leaderboards and service hours
 - Dues, invoices and payment history
 - Member directory with roles
-- Push notifications you control
+- Push notifications you control, with quiet hours
 
 ## Keywords (iOS, 100 chars)
 
@@ -63,7 +63,7 @@ First release.
 - The app is invite-only. A reviewer account and a test chapter invite are provided in the Notes field at submission time; the invite link opens the app to the join screen.
 - Camera is used only to scan a chapter's event check-in QR code. Location is used only while the app is open, to confirm the member is inside a chapter study zone or at the event being checked in to; there is no background location.
 - Sign in with Apple is not offered because the app has no third-party sign-in of any kind: accounts are email + password through the chapter's invite.
-- No in-app purchases: chapters subscribe on the web dashboard, and the app never links to or mentions purchasing.
+- No in-app purchases and no digital goods. The app does take **chapter dues** by card (Stripe PaymentSheet on the Dues tab): these are membership dues owed to the member's own real-world organization, i.e. goods and services consumed outside the app (guideline 3.1.5), not digital content. Chapter *subscriptions* to Frapp itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
 
 ## Privacy questionnaire answers
 

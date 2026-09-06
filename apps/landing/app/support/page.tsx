@@ -30,7 +30,7 @@ const sections = [
   {
     heading: "3. Notifications",
     paragraphs: [
-      "Push notifications are optional and can be turned on or off at any time from the app's Notifications settings, or from your device's system settings for Frapp. Quiet hours and per-channel muting are available inside the app.",
+      "Push notifications are optional and can be turned on or off at any time from the app's Notifications settings, or from your device's system settings for Frapp. Inside the app you can set quiet hours and choose which categories of notification you receive; muting an individual channel is done from the web dashboard.",
     ],
   },
   {
