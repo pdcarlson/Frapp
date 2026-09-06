@@ -92,7 +92,7 @@ describe('StudyService', () => {
       create: jest.fn(),
       findByClientMessageId: jest.fn().mockResolvedValue(null),
       findByUser: jest.fn(),
-      findByChapter: jest.fn(),
+      leaderboard: jest.fn(),
       findByChapterFiltered: jest.fn(),
       countRecentAdjustments: jest.fn(),
     };
