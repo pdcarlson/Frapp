@@ -4,7 +4,7 @@ import { CustomRoleService } from '../../application/services/custom-role.servic
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { PERMISSIONS_ANY_KEY } from '../decorators/permissions.decorator';
 import {
   CreateCustomRoleDto,

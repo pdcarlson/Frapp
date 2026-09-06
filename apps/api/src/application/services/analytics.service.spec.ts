@@ -11,12 +11,12 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
-} from '../../domain/adapters/analytics.interface';
+} from '#domain/adapters/analytics.interface';
 import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
-} from '../../domain/repositories/member.repository.interface';
-import type { Member } from '../../domain/entities/member.entity';
+} from '#domain/repositories/member.repository.interface';
+import type { Member } from '#domain/entities/member.entity';
 
 const SALT = 'test-env-salt';
 const USER_ID = 'user-123';

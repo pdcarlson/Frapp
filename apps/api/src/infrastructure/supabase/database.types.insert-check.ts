@@ -8,7 +8,7 @@
  * Not imported at runtime. Kept next to `database.types.ts` so `nest build`
  * (tsconfig.build.json) type-checks it.
  */
-import type { Task } from '../../domain/entities/task.entity';
+import type { Task } from '#domain/entities/task.entity';
 import type {
   FrappSupabaseClient,
   TablesInsert,

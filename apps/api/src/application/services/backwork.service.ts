@@ -17,12 +17,12 @@ import {
   BACKWORK_DEPARTMENT_REPOSITORY,
   BACKWORK_PROFESSOR_REPOSITORY,
   type BackworkResourceFilter,
-} from '../../domain/repositories/backwork.repository.interface';
+} from '#domain/repositories/backwork.repository.interface';
 import type {
   IBackworkResourceRepository,
   IBackworkDepartmentRepository,
   IBackworkProfessorRepository,
-} from '../../domain/repositories/backwork.repository.interface';
+} from '#domain/repositories/backwork.repository.interface';
 import type {
   BackworkResource,
   BackworkDepartment,
@@ -30,12 +30,12 @@ import type {
   Semester,
   AssignmentType,
   DocumentVariant,
-} from '../../domain/entities/backwork.entity';
+} from '#domain/entities/backwork.entity';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
-import { assertSafeStoragePath } from '../../domain/utils/storage-path';
+} from '#domain/adapters/storage.interface';
+import { assertSafeStoragePath } from '#domain/utils/storage-path';
 
 const BACKWORK_BUCKET = 'backwork';
 

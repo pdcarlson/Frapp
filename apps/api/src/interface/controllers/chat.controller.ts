@@ -31,7 +31,7 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import {
   CreateChannelDto,
   UpdateChannelDto,
@@ -52,7 +52,7 @@ import {
   ClearedKindNotificationPreferenceDto,
   ResolveAuthorAvatarsDto,
 } from '../dtos/chat.dto';
-import type { ChannelType } from '../../domain/entities/chat.entity';
+import type { ChannelType } from '#domain/entities/chat.entity';
 
 @ApiTags('Chat')
 @ApiBearerAuth()

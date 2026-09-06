@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import type { IUserSettingsRepository } from '../../../domain/repositories/notification.repository.interface';
-import type { UserSettings } from '../../../domain/entities/notification.entity';
+import type { IUserSettingsRepository } from '#domain/repositories/notification.repository.interface';
+import type { UserSettings } from '#domain/entities/notification.entity';
 
 @Injectable()
 export class SupabaseUserSettingsRepository implements IUserSettingsRepository {

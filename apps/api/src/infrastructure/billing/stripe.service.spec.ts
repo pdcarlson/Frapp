@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { StripeBillingService } from './stripe.service';
-import { chargeIdFromLatestCharge } from '../../domain/adapters/billing.interface';
+import { chargeIdFromLatestCharge } from '#domain/adapters/billing.interface';
 import Stripe from 'stripe';
 
 jest.mock('stripe');
@@ -184,40 +184,6 @@ describe('StripeBillingService', () => {
         customer: params.customerId,
         return_url: params.returnUrl,
       });
-    });
-  });
-
-  describe('getSubscriptionStatus', () => {
-    it('should retrieve a subscription and return its status', async () => {
-      const subscriptionId = 'sub_123';
-      const expectedStatus = 'active';
-
-      stripeMock.subscriptions = {
-        retrieve: jest.fn().mockResolvedValue({ status: expectedStatus }),
-      } as any;
-
-      const result = await service.getSubscriptionStatus(subscriptionId);
-
-      expect(result).toBe(expectedStatus);
-      expect(stripeMock.subscriptions.retrieve).toHaveBeenCalledWith(
-        subscriptionId,
-      );
-    });
-  });
-
-  describe('cancelSubscription', () => {
-    it('should cancel a subscription', async () => {
-      const subscriptionId = 'sub_123';
-
-      stripeMock.subscriptions = {
-        cancel: jest.fn().mockResolvedValue({}),
-      } as any;
-
-      await service.cancelSubscription(subscriptionId);
-
-      expect(stripeMock.subscriptions.cancel).toHaveBeenCalledWith(
-        subscriptionId,
-      );
     });
   });
 

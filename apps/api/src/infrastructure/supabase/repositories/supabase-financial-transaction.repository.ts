@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import { IFinancialTransactionRepository } from '../../../domain/repositories/financial-transaction.repository.interface';
-import { FinancialTransaction } from '../../../domain/entities/financial-transaction.entity';
+import { IFinancialTransactionRepository } from '#domain/repositories/financial-transaction.repository.interface';
+import { FinancialTransaction } from '#domain/entities/financial-transaction.entity';
 
 @Injectable()
 export class SupabaseFinancialTransactionRepository implements IFinancialTransactionRepository {
@@ -10,16 +10,6 @@ export class SupabaseFinancialTransactionRepository implements IFinancialTransac
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
   ) {}
-
-  async findByChapter(chapterId: string): Promise<FinancialTransaction[]> {
-    const { data, error } = await this.supabase
-      .from('financial_transactions')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
-  }
 
   async findByInvoice(invoiceId: string): Promise<FinancialTransaction[]> {
     const { data, error } = await this.supabase

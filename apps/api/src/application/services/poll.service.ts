@@ -7,18 +7,18 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { isPollClosed, validateIndexedPollVote } from '@repo/validation';
-import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
-import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
+import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
+import { POLL_VOTE_REPOSITORY } from '#domain/repositories/poll-vote.repository.interface';
 import type {
   IPollVoteRepository,
   PollVoteOptionTotalRow,
-} from '../../domain/repositories/poll-vote.repository.interface';
-import type { ChatMessage } from '../../domain/entities/chat.entity';
-import { SYSTEM_SENDER_ID } from '../../domain/constants/chat';
-import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
+} from '#domain/repositories/poll-vote.repository.interface';
+import type { ChatMessage } from '#domain/entities/chat.entity';
+import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
+import type { PollMetadata } from '#domain/entities/poll-vote.entity';
 import { ChannelAccessService } from './channel-access.service';
-import { clampListLimit } from '../../domain/constants/list-query-limits';
+import { clampListLimit } from '#domain/constants/list-query-limits';
 
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 10;

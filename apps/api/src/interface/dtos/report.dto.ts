@@ -1,9 +1,6 @@
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  POINTS_WINDOWS,
-  type PointsWindow,
-} from '../../domain/utils/points-window';
+import { POINTS_WINDOWS, type PointsWindow } from '#domain/utils/points-window';
 
 export class AttendanceReportDto {
   @ApiPropertyOptional({ description: 'Filter by event ID' })
@@ -109,7 +106,7 @@ export class ReportExportResponseDto {
     description:
       'What was cut, when the row count alone does not say it — a roster whose point balances were summed from a truncated read is the right length, so row_limit on its own would describe a cut the document never took. Absent when the row count is the whole story.',
     example:
-      'point balances are incomplete — summed from the first 50,000 transactions',
+      'point balances are incomplete — summed for the first 50,000 members',
   })
   truncation_note?: string;
 }

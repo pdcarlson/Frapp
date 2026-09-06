@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IChapterRepository } from '../../../domain/repositories/chapter.repository.interface';
-import { Chapter } from '../../../domain/entities/chapter.entity';
+import { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import { Chapter } from '#domain/entities/chapter.entity';
 
 @Injectable()
 export class SupabaseChapterRepository implements IChapterRepository {

@@ -6,8 +6,8 @@ import type { BadgeKind } from "@/components/ui/badge";
  * `polls-page.tsx` rendered this as `isExpired ? "outline" : "default"`, and
  * `default` is §5's Accent kind — the chapter's own colour on a domain status.
  * That is #1202's defect reached by an inline ternary, and this family had no
- * mapper at all, so `components/shared/status-kind.test.ts` never looked at it.
- * The measurement is in `components/billing/status-contrast.test.ts`: under a
+ * mapper at all, so `components/shared/status-kind.spec.ts` never looked at it.
+ * The measurement is in `components/billing/status-contrast.spec.ts`: under a
  * green seed an accent badge sits 1.08:1 from the success badge and under
  * `#CC0000`/`#8B0000`/`#BF0A30` 1.13:1 from danger, so the chapter that most
  * needs "Open" to read as open is the one where it read as a failure.

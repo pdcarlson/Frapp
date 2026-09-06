@@ -151,7 +151,7 @@ You need **two** Supabase projects: one for staging, one for production.
 
 1. Go to https://supabase.com/dashboard → **New Project**.
 2. Create `frapp-staging` (region closest to you).
-3. Create `frapp-prod` — that is the name [`ci/environments.json`](../../../ci/environments.json)
+3. Create `frapp-prod` — that is the name [`.github/environments.json`](../../../.github/environments.json)
    records, and the one `scripts/run-migration.mjs` prints when an injected ref does not match.
    Region: closest to you — it need not match staging, and the two live projects do
    differ. [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality)
@@ -830,9 +830,11 @@ Two consequences worth carrying:
   the root leaves `packages/<name>/node_modules` absent, and one forced down by a version conflict
   leaves it present — either way an unguarded `COPY` fails or silently ships an incomplete image.
 - **`api-docker-build` now boots the image and probes `/health`** before passing. The build step sets
-  `load: true` so there is an image to run, and the probe supplies obviously-fake values for the six
-  variables [`env.validation.ts`](../../../apps/api/src/config/env.validation.ts) requires at boot —
-  no secret is needed, because `/health` answers `200` without a working database (§5.4).
+  `load: true` so there is an image to run, and the probe supplies obviously-fake values for every
+  variable [`env.validation.ts`](../../../apps/api/src/config/env.validation.ts) requires at boot —
+  no secret is needed, because `/health` answers `200` without a working database (§5.4). Read the
+  count off that array rather than from here: a total typed into prose has no mechanism to keep it
+  true, and this sentence has already been wrong once for that reason.
 
 **Optional hardening (not implemented here):** poll the Render [Deploys API](https://render.com/docs/deploys) after CI for the commit SHA and fail if the deploy never leaves `build_in_progress` / reaches `build_failed` — closest to “exactly what Render does,” but slower and flakier than building the same Dockerfile in Actions.
 

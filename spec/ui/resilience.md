@@ -581,7 +581,7 @@ useEffect(() => {
 > imports `OutboxStore` from `@repo/chat-core/adapters`, not the package
 > barrel. `apps/web/lib/chat/` retains only the web glue:
 > `use-chat-channel.ts`, `chat-provider.tsx`, `offline-queue.ts`,
-> `offline-queue.test.ts`, and `parsers.test.ts`.
+> `offline-queue.spec.ts`, and `parsers.spec.ts`.
 >
 > **The same rule binds every non-chat subscription.** `useRealtimeTable`
 > derives its topic from `table` + `scopeId` alone, so an effect re-run driven by

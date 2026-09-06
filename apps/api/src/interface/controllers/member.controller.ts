@@ -35,7 +35,7 @@ import {
   MemberProfileDto,
   MemberRosterEntryDto,
 } from '../dtos/member-profile.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Members')
 @ApiBearerAuth()

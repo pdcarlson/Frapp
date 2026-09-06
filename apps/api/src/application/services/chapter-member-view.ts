@@ -1,4 +1,4 @@
-import { Chapter } from '../../domain/entities/chapter.entity';
+import { Chapter } from '#domain/entities/chapter.entity';
 
 /**
  * The `chapters` columns any member of that chapter may read (#930).

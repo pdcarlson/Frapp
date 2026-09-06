@@ -82,7 +82,11 @@ write_env_files() {
   local webenvfile="$ROOT/apps/web/.env.local"
   local supa
 
-  # Preferred: map Supabase's status output straight onto the API's variable names.
+  # Preferred: map Supabase's status output onto the names the two generated .env.local
+  # files use. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are the API's; SUPABASE_ANON_KEY
+  # is fetched for apps/web, which consumes it as NEXT_PUBLIC_SUPABASE_ANON_KEY below. The
+  # API does not read the anon key and does not require it
+  # (apps/api/src/config/env.validation.ts).
   supa=$(cs_supabase status -o env \
     --override-name api.url=SUPABASE_URL \
     --override-name auth.anon_key=SUPABASE_ANON_KEY \
@@ -98,11 +102,27 @@ write_env_files() {
       | grep -E '^SUPABASE_(URL|ANON_KEY|SERVICE_ROLE_KEY)=')
   fi
 
-  # Validate every variable apps/api/src/config/env.validation.ts hard-requires, not just
-  # the URL. `supabase status` omits the auth keys when gotrue is stopped or excluded (e.g.
-  # a FRAPP_SUPABASE_START_ARGS override adding `-x gotrue`), and checking only SUPABASE_URL
-  # let that write a .env.local the API cannot boot from — while still returning 0 and
-  # landing the .cloud-sandbox-up.done success sentinel.
+  # Validate every variable the two generated .env.local files need, not just the URL.
+  # `supabase status` omits the auth keys when gotrue is stopped or excluded (e.g. a
+  # FRAPP_SUPABASE_START_ARGS override adding `-x gotrue`), and checking only SUPABASE_URL
+  # let that write env files missing a key their consumer hard-requires — while still
+  # returning 0 and landing the .cloud-sandbox-up.done success sentinel. Which consumer,
+  # and how badly, differs per name; that is what the list below is for.
+  #
+  # Check each name for the consumer that needs it, never for the list it appears on:
+  #   - SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  the API requires both at boot
+  #                                              (apps/api/src/config/env.validation.ts).
+  #   - SUPABASE_ANON_KEY                        apps/web requires it. It is NOT an API
+  #                                              variable and env.validation.ts does not
+  #                                              ask for it, so do not drop it from this
+  #                                              loop on the strength of that list: the
+  #                                              NEXT_PUBLIC_ write below derives from
+  #                                              $supa and this is its only guard.
+  #                                              Losing it breaks `npm run build -w
+  #                                              apps/web` in every future session, and
+  #                                              no CI job would catch that — see the
+  #                                              note on the web write below for why
+  #                                              `web-production-build` cannot.
   local key missing=""
   for key in SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY; do
     printf '%s' "$supa" | grep -q "^${key}=" || missing="${missing} ${key}"
@@ -139,7 +159,11 @@ write_env_files() {
   # non-null-asserted (apps/web/lib/supabase/client.ts). Without this file `npm run build
   # -w apps/web` dies prerendering /chat — `createSupabaseBrowserClient()` throws inside
   # the static export — which reads as "my change broke the build" to the next agent
-  # (#1156). Next.js production builds are not in CI (#355), so nothing else catches it.
+  # (#1156), and no CI job catches it. Not because CI skips the build — `web-production-build`
+  # has run a real `next build` over apps/web on every PR since #1374, which closed #355 — but
+  # because that job supplies its OWN NEXT_PUBLIC_SUPABASE_* stand-ins in its step `env:`
+  # (.github/workflows/ci.yml). It therefore never reads the file written here, and a defect in
+  # what this function generates is invisible to it by construction. Sandbox-local, always.
   #
   # The grep is the security boundary, not a tidiness filter. NEXT_PUBLIC_* is INLINED
   # INTO THE CLIENT BUNDLE by Next, so anything written here is public by construction.
@@ -147,8 +171,10 @@ write_env_files() {
   # present in $supa, and validated above — from being prefixed along with them. Widen
   # this pattern only with that in mind.
   #
-  # $supa is already known to carry both keys: write_env_files validated all three above
-  # and returned non-zero if any were missing.
+  # $supa is already known to carry both keys: the loop above validated all three names
+  # and returned non-zero if any were missing. SUPABASE_ANON_KEY is in that loop *for this
+  # write* — the API neither reads nor requires it — so this line and that check are one
+  # mechanism. Remove either and the other becomes silently wrong.
   #
   # NON-FATAL, unlike the API write above, and the asymmetry is the point. The caller is
   # `write_env_files || fail`, and `fail` exits before the ACL repair below — so returning

@@ -1,13 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
-import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
+import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
+import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
 import {
   resolveWindowSince,
   type PointsWindow,
-} from '../../domain/utils/points-window';
+} from '#domain/utils/points-window';
 import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
-import { chunkIds } from '../../domain/utils/chunk-ids';
+import { chunkIds } from '#domain/utils/chunk-ids';
 import { fetchAllPages as fetchAllPagesShared } from '../../infrastructure/supabase/supabase.utils';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
@@ -114,17 +114,27 @@ export const REPORT_MAX_ROWS = 5_000;
 
 /**
  * Ceiling on rows read only to aggregate a number that lands in the document
- * — point transactions behind a roster balance, not roster lines themselves.
+ * — roster balances, not roster lines themselves.
  *
- * Higher than `REPORT_MAX_ROWS` because these rows never reach the renderer,
- * but not dramatically so: the pages are read sequentially, each waiting on
- * the last, so the ceiling is really a latency budget. At 50,000 that is up to
- * 50 round-trips (~1.2 s by the measurement in the perf notes) before any
- * rendering starts. Raising it buys correctness for chapters this large at a
- * cost that lands on every roster export.
+ * Higher than `REPORT_MAX_ROWS` because these rows never reach the renderer.
+ * The pages are read sequentially, each waiting on the last, so the ceiling is
+ * really a latency budget rather than a render cost: at 50,000 that is up to
+ * 50 round-trips (~1.2 s by the measurement in the perf notes), plus the one
+ * terminating empty request `fetchAllPages` always pays, before any rendering
+ * starts. That arithmetic is unchanged by #567 — what changed is how many rows
+ * it takes to get there.
  *
- * The real fix is to stop streaming transactions into the API and let Postgres
- * sum them — tracked in #567. This ceiling is what keeps the interim honest.
+ * **It counts scoring members, not transactions (#567).** Balances come from
+ * `get_points_leaderboard`, which groups by `user_id`, so a chapter costs one
+ * row per member who has ever scored in it rather than one row per
+ * transaction. That still grows with the chapter's life — an alumnus's rows
+ * keep their group — but per *member*, not per *entry*, which is the whole
+ * difference: the transaction stream this replaced could cross 50,000 in one
+ * active semester and then reported wrong balances behind a footnote.
+ *
+ * The branch below stays because the bound is still real, not because it is
+ * expected to fire. With the roster itself capped at `REPORT_MAX_ROWS`, firing
+ * it needs a chapter with 50,000 distinct scorers on record.
  */
 export const REPORT_AGGREGATE_MAX_ROWS = 50_000;
 
@@ -146,7 +156,7 @@ export interface ReportResult<T> {
    * The ceiling that `truncated` refers to. Carried rather than assumed
    * because a report can be cut short by more than one limit — a roster is
    * bounded by `REPORT_MAX_ROWS` rows but its balances are bounded by
-   * `REPORT_AGGREGATE_MAX_ROWS` transactions, and reporting the wrong one
+   * `REPORT_AGGREGATE_MAX_ROWS` members, and reporting the wrong one
    * gives an officer a number that contradicts the document in front of them.
    */
   limit: number;
@@ -181,9 +191,19 @@ interface UserRosterRow {
   email: string;
 }
 
-interface UserAmountRow {
+/**
+ * One member's whole balance, already summed by `get_points_leaderboard`
+ * (`20260906120001`). This replaced a `{ user_id, amount }` row per
+ * *transaction*: the roster used to stream those in and reduce them in Node.
+ *
+ * The same shape `PointsLeaderboardRow` reads, deliberately: with both bounds
+ * null that function answers exactly the question the roster asks, so the
+ * roster reads it rather than adding a second per-member sum (#1743).
+ */
+interface RosterBalanceRow {
   user_id: string;
-  amount: number;
+  /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
+  total: number;
 }
 
 interface RoleNameRow {
@@ -436,7 +456,7 @@ export class ReportService {
 
     // ⚡ Bolt: Parallelize independent DB queries to eliminate sequential
     // network roundtrips. Expected impact: Reduces latency during roster
-    // generation by fetching users and points transactions concurrently.
+    // generation by fetching users and point balances concurrently.
     const usersQuery = Promise.all(
       chunkIds(userIds).map(
         (ids) =>
@@ -446,25 +466,59 @@ export class ReportService {
             .in('id', ids) as PromiseLike<QueryResult<UserRosterRow>>,
       ),
     );
-    // Scoped by chapter alone, then matched against the roster in memory
-    // below. Filtering on `user_id` as well would mean an `in` list holding
-    // every member, chunked across a query that also has to page — for a
-    // filter that changes nothing: a balance is only ever read back for a
-    // member's own ID, so a departed member's residual rows are inert.
-    const transactionsQuery = fetchAllPages<UserAmountRow>(
+    // Summed by Postgres, one row per member, rather than streamed in as one
+    // row per transaction (#567). Scoped by chapter alone, then matched
+    // against the roster in memory below. Filtering on `user_id` as well would
+    // mean an `in` list holding every member — for a filter that changes
+    // nothing: a balance is only ever read back for a member's own ID, so a
+    // departed member's residual rows are inert.
+    //
+    // `get_points_leaderboard` with both bounds null, rather than a roster-only
+    // aggregate of its own (#1743). The two would be the same `group by
+    // pt.user_id` over the same table with the same grants, and the roster
+    // needs no window: a roster balance is the member's all-time chapter
+    // total, which is exactly what unbounded means here. Null bounds are the
+    // function's documented "no window" case, not a coincidence of its filter
+    // — `getLeaderboard` sends the same nulls for the `all` window.
+    //
+    // Still paged, on the same terms as `getPointsReport` above: PostgREST
+    // applies `max_rows` to an RPC result set exactly as to a table read. The
+    // order is on `user_id`, which the function groups by and is therefore
+    // unique across the result — a total order, so no *tie* can duplicate or
+    // drop a row across a page boundary. Ordering here overrides the
+    // function's own `order by total desc`, which the leaderboard needs and
+    // the roster must not page on: `total` is not unique. (`get_points_report`
+    // cannot offer either: it returns no key and can only tie-break on display
+    // name, which is the whole of #747.)
+    //
+    // A total order is not a snapshot, and does not claim to be: a paged read
+    // is several statements, so a concurrent write can still shift a boundary
+    // (`fetchAllPages`' own docstring says so). That is the report-wide caveat
+    // in the perf notes, not something this ordering fixes.
+    //
+    // What DID change is the shape of that rare failure, and it cuts both
+    // ways. A row inserted between pages used to double-count one transaction;
+    // now a duplicated aggregate row just rewrites the Map with the same value,
+    // which is harmless. But a delete that removes a member's whole group no
+    // longer shaves one transaction off their balance — it drops the group, and
+    // they render as 0. Both need a chapter past one page of scoring members
+    // plus a concurrent write mid-report.
+    const balancesQuery = fetchAllPages<RosterBalanceRow>(
       (from, to) =>
         this.supabase
-          .from('point_transactions')
-          .select('user_id, amount')
-          .eq('chapter_id', chapterId)
-          .order('id', { ascending: true })
+          .rpc('get_points_leaderboard', {
+            p_chapter_id: chapterId,
+            p_since: null,
+            p_until: null,
+          })
+          .order('user_id', { ascending: true })
           .range(from, to),
       { limit: REPORT_AGGREGATE_MAX_ROWS },
     );
 
-    const [userPages, transactions] = await Promise.all([
+    const [userPages, balanceRows] = await Promise.all([
       usersQuery,
-      transactionsQuery,
+      balancesQuery,
     ]);
 
     for (const pageResult of userPages) {
@@ -480,11 +534,20 @@ export class ReportService {
       ),
     );
 
-    const balances = new Map<string, number>();
-    for (const t of transactions.rows) {
-      const uid = t.user_id;
-      balances.set(uid, (balances.get(uid) ?? 0) + (t.amount ?? 0));
-    }
+    // One row per member now, so this is a lookup table rather than a
+    // reduction. `Number(...)` because the SQL type is `bigint`: PostgREST
+    // serializes it as a JSON number, but the same cast guards the string form
+    // some drivers hand back for 64-bit integers.
+    //
+    // `?? 0` guards a missing FIELD, not a null total: `amount` is `int not
+    // null` on `point_transactions`, so within `group by pt.user_id` every
+    // group has at least one non-null row and `sum` cannot come back null.
+    // What it does buy is that `Number(undefined)` is `NaN`, and a NaN balance
+    // does not throw — it renders as "NaN" in the PDF and CSV an officer
+    // downloads. Cheap insurance against a shape this file does not own.
+    const balances = new Map<string, number>(
+      balanceRows.rows.map((b) => [b.user_id, Number(b.total ?? 0)]),
+    );
 
     // Every role the chapter defines, rather than the subset the roster
     // mentions: `roles` is already chapter-scoped and a chapter holds a
@@ -518,15 +581,20 @@ export class ReportService {
       };
     });
 
-    // A truncated transaction read is not a short roster — it is a roster of
-    // the right length carrying *wrong* balances, which no row count reveals.
-    // It counts as truncation so the report still declares itself incomplete,
-    // but it reports its own ceiling and says which field is wrong: labelling
-    // a complete 300-line roster "capped at 5,000 rows" reads as a false
+    // A truncated balance read is not a short roster — it is a roster of the
+    // right length carrying *wrong* balances, which no row count reveals. It
+    // counts as truncation so the report still declares itself incomplete, but
+    // it reports its own ceiling and says which field is wrong: labelling a
+    // complete 300-line roster "capped at 5,000 rows" reads as a false
     // positive, and the reader goes looking for missing members instead of
     // distrusting the balances.
-    if (transactions.truncated) {
-      const balanceNote = `point balances are incomplete — summed from the first ${REPORT_AGGREGATE_MAX_ROWS.toLocaleString('en-US')} transactions`;
+    //
+    // The ceiling counts scoring members rather than transactions now (#567);
+    // `REPORT_AGGREGATE_MAX_ROWS` carries why that stops being a cliff. What
+    // matters here is that the note has to say which, or it sends the reader
+    // looking at transaction volume for a members-shaped bound.
+    if (balanceRows.truncated) {
+      const balanceNote = `point balances are incomplete — summed for the first ${REPORT_AGGREGATE_MAX_ROWS.toLocaleString('en-US')} members`;
       return {
         rows,
         truncated: true,

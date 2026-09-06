@@ -5,14 +5,15 @@ import type {
   IPollVoteRepository,
   PollUserVoteRow,
   PollVoteOptionTotalRow,
-} from '../../../domain/repositories/poll-vote.repository.interface';
-import type { PollVote } from '../../../domain/entities/poll-vote.entity';
+} from '#domain/repositories/poll-vote.repository.interface';
+import type { PollVote } from '#domain/entities/poll-vote.entity';
 
 /**
  * No method here reads whole `poll_votes` rows to count them. Both callers that
  * did — `PollService.listPolls`, then `getPoll` (#568) — now tally through the
- * `GROUP BY` RPCs below, so the paged row read and its 1000-row page size
- * (#1628) were deleted rather than left as a faster-looking alternative.
+ * `GROUP BY` RPCs below, so the paged row read (`findByMessage` /
+ * `findByMessages`, and the fixes it had accumulated in #1628 and #1724) was
+ * deleted rather than left as a faster-looking alternative.
  *
  * That trade is only safe *per poll*. These RPCs emit one row per (poll,
  * option), and an RPC result set is subject to `max_rows` exactly like a table
@@ -106,20 +107,6 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       .delete()
       .eq('message_id', messageId)
       .eq('user_id', userId);
-    if (error) throw error;
-  }
-
-  async deleteByMessageUserAndOption(
-    messageId: string,
-    userId: string,
-    optionIndex: number,
-  ): Promise<void> {
-    const { error } = await this.supabase
-      .from('poll_votes')
-      .delete()
-      .eq('message_id', messageId)
-      .eq('user_id', userId)
-      .eq('option_index', optionIndex);
     if (error) throw error;
   }
 }

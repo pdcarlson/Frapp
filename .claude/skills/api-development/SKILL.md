@@ -159,12 +159,25 @@ export class WidgetController {
     WidgetService,
     { provide: WIDGET_REPOSITORY, useClass: SupabaseWidgetRepository },
   ],
-  exports: [WidgetService],
 })
 export class WidgetModule {}
 ```
 
 Import in `app.module.ts`.
+
+**Add `exports:` only when a module that imports this one actually injects the provider.**
+The test is injection, not listing: a module appears in `AppModule.imports` so its controllers
+get registered, which on its own makes `AppModule` no consumer of anything it exports. (If you
+ever do give `AppModule` a provider that injects `FooService`, then it *is* a consumer and
+`FooModule` must export it — the root module is not special here.) Exporting by reflex costs
+nothing at runtime but states a dependency that does not exist, and the next reader has to
+disprove it. Add the entry in the change that adds the injector, not in advance.
+
+**The exception is `@Global()`.** A global module's exports are visible to every injector in
+the app without anyone listing it in `imports:`, so its `exports:` array is load-bearing even
+with no importer at all — `SupabaseModule` exports `SUPABASE_CLIENT` that way, and the template
+above resolves it in `SupabaseWidgetRepository` despite declaring no `imports:`. Never read a
+global module's empty importer list as evidence its exports are dead.
 
 ### 8. Write tests
 

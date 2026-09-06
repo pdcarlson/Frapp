@@ -160,7 +160,7 @@ export function OpsSetupNudgeCard({
   // "Chat" entry — for a key it does not know, which would render "Enable Chat"
   // rather than fail. What makes that unreachable is the
   // `describe("nudge keys against MODULE_CATALOG")` block in
-  // `ops-setup-nudge.test.tsx` beside this file. It cannot live in
+  // `ops-setup-nudge.spec.tsx` beside this file. It cannot live in
   // `packages/validation/src/ops-nudges.spec.ts`, which is where you would look
   // first: that package cannot import `@repo/org-archetypes`, and its own
   // comment says so.

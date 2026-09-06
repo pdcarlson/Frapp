@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ReportRetentionService } from '../../application/services/report-retention.service';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 
 /**

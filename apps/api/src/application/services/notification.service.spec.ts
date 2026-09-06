@@ -6,23 +6,23 @@ import {
   PUSH_TOKEN_REPOSITORY,
   NOTIFICATION_PREFERENCE_REPOSITORY,
   USER_SETTINGS_REPOSITORY,
-} from '../../domain/repositories/notification.repository.interface';
+} from '#domain/repositories/notification.repository.interface';
 import type {
   INotificationRepository,
   IPushTokenRepository,
   INotificationPreferenceRepository,
   IUserSettingsRepository,
-} from '../../domain/repositories/notification.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { NOTIFICATION_PROVIDER } from '../../domain/adapters/notification.interface';
-import type { INotificationProvider } from '../../domain/adapters/notification.interface';
+} from '#domain/repositories/notification.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { NOTIFICATION_PROVIDER } from '#domain/adapters/notification.interface';
+import type { INotificationProvider } from '#domain/adapters/notification.interface';
 import type {
   Notification,
   PushToken,
   NotificationPreference,
   UserSettings,
-} from '../../domain/entities/notification.entity';
+} from '#domain/entities/notification.entity';
 
 describe('NotificationService', () => {
   let service: NotificationService;

@@ -4,14 +4,14 @@ import { AccountDeletionService } from './account-deletion.service';
 import { AnalyticsService } from './analytics.service';
 import { RbacService } from './rbac.service';
 import { ReportRetentionService } from './report-retention.service';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import type { IStorageProvider } from '../../domain/adapters/storage.interface';
-import { AUTH_ADMIN_PROVIDER } from '../../domain/adapters/auth-admin.interface';
-import type { IAuthAdminProvider } from '../../domain/adapters/auth-admin.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import type { IStorageProvider } from '#domain/adapters/storage.interface';
+import { AUTH_ADMIN_PROVIDER } from '#domain/adapters/auth-admin.interface';
+import type { IAuthAdminProvider } from '#domain/adapters/auth-admin.interface';
 
 const liveUser = {
   id: 'user-1',
@@ -66,7 +66,6 @@ describe('AccountDeletionService', () => {
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
-      findByEmail: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       anonymize: jest.fn(async () => {

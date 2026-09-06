@@ -35,9 +35,4 @@ export interface IPollVoteRepository {
   create(data: Partial<PollVote>): Promise<PollVote>;
   createMany(data: Partial<PollVote>[]): Promise<PollVote[]>;
   deleteByMessageAndUser(messageId: string, userId: string): Promise<void>;
-  deleteByMessageUserAndOption(
-    messageId: string,
-    userId: string,
-    optionIndex: number,
-  ): Promise<void>;
 }

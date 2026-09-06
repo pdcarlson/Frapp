@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import type { IBackworkProfessorRepository } from '../../../domain/repositories/backwork.repository.interface';
-import { BackworkProfessor } from '../../../domain/entities/backwork.entity';
+import type { IBackworkProfessorRepository } from '#domain/repositories/backwork.repository.interface';
+import { BackworkProfessor } from '#domain/entities/backwork.entity';
 
 @Injectable()
 export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRepository {

@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import type { IChapterDocumentFolderRepository } from '../../../domain/repositories/chapter-document-folder.repository.interface';
-import type { ChapterDocumentFolder } from '../../../domain/entities/chapter-document.entity';
+import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
+import type { ChapterDocumentFolder } from '#domain/entities/chapter-document.entity';
 
 @Injectable()
 export class SupabaseChapterDocumentFolderRepository implements IChapterDocumentFolderRepository {

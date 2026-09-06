@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChatPushWorkerService } from './chat-push-worker.service';
 import {
@@ -9,7 +9,7 @@ import {
   type ChatNotificationPreferenceRow,
 } from './chat-notification-preference.repository';
 import { RbacService } from '../../application/services/rbac.service';
-import type { ChatMessage } from '../../domain/entities';
+import type { ChatMessage } from '#domain/entities';
 import { ChannelCacheService } from './channel-cache.service';
 
 /**
@@ -70,7 +70,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
   let service: ChatPushWorkerService;
   let notifyUser: jest.Mock;
   let findByChapter: jest.Mock;
-  let findForUser: jest.Mock;
+  let findForUsers: jest.Mock;
   let getEffectivePermissions: jest.Mock;
   let subscribeSpy: jest.Mock;
   let removeChannel: jest.Mock;
@@ -131,16 +131,27 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
   }
 
   /**
-   * Seed preferences **per user**, as `findForUser(recipientId, chapterId)`
-   * actually behaves. A bare `mockResolvedValue([row])` returns one user's row
-   * for every recipient, so a member with no preference silently inherits
-   * someone else's level — which is how a DM test can assert the right
+   * Seed preferences **per user**, as `findForUsers(userIds, chapterId)`
+   * actually behaves. A bare `mockResolvedValue(map)` holding one row would
+   * hand that row to every recipient, so a member with no preference silently
+   * inherits someone else's level — which is how a DM test can assert the right
    * recipient and still be passing for the wrong reason.
+   *
+   * Keyed off the ids the worker actually asked for, so a user the worker never
+   * queried cannot contribute a preference, and — like the real repository — a
+   * user with no rows is simply **absent** from the map rather than present
+   * with an empty array. That distinction is what pins the caller's
+   * `?? []` fallback rather than assuming it.
    */
   function setPrefs(byUser: Record<string, ChatNotificationPreferenceRow[]>) {
-    findForUser.mockImplementation(
-      async (userId: string) => byUser[userId] ?? [],
-    );
+    findForUsers.mockImplementation(async (userIds: string[]) => {
+      const map = new Map<string, ChatNotificationPreferenceRow[]>();
+      for (const userId of userIds) {
+        const rows = byUser[userId];
+        if (rows?.length) map.set(userId, rows);
+      }
+      return map;
+    });
   }
 
   function notifiedUsers(): string[] {
@@ -154,7 +165,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
     // try/catch swallows it — so a `not.toHaveBeenCalled()` assertion would
     // pass because the roster load crashed, not because the rule skipped.
     findByChapter = jest.fn().mockResolvedValue([]);
-    findForUser = jest.fn().mockResolvedValue([]);
+    findForUsers = jest.fn().mockResolvedValue(new Map());
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
 
     subscribeSpy = jest.fn(() => channelStub);
@@ -210,7 +221,7 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
         { provide: NotificationService, useValue: { notifyUser } },
         {
           provide: ChatNotificationPreferenceRepository,
-          useValue: { findForUser },
+          useValue: { findForUsers },
         },
         { provide: RbacService, useValue: { getEffectivePermissions } },
       ],
