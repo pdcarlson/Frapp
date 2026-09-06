@@ -30,7 +30,9 @@ For the full operator runbook (DNS, provider setup, and detailed checklists), us
   of a Git link instead.
   Unchanged as policy: since #1340 production is only ever deployed from a **named commit** by
   `deploy-production.yml`, so nothing auto-promotes. Since **#1578** that workflow builds the commit
-  on the runner and uploads it (`vercel build --prod` then `vercel deploy --prebuilt --prod`),
+  on the runner and uploads it (`vercel build --prod` then `vercel deploy --prebuilt --prod`) —
+  since 2026-09-06 as two phases, the build *before* the migration applies and the upload after
+  Render is healthy (`DEPLOY_PHASE` in `scripts/ci/deploy-vercel.mjs`) —
   replacing the `gitSource` call the retired integration used to serve; the same path deploys
   staging from `deploy-vercel-staging.yml` after CI passes. **ADR-21** in
   [`spec/architecture/README.md`](../../spec/architecture/README.md) is the canonical record of the

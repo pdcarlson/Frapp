@@ -47,10 +47,33 @@
 // lookup downstream matches on it, and a commit id in that field matches
 // nothing.
 //
+// ── Why build and upload are separable ─────────────────────────────────────
+// `vercel build` is the step that can fail for reasons unrelated to the commit
+// — the OOM killer, a missing Production env var, a registry blip during
+// `next build` — and on the production path it used to run AFTER the migration
+// had applied and the Render API had shipped. A failure there left a migrated
+// database under a half-updated production with no tag naming what was live:
+// exactly the split run 33275321347 produced. So `deploy-production.yml` now
+// builds BOTH bundles before anything is applied and uploads them after Render
+// is healthy. That needs the two halves to be callable separately, with the
+// built output surviving in between — hence `buildVercelProject`,
+// `deployPrebuiltVercelProject`, and the `stashDir` they hand off through.
+//
+// The stash moves the whole `.vercel` directory, not just `.vercel/output`:
+// `vercel pull` writes `project.json` and the environment file beside the
+// output, `vercel build` records the target it built for in
+// `output/builds.json`, and `vercel deploy --prebuilt --prod` checks that
+// recorded target against the flag. Keeping the directory whole keeps every one
+// of those consistent per project, and it is what lets two projects build in
+// one checkout without the second `vercel build` overwriting the first's
+// output — which is the reason the builds were sequential to begin with.
+//
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/vercel-cli.test.mjs`.
 
 import { spawn } from "node:child_process";
+import { cp, mkdir, rename, rm, stat } from "node:fs/promises";
+import path from "node:path";
 
 /**
  * The Vercel deployment target this repo understands.
@@ -204,15 +227,123 @@ export function vercelCliEnv({ token, orgId, projectId, baseEnv = process.env })
   };
 }
 
+/** The `.vercel` directory the CLI reads and writes, for a working directory. */
+export function vercelDirFor(cwd) {
+  return path.join(cwd ?? process.cwd(), ".vercel");
+}
+
 /**
- * Pull, build and deploy ONE project, returning the deployment hostname.
+ * The filesystem operations the stash needs, injectable for tests.
  *
- * Sequential by necessity: each step consumes the previous one's output on
- * disk. A non-zero exit from any step throws, because there is no partial
- * success worth reporting here — a failed pull produces a build with the wrong
- * environment variables, and a failed build has nothing to upload.
+ * `move` is rename-first: on the runner `.vercel` and `$RUNNER_TEMP` are on one
+ * filesystem and a rename is atomic and instant. `EXDEV` (a cross-device move)
+ * falls back to copy-then-remove so a differently mounted temp dir still works
+ * rather than failing the release over where the output happens to live.
  */
-export async function buildAndDeployVercelProject({
+export const defaultStashFs = {
+  async exists(p) {
+    try {
+      await stat(p);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+  async remove(p) {
+    await rm(p, { recursive: true, force: true });
+  },
+  async move(from, to) {
+    await mkdir(path.dirname(to), { recursive: true });
+    try {
+      await rename(from, to);
+    } catch (error) {
+      if (error?.code !== "EXDEV") throw error;
+      await cp(from, to, { recursive: true });
+      await rm(from, { recursive: true, force: true });
+    }
+  },
+};
+
+/** Run one CLI step, throwing on a non-zero exit with the tail of its output. */
+async function runVercelStep({ label, args, env, cwd, cliCommand, runCommand, logger }) {
+  logger.log?.(`[${label}] vercel ${args.join(" ")}`);
+  const result = await runCommand({ command: cliCommand, args, env, cwd, logger });
+
+  if (result.code !== 0) {
+    // `killed by SIGKILL` rather than `exited null` when a signal ended it.
+    // The OOM killer taking `next build` is the most common CI build failure
+    // there is, and this change moved both app builds onto a runner — for
+    // that case `code` is null and `signal` is the only word that says why.
+    const how = result.signal ? `was killed by ${result.signal}` : `exited ${result.code}`;
+    throw new Error(
+      `[${label}] \`vercel ${args.join(" ")}\` ${how}. ` +
+        `${(result.stderr || result.stdout || "").trim().slice(-500) || "No output."}`,
+    );
+  }
+
+  return result;
+}
+
+/**
+ * Pull and build ONE project. Uploads nothing.
+ *
+ * With `stashDir` set, the whole `.vercel` directory the build produced is moved
+ * there afterwards, so a later `deployPrebuiltVercelProject` can upload exactly
+ * this output — after other projects have built, and after other steps have run
+ * in between. Without it the output is left in place for an immediate deploy,
+ * which is what `buildAndDeployVercelProject` does.
+ *
+ * A non-zero exit from either step throws: a failed pull produces a build with
+ * the wrong environment variables, and a failed build has nothing to upload.
+ */
+export async function buildVercelProject({
+  target,
+  token,
+  orgId,
+  projectId,
+  label = projectId,
+  cwd,
+  stashDir = null,
+  cliCommand = "vercel",
+  runCommand = runCommandCapturing,
+  stashFs = defaultStashFs,
+  logger = console,
+}) {
+  const env = vercelCliEnv({ token, orgId, projectId });
+  const common = { label, env, cwd, cliCommand, runCommand, logger };
+
+  await runVercelStep({ ...common, args: vercelPullArgs({ target }) });
+  await runVercelStep({ ...common, args: vercelBuildArgs({ target }) });
+
+  if (stashDir) {
+    const vercelDir = vercelDirFor(cwd);
+    if (!(await stashFs.exists(vercelDir))) {
+      throw new Error(
+        `[${label}] \`vercel build\` exited 0 but left no ${vercelDir} to stash. ` +
+          `Nothing would be uploaded later; refusing to call this build a success.`,
+      );
+    }
+    // A stale stash from an earlier attempt must not be merged into — the
+    // upload would then carry files from two different builds.
+    await stashFs.remove(stashDir);
+    await stashFs.move(vercelDir, stashDir);
+    logger.log?.(`[${label}] Stashed the built output at ${stashDir}.`);
+  }
+
+  return { stashDir };
+}
+
+/**
+ * Upload ONE project's already-built output, returning the deployment hostname.
+ *
+ * With `stashDir` set, that directory is moved back to `.vercel` first,
+ * replacing whatever is there — on the production path that is the OTHER
+ * project's leftovers, and uploading those would ship landing's bundle to the
+ * web project while every status page reported success. A missing stash is a
+ * hard failure, not a fall-through to whatever `.vercel` happens to hold, for
+ * the same reason.
+ */
+export async function deployPrebuiltVercelProject({
   target,
   sha,
   ref = "main",
@@ -221,46 +352,37 @@ export async function buildAndDeployVercelProject({
   projectId,
   label = projectId,
   cwd,
+  stashDir = null,
   cliCommand = "vercel",
   runCommand = runCommandCapturing,
+  stashFs = defaultStashFs,
   logger = console,
 }) {
-  const env = vercelCliEnv({ token, orgId, projectId });
-
-  const steps = [
-    { name: "pull", args: vercelPullArgs({ target }) },
-    { name: "build", args: vercelBuildArgs({ target }) },
-    { name: "deploy", args: vercelDeployArgs({ target, sha, ref }) },
-  ];
-
-  let deployStdout = "";
-
-  for (const step of steps) {
-    logger.log?.(`[${label}] vercel ${step.args.join(" ")}`);
-    const result = await runCommand({
-      command: cliCommand,
-      args: step.args,
-      env,
-      cwd,
-      logger,
-    });
-
-    if (result.code !== 0) {
-      // `killed by SIGKILL` rather than `exited null` when a signal ended it.
-      // The OOM killer taking `next build` is the most common CI build failure
-      // there is, and this change moved both app builds onto a runner — for
-      // that case `code` is null and `signal` is the only word that says why.
-      const how = result.signal ? `was killed by ${result.signal}` : `exited ${result.code}`;
+  if (stashDir) {
+    if (!(await stashFs.exists(stashDir))) {
       throw new Error(
-        `[${label}] \`vercel ${step.args.join(" ")}\` ${how}. ` +
-          `${(result.stderr || result.stdout || "").trim().slice(-500) || "No output."}`,
+        `[${label}] No prebuilt output at ${stashDir}. The build phase for this project ` +
+          `did not run or did not complete; refusing to upload whatever \`.vercel\` holds.`,
       );
     }
-
-    if (step.name === "deploy") deployStdout = result.stdout;
+    const vercelDir = vercelDirFor(cwd);
+    await stashFs.remove(vercelDir);
+    await stashFs.move(stashDir, vercelDir);
+    logger.log?.(`[${label}] Restored the built output from ${stashDir}.`);
   }
 
-  const host = parseDeploymentHost(deployStdout);
+  const env = vercelCliEnv({ token, orgId, projectId });
+  const result = await runVercelStep({
+    label,
+    env,
+    cwd,
+    cliCommand,
+    runCommand,
+    logger,
+    args: vercelDeployArgs({ target, sha, ref }),
+  });
+
+  const host = parseDeploymentHost(result.stdout);
   if (!host) {
     throw new Error(
       `[${label}] \`vercel deploy\` exited 0 but printed no deployment URL, so there is ` +
@@ -269,4 +391,16 @@ export async function buildAndDeployVercelProject({
   }
 
   return { host };
+}
+
+/**
+ * Pull, build and deploy ONE project, returning the deployment hostname.
+ *
+ * The single-phase form, used where nothing needs to happen between build and
+ * upload (staging). Sequential by necessity: each step consumes the previous
+ * one's output on disk.
+ */
+export async function buildAndDeployVercelProject(options) {
+  await buildVercelProject({ ...options, stashDir: null });
+  return deployPrebuiltVercelProject({ ...options, stashDir: null });
 }
