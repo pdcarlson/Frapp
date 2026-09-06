@@ -186,21 +186,49 @@ prevent.
 
 ## Restoring from an offsite dump
 
+Two shapes. **Use the first.** The second is the fallback for when the repository
+is not to hand, and it leaves work behind that the first does not.
+
+**Preferred — schema from the repo, data from the dump:**
+
 ```bash
 # 1. Fetch the dump you want (labels are UTC and sort chronologically).
-aws s3 cp "s3://$BACKUP_S3_BUCKET/staging/<label>/" ./restore/ \
+aws s3 cp "s3://$BACKUP_S3_BUCKET/<staging|production>/<label>/" ./restore/ \
   --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive
 
-# 2. Restore. Verifies checksums and preconditions before touching the target.
-scripts/db-restore.sh --backup-dir ./restore --db-url "<target-url>" --force
+# 2. Check out the commit that was live when the dump was taken (the release tag,
+#    or the SHA deploy-production.yml recorded), and point the repo's migrations
+#    at the fresh project. This recreates EVERYTHING the migrations own, including
+#    the objects inside Supabase-managed schemas that the dump cannot carry.
+supabase link --project-ref <fresh-project-ref>
+supabase db push --include-all
+
+# 3. Load the data. Refuses unless the target's migration ledger and the dump's
+#    name the same migrations; empties each table it is about to fill (a fresh
+#    push seeds `public.users` with the system sender, which the dump also
+#    carries) and skips the dump's copy of the ledger.
+scripts/db-restore.sh --backup-dir ./restore --db-url "<target-url>" --force --data-only
 ```
 
-**The target must be a Supabase-provisioned database** — a freshly created
-project, or a reset local stack. These dumps are *not* self-contained:
-`supabase db dump` excludes Supabase-managed schemas, so the schema dump references
-`auth`, `storage` and `extensions` without creating them, and restoring into a
-bare `CREATE DATABASE` dies partway through. The restore script checks this up front
-rather than letting you discover it mid-replay.
+**Fallback — dump only** (`scripts/db-restore.sh --backup-dir ./restore --db-url
+"<target-url>" --force`, replaying roles → schema → data): use it when the repo at
+the right commit is unavailable. **Know what it leaves out.** `supabase db dump`
+excludes the Supabase-managed schemas, and that exclusion covers every object our
+own migrations create *inside* them: the `realtime_messages_scoped_select` policy on
+`realtime.messages` — without it every private change-ping topic joins, reports
+`SUBSCRIBED` and delivers nothing (#867's shape) — and all eight `storage.buckets`
+rows, without which every upload fails. The 2026-09-06 rehearsal measured exactly
+those nine objects missing after a row-for-row-identical dump-only restore. And
+because the dump restores `supabase_migrations.schema_migrations`, a later
+`supabase db push` believes those migrations already ran and never recreates
+them. After a dump-only restore, recreate them by hand from the migrations that
+own them before declaring the restore complete.
+
+**Either way the target must be a Supabase-provisioned database** — a freshly
+created project, or a reset local stack. The dumps are *not* self-contained: the
+schema dump references `auth`, `storage` and `extensions` without creating them,
+and restoring into a bare `CREATE DATABASE` dies partway through. The restore
+script checks this up front rather than letting you discover it mid-replay.
 
 `--force` is required for any non-local target. That is not ceremony: the script
 replaces the contents of the database it is pointed at, and the difference
@@ -301,14 +329,20 @@ Record each run in the rehearsal log below.
 
 A backup you have never restored is a rumor. Re-run
 [`scripts/db-restore-rehearsal.sh`](../../../scripts/db-restore-rehearsal.sh)
-after changing any dump flag or the restore order — it backs up the local stack,
-drops the application schema, restores from the dump alone, and diffs row counts
-table-by-table, exiting non-zero on any drift.
+after changing any dump flag, the restore order, or a migration that creates an
+object inside a Supabase-managed schema — it backs up the local stack and then
+runs both restore shapes above against a wiped database: pass A replays the dump
+alone and diffs row counts table-by-table; pass B rebuilds the schema with
+`supabase db push --local --include-all`, loads the dump with `--data-only`, and
+diffs the rows **and** the managed objects (`realtime`/`storage` policies, the
+`supabase_realtime` publication membership, `storage.buckets`). It exits non-zero
+on any drift in pass B; pass A's missing managed objects are reported as the
+known limitation of a dump-only restore.
 
 | Date | Result | Notes |
 | --- | --- | --- |
 | 2026-08-27 | **PASS** | 24 tables identical row-for-row. `auth.users` restored with `encrypted_password` intact. Took five iterations; each failure was a real defect in the recipe (see #852). Local stack, Postgres 17.6 — same major/minor as staging. Not yet rehearsed against a real Supabase project — unblocked since 2026-08-27, when #1287 provisioned the offsite bucket. |
-| 2026-09-06 | **FAIL, then PASS** | First run against a local database that had actually been used through the API (two GoTrue sign-ins, a chapter created via `POST /v1/chapters`, an invite minted and redeemed, chat messages, a config PATCH with its audit row): the restore aborted on `auth.audit_log_entries_pkey`. The rehearsal's "destroy" step truncated only `auth.users`, and `audit_log_entries` (like `flow_state`, `instances` and the SSO/OAuth tables) has no FK to users, so the rows survived and collided with the dump's copy — the 2026-08-27 pass had an empty auth schema and never exercised this. A fresh Supabase project has every auth data table empty, so the step now truncates all of them except GoTrue's `schema_migrations`. Re-run: **18 non-empty tables identical row-for-row**, and the API served a sign-in, channel history and the member list from the restored database. Because `db-restore.sh` runs in one transaction, the failed attempt left the target untouched apart from the rehearsal's own wipe; the kept dump restored it. Still local only — a restore into a disposable hosted project remains undone (#1421). |
+| 2026-09-06 | **FAIL, then PASS** | First run against a local database that had actually been used through the API (two GoTrue sign-ins, a chapter created via `POST /v1/chapters`, an invite minted and redeemed, chat messages, a config PATCH with its audit row): the restore aborted on `auth.audit_log_entries_pkey`. The rehearsal's "destroy" step truncated only `auth.users`, and `audit_log_entries` (like `flow_state`, `instances` and the SSO/OAuth tables) has no FK to users, so the rows survived and collided with the dump's copy — the 2026-08-27 pass had an empty auth schema and never exercised this. A fresh Supabase project has every auth data table empty, so the step now truncates all of them except GoTrue's `schema_migrations`. Re-run: **18 non-empty tables identical row-for-row**, and the API served a sign-in, channel history and the member list from the restored database. Because `db-restore.sh` runs in one transaction, the failed attempt left the target untouched apart from the rehearsal's own wipe; the kept dump restored it. **Then a second gap, invisible to a row-count diff:** after that identical restore, `pg_policies` on `realtime` was empty — the dump excludes managed schemas, so the realtime authorisation policy and all eight `storage.buckets` rows were gone, and the restored ledger would have stopped `db push` from ever recreating them. The rehearsal now runs two passes and compares the managed objects too: pass A (dump only) reports the 9 missing objects as the known limitation; pass B (`supabase db push --local --include-all`, then `db-restore.sh --data-only`) **restored 18 tables row-for-row AND all 12 managed objects identical**. Pass B is now the documented recovery. Still local only — a restore into a disposable hosted project remains undone (#1421). |
 
 ## Immediate response steps
 
