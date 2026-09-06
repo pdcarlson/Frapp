@@ -19,7 +19,7 @@ import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
 } from '@repo/validation';
-import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
+import type { PointTransaction } from '#domain/entities/point-transaction.entity';
 
 /**
  * The only two categories `POST /v1/points/adjust` can write. Shared by the
@@ -91,28 +91,27 @@ export class AdjustPointsDto {
  * what lets `/points` see `card_posted` (#544); the transaction fields are
  * flattened at the top level exactly as the route already returned them.
  *
- * `implements PointTransaction` earns its place, but it guards exactly one case,
- * and the boundaries matter more than the guarantee. It forces this class to
- * gain any **required** field added to the ledger row — including the new half
- * of a rename — because a missing required member fails to compile, and without
- * it even that was unguarded (`@ApiCreatedResponse` is pure metadata and the
- * controller has no return-type annotation).
+ * Drift between this class and the ledger row is caught by two mechanisms that
+ * catch different things, so both are kept:
+ *   - `implements PointTransaction` catches **type** drift — a field whose type
+ *     changed under us stops being assignable and fails to compile. It does NOT
+ *     catch key drift: an extra member is always legal, and `implements` cannot
+ *     require an **optional** one.
+ *   - the `Assert<Exclude<…>>` aliases at the bottom of this file catch **key**
+ *     drift in both directions, and name the offending field in the error. Same
+ *     device as `chapter-response.dto.ts`, for the same reason.
  *
- * Two changes slip straight through it, both verified against `tsc` rather than
- * assumed:
- *   - a **dropped** column — an extra class member is always legal, so this DTO
- *     keeps advertising a field the route no longer sends;
- *   - an **optional** field added to the interface — nothing requires the class
- *     to declare it, so the published contract silently omits it.
+ * The optional-field hole is why they are here rather than in a follow-up. #1719
+ * added `client_message_id?: string | null` to `PointTransaction` while this
+ * branch was open and every gate stayed green with the field missing from this
+ * class. `check:api-contract` cannot see that class of drift even in principle:
+ * it regenerates the artifacts and diffs them, and `PointTransaction` carries no
+ * Swagger decorators, so a field added there cannot change what is emitted. It
+ * was caught by hand, once, during a merge.
  *
- * The second is not hypothetical. #1719 added `client_message_id?: string | null`
- * to `PointTransaction` while this branch was open, and every gate stayed green
- * with the field missing from here — the artifacts regenerate faithfully from a
- * stale decorator. It is declared below now. **Anything but adding a required
- * column still needs this file checked by hand.**
- *
- * A narrower `category` still satisfies the interface, which is what makes the
- * honest two-value enum below compatible with the domain's six-value union.
+ * A narrower `category` still satisfies the interface — `keyof` is indifferent
+ * to value types — which is what makes the honest two-value enum below
+ * compatible with the domain's six-value union.
  */
 export class AdjustPointsResponseDto implements PointTransaction {
   @ApiProperty({ format: 'uuid' })
@@ -132,7 +131,9 @@ export class AdjustPointsResponseDto implements PointTransaction {
   // Only the two this route can write — see ADJUSTABLE_CATEGORIES. Publishing
   // the full six-value union would tell every SDK consumer to write four
   // unreachable branches, and would contradict `spec/behavior/points.md`
-  // § Categories, which says manual adjustments are MANUAL or FINE only.
+  // § Admin Adjustments, which says manual adjustments are MANUAL or FINE only.
+  // (Not § Chapter-wide transaction list, a few screens down, which lists all
+  // six because it describes the ledger rather than this route.)
   @ApiProperty({ enum: ADJUSTABLE_CATEGORIES })
   category: (typeof ADJUSTABLE_CATEGORIES)[number];
 
@@ -154,12 +155,14 @@ export class AdjustPointsResponseDto implements PointTransaction {
   // Echoed back so a caller can match the row it got to the key it sent — which
   // is the whole point of a replay returning the ORIGINAL transaction rather
   // than a new one (#1719). `null` for dashboard adjustments, which send no key.
-  // `type: String` is load-bearing, not decoration. Without it Swagger's
-  // reflection sees `string | null`, cannot pick a primitive, and publishes
-  // `type: "object"` — which openapi-typescript renders as
-  // `Record<string, never> | null`, i.e. a uuid the SDK types as an empty
-  // object. Caught by `check:api-contract` regenerating the artifacts, not by
-  // `tsc`. Same reason `chat.dto.ts:89` spells it out.
+  // `type: String` AND `format: 'uuid'` must BOTH be explicit. With only
+  // `format` + `nullable`, Swagger's reflection cannot pick a primitive for
+  // `string | null` and publishes `type: "object"`, which openapi-typescript
+  // renders as `Record<string, never> | null` — a uuid the SDK types as an
+  // empty object. `tsc` cannot see it; only regenerating the artifacts
+  // (`npm run check:api-contract`) can. `UpdateChannelDto.category_id` in
+  // `chat.dto.ts` carries the same pair and documents the mirror image of this
+  // quirk: there `type` was present and `format` was the missing half.
   @ApiPropertyOptional({
     type: String,
     format: 'uuid',
@@ -171,7 +174,7 @@ export class AdjustPointsResponseDto implements PointTransaction {
 
   @ApiPropertyOptional({
     description:
-      'Whether the accompanying chat card was posted. Present ONLY when this request actually attempted one — `channel_id` + `client_message_id` supplied, and not a deduplicated replay. `false` means the ledger row committed but the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — the caller should drop it and warn. Absent means the server reported no outcome (a dashboard adjustment, which posts no card, or a replay, which fires no side effect and records nothing about the original attempt); leave the placeholder for the echo.',
+      'Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the ledger row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the adjustment failed. Absent means the server reported no outcome (a dashboard adjustment, or a deduplicated replay) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch.',
   })
   card_posted?: boolean;
 }
@@ -248,3 +251,25 @@ export class ListPointTransactionsQueryDto {
   @IsInt()
   limit?: number;
 }
+
+/**
+ * Compile-time key-drift guards between {@link AdjustPointsResponseDto} and the
+ * ledger row it publishes. Each resolves to `never` while the two agree; when
+ * they diverge the alias stops satisfying `Assert`'s constraint and the build
+ * fails naming the field.
+ */
+type Assert<T extends never> = T;
+
+/** Ledger fields {@link AdjustPointsResponseDto} forgot to declare. Must be `never`. */
+export type AdjustPointsResponseDtoMissingFields = Assert<
+  Exclude<keyof PointTransaction, keyof AdjustPointsResponseDto>
+>;
+
+/**
+ * Fields {@link AdjustPointsResponseDto} declares that the ledger row does not
+ * carry. Must be `never`. `card_posted` is excluded because it is this route's
+ * own outcome flag, not a column — the one deliberate addition.
+ */
+export type AdjustPointsResponseDtoExtraFields = Assert<
+  Exclude<keyof AdjustPointsResponseDto, keyof PointTransaction | 'card_posted'>
+>;

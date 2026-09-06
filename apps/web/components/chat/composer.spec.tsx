@@ -404,6 +404,29 @@ describe("notifyDispatchOutcome (#544)", () => {
     expect(arg.variant).toBeUndefined();
   });
 
+  // The dispatcher removes the placeholder before this toast fires, so the
+  // toast is the only surviving evidence that the grant committed. At the
+  // Radix default it auto-dismisses after 5s and the channel goes blank —
+  // indistinguishable from "nothing happened", which is the state that gets
+  // the command re-run.
+  it("makes the partial-success toast sticky, not a 5-second one", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, { ok: true, warning: "Points recorded." });
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ duration: Infinity }),
+    );
+  });
+
+  // The mirror: a plain failure committed nothing, so it must NOT pin an
+  // undismissable toast to the corner of the screen.
+  it("leaves the failure toast on the default duration", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, { ok: false, error: "Nope" });
+
+    expect(toast.mock.calls[0]?.[0]).not.toHaveProperty("duration");
+  });
+
   it("stays silent on an unremarkable success", () => {
     const toast = vi.fn();
     notifyDispatchOutcome(toast, cmd, { ok: true });
@@ -434,13 +457,17 @@ describe("runDispatch (#1718)", () => {
   // handler, which was the only place they were recorded. Reporting is what
   // keeps #1718's failure class visible in production rather than trading a
   // silent user experience for a silent monitoring one.
-  it("reports the swallowed rejection to Sentry", async () => {
+  it("reports the swallowed rejection to Sentry, tagged with the command", async () => {
     const boom = new Error("QuotaExceededError");
     const dispatch = vi.fn().mockRejectedValue(boom);
 
     await runDispatch(dispatch, command, "args");
 
-    expect(captureException).toHaveBeenCalledWith(boom);
+    // The tag is load-bearing: catching these moves them off Sentry's
+    // `is:unhandled` filter, so it is what keeps the class findable.
+    expect(captureException).toHaveBeenCalledWith(boom, {
+      tags: { slash_command: "poll" },
+    });
   });
 
   it("passes a resolved outcome through untouched, warning included", async () => {

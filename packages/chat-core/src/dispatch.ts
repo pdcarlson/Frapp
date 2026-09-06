@@ -254,6 +254,14 @@ async function dispatchPoints(
   // effect and knows nothing about the original attempt's card. Treat that as
   // success rather than tearing down a placeholder the echo may still
   // reconcile.
+  //
+  // That is safe TODAY only because this function mints a fresh id per dispatch
+  // above, so no request reaching it is ever a replay. It is not safe in
+  // general: once a retry reuses its key (#1733), a replay whose ORIGINAL card
+  // post failed returns `undefined` here, no echo is ever coming, and the
+  // placeholder strands — #544's exact bug, back through this branch. Whoever
+  // lands #1733 has to change this line too, and the server cannot help until
+  // the ledger row records its origin channel (#1734).
   if (cardPosted === false) {
     removeLocalPlaceholder(ctx, channelId, clientMessageId);
     return {

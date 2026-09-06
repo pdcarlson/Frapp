@@ -523,6 +523,11 @@ export class PointsService {
    * server reported no outcome, which is exactly the truth here — so the caller
    * leaves its placeholder for the original card's echo rather than tearing
    * down one that may still reconcile.
+   *
+   * The caller's half of that is only correct while the original card DID post.
+   * When it did not, no echo is coming and the placeholder strands — which this
+   * route cannot detect for the reason above, and #1734 is what fixes. Today no
+   * client replays (#1733), so the case is unreachable rather than handled.
    */
   private completeReplay(existing: PointTransaction): PointTransaction {
     return existing;

@@ -3495,7 +3495,7 @@ export interface components {
              * @description The idempotency key this row was written under, echoed back. `null` for dashboard adjustments, which send no key and are not deduplicated.
              */
             client_message_id?: string | null;
-            /** @description Whether the accompanying chat card was posted. Present ONLY when this request actually attempted one — `channel_id` + `client_message_id` supplied, and not a deduplicated replay. `false` means the ledger row committed but the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — the caller should drop it and warn. Absent means the server reported no outcome (a dashboard adjustment, which posts no card, or a replay, which fires no side effect and records nothing about the original attempt); leave the placeholder for the echo. */
+            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the ledger row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the adjustment failed. Absent means the server reported no outcome (a dashboard adjustment, or a deduplicated replay) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
         };
         CreateCheckoutDto: {

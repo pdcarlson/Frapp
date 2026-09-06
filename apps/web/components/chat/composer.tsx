@@ -232,6 +232,11 @@ export function composerPlaceholder(channelName: string, isDirect?: boolean) {
  * experience for a silent *monitoring* one, and make #1718's failure class
  * invisible in production exactly as we start handling it.
  *
+ * It does move them, though, and that is worth stating rather than glossing:
+ * once caught they report as `mechanism.handled: true`, so Sentry's `is:unhandled`
+ * filter and any alert rule keyed on it stop matching this class. The
+ * `slash_command` tag is what keeps them findable afterwards.
+ *
  * This is the caller's own safety net; the dispatcher honouring its contract is
  * tracked separately (#1718).
  */
@@ -243,7 +248,7 @@ export async function runDispatch(
   try {
     return await dispatch(command, args);
   } catch (error) {
-    Sentry.captureException(error);
+    Sentry.captureException(error, { tags: { slash_command: command.name } });
     return { ok: false };
   }
 }
@@ -278,6 +283,14 @@ export function notifyDispatchOutcome(
     toast({
       title: `/${commandName} partly succeeded`,
       description: result.warning,
+      // Sticky (Radix skips the close timer on `Infinity`) because this toast is
+      // the ONLY remaining trace of a committed write: the dispatcher has just
+      // removed the optimistic placeholder, and no card is coming. At the
+      // default 5s an officer who looked away sees an empty channel and re-runs
+      // the command — the double-grant this whole path exists to prevent. The
+      // failure branch above keeps the default: nothing committed there, so
+      // there is nothing to lose track of.
+      duration: Infinity,
     });
   }
 }

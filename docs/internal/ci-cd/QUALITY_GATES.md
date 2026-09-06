@@ -16,7 +16,7 @@ baseline story actually supports.
 |---|---|---|---|---|
 | dependency-cruiser | `npm run check:dep-cruiser` | `dependency-cruiser` | **Required** | Has a real baseline; 5 existing violations grandfathered (7 when it landed), new ones fail |
 | oasdiff breaking changes | `npm run check:api-breaking` | step in `api-contract-check` | **Advisory** | Every consumer is in this repo and ships with the change |
-| `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | 142 findings and no ESLint baseline mechanism |
+| `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | A large undecorated-route backlog (count it, see below) and no ESLint baseline mechanism |
 | jscpd duplication | `npm run check:duplication` | `duplicate-detection` | **Advisory** | No clone-level baseline exists; a repo-wide % is too coarse to block on |
 | 375px responsive floor | `npm run test:floor -w apps/web` | `web-responsive-floor` | **Required** | No baseline at all — it reads one integer per route. Nothing to grandfather and nothing to drift |
 | Vercel-parity production build | `npm ci --omit=dev` + `turbo run build --filter=web --filter=landing` | `web-production-build` | **Required** | Nothing to grandfather: the build either succeeds on a pruned tree or it does not, and it was already succeeding when the job landed. Advisory was never on the table — the two failures it catches (#1331, #1372) both reached production precisely because nothing blocked on them |
@@ -232,10 +232,20 @@ response generates `content?: never` in the SDK, so callers get no types for the
 contract silently claims the route returns nothing.
 
 **Set to `warn`, and it must stay that way until the Wave 2 route-DTO backfill lands.** The rule
-fires once per undecorated controller method and there are **142** today — measured, not estimated;
-the planning docs guessed ~30, which is out by roughly 5x and is exactly the figure someone would use
-to conclude the backfill was finished. ESLint has no native baseline mechanism, and `lint` is a
-required check, so `error` now would mean red on every PR until all 142 are done. Warnings do not
+fires once per undecorated controller method. **Measure the backlog, do not read it off this page** —
+a hand-copied total here is a future contradiction, and this paragraph carried a stale `142` for
+long enough to prove it:
+
+```sh
+cd apps/api && npx eslint "src/**/*.controller.ts" --format json \
+  | python3 -c "import json,sys; print(sum(1 for f in json.load(sys.stdin) for m in f['messages'] if m.get('ruleId')=='nestjs-typed/api-method-should-specify-api-response'))"
+```
+
+That printed **164** on 2026-09-06, on the branch for #544 (which decorates one route, so it is one
+fewer than the same branch's base). Worth knowing whatever it prints today: the planning docs guessed
+~30, which is out by roughly 5x and is exactly the figure someone would use to conclude the backfill
+was finished. ESLint has no native baseline mechanism, and `lint` is a required
+check, so `error` now would mean red on every PR until the whole backlog is done. Warnings do not
 fail ESLint, so `npm run lint` stays green and the backlog stays visible.
 
 Only that one rule is enabled. The plugin's bundled `flatRecommended` preset turns on 20+ rules at

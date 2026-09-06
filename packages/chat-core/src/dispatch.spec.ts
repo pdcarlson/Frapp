@@ -4,7 +4,8 @@ import type { SlashCommand } from "@repo/chat-integrations";
 import { dispatchSlashCommand } from "./dispatch";
 import type { ChatActionContext } from "./chat-client";
 import type { OutboxStore } from "./adapters";
-import { chatMessagesKey } from "./types";
+import { chatMessagesKey, type ChannelCache } from "./types";
+import { selectMessages } from "./cache";
 
 /**
  * #544 — a `/points` grant whose ledger row commits but whose chat card fails to
@@ -33,22 +34,26 @@ function buildCtx(post: ReturnType<typeof vi.fn>): ChatActionContext {
     supabase: { from: vi.fn() } as unknown as ChatActionContext["supabase"],
     userId: "user-1",
     outbox: {} as OutboxStore,
-  } as ChatActionContext;
+  };
 }
 
 /**
- * Count the optimistic `loading` rows sitting in the channel cache. The cache is
- * `{ byId, order, actionIndex }` — reading any other shape silently returns 0
- * and makes every "placeholder was removed" assertion vacuous, so the
- * card-posted case below deliberately asserts a NON-zero count to prove this
- * helper actually sees the row.
+ * Count the optimistic `loading` rows sitting in the channel cache.
+ *
+ * Read through `selectMessages` rather than a hand-written structural cast, so
+ * `kind` is the `ChatMessageKind` union — a typo'd literal here is a compile
+ * error rather than a filter that quietly matches nothing.
+ *
+ * A helper that went blind would NOT pass silently: the two `toBe(1)` cases
+ * below fail the moment it stops seeing the row (verified by stubbing it to
+ * `return 0`, which turns this file red). They are the guard, and they are why
+ * the card-posted case asserts a NON-zero count rather than only absences.
  */
 function placeholderCount(ctx: ChatActionContext): number {
-  const cache = ctx.queryClient.getQueryData(chatMessagesKey(CHANNEL_ID)) as
-    | { byId?: Record<string, { kind?: string }> }
-    | undefined;
-  return Object.values(cache?.byId ?? {}).filter((m) => m.kind === "loading")
-    .length;
+  const cache = ctx.queryClient.getQueryData<ChannelCache>(
+    chatMessagesKey(CHANNEL_ID),
+  );
+  return selectMessages(cache).filter((m) => m.kind === "loading").length;
 }
 
 function dispatchGrant(ctx: ChatActionContext) {
