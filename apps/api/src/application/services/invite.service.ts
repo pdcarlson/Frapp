@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   GoneException,
   Inject,
   Injectable,
@@ -21,6 +22,7 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { Invite } from '#domain/entities/invite.entity';
 import { SystemRoleKeys } from '#domain/constants/permissions';
+import { isSubscriptionHardLocked } from '#domain/constants/subscription-grace';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
@@ -280,6 +282,28 @@ export class InviteService {
     if (invite.used_at) throw new GoneException('Invite already used');
     if (new Date(invite.expires_at) < new Date())
       throw new GoneException('Invite expired');
+
+    // The chapter that matters here is the INVITE's, which `ChapterGuard`
+    // never sees — it resolves the caller's active chapter, and a brand-new
+    // user has none — so the subscription lock is evaluated here (#1546).
+    // `spec/behavior/data-retention.md`: a canceled chapter cannot gain
+    // members. Minting already stops the moment a chapter lapses; this closes
+    // the 24h window in which a token minted before the lapse could still add
+    // one. Checked BEFORE the atomic claim so the token is not consumed: the
+    // chapter may recover inside the token's lifetime, and the same link then
+    // works. 403 rather than the token-terminal 410 for the same reason —
+    // nothing is wrong with the invite, and the copy should say what is.
+    const chapter = await this.chapterRepo.findById(invite.chapter_id);
+    if (chapter && isSubscriptionHardLocked(chapter)) {
+      throw new ForbiddenException({
+        code:
+          chapter.subscription_status === 'canceled'
+            ? 'chapter.subscription.canceled'
+            : 'chapter.subscription.write_locked',
+        message:
+          "This chapter isn't accepting new members right now: its subscription is inactive. Ask a chapter officer to restore it, then use this invite again.",
+      });
+    }
 
     const existingMember = await this.memberRepo.findByUserAndChapter(
       userId,
