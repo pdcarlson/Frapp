@@ -298,6 +298,19 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback `idx_audit_log_chapter_action_created_at`
+
+* **Migration**: `20260906120000_audit_log_chapter_action_created_at_idx.sql`
+* **Action**: `DROP INDEX IF EXISTS idx_audit_log_chapter_action_created_at;`
+* **Note**: Additive index only — no column, constraint or data change, so
+  dropping it loses nothing but the optimization. `GET /v1/audit-log`'s `action`
+  filter keeps returning identical rows; it falls back to scanning the chapter's
+  history in `created_at` order and discarding non-matching rows, which is what
+  it did before this migration. The other three indexes on the table are
+  untouched, so the actor filter, the date window and the newest-first ordering
+  are unaffected. **No API rollback is needed or implied** — nothing in the
+  application references the index by name.
+
 ## Rollback the ops-setup nudge dismissals
 
 * **Migration**: `20260905030000_member_dismissed_ops_nudges.sql`

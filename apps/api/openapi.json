@@ -866,15 +866,59 @@
     },
     "/v1/audit-log": {
       "get": {
-        "description": "Officer-action history (config changes, role/field changes, member removal, and similar). Paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).",
+        "description": "Officer-action history (config changes, role/field changes, member removal, and similar). Optional filters — `actor_user_id`, `action`, and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).",
         "operationId": "ChapterAuditLogController_list_v1",
         "parameters": [
+          {
+            "name": "actor_user_id",
+            "required": false,
+            "in": "query",
+            "description": "Filter to entries written by a single actor",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "required": false,
+            "in": "query",
+            "description": "Filter to a single action verb, e.g. `member_removed`. Matched exactly; an unknown verb returns an empty list.",
+            "schema": {
+              "example": "member_removed",
+              "type": "string"
+            }
+          },
+          {
+            "name": "start_date",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive lower bound on `created_at`. Full ISO 8601 timestamp with an explicit UTC offset — a bare date is rejected rather than read as midnight. Filters the range; pair with `before` to page within it.",
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$",
+              "example": "2026-01-01T00:00:00.000Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_date",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive upper bound on `created_at`. Full ISO 8601 timestamp with an explicit UTC offset — send `…T23:59:59.999Z` for a whole final day rather than a bare date. Unlike `before`, this bounds the range rather than moving with pagination.",
+            "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$",
+              "example": "2026-01-31T23:59:59.999Z",
+              "type": "string"
+            }
+          },
           {
             "name": "before",
             "required": false,
             "in": "query",
-            "description": "ISO8601 cursor — return audit entries created before this timestamp",
+            "description": "Cursor — return audit entries created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received.",
             "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$",
+              "example": "2026-01-31T23:59:59.999999+00:00",
               "type": "string"
             }
           },
