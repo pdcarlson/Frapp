@@ -459,10 +459,11 @@ jobs:
           ID="$(grep -oP '^render_deploy_id=\K.*' "${RUNNER_TEMP:-/tmp}/render.log" || true)"
           echo "deploy_id=$ID" >> "$GITHUB_OUTPUT"
 
-      # Render's `live` means the container started, opened its port and — since
-      # 2026-09-06, when `healthCheckPath: /health` was applied to the live
-      # service to match render.yaml — answered the plain liveness probe. That
-      # probe always 2xxs by design, so this loop is still the only thing
+      # Render's `live` means the new instance passed Render's health probe:
+      # since 2026-09-06 that probe is `GET /health` (applied to the live service
+      # to match render.yaml — before that the path was empty and the probe was
+      # a bare TCP check on the port; DEPLOYMENT.md § 5.4 cites Render's docs).
+      # `/health` always 2xxs by design, so this loop is still the only thing
       # asserting the app is actually READY (DB and Storage reachable). Unlike
       # deploy-api.yml, a missing URL FAILS rather than warning and exiting 0: a
       # health check that silently does not run is indistinguishable from one

@@ -491,10 +491,17 @@ reachable.
 >
 > **2026-09-06:** the drift was closed from the other side. `PATCH /v1/services/{id}` set
 > `healthCheckPath: /health` on **both** `frapp-api-staging` and `frapp-api-prod` (read back as
-> `/health` on each), so the live services now match the blueprint. Render gates a deploy on that
-> path returning 2xx; `/health` is the plain liveness probe that always does, which is why it — and
-> not `/health/ready` — is the value here (see the health smoke check in `deploy-production.yml`
-> for the readiness half).
+> `/health` on each), so the live services now match the blueprint. The open question above was
+> also settled that day from Render's own documentation
+> ([render.com/docs/health-checks](https://render.com/docs/health-checks), read from an unrestricted
+> session): with an **empty** `healthCheckPath` Render's probe is a plain **TCP socket check** on the
+> open port; with a path set it sends `GET <path>` and treats `2xx`/`3xx` within five seconds as
+> healthy. On a new deploy Render routes no traffic to the new instances until all of them pass, and
+> **cancels the deploy** if they have not within 15 minutes. So the empty value never disabled
+> deploy gating — it gated on "opened a port" rather than "answered HTTP". The page does not mention
+> the Dockerfile `HEALTHCHECK` directive at all, so whether Render reads it remains unestablished.
+> `/health` is the right value here because it is the plain liveness probe that always 2xxs; the
+> readiness half is the `/health/ready` smoke loop in `deploy-production.yml`.
 
 ### 5.5 In-process chat workers (Chunk 05)
 
