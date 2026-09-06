@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing';
 import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChatPushWorkerService } from './chat-push-worker.service';
 import {
@@ -9,7 +9,7 @@ import {
   type ChatNotificationPreferenceRow,
 } from './chat-notification-preference.repository';
 import { RbacService } from '../../application/services/rbac.service';
-import type { ChatMessage } from '../../domain/entities';
+import type { ChatMessage } from '#domain/entities';
 import { ChannelCacheService } from './channel-cache.service';
 
 /**

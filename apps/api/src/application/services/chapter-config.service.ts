@@ -11,7 +11,7 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../../infrastructure/supabase/database.types';
-import type { DuesCadence } from '../../domain/entities/chapter-dues-config.entity';
+import type { DuesCadence } from '#domain/entities/chapter-dues-config.entity';
 import {
   buildChapterConfigFromArchetype,
   getArchetype,

@@ -53,8 +53,8 @@ import type {
   Task,
   User,
   UserSettings,
-} from '../../domain/entities';
-import type { StripeWebhookClaimOutcome } from '../../domain/repositories/stripe-webhook-event.repository.interface';
+} from '#domain/entities';
+import type { StripeWebhookClaimOutcome } from '#domain/repositories/stripe-webhook-event.repository.interface';
 
 export type Json =
   | string

@@ -177,7 +177,7 @@ describe("the accent preview reports its own legibility", () => {
    * and fails the second at 4.191:1. Before this, the swatch drew "Preview" in
    * a tone `pickAccessibleColor` had explicitly rejected and said nothing.
    *
-   * `settings-contrast.test.ts` measures the tones. This asserts the screen
+   * `settings-contrast.spec.ts` measures the tones. This asserts the screen
    * actually surfaces the verdict, which no measurement can.
    */
   beforeEach(() => {

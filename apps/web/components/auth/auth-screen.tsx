@@ -39,7 +39,7 @@
  * `--muted`: `components.md` §1 records that `--muted` "is not usable as text
  * anywhere on the ladder", and `--background` is its most forgiving step at
  * 4.041:1 — still under §6's 4.5:1 gate. Measured in
- * `components/profile/profile-contrast.test.ts`.
+ * `components/profile/profile-contrast.spec.ts`.
  */
 
 import Link from "next/link";

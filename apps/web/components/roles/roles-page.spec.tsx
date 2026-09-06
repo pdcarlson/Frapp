@@ -8,7 +8,7 @@ import { networkMock } from "@/tests/network";
  *
  * `roles-page.tsx` is 604 lines carrying the presidency transfer, the wildcard
  * lock, and two destructive confirmations, and nothing in the suite rendered
- * it: `settings-roles-tab.test.tsx` mocks the whole module out, so the Live
+ * it: `settings-roles-tab.spec.tsx` mocks the whole module out, so the Live
  * roles sub-tab was never mounted by any test. The Settings & Roles slice
  * rewrote its state branches, its checkboxes and both confirmations, which is
  * a lot of change to land on an unpinned file.

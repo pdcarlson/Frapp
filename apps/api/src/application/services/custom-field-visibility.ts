@@ -1,5 +1,5 @@
-import { SystemPermissions } from '../../domain/constants/permissions';
-import type { CustomFieldVisibility } from '../../domain/entities/chapter-custom-field.entity';
+import { SystemPermissions } from '#domain/constants/permissions';
+import type { CustomFieldVisibility } from '#domain/entities/chapter-custom-field.entity';
 
 /**
  * Resolve which custom-field visibility tiers a viewer may see on a target

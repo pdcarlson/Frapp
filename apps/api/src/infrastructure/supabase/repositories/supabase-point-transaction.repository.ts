@@ -5,9 +5,9 @@ import {
   IPointTransactionRepository,
   PointTransactionDuplicateError,
   type ListChapterPointTransactionsOptions,
-} from '../../../domain/repositories/point-transaction.repository.interface';
-import { PG_UNIQUE_VIOLATION } from '../../../domain/repositories/chat.repository.interface';
-import { PointTransaction } from '../../../domain/entities/point-transaction.entity';
+} from '#domain/repositories/point-transaction.repository.interface';
+import { PG_UNIQUE_VIOLATION } from '#domain/repositories/chat.repository.interface';
+import { PointTransaction } from '#domain/entities/point-transaction.entity';
 
 @Injectable()
 export class SupabasePointTransactionRepository implements IPointTransactionRepository {

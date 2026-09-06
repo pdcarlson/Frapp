@@ -15,7 +15,7 @@ import {
   ChapterAuditLogEntryDto,
   ListChapterAuditLogQueryDto,
 } from '../dtos/chapter-audit-log.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Chapter Audit Log')
 @ApiBearerAuth()

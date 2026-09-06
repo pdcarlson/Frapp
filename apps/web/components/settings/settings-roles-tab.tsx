@@ -384,7 +384,7 @@ function MatrixView({
                             chat slice already recorded that it "is not usable
                             as text anywhere on the ladder", and reaching for
                             it here would have reproduced that finding one
-                            family over. Measured in `settings-contrast.test.ts`:
+                            family over. Measured in `settings-contrast.spec.ts`:
                             success 6.752:1, muted-foreground 6.849:1 on the
                             card this table sits in.
                           */

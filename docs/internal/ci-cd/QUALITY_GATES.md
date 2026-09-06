@@ -82,7 +82,7 @@ fail — that is how this was caught, and each of the four rule families has bee
 
 ### The baseline
 
-`.dependency-cruiser-known-violations.json` holds the violations that existed when the gate landed —
+`scripts/dependency-cruiser-known-violations.json` holds the violations that existed when the gate landed —
 7 then, 5 since #1549 re-recorded it after #1539 had moved
 `apps/api/src/domain/constants/report-columns.ts` out of the interface layer without shrinking it
 (all `api-application-not-to-interface` — services importing
@@ -112,11 +112,11 @@ only correct resolution is one run per workspace with that workspace as cwd, whi
 **This is worth knowing because getting it wrong is silent, not loud.** Cruising everything from the
 repo root "works" and reports **806 violations, 792 of them `not-to-unresolvable`** — purely `@/*`
 failing to resolve, reproducible with `DEPCRUISE_WORKSPACE=apps/web npx depcruise . --config
-.dependency-cruiser.cjs`. Baselining that run would have grandfathered 792 phantoms and left every
+scripts/dependency-cruiser.cjs`. Baselining that run would have grandfathered 792 phantoms and left every
 real rule asleep underneath them. Resolved per workspace, the true total is **7**.
 
 Two consequences follow, and both are easy to trip over when editing
-[`.dependency-cruiser.cjs`](../../../.dependency-cruiser.cjs):
+[`scripts/dependency-cruiser.cjs`](../../../scripts/dependency-cruiser.cjs):
 
 - **Every path in the config is workspace-relative.** A root-anchored `^apps/api/src/…` silently
   matches nothing. Rules that only apply to one workspace are selected with `DEPCRUISE_WORKSPACE`

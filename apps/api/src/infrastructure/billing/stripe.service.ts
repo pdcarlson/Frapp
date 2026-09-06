@@ -9,7 +9,7 @@ import {
   type CreatePaymentIntentParams,
   type PaymentIntentResult,
   type WebhookEvent,
-} from '../../domain/adapters/billing.interface';
+} from '#domain/adapters/billing.interface';
 
 /**
  * The trial the public site sells (#913). `apps/landing/app/page.tsx` labels the
@@ -88,16 +88,6 @@ export class StripeBillingService implements IBillingProvider {
       return_url: params.returnUrl,
     });
     return session.url;
-  }
-
-  async getSubscriptionStatus(subscriptionId: string): Promise<string> {
-    const subscription =
-      await this.stripe.subscriptions.retrieve(subscriptionId);
-    return subscription.status;
-  }
-
-  async cancelSubscription(subscriptionId: string): Promise<void> {
-    await this.stripe.subscriptions.cancel(subscriptionId);
   }
 
   async createPaymentIntent(

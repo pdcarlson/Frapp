@@ -4,7 +4,7 @@ import { NotificationService } from '../../application/services/notification.ser
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
 import { ReportRetentionService } from '../../application/services/report-retention.service';
 import { PollService } from '../../application/services/poll.service';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ScheduledJobsService } from './scheduled-jobs.service';
 import { ScheduledJobsRepository } from './scheduled-jobs.repository';
 

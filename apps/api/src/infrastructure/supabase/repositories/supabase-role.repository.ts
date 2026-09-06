@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IRoleRepository } from '../../../domain/repositories/role.repository.interface';
-import { Role } from '../../../domain/entities/role.entity';
+import { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { Role } from '#domain/entities/role.entity';
 
 @Injectable()
 export class SupabaseRoleRepository implements IRoleRepository {

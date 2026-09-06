@@ -505,7 +505,7 @@ jobs:
       # ONE injection, and the `prod` slug rather than `staging`.
       #
       # Only `SUPABASE_ACCESS_TOKEN` is wanted — the project REFS come from
-      # `ci/environments.json`, which is what lets this job skip the
+      # `.github/environments.json`, which is what lets this job skip the
       # capture-between-injections dance check-migration-drift.yml needs (a
       # second `secrets-action` step clobbers `SUPABASE_PROJECT_REF` from the
       # first).

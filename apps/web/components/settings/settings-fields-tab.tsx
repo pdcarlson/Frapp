@@ -496,7 +496,7 @@ function AddFieldForm({ canManage }: { canManage: boolean }) {
                       /*
                         `--accent` aliases `--popover`, so `hover:bg-accent`
                         on a chip inside a card composites to 1.085:1 —
-                        `shared/table-contrast.test.ts` pins that exact
+                        `shared/table-contrast.spec.ts` pins that exact
                         measurement. The accent tint separates by hue instead
                         of by a ladder step that is not there.
                       */

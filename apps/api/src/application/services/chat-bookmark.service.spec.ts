@@ -5,13 +5,13 @@ import {
   ChatBookmarkService,
 } from './chat-bookmark.service';
 import { ChannelAccessService } from './channel-access.service';
-import { CHAT_MESSAGE_BOOKMARK_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import type { IChatMessageBookmarkRepository } from '../../domain/repositories/chat.repository.interface';
+import { CHAT_MESSAGE_BOOKMARK_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import type { IChatMessageBookmarkRepository } from '#domain/repositories/chat.repository.interface';
 import type {
   BookmarkedMessage,
   ChatMessageBookmarkRef,
   ChatMessageBookmarkWithMessage,
-} from '../../domain/entities/chat.entity';
+} from '#domain/entities/chat.entity';
 
 const CHAPTER = 'chap-1';
 const USER = 'user-1';

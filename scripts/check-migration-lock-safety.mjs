@@ -21,7 +21,7 @@
 // So even tuned, this cannot be a hard block today: any PR touching one of
 // those 8 files would fail on a finding it did not introduce. Making it
 // blocking needs a baseline of the existing 13 — the same move
-// `.dependency-cruiser-known-violations.json` makes for the architecture gate,
+// `scripts/dependency-cruiser-known-violations.json` makes for the architecture gate,
 // which is what lets THAT gate be strict from day one. That is a deliberate,
 // separate change; `--strict` below exists so it is a one-line switch when
 // someone decides to make it.

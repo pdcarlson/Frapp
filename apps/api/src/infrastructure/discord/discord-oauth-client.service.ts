@@ -9,7 +9,7 @@ import {
   type DiscordTokenExchangeResult,
   type DiscordUserGuild,
   type IDiscordOAuthClient,
-} from '../../domain/adapters/discord.interface';
+} from '#domain/adapters/discord.interface';
 
 const DISCORD_AUTHORIZE_URL = 'https://discord.com/oauth2/authorize';
 const DISCORD_TOKEN_URL = 'https://discord.com/api/v10/oauth2/token';

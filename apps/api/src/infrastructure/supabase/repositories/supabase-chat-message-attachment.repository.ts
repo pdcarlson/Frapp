@@ -4,8 +4,8 @@ import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   IChatMessageAttachmentRepository,
   NewChatMessageAttachment,
-} from '../../../domain/repositories/chat.repository.interface';
-import { ChatMessageAttachment } from '../../../domain/entities/chat.entity';
+} from '#domain/repositories/chat.repository.interface';
+import { ChatMessageAttachment } from '#domain/entities/chat.entity';
 
 /**
  * `chat_message_attachments` reads and writes.

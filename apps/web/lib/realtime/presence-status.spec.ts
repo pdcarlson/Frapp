@@ -144,7 +144,7 @@ describe("presenceMapFrom", () => {
 /**
  * Presence is a domain status vocabulary like `poll-status.ts` and
  * `settings-status.ts`, and the invariant those share — pinned for them in
- * `components/shared/status-kind.test.ts` — is that **no domain status is ever
+ * `components/shared/status-kind.spec.ts` — is that **no domain status is ever
  * painted in the chapter accent**. #1202 found five that were, and the families
  * with no mapper were exactly the ones nobody could check. This is presence's
  * half of that check.

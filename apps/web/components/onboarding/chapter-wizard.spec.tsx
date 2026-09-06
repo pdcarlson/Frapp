@@ -145,7 +145,7 @@ describe("ChapterWizard legal acceptance gate", () => {
 describe("the archetype card, at the call site", () => {
   it("paints the selection with the accent pair, never an opacity wash", () => {
     /*
-     * `components/profile/profile-contrast.test.ts` measures the tones; it
+     * `components/profile/profile-contrast.spec.ts` measures the tones; it
      * cannot see which one the component reaches for, and a conditional is
      * invisible to a whole-file grep because the *other* branch's classes are
      * in the file either way. So this reads the rendered element.

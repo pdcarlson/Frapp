@@ -5,14 +5,14 @@ import { RbacService } from './rbac.service';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
-} from '../../domain/repositories/chat.repository.interface';
+} from '#domain/repositories/chat.repository.interface';
 import type {
   IChatChannelRepository,
   IChatMessageRepository,
-} from '../../domain/repositories/chat.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import type { ChatChannel } from '../../domain/entities/chat.entity';
+} from '#domain/repositories/chat.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type { ChatChannel } from '#domain/entities/chat.entity';
 
 describe('ChannelAccessService', () => {
   let service: ChannelAccessService;

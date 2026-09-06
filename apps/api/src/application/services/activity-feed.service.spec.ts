@@ -6,14 +6,11 @@ import { BackworkService } from './backwork.service';
 import { MemberService, RecentMemberJoin } from './member.service';
 import { ChatService } from './chat.service';
 import { RbacService } from './rbac.service';
-import { SystemPermissions } from '../../domain/constants/permissions';
-import type { Event } from '../../domain/entities/event.entity';
-import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
-import type { BackworkResource } from '../../domain/entities/backwork.entity';
-import type {
-  ChatChannel,
-  ChatMessage,
-} from '../../domain/entities/chat.entity';
+import { SystemPermissions } from '#domain/constants/permissions';
+import type { Event } from '#domain/entities/event.entity';
+import type { PointTransaction } from '#domain/entities/point-transaction.entity';
+import type { BackworkResource } from '#domain/entities/backwork.entity';
+import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 
 describe('ActivityFeedService', () => {
   let service: ActivityFeedService;

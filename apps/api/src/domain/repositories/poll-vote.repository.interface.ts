@@ -17,8 +17,6 @@ export interface PollUserVoteRow {
 
 export interface IPollVoteRepository {
   findByMessage(messageId: string): Promise<PollVote[]>;
-  /** All votes for any of the given poll message ids (one round-trip). */
-  findByMessages(messageIds: string[]): Promise<PollVote[]>;
   /**
    * `GROUP BY message_id, option_index` totals for the given poll message ids.
    * Empty when `messageIds` is empty.
@@ -38,9 +36,4 @@ export interface IPollVoteRepository {
   create(data: Partial<PollVote>): Promise<PollVote>;
   createMany(data: Partial<PollVote>[]): Promise<PollVote[]>;
   deleteByMessageAndUser(messageId: string, userId: string): Promise<void>;
-  deleteByMessageUserAndOption(
-    messageId: string,
-    userId: string,
-    optionIndex: number,
-  ): Promise<void>;
 }

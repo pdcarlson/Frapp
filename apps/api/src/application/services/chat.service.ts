@@ -27,7 +27,7 @@ import {
   CHANNEL_READ_RECEIPT_REPOSITORY,
   ChatMessageDuplicateError,
   ChatMessageActionDuplicateError,
-} from '../../domain/repositories/chat.repository.interface';
+} from '#domain/repositories/chat.repository.interface';
 import type {
   IChatChannelRepository,
   IChatCategoryRepository,
@@ -36,14 +36,14 @@ import type {
   IChatMessageAttachmentRepository,
   IMessageReactionRepository,
   IChannelReadReceiptRepository,
-} from '../../domain/repositories/chat.repository.interface';
+} from '#domain/repositories/chat.repository.interface';
 import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
-} from '../../domain/repositories/member.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import type { IStorageProvider } from '../../domain/adapters/storage.interface';
-import { CHAT_ARCHIVE_BUCKET } from '../../domain/constants/storage';
+} from '#domain/repositories/member.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import type { IStorageProvider } from '#domain/adapters/storage.interface';
+import { CHAT_ARCHIVE_BUCKET } from '#domain/constants/storage';
 import type {
   ChatChannel,
   ChatChannelView,
@@ -55,13 +55,13 @@ import type {
   ChatMessageKind,
   ChannelType,
   ChannelUnreadCount,
-} from '../../domain/entities/chat.entity';
+} from '#domain/entities/chat.entity';
 import {
   CHAT_MESSAGE_KINDS,
   SETTABLE_NOTIFICATION_KINDS,
   isChatMessageKind,
   isSettableNotificationKind,
-} from '../../domain/entities/chat.entity';
+} from '#domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
 import { ChannelAccessService } from './channel-access.service';
 import { ActivationService } from './activation.service';

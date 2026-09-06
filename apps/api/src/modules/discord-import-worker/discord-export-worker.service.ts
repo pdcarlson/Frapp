@@ -3,25 +3,25 @@ import {
   ArchiveQuotaExceededError,
   DISCORD_IMPORT_REPOSITORY,
   type IDiscordImportRepository,
-} from '../../domain/repositories/discord-import.repository.interface';
+} from '#domain/repositories/discord-import.repository.interface';
 import { archiveQuotaMessage } from '../../application/services/discord-import.service';
 import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
-} from '../../domain/repositories/discord-connection.repository.interface';
+} from '#domain/repositories/discord-connection.repository.interface';
 import {
   DISCORD_BOT_GATEWAY,
   DISCORD_MESSAGE_PAGE_LIMIT,
   type IDiscordBotGateway,
-} from '../../domain/adapters/discord.interface';
+} from '#domain/adapters/discord.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveMediaObjectPath,
-} from '../../domain/constants/storage';
+} from '#domain/constants/storage';
 import {
   MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_IMPORT_BYTES,
@@ -38,13 +38,13 @@ import {
   type DiscordApiAttachment,
   type DiscordApiMessage,
   type MessageContentTally,
-} from '../../domain/utils/discord-api-message';
-import type { DiscordExportMessage } from '../../domain/utils/discord-export';
+} from '#domain/utils/discord-api-message';
+import type { DiscordExportMessage } from '#domain/utils/discord-export';
 import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
-} from '../../domain/entities/discord-import.entity';
+} from '#domain/entities/discord-import.entity';
 
 /**
  * Messages fetched per Discord round trip.

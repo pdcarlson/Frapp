@@ -15,8 +15,8 @@ import type { ConfirmResult } from "@/components/shared/confirm-dialog";
  * someone meant to abandon the rejection, which is the worst direction for it
  * to be wrong in: the member is notified either way.
  *
- * Nothing in the shipped suites reaches these paths — `tasks-board.test.tsx`
- * and `service-page.test.tsx` assert button enablement for §5's gating and stop
+ * Nothing in the shipped suites reaches these paths — `tasks-board.spec.tsx`
+ * and `service-page.spec.tsx` assert button enablement for §5's gating and stop
  * there — so before this file the whole confirmation path was untested on both
  * sides of the conversion.
  */
@@ -241,8 +241,8 @@ describe("the confirmation is in-product, and reads as a verb", () => {
 
   it("labels the action with its verb and object, never a bare 'Confirm'", async () => {
     // `writing.md` §2's CTA rule, and it is also what keeps the screens' own
-    // suites unambiguous: `tasks-board.test.tsx` queries `/^delete$/i` and
-    // `service-page.test.tsx` queries `/reject/i` against the page's buttons.
+    // suites unambiguous: `tasks-board.spec.tsx` queries `/^delete$/i` and
+    // `service-page.spec.tsx` queries `/reject/i` against the page's buttons.
     const user = userEvent.setup();
     render(<Harness onSettle={noop} withComment={false} />);
 

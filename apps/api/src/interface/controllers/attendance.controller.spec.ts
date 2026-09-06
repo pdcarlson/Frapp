@@ -3,7 +3,7 @@ import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from '../../application/services/attendance.service';
 import { CheckInDto, UpdateAttendanceDto } from '../dtos/attendance.dto';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 describe('AttendanceController', () => {
   let controller: AttendanceController;

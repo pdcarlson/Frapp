@@ -11,24 +11,24 @@ import {
 import {
   POINT_TRANSACTION_REPOSITORY,
   PointTransactionDuplicateError,
-} from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
-import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
-import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
+} from '#domain/repositories/point-transaction.repository.interface';
+import type { IPointTransactionRepository } from '#domain/repositories/point-transaction.repository.interface';
+import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
+import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import type {
   PointTransaction,
   PointCategory,
-} from '../../domain/entities/point-transaction.entity';
+} from '#domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
-import { clampListLimit } from '../../domain/constants/list-query-limits';
+import { clampListLimit } from '#domain/constants/list-query-limits';
 import {
   resolveWindowSince,
   type PointsWindow,
-} from '../../domain/utils/points-window';
+} from '#domain/utils/points-window';
 import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
 
 // Re-exported so existing importers (points.controller, etc.) keep their path;

@@ -1,13 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
-import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
+import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
+import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
 import {
   resolveWindowSince,
   type PointsWindow,
-} from '../../domain/utils/points-window';
+} from '#domain/utils/points-window';
 import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
-import { chunkIds } from '../../domain/utils/chunk-ids';
+import { chunkIds } from '#domain/utils/chunk-ids';
 import { fetchAllPages as fetchAllPagesShared } from '../../infrastructure/supabase/supabase.utils';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 

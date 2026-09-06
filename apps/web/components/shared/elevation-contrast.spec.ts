@@ -15,7 +15,7 @@ import {
  * The defect this file exists for.
  *
  * Chapter Ops shipped two fills that composited to **exactly 1.000:1** — not
- * the 1.085:1 near-miss `components/shared/table-contrast.test.ts` pins for a
+ * the 1.085:1 near-miss `components/shared/table-contrast.spec.ts` pins for a
  * card-seated row, but a container's own colour washed over itself. Both
  * survived review twice because the class names read fine: `bg-accent/40` on a
  * dialog and `bg-secondary/40` on a card are only wrong once you know that
@@ -25,7 +25,7 @@ import {
  * than restated — a guard that hardcodes the values it guards goes green
  * against constants that no longer ship.
  *
- * It lives in `shared/` for `table-contrast.test.ts`'s reason: four families
+ * It lives in `shared/` for `table-contrast.spec.ts`'s reason: four families
  * composited the same ladder mistake here, and the families whose #920 slice
  * has not landed will inherit it.
  */

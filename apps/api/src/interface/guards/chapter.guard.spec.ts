@@ -9,7 +9,7 @@ import {
   SUBSCRIPTION_GRACE_BLOCKED_KEY,
 } from '../decorators/subscription.decorator';
 import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
-import type { SubscriptionStatus } from '../../domain/entities/chapter.entity';
+import type { SubscriptionStatus } from '#domain/entities/chapter.entity';
 
 describe('ChapterGuard', () => {
   let guard: ChapterGuard;

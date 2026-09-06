@@ -11,7 +11,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './')
     },
-    include: ['**/*.test.{ts,tsx}'],
+    include: ['**/*.spec.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', 'tests/visual/**']
   },
 })

@@ -89,7 +89,7 @@ type CanProps = BaseProps &
  *   `isPending` false whenever `data` exists, so a paused *refetch* falls
  *   straight through to the verdict on its own; the `isError` branch below had
  *   to be narrowed to `!data` for a *failed* refetch to do the same. Both are
- *   pinned in `can-fallback.test.tsx`, because the obvious fix — gate on
+ *   pinned in `can-fallback.spec.tsx`, because the obvious fix — gate on
  *   `fetchStatus === "paused"` alone — breaks the first, which is the defect
  *   the Resources & Reporting slice found on two data queries.
  * - **Paused, nothing cached** → `offlineFallback`. Never `null`: an

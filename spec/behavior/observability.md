@@ -212,7 +212,7 @@ Unlike the activation funnel above, these events carry **no durable Frapp-owned 
 
 ### PII exclusion
 
-No event property is ever the message body or anything content-derived. This is enforced generically, not per call site: `ctx.track` is the same `AnalyticsContext.track` every client event uses, and the API rejects forbidden keys (`content`, `body`, `message`, …) and non-scalar values via `assertContentFreeProperties` (`packages/validation/src/analytics.ts`) before anything reaches the provider. `chat-client.test.ts`'s outbox-analytics suite runs every emitted event through that same assertion as a local regression guard.
+No event property is ever the message body or anything content-derived. This is enforced generically, not per call site: `ctx.track` is the same `AnalyticsContext.track` every client event uses, and the API rejects forbidden keys (`content`, `body`, `message`, …) and non-scalar values via `assertContentFreeProperties` (`packages/validation/src/analytics.ts`) before anything reaches the provider. `chat-client.spec.ts`'s outbox-analytics suite runs every emitted event through that same assertion as a local regression guard.
 
 ### Computing p50 time-to-confirm and failure rate
 
@@ -240,7 +240,7 @@ The web command palette (`apps/web/components/layout/dashboard-command-menu.tsx`
 
 ### PII exclusion
 
-**The raw query string is never sent, by construction — not merely because `assertContentFreeProperties` (`packages/validation/src/analytics.ts`) would catch it.** It would not: `"query"` is not in `FORBIDDEN_ANALYTICS_PROPERTY_KEYS`, and a query string is itself a scalar, so a property literally named `query` holding the raw text would pass the shared gate untouched. The design instead sends only `query_length`/`query_word_count` — shape, not content — and `dashboard-command-menu.test.tsx`'s search-telemetry suite asserts both that every emitted event still passes `assertContentFreeProperties` (the generic backstop) and that no emitted property value ever equals the typed query text (the specific guarantee the generic gate cannot provide).
+**The raw query string is never sent, by construction — not merely because `assertContentFreeProperties` (`packages/validation/src/analytics.ts`) would catch it.** It would not: `"query"` is not in `FORBIDDEN_ANALYTICS_PROPERTY_KEYS`, and a query string is itself a scalar, so a property literally named `query` holding the raw text would pass the shared gate untouched. The design instead sends only `query_length`/`query_word_count` — shape, not content — and `dashboard-command-menu.spec.tsx`'s search-telemetry suite asserts both that every emitted event still passes `assertContentFreeProperties` (the generic backstop) and that no emitted property value ever equals the typed query text (the specific guarantee the generic gate cannot provide).
 
 ### Building a zero-result taxonomy report
 
