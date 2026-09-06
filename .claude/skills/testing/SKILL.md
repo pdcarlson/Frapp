@@ -205,6 +205,12 @@ disk (`absent`), and a rollback entry naming a migration that does not exist (`o
 three are fixed by editing `UNLEDGERED` or the runbook. Read the failure line, which names both the
 file and the remedy, rather than assuming you owe an entry.
 
+One caveat on that split: `main()` wraps every check in a catch-all that also exits **1**, so an
+unexpected error carries the same code as a rule violation. The one you are most likely to meet is
+`Unable to diff changed files for base=… head=…`, which means the checkout is too shallow for the
+`--base`/`--head` range — an environment problem, not your diff. If the message is not one of the
+cases above, suspect the checkout before your change.
+
 **Exit 2 means the gate cannot do its job** — it is refusing to grade rather than returning a
 verdict: a renamed runbook `MIGRATION_DOCS` no longer resolves, a declared doc with no entry shape, a
 declared ledger that cannot be read, a malformed `--base`/`--head`, or a post-ceiling migration added

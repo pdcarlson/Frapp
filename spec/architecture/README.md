@@ -1075,10 +1075,11 @@ the ones a later reader would otherwise re-litigate.
 - **A `frapp-prod` data-loss event is unrecoverable until stage 5.** `frapp-prod` is
   `ACTIVE_HEALTHY` and held 54 migrations when the Management API was last read (2026-08-29) — so
   this is a live exposure, not a hypothetical about a paused project. **"held 54 … when last read"
-  is a dated snapshot, not current state:** `main` carries 73 migrations as of 2026-09-06, past the
-  `20260829002000` high-water mark that read recorded. Whether either project is behind *today* is
-  **unverified** — the applied counts have not been re-read, and a promotion may have happened
-  since. #1620 tracks refreshing this and the matching block in
+  is a dated snapshot, not current state:** `main` has moved past the `20260829002000` high-water
+  mark that read recorded. Whether either project is behind *today* is **unverified** — the applied
+  counts have not been re-read, and a promotion may have happened since. No tree-side count is
+  quoted here on purpose: every merge moves it, so re-derive with
+  `ls supabase/migrations/*.sql | wc -l`. #1620 tracks refreshing this and the matching block in
   `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
 - **Staging and production build differently on purpose.** Staging is verified through preview
   deployments; production is built through the API with `target: production`. `web-production-build`

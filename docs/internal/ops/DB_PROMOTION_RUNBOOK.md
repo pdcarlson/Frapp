@@ -103,11 +103,17 @@ The workflow holds the `db-migrate-production` concurrency group with
 > The hand-applied `20260228000000_enable_rls_on_remaining_tables` that used to
 > block `supabase db push` outright is gone from the history (#832).
 >
+>
 > **⚠️ Correction 2026-09-06 — the "nothing pending" half is superseded.** The
 > **54** above is a real Management API read and is left as recorded, but `main`
-> now carries **73** migrations, newest `20260906120000`. So the applied set no
-> longer matches that historical snapshot; current pending status for either
-> project is unverified. **The applied counts have not been re-read** — this
+> has carried migrations past that read's `20260829002000` high-water mark ever
+> since. So the applied set no longer matches that historical snapshot; current
+> pending status for either project is unverified.
+>
+> Deliberately no tree-side count here: this note has quoted one three times and
+> it went stale within a day each time, because every merge moves it. Re-derive
+> with `ls supabase/migrations/*.sql | wc -l` — the durable fact is that the tree
+> is past `20260829002000`, not any particular total. **The applied counts have not been re-read** — this
 > correction is derived from the repository alone, which is enough to supersede
 > the old comparison but not to state what either project holds today. Re-read
 > before any promotion, and do not skip the dry run on the strength of the ✅
@@ -448,8 +454,9 @@ date — is welcome; inventing a date to turn the gate green is not.
   changes, no table touched, no backfill, no data change. Ships locked down at
   birth (`revoke execute … from public`, and from `anon`/`authenticated` where
   those Supabase roles exist), rather than inheriting the default-broad EXECUTE
-  that `20260901173000` had to close for the earlier read RPCs. Ordering
-  matters: it must land after `20260906120000`, which shares its date.
+  that `20260901173000` had to close for the earlier read RPCs. No dependency
+  on `20260906120000`, which merely shares its date; the `+1` suffix only keeps
+  the version prefixes unique.
 * **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) §
   Rollback `get_points_leaderboard` RPC.
 
