@@ -573,6 +573,11 @@ export default function Home() {
             <p className="text-sm font-semibold">Contact</p>
             <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
               <li>
+                <Link href="/support" className="hover:text-foreground">
+                  Support
+                </Link>
+              </li>
+              <li>
                 <Link
                   href="mailto:team@frapp.live"
                   className="hover:text-foreground"
