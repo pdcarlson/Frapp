@@ -117,6 +117,16 @@ describe("vercelBuildArgs", () => {
 });
 
 describe("vercelDeployArgs", () => {
+  it("uploads the prebuilt output as ONE archive, not one request per file", () => {
+    // Vercel's free plan allows 5000 upload requests per 24h; a per-file
+    // prebuilt Next.js deploy is thousands, and six merges in a day exhausted
+    // it (run 34062542629). On the production path that failure lands after
+    // the apply. `--archive=tgz` makes a deploy a handful of requests.
+    const args = vercelDeployArgs({ target: VERCEL_TARGET_PREVIEW, sha: SHA });
+    assert.ok(args.includes("--archive=tgz"));
+    assert.ok(args.indexOf("--archive=tgz") > args.indexOf("--prebuilt"));
+  });
+
   it("uploads prebuilt output and never prompts", () => {
     const args = vercelDeployArgs({ target: VERCEL_TARGET_PREVIEW, sha: SHA });
     assert.ok(args.includes("--prebuilt"), "must upload the output already built on the runner");
@@ -464,7 +474,7 @@ describe("deployPrebuiltVercelProject", () => {
       ["remove", VERCEL_DIR],
       ["move", STASH, VERCEL_DIR],
     ]);
-    assert.deepEqual(calls[0].args.slice(0, 4), ["deploy", "--prebuilt", "--yes", "--prod"]);
+    assert.deepEqual(calls[0].args.slice(0, 5), ["deploy", "--prebuilt", "--archive=tgz", "--yes", "--prod"]);
   });
 
   it("refuses to upload when the stash is missing — never falls through to .vercel", async () => {

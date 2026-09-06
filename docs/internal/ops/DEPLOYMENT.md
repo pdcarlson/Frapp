@@ -210,6 +210,17 @@ From each project's dashboard → Settings → API, note:
 > | Staging (web + landing) | `deploy-vercel-staging.yml`, after CI succeeds on `main` | `vercel pull --environment=preview` → `vercel build` → `vercel deploy --prebuilt` → alias the staging hostnames |
 > | Production (web + landing) | `deploy-production.yml`, on a dispatched SHA | `vercel pull --environment=production` → `vercel build --prod` → `vercel deploy --prebuilt --prod` |
 >
+> **Uploads are one archive per deploy, not one request per file (`--archive=tgz`, since
+> 2026-09-06).** The team is on Vercel's free plan, whose upload API allows **5000 requests per 24
+> hours** (`code: "api-upload-free"`). A per-file prebuilt Next.js upload is thousands of requests —
+> every traced `node_modules` file under `functions/*.func` — and six merges to `main` on 2026-09-06
+> exhausted the budget: staging run 34062542629 failed with `Too many requests - try again in 24
+> hours`, and the same failure on the production path lands in the upload step, after the apply and
+> the Render deploy. With `--archive=tgz` the CLI tars `.vercel/output` and uploads a handful of
+> parts, so the cap stops mattering. If the cap is ever hit anyway, the deploy fails closed (nothing
+> partial is aliased) and clears on its own 24 hours after the first counted upload — or sooner on a
+> paid plan, which is the owner's call, not a workflow's.
+>
 > Both run [`scripts/ci/deploy-vercel.mjs`](../../../scripts/ci/deploy-vercel.mjs), which replaced
 > `deploy-vercel-production.mjs` and its `gitSource` call.
 >

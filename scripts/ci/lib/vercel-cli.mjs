@@ -122,9 +122,20 @@ export function vercelBuildArgs({ target }) {
  *
  * `--yes` skips the interactive project-scope confirmation; a CI runner has no
  * one to answer it and the process would otherwise hang to its timeout.
+ *
+ * `--archive=tgz` uploads the whole `.vercel/output` as one tarball (the CLI
+ * splits it into a few `source.tgz.partN` files when large) instead of one
+ * request per file. That is not a tuning knob either: without it a prebuilt
+ * Next.js deploy is thousands of file uploads — every traced `node_modules`
+ * file under `functions/*.func` — and the team is on Vercel's free plan, whose
+ * upload API allows 5000 per 24 hours (`code: "api-upload-free"`). Six merges
+ * on 2026-09-06 exhausted it, and run 34062542629 failed on `Too many
+ * requests - try again in 24 hours`; on the production path that error lands
+ * in the upload step, AFTER the migration has applied and Render has shipped.
+ * The CLI's own error text for the per-file path suggests exactly this flag.
  */
 export function vercelDeployArgs({ target, sha, ref = "main" }) {
-  const args = ["deploy", "--prebuilt", "--yes"];
+  const args = ["deploy", "--prebuilt", "--archive=tgz", "--yes"];
   if (target === VERCEL_TARGET_PRODUCTION) args.push("--prod");
   if (sha) args.push("--meta", `githubCommitSha=${sha}`);
   if (ref) args.push("--meta", `githubCommitRef=${ref}`);
