@@ -394,6 +394,25 @@ touch this file **or** [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — 
 backs the habit, it does not prove the log complete. Appending here stays the
 promoter's job.
 
+## 2026-09-06: Audit-log action filter index
+
+* **Migration**: `20260906120000_audit_log_chapter_action_created_at_idx.sql`
+* **Purpose**: B-tree on `(chapter_id, action, created_at desc)` so the `action`
+  filter added to `GET /v1/audit-log` seeks rather than scans. The date window
+  and newest-first ordering were already served by
+  `idx_audit_log_chapter_created_at`, and the actor filter by
+  `idx_audit_log_actor_created_at`; `action` was served by nothing.
+* **Checks**: After `db push`, confirm the index exists:
+  `select indexname from pg_indexes where tablename = 'chapter_audit_log' and indexname = 'idx_audit_log_chapter_action_created_at';`
+* **Promoter notes**: Additive and non-blocking in practice — `create index`
+  (not `CONCURRENTLY`, which Postgres forbids inside the transaction Supabase
+  wraps each migration in) holds SHARE on `chapter_audit_log` for the build,
+  blocking the officer-action audit inserts for its duration. The table is
+  small and append-only, so this is short; still, prefer a low-traffic window
+  on production. No backfill, no data change, no API coupling.
+* **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) §
+  Rollback `idx_audit_log_chapter_action_created_at`.
+
 ## 2026-09-05: Ops-setup nudge dismissals (#492)
 
 One additive migration. Adds a single `text[]` column with a literal default to

@@ -165,6 +165,18 @@ describe('DTO constraint coverage (#849)', () => {
     ['UpdateEventDto', 'point_value', 'ledger write above the ceiling', 2e9],
     ['CreateTaskDto', 'point_reward', 'ledger write above the ceiling', 2e9],
     ['ListPollsQueryDto', 'channel_id', 'non-uuid channel', 'not-a-uuid'],
+    [
+      'ListChapterAuditLogQueryDto',
+      'actor_user_id',
+      'non-uuid filter',
+      'not-a-uuid',
+    ],
+    [
+      'ListChapterAuditLogQueryDto',
+      'action',
+      'unbounded action filter',
+      'x'.repeat(65),
+    ],
     ['StartStudySessionDto', 'geofence_id', 'non-uuid geofence', 'not-a-uuid'],
     // The study rate is a ledger input too; the computed total is #948.
     ['CreateGeofenceDto', 'points_per_interval', 'unbounded award rate', 2e9],
