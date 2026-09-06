@@ -1137,7 +1137,7 @@ One additive migration. Adds a single boolean column with a default — fully ba
 
 ## 2026-04-17: Poll list vote aggregation RPCs
 * **Migration**: `20260417180000_add_poll_list_vote_aggregate_rpcs.sql`
-* **Purpose**: `get_poll_vote_option_totals` and `get_poll_user_votes_for_messages` aggregate `poll_votes` in Postgres instead of loading every vote row into the API. `get_poll_user_votes_for_messages` backs `GET /v1/polls` (chapter poll list); `get_poll_vote_option_totals` backs both `GET /v1/polls` and `GET /v1/polls/:messageId` (poll detail), so dropping it takes out the detail view too.
+* **Purpose**: `get_poll_vote_option_totals` and `get_poll_user_votes_for_messages` aggregate `poll_votes` in Postgres for `GET /v1/polls` (chapter poll list) instead of loading every vote row into the API.
 * **Checks**: After `db push`, e.g. `select proname from pg_proc where proname in ('get_poll_vote_option_totals', 'get_poll_user_votes_for_messages');` Rollback: `DB_ROLLBACK_PLAYBOOK.md` § Rollback poll list vote aggregate RPCs.
 
 ## 2026-04-17: Point transactions chapter audit index
