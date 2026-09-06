@@ -184,10 +184,38 @@ npm run generate -w packages/api-sdk
 
 ### Migration safety (`check:migration-safety`)
 
-Validates migration filenames match `{14-digit-timestamp}_{snake_case}.sql` and that promotion docs
+Validates migration filenames match `{14-digit-timestamp}_{snake_case}.sql`, that version prefixes
+are unique, and that a migration change also touches one of the promotion docs
 ([`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md),
-[`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md))
-are updated alongside migration changes.
+[`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md)).
+
+Separately and more strictly, it asserts **per-migration ledger coverage in both docs**, whole-tree,
+on every run — including the bare push invocation, not just PRs. Coverage is matched by entry
+**shape**, so naming a migration in prose does not count; each runbook states the shapes it accepts.
+Migrations predating the gate are grandfathered in `UNLEDGERED` in
+[`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs), which is
+**shrink-only**: `RATCHET_VERSION_CEILING` rejects any entry newer than the gate, so a new migration
+must carry a real entry in both docs rather than an allowlist line.
+
+**Exit 1 means the change violates a rule**, and several checks use it: an invalid or duplicate
+migration filename, a migration PR that touched neither runbook, and `ledger coverage`. Coverage
+itself has four cases, and only the first is fixed by writing an entry — a migration with no entry
+(`missing`), an allowlist line for a migration that now *has* one (`covered`) or that is no longer on
+disk (`absent`), and a rollback entry naming a migration that does not exist (`orphan`). The other
+three are fixed by editing `UNLEDGERED` or the runbook. Read the failure line, which names both the
+file and the remedy, rather than assuming you owe an entry.
+
+One caveat on that split: `main()` wraps every check in a catch-all that also exits **1**, so an
+unexpected error carries the same code as a rule violation. The one you are most likely to meet is
+`Unable to diff changed files for base=… head=…`, which means the checkout is too shallow for the
+`--base`/`--head` range — an environment problem, not your diff. If the message is not one of the
+cases above, suspect the checkout before your change.
+
+**Exit 2 means the gate cannot do its job** — it is refusing to grade rather than returning a
+verdict: a renamed runbook `MIGRATION_DOCS` no longer resolves, a declared doc with no entry shape, a
+declared ledger that cannot be read, a malformed `--base`/`--head`, or a post-ceiling migration added
+to `UNLEDGERED` (`UNLEDGERED grew`). Some of those *are* your own change — the rename and the
+allowlist line especially — so exit 2 is not a signal to escalate past your own diff.
 
 ---
 
