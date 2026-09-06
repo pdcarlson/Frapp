@@ -13,11 +13,11 @@
  * *particular channel* open; the directory needs who is present in the
  * *chapter* at all, including members who are not in chat right now.
  *
- * **This is a `private: true` channel since #1552 phase 1 (2026-09-06).** The
+ * **This is a `private: true` channel since #1552 (2026-09-06).** The
  * private-channel authoriser `realtime_messages_scoped_select` ends in
  * `else false`, so a private topic is denied for every subscriber until the
  * policy carries an arm for it; migration
- * `20260906203000_realtime_presence_chapter_private.sql` added that arm (chapter
+ * `20260906203000_realtime_presence_private.sql` added that arm (chapter
  * membership) and the matching INSERT policy that lets a member `track()`. The
  * hook's `private: true` and that migration are one change — a private topic
  * whose arm is missing joins, reports SUBSCRIBED and delivers nothing.
@@ -30,12 +30,12 @@
  * policies see the topic and the message extension, not the tracked state), so
  * a chapter MEMBER can still `track({ userId: <another member> })`. Presence
  * therefore stays advisory and is never an input to an authorization decision.
- * Chat's `chat:channel:<id>` topic is still public with the identical payload —
- * there a forged entry also suppresses a real member's ADR-10 push
- * notifications — and is #1552's second phase, because it needs a per-channel
- * predicate rather than chapter membership. Canonical home for the
- * authorisation half: `docs/internal/security/AUTHORIZATION_MODEL.md`
- * § "The policies that do exist".
+ * Chat's `chat:channel:<id>` topic went private in the same change, behind a
+ * per-channel predicate (`can_read_chat_channel`) rather than chapter
+ * membership, so DM and role-gated presence is not visible chapter-wide.
+ * Canonical home for the authorisation half:
+ * `docs/internal/security/AUTHORIZATION_MODEL.md` § "The policies that do
+ * exist".
  *
  * Kept tiny and dependency-free so the pin test can import it without pulling
  * in React or the Supabase client, matching `change-topics.ts`.
@@ -50,7 +50,7 @@
  * by topic string, so a collision would make one subscription tear the other
  * down on every re-attach.
  *
- * The topic is PRIVATE (#1552 phase 1): `realtime_messages_scoped_select` and
+ * The topic is PRIVATE (#1552): `realtime_messages_scoped_select` and
  * `realtime_messages_scoped_insert` on `realtime.messages` match exactly this
  * prefix + a UUID and admit chapter members only, so an anon-key holder can
  * neither read the roster nor publish an entry. A chapter member can still

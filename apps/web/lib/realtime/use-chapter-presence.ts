@@ -339,7 +339,7 @@ export function useChapterPresence({
         return realtimeChannel;
       },
       {
-        // Private since #1552 (phase 1): the join and every `track()` are
+        // Private since #1552: the join and every `track()` are
         // authorised by `realtime_messages_scoped_select` / `_insert` on
         // `realtime.messages` (migration 20260906203000), behind the chapter-
         // membership predicate. Without those branches a private topic joins,

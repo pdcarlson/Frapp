@@ -332,10 +332,10 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
-## Rollback the private Directory presence topic
-* **Migration**: `20260906203000_realtime_presence_chapter_private.sql`
-* **Action**: Drop the INSERT policy and recreate the SELECT policy with the three original arms only — i.e. re-run the `create policy "realtime_messages_scoped_select"` block from `20260816140000_realtime_carrier_repair.sql` after `drop policy if exists "realtime_messages_scoped_select" on realtime.messages; drop policy if exists "realtime_messages_scoped_insert" on realtime.messages;`.
-* **Note**: Policy-only, no data. **Order matters in reverse too:** the web Directory attaches `presence:chapter:<id>` with `private: true` since the same change, so rolling the database back while that client is live makes every Directory presence channel join, report `SUBSCRIBED` and deliver nothing — the silent failure the migration's header describes. Roll the client back to a public channel first (`use-chapter-presence.ts`, `private: true` → omitted, and flip `use-chapter-presence.spec.tsx`'s pin), or accept an empty Directory until it is. The `chat:channel:<id>` topic is untouched by both directions.
+## Rollback the private presence topics
+* **Migration**: `20260906203000_realtime_presence_private.sql`
+* **Action**: Drop the INSERT policy and recreate the SELECT policy with the three original arms only — re-run the `create policy "realtime_messages_scoped_select"` block from `20260816140000_realtime_carrier_repair.sql` after `drop policy if exists "realtime_messages_scoped_select" on realtime.messages; drop policy if exists "realtime_messages_scoped_insert" on realtime.messages;`. `can_read_chat_channel` and the delegating `can_read_chat_message` can stay (same semantics as before); to remove them too, recreate `can_read_chat_message` from `20260827190000_secdef_search_path_pg_temp.sql` first, then `drop function public.can_read_chat_channel(uuid)`.
+* **Note**: Function/policy-only, no data. **Order matters in reverse too:** the web Directory, chat-core (web and mobile chat) and the push worker all join their topics with `private: true` since the same change, so rolling the database back while those clients are live makes every presence channel — including every chat channel's live message delivery, which shares the topic — join, report `SUBSCRIBED` and deliver nothing: the silent failure the migration's header describes. Roll the clients back to public channels first (`use-chapter-presence.ts`, `packages/chat-core/src/realtime-manager.ts`, `chat-push-worker.service.ts`, and the two spec pins), ship them, then roll the database back. A mobile build cannot be rolled back on a member's phone, so a database-only rollback breaks chat for every installed mobile build until they update.
 
 ## Rollback `idx_audit_log_chapter_action_created_at`
 

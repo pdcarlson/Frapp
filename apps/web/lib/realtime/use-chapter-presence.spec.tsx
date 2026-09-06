@@ -133,14 +133,14 @@ describe("useChapterPresence", () => {
   /**
    * `private: true`, and the private-channel authoriser
    * (`realtime_messages_scoped_select`) has an arm for this topic since
-   * #1552 phase 1. The authoriser ends in `else false`, so a private topic
+   * #1552. The authoriser ends in `else false`, so a private topic
    * WITHOUT its arm joins, reports SUBSCRIBED and silently never delivers —
    * the exact shape that hid #867 for months. This test is where a change to
    * the topic prefix or to the policy finds out the two must move together.
    */
   test("requests a private channel — the RLS branches for this topic exist", () => {
-    // Flipped in #1552 phase 1 together with migration
-    // 20260906203000_realtime_presence_chapter_private.sql, which adds the
+    // Flipped in #1552 together with migration
+    // 20260906203000_realtime_presence_private.sql, which adds the
     // `presence:chapter:<uuid>` arm to `realtime_messages_scoped_select` and
     // the matching INSERT policy for `track()`. If this test ever needs to go
     // back to `toBeFalsy()`, that migration is the reason it cannot: a private
