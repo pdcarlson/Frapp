@@ -21,6 +21,14 @@ export interface ListChapterAuditLogOptions {
   startDate?: string;
   /** Inclusive upper bound on `created_at`, as an ISO timestamp. */
   endDate?: string;
+  /**
+   * Drop exec-only rows (`member_visible = false`). The API layer sets this
+   * for every caller who is not the chapter's President — the filter the
+   * table's migration comment always said the API applied, and the predicate
+   * `idx_audit_log_chapter_visible (chapter_id, member_visible, created_at)`
+   * was created for (#1773).
+   */
+  memberVisibleOnly?: boolean;
   limit: number;
 }
 
