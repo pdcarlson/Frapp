@@ -126,6 +126,42 @@ describe('Points chat card — adjust endpoint wiring (e2e)', () => {
     );
   });
 
+  // #544: the flag is only useful if it survives the response pipeline. A
+  // serializer or interceptor that dropped an undeclared property would leave
+  // the client unable to distinguish a failed card from a posted one — silently,
+  // and exactly as it behaved before this change.
+  it('returns card_posted in the response body so the client can act on it', async () => {
+    pointsServiceMock.adjustPoints.mockResolvedValueOnce({
+      id: 'pt-1',
+      chapter_id: 'chapter-1',
+      user_id: TARGET_USER_ID,
+      amount: 5,
+      category: 'MANUAL',
+      description: 'great work',
+      metadata: { adjusted_by: 'admin-1', reason: 'great work' },
+      created_at: '2026-05-30T18:00:00.000Z',
+      card_posted: false,
+    });
+
+    const res = await request(app.getHttpServer())
+      .post(`${V1}/points/adjust`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', 'chapter-1')
+      .send({
+        target_user_id: TARGET_USER_ID,
+        amount: 5,
+        category: 'MANUAL',
+        reason: 'great work',
+        channel_id: CHANNEL_ID,
+        client_message_id: CLIENT_MESSAGE_ID,
+      })
+      .expect(201);
+
+    expect(res.body.card_posted).toBe(false);
+    // The ledger row still comes back whole beside the flag.
+    expect(res.body.id).toBe('pt-1');
+  });
+
   it('omits the chat fields for a dashboard adjustment', async () => {
     await request(app.getHttpServer())
       .post(`${V1}/points/adjust`)

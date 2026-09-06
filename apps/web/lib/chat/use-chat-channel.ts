@@ -43,7 +43,11 @@ import {
   type ToastFn,
 } from "@repo/chat-core/chat-client";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
-import { dispatchSlashCommand, type ResolveMember } from "@repo/chat-core/dispatch";
+import {
+  dispatchSlashCommand,
+  type DispatchResult,
+  type ResolveMember,
+} from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-integrations";
 import {
   clearDraft,
@@ -74,12 +78,15 @@ export interface UseChatChannelResult {
   connection: ConnectionStatus;
   retry: (clientMessageId: string) => Promise<void>;
   discard: (clientMessageId: string) => Promise<void>;
+  // Returns the dispatcher's own `DispatchResult` rather than a restated shape,
+  // so a new outcome field (e.g. `warning`) reaches the composer instead of
+  // being silently erased at this boundary.
   dispatchSlash: (
     command: SlashCommand,
     args: string,
     announcementsChannelId: string | null,
     resolveMember?: ResolveMember,
-  ) => Promise<{ ok: boolean; error?: string }>;
+  ) => Promise<DispatchResult>;
   /** Card action invoker (Vote, RSVP, …). Goes through the NestJS chat actions endpoint (ADR-11). */
   act: (
     messageId: string,

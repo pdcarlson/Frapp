@@ -7,7 +7,12 @@ import {
   Param,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import {
   PointsService,
   PointsWindow,
@@ -23,6 +28,7 @@ import {
 } from '../decorators/current-user.decorator';
 import {
   AdjustPointsDto,
+  AdjustPointsResponseDto,
   ListPointTransactionsQueryDto,
   PointsWindowQueryDto,
 } from '../dtos/points.dto';
@@ -108,6 +114,7 @@ export class PointsController {
   @Post('adjust')
   @RequirePermissions(SystemPermissions.POINTS_ADJUST)
   @ApiOperation({ summary: 'Manually adjust member points' })
+  @ApiCreatedResponse({ type: AdjustPointsResponseDto })
   async adjust(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') adminId: string,

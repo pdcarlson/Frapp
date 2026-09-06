@@ -34,7 +34,13 @@ import {
   useRequestChatUploadUrl,
   useUploadSignedUrl,
 } from "@repo/hooks";
+import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+// Imported, never restated. A structural copy of this shape is assignable even
+// when it is missing a field, so a hand-written `{ ok, error? }` silently erases
+// any outcome added later — which is exactly what happened at the
+// `use-chat-channel` boundary before #544 added `warning`.
+import type { DispatchResult } from "@repo/chat-core/dispatch";
 import { useToast } from "@/hooks/use-toast";
 import {
   MAX_UPLOAD_LABEL,
@@ -118,14 +124,14 @@ interface ComposerBaseProps {
   ) => void | Promise<void>;
   /**
    * Invoked when the user picks a slash command from the palette. Returns a
-   * dispatch result so the composer can toast on failure. The args string is
-   * everything after the command token (already trimmed). The composer
-   * clears its own editor on success.
+   * dispatch result so the composer can toast on failure, or on a partial
+   * success (`warning`). The args string is everything after the command token
+   * (already trimmed). The composer clears its own editor on success.
    */
   onSlashDispatch?: (
     command: SlashCommand,
     args: string,
-  ) => Promise<{ ok: boolean; error?: string }>;
+  ) => Promise<DispatchResult>;
   onTyping: () => void;
   isModuleEnabled: (moduleKey: string) => boolean;
   /**
@@ -206,6 +212,87 @@ function buildDocFromPlainText(text: string): JSONContent {
 /** `#` only for an actual channel — a DM's name is a person's. */
 export function composerPlaceholder(channelName: string, isDirect?: boolean) {
   return isDirect ? `Message ${channelName}` : `Message #${channelName}`;
+}
+
+/**
+ * Await a dispatch and turn a REJECTION into a normal `{ ok: false }` outcome.
+ *
+ * `dispatchSlashCommand` documents itself as total — every path returns a
+ * `DispatchResult` — but `/poll` and `/announce` call `sendMessage` without a
+ * guard, and its outbox enqueue sits outside its own try block, so a Dexie
+ * failure rejects instead. Both call sites here clear the composer (and, via
+ * `onUpdate`, the persisted draft) *before* dispatching, so an unhandled
+ * rejection cost the user their typed command AND every scrap of feedback.
+ * `void`-ing the promise at one site and returning it into a `void`-typed
+ * palette handler at the other meant nothing ever observed it.
+ *
+ * The `captureException` is not optional. Precisely because nothing observed
+ * these rejections, Sentry's `GlobalHandlers` integration was capturing them as
+ * unhandled — so catching them here without reporting would trade a silent user
+ * experience for a silent *monitoring* one, and make #1718's failure class
+ * invisible in production exactly as we start handling it.
+ *
+ * It does move them, though, and that is worth stating rather than glossing:
+ * once caught they report as `mechanism.handled: true`, so Sentry's `is:unhandled`
+ * filter and any alert rule keyed on it stop matching this class. The
+ * `slash_command` tag is what keeps them findable afterwards.
+ *
+ * This is the caller's own safety net; the dispatcher honouring its contract is
+ * tracked separately (#1718).
+ */
+export async function runDispatch(
+  dispatch: NonNullable<ComposerProps["onSlashDispatch"]>,
+  command: SlashCommand,
+  args: string,
+): Promise<DispatchResult> {
+  try {
+    return await dispatch(command, args);
+  } catch (error) {
+    Sentry.captureException(error, { tags: { slash_command: command.name } });
+    return { ok: false };
+  }
+}
+
+/**
+ * Toast the outcome of a slash dispatch. Shared by the two call sites (typed
+ * `/command` submit and palette pick) so they cannot drift — they previously
+ * held byte-identical failure branches.
+ *
+ * Three outcomes, not two. A `warning` on an `ok` result means the command's
+ * write COMMITTED but something around it did not (a heavy command whose chat
+ * card failed to post — #544). That gets a plain, non-destructive toast: styling
+ * it as a failure would invite a retry, and the retry an officer actually
+ * performs is re-typing the command, which mints a FRESH `client_message_id` —
+ * so the server's idempotency index (#1719) does not dedupe it and a second
+ * ledger row lands.
+ */
+export function notifyDispatchOutcome(
+  toast: ReturnType<typeof useToast>["toast"],
+  commandName: string,
+  result: DispatchResult,
+): void {
+  if (!result.ok) {
+    toast({
+      title: `/${commandName} failed`,
+      description: result.error ?? "Couldn't run that command.",
+      variant: "destructive",
+    });
+    return;
+  }
+  if (result.warning) {
+    toast({
+      title: `/${commandName} partly succeeded`,
+      description: result.warning,
+      // Sticky (Radix skips the close timer on `Infinity`) because this toast is
+      // the ONLY remaining trace of a committed write: the dispatcher has just
+      // removed the optimistic placeholder, and no card is coming. At the
+      // default 5s an officer who looked away sees an empty channel and re-runs
+      // the command — the double-grant this whole path exists to prevent. The
+      // failure branch above keeps the default: nothing committed there, so
+      // there is nothing to lose track of.
+      duration: Infinity,
+    });
+  }
 }
 
 /**
@@ -427,14 +514,11 @@ export function Composer({
         }
         editor.commands.clearContent(true);
         void (async () => {
-          const result = await onSlashDispatch(command, parsed.args);
-          if (!result.ok) {
-            toast({
-              title: `/${command.name} failed`,
-              description: result.error ?? "Couldn't run that command.",
-              variant: "destructive",
-            });
-          }
+          notifyDispatchOutcome(
+            toast,
+            command.name,
+            await runDispatch(onSlashDispatch, command, parsed.args),
+          );
         })();
         return;
       }
@@ -600,14 +684,11 @@ export function Composer({
       // through the same hot path as `onSend`, so the optimistic card appears
       // immediately and a toast surfaces any parse / authz failure.
       if (editor) editor.commands.clearContent(true);
-      const result = await onSlashDispatch(command, args);
-      if (!result.ok) {
-        toast({
-          title: `/${command.name} failed`,
-          description: result.error ?? "Couldn't run that command.",
-          variant: "destructive",
-        });
-      }
+      notifyDispatchOutcome(
+        toast,
+        command.name,
+        await runDispatch(onSlashDispatch, command, args),
+      );
     },
     [editor, onSlashDispatch, slashRefusal, toast],
   );
