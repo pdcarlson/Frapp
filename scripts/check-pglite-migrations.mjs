@@ -871,10 +871,11 @@ for (const lm of RLS_SMOKE) await runOne(lm);
 //     are created inside `if exists (select 1 from pg_roles where rolname =
 //     'supabase_auth_admin')` (20260802120000_active_chapter_jwt_claim.sql:137),
 //     and that role does not exist here.
-//   - `realtime.messages.realtime_messages_scoped_select` lives in the `realtime`
-//     schema, which PGlite does not have at all.
-// So: 8 in `public` here; 11 hosted (10 in `public` + 1 in `realtime`). The
-// printed hosted figure is derived from this list + those 3, so it cannot
+//   - `realtime.messages.realtime_messages_scoped_select` and
+//     `realtime.messages.realtime_messages_scoped_insert` (#1552 phase 1) live
+//     in the `realtime` schema, which PGlite does not have at all.
+// So: 8 in `public` here; 12 hosted (10 in `public` + 2 in `realtime`). The
+// printed hosted figure is derived from this list + those 4, so it cannot
 // silently contradict itself the way a second hardcoded literal would.
 //
 // Asserted as an exact SET rather than a count: a bare count lets a dropped
@@ -966,7 +967,7 @@ for (const lm of RLS_SMOKE) await runOne(lm);
   }
   if (!drifted) {
     console.log(
-      `OK    public policy inventory matches AUTHORIZATION_MODEL.md §4 (${got.length} here, ${EXPECTED_PUBLIC_POLICIES.length + 3} hosted)`,
+      `OK    public policy inventory matches AUTHORIZATION_MODEL.md §4 (${got.length} here, ${EXPECTED_PUBLIC_POLICIES.length + 4} hosted)`,
     );
   }
 }

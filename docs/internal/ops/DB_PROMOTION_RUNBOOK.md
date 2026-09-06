@@ -446,6 +446,52 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-06: Both presence topics go private (#1552)
+
+* **Migration**: `20260906203000_realtime_presence_private.sql`
+* **Purpose**: Adds `can_read_chat_channel(uuid)` — the channel half of
+  `can_read_chat_message`, which now delegates to it — then recreates
+  `realtime_messages_scoped_select` on `realtime.messages` with two new arms
+  (`presence:chapter:<uuid>` behind `realtime_can_read_chapter_scope`,
+  `chat:channel:<uuid>` behind `can_read_chat_channel`) and adds
+  `realtime_messages_scoped_insert` (presence on the Directory topic; presence
+  and broadcast on the chat topic — typing is a client broadcast). The web
+  Directory hook, `packages/chat-core`'s realtime manager (web + mobile chat) and
+  the API's push worker all flip to `private: true` in the same change; an
+  anon-key holder can then neither read either roster nor publish to it, and a
+  DM's presence is visible only to its participants.
+* **Checks**: After `db push`, `select policyname, cmd from pg_policies where
+  schemaname = 'realtime' and tablename = 'messages'` returns exactly
+  `realtime_messages_scoped_insert INSERT` and `realtime_messages_scoped_select
+  SELECT`; `select qual from pg_policies where policyname =
+  'realtime_messages_scoped_select'` contains both `presence:chapter:` and
+  `chat:channel:`; `select proname from pg_proc where proname =
+  'can_read_chat_channel'` returns one row. Then, on the deployed web app as a
+  member: the Directory's online dots still appear, a chat channel still shows
+  new messages live and typing indicators, and the API log shows the push
+  worker's `chat-push subscribed` line (a private topic whose arm is missing
+  joins, reports SUBSCRIBED and delivers nothing — the #867 shape). Verified on
+  the local stack 2026-09-06: member SUBSCRIBED + `track` → `ok` + roster
+  populated on both topics; `postgres_changes` and a typing broadcast delivered
+  on the private chat topic; the service-role worker sees the member's presence
+  when joined privately and an EMPTY roster when joined publicly; a chapter
+  member who is not in a DM gets `CHANNEL_ERROR Unauthorized` on that DM's
+  topic; an authenticated non-member and the bare anon key are denied on both.
+* **Promoter notes**: Function + policy changes; no table, column or data
+  change. The client flips and this migration must be live together — deploy
+  the migration first or in the same release, never a client flip alone (a
+  private join with no arm is a silent empty channel; a public worker beside
+  private clients sends every push). `deploy-production.yml` applies the
+  migration before the Render deploy and the Vercel upload, which is the right
+  order. Mobile builds still on the public room until they update will not be
+  seen by the worker (extra pushes, the safe direction) and will not exchange
+  typing with web. Guarded on the `realtime` schema and the `authenticated`
+  role, so PGlite skips the policy half but applies and exercises the predicate
+  half; the PGlite policy inventory's hosted figure moves from 11 to 12 and
+  `AUTHORIZATION_MODEL.md` § "The policies that do exist" says why.
+* **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) §
+  Rollback the private presence topics.
+
 ## 2026-09-06: `get_points_leaderboard` RPC
 
 * **Migration**: `20260906120001_get_points_leaderboard.sql`
