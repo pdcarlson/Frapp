@@ -18,9 +18,8 @@ import { anyReadUncached } from "@/components/shared/async-states";
  * behaviour to define. `apps/web/tsconfig.json` includes every `.tsx` in the
  * app with only `node_modules` excluded, so these lines are checked by
  * `check-types` in CI — and because `@ts-expect-error` fails when the error it
- * expects is *absent*,
- * widening the signature back to `readonly CachedRead[]` turns this file red
- * rather than passing silently.
+ * expects is *absent*, widening the signature back to `readonly CachedRead[]`
+ * turns this file red rather than passing silently.
  */
 describe("anyReadUncached", () => {
   it("is false when every read is cached", () => {

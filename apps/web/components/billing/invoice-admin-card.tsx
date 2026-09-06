@@ -112,12 +112,18 @@ export function InvoiceAdminCard() {
   // has not answered. Without it the filter cheerfully returns nothing.
   //
   // Scope, stated precisely because an earlier draft of this comment overstated
-  // it: this flag reaches the filter option only (`:323`). The per-row OVERDUE
-  // badge at `:534` still derives from `overdueIds`, which is empty whenever
-  // the read is unavailable — so rows go unbadged and assert "not overdue" by
-  // absence while the page header a few pixels above reads "Overdue: —". That
-  // half needs a treatment the design system does not have a variant for, so it
-  // is #1787 rather than a drive-by here.
+  // it: this flag reaches the OVERDUE `SelectItem`'s `disabled` and nothing
+  // else. The per-row OVERDUE badge still derives from `overdueIds`, which is
+  // empty whenever the read has **never answered** — so on a cold load rows go
+  // unbadged and assert "not overdue" by absence while the page header a few
+  // pixels above reads "Overdue: —". Not on the `isError` half: v5 keeps `data`
+  // through a failed background refetch, so a retained cache still badges
+  // correctly there. That gap needs a treatment the design system has no
+  // variant for, so it is #1787 rather than a drive-by here.
+  //
+  // Deliberately no `:NNN` citations — the previous draft carried two, and the
+  // six lines this comment added shifted both off their targets.
+
   const overdueUnavailable =
     overdueQuery.isError || anyReadUncached(overdueQuery);
   // The destructive card is the strong one: it says the read *failed*, in the
