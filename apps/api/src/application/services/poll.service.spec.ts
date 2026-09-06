@@ -642,6 +642,10 @@ describe('PollService', () => {
       mockVoteRepo.aggregateOptionTotalsByMessages.mockRejectedValue(
         new Error('boom'),
       );
+      // Stubbed even though `Promise.all` rejects on the other read first:
+      // leaving it undefined would make this pass for the wrong reason if the
+      // two reads were ever resequenced.
+      mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
 
       // Deliberately unlike `listPolls`, which degrades to zero tallies to keep
       // the list rendering. On a detail view that is indistinguishable from a
@@ -649,6 +653,60 @@ describe('PollService', () => {
       await expect(service.getPoll('msg-1', 'ch-1', 'user-2')).rejects.toThrow(
         'boom',
       );
+    });
+
+    it('propagates a user-vote failure rather than reporting the caller as not having voted', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([
+        { message_id: 'msg-1', option_index: 0, vote_count: 2 },
+      ]);
+      mockVoteRepo.findByMessageAndUser.mockRejectedValue(new Error('boom'));
+
+      // The other half of the divergence from `listPolls`: an empty `userVotes`
+      // is indistinguishable from "this member has not voted yet", which is
+      // what the vote button renders off.
+      await expect(service.getPoll('msg-1', 'ch-1', 'user-2')).rejects.toThrow(
+        'boom',
+      );
+    });
+
+    it('tallies a poll whose id reaches the route in non-canonical case', async () => {
+      // Regression: the tally is keyed on the id the database returned, never
+      // on the route parameter. `polls/:messageId` has no `ParseUUIDPipe`, and
+      // Postgres compares `uuid` case-insensitively while PostgREST renders it
+      // canonically lower-case — so an upper-case id matches the row in
+      // `findById` and matches the votes in the RPC, then arrives back
+      // lower-cased. Comparing it to the raw parameter dropped every row and
+      // rendered a real poll as every option at zero.
+      const canonicalId = '0848ac98-f67e-4dfe-b3df-03cc47c0a9af';
+      const routeId = canonicalId.toUpperCase();
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        id: canonicalId,
+      });
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([
+        { message_id: canonicalId, option_index: 0, vote_count: 2 },
+        { message_id: canonicalId, option_index: 1, vote_count: 1 },
+      ]);
+      mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
+
+      const result = await service.getPoll(routeId, 'ch-1', 'user-2');
+
+      // Both reads go out under the database's spelling of the id, not the URL's.
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
+        [canonicalId],
+      );
+      expect(mockVoteRepo.findByMessageAndUser).toHaveBeenCalledWith(
+        canonicalId,
+        'user-2',
+      );
+      expect(result.results).toEqual([
+        { optionIndex: 0, optionText: 'Monday', voteCount: 2 },
+        { optionIndex: 1, optionText: 'Tuesday', voteCount: 1 },
+        { optionIndex: 2, optionText: 'Wednesday', voteCount: 0 },
+      ]);
     });
 
     it('should throw NotFoundException when poll not found', async () => {

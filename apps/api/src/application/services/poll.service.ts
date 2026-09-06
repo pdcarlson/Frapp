@@ -10,7 +10,10 @@ import { isPollClosed, validateIndexedPollVote } from '@repo/validation';
 import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
 import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
-import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
+import type {
+  IPollVoteRepository,
+  PollVoteOptionTotalRow,
+} from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
 import { SYSTEM_SENDER_ID } from '../../domain/constants/chat';
 import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
@@ -255,19 +258,21 @@ export class PollService {
     // channel gate above, so they go concurrently rather than costing this
     // endpoint two serial round trips — a poll posted to a channel opens as a
     // burst of detail views, not one at a time.
+    // Both reads take `message.id`, not `messageId`: past this point the route
+    // parameter has served its purpose and the database's own id is the one
+    // canonical spelling of it.
     const [totals, userVoteList] = await Promise.all([
-      this.voteRepo.aggregateOptionTotalsByMessages([messageId]),
-      this.voteRepo.findByMessageAndUser(messageId, userId),
+      this.voteRepo.aggregateOptionTotalsByMessages([message.id]),
+      this.voteRepo.findByMessageAndUser(message.id, userId),
     ]);
 
     // Scoped to this poll before keying on `option_index` alone: the RPC takes
     // a list, and a later caller widening it must not silently fold another
-    // poll's tallies into this one.
-    const countsByOption = new Map(
-      totals
-        .filter((row) => row.message_id === messageId)
-        .map((row) => [row.option_index, row.vote_count]),
-    );
+    // poll's tallies into this one. Keyed on `message.id` — the id the database
+    // just returned — never on `messageId`, which is whatever the URL said.
+    const countsByOption =
+      this.groupTotalsByMessage(totals).get(message.id) ??
+      new Map<number, number>();
 
     const results = options.map((optionText, optionIndex) => ({
       optionIndex,
@@ -289,6 +294,32 @@ export class PollService {
       results,
       userVotes,
     };
+  }
+
+  /**
+   * Fan `get_poll_vote_option_totals` rows out into per-poll, per-option counts.
+   * Shared by `listPolls` and `getPoll` so the two read paths cannot drift.
+   *
+   * Keys on the `message_id` the database returned. Callers must look results
+   * up by a database-supplied id too (`message.id`, not a route parameter): a
+   * `uuid` is 128 bits, so Postgres accepts any case on the way in and always
+   * renders it canonically lower-case on the way out. An id taken from a URL
+   * therefore matches every row inside the query and can still fail `===`
+   * against every row that comes back.
+   */
+  private groupTotalsByMessage(
+    totals: PollVoteOptionTotalRow[],
+  ): Map<string, Map<number, number>> {
+    const byMessage = new Map<string, Map<number, number>>();
+    for (const row of totals) {
+      let byOption = byMessage.get(row.message_id);
+      if (!byOption) {
+        byOption = new Map<number, number>();
+        byMessage.set(row.message_id, byOption);
+      }
+      byOption.set(row.option_index, row.vote_count);
+    }
+    return byMessage;
   }
 
   /**
@@ -449,20 +480,13 @@ export class PollService {
     }
 
     const messageIds = listRows.map((row) => row.message.id);
-    const voteCountsByMessageId = new Map<string, Map<number, number>>();
+    let voteCountsByMessageId = new Map<string, Map<number, number>>();
     let userVotesByMessageId: Map<string, number[]> | null = null;
 
     try {
       const totals =
         await this.voteRepo.aggregateOptionTotalsByMessages(messageIds);
-      for (const row of totals) {
-        let byOption = voteCountsByMessageId.get(row.message_id);
-        if (!byOption) {
-          byOption = new Map<number, number>();
-          voteCountsByMessageId.set(row.message_id, byOption);
-        }
-        byOption.set(row.option_index, row.vote_count);
-      }
+      voteCountsByMessageId = this.groupTotalsByMessage(totals);
     } catch (error) {
       // Failed aggregate read: return polls with zero vote tallies rather than failing the list.
       this.logger.error(
