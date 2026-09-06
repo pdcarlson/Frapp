@@ -207,6 +207,24 @@ export interface Database {
         }[];
       };
       /**
+       * `20260906120001` — per-member point totals for one chapter, summed in
+       * Postgres. Bounds carry the same semantics as `get_points_report`:
+       * `p_since` exclusive, `p_until` inclusive, either null unbounded. Rows
+       * come back ordered by total descending, then `user_id` ascending.
+       */
+      get_points_leaderboard: {
+        Args: {
+          p_chapter_id: string;
+          p_since?: string | null;
+          p_until?: string | null;
+        };
+        Returns: {
+          user_id: string;
+          /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
+          total: number;
+        }[];
+      };
+      /**
        * `20260905010000` (#1243). Registers Discord-import manifest rows and
        * enforces the two `chat-archive` byte ceilings in one transaction,
        * returning the rows it wrote.
