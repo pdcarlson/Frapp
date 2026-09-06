@@ -46,7 +46,6 @@ To run the container against your local Supabase instance:
 docker run --rm -p 3001:3001 \
   -e SUPABASE_URL=http://host.docker.internal:54321 \
   -e SUPABASE_SERVICE_ROLE_KEY=... \
-  -e SUPABASE_ANON_KEY=... \
   -e STRIPE_SECRET_KEY=... \
   -e STRIPE_WEBHOOK_SECRET=... \
   -e STRIPE_PRICE_ID=... \
@@ -74,7 +73,6 @@ services:
     environment:
       - SUPABASE_URL=http://host.docker.internal:54321
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
       - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
