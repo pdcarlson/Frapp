@@ -31,6 +31,14 @@ across the store. Decide the name first; everything below is written for
 | Marketing URL | https://frapp.live |
 | Support email | team@frapp.live |
 
+> **Sequence: the first `Deploy production` run comes before either store submission.** The
+> privacy, terms and support pages exist on `main`, but production's landing is still a build
+> from 2026-03-04 on which `https://frapp.live/privacy`, `/terms` and `/support` all answer
+> **404** (checked 2026-09-07 00:05Z). Both stores fetch the privacy policy URL when the
+> listing is saved and reviewers open the support URL, so a submission made before the deploy
+> is rejected on the URLs alone — and the app itself points at `api.frapp.live`, which is
+> also the old build until that run. Deploy, confirm the three URLs return 200, then submit.
+
 ## Description
 
 Frapp is the app your chapter actually runs on.
