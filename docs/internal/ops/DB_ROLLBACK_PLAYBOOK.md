@@ -1,5 +1,39 @@
 # DB Rollback Playbook
 
+## Every migration owes a recipe here
+
+`check:migration-safety` asserts **per-migration** coverage in this file *and*
+in [`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md) — both, not either. It
+reads the entry **shape**, so naming a migration in prose does not satisfy it.
+Any of these counts, anywhere in the file:
+
+```
+* **Migration**: `<migration>.sql`
+## Rollback <what> (<migration>.sql)
+## Rollback <what> (<14-digit version>)
+## Rollback <what> (<version-prefix>*)
+```
+
+The bullet is the usual form and conventionally opens a `## Rollback <what>`
+recipe, but neither the heading nor the position is required — the line shape
+alone is what is read. The list marker may be `*` or `-`, and a heading may
+carry a trailing issue ref after the parenthetical.
+
+A recipe heading may name its subject by bare version rather than filename
+(`## Rollback account deletion (20260803140000)`), and the glob form covers a
+chunk applied together (`## Rollback Chunk 02 migrations (20260523*)`). Both
+are real entries — reading only the filename form once put **eleven** fully
+documented migrations on the allowlist as debt they had already paid.
+
+A migration with no reversible DDL still
+gets a recipe — say so in an `* **Action**:` bullet; "not reversible, restore
+from backup" is a legitimate recipe and the honest one.
+
+Migrations that predate the gate are grandfathered in `UNLEDGERED` in
+[`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs).
+That list is **shrink-only** and enforced by a version ceiling, so a migration
+created after the gate cannot be added to it.
+
 ## Automated Migration Context
 
 Migrations are now applied automatically in the deploy pipeline (see `.github/workflows/deploy-api.yml`):
@@ -1261,6 +1295,7 @@ After any rollback event:
 ## Rollback poll list vote aggregate RPCs
 * **Migration**: `20260417180000_add_poll_list_vote_aggregate_rpcs.sql`
 * **Action**: Run `DROP FUNCTION IF EXISTS get_poll_vote_option_totals(uuid[]);` and `DROP FUNCTION IF EXISTS get_poll_user_votes_for_messages(uuid[], uuid);`
+* **⚠ Roll the API back first** — despite the heading, `get_poll_vote_option_totals` is no longer list-only. Since [#568](https://github.com/pdcarlson/Frapp/issues/568) it also backs `GET /v1/polls/{messageId}`, and `PollService.getPoll` deliberately does **not** swallow an aggregate failure (a detail view showing every option at zero is indistinguishable from a real result), so dropping the function under a running post-#568 API makes **every poll detail request 500**, not just degrade the chapter list. `listPolls` alone degrades gracefully (catches, logs `vote tallies omitted`, renders zeros). Redeploy the API at the pre-#568 revision, or forward-fix, rather than a bare drop.
 
 ## Rollback locking EXECUTE on `get_points_report`/poll-vote-aggregate RPCs to `service_role`
 * **Migration**: `20260901173000_lock_down_public_rpc_execute.sql`
