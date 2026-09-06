@@ -283,6 +283,13 @@ export class InviteService {
     if (new Date(invite.expires_at) < new Date())
       throw new GoneException('Invite expired');
 
+    const existingMember = await this.memberRepo.findByUserAndChapter(
+      userId,
+      invite.chapter_id,
+    );
+    if (existingMember)
+      throw new ConflictException('Already a member of this chapter');
+
     // The chapter that matters here is the INVITE's, which `ChapterGuard`
     // never sees — it resolves the caller's active chapter, and a brand-new
     // user has none — so the subscription lock is evaluated here (#1546).
@@ -292,7 +299,10 @@ export class InviteService {
     // one. Checked BEFORE the atomic claim so the token is not consumed: the
     // chapter may recover inside the token's lifetime, and the same link then
     // works. 403 rather than the token-terminal 410 for the same reason —
-    // nothing is wrong with the invite, and the copy should say what is.
+    // nothing is wrong with the invite, and the copy should say what is. And
+    // AFTER the duplicate-membership check: a member of a locked chapter who
+    // opens a still-valid link needs the 409 the join screens special-case
+    // ("open it from your chapter list"), not advice to wait for a restore.
     const chapter = await this.chapterRepo.findById(invite.chapter_id);
     if (chapter && isSubscriptionHardLocked(chapter)) {
       throw new ForbiddenException({
@@ -304,13 +314,6 @@ export class InviteService {
           "This chapter isn't accepting new members right now: its subscription is inactive. Ask a chapter officer to restore it, then use this invite again.",
       });
     }
-
-    const existingMember = await this.memberRepo.findByUserAndChapter(
-      userId,
-      invite.chapter_id,
-    );
-    if (existingMember)
-      throw new ConflictException('Already a member of this chapter');
 
     const claimed = await this.inviteRepo.markUsedAtomically(invite.id);
     if (!claimed) throw new GoneException('Invite already used');

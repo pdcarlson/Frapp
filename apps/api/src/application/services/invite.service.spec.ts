@@ -631,6 +631,29 @@ describe('InviteService', () => {
       ).resolves.toMatchObject({ chapterId: 'ch-1' });
     });
 
+    it('still answers 409 to an existing member of a locked chapter — their next action is different', async () => {
+      mockChapterRepo.findById.mockResolvedValue(
+        lockedChapter({ subscription_status: 'canceled' }),
+      );
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        id: 'member-existing',
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        role_ids: [],
+        custom_role_ids: [],
+        has_completed_onboarding: true,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+
+      await expect(
+        service.redeem('locked-token', 'user-2'),
+      ).rejects.toMatchObject({
+        status: 409,
+      });
+      expect(mockChapterRepo.findById).not.toHaveBeenCalled();
+    });
+
     it('checks the lock only after the token itself is valid', async () => {
       // A dead token is a 410 regardless of the chapter's state: the caller's
       // next action ("ask for a new invite") is the same either way, and the

@@ -24,7 +24,7 @@ Checkout is offered at `incomplete` and again at `canceled`; `past_due` recovers
 | `incomplete` | Created but not yet paid.                                                                                                                    |
 | `active`     | Subscription current. Full access.                                                                                                           |
 | `past_due`   | Payment failed. 3-day grace period (soft lock — can still read, cannot invite).                                                              |
-| `canceled`   | Subscription ended. Data preserved, read-only (hard lock) across the guarded surface — see #1546 for the un-guarded routes that still write. |
+| `canceled`   | Subscription ended. Data preserved, read-only (hard lock) across the guarded surface, and invite redemption honours the lock in the service (#1546); the only un-guarded writes left are the member's own notification preferences and analytics events. |
 
 ## Invite System
 
