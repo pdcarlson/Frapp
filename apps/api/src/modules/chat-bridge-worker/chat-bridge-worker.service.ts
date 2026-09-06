@@ -14,7 +14,7 @@ import type {
   FrappSupabaseClient,
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
-import { SYSTEM_SENDER_ID } from '../../domain/constants/chat';
+import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 interface AuditLogRow {
   id: string;

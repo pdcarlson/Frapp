@@ -1,11 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import type { IChatMessageBookmarkRepository } from '../../../domain/repositories/chat.repository.interface';
+import type { IChatMessageBookmarkRepository } from '#domain/repositories/chat.repository.interface';
 import type {
   ChatMessageBookmarkRef,
   ChatMessageBookmarkWithMessage,
-} from '../../../domain/entities/chat.entity';
+} from '#domain/entities/chat.entity';
 /**
  * The message columns this endpoint serves — deliberately NOT
  * `CHAT_MESSAGE_COLUMNS`.

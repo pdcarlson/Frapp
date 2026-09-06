@@ -5,13 +5,13 @@ import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   IBackworkResourceRepository,
   BackworkResourceFilter,
-} from '../../../domain/repositories/backwork.repository.interface';
-import { BackworkResource } from '../../../domain/entities/backwork.entity';
+} from '#domain/repositories/backwork.repository.interface';
+import { BackworkResource } from '#domain/entities/backwork.entity';
 import type {
   AssignmentType,
   DocumentVariant,
   Semester,
-} from '../../../domain/entities/backwork.entity';
+} from '#domain/entities/backwork.entity';
 
 @Injectable()
 export class SupabaseBackworkResourceRepository implements IBackworkResourceRepository {

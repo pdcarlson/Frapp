@@ -5,10 +5,10 @@ import {
   REPORT_URL_TTL_SECONDS,
   ReportExportService,
 } from './report-export.service';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import { REPORT_PDF_RENDERER } from '../../domain/adapters/pdf.interface';
-import { ROSTER_COLUMNS } from '../../domain/constants/report-columns';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import { REPORT_PDF_RENDERER } from '#domain/adapters/pdf.interface';
+import { ROSTER_COLUMNS } from '#domain/constants/report-columns';
 
 describe('ReportExportService', () => {
   let service: ReportExportService;

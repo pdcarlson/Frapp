@@ -30,7 +30,13 @@
  *
  * Bucket policies in `supabase/migrations/*.sql` must keep mirroring these
  * MIME lists (comment cross-references only on shipped migrations). Size is
- * `MAX_UPLOAD_BYTES` (26214400), matching `supabase/config.toml`.
+ * **not** one number, and `supabase/config.toml`'s `[storage] file_size_limit`
+ * is not `MAX_UPLOAD_BYTES`: it caps the **local stack** and overrides a higher
+ * per-bucket column there. What the hosted projects enforce per object is not
+ * measured here, and so is not claimed. See `MAX_ARCHIVE_UPLOAD_BYTES` below
+ * for the one kind deliberately held off this cap; the per-bucket values are
+ * owned by
+ * `spec/architecture/README.md` § 7 (Storage).
  *
  * ## What the bucket allowlist actually enforces
  *
@@ -108,6 +114,48 @@ export const MAX_ARCHIVE_UPLOAD_BYTES = 100 * 1024 * 1024;
  * so the admin-facing error names that flag rather than a byte count.
  */
 export const MAX_ARCHIVE_EXPORT_PART_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Ceiling on the total bytes one Discord import may register.
+ *
+ * The two constants above bound a single OBJECT. Neither bounds an import, and
+ * nothing else did either (#1243): a `channels:manage` holder could loop
+ * create-import → mint 100 upload URLs → repeat, and `CustomThrottlerGuard`
+ * bounds request rate, not bytes.
+ *
+ * The number comes from what a legitimate import actually weighs. A
+ * DiscordChatExporter run over an active chapter's server with `--media` is
+ * plausibly single-digit GB, so 20 GiB clears any real export by a wide margin
+ * and only ever catches a runaway or a deliberate loop.
+ *
+ * Binary, like every other ceiling in this file — 20 GiB is ~21.5 GB decimal.
+ * Admin-facing messages render it through `formatBytes`, which labels binary
+ * units the way a file browser does, so the copy reads "20 GB" and the constant
+ * stays exact. Do not "correct" one to match the other.
+ *
+ * **This is not a capacity plan for the hosted project.** It is an abuse
+ * ceiling. What the shared Supabase project can actually hold is a separate,
+ * still-open question — see #1235 (the hosted per-object limit) and #1403 (the
+ * org tier, which is what gates total storage). Lowering this to track a real
+ * capacity budget is a one-line edit here, exactly as it is for the two
+ * ceilings above.
+ */
+export const MAX_ARCHIVE_IMPORT_BYTES = 20 * 1024 * 1024 * 1024;
+
+/**
+ * Ceiling on the total bytes one chapter may hold across all of its imports.
+ *
+ * Deliberately above {@link MAX_ARCHIVE_IMPORT_BYTES} rather than equal to it:
+ * re-importing after a bad run is the normal recovery path, and a chapter that
+ * has not purged the first attempt would otherwise be locked out of the second.
+ * Two full-size imports plus headroom.
+ *
+ * Bytes are released by the per-import purge (`DELETE /v1/discord-imports/{id}`)
+ * and by nothing else — there is no retention sweep over this bucket yet
+ * (#1246). A chapter that hits this ceiling deletes an old import to continue,
+ * which is what the refusal message tells it to do.
+ */
+export const MAX_ARCHIVE_CHAPTER_BYTES = 50 * 1024 * 1024 * 1024;
 
 /**
  * Surfaces that must share the `document` kind. Adding a fourth member-upload

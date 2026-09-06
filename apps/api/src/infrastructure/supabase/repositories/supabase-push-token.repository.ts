@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import type { IPushTokenRepository } from '../../../domain/repositories/notification.repository.interface';
-import type { PushToken } from '../../../domain/entities/notification.entity';
+import type { IPushTokenRepository } from '#domain/repositories/notification.repository.interface';
+import type { PushToken } from '#domain/entities/notification.entity';
 
 @Injectable()
 export class SupabasePushTokenRepository implements IPushTokenRepository {

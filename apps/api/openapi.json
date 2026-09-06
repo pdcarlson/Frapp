@@ -1361,6 +1361,36 @@
         ]
       }
     },
+    "/v1/members/me/ops-nudges/dismiss": {
+      "patch": {
+        "operationId": "MemberController_dismissOpsNudge_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissOpsNudgeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Dismiss an ops-module setup nudge",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
     "/v1/alumni": {
       "get": {
         "operationId": "AlumniController_list_v1",
@@ -7923,6 +7953,24 @@
           "has_completed_onboarding"
         ]
       },
+      "DismissOpsNudgeDto": {
+        "type": "object",
+        "properties": {
+          "module_key": {
+            "type": "string",
+            "enum": [
+              "dues",
+              "events",
+              "tasks",
+              "points"
+            ],
+            "description": "Module whose ops-setup nudge to dismiss for the caller in the active chapter. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing."
+          }
+        },
+        "required": [
+          "module_key"
+        ]
+      },
       "CreateInviteDto": {
         "type": "object",
         "properties": {
@@ -8785,7 +8833,7 @@
           },
           "client_message_id": {
             "type": "string",
-            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
+            "description": "Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud."
           }
         },
         "required": [

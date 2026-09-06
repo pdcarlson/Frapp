@@ -24,13 +24,14 @@ Asserts that every Infisical environment slug named in the files it scans is one
 in different files.
 
 **It scans a fixed list, not the repo, and matches fixed syntaxes rather than any mention of a
-slug.** `SCAN_ROOTS` is `package.json`, `.infisical.json`, `ci/environments.json`,
+slug.** `SCAN_ROOTS` is `package.json`, `.infisical.json`, `.github/environments.json`,
 `.github/workflows`, `.github/actions`, `docs`, `spec`, and `ENV_REFERENCE.md` itself — which is
 listed separately so its absence is caught, not just its content. Within those it reads
-`infisical run --env=`, `.infisical.json`'s `defaultEnvironment` and branch mapping, `env-slug:` in
+`infisical run --env=`, `.infisical.json`'s `defaultEnvironment` and branch mapping, a quoted `env-slug: "<slug>"` in
 workflows and actions, `--env=` in `docs`/`spec` code samples, and `infisicalEnvSlug` in the
-environments config. A slug carried by any other syntax — an `infisical-environment:` input, an
-`INFISICAL_ENV` variable — is not seen even inside a scanned file. Configs and workflows are in scope alongside prose because a wrong slug in a script is the
+environments config. A slug carried by any other syntax — an unquoted `env-slug: prod`, which the
+pattern's mandatory quotes exclude, an `infisical-environment:` input, an `INFISICAL_ENV`
+variable — is not seen even inside a scanned file. Configs and workflows are in scope alongside prose because a wrong slug in a script is the
 same defect as one in a doc — which is also why this is **not** a documentation gate and has its own
 job: a failure should name what it is. Everything outside that list is unscanned, `.claude/`,
 `scripts/`, `apps/` and the root `README.md` included. Read `SCAN_ROOTS` rather than this sentence

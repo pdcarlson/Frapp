@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import type { IStudyGeofenceRepository } from '../../../domain/repositories/study.repository.interface';
-import type { StudyGeofence } from '../../../domain/entities/study.entity';
+import type { IStudyGeofenceRepository } from '#domain/repositories/study.repository.interface';
+import type { StudyGeofence } from '#domain/entities/study.entity';
 
 @Injectable()
 export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository {

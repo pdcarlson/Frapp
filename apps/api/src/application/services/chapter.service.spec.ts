@@ -10,23 +10,23 @@ import * as chapterTheme from '@repo/chapter-theme';
 import { ChapterService } from './chapter.service';
 import { toChapterMemberView } from './chapter-member-view';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
-} from '../../domain/constants/permissions';
-import type { Chapter } from '../../domain/entities/chapter.entity';
-import type { Role } from '../../domain/entities/role.entity';
-import type { Member } from '../../domain/entities/member.entity';
+} from '#domain/constants/permissions';
+import type { Chapter } from '#domain/entities/chapter.entity';
+import type { Role } from '#domain/entities/role.entity';
+import type { Member } from '#domain/entities/member.entity';
 
 function mockRoleIdForName(name: string): string {
   return `role-${name.toLowerCase().replace(/\s+/g, '-')}`;
@@ -105,7 +105,6 @@ describe('ChapterService', () => {
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
-      findByEmail: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       anonymize: jest.fn(),
@@ -232,6 +231,11 @@ describe('ChapterService', () => {
         chapter_id: 'ch-1',
         role_ids: ['role-president'],
         has_completed_onboarding: true,
+        // `[]`, not absent: the member fixtures predate `dismissed_ops_nudges`
+        // (#492) and carry no such key, so this pins the `?? []` normalization
+        // in `mapMembershipSummary` — the web contract declares a plain array
+        // and `undefined` reaching `selectOpsNudge` would be a silent hole.
+        dismissed_ops_nudges: [],
         chapter: toChapterMemberView(chapters[0]),
       },
       {
@@ -239,6 +243,7 @@ describe('ChapterService', () => {
         chapter_id: 'ch-2',
         role_ids: ['role-member'],
         has_completed_onboarding: false,
+        dismissed_ops_nudges: [],
         chapter: toChapterMemberView(chapters[1]),
       },
     ]);

@@ -8,17 +8,17 @@ import {
 import { PollService } from './poll.service';
 import { ChannelAccessService } from './channel-access.service';
 import { RbacService } from './rbac.service';
-import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
-import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
-import type { ChatMessage } from '../../domain/entities/chat.entity';
-import type { ChatChannel } from '../../domain/entities/chat.entity';
-import type { PollVote } from '../../domain/entities/poll-vote.entity';
+import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { POLL_VOTE_REPOSITORY } from '#domain/repositories/poll-vote.repository.interface';
+import type { IPollVoteRepository } from '#domain/repositories/poll-vote.repository.interface';
+import type { ChatMessage } from '#domain/entities/chat.entity';
+import type { ChatChannel } from '#domain/entities/chat.entity';
+import type { PollVote } from '#domain/entities/poll-vote.entity';
 
 describe('PollService', () => {
   let service: PollService;
@@ -100,14 +100,12 @@ describe('PollService', () => {
 
     mockVoteRepo = {
       findByMessage: jest.fn(),
-      findByMessages: jest.fn(),
       aggregateOptionTotalsByMessages: jest.fn(),
       findUserVotesByMessagesForUser: jest.fn(),
       findByMessageAndUser: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
       deleteByMessageAndUser: jest.fn(),
-      deleteByMessageUserAndOption: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -352,7 +350,6 @@ describe('PollService', () => {
         'user-2',
       );
       expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
-      expect(mockVoteRepo.deleteByMessageUserAndOption).not.toHaveBeenCalled();
       expect(mockVoteRepo.createMany).toHaveBeenCalledWith([
         {
           message_id: 'msg-1',

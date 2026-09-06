@@ -36,7 +36,7 @@ jobs:
   # with it; it has its own job so that a failure names what it is.
   #
   # Its reach is exactly `SCAN_ROOTS` in `scripts/check-env-slugs.mjs`:
-  # `package.json`, `.infisical.json`, `ci/environments.json`,
+  # `package.json`, `.infisical.json`, `.github/environments.json`,
   # `.github/workflows`, `.github/actions`, `docs`, `spec`, and
   # `docs/internal/environment/ENV_REFERENCE.md`. It is NOT a whole-repo scan —
   # a slug written in `.claude/`, in `scripts/`, in app code or in a root

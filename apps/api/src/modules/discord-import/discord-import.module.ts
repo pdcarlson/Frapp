@@ -11,14 +11,14 @@ import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/rep
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { DiscordBotGatewayService } from '../../infrastructure/discord/discord-bot-gateway.service';
 import { DiscordOAuthClientService } from '../../infrastructure/discord/discord-oauth-client.service';
-import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
-import { DISCORD_CONNECTION_REPOSITORY } from '../../domain/repositories/discord-connection.repository.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
+import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import {
   DISCORD_BOT_GATEWAY,
   DISCORD_OAUTH_CLIENT,
-} from '../../domain/adapters/discord.interface';
+} from '#domain/adapters/discord.interface';
 
 /**
  * The Discord archive importer: admin routes, the connect flow, and the worker.
@@ -65,6 +65,5 @@ import {
     { provide: DISCORD_BOT_GATEWAY, useClass: DiscordBotGatewayService },
     { provide: DISCORD_OAUTH_CLIENT, useClass: DiscordOAuthClientService },
   ],
-  exports: [DiscordImportService, DiscordOAuthService],
 })
 export class DiscordImportModule {}

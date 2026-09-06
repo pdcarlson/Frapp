@@ -96,6 +96,18 @@ export function useAdjustPoints() {
   const chapterId = useActiveChapterId();
   const queryClient = useQueryClient();
   return useMutation({
+    // No retry. The web client defaults every mutation to `retry: 2`
+    // (`apps/web/lib/providers/query-provider.tsx`), and this path sends no
+    // `client_message_id`, so the server has nothing to deduplicate on: if the
+    // first attempt commits the ledger row and only its response is lost, the
+    // two automatic retries write two MORE rows. The ledger is append-only, so
+    // a +50 grant becomes +150 with no way back through the API — #1719's
+    // double-grant, fired without anyone intending a second grant.
+    //
+    // This is the cheap containment, not the fix. The fix is for this hook to
+    // mint a key and reuse it across attempts, which is #1733 along with the
+    // `/points` slash-command half.
+    retry: false,
     mutationFn: async (body: {
       target_user_id: string;
       amount: number;

@@ -14,10 +14,7 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
 import type { BooleanStringQueryValue } from '../utils/query-boolean';
-import {
-  POINTS_WINDOWS,
-  type PointsWindow,
-} from '../../domain/utils/points-window';
+import { POINTS_WINDOWS, type PointsWindow } from '#domain/utils/points-window';
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
@@ -66,7 +63,7 @@ export class AdjustPointsDto {
 
   @ApiPropertyOptional({
     description:
-      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`.',
+      'Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud.',
   })
   @IsOptional()
   @IsUUID()

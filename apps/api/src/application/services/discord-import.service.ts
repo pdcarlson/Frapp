@@ -9,31 +9,35 @@ import {
 } from '@nestjs/common';
 import { basename } from 'node:path';
 import {
+  MAX_ARCHIVE_CHAPTER_BYTES,
   MAX_ARCHIVE_EXPORT_PART_BYTES,
+  MAX_ARCHIVE_IMPORT_BYTES,
   contentTypeByExtension,
   fileExtension,
   isAllowedUploadMime,
   isWithinArchiveUploadSizeLimit,
 } from '@repo/validation';
+import { formatBytes } from '@repo/formatting';
 import {
+  ArchiveQuotaExceededError,
   DISCORD_IMPORT_REPOSITORY,
   type IDiscordImportRepository,
-} from '../../domain/repositories/discord-import.repository.interface';
+} from '#domain/repositories/discord-import.repository.interface';
 import {
   CHAT_CHANNEL_REPOSITORY,
   type IChatChannelRepository,
-} from '../../domain/repositories/chat.repository.interface';
+} from '#domain/repositories/chat.repository.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveExportPrefix,
   archiveImportPrefix,
   archiveMediaObjectPath,
   flattenArchiveRelativePath,
-} from '../../domain/constants/storage';
+} from '#domain/constants/storage';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -41,17 +45,50 @@ import type {
   DiscordImportFile,
   DiscordImportSource,
   DiscordRoleMapping,
-} from '../../domain/entities/discord-import.entity';
+} from '#domain/entities/discord-import.entity';
 import {
   DISCORD_BOT_GATEWAY,
   DiscordApiError,
   DiscordNotConfiguredError,
   type IDiscordBotGateway,
-} from '../../domain/adapters/discord.interface';
+} from '#domain/adapters/discord.interface';
 import { DiscordOAuthService } from './discord-oauth.service';
 
 /** How many files one mint request may register. */
 export const MAX_UPLOAD_URL_BATCH = 100;
+
+/**
+ * The admin-facing sentence for a refused batch, shared by both import paths.
+ *
+ * Takes the import's `source` because the remedy is not the same on both. An
+ * admin on the **bot** path never ran DiscordChatExporter, has no export folder
+ * and no `--media` flag — telling them to "re-export without media" names three
+ * things that do not exist in their flow and leaves them with no next step. The
+ * chapter-ceiling advice ("delete an old import") is the only half that is
+ * path-neutral.
+ *
+ * Sizes go through `formatBytes` rather than a local GB helper: the ceilings are
+ * meant to be tuned (the rollback playbook names constant-tuning as the fast
+ * forward-fix), and a hard-pinned GB unit renders a lowered ceiling as "0 GB".
+ * `formatBytes` walks the unit ladder, so a 50 MB ceiling reads "50 MB".
+ */
+export function archiveQuotaMessage(
+  error: ArchiveQuotaExceededError,
+  source: DiscordImportSource,
+): string {
+  const held = formatBytes(error.wouldHoldBytes);
+  const cap = formatBytes(error.capBytes);
+
+  if (error.scope === 'chapter') {
+    return `Your chapter's archive would hold ${held} of files, past its ${cap} limit. Delete an old import to free space — deletion finishes in the background, so give it a moment before retrying.`;
+  }
+
+  const remedy =
+    source === 'bot'
+      ? 'Import fewer channels, or delete an earlier import first.'
+      : 'Re-export with a smaller date range or without --media, or split the server across separate imports.';
+  return `This import would hold ${held} of files, past the ${cap} limit for one import. ${remedy}`;
+}
 
 /**
  * Discovery warnings kept on the job row.
@@ -217,7 +254,23 @@ export class DiscordImportService {
     }
 
     const rows = files.map((file) => this.toManifestRow(job, chapterId, file));
-    const created = await this.importRepo.createFiles(rows);
+
+    // Registration enforces the archive ceilings itself, in the same
+    // transaction — see the repository interface for why this is not a check
+    // followed by a write. A refused batch registers nothing, so no signed URL
+    // below is ever minted for a file that was not admitted.
+    let created;
+    try {
+      created = await this.importRepo.registerFiles(chapterId, id, rows, {
+        importBytes: MAX_ARCHIVE_IMPORT_BYTES,
+        chapterBytes: MAX_ARCHIVE_CHAPTER_BYTES,
+      });
+    } catch (error) {
+      if (error instanceof ArchiveQuotaExceededError) {
+        throw new BadRequestException(archiveQuotaMessage(error, job.source));
+      }
+      throw error;
+    }
 
     // Signed with `upsert`, because re-requesting a URL for a file the admin
     // already registered is the normal resume path after an interrupted

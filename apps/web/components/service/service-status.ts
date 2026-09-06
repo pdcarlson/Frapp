@@ -10,8 +10,8 @@ export type ServiceStatus = "PENDING" | "APPROVED" | "REJECTED";
  * attendance and the Directory & Finance slice of #920 fixed for invoices.
  * `writing.md` §5: "status color is never decorative". The measurement behind
  * it is in `components.md` §5, pinned across all 19 seeds in
- * `../billing/status-contrast.test.ts`, and that this mapper never returns the
- * accent is pinned in `../shared/status-kind.test.ts`: an accent badge is 1.08:1 from the
+ * `../billing/status-contrast.spec.ts`, and that this mapper never returns the
+ * accent is pinned in `../shared/status-kind.spec.ts`: an accent badge is 1.08:1 from the
  * success tint under a green-seeded chapter and 1.13:1 from the danger tint
  * under a red-seeded one, so a red-branded chapter read `APPROVED` as
  * `REJECTED` — the one column where that inversion costs a member their hours.

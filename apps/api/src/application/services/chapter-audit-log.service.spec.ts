@@ -3,7 +3,7 @@ import { ChapterAuditLogService } from './chapter-audit-log.service';
 import {
   CHAPTER_AUDIT_LOG_REPOSITORY,
   type IChapterAuditLogRepository,
-} from '../../domain/repositories/chapter-audit-log.repository.interface';
+} from '#domain/repositories/chapter-audit-log.repository.interface';
 
 describe('ChapterAuditLogService', () => {
   let service: ChapterAuditLogService;

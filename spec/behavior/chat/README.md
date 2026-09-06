@@ -205,7 +205,7 @@ adding that filter would make the bookmark vanish, the opposite of this rule.
 | `chat:channel:<channelId>` | Who has *this channel* open | The push worker, via service role, to suppress pushes to members already looking (ADR-10) |
 | `presence:chapter:<chapterId>` | Who is present in the *chapter* at all | The web Directory |
 
-The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.test.ts`. Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
+The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.spec.ts`. Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
 
 Both are **public** Realtime channels, so presence is advisory and must never be an input to an authorization decision — it can be both read and forged by anyone holding the anon key. Why they are public, and what that exposes, is [`docs/internal/security/AUTHORIZATION_MODEL.md`](../../../docs/internal/security/AUTHORIZATION_MODEL.md) § "The policies that do exist".
 
@@ -420,6 +420,18 @@ channel that reports a different one fails the import rather than being skipped.
   Signet cannot verify it, and says so — but
   `discord_imports.consent_acknowledged_at` is NOT NULL, so no import exists
   anywhere in the system that skipped the question.
+- **An import is bounded, and so is a chapter's archive.** Both import paths
+  refuse a batch that would cross a per-import or per-chapter byte ceiling, at
+  the moment files are registered — so nothing is recorded, no upload URL is
+  handed back on the upload path, and on the bot path nothing is fetched from
+  Discord. The ceilings clear a real DiscordChatExporter run over an active
+  server with `--media` by a wide margin: they stop a runaway, they do not
+  ration a legitimate import. A chapter at its ceiling deletes an old import to
+  continue, which is the only thing that releases the bytes (see the next
+  bullet) and which finishes in the background rather than instantly. The
+  numbers, and what the check does and does not enforce, are owned by
+  [`docs/internal/security/content-validation.md`](../../../docs/internal/security/content-validation.md)
+  § 3.
 - **Deleting an import removes what it brought in**: its messages (cascading to
   attachments and reactions) and its objects in the `chat-archive` bucket. Scoped
   by `metadata->>'discord_import_id'`, so purging one import that merged into a
@@ -554,8 +566,8 @@ These are the user-observable guarantees of the chat client (web and mobile), in
 
 ## Web ↔ mobile parity
 
-The mobile (Expo) chat experience is held to **parity** with web: reactions, inline rich-message cards, presence, and the offline composer queue all behave the same across platforms. Differences that are canonical:
+The mobile (Expo) chat experience shares web's realtime transport and outbox, so **presence and the offline composer queue behave the same across platforms** — both run the same `@repo/chat-core` code. Reactions round-trip on both, but the affordance does not match: mobile draws a single quick reaction where web offers four plus a full picker. Inline rich-message cards are web-only apart from polls: web has a renderer registry (`apps/web/components/chat/renderers/`, two of its kinds still stubs), mobile branches on `poll` alone. Differences that are canonical:
 
-- **Voice memos** are mobile-native: recorded in the composer, uploaded to Storage, and sent as `kind="audio"` with waveform metadata. Web clients play them back. **Specified, not built** — `audio` is not in `CHAT_MESSAGE_KINDS`, as the Message Kinds and Actions table above records, so this describes the intended behavior rather than a shipped one.
-- **Presence lifecycle on mobile** maps app state to presence: backgrounded → `idle`, force-quit → `offline` (consistent with the Idle/Offline statuses tracked via Realtime Presence above).
+- **Voice memos** would be mobile-native: recorded in the composer, uploaded to Storage, and sent as `kind="audio"` with waveform metadata, with web clients playing them back. **Specified, not built** — `audio` is not in `CHAT_MESSAGE_KINDS`, as the Message Kinds and Actions table above records, so this describes the intended behavior rather than a shipped one.
+- **Presence lifecycle on mobile** — **specified, not built.** The presence payload carries no status field: it is exactly `{ userId, ts }`, pinned by key-set equality in `presence-contract.spec.ts` because widening it silently breaks push suppression. Nothing binds `AppState` to presence. As designed it would map app state to presence: backgrounded → `idle`, force-quit → `offline` — statuses that today are derived from the age of `ts`, never written.
 - The authenticated entry point on mobile lands directly on chat, with the channel list as the default tab.

@@ -53,8 +53,8 @@ import type {
   Task,
   User,
   UserSettings,
-} from '../../domain/entities';
-import type { StripeWebhookClaimOutcome } from '../../domain/repositories/stripe-webhook-event.repository.interface';
+} from '#domain/entities';
+import type { StripeWebhookClaimOutcome } from '#domain/repositories/stripe-webhook-event.repository.interface';
 
 export type Json =
   | string
@@ -207,7 +207,7 @@ export interface Database {
         }[];
       };
       /**
-       * `20260905030000` — per-member point totals for one chapter, summed in
+       * `20260905030001` — per-member point totals for one chapter, summed in
        * Postgres. Bounds carry the same semantics as `get_points_report`:
        * `p_since` exclusive, `p_until` inclusive, either null unbounded. Rows
        * come back ordered by total descending, then `user_id` ascending.
@@ -223,6 +223,36 @@ export interface Database {
           /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
           total: number;
         }[];
+      };
+      /**
+       * `20260905010000` (#1243). Registers Discord-import manifest rows and
+       * enforces the two `chat-archive` byte ceilings in one transaction,
+       * returning the rows it wrote.
+       *
+       * Raises `check_violation` with a `discord_import_archive_quota:`-prefixed
+       * message when a ceiling is crossed, in which case the whole batch is
+       * rolled back. `p_rows` carries the same shape as a
+       * `discord_import_files` insert, minus the columns the function supplies
+       * itself (`import_id`, `chapter_id`).
+       */
+      discord_import_register_files: {
+        Args: {
+          p_chapter_id: string;
+          p_import_id: string;
+          p_rows: {
+            relative_path: string;
+            kind: string;
+            part_index: number | null;
+            bucket: string;
+            storage_path: string;
+            content_type: string | null;
+            byte_size: number | null;
+          }[];
+          /** `bigint` in SQL; sent and returned as a JSON number. */
+          p_import_cap: number;
+          p_chapter_cap: number;
+        };
+        Returns: DiscordImportFile[];
       };
       /** `20260602210000` — `returns setof tasks`. */
       confirm_task_completion: {

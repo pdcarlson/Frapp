@@ -11,7 +11,7 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../../infrastructure/supabase/database.types';
-import type { DuesCadence } from '../../domain/entities/chapter-dues-config.entity';
+import type { DuesCadence } from '#domain/entities/chapter-dues-config.entity';
 import {
   buildChapterConfigFromArchetype,
   getArchetype,
@@ -670,7 +670,8 @@ export class ChapterConfigService {
       );
     }
 
-    // Recompute theme palette if branding colors changed. Use the merged
+    // Recompute the theme palette whenever the PATCH carries `branding.colors` —
+    // presence, not change. Use the merged
     // branding colors so a partial color patch keeps the untouched channel.
     if (dto.branding?.colors) {
       const mergedColors =

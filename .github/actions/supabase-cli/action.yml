@@ -1,0 +1,25 @@
+name: Supabase CLI
+description: >
+  Install the Supabase CLI at the single version this repo pins. Every workflow
+  that needs the CLI calls this action, so the version exists in exactly one
+  place.
+
+# No inputs, deliberately.
+#
+# A `version:` input would put the pin back at the call sites -- four copies
+# again, with the action reduced to a wrapper that dedupes nothing. The reason
+# the version is single-sourced is that the four copies have to AGREE: the
+# production apply and the migration-replay rehearsal exist to be "the same CLI
+# code path" (see `deploy-production.yml`'s Rehearse step), and a rehearsal on a
+# different CLI build than the apply proves nothing about the apply. Drift there
+# fails silently -- both runs go green, on different binaries.
+#
+# So a caller that needs a different version does not pass one; it changes the
+# pin here, for everybody, on purpose.
+runs:
+  using: composite
+  steps:
+    - name: Setup Supabase CLI
+      uses: supabase/setup-cli@v2
+      with:
+        version: 2.77.0

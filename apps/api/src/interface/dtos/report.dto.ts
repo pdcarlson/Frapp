@@ -1,9 +1,6 @@
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  POINTS_WINDOWS,
-  type PointsWindow,
-} from '../../domain/utils/points-window';
+import { POINTS_WINDOWS, type PointsWindow } from '#domain/utils/points-window';
 
 export class AttendanceReportDto {
   @ApiPropertyOptional({ description: 'Filter by event ID' })

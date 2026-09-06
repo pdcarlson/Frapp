@@ -2,9 +2,9 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   CHAPTER_AUDIT_LOG_REPOSITORY,
   type IChapterAuditLogRepository,
-} from '../../domain/repositories/chapter-audit-log.repository.interface';
-import { ChapterAuditLog } from '../../domain/entities/chapter-audit-log.entity';
-import { clampListLimit } from '../../domain/constants/list-query-limits';
+} from '#domain/repositories/chapter-audit-log.repository.interface';
+import { ChapterAuditLog } from '#domain/entities/chapter-audit-log.entity';
+import { clampListLimit } from '#domain/constants/list-query-limits';
 
 export interface RecordAuditEntryInput {
   chapterId: string;

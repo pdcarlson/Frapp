@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import type { IChatCategoryRepository } from '../../../domain/repositories/chat.repository.interface';
-import { ChatChannelCategory } from '../../../domain/entities/chat.entity';
+import type { IChatCategoryRepository } from '#domain/repositories/chat.repository.interface';
+import { ChatChannelCategory } from '#domain/entities/chat.entity';
 
 @Injectable()
 export class SupabaseChatCategoryRepository implements IChatCategoryRepository {

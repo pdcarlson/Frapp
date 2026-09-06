@@ -17,7 +17,7 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 /**
  * Coerce the raw `channelId` query value to a single trimmed id, or `undefined`

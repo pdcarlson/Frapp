@@ -6,7 +6,7 @@ import {
   inA,
   inB,
   type TenantHarness,
-} from '../../../../test/helpers/tenant-scope.harness';
+} from '#test/helpers/tenant-scope.harness';
 
 /**
  * Tenant scope for `poll_votes`.
@@ -57,6 +57,96 @@ const seed = () => ({
       created_at: '2026-01-01T00:00:00.000Z',
     },
   ],
+});
+
+/** Mirrors `POLL_VOTES_PAGE_SIZE` in the repository under test. */
+const PAGE_SIZE = 1000;
+
+/**
+ * Minimal PostgREST query-builder stand-in that records the window each page
+ * asked for. The tenant harness above resolves queries in one shot, so the
+ * paging walk itself needs its own stub to be observable.
+ */
+function makePagingClient(pages: Array<{ data: unknown[] | null }>) {
+  const ranges: Array<[number, number]> = [];
+  let index = 0;
+  const builder: Record<string, unknown> = {};
+  for (const method of ['select', 'in', 'order']) {
+    builder[method] = jest.fn(() => builder);
+  }
+  builder.range = jest.fn((from: number, to: number) => {
+    ranges.push([from, to]);
+    return Promise.resolve(pages[index++] ?? { data: [], error: null });
+  });
+  return { client: { from: jest.fn(() => builder) }, ranges };
+}
+
+const voteRows = (count: number) =>
+  Array.from({ length: count }, (_, i) => ({ id: `vote-${i}` }));
+
+describe('SupabasePollVoteRepository — paging', () => {
+  // #1628: POLL_VOTES_PAGE_SIZE is exactly the common PostgREST `max_rows`
+  // default, so this was the most exposed of the repo's sweep loops — any cap
+  // at or below 1000 made the first page short and ended the read there,
+  // under-counting every poll aggregate built from it.
+  it('does not end the read on a short-but-non-empty page', async () => {
+    const { client, ranges } = makePagingClient([
+      // Asked for 1000, capped at 400 by the server.
+      { data: voteRows(400) },
+      { data: voteRows(400) },
+      { data: voteRows(30) },
+      { data: [] },
+    ]);
+    const repo = new SupabasePollVoteRepository(
+      client as unknown as ConstructorParameters<
+        typeof SupabasePollVoteRepository
+      >[0],
+    );
+
+    const votes = await repo.findByMessages([MESSAGE_A]);
+
+    expect(votes).toHaveLength(830);
+    // Every window opens where the previous one actually ended.
+    expect(ranges).toEqual([
+      [0, PAGE_SIZE - 1],
+      [400, 400 + PAGE_SIZE - 1],
+      [800, 800 + PAGE_SIZE - 1],
+      [830, 830 + PAGE_SIZE - 1],
+    ]);
+  });
+
+  it('makes no request at all for an empty message-id list', async () => {
+    const { client, ranges } = makePagingClient([]);
+    const repo = new SupabasePollVoteRepository(
+      client as unknown as ConstructorParameters<
+        typeof SupabasePollVoteRepository
+      >[0],
+    );
+
+    expect(await repo.findByMessages([])).toEqual([]);
+    expect(ranges).toEqual([]);
+  });
+
+  it('propagates a page error rather than returning a partial read', async () => {
+    const ranges: Array<[number, number]> = [];
+    const builder: Record<string, unknown> = {};
+    for (const method of ['select', 'in', 'order']) {
+      builder[method] = jest.fn(() => builder);
+    }
+    builder.range = jest.fn((from: number, to: number) => {
+      ranges.push([from, to]);
+      return Promise.resolve({ data: null, error: { message: 'boom' } });
+    });
+    const repo = new SupabasePollVoteRepository({
+      from: jest.fn(() => builder),
+    } as unknown as ConstructorParameters<
+      typeof SupabasePollVoteRepository
+    >[0]);
+
+    await expect(repo.findByMessages([MESSAGE_A])).rejects.toEqual({
+      message: 'boom',
+    });
+  });
 });
 
 describe('SupabasePollVoteRepository — tenant scope', () => {

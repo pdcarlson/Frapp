@@ -3,11 +3,13 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import {
   IPointTransactionRepository,
+  PointTransactionDuplicateError,
   type ListChapterPointTransactionsOptions,
   type PointsLeaderboardRow,
   type PointsLeaderboardWindow,
-} from '../../../domain/repositories/point-transaction.repository.interface';
-import { PointTransaction } from '../../../domain/entities/point-transaction.entity';
+} from '#domain/repositories/point-transaction.repository.interface';
+import { PG_UNIQUE_VIOLATION } from '#domain/repositories/chat.repository.interface';
+import { PointTransaction } from '#domain/entities/point-transaction.entity';
 
 @Injectable()
 export class SupabasePointTransactionRepository implements IPointTransactionRepository {
@@ -25,8 +27,39 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // `idx_point_transactions_dedupe` rejecting the insert is not a failure:
+      // it means this idempotency key already committed a row, and the caller
+      // should return that row. Translated to a typed error here so the service
+      // never has to know a Postgres error code — the same seam
+      // `SupabaseChatMessageRepository` uses for `chat_messages`.
+      if (
+        (error as { code?: string }).code === PG_UNIQUE_VIOLATION &&
+        data.chapter_id &&
+        data.client_message_id
+      ) {
+        throw new PointTransactionDuplicateError(
+          data.chapter_id,
+          data.client_message_id,
+        );
+      }
+      throw error;
+    }
     return created;
+  }
+
+  async findByClientMessageId(
+    chapterId: string,
+    clientMessageId: string,
+  ): Promise<PointTransaction | null> {
+    const { data, error } = await this.supabase
+      .from('point_transactions')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('client_message_id', clientMessageId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ?? null;
   }
 
   async findByUser(

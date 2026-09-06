@@ -4,7 +4,7 @@ import type { FrappSupabaseClient, TablesUpdate } from '../database.types';
 import type {
   IStripeWebhookEventRepository,
   StripeWebhookClaim,
-} from '../../../domain/repositories/stripe-webhook-event.repository.interface';
+} from '#domain/repositories/stripe-webhook-event.repository.interface';
 
 /** Postgres caps nothing here, but an unbounded provider message is not worth storing. */
 const MAX_ERROR_LENGTH = 1000;

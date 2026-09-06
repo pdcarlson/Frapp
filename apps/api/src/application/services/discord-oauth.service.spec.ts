@@ -14,9 +14,9 @@ import {
 import {
   DISCORD_BOT_GATEWAY,
   DISCORD_OAUTH_CLIENT,
-} from '../../domain/adapters/discord.interface';
-import { DISCORD_CONNECTION_REPOSITORY } from '../../domain/repositories/discord-connection.repository.interface';
-import type { DiscordOAuthState } from '../../domain/entities/discord-connection.entity';
+} from '#domain/adapters/discord.interface';
+import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
+import type { DiscordOAuthState } from '#domain/entities/discord-connection.entity';
 
 const CHAPTER = 'chapter-1';
 const OTHER_CHAPTER = 'chapter-2';

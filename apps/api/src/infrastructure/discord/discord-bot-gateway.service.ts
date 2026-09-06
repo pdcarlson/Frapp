@@ -11,7 +11,8 @@ import {
   type DiscordChannelRef,
   type DiscordRoleRef,
   type IDiscordBotGateway,
-} from '../../domain/adapters/discord.interface';
+} from '#domain/adapters/discord.interface';
+import { asRecord, asString } from '#domain/utils/json-guards';
 
 /**
  * Channel types that hold messages a chapter would want archived.
@@ -72,16 +73,6 @@ const MAX_ARCHIVED_THREAD_PAGES = 50;
 
 /** Attachment fetches that hang must not hold a slice's whole budget. */
 const ATTACHMENT_FETCH_TIMEOUT_MS = 30_000;
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
 
 /** The HTTP status behind a `@discordjs/rest` rejection, when it carried one. */
 function statusOf(error: unknown): number | null {

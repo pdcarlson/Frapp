@@ -1,6 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
-import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
+import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
 
 describe('resolveSemesterArchiveRangeOrThrow', () => {
   const makeRepo = (

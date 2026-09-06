@@ -6,7 +6,7 @@ import {
   ReportService,
 } from './report.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
+import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 describe('ReportService', () => {

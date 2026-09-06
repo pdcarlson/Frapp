@@ -81,16 +81,23 @@ opening a browser.
 |-------|--------|--------------|--------------|
 | ONLINE | None | Enabled | Enabled (live data) |
 | DEGRADED | "Slow connection. Some features may be delayed." (amber) | Enabled (with extended timeouts) | Enabled (from cache + refetch) |
-| OFFLINE | "You're offline. Showing cached data." (red/amber) | **Labeled where a queue exists; disabled with "Reconnect to make changes." where none does** — see below | Enabled (from cache) |
+| OFFLINE | "You're offline. Showing cached data." (red/amber) | **Labeled where a queue exists; refused with "Reconnect to make changes." where none does — usually by disabling the control, but not where its appearance carries state** — see below | Enabled (from cache) |
 
 **The copy above lost its leading ⚡ / 📡.** Those predate Signet's iconography
 rule, which governs glyphs on these surfaces and does not admit emoji
 ([`design-system/iconography.md`](design-system/iconography.md)), and the semantic
 tint already carries the severity they stood in for. The strings are otherwise
-verbatim and mobile ships them exactly. `apps/web` still ships a **third** variant —
-`"You're offline. Showing cached data. Changes will sync when you reconnect."` with
-lucide `WifiOff` / `Zap` icons (`apps/web/components/shared/offline-banner.tsx`) —
-left alone for the web reskin rather than changed from a mobile slice.
+verbatim and mobile ships them exactly. `apps/web` shipped a **third** variant until
+#1707 — `"You're offline. Showing cached data. Changes will sync when you reconnect."`
+— and now ships the string above, because the trailing clause became false rather
+than merely divergent. Web mutations no longer pause-and-resume offline; they reject
+(see [`web-dashboard/README.md`](web-dashboard/README.md) § Surviving data contracts),
+so a global banner promising a sync would have contradicted principle 1, "actions must
+never appear to succeed when they haven't". The queue promise belongs at the one
+control that has a queue — the composer's own label — not in page chrome that renders
+on every route. The lucide `WifiOff` / `Zap` icons
+(`apps/web/components/shared/offline-banner.tsx`) are still web-only, left for the
+reskin.
 
 **Write gating is "labeled, never blocked, wherever an outbox exists."** The
 disabled-with-tooltip rule holds only where a failed write is *lost*. It must not be
@@ -120,6 +127,52 @@ say why: service hours (s20) and check-in (s18) both take
 a sentence beside it. Dues is already gated by its own Stripe guard. The rule lives
 in `apps/mobile/lib/connection/state.ts` (`writeBlockedReason`) so the split is one
 decision rather than a per-screen judgement call.
+
+**Disabling is the usual form of that refusal and is right above** — a mobile
+submit button carries no state of its own, so `disabled` costs nothing beyond
+the press. **On a control whose appearance carries state, it is wrong.** The web
+Profile notification switches (#564) are
+queueless, and since #1754's `networkMode: "always"` an offline toggle no longer
+parks — it starts, exhausts `retry: 2` and rejects in about three seconds. That
+removed the silent loss, but not the reason to refuse: the optimistic `onMutate`
+moves the switch, it sits wrong for those three seconds, then snaps back under an
+error toast. On a control whose *position is the state*, showing a value the
+server was never told about is the failure; refusing costs nothing and answers
+immediately. So they refuse — this is § 2's "disabled with 'Reconnect to make
+changes'" applied to one surface ahead of the dashboard-wide #1753.
+They refuse with **`aria-disabled` plus a guard in the handler**, not the
+`disabled` attribute, because `apps/web/components/ui/switch.tsx` scopes every
+state colour to `enabled:` and its thumb takes `group-data-[disabled]`, which
+outranks the `data-[state]` thumb rules. A genuinely disabled grid therefore
+renders every switch identically, leaving the on/off cue at the thumb offset
+alone — measured 2.24:1, under [WCAG 1.4.11's 3:1 for non-text](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html) —
+and drops the whole grid out of the tab order. Reading which categories are
+muted is the more common offline need, so erasing the state to signal
+unavailability trades the wrong one away.
+
+The obligations that come with soft-disabling, all three required together:
+the handler must actually refuse (an `aria-disabled` control that still writes
+is a lie); the reason must reach the control itself via `aria-describedby`, per
+the `accessibilityHint` rule above — a sentence after the last row is not on the
+control; and the visual presentation must not contradict the accessibility tree, so
+`switch.tsx` carries an `aria-disabled:` cursor rather than leaving a control
+that announces "unavailable" while behaving like a live one. Activating it
+anyway is answered out loud rather than swallowed, since a control that
+silently ignores a click is the dead control this whole section exists to
+prevent.
+
+**That third obligation stops at the cursor, and the reason is measured.** An
+`opacity` dim is the obvious way to make the two agree and is wrong twice over,
+because `opacity` composites the whole element. It dims the focus ring — and
+soft-disabling is exactly the case where the control keeps its place in the tab
+order, so that ring is the entire focus indicator: across all 19 seeds,
+ring-vs-`--background` falls from 3.05–4.07 to 1.78–2.17, and **none** still
+clears [§6](design-system/README.md)'s 3:1. And it flattens the on/off cue this
+whole carve-out exists to protect, dropping checked-vs-unchecked below 3:1 on
+six accents — the same erasure, at the same magnitude, that disqualified the
+real `disabled` attribute. `button.tsx` and `label.tsx` already record the
+system's ban on that idiom. So the visual signal here is the cursor, and the
+*explanation* is carried by `aria-describedby` and the note, not by dimming.
 
 Banner behavior:
 - Appears at the top of the content area (below header bar). **Mobile deviates,
@@ -528,7 +581,7 @@ useEffect(() => {
 > imports `OutboxStore` from `@repo/chat-core/adapters`, not the package
 > barrel. `apps/web/lib/chat/` retains only the web glue:
 > `use-chat-channel.ts`, `chat-provider.tsx`, `offline-queue.ts`,
-> `offline-queue.test.ts`, and `parsers.test.ts`.
+> `offline-queue.spec.ts`, and `parsers.spec.ts`.
 >
 > **The same rule binds every non-chat subscription.** `useRealtimeTable`
 > derives its topic from `table` + `scopeId` alone, so an effect re-run driven by
@@ -627,7 +680,7 @@ For files > 5MB, consider chunked upload for resumability. Not in v1 scope, but 
 | Service entries | 30s | 5min | Approval queue is time-sensitive |
 | Tasks | 30s | 5min | Status changes are frequent |
 | Study sessions | 30s | 5min | The **live** session is not served from this cache at all — s10 holds it in screen state and refreshes it from each mutation's own response, because a session can end by returning 200 and a 30s window would keep a dead timer ticking. The cached list backs the history and the recovery-on-mount read |
-| Study zones | 60s | _(default)_ | A chapter's zones change about as often as its roles. `useGeofences` sets only `staleTime`, so `gcTime` is TanStack's 5-minute default — recorded as-is rather than as an intent nothing implements |
+| Study zones | 60s | _(default)_ | A chapter's zones change about as often as its roles. `useGeofences` sets only `staleTime`, so `gcTime` falls through to each app's own default exactly as the Chat messages row above sets out — recorded as-is rather than as an intent nothing implements |
 
 ### Cache Invalidation Triggers
 
@@ -639,7 +692,7 @@ For files > 5MB, consider chunked upload for resumability. Not in v1 scope, but 
 | User changes roles | `['members', chapterId]`, `['roles']` |
 | Supabase Realtime event | Relevant query key (auto-updated) |
 | Window focus (tab switch) | All stale queries (TanStack built-in) |
-| Network reconnect | All queries (forced refetch) |
+| Network reconnect | Mounted, enabled queries. Web forces even fresh ones (`refetchOnReconnect: "always"`); mobile leaves the default, so only stale ones refetch. Separately, a fetch the drop left paused resumes regardless of observers |
 
 **Those last two rows are delivered on mobile, not merely specified.** They depend on
 TanStack's `onlineManager` and `focusManager`, which nothing wired until

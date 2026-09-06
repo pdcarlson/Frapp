@@ -809,21 +809,40 @@ export {
   MAX_TIME_ZONE_LENGTH,
 } from "./time-zone";
 
-// ── Notification categories (issue #564, mobile half in C4 of #937) ──────────
+// ── Notification categories (issue #564; mobile half shipped in C4 of #937) ──
 // Shared because each `key` is written verbatim into
 // `notification_preferences.category` and nothing validates it — the column is
 // unconstrained `text` and the DTO only length-limits the string — so a
-// per-surface copy drifts into preference rows the server never reads. Web's
-// Profile grid adopting this is the other half of #564.
+// per-surface copy drifts into preference rows the server never reads. Both
+// surfaces now draw from here: mobile's s16 grid and web's Profile card.
+// `rowsToNotificationCategoryState` is shared for the same reason the catalog
+// is — it is the fold from server rows onto those keys, and a second copy is
+// how two surfaces come to disagree about what a member's switches say.
 export {
   NOTIFICATION_CATEGORIES,
   isNotificationCategoryKey,
   defaultNotificationCategoryState,
+  rowsToNotificationCategoryState,
 } from "./notification-categories";
 export type {
   NotificationCategory,
   NotificationCategoryKey,
+  NotificationCategoryState,
 } from "./notification-categories";
+
+// ── Ops-setup nudges (issue #492) ────────────────────────────────────────────
+// Shared for the same reason as the categories above: each `key` is written
+// verbatim into `members.dismissed_ops_nudges`, the column is an unconstrained
+// `text[]`, and `DismissOpsNudgeDto` validates against this catalog — so a
+// per-surface copy would drift into dismissal entries that suppress nothing.
+// `selectOpsNudge` carries the spec's priority order, which is behavior rather
+// than presentation, so it is shared too rather than re-derived per surface.
+export {
+  OPS_NUDGE_MODULES,
+  isOpsNudgeModuleKey,
+  selectOpsNudge,
+} from "./ops-nudges";
+export type { OpsNudgeModule, OpsNudgeModuleKey } from "./ops-nudges";
 
 // ── Poll vote rules ──────────────────────────────────────────────────────────
 // Shared by the two paths that accept a vote, which are NOT the same code path
@@ -961,6 +980,8 @@ export {
   MAX_UPLOAD_LABEL,
   MAX_ARCHIVE_UPLOAD_BYTES,
   MAX_ARCHIVE_EXPORT_PART_BYTES,
+  MAX_ARCHIVE_IMPORT_BYTES,
+  MAX_ARCHIVE_CHAPTER_BYTES,
   DOCUMENT_UPLOAD_SURFACES,
   uploadMimeTypes,
   uploadMimeList,

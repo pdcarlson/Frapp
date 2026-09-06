@@ -5,18 +5,18 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { MemberService } from './member.service';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { SystemRoleKeys } from '../../domain/constants/permissions';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { SystemRoleKeys } from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 
 describe('MemberService', () => {
   let service: MemberService;
@@ -51,7 +51,6 @@ describe('MemberService', () => {
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
-      findByEmail: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       anonymize: jest.fn(),
@@ -1536,6 +1535,89 @@ describe('MemberService', () => {
       const result = await service.findAlumniByChapter('chapter-1');
 
       expect(result).toEqual([]);
+    });
+  });
+  describe('dismissOpsNudge', () => {
+    const member = {
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: 'chapter-1',
+      role_ids: ['role-1'],
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      dismissed_ops_nudges: [],
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+
+    it('appends the module key to the member row', async () => {
+      mockRepo.findById.mockResolvedValue(member);
+      mockRepo.update.mockResolvedValue({
+        ...member,
+        dismissed_ops_nudges: ['dues'],
+      });
+
+      await service.dismissOpsNudge('member-1', 'dues');
+
+      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
+        dismissed_ops_nudges: ['dues'],
+      });
+    });
+
+    it('preserves nudges already dismissed', async () => {
+      mockRepo.findById.mockResolvedValue({
+        ...member,
+        dismissed_ops_nudges: ['dues'],
+      });
+      mockRepo.update.mockResolvedValue({});
+
+      await service.dismissOpsNudge('member-1', 'events');
+
+      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
+        dismissed_ops_nudges: ['dues', 'events'],
+      });
+    });
+
+    // Idempotent, and specifically by *not writing*. A retried request or a
+    // double-click must not grow the column with a duplicate entry — the array
+    // is read back by `selectOpsNudge` and would still behave, but it would
+    // grow without bound over a member's lifetime.
+    it('does not write when the nudge is already dismissed', async () => {
+      mockRepo.findById.mockResolvedValue({
+        ...member,
+        dismissed_ops_nudges: ['dues'],
+      });
+
+      const result = await service.dismissOpsNudge('member-1', 'dues');
+
+      expect(mockRepo.update).not.toHaveBeenCalled();
+      expect(result.dismissed_ops_nudges).toEqual(['dues']);
+    });
+
+    // The column was added after these rows existed, so a row read back from a
+    // fixture or an older cache has no array at all. Spreading `undefined`
+    // would throw before the write ever happened.
+    it('tolerates a row predating the column', async () => {
+      mockRepo.findById.mockResolvedValue({
+        ...member,
+        dismissed_ops_nudges: undefined,
+      });
+      mockRepo.update.mockResolvedValue({});
+
+      await service.dismissOpsNudge('member-1', 'points');
+
+      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
+        dismissed_ops_nudges: ['points'],
+      });
+    });
+
+    it('throws when the member does not exist', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+
+      await expect(service.dismissOpsNudge('missing', 'dues')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockRepo.update).not.toHaveBeenCalled();
     });
   });
 });

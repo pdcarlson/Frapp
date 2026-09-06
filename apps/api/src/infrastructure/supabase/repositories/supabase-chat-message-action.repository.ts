@@ -5,12 +5,12 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import type { IChatMessageActionRepository } from '../../../domain/repositories/chat.repository.interface';
+import type { IChatMessageActionRepository } from '#domain/repositories/chat.repository.interface';
 import {
   ChatMessageActionDuplicateError,
   PG_UNIQUE_VIOLATION,
-} from '../../../domain/repositories/chat.repository.interface';
-import { ChatMessageAction } from '../../../domain/entities/chat.entity';
+} from '#domain/repositories/chat.repository.interface';
+import { ChatMessageAction } from '#domain/entities/chat.entity';
 
 @Injectable()
 export class SupabaseChatMessageActionRepository implements IChatMessageActionRepository {

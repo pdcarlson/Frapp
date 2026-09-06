@@ -58,7 +58,7 @@ import { cn } from "@/lib/utils"
  * carries information**, so it is deliberately redundant three ways: this fill,
  * the accent text tone, and — on every table that offers selection — the
  * checked checkbox in the row and the bulk-action bar above it. Pinned in
- * `components/shared/table-contrast.test.ts`.
+ * `components/shared/table-contrast.spec.ts`.
  *
  * Cell text is `body` (16). A table on the 375px floor scrolls inside its own
  * container rather than shrinking its type below the §7 floor.

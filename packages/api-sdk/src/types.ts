@@ -570,6 +570,23 @@ export interface paths {
         patch: operations["MemberController_updateOnboarding_v1"];
         trace?: never;
     };
+    "/v1/members/me/ops-nudges/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Dismiss an ops-module setup nudge */
+        patch: operations["MemberController_dismissOpsNudge_v1"];
+        trace?: never;
+    };
     "/v1/alumni": {
         parameters: {
             query?: never;
@@ -3158,6 +3175,13 @@ export interface components {
         UpdateOnboardingDto: {
             has_completed_onboarding: boolean;
         };
+        DismissOpsNudgeDto: {
+            /**
+             * @description Module whose ops-setup nudge to dismiss for the caller in the active chapter. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing.
+             * @enum {string}
+             */
+            module_key: "dues" | "events" | "tasks" | "points";
+        };
         CreateInviteDto: {
             /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
             role?: string;
@@ -3446,7 +3470,7 @@ export interface components {
             reason: string;
             /** @description When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments. */
             channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            /** @description Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud. */
             client_message_id?: string;
         };
         CreateCheckoutDto: {
@@ -4838,6 +4862,27 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateOnboardingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MemberController_dismissOpsNudge_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissOpsNudgeDto"];
             };
         };
         responses: {

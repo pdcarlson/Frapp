@@ -12,7 +12,7 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
 } from '@repo/validation';
-import { assertSafeStoragePath } from '../../domain/utils/storage-path';
+import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import {
   buildChapterPalette,
   logChapterPaletteWarnings,
@@ -23,25 +23,25 @@ import {
   type ChapterMemberView,
 } from './chapter-member-view';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
-import { Chapter } from '../../domain/entities/chapter.entity';
-import type { Member } from '../../domain/entities/member.entity';
+} from '#domain/adapters/storage.interface';
+import { Chapter } from '#domain/entities/chapter.entity';
+import type { Member } from '#domain/entities/member.entity';
 import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
   SystemRoleKeys,
-} from '../../domain/constants/permissions';
+} from '#domain/constants/permissions';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   FrappSupabaseClient,
@@ -96,6 +96,14 @@ export interface ChapterMembershipSummary {
   chapter_id: string;
   role_ids: string[];
   has_completed_onboarding: boolean;
+  /**
+   * `MODULE_CATALOG` keys whose ops-setup nudge this member has dismissed in
+   * this chapter (#492). Rides this summary rather than getting its own read
+   * for the same reason `has_completed_onboarding` does: chat home already
+   * holds the membership, and a dedicated request per session would be a
+   * round trip to decide whether to render one card.
+   */
+  dismissed_ops_nudges: string[];
   // Projected, not the raw row: this endpoint has no billing permission, and
   // an unprojected chapter here leaked the same identifiers `/current` did
   // (#930). See `chapter-member-view.ts`.
@@ -590,6 +598,12 @@ export class ChapterService {
       chapter_id: member.chapter_id,
       role_ids: member.role_ids,
       has_completed_onboarding: member.has_completed_onboarding,
+      // `?? []` because the column was added after these rows existed: a member
+      // row read back by a client older than the migration, or from a test
+      // fixture that predates it, has no key here. The web contract declares a
+      // plain array, so normalizing at the boundary keeps `undefined` from
+      // reaching `selectOpsNudge`.
+      dismissed_ops_nudges: member.dismissed_ops_nudges ?? [],
       chapter: toChapterMemberView(chapter),
     };
   }

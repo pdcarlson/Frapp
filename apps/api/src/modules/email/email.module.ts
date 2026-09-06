@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   EMAIL_PROVIDER,
   type IEmailProvider,
-} from '../../domain/adapters/email.interface';
+} from '#domain/adapters/email.interface';
 import { NoopEmailProvider } from '../../infrastructure/email/noop-email.provider';
 import { ResendEmailProvider } from '../../infrastructure/email/resend-email.provider';
 

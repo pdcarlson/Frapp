@@ -8,15 +8,15 @@ import {
   PURGE_BATCH_SIZE,
 } from './discord-import-worker.service';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
-import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
-import { DISCORD_CONNECTION_REPOSITORY } from '../../domain/repositories/discord-connection.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
+import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
+import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
-} from '../../domain/entities/discord-import.entity';
+} from '#domain/entities/discord-import.entity';
 
 const FIXTURES = join(__dirname, '../../../test/fixtures/discord');
 const CHAPTER = 'chapter-1';
@@ -240,7 +240,7 @@ function makeRepo(initial: DiscordImport) {
     findById: jest.fn(async () => current),
     findByChapter: jest.fn(async () => [current]),
     replaceChannels: jest.fn(),
-    createFiles: jest.fn(),
+    registerFiles: jest.fn(),
     markFilesUploaded: jest.fn(),
   };
 }
@@ -692,7 +692,9 @@ describe('DiscordImportWorkerService — purging', () => {
     const result = await worker.sweepImports(NOW);
 
     expect(result.finished).toBe(true);
-    expect(repoRef.deleteImportedMessages).toHaveBeenCalledTimes(2);
+    // Three rounds, not two: the 12-row round is short but not empty, so it
+    // does not prove the rows ran out (#1628). The stub answers 0 on the third.
+    expect(repoRef.deleteImportedMessages).toHaveBeenCalledTimes(3);
     // Storage is swept after the rows: a row pointing at a deleted object would
     // keep minting signed URLs for bytes that are not there.
     expect(storage.deleteFiles).toHaveBeenCalled();
@@ -700,6 +702,26 @@ describe('DiscordImportWorkerService — purging', () => {
     expect(
       (repoRef.updates.at(-1) as { purged_at: string }).purged_at,
     ).toBeTruthy();
+  });
+
+  // The direct regression test for #1628 on the purge path. A project whose
+  // `max_rows` sits below PURGE_BATCH_SIZE caps the candidate select, so the
+  // first round comes back short. Breaking there stranded every imported
+  // message after it — and then deleted the storage objects and marked the job
+  // purged, so nothing ever revisited the rows left pointing at missing bytes.
+  it('does not stop purging on a short-but-non-empty round', async () => {
+    repoRef.deletedRounds = [200, 200, 40, 0];
+    const storage = makeStorage(null);
+    storage.listFiles = jest.fn(async () => ['a/one.png']);
+    const { worker } = await buildWorker(repoRef, storage);
+
+    const result = await worker.sweepImports(NOW);
+
+    expect(result.finished).toBe(true);
+    expect(repoRef.deleteImportedMessages).toHaveBeenCalledTimes(4);
+    // Only after every row is gone may the objects go and the job be marked.
+    expect(storage.deleteFiles).toHaveBeenCalled();
+    expect(repoRef.updates.at(-1)).toMatchObject({ status: 'purged' });
   });
 
   it('sweeps both the export and media prefixes', async () => {
@@ -718,7 +740,10 @@ describe('DiscordImportWorkerService — purging', () => {
 describe('worker constants', () => {
   it('keeps the batch below PostgREST max_rows', () => {
     // An unpaged read past max_rows (1000) truncates with a plain 200 and a
-    // null error, so headroom is what makes a short page mean "no more rows".
+    // null error, so each batch stays under the cap to keep a round trip
+    // small. This is throughput, not correctness: the paged reads terminate on
+    // an empty page, never a short one (#1628), so a cap below these values
+    // costs extra round trips rather than silently dropping rows.
     expect(IMPORT_BATCH_SIZE).toBeLessThan(1000);
     expect(PURGE_BATCH_SIZE).toBeLessThan(1000);
   });

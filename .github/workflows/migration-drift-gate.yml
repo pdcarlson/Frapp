@@ -128,29 +128,12 @@ jobs:
         with:
           node-version: 20
 
-      - name: Verify Infisical credentials are configured
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-
       - name: Inject staging secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "staging"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "staging"
-          secret-path: "/"
-          include-imports: true
 
       - name: Check migration drift against staging
         env:
@@ -263,39 +246,19 @@ jobs:
         with:
           node-version: 20
 
-      - name: Verify Infisical credentials are configured
-        if: steps.touched.outputs.run == 'true'
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-
       # The `prod` slug, not `staging`: this gate is about the database the
       # migrations are heading for. NOTE the slug for production is `prod`.
       - name: Inject production secrets from Infisical
         if: steps.touched.outputs.run == 'true'
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "prod"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "prod"
-          secret-path: "/"
-          include-imports: true
 
       - name: Setup Supabase CLI
         if: steps.touched.outputs.run == 'true'
-        uses: supabase/setup-cli@v2
-        with:
-          version: 2.77.0
+        uses: ./.github/actions/supabase-cli
 
       # Only what the migrations need a real server for. Studio, imgproxy, the
       # edge runtime, the log pipeline and the pooler contribute nothing to an
@@ -539,24 +502,10 @@ jobs:
             echo "No files under supabase/migrations/ changed — the base-branch rule still runs, no database is read."
           fi
 
-      - name: Verify Infisical credentials are configured
-        if: steps.creds.outputs.remote == 'true' && steps.touched.outputs.run == 'true'
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-
       # ONE injection, and the `prod` slug rather than `staging`.
       #
       # Only `SUPABASE_ACCESS_TOKEN` is wanted — the project REFS come from
-      # `ci/environments.json`, which is what lets this job skip the
+      # `.github/environments.json`, which is what lets this job skip the
       # capture-between-injections dance check-migration-drift.yml needs (a
       # second `secrets-action` step clobbers `SUPABASE_PROJECT_REF` from the
       # first).
@@ -570,15 +519,11 @@ jobs:
       # copy with the widest proven reach costs nothing.
       - name: Inject production secrets from Infisical
         if: steps.creds.outputs.remote == 'true' && steps.touched.outputs.run == 'true'
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "prod"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "prod"
-          secret-path: "/"
-          include-imports: true
 
       # A manual dispatch runs the PROBE, not the gate.
       #

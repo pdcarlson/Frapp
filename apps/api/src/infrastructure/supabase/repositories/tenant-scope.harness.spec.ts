@@ -5,7 +5,7 @@ import {
   createTenantHarness,
   inA,
   inB,
-} from '../../../../test/helpers/tenant-scope.harness';
+} from '#test/helpers/tenant-scope.harness';
 import type { FrappSupabaseClient } from '../database.types';
 
 /**
