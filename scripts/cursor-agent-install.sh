@@ -25,7 +25,14 @@ log() { printf '[cursor-install] %s\n' "$*" >&2; }
 if ! command -v dockerd >/dev/null 2>&1; then
   log "Installing Docker Engine + fuse-overlayfs..."
   sudo apt-get update -qq
+  # `--force-confold`: DEBIAN_FRONTEND=noninteractive does NOT silence dpkg's
+  # conffile prompt. The base image ships a modified /etc/fuse.conf, so
+  # installing fuse-overlayfs asked "fuse.conf (Y/I/N/O/D/Z)?" and, with a TTY
+  # attached, hung the install until someone typed N (observed 2026-09-06 when
+  # this script was run by hand in a session). Keeping the installed conffile
+  # is the answer we want anyway.
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
     docker.io fuse-overlayfs iptables uidmap
 fi
 
