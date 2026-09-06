@@ -76,25 +76,16 @@ npm run build
 # Bring the stack up once purely to pull + cache the ~10 images, then stop it. Only the
 # pulled images persist on disk (and into the build snapshot); the containers do not.
 # Non-fatal: a failed pre-pull just means per-session `start` pulls at boot instead.
-# shellcheck source=scripts/lib/cloud-sandbox-common.sh
-. "$ROOT/scripts/lib/cloud-sandbox-common.sh"
-
+#
 # bridge-nf-call-iptables=0 lets same-bridge IPv4 container traffic flow (the nested VM's
 # nft DOCKER rules otherwise drop inter-container IPv4, which times out logflare/vector's
 # DB connections). Kernel-runtime only; scripts/cursor-agent-start.sh re-applies per boot.
 sudo modprobe br_netfilter 2>/dev/null || true
 sudo sysctl -w net.bridge.bridge-nf-call-iptables=0 net.bridge.bridge-nf-call-ip6tables=0 >/dev/null 2>&1 || true
 
-if sg docker -c "$(cat <<EOF
-set -uo pipefail
-. "$ROOT/scripts/lib/cloud-sandbox-common.sh"
-cs_ensure_docker_daemon || exit 0
-cs_docker_login_if_creds
-# shellcheck disable=SC2086
-cs_retry "pre-pull 'supabase start'" "cs_supabase stop" cs_supabase start \$CS_SUPABASE_START_ARGS || true
-cs_supabase stop || true
-EOF
-)"; then
+# `sg docker` so the daemon is reachable without sudo. It runs its argument with /bin/sh,
+# so the bash-only pre-pull logic lives in its own script (see cursor-agent-prepull.sh).
+if sg docker -c "bash '$ROOT/scripts/cursor-agent-prepull.sh'"; then
   log "Supabase images pre-pulled."
 else
   log "WARN: image pre-pull did not complete; per-session start will pull instead."
