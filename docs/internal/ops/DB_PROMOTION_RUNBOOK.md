@@ -433,6 +433,37 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-06: Directory presence topic goes private (#1552 phase 1)
+
+* **Migration**: `20260906203000_realtime_presence_chapter_private.sql`
+* **Purpose**: Recreates `realtime_messages_scoped_select` on `realtime.messages`
+  with a fourth arm — `presence:chapter:<uuid>` behind the existing
+  `realtime_can_read_chapter_scope` predicate — and adds
+  `realtime_messages_scoped_insert`, which lets a chapter member `track()`
+  (extension `presence`) on that topic and nothing else. The web Directory's
+  presence channel flips to `private: true` in the same change; an anon-key
+  holder can then neither read the roster nor publish an entry. Chat's
+  `chat:channel:<id>` presence stays public (phase 2 needs a per-channel
+  predicate).
+* **Checks**: After `db push`, `select policyname, cmd from pg_policies where
+  schemaname = 'realtime' and tablename = 'messages'` returns exactly
+  `realtime_messages_scoped_insert INSERT` and `realtime_messages_scoped_select
+  SELECT`, and `pg_get_expr(qual, 'realtime.messages'::regclass)` on the SELECT
+  row contains `presence:chapter:`. Then, on the deployed web Directory as a
+  member, the online dots still appear (a private topic whose arm is missing
+  joins, reports SUBSCRIBED and shows nobody — the #867 shape). Verified on the
+  local stack 2026-09-06 with a member (SUBSCRIBED, `track` → `ok`, roster
+  populated), an authenticated non-member and the bare anon key (both
+  `CHANNEL_ERROR: Unauthorized … presence:chapter:…`).
+* **Promoter notes**: Policy-only; no table, column or data change. The web
+  client change and this migration must be live together — deploy the migration
+  first or in the same release, never the client flip alone. Guarded on the
+  `realtime` schema and the `authenticated` role, so PGlite skips it; the PGlite
+  policy inventory's hosted figure moves from 11 to 12 and
+  `AUTHORIZATION_MODEL.md` § "The policies that do exist" says why.
+* **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) §
+  Rollback the private Directory presence topic.
+
 ## 2026-09-06: `get_points_leaderboard` RPC
 
 * **Migration**: `20260906120001_get_points_leaderboard.sql`

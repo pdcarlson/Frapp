@@ -172,17 +172,20 @@ does, so publishing these three would have opened them to direct browser reads a
 enforcing layer out of the API. Topics are authorised by `realtime_messages_scoped_select` on
 `realtime.messages` (§ "The policies that do exist").
 
-### The policies that do exist (11 statements)
+### The policies that do exist (12 statements)
 
-**Counting convention.** `11` counts individual policy *statements* — rows in `pg_policies` — not
+**Counting convention.** `12` counts individual policy *statements* — rows in `pg_policies` — not
 rows in the table below, several of which name two policies each. That ambiguity is what let the
 number drift unnoticed before, so it is now stated rather than derived.
 
 Reconciled against hosted `frapp-staging` on 2026-08-27
 (`select schemaname, count(*) from pg_policies group by schemaname`):
-**10 in `public` + 1 in `realtime` = 11.** The table below is correct.
+**10 in `public` + 1 in `realtime` = 11** at that read. Migration `20260906203000` (#1552 phase 1)
+adds a second `realtime` policy, so once it is applied the hosted figure is **10 + 2 = 12** — the
+count the heading and the PGlite check now carry; re-read the hosted catalog after the deploy that
+carries it and re-stamp this line.
 
-The PGlite CI substrate sees **8**, and all three absences are role- or schema-gated rather than
+The PGlite CI substrate sees **8**, and all four absences are role- or schema-gated rather than
 drift: `auth_admin_can_read_users` and `auth_admin_can_read_members` are created only inside
 `if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')`
 (`20260802120000_active_chapter_jwt_claim.sql:137`), and `realtime.messages` needs a `realtime`
@@ -200,17 +203,18 @@ rows. That matters most for `member_custom_field_values_service_role`, which is 
 This is a tripwire for the obvious rewrite, not a proof: it catches the literal spellings
 (`true`, `(true)`, `1=1`), and an adversarial `using (id = id)` would still pass.
 
-Note the limit of the guard: the three policies PGlite cannot see are **not** covered, so dropping
-`auth_admin_can_read_users`, `auth_admin_can_read_members`, or `realtime_messages_scoped_select`
-would leave the inventory printing its clean `(8 here, 11 hosted)` — and the `11` is derived from
-the pinned list plus those three, so it would then be reporting a hosted figure that is itself wrong. Those three stay doc-only, and changes to them have
-to be caught in review.
+Note the limit of the guard: the four policies PGlite cannot see are **not** covered, so dropping
+`auth_admin_can_read_users`, `auth_admin_can_read_members`, `realtime_messages_scoped_select` or
+`realtime_messages_scoped_insert` would leave the inventory printing its clean `(8 here, 12 hosted)`
+— and the `12` is derived from the pinned list plus those four, so it would then be reporting a
+hosted figure that is itself wrong. Those four stay doc-only, and changes to them have to be caught
+in review.
 
 | Table | Policy | Effect |
 | --- | --- | --- |
 | `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id)` — per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. RLS is the only gate here: the web reads it directly (`packages/chat-core/src/realtime-manager.ts`, 2 call sites) |
 | `chat_messages` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(id) AND kind <> 'imported'` — the same predicate applied to the message row itself, plus the imported-archive exclusion. Introduced by `20260816140000_realtime_carrier_repair.sql` so the chat `postgres_changes` subscription can receive rows, then **superseded by `20260823123000_chat_imported_kind_semantics.sql`**, which added the third conjunct: Realtime evaluates this policy per subscriber, so it is what stops a bulk archive import fanning a frame per row to every open client. RLS is the only gate, as above |
-| `realtime.messages` | `realtime_messages_scoped_select` | Authorises the three private change-ping topics by prefix (`notif:` / `events:` / `attendance:`), each behind a `SECURITY DEFINER` scope predicate (own user, chapter membership, event's chapter membership). Purely additive: `realtime.messages` had RLS on with **no** policy, which denied every private channel. Chat's typing/presence channels, and the Directory's `presence:chapter:<chapterId>` channel, are *public* and bypass this table entirely — the `case` ends in `else false`, so any topic outside the three prefixes is denied on a private channel and must ship a fourth branch here before it can go private. **Public presence is unauthenticated both ways:** anyone with the anon key and the id can read the roster, and because presence identity comes from the tracked payload rather than the caller's JWT, can also forge an entry for another user. Presence is therefore advisory — never an input to an authorization decision |
+| `realtime.messages` | `realtime_messages_scoped_select`, `realtime_messages_scoped_insert` | **SELECT** authorises four private topics by prefix — the three change-ping topics (`notif:` / `events:` / `attendance:`) and, since 2026-09-06 (#1552 phase 1, migration `20260906203000`), the Directory's `presence:chapter:<chapterId>` — each behind a `SECURITY DEFINER` scope predicate (own user, chapter membership, event's chapter membership; the presence arm reuses chapter membership). **INSERT** authorises only `extension = 'presence'` on the `presence:chapter:` topic, for chapter members — that is what lets a member `track()` on a private channel; the change-ping topics are receive-only and nothing may broadcast on the Directory topic. Both `case`s end in `else false`: any other topic is denied on a private channel and must ship a branch here before it can go private. Chat's `chat:channel:<channelId>` typing/presence channel is still *public* and bypasses this table — it needs a per-channel predicate, not chapter membership (phase 2). **Presence stays advisory even where private:** the policies see the topic and the message extension, not the presence payload, so a chapter member can still publish an entry naming another member. Only the anon-key outsider is closed out |
 | `chat_message_actions` | `_insert`, `_delete` | `user_id in (select id from users where supabase_auth_id = auth.uid())` — own rows only |
 | `chat_notification_preferences` | `_select_own` | Own rows only |
 | `chapter_audit_log` | `_no_update`, `_no_delete` | `using (false)` — append-only, tightens rather than widens |

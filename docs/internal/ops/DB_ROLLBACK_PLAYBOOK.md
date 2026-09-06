@@ -332,6 +332,11 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the private Directory presence topic
+* **Migration**: `20260906203000_realtime_presence_chapter_private.sql`
+* **Action**: Drop the INSERT policy and recreate the SELECT policy with the three original arms only — i.e. re-run the `create policy "realtime_messages_scoped_select"` block from `20260816140000_realtime_carrier_repair.sql` after `drop policy if exists "realtime_messages_scoped_select" on realtime.messages; drop policy if exists "realtime_messages_scoped_insert" on realtime.messages;`.
+* **Note**: Policy-only, no data. **Order matters in reverse too:** the web Directory attaches `presence:chapter:<id>` with `private: true` since the same change, so rolling the database back while that client is live makes every Directory presence channel join, report `SUBSCRIBED` and deliver nothing — the silent failure the migration's header describes. Roll the client back to a public channel first (`use-chapter-presence.ts`, `private: true` → omitted, and flip `use-chapter-presence.spec.tsx`'s pin), or accept an empty Directory until it is. The `chat:channel:<id>` topic is untouched by both directions.
+
 ## Rollback `idx_audit_log_chapter_action_created_at`
 
 * **Migration**: `20260906120000_audit_log_chapter_action_created_at_idx.sql`

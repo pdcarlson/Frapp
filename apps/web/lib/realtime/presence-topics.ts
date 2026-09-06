@@ -47,6 +47,15 @@
  * one channel instance. `topic-registry.ts` keys the whole attach/release queue
  * by topic string, so a collision would make one subscription tear the other
  * down on every re-attach.
+ *
+ * The topic is PRIVATE (#1552 phase 1): `realtime_messages_scoped_select` and
+ * `realtime_messages_scoped_insert` on `realtime.messages` match exactly this
+ * prefix + a UUID and admit chapter members only, so an anon-key holder can
+ * neither read the roster nor publish an entry. A chapter member can still
+ * `track()` another member's id — Realtime policies see the topic and the
+ * message extension, not the presence payload — so presence stays advisory
+ * (`AUTHORIZATION_MODEL.md`). Changing the prefix here without a matching
+ * policy branch turns the Directory silently empty; grep the migrations first.
  */
 export function chapterPresenceTopic(chapterId: string): string {
   return `presence:chapter:${chapterId}`;
