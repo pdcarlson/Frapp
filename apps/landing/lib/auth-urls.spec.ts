@@ -39,17 +39,26 @@ describe("buildAuthUrls", () => {
     }
   });
 
-  it("drops the base's path but keeps its origin and userinfo", () => {
+  it("drops the base's path but keeps its origin", () => {
     expect(buildAuthUrls("https://app.frapp.live/").signupUrl).toBe(
       "https://app.frapp.live/sign-up",
     );
     expect(buildAuthUrls("https://app.frapp.live/sign-up").loginUrl).toBe(
       "https://app.frapp.live/sign-in",
     );
-    // Userinfo is the one part of the base that survives, so a credentialed
-    // base is rendered into a public href. Pinned rather than left incidental.
+  });
+
+  it("strips userinfo rather than rendering it into a public href", () => {
+    // `new URL` preserves userinfo, so without the strip a credentialed base
+    // reaches every CTA in server-rendered HTML.
     expect(buildAuthUrls("https://u:p@app.frapp.live/x").signupUrl).toBe(
-      "https://u:p@app.frapp.live/sign-up",
+      "https://app.frapp.live/sign-up",
+    );
+    expect(buildAuthUrls("https://u:p@app.frapp.live/x").loginUrl).toBe(
+      "https://app.frapp.live/sign-in",
+    );
+    expect(buildAuthUrls("https://user@app.frapp.live").signupUrl).toBe(
+      "https://app.frapp.live/sign-up",
     );
   });
 });
