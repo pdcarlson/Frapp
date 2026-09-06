@@ -330,7 +330,7 @@ describe('ReportService', () => {
         error: null,
       });
       const balancesChain = makeChain({
-        data: [{ user_id: 'u-1', total_points: 25 }],
+        data: [{ user_id: 'u-1', total: 25 }],
         error: null,
       });
       const rolesChain = makeChain({
@@ -344,7 +344,7 @@ describe('ReportService', () => {
         return rolesChain;
       });
       (mockSupabase.rpc as jest.Mock).mockImplementation((fn: string) =>
-        fn === 'get_roster_point_balances'
+        fn === 'get_points_leaderboard'
           ? balancesChain
           : makeChain({ data: [], error: null }),
       );
@@ -375,7 +375,7 @@ describe('ReportService', () => {
         error: null,
       });
       const balances = makeChain({
-        data: [{ user_id: 'u-1', total_points: 42 }],
+        data: [{ user_id: 'u-1', total: 42 }],
         error: null,
       });
       (mockSupabase.from as jest.Mock).mockImplementation((t: string) =>
@@ -395,12 +395,19 @@ describe('ReportService', () => {
 
       expect(result.rows[0].point_balance).toBe(42);
       expect(mockSupabase.from).not.toHaveBeenCalledWith('point_transactions');
-      expect(mockSupabase.rpc).toHaveBeenCalledWith(
-        'get_roster_point_balances',
-        { p_chapter_id: 'ch-1' },
-      );
-      // A total order, which is what makes the paged read safe — and exactly
-      // what `get_points_report` cannot offer (#747: it returns no key).
+      // Both bounds null: a roster balance is the member's all-time chapter
+      // total, and that is what the leaderboard's "no window" case already
+      // computes (#1743). A bound leaking in here would silently shorten every
+      // balance on the document.
+      expect(mockSupabase.rpc).toHaveBeenCalledWith('get_points_leaderboard', {
+        p_chapter_id: 'ch-1',
+        p_since: null,
+        p_until: null,
+      });
+      // A total order, which is what makes the paged read safe. It overrides
+      // the function's own `order by total desc` — correct for the leaderboard
+      // surface, unusable for paging here, since `total` is not unique.
+      // (`get_points_report` can offer neither: #747, it returns no key.)
       expect(balances.order).toHaveBeenCalledWith('user_id', {
         ascending: true,
       });
@@ -432,7 +439,7 @@ describe('ReportService', () => {
             }),
       );
       (mockSupabase.rpc as jest.Mock).mockImplementation(() =>
-        makeChain({ data: [{ user_id: 'u-1', total_points: 9 }], error: null }),
+        makeChain({ data: [{ user_id: 'u-1', total: 9 }], error: null }),
       );
 
       const result = await service.getRosterReport('ch-1');
@@ -473,11 +480,11 @@ describe('ReportService', () => {
       (mockSupabase.rpc as jest.Mock).mockImplementation(() =>
         makeChain({
           data: [
-            { user_id: 'u-a', total_points: 10 },
+            { user_id: 'u-a', total: 10 },
             // A member removed from the chapter keeps ledger rows, so the
             // aggregate still emits them. They must not land on anyone.
-            { user_id: 'u-gone', total_points: 999 },
-            { user_id: 'u-b', total_points: 20 },
+            { user_id: 'u-gone', total: 999 },
+            { user_id: 'u-b', total: 20 },
           ],
           error: null,
         }),
@@ -495,7 +502,7 @@ describe('ReportService', () => {
     });
 
     it('coerces a bigint balance handed back as a string', async () => {
-      // `total_points` is `bigint`. PostgREST serializes it as a JSON number,
+      // `total` is `bigint`. PostgREST serializes it as a JSON number,
       // but 64-bit integers are the classic case where a driver hands back a
       // string instead — and string concatenation would silently produce
       // nonsense totals rather than an error.
@@ -518,7 +525,7 @@ describe('ReportService', () => {
       );
       (mockSupabase.rpc as jest.Mock).mockImplementation(() =>
         makeChain({
-          data: [{ user_id: 'u-1', total_points: '1234' }],
+          data: [{ user_id: 'u-1', total: '1234' }],
           error: null,
         }),
       );
@@ -714,7 +721,7 @@ describe('ReportService', () => {
       const balances = makeChain({
         data: rows(TOTAL, (i) => ({
           user_id: `u-${String(i).padStart(6, '0')}`,
-          total_points: 7,
+          total: 7,
         })),
         error: null,
       });
@@ -812,10 +819,10 @@ describe('ReportService', () => {
   });
 
   describe('roster balances truncated by the aggregate ceiling', () => {
-    // Post-#567 the ceiling counts MEMBERS, not transactions: the aggregate
-    // emits one row per member holding any transaction. Reaching it now needs
-    // a 50,000-member chapter rather than a 50,000-transaction one, so these
-    // guard a bound that is still real but no longer a cliff anyone hits.
+    // Post-#567 the ceiling counts SCORING MEMBERS, not transactions: the
+    // aggregate emits one row per member holding any transaction. Reaching it
+    // needs 50,000 people on a chapter's books rather than 50,000 entries, so
+    // these guard a bound that is still real but no longer a cliff anyone hits.
     it('reports its own ceiling and names the balances, not the row count', async () => {
       // The roster is complete at one line; only the balances are wrong.
       // Reporting REPORT_MAX_ROWS here would print "capped at the first 5,000
@@ -835,7 +842,7 @@ describe('ReportService', () => {
       const balances = makeChain({
         data: rows(REPORT_AGGREGATE_MAX_ROWS + 1, (i) => ({
           user_id: `u-${String(i).padStart(6, '0')}`,
-          total_points: 1,
+          total: 1,
         })),
         error: null,
       });
@@ -872,7 +879,7 @@ describe('ReportService', () => {
       const balances = makeChain({
         data: rows(REPORT_AGGREGATE_MAX_ROWS + 1, (i) => ({
           user_id: `u-${String(i).padStart(6, '0')}`,
-          total_points: 1,
+          total: 1,
         })),
         error: null,
       });

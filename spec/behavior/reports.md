@@ -175,11 +175,12 @@ Three notes on what the numbers mean:
   "is this the whole chapter?".
 - A roster's point balances are summed **by Postgres**, one row per member,
   and read under a separate, higher ceiling of 50,000. That ceiling counts
-  members, not transactions, so it scales with roster size rather than chapter
-  history. If _that_ read is cut short the roster is not short — its balances
-  are wrong — so it reports `truncated` with a note naming the balances rather
-  than a row cap the document never reached. When both ceilings bite at once
-  the note says so and the row limit stays the headline.
+  members who have scored, not transactions, so a chapter reaches it by
+  enrolling 50,000 people rather than by recording 50,000 entries. If _that_
+  read is cut short the roster is not short — its balances are wrong — so it
+  reports `truncated` with a note naming the balances rather than a row cap the
+  document never reached. When both ceilings bite at once the note says so and
+  the row limit stays the headline.
 - A paged read is several statements, not a snapshot. Rows written or deleted
   while a large report is being assembled can shift a page boundary, so a
   report is a point-in-time summary rather than a ledger.

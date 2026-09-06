@@ -83,10 +83,15 @@ balances are parallelized using `Promise.all()`. They depend on the result of
 the `members` query, but are independent of each other. This reduces the number
 of sequential network roundtrips required to build the roster report.
 
-**Balances are summed by Postgres (#567).** `get_roster_point_balances`
-(`20260905100000`) groups `point_transactions` by `user_id` and returns one row
-per member, so the roster no longer streams the ledger into the API to reduce it
-here.
+**Balances are summed by Postgres (#567).** The roster calls
+`get_points_leaderboard` (`20260906120001`) with both bounds null: it groups
+`point_transactions` by `user_id` and returns one row per member, so the roster
+no longer streams the ledger into the API to reduce it here.
+
+It reuses the leaderboard's function rather than adding a roster-only one
+(#1743). A roster balance is the member's all-time chapter total, which is what
+unbounded already means there — a second aggregate would be the same `group by`
+over the same table for the same answer.
 
 That read still pages, under the separate higher ceiling
 (`REPORT_AGGREGATE_MAX_ROWS`, 50,000), because an RPC result set is subject to
@@ -95,11 +100,11 @@ budget rather than a render cost: the pages are sequential, so 50,000 rows is up
 to 50 round-trips (~1.2 s) before anything else happens — unchanged by #567,
 which altered how many rows it takes to reach that number, not the arithmetic.
 
-But the ceiling now counts **members, not transactions** — reaching it needs a
-50,000-member chapter rather than a 50,000-transaction one, which is the
-difference between a bound no real chapter approaches and one an active chapter
-crossed in a semester. Before this, crossing it meant a roster of the right
-length carrying wrong balances.
+But the ceiling now counts **scoring members, not transactions** — one row per
+member who has ever scored in the chapter. That still grows over a chapter's
+life, since an alumnus's rows keep their group, but per *member* rather than per
+*entry*: the stream it replaced could cross 50,000 in a single active semester,
+and crossing it meant a roster of the right length carrying wrong balances.
 
 The aggregate needs no new index: `point_transactions` already carries two
 `chapter_id`-leading btrees (`idx_point_transactions_chapter_user` and
@@ -123,5 +128,12 @@ members instead of distrusting the numbers.
 
 The RPC returns `user_id`, so the paged read orders on a column that is unique
 across the result — a **total** order, with no tie for a page boundary to
-duplicate or drop across. This is exactly what `get_points_report` cannot offer:
-it returns no key and can only tie-break on display name, which is #747.
+duplicate or drop across. The roster's `.order('user_id')` overrides the
+function's own `order by total desc`, which the leaderboard surface needs and
+the roster must not page on, `total` being non-unique. This is what
+`get_points_report` cannot offer at all: it returns no key and can only
+tie-break on display name, which is #747.
+
+The leaderboard's own call site (`SupabasePointTransactionRepository.
+leaderboard`) does **not** page, so it is capped by `max_rows` where this read
+is not. That is tracked separately; it is not a property of the function.

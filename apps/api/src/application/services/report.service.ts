@@ -124,14 +124,17 @@ export const REPORT_MAX_ROWS = 5_000;
  * starts. That arithmetic is unchanged by #567 — what changed is how many rows
  * it takes to get there.
  *
- * **It counts members, not transactions (#567).** Balances come from
- * `get_roster_point_balances`, which groups by `user_id` and emits one row per
- * member with any transaction, so this bound scales with roster size and is
- * independent of chapter history. It used to bound the *transaction* stream
- * this replaced, where an active chapter could cross it in a semester and the
- * export would then report wrong balances behind a footnote. At one row per
- * member the ceiling is no longer a cliff anyone reaches; it stays because the
- * bound is still real, not because it is expected to fire.
+ * **It counts scoring members, not transactions (#567).** Balances come from
+ * `get_points_leaderboard`, which groups by `user_id`, so a chapter costs one
+ * row per member who has ever scored in it rather than one row per
+ * transaction. That still grows with the chapter's life — an alumnus's rows
+ * keep their group — but per *member*, not per *entry*, which is the whole
+ * difference: the transaction stream this replaced could cross 50,000 in one
+ * active semester and then reported wrong balances behind a footnote.
+ *
+ * The branch below stays because the bound is still real, not because it is
+ * expected to fire. With the roster itself capped at `REPORT_MAX_ROWS`, firing
+ * it needs a chapter with 50,000 distinct scorers on record.
  */
 export const REPORT_AGGREGATE_MAX_ROWS = 50_000;
 
@@ -189,14 +192,18 @@ interface UserRosterRow {
 }
 
 /**
- * One member's whole balance, already summed by `get_roster_point_balances`
- * (`20260905100000`). This replaced a `{ user_id, amount }` row per
+ * One member's whole balance, already summed by `get_points_leaderboard`
+ * (`20260906120001`). This replaced a `{ user_id, amount }` row per
  * *transaction*: the roster used to stream those in and reduce them in Node.
+ *
+ * The same shape `PointsLeaderboardRow` reads, deliberately: with both bounds
+ * null that function answers exactly the question the roster asks, so the
+ * roster reads it rather than adding a second per-member sum (#1743).
  */
 interface RosterBalanceRow {
   user_id: string;
   /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
-  total_points: number;
+  total: number;
 }
 
 interface RoleNameRow {
@@ -466,12 +473,22 @@ export class ReportService {
     // nothing: a balance is only ever read back for a member's own ID, so a
     // departed member's residual rows are inert.
     //
+    // `get_points_leaderboard` with both bounds null, rather than a roster-only
+    // aggregate of its own (#1743). The two would be the same `group by
+    // pt.user_id` over the same table with the same grants, and the roster
+    // needs no window: a roster balance is the member's all-time chapter
+    // total, which is exactly what unbounded means here. Null bounds are the
+    // function's documented "no window" case, not a coincidence of its filter
+    // — `getLeaderboard` sends the same nulls for the `all` window.
+    //
     // Still paged, on the same terms as `getPointsReport` above: PostgREST
     // applies `max_rows` to an RPC result set exactly as to a table read. The
-    // order is on `user_id`, which `get_roster_point_balances` groups by and
-    // is therefore unique across the result — a total order, so no *tie* can
-    // duplicate or drop a row across a page boundary. (`get_points_report`
-    // cannot do this: it returns no key and can only tie-break on display
+    // order is on `user_id`, which the function groups by and is therefore
+    // unique across the result — a total order, so no *tie* can duplicate or
+    // drop a row across a page boundary. Ordering here overrides the
+    // function's own `order by total desc`, which the leaderboard needs and
+    // the roster must not page on: `total` is not unique. (`get_points_report`
+    // cannot offer either: it returns no key and can only tie-break on display
     // name, which is the whole of #747.)
     //
     // A total order is not a snapshot, and does not claim to be: a paged read
@@ -489,7 +506,11 @@ export class ReportService {
     const balancesQuery = fetchAllPages<RosterBalanceRow>(
       (from, to) =>
         this.supabase
-          .rpc('get_roster_point_balances', { p_chapter_id: chapterId })
+          .rpc('get_points_leaderboard', {
+            p_chapter_id: chapterId,
+            p_since: null,
+            p_until: null,
+          })
           .order('user_id', { ascending: true })
           .range(from, to),
       { limit: REPORT_AGGREGATE_MAX_ROWS },
@@ -518,14 +539,14 @@ export class ReportService {
     // serializes it as a JSON number, but the same cast guards the string form
     // some drivers hand back for 64-bit integers.
     //
-    // `?? 0` keeps the nullish guard the per-transaction sum had. The function
-    // coalesces, so a null total should be unreachable — but `Number(undefined)`
-    // is `NaN`, and a NaN balance does not throw: it renders as "NaN" in the
-    // PDF and CSV an officer downloads. A wrong number that announces itself as
-    // wrong is still worse than a zero here, and neither is worth the risk of
-    // relying on a shape this file does not own.
+    // `?? 0` guards a missing FIELD, not a null total: `amount` is `int not
+    // null` on `point_transactions`, so within `group by pt.user_id` every
+    // group has at least one non-null row and `sum` cannot come back null.
+    // What it does buy is that `Number(undefined)` is `NaN`, and a NaN balance
+    // does not throw — it renders as "NaN" in the PDF and CSV an officer
+    // downloads. Cheap insurance against a shape this file does not own.
     const balances = new Map<string, number>(
-      balanceRows.rows.map((b) => [b.user_id, Number(b.total_points ?? 0)]),
+      balanceRows.rows.map((b) => [b.user_id, Number(b.total ?? 0)]),
     );
 
     // Every role the chapter defines, rather than the subset the roster
@@ -568,13 +589,10 @@ export class ReportService {
     // positive, and the reader goes looking for missing members instead of
     // distrusting the balances.
     //
-    // THE CEILING NOW COUNTS MEMBERS, NOT TRANSACTIONS, which is the point of
-    // #567. `get_roster_point_balances` emits one row per member with any
-    // transaction, so reaching 50,000 needs a 50,000-member chapter rather
-    // than a 50,000-transaction one — the difference between a bound no real
-    // chapter approaches and one an active chapter crosses in a semester. The
-    // branch stays because the bound is still real, not because it is expected
-    // to fire.
+    // The ceiling counts scoring members rather than transactions now (#567);
+    // `REPORT_AGGREGATE_MAX_ROWS` carries why that stops being a cliff. What
+    // matters here is that the note has to say which, or it sends the reader
+    // looking at transaction volume for a members-shaped bound.
     if (balanceRows.truncated) {
       const balanceNote = `point balances are incomplete — summed for the first ${REPORT_AGGREGATE_MAX_ROWS.toLocaleString('en-US')} members`;
       return {
