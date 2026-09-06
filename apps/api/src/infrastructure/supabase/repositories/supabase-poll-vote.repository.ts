@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import { fetchAllPages } from '../supabase.utils';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   IPollVoteRepository,
@@ -10,56 +9,25 @@ import type {
 import type { PollVote } from '#domain/entities/poll-vote.entity';
 
 /**
- * PostgREST default `max-rows` is often 1000; page through to avoid silent
- * truncation.
+ * No method here reads whole `poll_votes` rows to count them. Both callers that
+ * did — `PollService.listPolls`, then `getPoll` (#568) — now tally through the
+ * `GROUP BY` RPCs below, so the paged row read (`findByMessage` /
+ * `findByMessages`, and the fixes it had accumulated in #1628 and #1724) was
+ * deleted rather than left as a faster-looking alternative.
  *
- * A request size, not an assumption about the server's cap. This value sits
- * exactly at the common default, which is what made the old loop here fail on
- * the *first* page (#1628): it stopped on any short page, so a cap at or below
- * 1000 ended the read early and under-counted vote aggregates. The shared
- * `fetchAllPages` stops only on an empty page and advances by the rows
- * actually returned, so the value is now a throughput choice rather than a
- * correctness one.
+ * That trade is only safe *per poll*. These RPCs emit one row per (poll,
+ * option), and an RPC result set is subject to `max_rows` exactly like a table
+ * read (`report.service.ts` says the same of `get_points_report`), so a
+ * 200-poll `listPolls` page can still overrun the 1000-row cap and truncate
+ * silently — **#1756**, which pages them. `getPoll` passes a single message id
+ * and reads at most `options.length` rows, so it is structurally clear of that.
  */
-const POLL_VOTES_PAGE_SIZE = 1000;
-
 @Injectable()
 export class SupabasePollVoteRepository implements IPollVoteRepository {
   constructor(
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
   ) {}
-
-  async findByMessage(messageId: string): Promise<PollVote[]> {
-    return this.findByMessages([messageId]);
-  }
-
-  /**
-   * Batch read backing {@link findByMessage}. Deliberately NOT on
-   * `IPollVoteRepository` — nothing outside this class calls it, and the port
-   * should not carry a method no consumer needs.
-   *
-   * Not `private`, though: its paging is the behaviour #1724 fixed, and this
-   * file's own spec pins that fix by calling it directly — including the
-   * empty-input short circuit, which `findByMessage` can never reach because it
-   * always passes exactly one id. Narrowing the port is what that cut was for;
-   * hiding the method from its own test only cost the coverage.
-   */
-  async findByMessages(messageIds: string[]): Promise<PollVote[]> {
-    if (messageIds.length === 0) {
-      return [];
-    }
-    return fetchAllPages<PollVote>(
-      (from, to) =>
-        this.supabase
-          .from('poll_votes')
-          .select('*')
-          .in('message_id', messageIds)
-          .order('id', { ascending: true })
-          .range(from, to),
-      { pageSize: POLL_VOTES_PAGE_SIZE },
-    );
-  }
 
   async aggregateOptionTotalsByMessages(
     messageIds: string[],

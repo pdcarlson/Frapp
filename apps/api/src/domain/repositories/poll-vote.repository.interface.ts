@@ -16,7 +16,6 @@ export interface PollUserVoteRow {
 }
 
 export interface IPollVoteRepository {
-  findByMessage(messageId: string): Promise<PollVote[]>;
   /**
    * `GROUP BY message_id, option_index` totals for the given poll message ids.
    * Empty when `messageIds` is empty.
