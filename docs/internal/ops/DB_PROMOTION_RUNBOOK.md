@@ -103,6 +103,23 @@ The workflow holds the `db-migrate-production` concurrency group with
 > The hand-applied `20260228000000_enable_rls_on_remaining_tables` that used to
 > block `supabase db push` outright is gone from the history (#832).
 >
+>
+> **⚠️ Correction 2026-09-06 — the "nothing pending" half is superseded.** The
+> **54** above is a real Management API read and is left as recorded, but `main`
+> has carried migrations past that read's `20260829002000` high-water mark ever
+> since. So the applied set no longer matches that historical snapshot; current
+> pending status for either project is unverified.
+>
+> Deliberately no tree-side count here: this note has quoted one three times and
+> it went stale within a day each time, because every merge moves it. Re-derive
+> with `ls supabase/migrations/*.sql | wc -l` — the durable fact is that the tree
+> is past `20260829002000`, not any particular total. **The applied counts have not been re-read** — this
+> correction is derived from the repository alone, which is enough to supersede
+> the old comparison but not to state what either project holds today. Re-read
+> before any promotion, and do not skip the dry run on the strength of the ✅
+> above. (#1620 tracks refreshing this and the matching claim in
+> `spec/architecture/README.md`.)
+>
 > This block previously warned that production was ~49 migrations behind and
 > that both paths above would fail on the dry run. That was true on 2026-08-24
 > and is not true now — left here as a correction rather than deleted, because
@@ -251,8 +268,8 @@ Two other refusals, both deliberate:
       repo excludes and why
 - [ ] PR includes migration SQL + rollback plan (`DB_ROLLBACK_PLAYBOOK.md`)
 - [ ] PR appends an entry to the promotion log at the bottom of this file
-      (`check:migration-safety` requires touching this doc or the rollback
-      playbook — it cannot tell which one you owed)
+      (`check:migration-safety` now requires a per-migration entry in **both**
+      this doc and the rollback playbook — see the entry shapes below)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
 - [ ] For a **production** promotion, a backup **taken by you**, with the dump path
       or object key recorded on the PR — or an explicit, written acceptance that
@@ -389,10 +406,59 @@ Post-apply production checks:
 ## Promotion log
 
 Every migration below records what it does, how it was promoted, and anything a
-promoter must do by hand. `check:migration-safety` requires a migration PR to
-touch this file **or** [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — it
-backs the habit, it does not prove the log complete. Appending here stays the
-promoter's job.
+promoter must do by hand.
+
+`check:migration-safety` asserts **per-migration** coverage here *and* in
+[`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — both, not either. It
+reads the entry **shape**, so a filename mentioned in prose does not count.
+Either of these counts, anywhere in the file:
+
+```
+### <migration>.sql
+```
+
+```
+* **Migration**: `<migration>.sql`
+```
+
+The bullet form conventionally sits under a dated heading
+(`## 2026-08-09: Activation funnel (#267)`), and that is the shape to copy for a
+new entry — but the gate reads the line, not its position. The list marker may
+be `*` or `-`.
+
+Migrations that predate the gate are grandfathered in `UNLEDGERED` in
+[`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs).
+That list is **shrink-only** and enforced by a version ceiling: a migration
+created after the gate cannot be added to it, so new work needs a real entry.
+Backfilling an old one — deleting its line once you know the real promotion
+date — is welcome; inventing a date to turn the gate green is not.
+
+## 2026-09-06: `get_points_leaderboard` RPC
+
+* **Migration**: `20260906120001_get_points_leaderboard.sql`
+* **Purpose**: Moves the points-leaderboard aggregation out of the API process
+  and into Postgres (#522, #1698). The endpoint previously loaded every
+  `point_transactions` row for the chapter and summed them in JavaScript, so
+  work and memory grew with the chapter's whole history on a frequently visited
+  officer surface; the API now receives one row per member. `security invoker`,
+  so RLS still applies under the caller's own privileges.
+* **Checks**: After `db push`, confirm the function exists and is callable —
+  `select proname, prosecdef from pg_proc where proname = 'get_points_leaderboard';`
+  — and that it is **not** broadly executable:
+  `select has_function_privilege('anon', 'get_points_leaderboard(uuid,timestamptz,timestamptz)', 'execute');`
+  should be false, and the same query for `service_role` true. Calling it (not
+  merely applying the migration) is the real check: `RETURNS TABLE` makes
+  `user_id`/`total` OUT parameters, so an unqualified reference resolves only at
+  call time, which is why the PGlite gate invokes it.
+* **Promoter notes**: Additive — `create or replace function` plus grant
+  changes, no table touched, no backfill, no data change. Ships locked down at
+  birth (`revoke execute … from public`, and from `anon`/`authenticated` where
+  those Supabase roles exist), rather than inheriting the default-broad EXECUTE
+  that `20260901173000` had to close for the earlier read RPCs. No dependency
+  on `20260906120000`, which merely shares its date; the `+1` suffix only keeps
+  the version prefixes unique.
+* **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) §
+  Rollback `get_points_leaderboard` RPC.
 
 ## 2026-09-06: Audit-log action filter index
 
