@@ -17,7 +17,7 @@ import { FOCUS_RING, FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, ErrorState, hasNoCachedData, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { EmptyState, ErrorState, anyReadUncached, LoadingState, OfflineState } from "@/components/shared/async-states";
 import {
   dashboardCheckboxCellClassName,
   dashboardCheckboxHitAreaClassName,
@@ -317,7 +317,7 @@ export function MembersDirectory() {
    * "looks healthy while quietly broken" state the comment on those guards
    * exists to prevent.
    */
-  if (isOffline && hasNoCachedData(activeQuery, rolesQuery, leaderboardQuery)) {
+  if (isOffline && anyReadUncached(activeQuery, rolesQuery, leaderboardQuery)) {
     return (
       <OfflineState
         title="Members directory unavailable offline"
@@ -334,7 +334,7 @@ export function MembersDirectory() {
            * gate covers three reads, and discarding what they typed to recover
            * from an uncached *roles* fetch would lose their work for nothing.
            */
-          if (usingSearch && hasNoCachedData(searchQuery)) setQuery("");
+          if (usingSearch && anyReadUncached(searchQuery)) setQuery("");
           void membersQuery.refetch();
           if (usingSearch) void searchQuery.refetch();
           void rolesQuery.refetch();

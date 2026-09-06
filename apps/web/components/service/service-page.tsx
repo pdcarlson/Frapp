@@ -42,7 +42,7 @@ import { NestedEmpty } from "@/components/shared/nested-states";
 import { ServiceGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   ErrorState,
-  hasNoCachedData,
+  anyReadUncached,
   LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
@@ -399,7 +399,7 @@ export function ServiceHoursPage() {
    * words on the Approve control ("Checking who you are…"), so that half
    * degrades honestly on its own.
    */
-  if (isOffline && hasNoCachedData(entriesQuery, membersQuery)) {
+  if (isOffline && anyReadUncached(entriesQuery, membersQuery)) {
     return (
       <OfflineState
         title="Service hours unavailable offline"

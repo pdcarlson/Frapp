@@ -37,7 +37,7 @@ import {
 import {
   EmptyState,
   ErrorState,
-  hasNoCachedData,
+  anyReadUncached,
   LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
@@ -422,7 +422,7 @@ export function RolesAndPermissionsPage() {
     (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
 
   let body: ReactNode;
-  if (isOffline && hasNoCachedData(rolesQuery, catalogQuery)) {
+  if (isOffline && anyReadUncached(rolesQuery, catalogQuery)) {
     body = (
       <OfflineState
         title="Roles unavailable offline"

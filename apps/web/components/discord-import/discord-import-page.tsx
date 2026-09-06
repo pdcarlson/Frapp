@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ErrorState,
-  hasNoCachedData,
+  anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -178,7 +178,7 @@ function DiscordImportBody({
 
   const paused = imports.isPending && imports.fetchStatus === "paused";
 
-  if (isOffline && hasNoCachedData(imports)) {
+  if (isOffline && anyReadUncached(imports)) {
     return <OfflineState onRetry={() => void imports.refetch()} />;
   }
   if (imports.isLoading || paused) {

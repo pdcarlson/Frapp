@@ -4,7 +4,7 @@ import { chapterSubscription } from "@/tests/chapter-subscription";
 
 /**
  * #1621 — the study surface's offline gate, which is the only three-way one on
- * the dashboard: `isOffline && !activeSession && hasNoCachedData(...)`.
+ * the dashboard: `isOffline && !activeSession && anyReadUncached(...)`.
  *
  * It gets its own cases because the shared predicate cannot observe either of
  * the other two terms. `!activeSession` is local `useState`, not a cache test —

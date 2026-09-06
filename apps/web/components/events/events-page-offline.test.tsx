@@ -113,7 +113,7 @@ describe("EventsPage offline read path (#1621)", () => {
 
   /*
    * This one pins the `isOffline` conjunct, not the cache half — it would pass
-   * with `hasNoCachedData` deleted from the gate, and that is the point. The
+   * with `anyReadUncached` deleted from the gate, and that is the point. The
    * two cases above pin the cache half; between them the whole conjunction is
    * covered, and dropping either term fails something.
    */

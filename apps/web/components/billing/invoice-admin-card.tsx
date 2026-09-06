@@ -46,7 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  hasNoCachedData,
+  anyReadUncached,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
@@ -113,17 +113,27 @@ export function InvoiceAdminCard() {
   // disagree on one screen — the header reads "Overdue: —" while every badge
   // here silently vanishes and the filter cheerfully returns nothing.
   const overdueUnavailable =
-    overdueQuery.isError || hasNoCachedData(overdueQuery);
+    overdueQuery.isError || anyReadUncached(overdueQuery);
   // The destructive card is the strong one: it says the read *failed*, in the
   // past tense, in `--destructive`. A query that has not answered yet has not
   // failed, and `GET /invoices/overdue` applies the chapter's grace policy so it
   // is routinely the slowest read on the page — gating the card on the weak
   // flag would flash a red failure notice on ordinary cold loads, which is this
   // family's own confidently-wrong signal with the sign flipped. So: failed, or
-  // holding nothing with no request in flight (i.e. paused offline).
+  // paused offline holding nothing.
+  //
+  // `fetchStatus === "paused"` and not `!isFetching`, which is broader than it
+  // reads: a query TanStack has never started is `"idle"`, not `"paused"`, and
+  // `useOverdueInvoices` is `enabled: !!chapterId`, so `!isFetching` also
+  // covers a read that was never attempted — the same "asserted from nothing"
+  // signal this flag exists to suppress, one state over. `<Can>` returns its
+  // `deniedFallback` before this renders when no chapter is active, so that is
+  // unreachable today; naming the paused state directly stops it depending on
+  // an unrelated component's early return, and matches the idiom `can.tsx`,
+  // `roles-page.tsx` and `chat-admin-page.tsx` already use.
   const overdueReadFailed =
     overdueQuery.isError ||
-    (hasNoCachedData(overdueQuery) && !overdueQuery.isFetching);
+    (overdueQuery.isPending && overdueQuery.fetchStatus === "paused");
   const overdueIds = useMemo(
     () => new Set(overdue.map((inv) => inv.id)),
     [overdue],

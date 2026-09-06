@@ -49,7 +49,7 @@ import { TasksGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   EmptyState,
   ErrorState,
-  hasNoCachedData,
+  anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -376,7 +376,7 @@ export function TasksBoard() {
    * Offline that read is paused, not errored, so nothing else would catch it.
    * `membersQuery` is here for the same reason its assignee labels need it.
    */
-  if (isOffline && hasNoCachedData(tasksQuery, membersQuery, currentUser)) {
+  if (isOffline && anyReadUncached(tasksQuery, membersQuery, currentUser)) {
     return (
       <OfflineState
         title="Tasks unavailable offline"

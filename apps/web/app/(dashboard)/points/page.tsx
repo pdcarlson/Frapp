@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ErrorState, hasNoCachedData, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { ErrorState, anyReadUncached, LoadingState, OfflineState } from "@/components/shared/async-states";
 import { NestedEmpty } from "@/components/shared/nested-states";
 import { amountToneClassName } from "@/components/points/amount-tone";
 import {
@@ -255,7 +255,7 @@ export default function PointsPage() {
    * than a broken-looking one. Only the two reads the board and the ledger are
    * actually made of belong here.
    */
-  if (isOffline && hasNoCachedData(leaderboardQuery, summaryQuery)) {
+  if (isOffline && anyReadUncached(leaderboardQuery, summaryQuery)) {
     return (
       <OfflineState
         title="Points ledger unavailable offline"

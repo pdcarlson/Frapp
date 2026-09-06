@@ -53,7 +53,7 @@ import {
 import {
   EmptyState,
   ErrorState,
-  hasNoCachedData,
+  anyReadUncached,
   LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
@@ -502,7 +502,7 @@ function ChatAdminBody() {
     (channelsQuery.isPending && channelsQuery.fetchStatus === "paused") ||
     (categoriesQuery.isPending && categoriesQuery.fetchStatus === "paused");
 
-  if (isOffline && hasNoCachedData(channelsQuery, categoriesQuery)) {
+  if (isOffline && anyReadUncached(channelsQuery, categoriesQuery)) {
     return (
       <OfflineState
         title="Chat Admin unavailable offline"

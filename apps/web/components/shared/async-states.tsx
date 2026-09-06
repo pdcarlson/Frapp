@@ -221,7 +221,7 @@ export function ErrorState({
 }
 
 /**
- * The shape `hasNoCachedData` reads.
+ * The shape `anyReadUncached` reads.
  *
  * Structural rather than `UseQueryResult<unknown>` only so the two fields it
  * actually uses are the two it declares — every current caller passes a real
@@ -240,8 +240,8 @@ type CachedRead = {
 };
 
 /**
- * Whether a surface has nothing truthful left to render, and so must show
- * `OfflineState` rather than its content.
+ * Whether **any** of the reads a surface needs is holding nothing truthful,
+ * and so the surface must show `OfflineState` rather than its content.
  *
  * ## Why a predicate and not `isOffline` alone
  *
@@ -253,17 +253,32 @@ type CachedRead = {
  *
  * ## Why it is variadic, which is the part that is easy to get wrong
  *
- * `query-provider.tsx` sets no `networkMode`, so TanStack's `"online"` default
- * **pauses** offline queries. A paused query is `isPending && !isFetching`,
- * therefore neither `isLoading` nor `isError` — so every loading and error
- * guard *below* an offline branch is dead while offline. Those guards are
+ * `query-provider.tsx` leaves queries on TanStack's `"online"` default (its
+ * `networkMode: "always"` is scoped to mutations), so offline queries
+ * **pause**. A paused query is neither `isLoading` nor `isError` — so every
+ * loading and error guard *below* an offline branch is dead while offline.
+ * Test that state as `isPending && fetchStatus === "paused"`, never as
+ * `isPending && !isFetching`: a query that was never started is `"idle"` and
+ * satisfies the second form too, which conflates "we could not ask" with
+ * "we did not ask" (`spec/ui/design-system/README.md` § the same rule). Those guards are
  * load-bearing: `members-directory.tsx` blocks on its roles and points reads
  * precisely because "the directory still looks healthy while those features
  * are quietly broken" without them.
  *
  * So a surface renders only when **every** read it needs to be truthful is
  * cached — not merely the one it maps over. Pass them all; `some` is
- * deliberate.
+ * deliberate, and the name carries the quantifier so a call site reading
+ * `anyReadUncached(a, b, c)` cannot be mistaken for "a, b and c are all
+ * uncached".
+ *
+ * The rest element is a **non-empty tuple** rather than a plain array. A
+ * surface that declares no reads has nothing to be truthful about, so
+ * `anyReadUncached()` is meaningless rather than merely false — and the spread
+ * form a later call site would reach for (`anyReadUncached(...reads)`) would
+ * otherwise render a surface built from an empty list without complaint. The
+ * tuple makes both a compile error (TS2555 and TS2556) rather than a
+ * behaviour, without the copy a `(first, ...rest)` split would need to put
+ * them back together.
  *
  * ## `isPlaceholderData`
  *
@@ -273,7 +288,9 @@ type CachedRead = {
  * filter's chips as if they were its results. Placeholder data is by
  * definition not this query's answer, so it counts as uncached.
  */
-export function hasNoCachedData(...reads: ReadonlyArray<CachedRead>): boolean {
+export function anyReadUncached(
+  ...reads: readonly [CachedRead, ...CachedRead[]]
+): boolean {
   return reads.some(
     (read) => read.data === undefined || read.isPlaceholderData === true,
   );

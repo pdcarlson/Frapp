@@ -36,7 +36,7 @@ import {
 import {
   EmptyState,
   ErrorState,
-  hasNoCachedData,
+  anyReadUncached,
   LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
@@ -390,7 +390,7 @@ export function GeofencesAdminPage() {
         disconnected member sat on the loading skeleton until the query gave
         up. Copy is writing.md §7's row.
       */}
-      {isOffline && hasNoCachedData(geofencesQuery) ? (
+      {isOffline && anyReadUncached(geofencesQuery) ? (
         <OfflineState
           title="Study zones unavailable offline"
           description="Reconnect to draw a zone or change its reward rate."

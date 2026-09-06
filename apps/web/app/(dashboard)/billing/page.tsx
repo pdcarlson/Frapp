@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { hasNoCachedData, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { anyReadUncached, LoadingState, OfflineState } from "@/components/shared/async-states";
 import { NestedEmpty } from "@/components/shared/nested-states";
 import {
   dashboardCheckboxCellClassName,
@@ -118,10 +118,10 @@ export default function BillingPage() {
   // case is reachable *online* too — on every first paint the header asserted
   // "Overdue: 0" for the duration of the request. Offline the read is paused
   // rather than failed, so it is `isPending` and never `isError`, reaching the
-  // same wrong signal by the other route. `hasNoCachedData` covers both, and
+  // same wrong signal by the other route. `anyReadUncached` covers both, and
   // conditioning it on `isOffline` would have fixed only the new one.
   const overdueUnavailable =
-    overdueQuery.isError || hasNoCachedData(overdueQuery);
+    overdueQuery.isError || anyReadUncached(overdueQuery);
   const filteredInvoices = useMemo(() => {
     const query = invoiceSearch.trim().toLowerCase();
     return visibleInvoices.filter((invoice) => {
@@ -200,7 +200,7 @@ export default function BillingPage() {
    * a member sees their own OPEN invoice with no way to pay it and nothing
    * saying why.
    */
-  if (isOffline && hasNoCachedData(invoicesQuery, currentUserQuery)) {
+  if (isOffline && anyReadUncached(invoicesQuery, currentUserQuery)) {
     return (
       <OfflineState
         title="Billing workspace unavailable offline"

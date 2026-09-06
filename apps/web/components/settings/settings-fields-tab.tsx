@@ -31,7 +31,7 @@ import {
 import {
   EmptyState,
   ErrorState,
-  hasNoCachedData,
+  anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -113,7 +113,7 @@ export function SettingsFieldsTab({ canManage }: Props) {
   const paused = fieldsQuery.isPending && fieldsQuery.fetchStatus === "paused";
 
   let body: ReactNode;
-  if (isOffline && hasNoCachedData(fieldsQuery)) {
+  if (isOffline && anyReadUncached(fieldsQuery)) {
     body = (
       <OfflineState
         title="Custom fields unavailable offline"

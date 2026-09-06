@@ -33,7 +33,7 @@ import { studySessionStatusKind } from "@/components/study/study-status";
 import { NestedEmpty } from "@/components/shared/nested-states";
 import {
   ErrorState,
-  hasNoCachedData,
+  anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -436,13 +436,13 @@ export function StudyPage() {
    * `!activeSession` reads like a cache test and is not one — `activeSession`
    * is local `useState` (see its declaration above), so on its own this
    * branch blanked the screen for every offline member without a running
-   * timer, cached zones or not. The cache test is `hasNoCachedData`; the
+   * timer, cached zones or not. The cache test is `anyReadUncached`; the
    * running-session carve-out documented above is unchanged.
    */
   if (
     isOffline &&
     !activeSession &&
-    hasNoCachedData(geofencesQuery, sessionsQuery)
+    anyReadUncached(geofencesQuery, sessionsQuery)
   ) {
     return (
       <OfflineState

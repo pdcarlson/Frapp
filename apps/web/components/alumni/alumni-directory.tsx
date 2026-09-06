@@ -18,7 +18,7 @@ import { EYEBROW } from "@/components/ui/typography";
 import {
   EmptyState,
   ErrorState,
-  hasNoCachedData,
+  anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -94,11 +94,11 @@ export function AlumniDirectory() {
 
   /*
    * `useAlumni` sets `placeholderData: keepPreviousData`, so its `data` is
-   * never `undefined` after the first load — `hasNoCachedData` treats
+   * never `undefined` after the first load — `anyReadUncached` treats
    * placeholder rows as uncached, which is what stops this screen rendering
    * the previous filter's alumni under the new filter's chips.
    */
-  if (isOffline && hasNoCachedData(query)) {
+  if (isOffline && anyReadUncached(query)) {
     return (
       <OfflineState
         title="Alumni directory unavailable offline"
@@ -112,6 +112,18 @@ export function AlumniDirectory() {
            * Clear button*, and a paused `refetch()` can never dismiss it.
            * Without this reset the member is stranded on the card with rows
            * still in cache until the network returns.
+           *
+           * All four pieces of state reset together, not just `committed`,
+           * which is the only one in the query key. Dropping the key alone
+           * would cost them less typing but land them on the *unfiltered*
+           * cached roster with "Austin" still in the City box and nothing
+           * saying the filter no longer applies — a list labelled by a filter
+           * it is not under, which is the confidently-wrong signal this whole
+           * family exists to remove. Retyping three short inputs is the
+           * cheaper loss. (`members-directory.tsx`'s guarded `setQuery("")`
+           * reads like precedent for splitting them and is not: there the
+           * input value *is* the query key via `deferredQuery`, so form and
+           * results cannot diverge in the first place.)
            */
           clearFilters();
           void query.refetch();
