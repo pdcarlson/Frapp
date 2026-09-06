@@ -35,6 +35,18 @@ export class SupabaseChapterRepository implements IChapterRepository {
     return data;
   }
 
+  async findByCustomerId(customerId: string): Promise<Chapter | null> {
+    // `stripe_customer_id text unique` (initial schema), so `maybeSingle` cannot
+    // hit the multiple-rows error here.
+    const { data, error } = await this.supabase
+      .from('chapters')
+      .select('*')
+      .eq('stripe_customer_id', customerId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   async create(chapterData: TablesInsert<'chapters'>): Promise<Chapter> {
     const { data, error } = await this.supabase
       .from('chapters')

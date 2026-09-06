@@ -129,6 +129,7 @@ describe('InviteService', () => {
     mockChapterRepo = {
       findById: jest.fn(),
       findBySubscriptionId: jest.fn(),
+      findByCustomerId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };

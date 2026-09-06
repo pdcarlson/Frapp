@@ -191,6 +191,7 @@ describe('BillingService', () => {
     mockChapterRepo = {
       findById: jest.fn(),
       findBySubscriptionId: jest.fn(),
+      findByCustomerId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -847,7 +848,9 @@ describe('BillingService', () => {
       });
 
       expect(loggerWarnSpy).toHaveBeenCalledWith(
-        'No chapter found for subscription: sub_superseded',
+        expect.stringContaining(
+          'No chapter found for subscription: sub_superseded',
+        ),
       );
       expect(captureMessage).not.toHaveBeenCalled();
 
@@ -1901,6 +1904,268 @@ describe('BillingService', () => {
         mockChapterRepo.update.mockClear();
         await service.handleWebhookEvent(subUpdated('past_due', T_OLD));
         expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      });
+    });
+
+    // #1738. `subscription_id` is written by `checkout.session.completed`, and
+    // Stripe guarantees no ordering between that event and the subscription
+    // events of the same checkout. A subscription event that overtakes its own
+    // checkout must resolve through `stripe_customer_id` — which
+    // `createCheckoutSession` writes *before* the session exists — instead of
+    // being acked and lost. The fallback is accepted only while the chapter
+    // references no subscription at all.
+    describe('subscription events that overtake their own checkout (#1738)', () => {
+      const T_CHECKOUT = Math.floor(
+        Date.parse('2026-06-01T12:00:00.000Z') / 1000,
+      );
+      const T_LATER = T_CHECKOUT + 5;
+      const LATER_ISO = new Date(T_LATER * 1000).toISOString();
+
+      // The chapter as `createCheckoutSession` leaves it: a customer, no
+      // subscription yet, and no webhook applied.
+      const preCheckoutChapter: Chapter = {
+        ...baseChapter,
+        stripe_customer_id: 'cus_race',
+        subscription_id: null,
+        subscription_status: 'incomplete',
+        last_stripe_webhook_at: null,
+      };
+
+      const subEvent = (
+        type: 'customer.subscription.updated' | 'customer.subscription.deleted',
+        object: Record<string, unknown>,
+        created = T_LATER,
+      ): WebhookEvent => ({
+        id: `evt_${type}_${String(object.id)}_${created}`,
+        type,
+        created,
+        data: { object },
+      });
+
+      let loggerWarnSpy: jest.SpyInstance;
+      beforeEach(() => {
+        loggerWarnSpy = jest
+          .spyOn(service['logger'], 'warn')
+          .mockImplementation(() => undefined);
+      });
+      afterEach(() => {
+        loggerWarnSpy.mockRestore();
+      });
+
+      it('resolves customer.subscription.updated through the customer, claims the reference, then applies the status', async () => {
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
+        mockChapterRepo.findByCustomerId.mockResolvedValue(preCheckoutChapter);
+        const claimed = { ...preCheckoutChapter, subscription_id: 'sub_race' };
+        mockChapterRepo.update
+          .mockResolvedValueOnce(claimed)
+          .mockResolvedValueOnce({ ...claimed, subscription_status: 'active' });
+
+        await service.handleWebhookEvent(
+          subEvent('customer.subscription.updated', {
+            id: 'sub_race',
+            status: 'active',
+            customer: 'cus_race',
+          }),
+        );
+
+        expect(mockChapterRepo.findByCustomerId).toHaveBeenCalledWith(
+          'cus_race',
+        );
+        // 1) the reference is claimed before anything else is written …
+        expect(mockChapterRepo.update).toHaveBeenNthCalledWith(1, 'ch-1', {
+          subscription_id: 'sub_race',
+        });
+        // 2) … and the transition the event carried lands, not acked-and-lost.
+        expect(mockChapterRepo.update).toHaveBeenNthCalledWith(2, 'ch-1', {
+          subscription_status: 'active',
+          last_stripe_webhook_at: LATER_ISO,
+          past_due_since: null,
+        });
+        expect(loggerWarnSpy).not.toHaveBeenCalledWith(
+          expect.stringContaining('No chapter found for subscription'),
+        );
+        expect(captureMessage).not.toHaveBeenCalled();
+      });
+
+      it('resolves invoice.paid through the customer the same way', async () => {
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
+        mockChapterRepo.findByCustomerId.mockResolvedValue({
+          ...preCheckoutChapter,
+          subscription_status: 'past_due',
+        });
+        const claimed = {
+          ...preCheckoutChapter,
+          subscription_status: 'past_due' as const,
+          subscription_id: 'sub_race',
+        };
+        mockChapterRepo.update.mockResolvedValue(claimed);
+
+        await service.handleWebhookEvent({
+          id: 'evt_inv_race',
+          type: 'invoice.paid',
+          created: T_LATER,
+          data: { object: { subscription: 'sub_race', customer: 'cus_race' } },
+        });
+
+        expect(mockChapterRepo.update).toHaveBeenNthCalledWith(1, 'ch-1', {
+          subscription_id: 'sub_race',
+        });
+        expect(mockChapterRepo.update).toHaveBeenNthCalledWith(2, 'ch-1', {
+          last_stripe_webhook_at: LATER_ISO,
+          subscription_status: 'active',
+          past_due_since: null,
+        });
+      });
+
+      it('normalizes an expanded customer object to its id', async () => {
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
+        mockChapterRepo.findByCustomerId.mockResolvedValue(preCheckoutChapter);
+        mockChapterRepo.update.mockResolvedValue({
+          ...preCheckoutChapter,
+          subscription_id: 'sub_race',
+        });
+
+        await service.handleWebhookEvent(
+          subEvent('customer.subscription.updated', {
+            id: 'sub_race',
+            status: 'active',
+            customer: { id: 'cus_race' },
+          }),
+        );
+
+        expect(mockChapterRepo.findByCustomerId).toHaveBeenCalledWith(
+          'cus_race',
+        );
+      });
+
+      it('still acks a genuinely foreign subscription: unknown customer, no write, no alert', async () => {
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
+        mockChapterRepo.findByCustomerId.mockResolvedValue(null);
+
+        await service.handleWebhookEvent(
+          subEvent('customer.subscription.deleted', {
+            id: 'sub_foreign',
+            customer: 'cus_elsewhere',
+          }),
+        );
+
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(loggerWarnSpy).toHaveBeenCalledWith(
+          expect.stringMatching(
+            /No chapter found for subscription: sub_foreign.*foreign subscription, acked/,
+          ),
+        );
+        expect(captureMessage).not.toHaveBeenCalled();
+        // Acked: the event row is marked processed, so Stripe is not retried for days.
+        expect(
+          webhookEventStore.get(
+            'evt_customer.subscription.deleted_sub_foreign_' + T_LATER,
+          )?.status,
+        ).toBe('processed');
+      });
+
+      it('does not resolve a superseded reference through the customer — that would cancel the live subscription', async () => {
+        // A canceled chapter resubscribed: `subscription_id` now names the new
+        // subscription, and the operator cancels the old one in Stripe.
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
+        mockChapterRepo.findByCustomerId.mockResolvedValue({
+          ...preCheckoutChapter,
+          subscription_status: 'active',
+          subscription_id: 'sub_new',
+        });
+
+        await service.handleWebhookEvent(
+          subEvent('customer.subscription.deleted', {
+            id: 'sub_old',
+            customer: 'cus_race',
+          }),
+        );
+
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+        expect(loggerWarnSpy).toHaveBeenCalledWith(
+          expect.stringMatching(
+            /sub_old.*references sub_new.*superseded reference, acked/,
+          ),
+        );
+        expect(captureMessage).not.toHaveBeenCalled();
+      });
+
+      it('does not consult the customer when the payload carries none', async () => {
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
+
+        await service.handleWebhookEvent(
+          subEvent('customer.subscription.updated', {
+            id: 'sub_nocust',
+            status: 'active',
+          }),
+        );
+
+        expect(mockChapterRepo.findByCustomerId).not.toHaveBeenCalled();
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(loggerWarnSpy).toHaveBeenCalledWith(
+          expect.stringMatching(
+            /No chapter found for subscription: sub_nocust.*no customer/,
+          ),
+        );
+      });
+
+      it('records the conversion milestone from a checkout dropped as stale when the race already claimed its subscription', async () => {
+        // The overtaking event claimed `sub_race` and advanced the mark to
+        // T_LATER; the checkout itself now arrives, created earlier.
+        mockChapterRepo.findById.mockResolvedValue({
+          ...checkoutChapter,
+          stripe_customer_id: 'cus_race',
+          subscription_id: 'sub_race',
+          subscription_status: 'active',
+          last_stripe_webhook_at: LATER_ISO,
+        });
+
+        await service.handleWebhookEvent({
+          id: 'evt_checkout_after_race',
+          type: 'checkout.session.completed',
+          created: T_CHECKOUT,
+          data: {
+            object: {
+              metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
+              subscription: 'sub_race',
+              customer: 'cus_race',
+            },
+          },
+        });
+
+        // Nothing to rewrite — the race already wrote status and reference …
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        // … but the funnel still learns the chapter converted.
+        expect(mockActivation.record).toHaveBeenCalledWith(
+          CHECKOUT_CHAPTER_ID,
+          'activation-checkout-completed',
+        );
+      });
+
+      it('does not record a milestone from a stale checkout for a subscription the chapter has moved past', async () => {
+        mockChapterRepo.findById.mockResolvedValue({
+          ...checkoutChapter,
+          subscription_id: 'sub_current',
+          subscription_status: 'active',
+          last_stripe_webhook_at: LATER_ISO,
+        });
+
+        await service.handleWebhookEvent({
+          id: 'evt_checkout_old_sub',
+          type: 'checkout.session.completed',
+          created: T_CHECKOUT,
+          data: {
+            object: {
+              metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
+              subscription: 'sub_previous',
+              customer: 'cus_123',
+            },
+          },
+        });
+
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockActivation.record).not.toHaveBeenCalled();
       });
     });
 
