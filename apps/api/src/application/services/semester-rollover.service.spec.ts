@@ -1,17 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { SemesterRolloverService } from './semester-rollover.service';
-import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
-import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
+import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
 import {
   SystemPermissions,
   SystemRoleKeys,
-} from '../../domain/constants/permissions';
+} from '#domain/constants/permissions';
 import { RbacService } from './rbac.service';
-import type { Role } from '../../domain/entities/role.entity';
-import type { SemesterArchive } from '../../domain/entities/semester-archive.entity';
+import type { Role } from '#domain/entities/role.entity';
+import type { SemesterArchive } from '#domain/entities/semester-archive.entity';
 
 describe('SemesterRolloverService', () => {
   let service: SemesterRolloverService;

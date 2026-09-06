@@ -22,22 +22,22 @@ import {
   ArchiveQuotaExceededError,
   DISCORD_IMPORT_REPOSITORY,
   type IDiscordImportRepository,
-} from '../../domain/repositories/discord-import.repository.interface';
+} from '#domain/repositories/discord-import.repository.interface';
 import {
   CHAT_CHANNEL_REPOSITORY,
   type IChatChannelRepository,
-} from '../../domain/repositories/chat.repository.interface';
+} from '#domain/repositories/chat.repository.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveExportPrefix,
   archiveImportPrefix,
   archiveMediaObjectPath,
   flattenArchiveRelativePath,
-} from '../../domain/constants/storage';
+} from '#domain/constants/storage';
 import type {
   DiscordImport,
   DiscordImportChannel,
@@ -45,13 +45,13 @@ import type {
   DiscordImportFile,
   DiscordImportSource,
   DiscordRoleMapping,
-} from '../../domain/entities/discord-import.entity';
+} from '#domain/entities/discord-import.entity';
 import {
   DISCORD_BOT_GATEWAY,
   DiscordApiError,
   DiscordNotConfiguredError,
   type IDiscordBotGateway,
-} from '../../domain/adapters/discord.interface';
+} from '#domain/adapters/discord.interface';
 import { DiscordOAuthService } from './discord-oauth.service';
 
 /** How many files one mint request may register. */

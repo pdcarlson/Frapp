@@ -5,25 +5,25 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 import {
   AUTH_ADMIN_PROVIDER,
   type IAuthAdminProvider,
-} from '../../domain/adapters/auth-admin.interface';
+} from '#domain/adapters/auth-admin.interface';
 import {
   PROFILES_BUCKET,
   profileFolderPrefix,
-} from '../../domain/constants/storage';
-import type { User } from '../../domain/entities/user.entity';
-import type { Member } from '../../domain/entities/member.entity';
-import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
+} from '#domain/constants/storage';
+import type { User } from '#domain/entities/user.entity';
+import type { Member } from '#domain/entities/member.entity';
+import { isUnsafeStoragePath } from '#domain/utils/storage-path';
 import { AnalyticsService } from './analytics.service';
 import { RbacService } from './rbac.service';
 import {

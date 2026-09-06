@@ -9,13 +9,10 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { RbacService } from './rbac.service';
 import { hasRequiredRole } from './event.service';
-import { SystemPermissions } from '../../domain/constants/permissions';
-import type { BackworkResource } from '../../domain/entities/backwork.entity';
-import type { Event } from '../../domain/entities/event.entity';
-import type {
-  ChatMessage,
-  ChannelType,
-} from '../../domain/entities/chat.entity';
+import { SystemPermissions } from '#domain/constants/permissions';
+import type { BackworkResource } from '#domain/entities/backwork.entity';
+import type { Event } from '#domain/entities/event.entity';
+import type { ChatMessage, ChannelType } from '#domain/entities/chat.entity';
 
 export interface SearchMemberResult {
   id: string;

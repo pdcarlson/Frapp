@@ -124,7 +124,7 @@ vi.mock("@repo/hooks", () => ({
   // (#492). Left deliberately inert: `useOrgConfig` above returns no
   // `enabled_modules`, so `selectOpsNudge` gets `undefined` and the card is
   // never eligible. These cases are about the shell, and a nudge that never
-  // renders keeps it out of their way — `ops-setup-nudge.test.tsx` is where
+  // renders keeps it out of their way — `ops-setup-nudge.spec.tsx` is where
   // its own behaviour is pinned.
   useAccessibleChapters: () => ({ data: [] }),
   useDismissOpsNudge: () => ({ mutate: vi.fn() }),
@@ -219,7 +219,7 @@ vi.mock("./channel-list", () => ({
 // the channel), not merely re-renders with a new `channelId`/`channelName`
 // prop. `useEffect` with no deps fires once per mount, never on a prop-only
 // re-render, so counting it is how this suite tells the two apart without a
-// real ProseMirror view (jsdom can't render one; see composer.test.tsx).
+// real ProseMirror view (jsdom can't render one; see composer.spec.tsx).
 // Keyed off `channelId` rather than `channelName` because this file's
 // `directChannelDisplayName` stub always returns `""`.
 vi.mock("./composer", () => ({
@@ -281,7 +281,7 @@ vi.mock("./pins-popover", () => ({
 }));
 // Stubbed down to a single button that fires `onJump` with whatever hit the
 // test set, so these cases exercise the *shell's* jump wiring rather than the
-// popover's own search behaviour (which chat-search-popover.test.tsx owns).
+// popover's own search behaviour (which chat-search-popover.spec.tsx owns).
 vi.mock("./chat-search-popover", () => ({
   ChatSearchPopover: ({
     onJump,
@@ -295,7 +295,7 @@ vi.mock("./chat-search-popover", () => ({
 }));
 // Exposes `onJump` as a button so the cross-channel jump (#462) can be driven
 // without opening a real Radix popover. The panel's own rendering is covered in
-// `bookmarks-popover.test.tsx`; what belongs here is the shell wiring.
+// `bookmarks-popover.spec.tsx`; what belongs here is the shell wiring.
 vi.mock("./bookmarks-popover", () => ({
   BookmarksPopover: ({
     onJump,
@@ -985,7 +985,7 @@ describe("ChatShell bookmark write failure (#462)", () => {
  * **root** message per `spec/behavior/chat/README.md` ("Replying to a reply
  * references the root message (no deep nesting)").
  *
- * These live here rather than in `composer.test.tsx` because jsdom renders no
+ * These live here rather than in `composer.spec.tsx` because jsdom renders no
  * ProseMirror view — `useEditor` is stubbed to `null` there, so `Composer`'s
  * own `submit()` returns on its first line and no test can drive a real send
  * through it. The seam that *is* drivable is this one.

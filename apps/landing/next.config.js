@@ -13,14 +13,14 @@ const nextConfig = {
   //
   // Vercel's production install omits devDependencies. `tsconfig.json` includes
   // every .ts and .tsx file under the app, so `vitest.config.ts` and
-  // `lib/auth-urls.test.ts` both land in the TS program `next build` type-checks,
+  // `lib/auth-urls.spec.ts` both land in the TS program `next build` type-checks,
   // and both import `vitest`, which is not on disk there.
   //
   // It is not the suffixed test files that break the build: Next discards
   // diagnostics from files *named* `*.test.*`, `*.spec.*`, `__tests__/` or
   // `__mocks__/` (next/dist/lib/typescript/runTypeCheck.js). What surfaces is the
   // in-program files carrying no test suffix — here `vitest.config.ts` alone.
-  // `lib/auth-urls.test.ts` is suppressed by its name, so despite importing
+  // `lib/auth-urls.spec.ts` is suppressed by its name, so despite importing
   // `vitest` it could never have failed a build; every frapp-landing deploy with
   // `target: production` died on the config file.
   //

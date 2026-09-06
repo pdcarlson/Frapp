@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { ActivationMilestone } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import type { IActivationMilestoneRepository } from '../../../domain/repositories/activation-milestone.repository.interface';
+import type { IActivationMilestoneRepository } from '#domain/repositories/activation-milestone.repository.interface';
 
 @Injectable()
 export class SupabaseActivationMilestoneRepository implements IActivationMilestoneRepository {

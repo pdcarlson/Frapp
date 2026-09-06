@@ -14,7 +14,7 @@ import { CustomFieldService } from '../../application/services/custom-field.serv
 import { CustomFieldController } from '../../interface/controllers/custom-field.controller';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
 import { ChapterAuditLogController } from '../../interface/controllers/chapter-audit-log.controller';
-import { CHAPTER_AUDIT_LOG_REPOSITORY } from '../../domain/repositories/chapter-audit-log.repository.interface';
+import { CHAPTER_AUDIT_LOG_REPOSITORY } from '#domain/repositories/chapter-audit-log.repository.interface';
 import { SupabaseChapterAuditLogRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-audit-log.repository';
 import { ActivationModule } from '../activation/activation.module';
 

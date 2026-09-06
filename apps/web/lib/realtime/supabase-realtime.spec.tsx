@@ -9,7 +9,7 @@ import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
  * has not actually freed yet.
  *
  * The fake below is the one from
- * `packages/chat-core/src/realtime-manager.test.ts` — the same
+ * `packages/chat-core/src/realtime-manager.spec.ts` — the same
  * two library behaviours #783 turned on, which is what makes the bug
  * observable at all:
  *

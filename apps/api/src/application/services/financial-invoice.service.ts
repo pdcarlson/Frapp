@@ -8,19 +8,19 @@ import {
   BadRequestException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { FINANCIAL_INVOICE_REPOSITORY } from '../../domain/repositories/financial-invoice.repository.interface';
-import type { IFinancialInvoiceRepository } from '../../domain/repositories/financial-invoice.repository.interface';
-import { FINANCIAL_TRANSACTION_REPOSITORY } from '../../domain/repositories/financial-transaction.repository.interface';
-import type { IFinancialTransactionRepository } from '../../domain/repositories/financial-transaction.repository.interface';
+import { FINANCIAL_INVOICE_REPOSITORY } from '#domain/repositories/financial-invoice.repository.interface';
+import type { IFinancialInvoiceRepository } from '#domain/repositories/financial-invoice.repository.interface';
+import { FINANCIAL_TRANSACTION_REPOSITORY } from '#domain/repositories/financial-transaction.repository.interface';
+import type { IFinancialTransactionRepository } from '#domain/repositories/financial-transaction.repository.interface';
 import {
   BILLING_PROVIDER,
   type IBillingProvider,
   type PaymentIntentResult,
-} from '../../domain/adapters/billing.interface';
+} from '#domain/adapters/billing.interface';
 import type {
   FinancialInvoice,
   InvoiceStatus,
-} from '../../domain/entities/financial-invoice.entity';
+} from '#domain/entities/financial-invoice.entity';
 import { NotificationService } from './notification.service';
 import { ChapterWorkflowsService } from './chapter-workflows.service';
 
@@ -419,10 +419,6 @@ export class FinancialInvoiceService {
         data: { target: { screen: 'billing' } },
       });
     } catch {}
-  }
-
-  async getTransactions(chapterId: string) {
-    return this.transactionRepo.findByChapter(chapterId);
   }
 
   async getInvoiceTransactions(invoiceId: string, chapterId: string) {

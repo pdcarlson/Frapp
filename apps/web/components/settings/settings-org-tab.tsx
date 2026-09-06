@@ -352,7 +352,7 @@ export function SettingsOrgTab({
                     folder — but `bg-primary/5` was a raw opacity wash of the
                     chapter hex, which README §2 bans outright, and at 5% it
                     was invisible besides. The recipe is §2's two card-seated
-                    states, the one `shared/table-contrast.test.ts` pins:
+                    states, the one `shared/table-contrast.spec.ts` pins:
                     hover `accent-3`, selected `accent-4` plus `accent-11`
                     text. `border-primary/40` on hover went with it — the
                     border swap is `FOCUS_RING`'s job, and using it for hover

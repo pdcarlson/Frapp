@@ -14,8 +14,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../../infrastructure/supabase/database.types';
-import type { ChapterCustomRole } from '../../domain/entities/chapter-custom-role.entity';
-import { WILDCARD } from '../../domain/constants/permissions';
+import type { ChapterCustomRole } from '#domain/entities/chapter-custom-role.entity';
+import { WILDCARD } from '#domain/constants/permissions';
 import type {
   CreateCustomRoleDto,
   UpdateCustomRoleDto,

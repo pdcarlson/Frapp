@@ -11,9 +11,9 @@ import type {
 } from '../../infrastructure/supabase/database.types';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
-import type { Chapter } from '../../domain/entities/chapter.entity';
+import type { Chapter } from '#domain/entities/chapter.entity';
 import type { ChapterOnboardingDto } from '../../interface/dtos/chapter-onboarding.dto';
-import { SYSTEM_SENDER_ID } from '../../domain/constants/chat';
+import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 type Branding = Record<string, unknown>;
 

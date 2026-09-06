@@ -12,7 +12,7 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
 } from '@repo/validation';
-import { assertSafeStoragePath } from '../../domain/utils/storage-path';
+import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import {
   buildChapterPalette,
   logChapterPaletteWarnings,
@@ -23,25 +23,25 @@ import {
   type ChapterMemberView,
 } from './chapter-member-view';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
-import { Chapter } from '../../domain/entities/chapter.entity';
-import type { Member } from '../../domain/entities/member.entity';
+} from '#domain/adapters/storage.interface';
+import { Chapter } from '#domain/entities/chapter.entity';
+import type { Member } from '#domain/entities/member.entity';
 import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
   SystemRoleKeys,
-} from '../../domain/constants/permissions';
+} from '#domain/constants/permissions';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   FrappSupabaseClient,

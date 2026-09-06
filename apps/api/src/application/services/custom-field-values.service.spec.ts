@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CustomFieldService } from './custom-field.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { CustomFieldVisibility } from '../../domain/entities/chapter-custom-field.entity';
+import type { CustomFieldVisibility } from '#domain/entities/chapter-custom-field.entity';
 
 const CHAPTER_ID = 'chapter-1';
 const MEMBER_ID = 'member-1';

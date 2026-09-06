@@ -1,5 +1,5 @@
 import { SupabaseDiscordImportRepository } from './supabase-discord-import.repository';
-import { ArchiveQuotaExceededError } from '../../../domain/repositories/discord-import.repository.interface';
+import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.repository.interface';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -7,7 +7,7 @@ import {
   inA,
   inB,
   type TenantHarness,
-} from '../../../../test/helpers/tenant-scope.harness';
+} from '#test/helpers/tenant-scope.harness';
 
 /**
  * Tenant scope for the Discord importer's three tables.

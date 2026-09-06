@@ -9,7 +9,7 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { RolloverDto } from '../dtos/semester-rollover.dto';
 
 @ApiTags('Semesters')

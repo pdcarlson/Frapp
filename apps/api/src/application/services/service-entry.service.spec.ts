@@ -6,13 +6,13 @@ import {
 } from '@nestjs/common';
 import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import { ServiceEntryService } from './service-entry.service';
-import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entry.repository.interface';
-import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
-import type { ServiceEntry } from '../../domain/entities/service-entry.entity';
+import { SERVICE_ENTRY_REPOSITORY } from '#domain/repositories/service-entry.repository.interface';
+import type { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
+import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 import { NotificationService } from './notification.service';
 import {
   ChapterWorkflowsService,

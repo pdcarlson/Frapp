@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import { IFinancialTransactionRepository } from '../../../domain/repositories/financial-transaction.repository.interface';
-import { FinancialTransaction } from '../../../domain/entities/financial-transaction.entity';
+import { IFinancialTransactionRepository } from '#domain/repositories/financial-transaction.repository.interface';
+import { FinancialTransaction } from '#domain/entities/financial-transaction.entity';
 
 @Injectable()
 export class SupabaseFinancialTransactionRepository implements IFinancialTransactionRepository {

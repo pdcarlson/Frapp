@@ -195,10 +195,6 @@ export interface IMessageReactionRepository {
 }
 
 export interface IChannelReadReceiptRepository {
-  findByChannelAndUser(
-    channelId: string,
-    userId: string,
-  ): Promise<ChannelReadReceipt | null>;
   upsert(
     channelId: string,
     userId: string,

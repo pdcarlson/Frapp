@@ -265,7 +265,7 @@ describe("PollsPage status colour", () => {
   });
 
   it("never paints the poll status in the chapter accent", () => {
-    // `status-kind.test.ts` constrains the *mapper*; this constrains the call
+    // `status-kind.spec.ts` constrains the *mapper*; this constrains the call
     // site. The defect it replaces was an inline ternary, which a mapper-level
     // guard cannot see — so a revert to `variant="default"` here would pass
     // that file and fail this one.

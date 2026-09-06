@@ -44,8 +44,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const BASELINE_PATH = path.join(REPO_ROOT, ".dependency-cruiser-known-violations.json");
-const CONFIG_PATH = path.join(REPO_ROOT, ".dependency-cruiser.cjs");
+const BASELINE_PATH = path.join(REPO_ROOT, "scripts/dependency-cruiser-known-violations.json");
+const CONFIG_PATH = path.join(REPO_ROOT, "scripts/dependency-cruiser.cjs");
 
 /** Workspace globs, matching the root package.json `workspaces` field. */
 const WORKSPACE_ROOTS = ["apps", "packages"];
@@ -320,7 +320,7 @@ function main() {
   console.error("");
   console.error("These are NOT in the baseline, so this change introduced them.");
   console.error("Fix the import, or — if the boundary itself is wrong — change the rule in");
-  console.error(".dependency-cruiser.cjs and say why. Do not re-record the baseline to grow it:");
+  console.error("scripts/dependency-cruiser.cjs and say why. Do not re-record the baseline to grow it:");
   console.error("it exists to shrink. See docs/internal/ci-cd/QUALITY_GATES.md.");
   return 1;
 }

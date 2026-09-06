@@ -6,7 +6,7 @@ import { BackworkService } from './backwork.service';
 import { MemberService } from './member.service';
 import { ChatService } from './chat.service';
 import { RbacService } from './rbac.service';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 export type ActivityFeedItemType =
   | 'event_created'

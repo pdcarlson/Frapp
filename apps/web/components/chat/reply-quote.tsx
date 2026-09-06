@@ -94,7 +94,7 @@ const ESCAPED_CHAR = new RegExp(
  * and backslash escapes consumed as delimiters — so it is no longer checked
  * against intuition. The chain was diffed against `mdast-util-from-markdown`,
  * the CommonMark core `react-markdown` itself uses, over 28 inputs with **zero**
- * divergences; `reply-quote.test.tsx` pins the cases that regressed.
+ * divergences; `reply-quote.spec.tsx` pins the cases that regressed.
  */
 function flattenMarkdown(text: string): string {
   return (

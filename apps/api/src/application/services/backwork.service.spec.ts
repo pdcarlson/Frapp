@@ -10,19 +10,19 @@ import {
   BACKWORK_RESOURCE_REPOSITORY,
   BACKWORK_DEPARTMENT_REPOSITORY,
   BACKWORK_PROFESSOR_REPOSITORY,
-} from '../../domain/repositories/backwork.repository.interface';
+} from '#domain/repositories/backwork.repository.interface';
 import type {
   IBackworkResourceRepository,
   IBackworkDepartmentRepository,
   IBackworkProfessorRepository,
-} from '../../domain/repositories/backwork.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+} from '#domain/repositories/backwork.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import type {
   BackworkResource,
   BackworkDepartment,
   BackworkProfessor,
-} from '../../domain/entities/backwork.entity';
+} from '#domain/entities/backwork.entity';
 
 describe('BackworkService', () => {
   let service: BackworkService;

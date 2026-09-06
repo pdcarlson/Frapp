@@ -2,9 +2,9 @@ import { Module } from '@nestjs/common';
 import { SemesterRolloverService } from '../../application/services/semester-rollover.service';
 import { SemesterRolloverController } from '../../interface/controllers/semester-rollover.controller';
 import { SupabaseSemesterArchiveRepository } from '../../infrastructure/supabase/repositories/supabase-semester-archive.repository';
-import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
+import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
 import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { RbacModule } from '../rbac/rbac.module';
 
 @Module({

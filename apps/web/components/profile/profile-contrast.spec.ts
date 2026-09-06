@@ -51,7 +51,7 @@ describe("the archetype card's selected state", () => {
   it("would have caught `hover:bg-accent/50`, which was a colour over itself", () => {
     // `--accent` holds `--popover`'s value. Inside the elevated container that
     // *is* that token the wash is exactly 1.000:1 — the alias
-    // `components/shared/elevation-contrast.test.ts` pins. Here the card sits
+    // `components/shared/elevation-contrast.spec.ts` pins. Here the card sits
     // on `--background`, so the failure is different and just as total: a
     // `--popover` wash at 50% over the app floor is a hover nobody sees as a
     // hover, because it is the same step the card already is not.
@@ -61,7 +61,7 @@ describe("the archetype card's selected state", () => {
 
   it("separates selected from resting and from hover, under every seed", () => {
     // §5's two card-seated accent states, measured on **`--background`**.
-    // `components/settings/settings-contrast.test.ts` pins the same recipe on
+    // `components/settings/settings-contrast.spec.ts` pins the same recipe on
     // `--card` for the Settings archetype grid; that guard does not transfer,
     // because this grid lives on a full-screen overlay one step lower.
     for (const seed of SEEDS) {

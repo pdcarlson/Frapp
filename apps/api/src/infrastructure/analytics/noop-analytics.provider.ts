@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { AnalyticsEvent } from '@repo/validation';
-import type { IAnalyticsProvider } from '../../domain/adapters/analytics.interface';
+import type { IAnalyticsProvider } from '#domain/adapters/analytics.interface';
 
 /**
  * Fallback analytics provider used when no `POSTHOG_API_KEY` is configured

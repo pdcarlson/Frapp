@@ -80,7 +80,7 @@ export function presenceLabel(status: PresenceStatus): string {
  * domain status is ever painted in the chapter accent** — #1202 found five that
  * were, and the ones that had no mapper were the ones nobody could check.
  * Presence is a vocabulary like the rest, so its colours live here where
- * `presence-status.test.ts` can assert the invariant over every arm.
+ * `presence-status.spec.ts` can assert the invariant over every arm.
  *
  * Idle is a ring rather than a fill, so Online and Idle differ in **shape** as
  * well as colour — `--success` and `--warning` are a green/amber pair, which is

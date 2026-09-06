@@ -14,10 +14,7 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
 import type { BooleanStringQueryValue } from '../utils/query-boolean';
-import {
-  POINTS_WINDOWS,
-  type PointsWindow,
-} from '../../domain/utils/points-window';
+import { POINTS_WINDOWS, type PointsWindow } from '#domain/utils/points-window';
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,

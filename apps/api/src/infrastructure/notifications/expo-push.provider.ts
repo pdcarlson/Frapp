@@ -4,7 +4,7 @@ import type {
   INotificationProvider,
   PushPayload,
   SendToUserResult,
-} from '../../domain/adapters/notification.interface';
+} from '#domain/adapters/notification.interface';
 
 /**
  * Running tally for one `sendToUser` call. Every field is a *count* — no token

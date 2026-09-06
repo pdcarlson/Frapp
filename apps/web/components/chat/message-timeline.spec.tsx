@@ -28,7 +28,7 @@ vi.mock("react-virtuoso", () => ({
 }));
 
 // `useAuthorAvatars` reaches for `FrappClientProvider`, which a bare `render()`
-// does not mount. Same treatment `thread-panel.test.tsx` gives it.
+// does not mount. Same treatment `thread-panel.spec.tsx` gives it.
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, useAuthorAvatars: () => ({ data: {} }) };

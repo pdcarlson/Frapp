@@ -30,7 +30,7 @@ import {
  * One shared file rather than one per family, because the invariant is shared:
  * **no domain status is ever the chapter accent.** The measurement behind that
  * rule is already pinned across all 19 seeds in
- * `components/billing/status-contrast.test.ts` and is deliberately not
+ * `components/billing/status-contrast.spec.ts` and is deliberately not
  * restated here; what this adds is that every mapper obeys it, including the
  * ones a later slice adds.
  */

@@ -74,7 +74,7 @@ describe("this module is error copy, not a status vocabulary", () => {
   it("exports no badge-kind mapper", () => {
     // Written down so the absence reads as a decision. 410 and 409 are never
     // persisted, badged or coloured, so there is no kind to be wrong about and
-    // nothing for `components/shared/status-kind.test.ts` to register — the
+    // nothing for `components/shared/status-kind.spec.ts` to register — the
     // same call `settings-status.ts` argues for a module tier.
     expect(Object.keys(joinErrors).sort()).toEqual(["joinErrorCopy", "redeemChapterId"]);
   });

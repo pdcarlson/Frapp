@@ -7,7 +7,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
  * Cover for the presence hook's own responsibilities.
  *
  * Attach/teardown correctness belongs to `attachRealtimeChannel`, tested in
- * `supabase-realtime.test.tsx` against a fake that reproduces the #783/#817
+ * `supabase-realtime.spec.tsx` against a fake that reproduces the #783/#817
  * library behaviour. Mocking it here is deliberate — re-testing it would be a
  * second copy of that suite, and what is worth pinning at this layer is that
  * the hook *delegates* rather than hand-rolling a second attach path, which

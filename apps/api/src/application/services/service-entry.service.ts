@@ -12,23 +12,23 @@ import {
   isWithinUploadSizeLimit,
   MAX_UPLOAD_LABEL,
 } from '@repo/validation';
-import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entry.repository.interface';
-import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
+import { SERVICE_ENTRY_REPOSITORY } from '#domain/repositories/service-entry.repository.interface';
+import type { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
 import type {
   ServiceEntry,
   ServiceEntryFilters,
   ServiceLeaderboardRow,
-} from '../../domain/entities/service-entry.entity';
+} from '#domain/entities/service-entry.entity';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 import { NotificationService } from './notification.service';
 import {
   ChapterWorkflowsService,
   WORKFLOW_HOURS_RECEIPT,
 } from './chapter-workflows.service';
-import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
+import { isUnsafeStoragePath } from '#domain/utils/storage-path';
 import { ChapterServiceConfigService } from './chapter-service-config.service';
 
 const SERVICE_BUCKET = 'service';
@@ -58,11 +58,6 @@ export interface RequestProofUploadUrlInput {
   filename: string;
   contentType: string;
   sizeBytes?: number;
-}
-
-export interface ReviewServiceEntryInput {
-  status: 'APPROVED' | 'REJECTED';
-  review_comment?: string | null;
 }
 
 @Injectable()

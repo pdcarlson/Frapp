@@ -19,8 +19,8 @@ export type AttendanceStatusOrUnrecorded = AttendanceStatus | "UNRECORDED";
  * red-accented one. So the chapter whose brand most needs `PRESENT` to read as
  * present is exactly the chapter where it renders as absent — and `ABSENT` is
  * the badge sitting next to it in the same column. The measurement is pinned
- * across all 19 seeds in `../billing/status-contrast.test.ts`; that this mapper
- * never returns the accent is pinned in `../shared/status-kind.test.ts`.
+ * across all 19 seeds in `../billing/status-contrast.spec.ts`; that this mapper
+ * never returns the accent is pinned in `../shared/status-kind.spec.ts`.
  *
  * `LATE` moves off `secondary` in the same change. `secondary` is §5's
  * **Neutral** kind — "counts and unread markers" — so a status was being

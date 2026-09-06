@@ -14,7 +14,7 @@ import { exportEventToCalendar } from "@/lib/calendar-export";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   CHECK_IN_GRACE_MINUTES,
-  formatClock,
+  formatEventClock,
   formatEventWindow,
   resolveCheckInWindow,
 } from "@/lib/events/format";
@@ -198,7 +198,7 @@ export default function EventDetailsScreen() {
             <View style={styles.checkInHeader}>
               <Text style={styles.checkInTitle}>Check-in is open</Text>
               <Text style={styles.checkInMeta}>
-                closes {formatClock(window.closesAt)}
+                closes {formatEventClock(window.closesAt)}
               </Text>
             </View>
             <Pressable
@@ -222,7 +222,7 @@ export default function EventDetailsScreen() {
           <>
             <Text style={styles.checkInTitle}>Check-in hasn&apos;t opened</Text>
             <Text style={styles.checkInMeta}>
-              Opens at {formatClock(window.opensAt)}.
+              Opens at {formatEventClock(window.opensAt)}.
             </Text>
           </>
         ) : (

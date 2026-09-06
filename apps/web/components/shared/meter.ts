@@ -13,7 +13,7 @@
  *
  * `--secondary` holds `--card`'s value, so `/polls` was washing a colour over
  * itself and shipped **no track at all** (1.000:1) — the alias trap
- * `components/shared/elevation-contrast.test.ts` exists to catch. Two live
+ * `components/shared/elevation-contrast.spec.ts` exists to catch. Two live
  * spellings of one recipe is also what the cutover rule forbids, so this
  * module is the recipe and both call sites import it.
  *

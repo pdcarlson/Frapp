@@ -6,14 +6,14 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
-import type { ITaskRepository } from '../../domain/repositories/task.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import type { Task, TaskView } from '../../domain/entities/task.entity';
-import { TaskStatus } from '../../domain/entities/task.entity';
+import { TASK_REPOSITORY } from '#domain/repositories/task.repository.interface';
+import type { ITaskRepository } from '#domain/repositories/task.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import type { Task, TaskView } from '#domain/entities/task.entity';
+import { TaskStatus } from '#domain/entities/task.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
@@ -66,10 +66,6 @@ export interface CreateTaskInput {
   client_message_id?: string;
 }
 
-export interface UpdateTaskStatusInput {
-  status: TaskStatus;
-}
-
 @Injectable()
 export class TaskService {
   private readonly logger = new Logger(TaskService.name);
@@ -98,19 +94,6 @@ export class TaskService {
     const tasks = isAdmin
       ? await this.taskRepo.findByChapter(chapterId)
       : await this.taskRepo.findByAssignee(chapterId, userId);
-    return toDisplayStatusList(tasks);
-  }
-
-  async listByChapter(chapterId: string): Promise<TaskView[]> {
-    const tasks = await this.taskRepo.findByChapter(chapterId);
-    return toDisplayStatusList(tasks);
-  }
-
-  async listByAssignee(
-    chapterId: string,
-    assigneeId: string,
-  ): Promise<TaskView[]> {
-    const tasks = await this.taskRepo.findByAssignee(chapterId, assigneeId);
     return toDisplayStatusList(tasks);
   }
 

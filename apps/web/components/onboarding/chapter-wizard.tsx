@@ -655,12 +655,12 @@ function ArchetypeStep({
                 grid already took in the #920 Settings & Roles slice. Note the
                 measurement does **not** carry over from that guard: that grid
                 sits on `--card` and this overlay is `--background`, so
-                `profile-contrast.test.ts` measures the pair again here.
+                `profile-contrast.spec.ts` measures the pair again here.
 
                 **The hover was a colour washed over itself.** `--accent` holds
                 `--popover`'s value, so `hover:bg-accent/50` was 1.000:1 —
                 invisible rather than dim, the alias
-                `components/shared/elevation-contrast.test.ts` exists to catch.
+                `components/shared/elevation-contrast.spec.ts` exists to catch.
 
                 **There was no visible focus indicator**, which is a §6
                 release-gate failure rather than a repaint nit. `focus.ts`

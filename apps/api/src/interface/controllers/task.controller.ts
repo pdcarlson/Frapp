@@ -26,7 +26,7 @@ import {
   UpdateTaskStatusDto,
   RejectTaskCompletionDto,
 } from '../dtos/task.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Tasks')
 @ApiBearerAuth()

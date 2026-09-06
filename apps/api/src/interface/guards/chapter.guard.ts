@@ -21,7 +21,7 @@ import {
 } from '../decorators/subscription.decorator';
 import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
 import { isModuleEnabled } from '@repo/validation';
-import type { SubscriptionStatus } from '../../domain/entities/chapter.entity';
+import type { SubscriptionStatus } from '#domain/entities/chapter.entity';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);

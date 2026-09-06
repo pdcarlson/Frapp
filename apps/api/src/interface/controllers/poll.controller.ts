@@ -19,7 +19,7 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
 import { parseBooleanQueryParam } from '../utils/query-boolean';
 

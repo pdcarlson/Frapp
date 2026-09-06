@@ -86,7 +86,7 @@ describe("the archetype card's selected state, across every seeded chapter", () 
     // §5 calls a selection accent-worthy, and `bg-primary/5` was a raw
     // opacity wash of the chapter hex — banned by README §2, and at 5%
     // invisible besides. The recipe is §2's two card-seated states, the ones
-    // `shared/table-contrast.test.ts` pins; this asserts the pair holds for
+    // `shared/table-contrast.spec.ts` pins; this asserts the pair holds for
     // the archetype grid's own surface rather than assuming it transfers.
     for (const seed of SEEDS) {
       const roles = accentRolesFor(seed);
