@@ -107,11 +107,17 @@ export function InvoiceAdminCard() {
   // would contradict the banner for invoices inside the grace window.
   // Two thresholds, because this card makes two different claims.
   //
-  // Degrading the badges and the OVERDUE filter is the weak one: it only has to
-  // mean "we do not know", which is honest whether the read failed, is paused,
-  // or simply has not answered. Without it this card and the page header
-  // disagree on one screen — the header reads "Overdue: —" while every badge
-  // here silently vanishes and the filter cheerfully returns nothing.
+  // Degrading the OVERDUE filter is the weak one: it only has to mean "we do
+  // not know", which is honest whether the read failed, is paused, or simply
+  // has not answered. Without it the filter cheerfully returns nothing.
+  //
+  // Scope, stated precisely because an earlier draft of this comment overstated
+  // it: this flag reaches the filter option only (`:323`). The per-row OVERDUE
+  // badge at `:534` still derives from `overdueIds`, which is empty whenever
+  // the read is unavailable — so rows go unbadged and assert "not overdue" by
+  // absence while the page header a few pixels above reads "Overdue: —". That
+  // half needs a treatment the design system does not have a variant for, so it
+  // is #1787 rather than a drive-by here.
   const overdueUnavailable =
     overdueQuery.isError || anyReadUncached(overdueQuery);
   // The destructive card is the strong one: it says the read *failed*, in the

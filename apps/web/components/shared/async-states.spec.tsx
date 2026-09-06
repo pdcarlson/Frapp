@@ -12,9 +12,15 @@ import { anyReadUncached } from "@/components/shared/async-states";
  * withhold it — which is what the name says, so these cases pin the behaviour
  * rather than having to correct a reading of it.
  *
- * There is no zero-argument case to pin: the first read is a required
- * parameter, so `anyReadUncached()` does not compile. A surface declaring no
- * reads is a mistake to make unrepresentable, not a behaviour to define.
+ * The zero-argument case is pinned by the type system rather than at runtime,
+ * so it is asserted here with `@ts-expect-error` instead of an `expect`: a
+ * surface declaring no reads is a mistake to make unrepresentable, not a
+ * behaviour to define. `apps/web/tsconfig.json` includes every `.tsx` in the
+ * app with only `node_modules` excluded, so these lines are checked by
+ * `check-types` in CI — and because `@ts-expect-error` fails when the error it
+ * expects is *absent*,
+ * widening the signature back to `readonly CachedRead[]` turns this file red
+ * rather than passing silently.
  */
 describe("anyReadUncached", () => {
   it("is false when every read is cached", () => {
@@ -44,6 +50,16 @@ describe("anyReadUncached", () => {
     expect(
       anyReadUncached({ data: [{ id: "a" }], isPlaceholderData: false }),
     ).toBe(false);
+  });
+
+  it("does not accept a call that declares no reads", () => {
+    // @ts-expect-error - the first read is a required tuple member (TS2555).
+    expect(() => anyReadUncached()).not.toThrow();
+    // Declared inline rather than importing the module's `CachedRead`, which
+    // is deliberately not exported — a test should not widen a public surface.
+    const spread: { data: unknown }[] = [{ data: [] }];
+    // @ts-expect-error - a non-tuple spread cannot satisfy it either (TS2556).
+    expect(anyReadUncached(...spread)).toBe(false);
   });
 
   it("distinguishes an empty answer from no answer", () => {

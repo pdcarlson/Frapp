@@ -10,7 +10,8 @@ import { networkMock } from "@/tests/network";
  *
  * The first test file this component has had. It exists mainly for the Retry
  * path, which on this surface does more than the bare `refetch()` most of the
- * seventeen gates pass — only `members-directory.tsx` shares that. `useAlumni`
+ * seventeen gates pass — `members-directory.tsx` (clears the search) and
+ * `points/page.tsx` (resets `window` and `semesterArchiveId`) share that. `useAlumni`
  * sets `placeholderData: keepPreviousData`, so committing a filter offline
  * keys the query to something never fetched and hands back the *previous*
  * key's rows as placeholder data. The gate counts that as uncached and
