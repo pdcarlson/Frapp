@@ -4,12 +4,12 @@ import { EventService } from './event.service';
 import {
   EVENT_REPOSITORY,
   IEventRepository,
-} from '../../domain/repositories/event.repository.interface';
-import { Event } from '../../domain/entities/event.entity';
+} from '#domain/repositories/event.repository.interface';
+import { Event } from '#domain/entities/event.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { RbacService } from './rbac.service';
 import { recurrenceChildCount } from '@repo/validation';
 

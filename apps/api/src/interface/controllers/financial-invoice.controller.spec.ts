@@ -11,7 +11,7 @@ import {
   TransitionInvoiceStatusDto,
 } from '../dtos/financial-invoice.dto';
 import { Reflector } from '@nestjs/core';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { SUBSCRIPTION_EXEMPT_KEY } from '../decorators/subscription.decorator';
 

@@ -12,7 +12,8 @@ name: Nightly Backup
 # This is not redundancy on top of a provider snapshot. The `Frapp Live` org is on
 # the Supabase FREE plan, which gets no dashboard-accessible daily backups and no
 # PITR — so until that changes, this workflow produces the only restorable backup
-# either project has. Supabase's own free-tier guidance is exactly this:
+# `frapp-staging` has, and `frapp-prod` has none at all (see the scope note just
+# below). Supabase's own free-tier guidance is exactly this:
 # https://supabase.com/docs/guides/platform/backups
 #
 # Production is out of scope for now, but not because it is deferred: `frapp-prod`
@@ -66,29 +67,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify Infisical credentials are configured
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured for the staging environment. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-
       - name: Inject staging secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "staging"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "staging"
-          secret-path: "/"
-          include-imports: true
 
       # Checked BEFORE the dump so an unconfigured destination fails in seconds
       # rather than after several minutes of pg_dump. The failure is deliberate:
@@ -122,9 +106,7 @@ jobs:
           fi
 
       - name: Setup Supabase CLI
-        uses: supabase/setup-cli@v2
-        with:
-          version: 2.77.0
+        uses: ./.github/actions/supabase-cli
 
       # `supabase link` rather than a connection string: GitHub runners are
       # IPv4-only and Supabase direct connections are IPv6-only without the IPv4
@@ -226,29 +208,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify Infisical credentials are configured
-        env:
-          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-        run: |
-          MISSING=""
-          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
-          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
-          if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured for the staging environment. Missing or empty:$MISSING. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
-          fi
-
       - name: Inject staging secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.12
+        uses: ./.github/actions/infisical-secrets
         with:
-          method: "universal"
+          env-slug: "staging"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: "frapp-live-ej-ls"
-          env-slug: "staging"
-          secret-path: "/"
-          include-imports: true
 
       # Same fail-fast posture as the dump job, and the same reason: a backup
       # job that goes green without writing a backup anywhere is the illusion

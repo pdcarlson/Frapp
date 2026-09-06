@@ -4,7 +4,7 @@
  * Deliberately separate from chat's `chat:channel:<id>` topic. That one is a
  * cross-service contract — the push worker reads presence on it via service
  * role to skip recipients who are already looking at the channel (ADR-10) —
- * and `packages/chat-core/src/presence-contract.test.ts` pins both its channel
+ * and `packages/chat-core/src/presence-contract.spec.ts` pins both its channel
  * config and its `{ userId, ts }` payload byte-for-byte. Re-keying it or
  * widening its payload silently disables push suppression, which is why the
  * directory gets its own topic instead of borrowing that one.

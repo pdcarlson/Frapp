@@ -9,7 +9,7 @@ import {
   inA,
   inB,
   type TenantHarness,
-} from '../../../test/helpers/tenant-scope.harness';
+} from '#test/helpers/tenant-scope.harness';
 
 /** Mirrors `SWEEP_PAGE_SIZE` in the repository under test. */
 const PAGE_SIZE = 500;
@@ -89,7 +89,7 @@ describe('ScheduledJobsRepository', () => {
   describe('paging', () => {
     // PostgREST caps responses at max_rows and reports truncation as a plain
     // 200 with a null error, so an unpaged read drops rows silently.
-    it('keeps reading until a page comes back short', async () => {
+    it('keeps reading until a page comes back empty', async () => {
       const { repo, supabase } = await buildRepo([
         { data: rows(PAGE_SIZE, { due_date: '2026-08-06' }), error: null },
         { data: rows(7, { due_date: '2026-08-06' }), error: null },
@@ -101,9 +101,42 @@ describe('ScheduledJobsRepository', () => {
       );
 
       expect(result).toHaveLength(PAGE_SIZE + 7);
+      // Three requests, not two: the 7-row page is *short*, not empty, so it
+      // does not prove the rows ran out. The third window also starts at 507 —
+      // where the rows actually ended — rather than at a multiple of the page
+      // size, which is the half of #1628 that dropped rows outright.
       expect(supabase.ranges).toEqual([
         [0, PAGE_SIZE - 1],
         [PAGE_SIZE, PAGE_SIZE * 2 - 1],
+        [PAGE_SIZE + 7, PAGE_SIZE * 2 + 6],
+      ]);
+    });
+
+    // The direct regression test for #1628. A server whose `max_rows` sits
+    // below SWEEP_PAGE_SIZE hands back a short first page; the old loop read
+    // that as "no more rows" and silently skipped every due row after it.
+    it('does not end the sweep on a short-but-non-empty first page', async () => {
+      const { repo, supabase } = await buildRepo([
+        // Asked for 500, capped at 200 by the server.
+        { data: rows(200, { due_date: '2026-08-06' }), error: null },
+        { data: rows(200, { due_date: '2026-08-06' }), error: null },
+        { data: rows(50, { due_date: '2026-08-06' }), error: null },
+        { data: [], error: null },
+      ]);
+
+      const result = await repo.findOpenInvoicesDueBetween(
+        '2026-08-01',
+        '2026-08-06',
+      );
+
+      expect(result).toHaveLength(450);
+      // Each window opens where the last one actually ended, never where the
+      // request had asked it to end.
+      expect(supabase.ranges).toEqual([
+        [0, PAGE_SIZE - 1],
+        [200, 200 + PAGE_SIZE - 1],
+        [400, 400 + PAGE_SIZE - 1],
+        [450, 450 + PAGE_SIZE - 1],
       ]);
     });
 
@@ -122,14 +155,23 @@ describe('ScheduledJobsRepository', () => {
       expect(supabase.ranges).toHaveLength(2);
     });
 
-    it('reads a single page without asking for a second', async () => {
+    // The cost of the guarantee above: one extra, empty round-trip once the
+    // rows run out. Cheap next to a silently short sweep.
+    it('confirms a short page with one more request before stopping', async () => {
       const { repo, supabase } = await buildRepo([
         { data: rows(3, { due_date: '2026-08-06' }), error: null },
       ]);
 
-      await repo.findOpenInvoicesDueBetween('2026-08-01', '2026-08-06');
+      const result = await repo.findOpenInvoicesDueBetween(
+        '2026-08-01',
+        '2026-08-06',
+      );
 
-      expect(supabase.ranges).toEqual([[0, PAGE_SIZE - 1]]);
+      expect(result).toHaveLength(3);
+      expect(supabase.ranges).toEqual([
+        [0, PAGE_SIZE - 1],
+        [3, 3 + PAGE_SIZE - 1],
+      ]);
     });
 
     // A partial batch is worse than none: the sweep would treat the missing

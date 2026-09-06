@@ -1,7 +1,12 @@
-// The shared @repo packages ship ESM-only dist (type: module) and the API's
-// jest setup doesn't transform them. Mock the two pure helpers — their seed /
-// palette logic is covered by each package's own tests; here we exercise the
-// onboarding orchestration only.
+// These are behavioural test doubles, not a module-resolution workaround: the
+// `@repo/*` dists are CJS and import fine here (the `@repo/validation` mock
+// below spreads the real module, and custom-field-provisioning.spec.ts imports
+// CUSTOM_FIELDS_SEED directly). An earlier version of this comment claimed they
+// were ESM-only and untransformable — they are not; the symptom behind that was
+// an unbuilt `dist`, fixed by building the packages.
+//
+// The two below are stubbed so this file exercises onboarding *orchestration*
+// against a fixed archetype/palette rather than the real seed's contents.
 jest.mock('@repo/org-archetypes', () => ({
   buildChapterConfigFromArchetype: jest.fn((key: string) => ({
     archetype: key,
@@ -38,14 +43,21 @@ jest.mock('@repo/chapter-theme', () => ({
     ],
   })),
 }));
-jest.mock('@repo/validation', () => ({ LEGAL_POLICY_VERSION: 'test-version' }));
+// Only the policy version is stubbed. The rest must stay real: the seeding path
+// validates every candidate row with the actual `CreateCustomFieldSchema`, so a
+// bare stub here would silently make that validation a no-op.
+jest.mock('@repo/validation', () => ({
+  ...jest.requireActual('@repo/validation'),
+  LEGAL_POLICY_VERSION: 'test-version',
+}));
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import { ChapterOnboardingService } from './chapter-onboarding.service';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { Chapter } from '../../domain/entities/chapter.entity';
+import type { Chapter } from '#domain/entities/chapter.entity';
 import type { ChapterOnboardingDto } from '../../interface/dtos/chapter-onboarding.dto';
 
 const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';
@@ -79,6 +91,7 @@ describe('ChapterOnboardingService', () => {
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let messageInsert: jest.Mock;
   let requestInsert: jest.Mock;
+  let fieldsUpsert: jest.Mock;
   let from: jest.Mock;
 
   beforeEach(async () => {
@@ -94,11 +107,13 @@ describe('ChapterOnboardingService', () => {
     };
     messageInsert = jest.fn().mockResolvedValue({ error: null });
     requestInsert = jest.fn().mockResolvedValue({ error: null });
+    fieldsUpsert = jest.fn().mockResolvedValue({ error: null });
     from = jest.fn((table: string) => {
       if (table === 'chat_channels') return channelQuery;
       if (table === 'chat_messages') return { insert: messageInsert };
       if (table === 'chapter_directory_requests')
         return { insert: requestInsert };
+      if (table === 'chapter_custom_fields') return { upsert: fieldsUpsert };
       return {};
     });
 
@@ -318,5 +333,195 @@ describe('ChapterOnboardingService', () => {
     await expect(
       service.onboard('user-1', directoryDto),
     ).resolves.toMatchObject({ id: 'ch-1' });
+  });
+
+  describe('archetype custom-field seeding (#572)', () => {
+    // The module-level archetype mock returns `customFields: []`, which is the
+    // right default for the other tests (they assert nothing about fields).
+    // These override it so the provisioning path has something to write.
+    function seedFields(customFields: unknown[]) {
+      (buildChapterConfigFromArchetype as jest.Mock).mockReturnValueOnce({
+        archetype: 'nphc',
+        modules: { chat: true },
+        rolePack: 'test_pack',
+        vocabulary: { recruitment: 'Rush', pledge: 'NM', class: 'Class' },
+        customFields,
+        workflows: [],
+        dues: {},
+      });
+    }
+
+    it('seeds the archetype default fields into chapter_custom_fields', async () => {
+      seedFields([
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+        {
+          id: 'cf_4',
+          label: 'T-shirt size',
+          type: 'select',
+          required: false,
+          visibleTo: 'chapter',
+          options: ['XS', 'S'],
+        },
+      ]);
+
+      await service.onboard('user-1', directoryDto);
+
+      expect(fieldsUpsert).toHaveBeenCalledTimes(1);
+      const [rows] = fieldsUpsert.mock.calls[0];
+      expect(rows).toEqual([
+        {
+          chapter_id: 'ch-1',
+          key: 'major',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibility: 'chapter',
+          sensitive: false,
+          options: null,
+          sort: 0,
+        },
+        {
+          chapter_id: 'ch-1',
+          key: 't_shirt_size',
+          label: 'T-shirt size',
+          type: 'select',
+          required: false,
+          visibility: 'chapter',
+          sensitive: false,
+          options: { choices: ['XS', 'S'] },
+          sort: 1,
+        },
+      ]);
+    });
+
+    it('asks PostgREST to skip existing (chapter_id, key) rows', async () => {
+      seedFields([
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+      ]);
+
+      await service.onboard('user-1', directoryDto);
+
+      // Named for what it asserts: the upsert options reaching the client. That
+      // this yields true idempotency is a PostgREST/Postgres property of the
+      // `unique (chapter_id, key)` constraint, which a mocked client cannot
+      // demonstrate — only an integration test against a real DB could.
+      const [, options] = fieldsUpsert.mock.calls[0];
+      expect(options).toEqual({
+        onConflict: 'chapter_id,key',
+        ignoreDuplicates: true,
+      });
+    });
+
+    it('writes nothing when the archetype seeds no fields', async () => {
+      // The module-level mock already returns `customFields: []`.
+      await service.onboard('user-1', directoryDto);
+      expect(fieldsUpsert).not.toHaveBeenCalled();
+    });
+
+    it('logs at error level, and still onboards, when the seed insert fails', async () => {
+      // Asserting only that onboard() resolves would pass even if the `error`
+      // branch were deleted outright — the outer .catch() guarantees resolution
+      // either way. The log is the only observable effect of that branch, so it
+      // is what this pins. `error` not `warn`: onboarding still returns 201, so
+      // a broken seed is invisible to the officer and fails for every chapter.
+      const logged = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+      seedFields([
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+      ]);
+      fieldsUpsert.mockResolvedValueOnce({ error: { message: 'boom' } });
+
+      await expect(
+        service.onboard('user-1', directoryDto),
+      ).resolves.toMatchObject({ id: 'ch-1' });
+
+      expect(logged).toHaveBeenCalledWith(
+        'chapter_custom_fields seed insert failed',
+        { message: 'boom' },
+      );
+    });
+
+    it('warns about — and does not seed — a malformed seed entry', async () => {
+      // The `skipped` channel exists only to be logged. Without this assertion
+      // the whole branch can be deleted and the suite stays green, so a field
+      // silently missing from every new chapter would have no trace at all.
+      const warned = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => undefined);
+      seedFields([
+        // A select with no choices: the CRUD contract rejects this shape, so
+        // seeding it would create a row the Fields tab could never save again.
+        {
+          id: 'cf_4',
+          label: 'Broken',
+          type: 'select',
+          required: false,
+          visibleTo: 'chapter',
+        },
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+      ]);
+
+      await service.onboard('user-1', directoryDto);
+
+      const [rows] = fieldsUpsert.mock.calls[0];
+      expect(rows).toHaveLength(1);
+      expect(rows[0].key).toBe('major');
+      expect(warned).toHaveBeenCalledWith(expect.stringContaining('cf_4:'));
+    });
+
+    it('still creates the chapter when the field seed throws outright', async () => {
+      seedFields([
+        {
+          id: 'cf_1',
+          label: 'Major',
+          type: 'text',
+          required: true,
+          visibleTo: 'chapter',
+        },
+      ]);
+      const logged = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+      fieldsUpsert.mockRejectedValueOnce(new Error('network down'));
+
+      await expect(
+        service.onboard('user-1', directoryDto),
+      ).resolves.toMatchObject({ id: 'ch-1' });
+      // The later best-effort writes must still run — a thrown seed must not
+      // swallow the welcome message.
+      expect(messageInsert).toHaveBeenCalled();
+      // A rejection is the same every-chapter outage as a returned PostgREST
+      // error, so it must log at the same level; asserting only that onboard()
+      // resolves would pass at any level, or at none.
+      expect(logged).toHaveBeenCalledWith(
+        'Failed to provision archetype custom fields',
+        expect.any(Error),
+      );
+    });
   });
 });

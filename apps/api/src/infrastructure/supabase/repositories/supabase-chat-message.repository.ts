@@ -6,17 +6,17 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import type { IChatMessageRepository } from '../../../domain/repositories/chat.repository.interface';
+import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
 import {
   ChatMessageDuplicateError,
   PG_UNIQUE_VIOLATION,
-} from '../../../domain/repositories/chat.repository.interface';
-import { ChatMessage } from '../../../domain/entities/chat.entity';
+} from '#domain/repositories/chat.repository.interface';
+import { ChatMessage } from '#domain/entities/chat.entity';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
   LIST_QUERY_LIMIT_MAX,
   LIST_QUERY_LIMIT_MIN,
-} from '../../../domain/constants/list-query-limits';
+} from '#domain/constants/list-query-limits';
 
 const DEFAULT_MESSAGE_LIMIT = 50;
 

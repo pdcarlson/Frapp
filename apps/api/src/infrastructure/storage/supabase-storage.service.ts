@@ -6,8 +6,8 @@ import type {
   SignedUploadOptions,
   StorageObject,
   StreamUploadOptions,
-} from '../../domain/adapters/storage.interface';
-import { assertSafeStoragePath } from '../../domain/utils/storage-path';
+} from '#domain/adapters/storage.interface';
+import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import type { FrappSupabaseClient } from '../supabase/database.types';
 
 /**
@@ -280,11 +280,13 @@ export class SupabaseStorageService implements IStorageProvider {
    * termination silently truncates the moment the backend returns fewer rows
    * than asked for, which it is free to do: `limit` is a ceiling, not a
    * promise, and a server-side cap below `pageSize` would make *every* first
-   * page read as "end of results". `SWEEP_PAGE_SIZE` in
-   * `scheduled-jobs.repository.ts` documents the same hazard for PostgREST;
-   * here the pattern costs one extra empty request per prefix and removes the
-   * assumption entirely. That matters most for the purges: a truncated list
-   * means a silent partial delete reported as complete erasure.
+   * page read as "end of results". `fetchAllPages` in
+   * `infrastructure/supabase/supabase.utils.ts` applies the same two rules to
+   * every PostgREST read for the same reason (#1628); this is the Storage
+   * `list({limit, offset})` equivalent, which that helper's `.range()`-shaped
+   * callback does not fit. It costs one extra empty request per prefix and
+   * removes the assumption entirely. That matters most for the purges: a
+   * truncated list means a silent partial delete reported as complete erasure.
    */
   private async listEntries(
     bucket: string,

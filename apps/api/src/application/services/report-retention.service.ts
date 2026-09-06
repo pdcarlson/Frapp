@@ -3,12 +3,12 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
   type StorageObject,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 import {
   REPORTS_BUCKET,
   REPORTS_ROOT_PREFIX,
   reportsFolderPrefix,
-} from '../../domain/constants/storage';
+} from '#domain/constants/storage';
 
 /**
  * How long a generated report survives after it is written.

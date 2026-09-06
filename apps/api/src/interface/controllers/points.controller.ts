@@ -32,7 +32,7 @@ import {
   ListPointTransactionsQueryDto,
   PointsWindowQueryDto,
 } from '../dtos/points.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { parseBooleanQueryParam } from '../utils/query-boolean';
 
 @ApiTags('Points')

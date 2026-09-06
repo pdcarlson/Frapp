@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthService } from '../../application/services/auth.service';
 import { SupabaseUserRepository } from '../../infrastructure/supabase/repositories/supabase-user.repository';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 
 @Module({
   providers: [

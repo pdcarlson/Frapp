@@ -1,38 +1,47 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import { fetchAllPages } from '../supabase.utils';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   ArchiveQuotaScope,
   ClaimedDiscordImport,
   DiscordImportProgressPatch,
   IDiscordImportRepository,
-} from '../../../domain/repositories/discord-import.repository.interface';
-import { ArchiveQuotaExceededError } from '../../../domain/repositories/discord-import.repository.interface';
+} from '#domain/repositories/discord-import.repository.interface';
+import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.repository.interface';
 import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
   DiscordImportStatus,
-} from '../../../domain/entities/discord-import.entity';
+} from '#domain/entities/discord-import.entity';
 import type {
   ImportedAttachmentRow,
   ImportedMessageRow,
-} from '../../../domain/utils/discord-export';
+} from '#domain/utils/discord-export';
 
 /**
  * PostgREST caps a response at `max_rows` (1000 — `supabase/config.toml`) and
  * signals truncation with a plain 200 and a null error, so an unpaged read
- * drops rows silently. Every batch here stays comfortably below the cap, and
- * with headroom rather than at it: a short page then unambiguously means the
- * rows ran out. Same reasoning as `SupabaseScheduledJobsRepository`.
+ * drops rows silently. Paged reads here go through the shared `fetchAllPages`
+ * (`infrastructure/supabase/supabase.utils.ts`), which stops only on an *empty*
+ * page and advances by the rows actually returned.
+ *
+ * For the *paged* reads the batch sizes below are therefore throughput choices
+ * rather than correctness ones. An earlier version of this note argued they had
+ * to keep headroom below the cap because "a short page then unambiguously means
+ * the rows ran out" — that rule was the bug (#1628), not the safeguard, and it
+ * also named a class (`SupabaseScheduledJobsRepository`) that does not exist.
+ *
+ * `MESSAGE_BATCH_SIZE` is the narrower case and still carries a real
+ * assumption: besides chunking inserts it bounds the `.in()` slice in
+ * `findExistingExternalIds`, which is *not* paged, so its result is silently
+ * truncated if `max_rows` ever drops below it. Tracked separately (#1722).
  */
 const MESSAGE_BATCH_SIZE = 200;
 
-/**
- * Manifest rows read per round trip. Below `max_rows` for the same reason
- * everything else in this file is — see the note above.
- */
+/** Manifest rows read per round trip. See the note above. */
 const FILE_PAGE_SIZE = 500;
 
 /**
@@ -292,25 +301,23 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     // `resolveAsset` returns null, the attachment is silently absent, and the
     // message lands with an under-counted `attachment_count` on an import the
     // admin was told succeeded. That is the failure this paging removes.
-    const all: DiscordImportFile[] = [];
-    for (let from = 0; ; from += FILE_PAGE_SIZE) {
-      const { data, error } = await this.supabase
-        .from('discord_import_files')
-        .select('*')
-        .eq('import_id', importId)
-        .eq('chapter_id', chapterId)
-        .order('part_index', { ascending: true })
-        // The `id` tiebreaker is load-bearing, not cosmetic. `part_index` is
-        // null on every media row, so ordering by it alone leaves one enormous
-        // tie — and `.range()` over an unstable order can serve a row on two
-        // pages or on none, which is the very failure this loop exists to fix.
-        .order('id', { ascending: true })
-        .range(from, from + FILE_PAGE_SIZE - 1);
-      if (error) throw error;
-      const page = data ?? [];
-      all.push(...page);
-      if (page.length < FILE_PAGE_SIZE) return all;
-    }
+    return fetchAllPages<DiscordImportFile>(
+      (from, to) =>
+        this.supabase
+          .from('discord_import_files')
+          .select('*')
+          .eq('import_id', importId)
+          .eq('chapter_id', chapterId)
+          .order('part_index', { ascending: true })
+          // The `id` tiebreaker is load-bearing, not cosmetic. `part_index` is
+          // null on every media row, so ordering by it alone leaves one
+          // enormous tie — and `.range()` over an unstable order can serve a
+          // row on two pages or on none, which is the very failure this paging
+          // exists to fix.
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: FILE_PAGE_SIZE },
+    );
   }
 
   async markFilesUploaded(

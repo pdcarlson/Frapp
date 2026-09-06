@@ -196,7 +196,6 @@ describe('Chat hot path (e2e)', () => {
     delete: jest.fn(),
   };
   const readReceiptRepoMock: jest.Mocked<IChannelReadReceiptRepository> = {
-    findByChannelAndUser: jest.fn(),
     upsert: jest.fn(),
     getUnreadCounts: jest.fn(),
   };

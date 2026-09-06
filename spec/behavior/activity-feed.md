@@ -5,8 +5,8 @@
 > `GET /v1/activity-feed` (`ActivityFeedController`/`ActivityFeedService`) implements the
 > aggregation below, and `@repo/hooks`' `useActivityFeed` wraps it — but neither web nor mobile has
 > a home surface to put it in, by later, more specific product decisions than this spec: the *web*
-> home screen it was written for was removed in the chat-first redesign (`/dashboard` and `/` both
-> redirect to `/chat` once a Supabase session exists), and **mobile**'s `(tabs)/index.tsx` is no
+> home screen it was written for was removed in the chat-first redesign (`/dashboard` redirects to `/chat`
+> unconditionally, and `/` does so once a Supabase session exists), and **mobile**'s `(tabs)/index.tsx` is no
 > longer a Home tab at all — the Signet mobile rebuild ([#937](https://github.com/pdcarlson/Frapp/issues/937))
 > made it `ChatHomeScreen`, chat's own home route. Wiring this feed into an actual screen needs an
 > IA decision (a new mobile tab, undoing the web redirect, or something else) that this issue's own
@@ -24,7 +24,7 @@ The activity aggregation for the user's active chapter covers:
 - Backwork: new resource uploaded.
 - Points: points awarded or deducted (own).
 - Members: new member joined.
-- Announcements: latest announcement.
+- Announcements: recent announcements.
 
 Feed items are pulled from existing data (events, point_transactions, backwork_resources, members, chat_messages where channel = announcements). This is a **read-only aggregation view**, not a separate data store.
 

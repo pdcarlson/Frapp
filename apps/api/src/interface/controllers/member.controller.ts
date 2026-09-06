@@ -26,12 +26,16 @@ import {
   CurrentMember,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { UpdateMemberRolesDto, UpdateOnboardingDto } from '../dtos/member.dto';
+import {
+  DismissOpsNudgeDto,
+  UpdateMemberRolesDto,
+  UpdateOnboardingDto,
+} from '../dtos/member.dto';
 import {
   MemberProfileDto,
   MemberRosterEntryDto,
 } from '../dtos/member-profile.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Members')
 @ApiBearerAuth()
@@ -119,6 +123,35 @@ export class MemberController {
       member.id,
       dto.has_completed_onboarding,
     );
+  }
+
+  /**
+   * Dismiss one ops-setup nudge for the caller in the active chapter (#492).
+   *
+   * Carries no *handler-level* `@RequirePermissions`, matching `me/onboarding`
+   * directly above. It is not unauthenticated or unpermissioned: `PermissionsGuard`
+   * unions the handler and class lists, so this route inherits the controller's
+   * class-level `@RequirePermissions(MEMBERS_VIEW)` and requires `members:view`,
+   * resolved against the caller's own roles re-scoped by `chapter_id`.
+   *
+   * That a *write* rides a read permission is deliberate and is the same exception
+   * `me/onboarding` takes: both write only the caller's own row through
+   * `@CurrentMember()`, which `ChapterGuard` resolves filtered by both `user_id`
+   * and `chapter_id`, so there is no id to authorize against and nothing a caller
+   * could reach beyond their own membership. Recorded in
+   * `docs/internal/security/AUTHORIZATION_MODEL.md` § Chapter-scoped controllers.
+   *
+   * Whether the member can *act* on the nudge is a separate question the client
+   * answers — the card renders only behind `chapter-config:manage` — and
+   * dismissing a card one cannot act on is a legitimate thing to want.
+   */
+  @Patch('me/ops-nudges/dismiss')
+  @ApiOperation({ summary: 'Dismiss an ops-module setup nudge' })
+  async dismissOpsNudge(
+    @CurrentMember() member: { id: string },
+    @Body() dto: DismissOpsNudgeDto,
+  ) {
+    return this.memberService.dismissOpsNudge(member.id, dto.module_key);
   }
 
   @Delete(':id')

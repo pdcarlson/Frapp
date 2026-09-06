@@ -14,7 +14,7 @@ import type { BadgeKind } from "@/components/ui/badge";
  * directory, an accent badge sits 1.08:1 from the success tint under a
  * green-accented chapter and 1.13:1 from the danger tint under a red-accented
  * one — so the chapter whose brand most needs `PAID` to read as paid is exactly
- * the chapter where it renders as overdue. Pinned in `status-contrast.test.ts`.
+ * the chapter where it renders as overdue. Pinned in `status-contrast.spec.ts`.
  *
  * `DRAFT` is the one state that is deliberately *not* semantic: it is the
  * absence of a status rather than a status, so it takes §5's Hairline kind,

@@ -4,7 +4,7 @@ import { MemberService } from '../../application/services/member.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { UseGuards } from '@nestjs/common';
 

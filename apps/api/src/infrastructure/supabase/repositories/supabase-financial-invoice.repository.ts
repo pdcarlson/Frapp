@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IFinancialInvoiceRepository } from '../../../domain/repositories/financial-invoice.repository.interface';
-import { FinancialInvoice } from '../../../domain/entities/financial-invoice.entity';
+import { IFinancialInvoiceRepository } from '#domain/repositories/financial-invoice.repository.interface';
+import { FinancialInvoice } from '#domain/entities/financial-invoice.entity';
 
 @Injectable()
 export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepository {

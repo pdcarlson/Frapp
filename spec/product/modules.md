@@ -56,7 +56,7 @@
 - Admins create invoices for members (e.g. semester dues).
 - Invoices have statuses: DRAFT, OPEN, PAID, VOID.
 - Payments tracked via Stripe PaymentIntents; members pay their own open invoices in-app and the webhook confirms payment (moves the invoice to PAID). Behavior details: [`spec/behavior/billing.md`](../behavior/billing.md).
-- Financial transactions log all payments, refunds, and adjustments.
+- Financial transactions log payments. The `type` column also permits `REFUND` and `ADJUSTMENT`, which no production path writes today — [`../behavior/billing.md`](../behavior/billing.md) owns the detail.
 - Overdue tracking with notifications.
 
 ## Communications
@@ -131,7 +131,7 @@
 
 ## Activity Feed
 
-- Unified feed showing recent chapter activity: new events, Backwork uploads, point milestones, new members, latest announcement. **Specified, not built on any surface today** — the web home screen was removed in the chat-first redesign and the mobile Home tab is still a static prototype (#253). Web's chat catch-up surfaces a separate, action-oriented pulse card instead ([`spec/behavior/chat/catch-up.md`](../behavior/chat/catch-up.md)).
+- Unified feed showing recent chapter activity — the item set is owned by [`../behavior/activity-feed.md`](../behavior/activity-feed.md) and not restated here. **Specified, not built on any surface today** — the web home screen was removed in the chat-first redesign, and mobile's `(tabs)/index.tsx` is no longer a Home tab at all: the Signet rebuild ([#937](https://github.com/pdcarlson/Frapp/issues/937)) made it `ChatHomeScreen`, chat's own home route. Web's chat catch-up surfaces a separate, action-oriented pulse card instead ([`spec/behavior/chat/catch-up.md`](../behavior/chat/catch-up.md)).
 - Read-only aggregation from existing data sources.
 
 ## Global Search
@@ -162,7 +162,7 @@
 - Separate from Backwork (no academic metadata).
 - Optional flat folder structure (one level deep). Folders are first-class records: officers create, rename, reorder and delete them from the dashboard, and naming a new folder during upload still registers it. Renaming re-files the documents in it; deleting moves them to the root rather than deleting them.
 - Documents are searchable by title, combinable with the folder filter.
-- All members can view/download. Upload requires `chapter_docs:upload`; management requires `chapter_docs:manage`.
+- Reads are gated on `members:view`, which every seeded role holds or clears via `*`. Upload requires `chapter_docs:upload`; management requires `chapter_docs:manage`.
 
 ## Semester Rollover
 
@@ -179,7 +179,7 @@
 
 ## Alumni
 
-- Alumni is a system role with limited permissions: read chat, view Backwork, view member directory.
+- Alumni is a system role with limited permissions: read chat, view member directory. The seeded set, and why the restrictions are enforced in the domain services rather than by the permission guard, are owned by [`../behavior/alumni.md`](../behavior/alumni.md).
 - **Alumni directory:** Searchable list with optional self-reported fields (graduation year, current city, current company).
 - **Alumni channel:** Default `#alumni` channel seeded on chapter creation.
 - **Donation link:** Optional external URL in chapter settings. "Support the Chapter" button shown to alumni.
@@ -231,7 +231,7 @@ Every paid module ships with: slash command(s), rich renderer, system channel, a
 | Points | `points` | Earn/spend ledger, leaderboard |
 | Service Hours | `hours` | Time tracking with approval queue |
 | Dues | `dues` | Invoices, payment plans, scholarships, Stripe |
-| Polls | `polls` | Chapter votes, anonymous or named |
+| Polls | `polls` | Chapter votes, anonymous or named — anonymity **not built**, and not a small addition ([`spec/behavior/polls.md` § Anonymous polls](../behavior/polls.md#anonymous-polls)) |
 | Recruitment | `rush` | Candidate funnel, voting, bid management |
 | Backwork | `backwork` | Document library + academic archive |
 | Documents | `documents` | Chapter-level docs (bylaws, minutes, policies) |

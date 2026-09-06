@@ -25,7 +25,7 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { BookmarkDto, BookmarkRefDto } from '../dtos/chat.dto';
 
 /**

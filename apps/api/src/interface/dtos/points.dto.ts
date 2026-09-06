@@ -14,10 +14,7 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
 import type { BooleanStringQueryValue } from '../utils/query-boolean';
-import {
-  POINTS_WINDOWS,
-  type PointsWindow,
-} from '../../domain/utils/points-window';
+import { POINTS_WINDOWS, type PointsWindow } from '#domain/utils/points-window';
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
@@ -78,7 +75,7 @@ export class AdjustPointsDto {
 
   @ApiPropertyOptional({
     description:
-      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`.',
+      'Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud.',
   })
   @IsOptional()
   @IsUUID()
@@ -105,13 +102,14 @@ export class AdjustPointsDto {
  * assumed:
  *   - a **dropped** column — an extra class member is always legal, so this DTO
  *     keeps advertising a field the route no longer sends;
- *   - an **optional** field added to the interface (`voided_at?: string | null`,
- *     the shape every later-added column in this repo uses) — nothing requires
- *     the class to declare it, so the published contract silently omits it.
+ *   - an **optional** field added to the interface — nothing requires the class
+ *     to declare it, so the published contract silently omits it.
  *
- * In both cases the artifacts regenerate faithfully from a stale decorator and
- * every gate stays green. **Anything but adding a required column still needs
- * this file checked by hand.**
+ * The second is not hypothetical. #1719 added `client_message_id?: string | null`
+ * to `PointTransaction` while this branch was open, and every gate stayed green
+ * with the field missing from here — the artifacts regenerate faithfully from a
+ * stale decorator. It is declared below now. **Anything but adding a required
+ * column still needs this file checked by hand.**
  *
  * A narrower `category` still satisfies the interface, which is what makes the
  * honest two-value enum below compatible with the domain's six-value union.
@@ -153,9 +151,20 @@ export class AdjustPointsResponseDto implements PointTransaction {
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 
+  // Echoed back so a caller can match the row it got to the key it sent — which
+  // is the whole point of a replay returning the ORIGINAL transaction rather
+  // than a new one (#1719). `null` for dashboard adjustments, which send no key.
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The idempotency key this row was written under, echoed back. `null` for dashboard adjustments, which send no key and are not deduplicated.',
+  })
+  client_message_id?: string | null;
+
   @ApiPropertyOptional({
     description:
-      'Whether the accompanying chat card was posted. Present ONLY when `channel_id` + `client_message_id` were supplied. `false` means the ledger row committed but the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — the caller should drop it and warn. Absent for dashboard adjustments, which post no card.',
+      'Whether the accompanying chat card was posted. Present ONLY when this request actually attempted one — `channel_id` + `client_message_id` supplied, and not a deduplicated replay. `false` means the ledger row committed but the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — the caller should drop it and warn. Absent means the server reported no outcome (a dashboard adjustment, which posts no card, or a replay, which fires no side effect and records nothing about the original attempt); leave the placeholder for the echo.',
   })
   card_posted?: boolean;
 }

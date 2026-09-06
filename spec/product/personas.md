@@ -7,4 +7,4 @@
 | **Treasurer**           | Web App (app.frapp.live) | Manages billing, dues/invoices, and the points ledger.                                                                                                          |
 | **Member**              | Mobile app               | Active brother. Uses chat, browses Backwork, checks into events, logs study hours, views points.                                                                |
 | **New Member (Pledge)** | Mobile app               | Limited-permission member during the new-member period.                                                                                                         |
-| **Alumni**              | Mobile app (read-mostly) | Graduated member with read access to chat and Backwork. Alumni directory, `#alumni` channel, optional donation link. No points, event check-in, or study hours. |
+| **Alumni**              | Mobile app (read-mostly) | Graduated member with read access to chat. Alumni directory, `#alumni` channel, optional donation link. No points, event check-in, or study hours. |

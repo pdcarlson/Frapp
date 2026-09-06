@@ -5,19 +5,19 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
-import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { Event } from '../../domain/entities/event.entity';
-import type { GeofenceCoordinate } from '../../domain/entities/study.entity';
+import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
+import type { IEventRepository } from '#domain/repositories/event.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { Event } from '#domain/entities/event.entity';
+import type { GeofenceCoordinate } from '#domain/entities/study.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
 import { RbacService } from './rbac.service';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import {
   RECURRENCE_RULES,
   isRecurrenceRule,

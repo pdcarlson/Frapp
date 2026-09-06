@@ -17,7 +17,7 @@ import type {
   ChapterCustomField,
   CustomFieldVisibility,
   MemberCustomFieldValue,
-} from '../../domain/entities/chapter-custom-field.entity';
+} from '#domain/entities/chapter-custom-field.entity';
 import type {
   CreateCustomFieldDto,
   UpdateCustomFieldDto,
@@ -195,7 +195,11 @@ export class CustomFieldService {
       // reference with the request payload — each chapter owns its own
       // options list (spec: "options lists are deep-cloned per chapter").
       options: dto.options ? structuredClone(dto.options) : null,
-      sort: dto.sort ?? 0,
+      // Append, rather than default to 0. `findByChapter` orders by `sort` then
+      // `created_at`, so a hardcoded 0 put every hand-added field *ahead* of the
+      // archetype fields seeded at onboarding (#572) instead of at the bottom —
+      // the Fields tab sends no `sort`, so that was every field an officer adds.
+      sort: dto.sort ?? (await this.nextSort(chapterId)),
     };
     const { data, error }: RowResponse = await this.supabase
       .from('chapter_custom_fields')
@@ -314,6 +318,27 @@ export class CustomFieldService {
       },
     );
     return { success: true };
+  }
+
+  /**
+   * Next free `sort` for a chapter — one past the highest in use, or 0 for a
+   * chapter with no fields yet. Read-then-write rather than a DB-side default
+   * because `sort` is chapter-scoped and freely reorderable; two fields racing
+   * to the same value is a cosmetic tie that `created_at` already breaks.
+   */
+  private async nextSort(chapterId: string): Promise<number> {
+    const { data, error } = (await this.supabase
+      .from('chapter_custom_fields')
+      .select('sort')
+      .eq('chapter_id', chapterId)
+      .order('sort', { ascending: false })
+      .limit(1)
+      .maybeSingle()) as {
+      data: { sort: number } | null;
+      error: PostgrestError | null;
+    };
+    if (error) throw error;
+    return data ? data.sort + 1 : 0;
   }
 
   private async findOne(

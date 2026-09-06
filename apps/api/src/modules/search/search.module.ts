@@ -9,6 +9,5 @@ import { RbacModule } from '../rbac/rbac.module';
   imports: [RbacModule],
   controllers: [SearchController],
   providers: [SearchService],
-  exports: [SearchService],
 })
 export class SearchModule {}

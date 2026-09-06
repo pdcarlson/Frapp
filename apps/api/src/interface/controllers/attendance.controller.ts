@@ -28,7 +28,7 @@ import {
   CheckInDto,
   UpdateAttendanceDto,
 } from '../dtos/attendance.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Attendance')
 @ApiBearerAuth()

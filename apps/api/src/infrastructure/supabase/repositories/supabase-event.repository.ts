@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IEventRepository } from '../../../domain/repositories/event.repository.interface';
-import { Event } from '../../../domain/entities/event.entity';
+import { IEventRepository } from '#domain/repositories/event.repository.interface';
+import { Event } from '#domain/entities/event.entity';
 
 @Injectable()
 export class SupabaseEventRepository implements IEventRepository {

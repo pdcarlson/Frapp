@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import type { ISemesterArchiveRepository } from '../../../domain/repositories/semester-archive.repository.interface';
-import type { SemesterArchive } from '../../../domain/entities/semester-archive.entity';
+import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
+import type { SemesterArchive } from '#domain/entities/semester-archive.entity';
 
 @Injectable()
 export class SupabaseSemesterArchiveRepository implements ISemesterArchiveRepository {

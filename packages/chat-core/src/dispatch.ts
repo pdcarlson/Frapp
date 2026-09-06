@@ -244,12 +244,16 @@ async function dispatchPoints(
   // never rolled back. But the placeholder is reconciled by the Realtime echo of
   // that card, so when the card did not post the echo never arrives and the
   // placeholder would sit on "Granting … points…" forever. Drop it ourselves and
-  // say what happened, without implying the grant failed: a retry here would
-  // write a second ledger row (#544).
+  // say what happened, without implying the grant failed: the retry that follows
+  // a failure toast is the officer re-typing the command, which mints a fresh
+  // `clientMessageId` above — so the server's idempotency index (#1719) does not
+  // dedupe it and a second ledger row lands (#544).
   //
-  // Only an explicit `false` counts. `undefined` means the server did not report
-  // an outcome, which is the pre-#544 contract — treat that as success rather
-  // than tearing down a placeholder the echo may still reconcile.
+  // Only an explicit `false` counts. `undefined` means the server reported no
+  // outcome — a pre-#544 server, or a deduplicated replay, which fires no side
+  // effect and knows nothing about the original attempt's card. Treat that as
+  // success rather than tearing down a placeholder the echo may still
+  // reconcile.
   if (cardPosted === false) {
     removeLocalPlaceholder(ctx, channelId, clientMessageId);
     return {

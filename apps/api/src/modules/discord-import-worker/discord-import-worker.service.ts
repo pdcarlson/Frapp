@@ -4,37 +4,37 @@ import { randomUUID } from 'node:crypto';
 import {
   DISCORD_IMPORT_REPOSITORY,
   type IDiscordImportRepository,
-} from '../../domain/repositories/discord-import.repository.interface';
+} from '#domain/repositories/discord-import.repository.interface';
 import {
   DISCORD_CONNECTION_REPOSITORY,
   type IDiscordConnectionRepository,
-} from '../../domain/repositories/discord-connection.repository.interface';
+} from '#domain/repositories/discord-connection.repository.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 import { MAX_ARCHIVE_EXPORT_PART_BYTES } from '@repo/validation';
 import {
   CHAT_ARCHIVE_BUCKET,
   archiveImportPrefix,
-} from '../../domain/constants/storage';
+} from '#domain/constants/storage';
 import {
   CHAT_CHANNEL_REPOSITORY,
   type IChatChannelRepository,
-} from '../../domain/repositories/chat.repository.interface';
+} from '#domain/repositories/chat.repository.interface';
 import {
   DiscordExportFormatError,
   parseExportPart,
   toImportedAttachments,
   toImportedMessage,
   type DiscordExportMessage,
-} from '../../domain/utils/discord-export';
+} from '#domain/utils/discord-export';
 import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
   DiscordImportStatus,
-} from '../../domain/entities/discord-import.entity';
+} from '#domain/entities/discord-import.entity';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
 
 /**
@@ -51,12 +51,19 @@ export const SLICE_BUDGET_MS = 45_000;
 export const LEASE_MS = 5 * 60_000;
 
 /**
- * Messages per insert. PostgREST caps a response at `max_rows` (1000), and this
- * stays well under it so a short page unambiguously means the rows ran out.
+ * Messages per insert. Sized well under PostgREST's `max_rows` (1000) to keep
+ * each round trip small; it is a throughput choice, not a correctness one.
+ * (An earlier version of this comment justified the headroom by claiming a
+ * short page then means the rows ran out — that rule was #1628's bug, and it
+ * never applied to an insert batch in the first place.)
  */
 export const IMPORT_BATCH_SIZE = 200;
 
-/** Imported messages deleted per purge round trip. */
+/**
+ * Imported messages deleted per purge round trip. The purge loop terminates on
+ * an empty round rather than a short one, so a server cap below this value
+ * costs extra round trips instead of stranding rows — see `runPurgeSlice`.
+ */
 export const PURGE_BATCH_SIZE = 500;
 
 /** Most recent warnings kept on the job row. */
@@ -809,7 +816,15 @@ export class DiscordImportWorkerService {
         PURGE_BATCH_SIZE,
       );
       deleted += round;
-      if (round < PURGE_BATCH_SIZE) break;
+      // Only a round that deleted *nothing* proves the rows ran out (#1628).
+      // `deleteImportedMessages` selects its candidates with `.limit()`, and
+      // PostgREST serves `min(limit, max_rows)` — so on a project whose cap is
+      // below PURGE_BATCH_SIZE, a short round is the server capping the read,
+      // not the end of the data. Breaking there would leave imported messages
+      // behind and then fall straight through to deleting the storage objects
+      // and marking the job purged: rows pointing at bytes that are gone, on a
+      // job nothing revisits. That is the failure the comment above forbids.
+      if (round === 0) break;
       const held = await this.importRepo.renewLease(
         job.id,
         lockToken,

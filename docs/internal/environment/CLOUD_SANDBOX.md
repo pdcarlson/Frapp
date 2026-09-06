@@ -225,9 +225,12 @@ first use. Same pinned-tooling pattern as gitleaks (`scripts/install-gitleaks.sh
 platform binary is ~200 MB, so as a root devDependency every `npm ci` in CI and the API
 image's dev-deps stage would download it for a tool only these two scripts call.
 
-> **Known version skew:** the sandbox pin is **not** the CLI version that applies
-> migrations in CI — [`deploy-api.yml`](../../../.github/workflows/deploy-api.yml) pins
-> `supabase/setup-cli` to **2.77.0** for the staging and production migration steps. The
+> **Known version skew:** the sandbox pin is **not** the CLI version CI uses —
+> [`.github/actions/supabase-cli`](../../../.github/actions/supabase-cli/action.yml) holds the
+> single `supabase/setup-cli` pin (**2.77.0**) that every CI step needing the CLI installs
+> from: the staging and production migration applies, the migration-replay rehearsal, and
+> `db-backup.yml`'s `pg_dump`. Until the composite-action extraction the same version was
+> written inline in **four** workflows; none names a version now. The
 > gap predates the pin (the scripts previously ran unpinned `npx supabase`, i.e. whatever
 > `latest` was that day), and the sandbox cannot simply match 2.77.0 — it fails to start
 > here because the realtime container aborts with `:listen_error, :eafnosupport` (IPv6
@@ -427,7 +430,7 @@ for how an agent is expected to use it.
 | `staging.frapp.live` | the landing site (apex — see wildcard note) |
 | `*.staging.frapp.live` | `app.staging.frapp.live`, the web dashboard |
 | `api-staging.frapp.live` | the Render-hosted API. A **sibling** of `staging.frapp.live`, not a subdomain of it, so `*.staging.frapp.live` does **not** cover it |
-| `hnoyzpidbmizhbqaiity.supabase.co` | the hosted `frapp-staging` project — Realtime, Presence, GoTrue. The **staging project ref**, not a wildcard; if the project is ever rotated this line must be updated — and so must [`ci/environments.json`](../../../ci/environments.json), which `run-migration.mjs` fails closed against and `check-migration-order.mjs` reads, so a rotation that misses it blocks every production migration and every migration-bearing PR. The bringup probe below is what will tell you about this line |
+| `hnoyzpidbmizhbqaiity.supabase.co` | the hosted `frapp-staging` project — Realtime, Presence, GoTrue. The **staging project ref**, not a wildcard; if the project is ever rotated this line must be updated — and so must [`.github/environments.json`](../../../.github/environments.json), which `run-migration.mjs` fails closed against and `check-migration-order.mjs` reads, so a rotation that misses it blocks every production migration and every migration-bearing PR. The bringup probe below is what will tell you about this line |
 
 ### Wildcard semantics — weaker than the docs imply
 

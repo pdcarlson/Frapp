@@ -64,7 +64,7 @@ GitHub Issues (canonical: planning, status, Triage intake)
 | --- | --- | --- |
 | **Claude Code** (web, interactive) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only sanctioned path for tracker work — reads and writes alike.** The MCP is auditable, and writes through it are lossless. Shell access to `api.github.com` is **route-dependent, not session-dependent** (corrected 2026-09-02; the 2026-08-08 observation of both a 403 and a success is explained by route, not by session): the proxied route 403s on every repo-scoped path, the direct one returns 200 from GitHub. **That direct route is never a substitute for the MCP.** If the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP: a verification read of an issue's raw `body` when you need to see what the MCP's read mangled, plus the provider-*settings* paths the MCP exposes no tool for. Never to create, edit, label, close or comment. Procedure and measurements: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). `gh` is not installed. No fallback tracker. |
 | **Claude Code Routines** (scheduled) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep and Hygiene Scan excepted — they write a PR, not issues, and push the branch and report its name when the MCP is down). See [`ROUTINES.md`](ROUTINES.md). |
-| **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` — tracker writes inside GitHub Actions only | The PAT works in Actions and on laptops. Corrected 2026-09-02: it is not dead in a cloud sandbox either — it fails only on the proxied route (403 on repo-scoped paths) and works on the direct one. That is a read channel, not a licence to do tracker work outside the MCP. **Branch protection, from an agent session: run `npm run configure:branch-protection:verify` (read-only; exits 0) and nothing else.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. *Applying* stays a human step with an admin PAT — policy, not lack of capability. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |
+| **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` — tracker writes inside GitHub Actions only | The PAT works in Actions and on laptops. Corrected 2026-09-02: it is not dead in a cloud sandbox either — it fails only on the proxied route (403 on repo-scoped paths) and works on the direct one. That is a read channel, not a licence to do tracker work outside the MCP. **Branch protection, from an agent session: run `npm run configure:branch-protection:verify` (read-only) and nothing else.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. *Applying* stays a human step with an admin PAT — policy, not lack of capability. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |
 
 ---
 
@@ -228,8 +228,8 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   exact `file:line` refs · acceptance criteria (objectively verifiable checkboxes) · an
   **Agent brief**.
 - **`fp=` dedup markers are the routines' mechanism, per-namespace.** They are **visible lines,
-  not HTML comments** — every MCP read path deletes HTML comments, which hides a comment-form
-  marker from both the read and the search index (see
+  not HTML comments** — and they stay that way even though the read that forced the change has
+  recovered, because the defect has flipped four times and a visible line costs nothing (see
   [Reading a body you intend to rewrite](#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)).
   The curator embeds `` `agent-suggestion: v1 fp=<area>/<slug> file=<path>` ``; the PR Follow-ups
   harvester embeds `` `agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N>` ``; human-action
@@ -237,7 +237,8 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   `` `agent-suggestion: v1 fp=human/<slug> source=<...>` `` (namespaces partition lifecycle
   ownership — PR Follow-ups owns both `pr-followup/` and `human/`). The `fp=` grammar is unchanged,
   so existing dedup queries keep working, and **legacy comment-form markers remain valid** — they
-  are stored, merely unreadable, so a missing marker means "unknown", never "absent". Ad-hoc
+  are stored, and readable again as of 2026-09-05 — but a missing marker still means "unknown",
+  never "absent", because that reading survives the next flip and a re-file does not. Ad-hoc
   filings (`/next` follow-ups, review deferrals) need no marker.
 - **Search before filing** (`search_issues`, open **and** closed) — refresh a near-match instead
   of duplicating it. This applies to every filing path, marker or not.
@@ -253,9 +254,9 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   is mandatory). Dedup for any filing path must also search `[human]` titles so a held blocker
   doesn't get a promotable twin. Full playbook:
   [`.claude/skills/file-follow-up/SKILL.md`](../../../.claude/skills/file-follow-up/SKILL.md).
-- **Never source a body rewrite from an MCP read** — `issue_read`, `list_issues` *and*
-  `search_issues` all corrupt what they return (regression confirmed 2026-08-20). Append a comment
-  instead, or author the replacement body yourself. See
+- **Sourcing a body rewrite from an MCP read is permitted while the fidelity table is green and
+  current** — all three read paths were measured faithful 2026-09-05, and a rewrite you authored
+  yourself was always safe. Re-run the probe before a bulk pass. See
   [Reading a body you intend to rewrite](#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
   below; it is the canonical statement of that rule and the routines defer to it.
 
@@ -275,70 +276,117 @@ every run, so a hand-edit there is both overwritten and capable of destroying it
 
 ## Reading a body you intend to rewrite (MCP read fidelity)
 
-**No GitHub MCP read path returns an issue body faithfully.** As of **2026-08-20**, `search_issues`
-corrupts bodies the same three ways `issue_read` and `list_issues` always have. The alternative this
-section used to recommend no longer exists.
+**The four read paths in the table below return an issue body faithfully — measured 2026-09-05.**
+All three vectors that used to corrupt a read are clear on each. **This has now flipped four times,
+so the measurement, not the prose, is what you trust**: re-run [the probe](#re-verifying-this-the-probe)
+before any bulk rewrite, and treat a stale date on this table as "unknown", not "fine".
 
-**The damage is entirely on read.** Stored bodies on GitHub are intact and `issue_write` stores what
-it is given — both re-proven out of band below. **Nothing needs back-filling for loss.** What is
-gone is your ability to *see* a body accurately, which is what makes a rewrite unsafe.
+"The four in the table" is meant literally — `search_pull_requests`, `pull_request_read
+get_comments` and review comments were **not** probed, so say "measured on the paths below" rather
+than "the MCP is fine". An unmeasured path is unknown, not clean.
 
-| Read path | HTML comments (`fp=` markers) | HTML/JSX tags | `'` `"` `&` `>` | Safe to re-body from? |
+| Read path | HTML comments (`fp=` markers) | HTML/JSX tags | `'` `"` `&` `>` `<` | Safe to re-body from? |
 | --- | --- | --- | --- | --- |
-| `issue_read method:get` | ❌ stripped | ❌ stripped | ❌ → `&#39;` `&#34;` `&amp;` | **No** |
-| `list_issues fields:["body"]` | ❌ stripped | ❌ stripped | ❌ → `&#39;` `&#34;` `&amp;` | **No** |
-| `search_issues fields:["number","title","body"]` | ❌ stripped | ❌ stripped | ❌ escaped | **No** |
+| `issue_read method:get` | ✅ intact | ✅ intact | ✅ literal | **Yes**, as of 2026-09-05 |
+| `list_issues fields:["body"]` | ✅ intact | ✅ intact | ✅ literal | **Yes**, as of 2026-09-05 |
+| `search_issues fields:["number","title","body"]` | ✅ intact | ✅ intact | ✅ literal | **Yes**, as of 2026-09-05 |
+| direct REST `body` (ground truth) | ✅ intact | ✅ intact | ✅ literal | **Yes**, always |
 
-The three vectors, each of which masks the others:
+Measured by round-tripping fixture **#1736**, which was written for this purpose and carries all
+three vectors including the historical discriminator (five `<Tabs.Screen …/>` lines inside a
+` ```tsx ` fence). Every path returned it byte-identical to the raw REST body. **Vector 2 is the one
+that matters** — it is the only vector whose failure is unrecoverable, and the only one an earlier
+round cleared by accident: the 2026-08-11 pass passed while a `tsx` fence was still being eaten,
+because it checked HTML comments alone.
 
-1. **HTML comments are deleted** — an `<!-- agent-suggestion: v1 fp=… -->` marker vanishes, so a
-   rewrite drops it and the curator re-files the issue as net-new. This is why the marker contract
-   is now a **visible line**, not a comment (see below).
-2. **Unrecognised tags are deleted**, including JSX *inside fenced code blocks* — a ` ```tsx ` fence
-   comes back as blank lines. Unrecoverable by convention: a dropped marker can be reconstructed
-   from `fp=<area>/<slug>`, a dropped snippet cannot.
-3. **`'`, `"`, `&`, `>` are entity-escaped** — inside code fences the quoted JSON, SQL, and shell
-   stop being copy-pasteable. This vector alone *is* mechanically reversible (see the escape hatch).
+The three vectors, kept here because a future regression will present as one of them:
 
-The tag sanitizer is **allowlist-based, not blanket** — `<br>` survives while `<Tabs.Screen …/>`
-does not, which is why the defect reads as intermittent and has now gone two full rounds
-(2026-08-09→-08-12, then a regression caught 2026-08-20) before being pinned each time.
+1. **HTML comments** — an `<!-- agent-suggestion: v1 fp=… -->` marker. When this vector fails the
+   marker vanishes from both the read *and* the search index, so the curator re-files the issue as
+   net-new. Markers stay **visible lines** regardless of this table (see below) — that is deliberate
+   insurance against the next flip, not a workaround for the last one.
+2. **Unrecognised tags**, including JSX *inside fenced code blocks*. Unrecoverable by convention: a
+   dropped marker can be reconstructed from `fp=<area>/<slug>`, a dropped code snippet cannot.
+3. **`'`, `"`, `&`, `>`, `<` entity-escaped** (as `&#39;` `&#34;`/`&quot;` `&amp;` `&gt;` `&lt;`) — inside code fences the quoted JSON, SQL and shell stop
+   being copy-pasteable. This vector alone *is* mechanically reversible.
 
-**It is not limited to issue bodies.** The same sanitizer runs on **issue comments**
-(`issue_read get_comments`) and on **PR bodies** (`pull_request_read get`) — verified 2026-08-20 by
-reading PR #1136's own description back, which returned `fp=<area>/<slug> file=<path>` as
-`fp=/ file=` while `WebFetch` of the rendered page showed the placeholders intact. Two practical
-consequences: a PR body you compose with tags or placeholders in it **is stored correctly** and only
-*reads* back mangled, so don't "fix" it on the strength of an MCP read; and when quoting an issue's
-text back to a human, quote from [the direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body)
-of the raw `body`, or from `WebFetch` of the rendered page — not from the MCP.
+The tag sanitizer, when active, is **allowlist-based, not blanket** — `<br>` survives while
+`<Tabs.Screen …/>` does not. That is why the defect reads as intermittent, and why `<br>` is a
+control rather than a signal in #1736.
+
+**The write side has never been the problem.** `issue_write` stores what it is given; content
+written years ago is still byte-present. Every round of this has been a read-side defect.
+
+### The damage a lossy read already did
+
+While vector 3 was live, a rewrite that round-tripped a body through a read **baked the escaped form
+into storage**. That damage does not heal when the read recovers — it is now the stored text.
+
+Nine bodies were found damaged by a corpus scan on 2026-09-05 (529 issues updated since 2026-08-19,
+read raw over REST): **#357** (repaired), and **#714 #1034 #1146 #1150 #1164 #1204 #1381 #1521**
+(identified, repair tracked in **#1737**). #1381 is the worst — the owner's own quoted words carry
+`&#39;`/`&#34;`, and escaped `&gt;` has broken its blockquotes.
+
+**That scan covered the most recent regression only, and the damage is probably older.** The window
+starts at 2026-08-19 because that is when `search_issues` joined the defect — but the version of
+this section it replaces recorded `issue_read` and `list_issues` as escaping entities **"always"**.
+So any body rewritten from one of those before 2026-08-19, and untouched since, was never looked at
+and is not in the nine. **Do not read a clean re-run of the same `since=2026-08-19` scan as a clean
+corpus.** Widening the window is cheap — the recipe takes `since` as a parameter — and #1737 carries
+it as an open question rather than an assumption.
+
+Re-run the scan with the recipe in [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body).
+Three hits are **legitimate and expected**: #1736 (the fixture stores escapes on purpose), #1725,
+and #357's repair note — each quotes an escape sequence as documentation rather than suffering one.
+
+**Issue comments are clear; PR bodies are only partly measured.** `issue_read get_comments` was
+re-measured 2026-09-05 against [#1736's comment control](https://github.com/pdcarlson/Frapp/issues/1736#issuecomment-5552915853),
+which carries all three vectors: all intact.
+
+**PR bodies have no fixture.** `pull_request_read get` was observed returning **vector 3** literally
+in the same session, and — spot-checked during review — PR **#1136**'s body now returns
+`` `agent-suggestion: v1 fp=<area>/<slug> file=<path>` `` intact, the exact string recorded on
+2026-08-20 as coming back `fp=/ file=`. That is two observations, not a fixture: there is no
+PR-side control carrying all three vectors, so treat PR bodies as *probably* clean and
+*not measured*. So the standing PR-body advice is unchanged, and
+does not depend on the table above: **a PR body you compose with tags or `fp=` placeholders in it is
+stored correctly even if it reads back mangled** (proven 2026-08-20 by reading PR #1136 back as
+`fp=/ file=` while the rendered page showed the placeholders intact). Never "fix" a PR body on the
+strength of an MCP read, and quote a PR's text to a human from the rendered page or the raw API,
+not from `pull_request_read`. When the sanitizer *is* active it runs on comments and PR bodies too,
+so a regression shows up in all of them — re-check a comment, not only a body.
 
 ### The operative rule
 
-**Never source a body rewrite from any MCP read.** In practice:
+**A body rewrite sourced from an MCP read is permitted while the table above is green and current.**
+That is a conditional permission, not a standing one — this defect has flipped four times, so:
 
-- **Default: don't rewrite — append a comment instead.** `add_issue_comment` is lossless in both
-  directions and is the right tool for anything additive (verification notes, status, findings).
-- **You may rewrite when you authored the replacement text yourself** — a body you composed this
-  run, or a full replacement you wrote from scratch. The hazard is *round-tripping* a body through
-  a lossy read, not writing one.
-- **Escape hatch, narrow:** a rewrite sourced from a read is permissible only when you have
-  confirmed — via [the direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body) of the
-  raw `body`, which that section gives as a runnable command — that the body contains **no HTML
-  comment and no tags anywhere (including inside code fences)**, and you un-escape vector 3
-  (`&#39;`→`'`, `&#34;`→`"`, `&amp;`→`&`, `&gt;`→`>`) before writing back. `WebFetch` cannot
-  satisfy that condition — it reads the *rendered* page, where an HTML comment is markup rather
-  than text, so it can never confirm one's absence. That REST call is a verification read of an
-  issue's raw text, **not** a tracker path: it does not license doing tracker work over REST, and
-  it is not available as an MCP fallback (if the MCP is down, stop and report). If you cannot
-  confirm the condition, leave a comment instead. Deleted content cannot be un-deleted; only
-  escaping is reversible.
+- **Confirm before a bulk pass.** One issue is a judgement call; a sweep over dozens is not. Re-run
+  [the probe](#re-verifying-this-the-probe) against #1736 first and say in your write-up that you
+  did. A green table dated weeks ago is evidence about a past MCP version, not this one.
+- **Prefer a comment when the edit is additive.** `add_issue_comment` is lossless in both directions
+  and needs no probe. Rewrite a body when the body is *wrong*, not to append news to it — that
+  preference is about keeping issues readable, and it survives whatever the read is doing.
+- **Author-your-own-text is always safe.** A body you composed this run never round-trips through a
+  read, so it needs no probe and no escape hatch. This is unchanged.
+- **Use the raw REST body when the stakes are high** — a `[human]` item, an epic, anything long or
+  quote-heavy. [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body) is ground
+  truth by construction rather than by measurement, so it is correct even mid-regression. That call
+  is a verification read, **not** a tracker path: it does not license tracker work over REST, and it
+  is not an MCP fallback (if the MCP is down, stop and report).
+- **If the probe is red, fall back to the old rule:** never source a rewrite from a read; append a
+  comment instead; and if you must rewrite, take the body from REST, confirm it holds **no HTML
+  comment and no tags anywhere including inside code fences**, and un-escape vector 3
+  (`&#39;`→`'`, `&#34;`→`"`, `&quot;`→`"`, `&amp;`→`&`, `&gt;`→`>`, `&lt;`→`<`) before writing back. **All six** — an earlier version of this list named four, and three of the nine damaged bodies below carry `&lt;` and nothing else, so a four-substitution pass would have declared them repaired while leaving them broken. Deleted content cannot be
+  un-deleted; only escaping is reversible — which is exactly how the nine damaged bodies above
+  happened, and why they were recoverable.
 
 ### The `fp=` marker is a visible line, not an HTML comment
 
-Because every read path eats HTML comments, a comment-form marker is invisible to **both** the read
-*and* the search index — one root cause, two symptoms. The contract is therefore a plain visible
-line, which is proven to survive both:
+**This contract does not relax when the read recovers.** It was forced by a sanitizer that ate HTML
+comments out of both the read *and* the search index — one root cause, two symptoms — and that
+sanitizer is currently off. The contract stays anyway, because it has flipped four times and a
+visible line costs nothing while a re-filed duplicate costs a human's attention:
 
 ```markdown
 `agent-suggestion: v1 fp=<area>/<slug> file=<primary-path>`
@@ -346,8 +394,9 @@ line, which is proven to survive both:
 
 The `fp=` grammar is unchanged, so every existing dedup query keeps working. **Legacy
 `<!-- agent-suggestion … -->` and `<!-- cursor-suggestion … -->` comment markers are still valid
-and still stored** — they are simply unreadable through the MCP, so treat a missing marker as
-"unknown", never as "absent", and never re-file on that basis alone.
+and still stored**, and as of 2026-09-05 they are readable again — but treat a missing marker as
+"unknown", never as "absent", and never re-file on that basis alone. That rule is unchanged too: it
+protects against reading a stale fidelity table as if it were a fresh measurement.
 
 ### Lookup still works — dedup is broken once, not twice
 
@@ -390,22 +439,51 @@ allow a retry before concluding a write failed.
 
 ### Re-verifying this (the probe)
 
-The discriminator that makes this diagnosable: **#697 and #357 quote the corrupted content inside a
-code span/fence**, where GitHub renders `<!-- … -->` and `<Tabs.Screen …/>` as *visible literal
-text*. That lets `WebFetch` witness content HTML-comment invisibility would otherwise hide — which
-is how storage was separated from serialization. Re-run all five steps if the MCP version changes:
+**The probe runs against fixture #1736, and against nothing else.** That issue exists only to be
+read: it carries all three vectors including the discriminator, its body states its own expected
+values, and it is labelled `routine-state` so no routine treats it as work. **Do not edit it** —
+its body *is* the expectation, so an edit silently invalidates every future run.
 
-| Step | Call | Faithful-read expectation | Observed 2026-08-20 |
+This replaced keying the probe on #357 and #697, which were real issues whose bodies nobody
+guaranteed would hold still. #357's ` ```tsx ` fence was later rewritten away, and the probe
+silently stopped being runnable — a rotted probe that still *looked* like a control (#1725).
+
+| Step | Call | Faithful-read expectation | Observed 2026-09-05 |
 | --- | --- | --- | --- |
-| 1 | `search_issues` `"Ship mobile Backwork browse and upload"`, `fields:["number","title","body"]` | #357's ` ```tsx ` fence holds five `<Tabs.Screen …/>` lines; `Frapp's` has a literal `'` | ❌ five blank lines; `Frapp&#39;s` |
-| 2 | `search_issues` `"Backfill missing fp= dedup markers legacy"` | #697's body shows a literal `<!-- cursor-suggestion: v1 fp=... -->` inside a code span | ❌ empty code span |
-| 3 | `WebFetch` `https://github.com/pdcarlson/Frapp/issues/357` | Ground truth — must agree with step 1 | ✅ five `<Tabs.Screen …/>` lines **present** → stored, read-stripped |
-| 4 | `WebFetch` `https://github.com/pdcarlson/Frapp/issues/697` | Ground truth — must agree with step 2 | ✅ `<!-- cursor-suggestion: v1 fp=... -->` **present** → stored, read-stripped |
-| 5 | `search_issues` a real `fp=` and a fabricated one | 1 precise hit / 0 hits | ✅ both correct — lookup healthy |
+| 1 | `issue_read` `method:"get"` on **#1736** | All three vectors intact — HTML comment, five `<Tabs.Screen …/>` lines inside the `tsx` fence, literal `'` `"` `&` `>` | ✅ all three |
+| 2 | `list_issues` `state:OPEN labels:["routine-state"] fields:["number","title","body"]` | Same, for #1736's entry | ✅ all three |
+| 3 | `search_issues` `"MCP read-fidelity probe control fixture"`, `fields:["number","title","body"]` | Same | ✅ all three |
+| 4 | [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body) of #1736 | Ground truth — steps 1-3 must agree with it | ✅ byte-identical to all three |
+| 5 | `issue_read get_comments` on #1736 | Two comment controls: one carrying all three vectors, one extending vector 3 to **bare `<`** and re-testing vector 2 for a *lowercase* unknown tag (`<not a tag>`, `<name>`) | ✅ all vectors on both |
+| 6 | `search_issues` a real `fp=` and a fabricated one | 1 precise hit / 0 hits | ✅ both correct — lookup healthy |
 
-State which vectors and which paths a re-verification covered, so the next one extends this rather
-than re-deriving it. A check naming only HTML comments is what let the 2026-08-11 round pass while
-a `tsx` fence was still being eaten.
+**State which vectors and which paths a re-verification covered.** A check naming only HTML comments
+is what let the 2026-08-11 round pass while a `tsx` fence was still being eaten — vector 2 is the
+one that decides the answer, because it is the only vector whose failure destroys content
+irrecoverably. Steps 1-3 disagreeing with step 4 means the read is lossy; steps 1-3 *agreeing* with
+step 4 means it is faithful, whatever this document's table says.
+
+**Run step 5, not only steps 1-3.** The fixture's *body* contains no bare `<` outside a tag, so the
+body alone cannot discriminate `&lt;`-escaping — and that is not a hypothetical gap: three of the
+nine damaged bodies below (#1034, #1164, #1521) carry `&lt;` **and nothing else**, so a probe that
+skipped step 5 would have called vector 3 green while exactly that damage was being written. The
+second comment control closes it, and also re-tests vector 2 for a *lowercase* unknown tag, which
+an allowlist-based sanitizer need not treat the same as a capitalised JSX-style one.
+
+Vector 2's coverage is still **narrow in shape**: every non-allowlisted token in the fixture is a
+bare tag name (`Tabs.Screen`, `not a tag`, `name`). A sanitizer keyed on *attributes* rather than
+tag names would pass this probe and still eat content. If you are extending the fixture, a second
+shape — an unknown tag carrying an event-handler or `style` attribute — is the cheapest thing to
+add.
+
+**Known gap, stated so it is not mistaken for a pass.** The probe measures what a read *returns*; it
+does **not** measure whether the search **index** matches text that exists only inside an HTML
+comment. #1736 cannot answer that — every comment-borne string in it also appears as visible text
+(in the answer key, or quoted in a code span), which is what makes the fixture readable but also
+makes it non-discriminating for this one question. That matters only for pre-2026-08-20 comment-form
+`fp=` markers; every marker written since is a visible line, which the index indexes. Adding a
+discriminator would mean a string that appears **only** inside a comment — worth doing if the
+legacy-marker audit in #697 is ever run.
 
 ### The direct REST read (ground truth for a raw body)
 
@@ -453,24 +531,34 @@ broader scopes.
 **Measured 2026-09-02 on this exact endpoint.** `GET /repos/pdcarlson/Frapp/issues/697` returns
 `403` with the proxy's "GitHub access is not enabled for this session" body over proxied `curl`,
 and `200` (`server: github.com`) over both node `fetch` and `curl --noproxy '*'` — and the returned
-`body` contains the literal `<!-- cursor-suggestion … -->` marker that every MCP read path strips.
-The same round of measurements covered the repo, branch-protection, environments, rulesets and
-vulnerability-alerts paths.
+`body` contained the literal `<!-- cursor-suggestion … -->` marker that every MCP read path was
+stripping at the time. The same round of measurements covered the repo, branch-protection,
+environments, rulesets and vulnerability-alerts paths.
 
 **Why this and not `WebFetch`.** `WebFetch` reads the *rendered* page, where an HTML comment is
 markup rather than text — so it can witness one that happens to be quoted inside a code span, but
-it can never prove a comment's **absence**, which is precisely what the escape hatch above needs.
-REST returns the raw `body`, which is exactly what "did the HTML comment survive?" asks. Steps 3
-and 4 of the probe above can be run against REST instead. The rule they rest on is unchanged:
-don't read a `WebFetch` miss as a dropped marker.
+it can never prove a comment's **absence**. REST returns the raw `body`, which is exactly what "did
+the HTML comment survive?" asks. It is also ground truth *by construction* rather than by
+measurement, so it stays correct mid-regression, which is why step 4 of the probe is the one every
+other step is judged against. Don't read a `WebFetch` miss as a dropped marker.
+
+**Scanning the corpus for baked-in escapes** uses the same call in a loop — page
+`GET /repos/pdcarlson/Frapp/issues?state=all&since=<ISO>&per_page=100`, skip entries carrying
+`pull_request`, and flag any `body` containing `&amp;` `&#39;` `&#34;` `&gt;` `&lt;` `&quot;`. Judge
+each hit by its context: a body may quote an escape sequence deliberately (#1736, #1725 and #357's
+repair note all do). That scan is what found the nine damaged bodies recorded above.
 
 ### The write side is faithful
 
-`issue_write` stores what it is given; the 2026-08-14 end-to-end fixture (#888, closed) established
-this and the 2026-08-20 ground-truth reads above re-confirm it — content written long ago is still
-byte-present on GitHub today. **What no longer follows is the old conclusion that "a brief backfill
-sourced from `search_issues` is safe."** It is not, because the read half regressed. Backfills are
-safe only under the escape hatch above, or when you author the whole body.
+`issue_write` stores what it is given; the 2026-08-14 fixture (#888, closed), the 2026-08-20
+ground-truth reads, and the 2026-09-05 round-trip through **#1736** all establish it independently —
+content written long ago is still byte-present on GitHub today. **The write side has never been the
+defect in any of the four rounds.**
+
+With the read half green again (2026-09-05), a backfill sourced from a read is safe — subject to the
+operative rule's one condition: re-run the probe first and say that you did. What is *not* safe is
+assuming that, since a body a read returned once looked right, a bulk pass will. Nine bodies carry
+baked-in escapes precisely because a rewrite trusted a read without checking.
 
 ### Marker-count guard (so the next regression surfaces in one run)
 

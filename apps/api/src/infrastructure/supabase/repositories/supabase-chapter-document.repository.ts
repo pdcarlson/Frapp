@@ -8,8 +8,8 @@ import type {
 import type {
   IChapterDocumentRepository,
   ChapterDocumentFilter,
-} from '../../../domain/repositories/chapter-document.repository.interface';
-import type { ChapterDocument } from '../../../domain/entities/chapter-document.entity';
+} from '#domain/repositories/chapter-document.repository.interface';
+import type { ChapterDocument } from '#domain/entities/chapter-document.entity';
 import { escapeLikePattern } from '../supabase.utils';
 
 @Injectable()

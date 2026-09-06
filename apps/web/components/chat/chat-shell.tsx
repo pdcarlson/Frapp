@@ -23,6 +23,7 @@ import {
   useBookmarkedMessageIds,
   useBookmarkMessage,
   useUnbookmarkMessage,
+  resolveAuthorLabel,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,10 @@ import {
   type MessageTimelineHandle,
 } from "./message-timeline";
 import { Composer } from "./composer";
+import { DELETED_MESSAGE_PLACEHOLDER } from "./message-placeholders";
+import { replyPreviewText } from "./reply-quote";
 import { ThreadPanel } from "./thread-panel";
+import { OpsSetupNudge } from "./ops-setup-nudge";
 import { PinsPopover } from "./pins-popover";
 import { ChatSearchPopover, type ChatSearchHit } from "./chat-search-popover";
 import { BookmarksPopover, type BookmarkEntry } from "./bookmarks-popover";
@@ -447,7 +451,7 @@ export function ChatShell({
           title: "Delete this message?",
           description:
             "This can't be undone. Everyone in the channel will see " +
-            '"[message deleted]" in its place.',
+            `"${DELETED_MESSAGE_PLACEHOLDER}" in its place.`,
           confirmLabel: "Delete message",
           tone: "destructive",
         });
@@ -549,6 +553,26 @@ export function ChatShell({
   );
 
   const [threadParentId, setThreadParentId] = useState<string | null>(null);
+  /**
+   * The message the composer's next send replies to (#489).
+   *
+   * An id, not the message: `channel.messages` is the live copy, so deriving
+   * the strip from it below means an edit, a delete or a reaction on the parent
+   * is reflected in what the member sees they are replying to. A snapshot taken
+   * at click time would quote text that no longer exists.
+   *
+   * Carries its **channel** alongside the message id, so a target can never
+   * outlive the channel it was staged in. `chat.service.ts` 400s a
+   * `reply_to_id` naming a message in another channel, and clearing on the
+   * switch paths alone is not enough to prevent that: the deep-link effect sets
+   * `selectedChannelId` directly without going through
+   * `dismissThreadForChannelSwitch`. Scoping makes it structural rather than a
+   * cleanup every future switch path has to remember.
+   */
+  const [replyTarget, setReplyTarget] = useState<{
+    channelId: string;
+    messageId: string;
+  } | null>(null);
   // What had focus when a thread was opened (the row's Reply control, most
   // often) — restored by `closeThread` below, per the keyboard-navigation
   // acceptance criterion in #396.
@@ -561,6 +585,12 @@ export function ChatShell({
   const dismissThreadForChannelSwitch = useCallback(() => {
     setThreadParentId(null);
     threadTriggerRef.current = null;
+    // A staged reply is NOT cleared here. It is scoped to its own channel (see
+    // `replyTarget`), so it is already invisible and unsendable anywhere else,
+    // and clearing here would discard it on a path that is not a switch at all:
+    // the rail calls this for a click on the channel already open, which is an
+    // ordinary miss-click. That silently dropped the reply while leaving the
+    // draft text, so Enter posted it as a top-level message.
   }, []);
   // Channel-scoped: the notice belongs to the channel the jump was attempted
   // in, so it never follows the member into a channel the message was never in.
@@ -690,6 +720,106 @@ export function ChatShell({
         : null;
     setThreadParentId(message.id);
   }, []);
+  /**
+   * Stages an inline reply, **normalized to the root message** — AC 3 and
+   * `spec/behavior/chat/README.md`: "Replying to a reply references the root
+   * message (no deep nesting)."
+   *
+   * Client-side on purpose. `ChatService.createMessage` validates only that
+   * `reply_to_id` names a message in the same channel, and it must stay that
+   * way: `linkReplyPairs` (`supabase-discord-import.repository.ts`) writes
+   * Discord's genuinely nested reply targets during an archive import, so a
+   * server-side root rule would rewrite an imported thread's real shape.
+   *
+   * One hop is enough because every reply this client authors is already
+   * root-normalized, so `parent.reply_to_id` is itself always a root. An
+   * imported chain deeper than that resolves to its own parent rather than its
+   * true root — accepted: chasing the chain would need messages outside the
+   * loaded window, and the alternative (quoting nothing) is worse.
+   */
+  const startReply = useCallback((message: ChatMessage) => {
+    setReplyTarget({
+      channelId: message.channel_id,
+      messageId: message.reply_to_id ?? message.id,
+    });
+  }, []);
+  const cancelReply = useCallback(() => setReplyTarget(null), []);
+  /**
+   * Whether to offer Reply on rows in this channel at all.
+   *
+   * **Both halves are load-bearing, and each covers a case the other misses.**
+   *
+   * `can_post` — is there a composer to stage into? It is the server's own
+   * capability (`ChannelAccessService.withPostCapability`), and it comes back
+   * false for *two* reasons, only one of which is read-only: the other is the
+   * alumni lifecycle restriction (`spec/behavior/alumni.md`). An alumnus in an
+   * ordinary `PUBLIC` channel gets `is_read_only: false` and
+   * `can_post: false`, so a read-only-only check leaves them a Reply chip whose
+   * strip can never render — `Composer` returns the "Alumni can read this
+   * channel but not post" paragraph instead of an editor. Clicking it would
+   * change nothing anywhere on screen: an inert control, which
+   * `spec/ui/design-system/components.md` § 5 bans outright.
+   *
+   * `is_read_only` — does the channel allow in-thread replies at all?
+   * `spec/behavior/chat/README.md` § 253: "Announcement messages cannot be
+   * replied to in-thread… it holds regardless of permissions", and
+   * `ChatService.sendMessage` 400s such a send. `can_post` does not cover this,
+   * because it is deliberately **true** in `#announcements` for a holder of
+   * `announcements:post` — they may post a top-level announcement, and nobody
+   * threads one. Without this half, that member stages a strip and the send
+   * fails.
+   *
+   * Read off the two fields the rail actually carries rather than through
+   * `@repo/validation`'s `allowsInThreadReplies`. Calling the shared predicate
+   * would need a hand-built `ChannelAccessRecord`, and the fields the rail has
+   * never loaded would have to be invented — `required_permissions: null` and
+   * no `archived_at`. That is a projection wearing the full type: the moment
+   * the predicate consults a field this literal fabricates, the call silently
+   * disagrees with the server while *looking* like it cannot. This is a UX
+   * pre-filter; the server is the enforcement, and it is the server's copy of
+   * the rule that has to be right.
+   */
+  const canReplyHere =
+    !!activeChannel &&
+    activeChannel.can_post !== false &&
+    !activeChannel.is_read_only;
+  /**
+   * The staged reply, resolved for the composer's strip.
+   *
+   * **This, not `replyTarget`, is what a send reads.** The strip the member can
+   * see and the `reply_to_id` the send carries come from the *same* derivation,
+   * so they cannot disagree — a reply nobody was shown they were sending is
+   * ruled out by construction rather than by an effect syncing state back down
+   * (which would also be a `setState` in an effect, and is what
+   * `react-hooks/set-state-in-effect` is right to refuse).
+   *
+   * It resolves to `null` only when nothing is staged for *this* channel. A
+   * staged target whose parent is not loaded still resolves — to the
+   * unavailable variant — so it stays visible and dismissable.
+   */
+  const replyTo = useMemo(() => {
+    if (!replyTarget || replyTarget.channelId !== activeChannelId) return null;
+    const parent = channel.messages.find((m) => m.id === replyTarget.messageId);
+    // Staged but not in the loaded window — `author: null` renders
+    // `QuotedMessage`'s unavailable variant. It must NOT collapse to `null`:
+    // the id is still perfectly sendable (the server validates same-channel,
+    // which scoping already guarantees), so dropping the strip would leave the
+    // member with a reply they can neither see nor dismiss, which then either
+    // vanishes from the send or re-attaches when the parent reappears.
+    //
+    // Reachable, not hypothetical, in two ways: root normalization can target a
+    // root older than the one window `useChatChannel` loads (#1571), and a jump
+    // or backfill can re-window the list under a reply already staged.
+    if (!parent) {
+      return { id: replyTarget.messageId, author: null, preview: null };
+    }
+    return {
+      id: parent.id,
+      author: resolveAuthorLabel(parent, nameFor, userId),
+      preview: replyPreviewText(parent),
+    };
+  }, [channel.messages, replyTarget, activeChannelId, nameFor, userId]);
+
   const closeThread = useCallback(() => {
     setThreadParentId(null);
     // The trigger is a row inside the virtualized timeline (`react-virtuoso`
@@ -978,6 +1108,15 @@ export function ChatShell({
           ) : null}
         </header>
         {/*
+          Between the channel header and the timeline: "a dismissible inline
+          nudge in chat" (`spec/product/modules.md` § Ops-setup nudges) without
+          being *inside* the virtualized log, which would make it a row
+          `react-virtuoso` can unmount. Renders `null` for everyone but an
+          officer of a chapter with a nudge-eligible module switched off, so it
+          costs the common case one early return.
+        */}
+        <OpsSetupNudge />
+        {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making
           this genuinely non-live takes an explicit `aria-live="off"`, not
@@ -1017,6 +1156,7 @@ export function ChatShell({
             loadError={channel.loadError}
             onReact={channel.react}
             onUnreact={channel.unreact}
+            onReply={canReplyHere ? startReply : undefined}
             onOpenThread={openThread}
             onRetry={channel.retry}
             onDiscard={channel.discard}
@@ -1062,7 +1202,26 @@ export function ChatShell({
             canPost={activeChannel.can_post}
             draft={channel.draft}
             onChangeDraft={channel.setDraft}
-            onSend={(body, attachments) => channel.send(body, { attachments })}
+            // `replyTo?.id`, not `replyToId`: the derived target is the one the
+            // member can actually see staged. Reading the raw id would let a
+            // send carry a reply whose strip resolved to nothing.
+            onSend={(body, attachments) => {
+              const target = replyTo?.id ?? null;
+              // Cleared before the await, not after: `channel.send` enqueues to
+              // the Dexie outbox and resolves on its own schedule, and a strip
+              // still standing after the message appears in the timeline reads
+              // as "your reply didn't send" — and would silently attach itself
+              // to whatever the member typed next.
+              //
+              // Only when the target belongs to THIS channel. Clearing
+              // unconditionally reproduced the exact bug the channel-scoping
+              // above exists to prevent: a member stages a reply in #general,
+              // answers a ping in #random — that send wiped it — and comes back
+              // to #general to a per-channel draft still in the composer and no
+              // strip above it, so Enter posts the reply as a top-level message.
+              if (replyTo) setReplyTarget(null);
+              return channel.send(body, { replyToId: target, attachments });
+            }}
             onSlashDispatch={(command: SlashCommand, args: string) =>
               channel.dispatchSlash(
                 command,
@@ -1080,6 +1239,8 @@ export function ChatShell({
             // composer would defeat the queue built to make composing-while-
             // offline work (`spec/ui/resilience.md` §2). It is labelled instead.
             isOffline={channel.connection === "offline"}
+            replyTo={replyTo}
+            onCancelReply={cancelReply}
           />
         ) : null}
       </section>
@@ -1108,8 +1269,8 @@ export function ChatShell({
           <div className="px-3 py-3">
             <h2 className="text-base font-bold text-foreground">Details</h2>
             <p className="mt-1 text-[12.5px] text-muted-foreground">
-              Open a message thread to see replies. Pinned messages live in the
-              popover above the timeline.
+              Open the quote above a reply to collect that conversation here.
+              Pinned messages live in the popover above the timeline.
             </p>
           </div>
         )}

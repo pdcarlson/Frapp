@@ -5,7 +5,7 @@ import { AnalyticsService } from './analytics.service';
 import {
   ACTIVATION_MILESTONE_REPOSITORY,
   type IActivationMilestoneRepository,
-} from '../../domain/repositories/activation-milestone.repository.interface';
+} from '#domain/repositories/activation-milestone.repository.interface';
 
 describe('ActivationService', () => {
   let service: ActivationService;

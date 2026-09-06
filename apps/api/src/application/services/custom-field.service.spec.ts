@@ -26,9 +26,22 @@ function makeSupabase(opts: {
   updateResult?: { data?: unknown; error?: unknown };
   /** Rows returned by the list query. */
   listRows?: unknown[];
+  /**
+   * Highest-`sort` row for the chapter, read by `nextSort` before an insert
+   * that supplies no explicit `sort`. `null`/omitted = the chapter has no
+   * fields yet, so the next sort is 0.
+   */
+  highestSortRow?: { sort: number } | null;
 }) {
   const auditInserts: AuditRow[] = [];
   const customFieldInsert = jest.fn();
+  // Recorders hoisted out of the per-call `builder` so tests can assert the
+  // arguments the service passed, not just the value the chain resolved to. A
+  // passthrough chain that ignores its arguments lets a dropped chapter filter
+  // or a flipped sort direction pass green.
+  const fieldEq = jest.fn();
+  const fieldOrder = jest.fn();
+  const fieldLimit = jest.fn();
 
   const from = jest.fn((table: string) => {
     if (table === 'chapter_audit_log') {
@@ -44,14 +57,35 @@ function makeSupabase(opts: {
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn(() => builder);
       // findByChapter chains .order().order() — the second order resolves.
-      builder.order = jest.fn(() => {
+      builder.order = jest.fn((...args: unknown[]) => {
+        fieldOrder(...args);
         const resolved = Promise.resolve({
           data: opts.listRows ?? [],
           error: null,
         });
-        return Object.assign(resolved, { order: jest.fn(() => resolved) });
+        return Object.assign(resolved, {
+          order: jest.fn((...inner: unknown[]) => {
+            fieldOrder(...inner);
+            return resolved;
+          }),
+          // nextSort chains .order().limit().maybeSingle() for the top row.
+          limit: jest.fn((...args: unknown[]) => {
+            fieldLimit(...args);
+            return {
+              maybeSingle: jest.fn(() =>
+                Promise.resolve({
+                  data: opts.highestSortRow ?? null,
+                  error: null,
+                }),
+              ),
+            };
+          }),
+        });
       });
-      builder.eq = jest.fn(() => builder);
+      builder.eq = jest.fn((...args: unknown[]) => {
+        fieldEq(...args);
+        return builder;
+      });
       builder.maybeSingle = jest.fn(() =>
         Promise.resolve({ data: opts.existingField ?? null, error: null }),
       );
@@ -76,7 +110,14 @@ function makeSupabase(opts: {
     return {};
   });
 
-  return { from, auditInserts, customFieldInsert };
+  return {
+    from,
+    auditInserts,
+    customFieldInsert,
+    fieldEq,
+    fieldOrder,
+    fieldLimit,
+  };
 }
 
 async function buildService(supabase: { from: jest.Mock }) {
@@ -150,6 +191,72 @@ describe('CustomFieldService', () => {
         target_id: created.id,
         member_visible: true,
       });
+    });
+
+    it('appends after the highest existing sort when none is supplied', async () => {
+      // The Fields tab sends no `sort`. A fixed default of 0 would place every
+      // hand-added field ahead of the fields seeded at onboarding (#572), since
+      // findByChapter orders by sort then created_at.
+      const supabase = makeSupabase({
+        highestSortRow: { sort: 7 },
+        insertResult: { data: { id: 'f9' }, error: null },
+      });
+      const service = await buildService(supabase);
+
+      await service.create(CHAPTER_ID, ACTOR_ID, {
+        key: 'nickname',
+        label: 'Nickname',
+        type: 'text',
+      });
+
+      expect(supabase.customFieldInsert).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 8 }),
+      );
+    });
+
+    it('scopes the next-sort lookup to this chapter, highest first', async () => {
+      // The resolved value alone cannot pin these: the test double is a
+      // passthrough, so dropping the chapter filter or flipping the sort
+      // direction both still return the fixture. Both are real defects —
+      // an unscoped read derives one chapter's sort from another's rows on a
+      // service-role client that bypasses RLS, and an ascending order returns
+      // min(sort)+1, which collides new fields into the seeded block.
+      const supabase = makeSupabase({
+        highestSortRow: { sort: 7 },
+        insertResult: { data: { id: 'f9' }, error: null },
+      });
+      const service = await buildService(supabase);
+
+      await service.create(CHAPTER_ID, ACTOR_ID, {
+        key: 'nickname',
+        label: 'Nickname',
+        type: 'text',
+      });
+
+      expect(supabase.fieldEq).toHaveBeenCalledWith('chapter_id', CHAPTER_ID);
+      expect(supabase.fieldOrder).toHaveBeenCalledWith('sort', {
+        ascending: false,
+      });
+      expect(supabase.fieldLimit).toHaveBeenCalledWith(1);
+    });
+
+    it('honours an explicitly supplied sort', async () => {
+      const supabase = makeSupabase({
+        highestSortRow: { sort: 7 },
+        insertResult: { data: { id: 'f9' }, error: null },
+      });
+      const service = await buildService(supabase);
+
+      await service.create(CHAPTER_ID, ACTOR_ID, {
+        key: 'nickname',
+        label: 'Nickname',
+        type: 'text',
+        sort: 2,
+      });
+
+      expect(supabase.customFieldInsert).toHaveBeenCalledWith(
+        expect.objectContaining({ sort: 2 }),
+      );
     });
 
     it('rejects a select field with no choices and does not audit', async () => {

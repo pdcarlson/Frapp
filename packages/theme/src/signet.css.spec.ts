@@ -281,13 +281,23 @@ describe("each surface imports exactly its own system", () => {
   const web = readFileSync(WEB_GLOBALS, "utf8");
   const landing = readFileSync(LANDING_GLOBALS, "utf8");
 
+  // Both spellings of the same file are accepted: the legacy relative reach
+  // into `packages/theme/src/`, and the `@repo/theme/*` subpath the apps use
+  // now that the package declares those exports. What the freeze turns on is
+  // *which* stylesheet a surface pulls in, never how the specifier is written —
+  // so the negative assertions below, not these, are the boundary.
+  const imports = (stylesheet: string) =>
+    new RegExp(
+      `@import\\s+"(?:[^"]*packages/theme/src/|@repo/theme/)${stylesheet}\\.css"`,
+    );
+
   it("apps/web imports signet.css and not the legacy stylesheet", () => {
-    expect(web).toMatch(/@import\s+"[^"]*packages\/theme\/src\/signet\.css"/);
+    expect(web).toMatch(imports("signet"));
     expect(web).not.toMatch(/globals\.css"/);
   });
 
   it("apps/landing imports the legacy stylesheet and not signet.css", () => {
-    expect(landing).toMatch(/@import\s+"[^"]*packages\/theme\/src\/globals\.css"/);
+    expect(landing).toMatch(imports("globals"));
     expect(landing).not.toMatch(/signet\.css/);
   });
 });
