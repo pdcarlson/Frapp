@@ -63,14 +63,19 @@ NODE20BIN="$(dirname "$(nvm which 20)")"
 export PATH="${NODE20BIN}:${PATH}"
 log "Using node $(node -v), npm $(npm -v)"
 
-# ─── 4. Dependencies + workspace build ────────────────────────────────────────────────
-# npm ci under Node 20 for the correct toolchain, then `npm run build` so the shared
-# @repo/* packages produce the `dist/` that apps/api's `start:dev` typechecks against
+# ─── 4. Dependencies + shared-package build ───────────────────────────────────────────
+# npm ci under Node 20 for the correct toolchain, then build ONLY the shared @repo/*
+# packages so they produce the `dist/` that apps/api's `start:dev` typechecks against
 # (without it, `nest start` reports dozens of TS2307/TS2339 errors from @repo/validation).
+#
+# Deliberately NOT `npm run build` (the whole graph): the apps run via `next dev` /
+# `nest start --watch` and need no production build here, and `next build` for apps/web
+# would fail at install time anyway — it prerenders pages that require
+# NEXT_PUBLIC_SUPABASE_* env vars, which only exist after `start` writes apps/web/.env.local.
 log "Installing npm dependencies (npm ci)..."
 npm ci
-log "Building workspaces (npm run build)..."
-npm run build
+log "Building shared workspace packages..."
+./node_modules/.bin/turbo run build --filter='./packages/*'
 
 # ─── 5. Pre-pull the Supabase images ──────────────────────────────────────────────────
 # Bring the stack up once purely to pull + cache the ~10 images, then stop it. Only the
