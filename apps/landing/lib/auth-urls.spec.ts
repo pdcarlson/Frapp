@@ -24,6 +24,11 @@ describe("buildAuthUrls", () => {
       "https://app.frapp.live",
       "https://app.frapp.live/",
       "https://staging.frapp.live/sign-up",
+      // Multi-segment, and load-bearing: against a single-segment base a
+      // relative "sign-up" resolves to the same string as an absolute
+      // "/sign-up", so this is the only entry that catches the two path
+      // constants losing their leading slash — which would ship a 404 CTA.
+      "https://staging.frapp.live/a/b",
     ]) {
       const { signupUrl, loginUrl } = buildAuthUrls(base);
       const { pathname: signupPath } = new URL(signupUrl);
@@ -34,12 +39,26 @@ describe("buildAuthUrls", () => {
     }
   });
 
-  it("strips a trailing slash and an accidental /sign-up suffix on the base", () => {
+  it("drops the base's path but keeps its origin", () => {
     expect(buildAuthUrls("https://app.frapp.live/").signupUrl).toBe(
       "https://app.frapp.live/sign-up",
     );
     expect(buildAuthUrls("https://app.frapp.live/sign-up").loginUrl).toBe(
       "https://app.frapp.live/sign-in",
+    );
+  });
+
+  it("strips userinfo rather than rendering it into a public href", () => {
+    // `new URL` preserves userinfo, so without the strip a credentialed base
+    // reaches every CTA in server-rendered HTML.
+    expect(buildAuthUrls("https://u:p@app.frapp.live/x").signupUrl).toBe(
+      "https://app.frapp.live/sign-up",
+    );
+    expect(buildAuthUrls("https://u:p@app.frapp.live/x").loginUrl).toBe(
+      "https://app.frapp.live/sign-in",
+    );
+    expect(buildAuthUrls("https://user@app.frapp.live").signupUrl).toBe(
+      "https://app.frapp.live/sign-up",
     );
   });
 });
