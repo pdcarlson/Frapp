@@ -1081,7 +1081,9 @@ the ones a later reader would otherwise re-litigate.
   mark that read recorded. Whether either project is behind *today* is **unverified** — the applied
   counts have not been re-read, and a promotion may have happened since. No tree-side count is
   quoted here on purpose: every merge moves it, so re-derive with
-  `ls supabase/migrations/*.sql | wc -l`. #1620 tracks refreshing this and the matching block in
+  `ls supabase/migrations/*.sql | wc -l`. The dated Management-API reads of what each project
+  actually holds live in `DB_PROMOTION_RUNBOOK.md` (latest 2026-09-06), not here — one home, so a
+  promotion updates one place. #1620 tracks refreshing this and the matching block in
   `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
 - **Staging and production build differently on purpose.** Staging is verified through preview
   deployments; production is built through the API with `target: production`. `web-production-build`
