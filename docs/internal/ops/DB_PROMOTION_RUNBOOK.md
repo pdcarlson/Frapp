@@ -427,6 +427,32 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-06: `get_points_leaderboard` RPC
+
+* **Migration**: `20260906120001_get_points_leaderboard.sql`
+* **Purpose**: Moves the points-leaderboard aggregation out of the API process
+  and into Postgres (#522, #1698). The endpoint previously loaded every
+  `point_transactions` row for the chapter and summed them in JavaScript, so
+  work and memory grew with the chapter's whole history on a frequently visited
+  officer surface; the API now receives one row per member. `security invoker`,
+  so RLS still applies under the caller's own privileges.
+* **Checks**: After `db push`, confirm the function exists and is callable —
+  `select proname, prosecdef from pg_proc where proname = 'get_points_leaderboard';`
+  — and that it is **not** broadly executable:
+  `select has_function_privilege('anon', 'get_points_leaderboard(uuid,timestamptz,timestamptz)', 'execute');`
+  should be false, and the same query for `service_role` true. Calling it (not
+  merely applying the migration) is the real check: `RETURNS TABLE` makes
+  `user_id`/`total` OUT parameters, so an unqualified reference resolves only at
+  call time, which is why the PGlite gate invokes it.
+* **Promoter notes**: Additive — `create or replace function` plus grant
+  changes, no table touched, no backfill, no data change. Ships locked down at
+  birth (`revoke execute … from public`, and from `anon`/`authenticated` where
+  those Supabase roles exist), rather than inheriting the default-broad EXECUTE
+  that `20260901173000` had to close for the earlier read RPCs. Ordering
+  matters: it must land after `20260906120000`, which shares its date.
+* **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) §
+  Rollback `get_points_leaderboard` RPC.
+
 ## 2026-09-06: Audit-log action filter index
 
 * **Migration**: `20260906120000_audit_log_chapter_action_created_at_idx.sql`
