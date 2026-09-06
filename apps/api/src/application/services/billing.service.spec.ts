@@ -2139,6 +2139,38 @@ describe('BillingService', () => {
         });
       });
 
+      it('applies the event when checkout already wrote this subscription between the two lookups', async () => {
+        // findBySubscriptionId missed (checkout had not committed); the customer
+        // fallback then sees the live row naming *this* id, not a different one.
+        // That is "already ours", not a superseded reference.
+        const liveOurs = {
+          ...preCheckoutChapter,
+          subscription_id: 'sub_race',
+          subscription_status: 'active' as const,
+        };
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
+        mockChapterRepo.findByCustomerId.mockResolvedValue(liveOurs);
+        mockChapterRepo.update.mockResolvedValue(liveOurs);
+
+        await service.handleWebhookEvent(
+          subEvent('customer.subscription.updated', {
+            id: 'sub_race',
+            status: 'active',
+            customer: 'cus_race',
+          }),
+        );
+
+        expect(mockChapterRepo.claimSubscriptionId).not.toHaveBeenCalled();
+        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+          subscription_status: 'active',
+          last_stripe_webhook_at: LATER_ISO,
+          past_due_since: null,
+        });
+        expect(loggerWarnSpy).not.toHaveBeenCalledWith(
+          expect.stringContaining('superseded reference'),
+        );
+      });
+
       it('does not resolve a superseded reference through the customer — that would cancel the live subscription', async () => {
         // A canceled chapter resubscribed: `subscription_id` now names the new
         // subscription, and the operator cancels the old one in Stripe.

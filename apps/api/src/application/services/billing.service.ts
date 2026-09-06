@@ -858,7 +858,9 @@ export class BillingService {
    * event overtaking it — the same race as the first checkout, one row later.
    * The reference is overwritten and the transition applied. An event for the
    * *stored* id never reaches this branch at all; `findBySubscriptionId` above
-   * resolves it directly.
+   * resolves it directly. The same-id live case can still land here if checkout
+   * commits between those two lookups — that is already ours and is returned,
+   * not refused.
    *
    * **The resolved reference is claimed immediately**, and the write is a
    * compare-and-set (`claimSubscriptionId`): it updates only while the stored
@@ -903,6 +905,13 @@ export class BillingService {
         `No chapter found for subscription: ${subscriptionId} (customer ${customerId} is unknown here — foreign subscription, acked)`,
       );
       return null;
+    }
+
+    if (byCustomer.subscription_id === subscriptionId) {
+      // Checkout (or a sibling event) wrote this id between our miss-by-sub
+      // lookup and the customer fallback. Already ours — do not treat it as a
+      // superseded reference, and do not try to claim a live row.
+      return byCustomer;
     }
 
     const storedIsLive =
