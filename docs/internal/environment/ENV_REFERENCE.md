@@ -333,6 +333,26 @@ is unavailable in that state and the sign-in screen says so.
 > `eas submit` reads them from the logged-in Apple account or an App Store Connect API
 > key held in EAS credentials, so the file carries no placeholders.
 
+> **Push credentials also live outside Infisical, and Android needs two of them.**
+> `expo-notifications` delivers through APNs on iOS and FCM on Android.
+> **iOS:** nothing to configure by hand — EAS generates and stores the APNs key on the
+> first `eas build -p ios` against the Apple account. **Android:** (1) Firebase's client
+> config `google-services.json` has to be packaged into the build, and (2) the FCM V1
+> *service-account* key has to be uploaded under EAS credentials → Android → FCM V1 so
+> Expo's push service can send. Without (1) a production Android build compiles and runs,
+> `getExpoPushTokenAsync()` throws ("Default FirebaseApp is not initialized"),
+> `use-push-runtime.ts` swallows it, and the member simply never gets a push. Since
+> 2026-09-06 `apps/mobile/app.config.js` sets `android.googleServicesFile` **only when a
+> file is actually present**: from `GOOGLE_SERVICES_JSON` — an EAS environment variable
+> of type **File**, set in the `production` and `preview` EAS environments the build
+> profiles bind to, which EAS materialises on the runner and points the variable at — or
+> else from `apps/mobile/google-services.json` for a local build. CI and any checkout
+> without the file prebuild unchanged, which is why the field is not static in
+> `app.json`. Prefer the file variable: the JSON carries a Google API key (`AIza…`) that
+> gitleaks' default `gcp-api-key` rule flags, so committing it would need a
+> `.gitleaks.toml` allowlist entry. Neither the Firebase project nor the FCM key exists
+> yet; both are console steps that become real with the store submission (#938).
+
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of
 them can take a payment anyway. `EXPO_PUBLIC_APP_URL` and `EXPO_PUBLIC_LANDING_URL`

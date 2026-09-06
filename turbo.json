@@ -9,7 +9,8 @@
     "SENTRY_AUTH_TOKEN",
     "NEXT_PUBLIC_SENTRY_DSN",
     "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE",
-    "VERCEL_ENV"
+    "VERCEL_ENV",
+    "GOOGLE_SERVICES_JSON"
   ],
   "tasks": {
     "build": {
