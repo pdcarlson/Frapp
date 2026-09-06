@@ -104,12 +104,15 @@ runs:
     - name: Back up Storage objects
       shell: bash
       env:
-        AWS_ACCESS_KEY_ID: ${{ env.BACKUP_S3_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ env.BACKUP_S3_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: ${{ env.BACKUP_S3_REGION || 'auto' }}
         STORAGE_PREFIX: ${{ inputs.prefix }}
         REHEARSAL: ${{ inputs.rehearsal }}
       run: |
+        set -euo pipefail
+        # From the process environment, not `${{ env.* }}` — see the database
+        # action's upload step for why.
+        export AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY"
+        export AWS_DEFAULT_REGION="${BACKUP_S3_REGION:-auto}"
         if [ "$REHEARSAL" = "true" ]; then
           node scripts/storage-backup-run.mjs rehearse --prefix "$STORAGE_PREFIX"
         else

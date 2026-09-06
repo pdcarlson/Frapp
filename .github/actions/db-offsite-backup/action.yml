@@ -116,15 +116,19 @@ runs:
     - name: Upload offsite
       shell: bash
       env:
-        AWS_ACCESS_KEY_ID: ${{ env.BACKUP_S3_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ env.BACKUP_S3_SECRET_ACCESS_KEY }}
-        # `auto` is correct for Cloudflare R2 and harmless elsewhere; override
-        # with BACKUP_S3_REGION for a provider that pins a real region.
-        AWS_DEFAULT_REGION: ${{ env.BACKUP_S3_REGION || 'auto' }}
         BACKUP_ENVIRONMENT: ${{ inputs.environment }}
         LABEL: ${{ steps.dump.outputs.label }}
       run: |
         set -euo pipefail
+        # Mapped in the shell, from the process environment, not through
+        # `${{ env.* }}`: the BACKUP_S3_* values arrive via $GITHUB_ENV from the
+        # calling job, and inside a composite action the expression context is
+        # not guaranteed to see them — an empty AWS_ACCESS_KEY_ID here would
+        # fail the upload after a several-minute dump. `auto` is correct for
+        # Cloudflare R2 and harmless elsewhere; BACKUP_S3_REGION overrides it.
+        export AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY"
+        export AWS_DEFAULT_REGION="${BACKUP_S3_REGION:-auto}"
         DEST="s3://$BACKUP_S3_BUCKET/$BACKUP_ENVIRONMENT/$LABEL/"
         aws s3 cp "$RUNNER_TEMP/backups/$LABEL/" "$DEST" \
           --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive --only-show-errors
@@ -144,12 +148,12 @@ runs:
     - name: Prune backups past the retention window
       shell: bash
       env:
-        AWS_ACCESS_KEY_ID: ${{ env.BACKUP_S3_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ env.BACKUP_S3_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: ${{ env.BACKUP_S3_REGION || 'auto' }}
         BACKUP_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         set -euo pipefail
+        export AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY"
+        export AWS_DEFAULT_REGION="${BACKUP_S3_REGION:-auto}"
         DAYS="${BACKUP_RETENTION_DAYS:-30}"
         CUTOFF="$(date -u -d "$DAYS days ago" +%Y-%m-%d)"
         echo "Pruning $BACKUP_ENVIRONMENT/ prefixes older than $CUTOFF"

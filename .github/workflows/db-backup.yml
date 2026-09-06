@@ -23,25 +23,37 @@ name: Nightly Backup
 # gate is not deploy-only: every job naming the environment pauses on it, and an
 # unapproved scheduled run just expires — a workflow that LOOKS like coverage and
 # writes nothing. #1435 records the trap. The production jobs run under a separate
-# `production-backup` environment instead, which GitHub creates on first reference
-# with no protection rules and which must stay that way: it exists precisely so
-# that nothing here needs a human at 02:30. Its only job is to make the read-only
-# intent visible in the Actions UI and in `GET /repos/…/environments`; the deploy
-# gate on `production` is untouched.
+# `production-backup` environment instead, which GitHub creates on the first run
+# that references it, with no protection rules. It must never gain REQUIRED
+# REVIEWERS — that would reintroduce the trap — but it SHOULD get a deployment
+# branch policy of `main` only (Settings → Environments → production-backup →
+# Deployment branches → Selected → main) once it exists: without one, anyone with
+# write access can dispatch a modified copy of this workflow from a branch and
+# run it under this environment. (The Infisical machine identity is a repo-level
+# secret, so the policy narrows the environment rather than the secret; the same
+# exposure already exists for `check-migration-drift.yml`, which reads `prod` with
+# no environment at all.) The deploy gate on `production` is untouched.
 #
 # ── Why the production jobs inject TWO Infisical environments ────────────────
 # The source credentials (SUPABASE_PROJECT_REF, SUPABASE_DB_PASSWORD, SUPABASE_URL,
 # SUPABASE_SERVICE_ROLE_KEY) come from Infisical `prod`. The offsite destination
 # (`BACKUP_S3_*`, provisioned 2026-08-27 in #1287) lives ONLY in Infisical
 # `staging` — one bucket, one token, both environments as prefixes under it. Until
-# those four are copied into `prod`, the production jobs inject `staging` FIRST
-# (for the bucket) and `prod` SECOND, so every shared name resolves to the
-# production value. That ordering is load-bearing, and it is not the only guard:
-# each backup action asserts the injected project ref / URL against
-# `.github/environments.json` before it links, so a missing `prod` value can only
-# fail the job — never dump the staging database under a `production/` label.
-# When `BACKUP_S3_*` land in `prod`, the `staging` injection on those two jobs
-# becomes redundant and can be removed; nothing else changes.
+# production has its own, the production jobs inject `staging` FIRST (for the
+# bucket) and `prod` SECOND, so every shared name resolves to the production
+# value. That ordering is load-bearing, and it is not the only guard: each backup
+# action asserts the injected project ref / URL against `.github/environments.json`
+# before it links, so a missing `prod` value can only fail the job — never dump
+# the staging database under a `production/` label.
+#
+# The shared bucket is a known, accepted, TEMPORARY weakness: the staging token
+# can read, overwrite and delete production dumps, so a staging or preview
+# compromise reaches the production backups. The target state is a SEPARATE R2
+# bucket and bucket-scoped token for production, stored as `BACKUP_S3_*` in
+# Infisical `prod` only (never synced to Vercel/Render staging or previews) — at
+# which point the `staging` injection on the two production jobs is deleted and
+# nothing else changes. Provisioning that is a dashboard step for the owner
+# (ENV_REFERENCE.md § Offsite Backup Secrets).
 #
 # Restoring what this produces: docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md.
 
