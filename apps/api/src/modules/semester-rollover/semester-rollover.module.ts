@@ -26,6 +26,5 @@ import { RbacModule } from '../rbac/rbac.module';
       useClass: SupabaseRoleRepository,
     },
   ],
-  exports: [SemesterRolloverService],
 })
 export class SemesterRolloverModule {}

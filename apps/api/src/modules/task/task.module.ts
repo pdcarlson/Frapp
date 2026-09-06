@@ -20,6 +20,5 @@ import { AuthModule } from '../auth/auth.module';
     { provide: TASK_REPOSITORY, useClass: SupabaseTaskRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
-  exports: [TaskService, TASK_REPOSITORY],
 })
 export class TaskModule {}

@@ -22,6 +22,5 @@ import { RbacModule } from '../rbac/rbac.module';
   ],
   controllers: [ActivityFeedController],
   providers: [ActivityFeedService],
-  exports: [ActivityFeedService],
 })
 export class ActivityFeedModule {}

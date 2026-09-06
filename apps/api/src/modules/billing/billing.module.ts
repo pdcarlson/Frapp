@@ -30,6 +30,5 @@ import { ActivationModule } from '../activation/activation.module';
       useClass: SupabaseStripeWebhookEventRepository,
     },
   ],
-  exports: [BillingService, BILLING_PROVIDER],
 })
 export class BillingModule {}
