@@ -28,16 +28,15 @@ import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ActivationModule } from '../activation/activation.module';
 import { ChapterModule } from '../chapter/chapter.module';
-import { AuthModule } from '../auth/auth.module';
 import { ChatNotificationPreferenceRepository } from '../chat-push-worker/chat-notification-preference.repository';
 import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
 
 @Module({
   // RbacModule → RbacService, which the delete-message route uses to resolve
   // `channels:manage` for the spec'd moderation path.
-  // ChapterModule → MEMBER_REPOSITORY, and AuthModule → USER_REPOSITORY. Both
-  // are needed by `sendMessage`'s server-side `@`-mention resolution, which
-  // walks the chapter roster to turn an `@`-token into a `users.id`.
+  // ChapterModule → MEMBER_REPOSITORY, needed by `sendMessage`'s server-side
+  // `@`-mention resolution, which walks the chapter roster to turn an
+  // `@`-token into a `users.id`.
   // `ChannelAccessModule` is not a substitute: it exports only its service.
   // `ChannelCacheModule` → `ChannelCacheService`, so `updateChannel` can evict
   // the push worker's cached authorization inputs on write (#988) — imported
@@ -51,7 +50,6 @@ import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
     RbacModule,
     ActivationModule,
     ChapterModule,
-    AuthModule,
     ChannelCacheModule,
   ],
   controllers: [ChatController, ChatBookmarkController],

@@ -30,11 +30,6 @@ import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
-  exports: [
-    ChapterService,
-    CHAPTER_REPOSITORY,
-    ROLE_REPOSITORY,
-    MEMBER_REPOSITORY,
-  ],
+  exports: [CHAPTER_REPOSITORY, ROLE_REPOSITORY, MEMBER_REPOSITORY],
 })
 export class ChapterModule {}

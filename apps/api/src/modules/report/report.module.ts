@@ -28,6 +28,5 @@ import { ReportPdfRenderer } from '../../infrastructure/pdf/report-pdf.renderer'
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
     { provide: REPORT_PDF_RENDERER, useClass: ReportPdfRenderer },
   ],
-  exports: [ReportService],
 })
 export class ReportModule {}

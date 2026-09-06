@@ -21,6 +21,6 @@ import { RbacModule } from '../rbac/rbac.module';
     // in ChapterModule's own import graph just for one lightweight token.
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
-  exports: [EventService, EVENT_REPOSITORY],
+  exports: [EventService],
 })
 export class EventModule {}

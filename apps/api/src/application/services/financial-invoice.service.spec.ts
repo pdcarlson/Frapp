@@ -56,7 +56,6 @@ describe('FinancialInvoiceService', () => {
     };
 
     mockTransactionRepo = {
-      findByChapter: jest.fn(),
       findByInvoice: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
     };

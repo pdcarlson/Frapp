@@ -20,6 +20,6 @@ import { RbacModule } from '../rbac/rbac.module';
     { provide: EVENT_REPOSITORY, useClass: SupabaseEventRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
-  exports: [AttendanceService, ATTENDANCE_REPOSITORY],
+  exports: [AttendanceService],
 })
 export class AttendanceModule {}
