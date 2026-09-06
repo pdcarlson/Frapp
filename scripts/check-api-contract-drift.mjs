@@ -123,8 +123,6 @@ function run(command) {
       SUPABASE_URL: process.env.SUPABASE_URL ?? "https://placeholder.supabase.co",
       SUPABASE_SERVICE_ROLE_KEY:
         process.env.SUPABASE_SERVICE_ROLE_KEY ?? "placeholder_value",
-      SUPABASE_ANON_KEY:
-        process.env.SUPABASE_ANON_KEY ?? "placeholder_value",
       STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY ?? "placeholder_value",
       STRIPE_WEBHOOK_SECRET:
         process.env.STRIPE_WEBHOOK_SECRET ?? "placeholder_value",

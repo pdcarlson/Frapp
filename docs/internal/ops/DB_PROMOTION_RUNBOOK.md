@@ -339,8 +339,8 @@ Before you promote — the API does not boot without these:
 - [ ] Every name in `REQUIRED_ENV_VARS`
       ([`apps/api/src/config/env.validation.ts`](../../../apps/api/src/config/env.validation.ts))
       is set **and non-empty** in the target environment's Infisical folder:
-      `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
-      `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
+      `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`,
+      `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
 
 `validateEnv` rejects an **empty string** exactly as it rejects an absent key
 (`typeof value !== 'string' || value.trim().length === 0`), so a name that is
