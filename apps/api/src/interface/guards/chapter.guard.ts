@@ -23,13 +23,9 @@ import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
 import { isModuleEnabled } from '@repo/validation';
 import type { SubscriptionStatus } from '#domain/entities/chapter.entity';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import { isWithinSubscriptionGrace } from '#domain/constants/subscription-grace';
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-
-// FRA-109: a chapter that lapses to `past_due` gets a 3-day grace window
-// (spec/behavior/billing.md, spec/product/onboarding.md) before the hard
-// read-only lock applies.
-const GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class ChapterGuard implements CanActivate {
@@ -192,17 +188,12 @@ export class ChapterGuard implements CanActivate {
   }
 
   /**
-   * A `past_due` chapter is within its 3-day grace window when less than
-   * GRACE_PERIOD_MS has elapsed since it lapsed. A null timestamp (legacy row,
-   * or a missed webhook) is treated as within grace — the safer default that
-   * preserves access rather than instantly hard-locking a lapsed-but-paying
-   * chapter; the next webhook re-establishes the clock.
+   * The 3-day grace rule lives in `#domain/constants/subscription-grace` so
+   * the one unguarded write that has to evaluate it (invite redemption,
+   * #1546) reads the same window this guard does.
    */
   private isWithinGrace(pastDueSince: string | null): boolean {
-    if (!pastDueSince) return true;
-    const lapsedAt = Date.parse(pastDueSince);
-    if (Number.isNaN(lapsedAt)) return true;
-    return this.currentTime() - lapsedAt <= GRACE_PERIOD_MS;
+    return isWithinSubscriptionGrace(pastDueSince, this.currentTime());
   }
 
   private enforceSubscription(
