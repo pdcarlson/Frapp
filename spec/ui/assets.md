@@ -91,13 +91,15 @@ No transactional email templates exist in-repo yet; this binds the first ones bu
 
 ## 7. Mobile (Expo) rasters
 
-Expo requires **raster** launcher icons: `apps/mobile/app.json` references PNGs under `apps/mobile/assets/images/` (`icon.png`, `adaptive-icon.png`, `splash-icon.png`, `favicon.png`); SVG cannot be the store icon.
+Expo requires **raster** launcher icons: `apps/mobile/app.json` references PNGs under `apps/mobile/assets/images/` (`icon.png`, `adaptive-icon.png`, `adaptive-icon-monochrome.png`, `splash-icon.png`, `favicon.png`); SVG cannot be the store icon.
 
-After the master mark changes:
+**State as of 2026-09-06:** the PNGs are rasters of the *current* `app-icon.svg` (the legacy Frapp "F" mark on `#0F172A`), exported with `sharp` — until then they were Expo's keyline-grid placeholders, which no store accepts. This is not the Signet pass and is not a piecemeal restyle (§1): it is the committed legacy mark made shippable. Shapes: `icon.png` 1024² opaque RGB (Apple rejects alpha); `adaptive-icon.png` and `adaptive-icon-monochrome.png` 1024² glyph-only on transparent, with the glyph well inside the 66% safe zone so launcher masks never clip it (the monochrome layer is white, for Android themed icons); `splash-icon.png` glyph-only on transparent over `splash.backgroundColor`; `favicon.png` 96² for `expo start --web`. `android.adaptiveIcon.backgroundColor` is `#0F172A`, the mark's own field — it was `#ffffff`, which put a navy tile on a white disc.
 
-1. Export PNGs at the required sizes from `app-icon.svg` (design tool or CLI rasterizer).
-2. Replace `icon.png`, `adaptive-icon.png`, `splash-icon.png`, `favicon.png` as needed.
-3. Keep `app.json` `splash.backgroundColor` and `android.adaptiveIcon.backgroundColor` consistent with product surfaces. Current values (`#ffffff`) are legacy; Signet values are set in the Signet asset pass, which also adds the iOS Light/Dark/Tinted variants and Android monochrome layer (§1).
+After the master mark changes (the Signet pass):
+
+1. Export PNGs at the required sizes from `app-icon.svg` (design tool or CLI rasterizer — `sharp` is already a dependency and was what produced the current set).
+2. Replace `icon.png`, `adaptive-icon.png`, `adaptive-icon-monochrome.png`, `splash-icon.png`, `favicon.png` as needed.
+3. Keep `app.json` `splash.backgroundColor` and `android.adaptiveIcon.backgroundColor` consistent with product surfaces, and add the iOS Light/Dark/Tinted variants (§1).
 
 ---
 
