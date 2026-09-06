@@ -273,8 +273,10 @@ Two other refusals, both deliberate:
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
 - [ ] For a **production** promotion, a backup **taken by you**, with the dump path
       or object key recorded on the PR — or an explicit, written acceptance that
-      there is no recovery path for this promotion. Nothing takes one for you:
-      `db-backup.yml` runs against `frapp-staging` only, and the free plan offers
+      there is no recovery path for this promotion. Nothing takes one for you at
+      promotion time: `db-backup.yml` dumps `frapp-prod` nightly since 2026-09-06
+      (the most recent `production/<label>/` in the bucket may be up to a day old,
+      and the job is only as real as its last green run), and the free plan offers
       neither a snapshot nor PITR
       ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality),
       so this box cannot be ticked by having read it. This replaced an older item

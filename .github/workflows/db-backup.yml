@@ -13,8 +13,9 @@ name: Nightly Backup
 #
 # This is not redundancy on top of a provider snapshot. The `Frapp Live` org is on
 # the Supabase FREE plan, which gets no dashboard-accessible daily backups and no
-# PITR — so until that changes (#1403), this workflow produces the ONLY restorable
-# backup either project has. Supabase's own free-tier guidance is exactly this:
+# PITR — so until that changes (#1403), this workflow is the ONLY source of a
+# restorable backup for either project (for production, from its first successful
+# scheduled run onward). Supabase's own free-tier guidance is exactly this:
 # https://supabase.com/docs/guides/platform/backups
 #
 # ── Why the production jobs do NOT say `environment: production` ─────────────
@@ -57,11 +58,12 @@ on:
     inputs:
       storage_rehearsal:
         description: >-
-          Run the Storage restore rehearsal instead of a plain backup, in BOTH
-          environments: write a canary object, back it up, delete it from Storage,
-          restore it from the offsite copy, and assert the bytes match. This is the
-          drill that turns a copy into a backup -- it writes and deletes only its
-          own canary.
+          Run the Storage restore rehearsal instead of a plain backup, on STAGING
+          only: write a canary object, back it up, delete it from Storage, restore
+          it from the offsite copy, and assert the bytes match. This is the drill
+          that turns a copy into a backup -- it writes and deletes only its own
+          canary. The production Storage job ignores this input on purpose: it
+          runs with no reviewer, and the rehearsal is a write.
         type: boolean
         default: false
 
@@ -184,7 +186,13 @@ jobs:
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
 
-      - name: Mirror Storage objects (or rehearse a restore)
+      # Never the rehearsal here. The rehearsal WRITES a canary object into the
+      # project's Storage and deletes it again, and this job runs with no
+      # reviewer — a `workflow_dispatch` tick would otherwise perform a write
+      # against production without the ADR-19 approval every other production
+      # write has. The staging job above is where #1421's rehearsal runs; a
+      # production Storage rehearsal is a deliberate human step for now.
+      - name: Mirror Storage objects
         uses: ./.github/actions/storage-offsite-backup
         with:
           environment: production
@@ -192,4 +200,4 @@ jobs:
           # lists `production/` and skips anything that is not a dump label, but
           # keeping the two namespaces apart means it never has to.
           prefix: storage-production
-          rehearsal: ${{ inputs.storage_rehearsal == true && 'true' || 'false' }}
+          rehearsal: "false"

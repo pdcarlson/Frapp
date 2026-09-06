@@ -166,7 +166,7 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MAN
 | ------------ | ----------------- | ----------------------------------- |
 | `staging`    | None              | Staging deploys (`main`)            |
 | `production` | **A required reviewer that actually pauses jobs** (see the note below) — since #1340 this is the ONLY human gate on production | Production deploys + migrations |
-| `production-backup` | **None, on purpose** — created by GitHub when `db-backup.yml` first referenced it (2026-09-06, #1435); must never gain a protection rule | The nightly **read-only** production dump and Storage mirror. A `schedule:` job naming `production` would suspend on the reviewer gate every night; this environment exists so the backup needs no human at 02:30 while keeping the deploy gate untouched. It holds no secrets of its own — the job injects Infisical `prod` (source) and `staging` (offsite bucket), and each backup action asserts the injected project ref against `.github/environments.json` before linking |
+| `production-backup` | **None, on purpose.** Referenced by `db-backup.yml` since 2026-09-06 (#1435). GitHub's documented behaviour is to create an environment the first time a job *runs* against a name that does not exist, with no protection rules — so it appears after the first scheduled run, not on merge, and had not been observed via `GET /repos/…/environments` when this row was written. If it is ever created by hand, it must be created **without** reviewers; a protection rule here silently suspends every nightly production dump | The nightly **read-only** production dump and Storage mirror. A `schedule:` job naming `production` would suspend on the reviewer gate every night; this environment exists so the backup needs no human at 02:30 while keeping the deploy gate untouched. It holds no secrets of its own — the job injects Infisical `prod` (source) and `staging` (offsite bucket), and each backup action asserts the injected project ref against `.github/environments.json` before linking |
 
 > **Environment-protection note — premise corrected 2026-08-21.** This note used to read "GitHub *environment* required-reviewer protection rules are Enterprise-only on private repos, so they do **not** gate this (private, Pro) repo." **The repo is public**, verified 2026-08-21 by fetching the README over raw.githubusercontent.com with no credentials: HTTP 200, against a 404 control for a nonexistent repo. So the private-repo exemption that sentence rested on does not apply, and the conclusion no longer follows from its stated reason.
 >
@@ -1166,7 +1166,7 @@ races a Management API read of the project it is dumping:
 
 | Time (UTC) | Workflow | Watches |
 | --- | --- | --- |
-| 06:30 | `db-backup.yml` | Offsite backup of `frapp-staging` (Postgres dump + Storage mirror) |
+| 06:30 | `db-backup.yml` | Offsite backup of `frapp-staging` **and** (since 2026-09-06, #1435) `frapp-prod` — Postgres dump + Storage mirror for each, four jobs in one run |
 | 07:00 | `check-migration-drift.yml` | Applied migrations match `supabase/migrations/`, staging **and** production |
 | 07:15 | `production-guardrails.yml` | The two dashboard settings that keep `deploy-production.yml` the only path to production |
 | 07:30 | `staging-conformance.yml` | Project health, auth hook, Infisical syncs, and a live sign-in probe against `frapp-staging` |

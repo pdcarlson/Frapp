@@ -139,12 +139,14 @@ Supabase's guidance for the free tier is to do exactly what this repo now does:
 
 Two consequences worth stating plainly:
 
-- **The nightly offsite dump is not defence-in-depth. It is the only restorable
-  backup either project has.** Until 2026-09-06 that sentence ended "and
-  `frapp-prod` has none at all" — the production jobs in `db-backup.yml` are what
-  changed it (#1435), and a production **restore** has still not been rehearsed
-  (see the rehearsal log). If the workflow is not running, there is no recovery
-  path from data loss beyond replaying migrations into an empty database.
+- **The nightly offsite dump is not defence-in-depth. It is the only source of a
+  restorable backup either project has.** For `frapp-staging` that has been true
+  since 2026-08-27. For `frapp-prod` the jobs were added on 2026-09-06 (#1435) and
+  **a production dump exists only from the first successful scheduled run onward
+  — check the `production/` prefix in the bucket, not this sentence**; a
+  production **restore** has not been rehearsed (see the rehearsal log). If the
+  workflow is not running, there is no recovery path from data loss beyond
+  replaying migrations into an empty database.
 - Free-tier projects may have up to 7 daily backups taken internally, but
   Supabase makes them accessible **only on upgrade**, and states it "might no
   longer make daily backups for free projects in the future". That is not
@@ -210,9 +212,14 @@ between a rehearsal and an outage is one mistyped host.
 
 ## Restoring Storage objects
 
-Storage is backed up by the `backup-staging-storage` job in
-[`db-backup.yml`](../../../.github/workflows/db-backup.yml), which runs
-[`scripts/storage-backup-run.mjs`](../../../scripts/storage-backup-run.mjs).
+Storage is backed up by the `backup-staging-storage` and `backup-production-storage`
+jobs in [`db-backup.yml`](../../../.github/workflows/db-backup.yml), which run
+[`scripts/storage-backup-run.mjs`](../../../scripts/storage-backup-run.mjs) through
+the [`storage-offsite-backup`](../../../.github/actions/storage-offsite-backup/action.yml)
+action. **The two environments live under two prefixes — `storage/` is staging,
+`storage-production/` is production** — and every command below takes the prefix
+explicitly (`--prefix`). Restoring `storage/` into `frapp-prod` would overlay the
+staging corpus onto production; read the prefix twice.
 Rationale for every design choice is in the header of
 [`scripts/storage-backup.mjs`](../../../scripts/storage-backup.mjs).
 
@@ -223,8 +230,10 @@ at a stable key so a restore can address one file without unpacking a nightly
 archive:
 
 ```
-s3://<BACKUP_S3_BUCKET>/storage/manifest.json
+s3://<BACKUP_S3_BUCKET>/storage/manifest.json                      # staging
 s3://<BACKUP_S3_BUCKET>/storage/<bucket>/<object path>
+s3://<BACKUP_S3_BUCKET>/storage-production/manifest.json           # production
+s3://<BACKUP_S3_BUCKET>/storage-production/<bucket>/<object path>
 ```
 
 The manifest object at the top of that prefix is the index: one record per

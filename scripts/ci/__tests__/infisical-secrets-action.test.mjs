@@ -10,7 +10,7 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 // the Infisical preamble+injection (15 call sites across 6 workflows) and the
 // Supabase CLI version pin (4 sites).
 //
-// Why this file has teeth beyond "the copies stayed gone": most of the eleven
+// Why this file has teeth beyond "the copies stayed gone": most of the eleven original (fifteen since #1435)
 // Infisical call sites never run on a pull request.
 //
 //   * ONE runs on every same-repo PR -- `migration-drift` in
@@ -25,7 +25,7 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 //     production deploy path, which no PR ever exercises.
 //
 // So CI can prove the mechanism but not the TRANSCRIPTION, and this file has to:
-// that all eleven were converted, that none was left hand-written, that each
+// that all eleven original were converted, that none was left hand-written, that each
 // still passes what it used to pass, and that each still asks for the
 // environment its job actually needs.
 //
@@ -34,7 +34,7 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 // in `.github/workflows` and `.github/actions`. Inside the action the value is
 // `${{ inputs.env-slug }}`, which that scan cannot match -- by design, because
 // the real literals survive as the `with:` values at the call sites. Rename the
-// action's input and all eleven literals leave the gate's reach at once: it
+// action's input and all fifteen literals leave the gate's reach at once: it
 // then scans zero bytes and passes. That is the vacuous green its own section 0
 // exists to refuse, and nothing else in the repo would notice.
 
@@ -100,14 +100,14 @@ describe("infisical-secrets composite action", () => {
       /^ {2}env-slug:$/m,
       "the input must be named `env-slug`: check-env-slugs.mjs matches the literal " +
         "`env-slug: \"<slug>\"` at the call sites, and renaming this input moves all " +
-        "eleven slugs out of that gate's reach while it keeps exiting 0.",
+        "fifteen slugs out of that gate's reach while it keeps exiting 0.",
     );
   });
 
   it("passes every input the hand-written call sites used to pass", () => {
     // The extraction is only lossless if the constants the call sites carried
     // are still carried. `include-imports: true` in particular was written at
-    // all eleven sites and is NOT the action's default.
+    // all fifteen sites and is NOT the action's default.
     for (const [key, value] of [
       ["method", '"universal"'],
       ["project-slug", '"frapp-live-ej-ls"'],
@@ -152,7 +152,7 @@ describe("infisical-secrets composite action", () => {
   });
 
   it("defaults `on-missing-credentials` to `error`", () => {
-    // Ten of the eleven call sites pass nothing and rely entirely on this
+    // Fourteen of the fifteen call sites pass nothing and rely entirely on this
     // default. Nothing asserted it, so flipping it to `warn` made every site —
     // deploy-production's `prod` injection included — continue past absent
     // credentials into `supabase db push`, with the suite green. The shell
