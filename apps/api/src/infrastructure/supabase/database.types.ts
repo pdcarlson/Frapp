@@ -207,7 +207,7 @@ export interface Database {
         }[];
       };
       /**
-       * `20260905030001` — per-member point totals for one chapter, summed in
+       * `20260906120001` — per-member point totals for one chapter, summed in
        * Postgres. Bounds carry the same semantics as `get_points_report`:
        * `p_since` exclusive, `p_until` inclusive, either null unbounded. Rows
        * come back ordered by total descending, then `user_id` ascending.
