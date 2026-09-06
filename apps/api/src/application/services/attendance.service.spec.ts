@@ -10,17 +10,17 @@ import { AttendanceService } from './attendance.service';
 import {
   CHECK_IN_TOKEN_WINDOW_MS,
   mintCheckInToken,
-} from '../../domain/utils/check-in-token';
+} from '#domain/utils/check-in-token';
 import { RbacService } from './rbac.service';
-import { ATTENDANCE_REPOSITORY } from '../../domain/repositories/attendance.repository.interface';
-import type { IAttendanceRepository } from '../../domain/repositories/attendance.repository.interface';
-import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
-import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import type { Event } from '../../domain/entities/event.entity';
-import type { EventAttendance } from '../../domain/entities/event-attendance.entity';
-import type { Member } from '../../domain/entities/member.entity';
+import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
+import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
+import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
+import type { IEventRepository } from '#domain/repositories/event.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type { Event } from '#domain/entities/event.entity';
+import type { EventAttendance } from '#domain/entities/event-attendance.entity';
+import type { Member } from '#domain/entities/member.entity';
 
 describe('AttendanceService', () => {
   let service: AttendanceService;

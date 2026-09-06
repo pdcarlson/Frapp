@@ -1,4 +1,4 @@
-@import "../../../packages/theme/src/signet.css";
+@import "@repo/theme/signet.css";
 
 /*
  * v4 has no `presets` key and no automatic `tailwind.config.ts` pickup: a

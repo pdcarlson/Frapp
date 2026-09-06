@@ -41,7 +41,7 @@ import { Textarea } from "@/components/ui/textarea";
  * collapsed those would silently reject a task with no comment where the person
  * meant to abandon the rejection entirely. So this resolves `null` for cancel
  * and a `{ comment }` object — with `comment` possibly `""` — for confirm, and
- * `confirm-dialog.test.tsx` pins that distinction.
+ * `confirm-dialog.spec.tsx` pins that distinction.
  *
  * **Focus return is not Radix's default here.** These dialogs open from a plain
  * `onClick`, not a `DialogTrigger`, so Radix restores focus to whatever was

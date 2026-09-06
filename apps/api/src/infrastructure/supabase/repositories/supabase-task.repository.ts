@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { ITaskRepository } from '../../../domain/repositories/task.repository.interface';
-import { Task } from '../../../domain/entities/task.entity';
+import { ITaskRepository } from '#domain/repositories/task.repository.interface';
+import { Task } from '#domain/entities/task.entity';
 
 @Injectable()
 export class SupabaseTaskRepository implements ITaskRepository {

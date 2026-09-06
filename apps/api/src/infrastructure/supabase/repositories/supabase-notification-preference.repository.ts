@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import type { INotificationPreferenceRepository } from '../../../domain/repositories/notification.repository.interface';
-import type { NotificationPreference } from '../../../domain/entities/notification.entity';
+import type { INotificationPreferenceRepository } from '#domain/repositories/notification.repository.interface';
+import type { NotificationPreference } from '#domain/entities/notification.entity';
 
 @Injectable()
 export class SupabaseNotificationPreferenceRepository implements INotificationPreferenceRepository {

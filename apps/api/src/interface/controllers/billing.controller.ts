@@ -7,7 +7,7 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { SubscriptionExempt } from '../decorators/subscription.decorator';
 import { CurrentChapterId } from '../decorators/current-user.decorator';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { CreateCheckoutDto, CreatePortalDto } from '../dtos/billing.dto';
 
 @ApiTags('Billing')

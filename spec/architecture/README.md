@@ -569,7 +569,7 @@ outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queu
 
 ### ADR-10: Supabase Realtime Presence is the presence source — no custom broadcast topic (Chunk 05)
 
-**Decision:** Presence on `chat:channel:<id>` uses Supabase Realtime's built-in Presence API: the web client calls `channel.track({ userId, ts })` from the `SUBSCRIBED` callback in `packages/chat-core/src/realtime-manager.ts` (pinned by that package's `presence-contract.test.ts`); the push worker opens a service-role subscription on the same topic and reads `presenceState()` per channel before fanout.
+**Decision:** Presence on `chat:channel:<id>` uses Supabase Realtime's built-in Presence API: the web client calls `channel.track({ userId, ts })` from the `SUBSCRIBED` callback in `packages/chat-core/src/realtime-manager.ts` (pinned by that package's `presence-contract.spec.ts`); the push worker opens a service-role subscription on the same topic and reads `presenceState()` per channel before fanout.
 
 **Rationale:** A bespoke broadcast topic (e.g. `presence:channel:<id>` with manual heartbeats) would re-implement what Realtime Presence already does — connect/disconnect tracking, a state aggregator, automatic cleanup on socket drop — and create a second source of truth that can drift from the actual subscription state. Presence on the chat channel topic is automatic; we already pay the realtime cost for messages on the same topic. **Alternatives considered:** (a) custom broadcast topic with periodic `still-here` pings — duplicates Presence with more bugs; (b) a global presence map maintained by the API via REST heartbeats — loses ephemerality, creates DB write amplification (ADR-02 anti-pattern); (c) skip presence and always push — trains users to mute notifications (ADR-04 anti-pattern).
 
@@ -1587,7 +1587,7 @@ The same TanStack Query mutations and Supabase Realtime subscriptions run on bot
 
 - **Foreground:** resubscribe Realtime and REST-backfill since the last cursor **before** rendering the channel, so the user never sees a stale thread.
 - **Background:** persist per-channel cursors.
-- **Presence states — specified, not built.** As designed: active → `online`; backgrounded → `idle`; force-quit → `offline`. Today the tracked payload is exactly `{ userId, ts }` — no status field, pinned by key-set equality in `packages/chat-core/src/presence-contract.test.ts` — and nothing in `apps/mobile` binds `AppState` to presence. Presence is Supabase Realtime Presence on the channel topic (ADR-10); [`../behavior/chat/README.md`](../behavior/chat/README.md) owns that status. Web derives `idle` from timestamp age on the *chapter* topic rather than from a tracked status, so "consistent with web" would describe the transport, not the mechanism.
+- **Presence states — specified, not built.** As designed: active → `online`; backgrounded → `idle`; force-quit → `offline`. Today the tracked payload is exactly `{ userId, ts }` — no status field, pinned by key-set equality in `packages/chat-core/src/presence-contract.spec.ts` — and nothing in `apps/mobile` binds `AppState` to presence. Presence is Supabase Realtime Presence on the channel topic (ADR-10); [`../behavior/chat/README.md`](../behavior/chat/README.md) owns that status. Web derives `idle` from timestamp age on the *chapter* topic rather than from a tracked status, so "consistent with web" would describe the transport, not the mechanism.
 
 ### Push delivery
 

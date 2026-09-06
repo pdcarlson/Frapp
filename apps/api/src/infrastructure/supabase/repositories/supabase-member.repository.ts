@@ -5,11 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IMemberRepository } from '../../../domain/repositories/member.repository.interface';
-import {
-  ChapterMemberIdentity,
-  Member,
-} from '../../../domain/entities/member.entity';
+import { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { ChapterMemberIdentity, Member } from '#domain/entities/member.entity';
 
 /**
  * The wire shape of the `users!inner(id, display_name)` embed, written out

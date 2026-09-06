@@ -5,11 +5,11 @@ import type {
   IDiscordConnectionRepository,
   PendingDiscordConnectionInput,
   UpsertDiscordConnectionInput,
-} from '../../../domain/repositories/discord-connection.repository.interface';
+} from '#domain/repositories/discord-connection.repository.interface';
 import type {
   DiscordConnection,
   DiscordOAuthState,
-} from '../../../domain/entities/discord-connection.entity';
+} from '#domain/entities/discord-connection.entity';
 
 @Injectable()
 export class SupabaseDiscordConnectionRepository implements IDiscordConnectionRepository {

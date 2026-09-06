@@ -30,7 +30,7 @@ import {
   TransferPresidencyDto,
   PresidencyClaimStatusDto,
 } from '../dtos/rbac.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Roles & Permissions')
 @ApiBearerAuth()

@@ -19,8 +19,8 @@ import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from '@repo/validation';
 import {
   CHAT_MESSAGE_KINDS,
   SETTABLE_NOTIFICATION_KINDS,
-} from '../../domain/entities/chat.entity';
-import type { SettableNotificationKind } from '../../domain/entities/chat.entity';
+} from '#domain/entities/chat.entity';
+import type { SettableNotificationKind } from '#domain/entities/chat.entity';
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
 

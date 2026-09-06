@@ -5,12 +5,12 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IServiceEntryRepository } from '../../../domain/repositories/service-entry.repository.interface';
+import { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
 import {
   ServiceEntry,
   ServiceEntryFilters,
   ServiceLeaderboardRow,
-} from '../../../domain/entities/service-entry.entity';
+} from '#domain/entities/service-entry.entity';
 
 @Injectable()
 export class SupabaseServiceEntryRepository implements IServiceEntryRepository {

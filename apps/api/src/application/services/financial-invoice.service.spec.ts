@@ -7,13 +7,13 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { FinancialInvoiceService } from './financial-invoice.service';
-import { FINANCIAL_INVOICE_REPOSITORY } from '../../domain/repositories/financial-invoice.repository.interface';
-import type { IFinancialInvoiceRepository } from '../../domain/repositories/financial-invoice.repository.interface';
-import { FINANCIAL_TRANSACTION_REPOSITORY } from '../../domain/repositories/financial-transaction.repository.interface';
-import type { IFinancialTransactionRepository } from '../../domain/repositories/financial-transaction.repository.interface';
-import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
-import type { IBillingProvider } from '../../domain/adapters/billing.interface';
-import type { FinancialInvoice } from '../../domain/entities/financial-invoice.entity';
+import { FINANCIAL_INVOICE_REPOSITORY } from '#domain/repositories/financial-invoice.repository.interface';
+import type { IFinancialInvoiceRepository } from '#domain/repositories/financial-invoice.repository.interface';
+import { FINANCIAL_TRANSACTION_REPOSITORY } from '#domain/repositories/financial-transaction.repository.interface';
+import type { IFinancialTransactionRepository } from '#domain/repositories/financial-transaction.repository.interface';
+import { BILLING_PROVIDER } from '#domain/adapters/billing.interface';
+import type { IBillingProvider } from '#domain/adapters/billing.interface';
+import type { FinancialInvoice } from '#domain/entities/financial-invoice.entity';
 import { NotificationService } from './notification.service';
 import { ChapterWorkflowsService } from './chapter-workflows.service';
 
@@ -65,8 +65,6 @@ describe('FinancialInvoiceService', () => {
       createCustomer: jest.fn(),
       createCheckoutSession: jest.fn(),
       createCustomerPortalSession: jest.fn(),
-      getSubscriptionStatus: jest.fn(),
-      cancelSubscription: jest.fn(),
       createPaymentIntent: jest.fn(),
       getPaymentIntent: jest.fn(),
       cancelPaymentIntent: jest.fn().mockResolvedValue(undefined),
@@ -1209,14 +1207,6 @@ describe('FinancialInvoiceService', () => {
           chargeId: 'ch_charge_1',
         }),
       ).resolves.toBeUndefined();
-    });
-  });
-
-  describe('getTransactions', () => {
-    it('should return chapter financial transactions', async () => {
-      mockTransactionRepo.findByChapter.mockResolvedValue([]);
-      const result = await service.getTransactions('ch-1');
-      expect(result).toEqual([]);
     });
   });
 

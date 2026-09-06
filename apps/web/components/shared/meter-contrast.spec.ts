@@ -175,7 +175,7 @@ describe("the accent fill, across every seeded chapter", () => {
 
   it("records that no seed's fill clears the non-text floor against the track", () => {
     // Deliberately recorded rather than enforced, the same way
-    // `table-contrast.test.ts` records it for row states: at this ladder a
+    // `table-contrast.spec.ts` records it for row states: at this ladder a
     // proportion fill cannot reach 3:1 for every seed, which is exactly why
     // both call sites print the count and percentage as text beside the bar
     // and mark the bar `aria-hidden`. If a later change makes the bar the only

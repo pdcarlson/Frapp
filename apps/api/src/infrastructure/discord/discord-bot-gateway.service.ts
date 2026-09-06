@@ -11,7 +11,7 @@ import {
   type DiscordChannelRef,
   type DiscordRoleRef,
   type IDiscordBotGateway,
-} from '../../domain/adapters/discord.interface';
+} from '#domain/adapters/discord.interface';
 
 /**
  * Channel types that hold messages a chapter would want archived.

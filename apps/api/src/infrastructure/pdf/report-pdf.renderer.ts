@@ -11,7 +11,7 @@ import type {
   IReportPdfRenderer,
   ReportPdfColumn,
   ReportPdfDocument,
-} from '../../domain/adapters/pdf.interface';
+} from '#domain/adapters/pdf.interface';
 
 /** Landscape US Letter — 5-column reports (attendance, service) need the width. */
 const PAGE_WIDTH = 792;

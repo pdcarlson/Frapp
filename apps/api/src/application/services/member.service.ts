@@ -5,30 +5,30 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { Member } from '../../domain/entities/member.entity';
-import { User } from '../../domain/entities/user.entity';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { Member } from '#domain/entities/member.entity';
+import { User } from '#domain/entities/user.entity';
 import {
   SystemPermissions,
   SystemRoleKeys,
-} from '../../domain/constants/permissions';
+} from '#domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { allowedVisibilities } from './custom-field-visibility';
-import type { MemberCustomFieldValue } from '../../domain/entities/chapter-custom-field.entity';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+import type { MemberCustomFieldValue } from '#domain/entities/chapter-custom-field.entity';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import {
   PROFILES_BUCKET,
   profileFolderPrefix,
-} from '../../domain/constants/storage';
+} from '#domain/constants/storage';
 
 export interface AlumniFilter {
   graduation_year?: number;

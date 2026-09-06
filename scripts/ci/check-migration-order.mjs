@@ -60,7 +60,7 @@
 // manually and is routinely behind, so the environment furthest ahead is the
 // one that refuses first — and that is usually staging.
 //
-// Project refs come from `ci/environments.json` (not secret; a ref grants
+// Project refs come from `.github/environments.json` (not secret; a ref grants
 // nothing without a token), so one Infisical injection for the account-level
 // `SUPABASE_ACCESS_TOKEN` covers both reads.
 //
@@ -650,7 +650,7 @@ export async function runOrderGate({
           "the Management API returned an EMPTY migration history. Every real project here holds " +
           "at least `00000000000000_initial_schema`, so this is a wrong project ref, a token " +
           "scoped elsewhere, or a reset project — not a clean database. If the project really is " +
-          'brand new, set "allowEmptyMigrationHistory": true for it in ci/environments.json.',
+          'brand new, set "allowEmptyMigrationHistory": true for it in .github/environments.json.',
         newestApplied: null,
         offending: [],
         stranded: [],

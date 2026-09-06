@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { AnalyticsEvent } from '@repo/validation';
-import type { IAnalyticsProvider } from '../../domain/adapters/analytics.interface';
+import type { IAnalyticsProvider } from '#domain/adapters/analytics.interface';
 
 export interface PosthogProviderOptions {
   apiKey: string;

@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { WebhookController } from './webhook.controller';
 import { BillingService } from '../../application/services/billing.service';
-import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
+import { BILLING_PROVIDER } from '#domain/adapters/billing.interface';
 import type { WebhookRequest } from '../types/request-context.types';
 
 /**

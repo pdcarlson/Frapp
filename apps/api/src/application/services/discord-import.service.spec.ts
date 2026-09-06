@@ -13,13 +13,13 @@ import { DiscordImportService } from './discord-import.service';
 import {
   ArchiveQuotaExceededError,
   DISCORD_IMPORT_REPOSITORY,
-} from '../../domain/repositories/discord-import.repository.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import { DISCORD_BOT_GATEWAY } from '../../domain/adapters/discord.interface';
+} from '#domain/repositories/discord-import.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import { DISCORD_BOT_GATEWAY } from '#domain/adapters/discord.interface';
 import { DiscordOAuthService } from './discord-oauth.service';
-import type { DiscordImport } from '../../domain/entities/discord-import.entity';
-import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
+import type { DiscordImport } from '#domain/entities/discord-import.entity';
+import { isUnsafeStoragePath } from '#domain/utils/storage-path';
 
 const CHAPTER = '11111111-1111-4111-8111-111111111111';
 const USER = '33333333-3333-4333-8333-333333333333';

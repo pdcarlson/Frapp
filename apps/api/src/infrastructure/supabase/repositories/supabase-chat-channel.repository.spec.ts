@@ -5,7 +5,7 @@ import {
   inA,
   inB,
   type TenantHarness,
-} from '../../../../test/helpers/tenant-scope.harness';
+} from '#test/helpers/tenant-scope.harness';
 
 /**
  * Tenant scope for `chat_channels`.

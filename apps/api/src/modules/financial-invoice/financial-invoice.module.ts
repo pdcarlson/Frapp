@@ -3,9 +3,9 @@ import { FinancialInvoiceService } from '../../application/services/financial-in
 import { FinancialInvoiceController } from '../../interface/controllers/financial-invoice.controller';
 import { SupabaseFinancialInvoiceRepository } from '../../infrastructure/supabase/repositories/supabase-financial-invoice.repository';
 import { SupabaseFinancialTransactionRepository } from '../../infrastructure/supabase/repositories/supabase-financial-transaction.repository';
-import { FINANCIAL_INVOICE_REPOSITORY } from '../../domain/repositories/financial-invoice.repository.interface';
-import { FINANCIAL_TRANSACTION_REPOSITORY } from '../../domain/repositories/financial-transaction.repository.interface';
-import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
+import { FINANCIAL_INVOICE_REPOSITORY } from '#domain/repositories/financial-invoice.repository.interface';
+import { FINANCIAL_TRANSACTION_REPOSITORY } from '#domain/repositories/financial-transaction.repository.interface';
+import { BILLING_PROVIDER } from '#domain/adapters/billing.interface';
 import { StripeBillingService } from '../../infrastructure/billing/stripe.service';
 import { NotificationModule } from '../notification/notification.module';
 import { RbacModule } from '../rbac/rbac.module';

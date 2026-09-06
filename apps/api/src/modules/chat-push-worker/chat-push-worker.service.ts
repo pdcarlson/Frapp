@@ -10,8 +10,8 @@ import type {
   RealtimePostgresInsertPayload,
 } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { NotificationService } from '../../application/services/notification.service';
 import { BurstBundler } from './burst-bundler';
 import { ChatNotificationPreferenceRepository } from './chat-notification-preference.repository';

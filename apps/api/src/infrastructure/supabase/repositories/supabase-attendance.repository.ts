@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IAttendanceRepository } from '../../../domain/repositories/attendance.repository.interface';
-import { EventAttendance } from '../../../domain/entities/event-attendance.entity';
+import { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
+import { EventAttendance } from '#domain/entities/event-attendance.entity';
 
 @Injectable()
 export class SupabaseAttendanceRepository implements IAttendanceRepository {

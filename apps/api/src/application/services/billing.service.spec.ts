@@ -27,21 +27,21 @@ function restoreSalt(priorSalt: string | undefined): void {
 }
 
 import { BillingService } from './billing.service';
-import { SystemRoleKeys } from '../../domain/constants/permissions';
-import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
+import { SystemRoleKeys } from '#domain/constants/permissions';
+import { BILLING_PROVIDER } from '#domain/adapters/billing.interface';
 import type {
   IBillingProvider,
   WebhookEvent,
-} from '../../domain/adapters/billing.interface';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/stripe-webhook-event.repository.interface';
-import type { IStripeWebhookEventRepository } from '../../domain/repositories/stripe-webhook-event.repository.interface';
-import type { Chapter } from '../../domain/entities/chapter.entity';
+} from '#domain/adapters/billing.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '#domain/repositories/stripe-webhook-event.repository.interface';
+import type { IStripeWebhookEventRepository } from '#domain/repositories/stripe-webhook-event.repository.interface';
+import type { Chapter } from '#domain/entities/chapter.entity';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { FinancialInvoiceService } from './financial-invoice.service';
@@ -182,8 +182,6 @@ describe('BillingService', () => {
       createCustomer: jest.fn(),
       createCheckoutSession: jest.fn(),
       createCustomerPortalSession: jest.fn(),
-      getSubscriptionStatus: jest.fn(),
-      cancelSubscription: jest.fn(),
       createPaymentIntent: jest.fn(),
       getPaymentIntent: jest.fn(),
       cancelPaymentIntent: jest.fn(),

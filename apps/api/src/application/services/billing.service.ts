@@ -16,21 +16,21 @@ import {
   type SubscriptionWebhookObject,
   type InvoiceWebhookObject,
   type PaymentIntentWebhookObject,
-} from '../../domain/adapters/billing.interface';
+} from '#domain/adapters/billing.interface';
 import { FinancialInvoiceService } from './financial-invoice.service';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import type {
   Chapter,
   SubscriptionStatus,
-} from '../../domain/entities/chapter.entity';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/stripe-webhook-event.repository.interface';
-import type { IStripeWebhookEventRepository } from '../../domain/repositories/stripe-webhook-event.repository.interface';
-import { SystemRoleKeys } from '../../domain/constants/permissions';
+} from '#domain/entities/chapter.entity';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '#domain/repositories/stripe-webhook-event.repository.interface';
+import type { IStripeWebhookEventRepository } from '#domain/repositories/stripe-webhook-event.repository.interface';
+import { SystemRoleKeys } from '#domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { pseudonymizeChapterId } from '../../infrastructure/observability/pseudonyms';

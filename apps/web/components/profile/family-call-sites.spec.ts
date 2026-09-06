@@ -10,9 +10,9 @@ import { describe, expect, it } from "vitest";
  * restated:
  *
  * - **A value-level guard cannot see a call site.**
- *   `profile-contrast.test.ts` computes every ratio here correctly and would
+ *   `profile-contrast.spec.ts` computes every ratio here correctly and would
  *   stay green through a full revert of the code it was written for
- *   (`components/settings/settings-contrast.test.ts` says the same about its
+ *   (`components/settings/settings-contrast.spec.ts` says the same about its
  *   own). Both halves are needed and they catch different things.
  * - **Checking *which token* cannot see *at what opacity*.** Slice 7's first
  *   guard banned `text-muted-foreground/40` literally and the review walked
@@ -25,14 +25,14 @@ import { describe, expect, it } from "vitest";
  * this file exists: reverting the archetype card to `border-primary
  * bg-primary/5` / `hover:bg-accent/50` and the tutorial strip to
  * `bg-secondary/60` turns **two** tests here red and leaves all thirteen in
- * `profile-contrast.test.ts` green.
+ * `profile-contrast.spec.ts` green.
  */
 
 const ROOT = join(__dirname, "..", "..");
 
 /**
  * Every file the slice owns. A ledger rather than a glob, in the shape
- * `components/shared/can-fallback.test.tsx` uses: a glob silently stops
+ * `components/shared/can-fallback.spec.tsx` uses: a glob silently stops
  * covering a file that moves, and the point of this list is that it has to be
  * edited deliberately.
  */
