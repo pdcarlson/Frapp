@@ -9,23 +9,23 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
-import type { IInviteRepository } from '../../domain/repositories/invite.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import { Invite } from '../../domain/entities/invite.entity';
-import { SystemRoleKeys } from '../../domain/constants/permissions';
+import { INVITE_REPOSITORY } from '#domain/repositories/invite.repository.interface';
+import type { IInviteRepository } from '#domain/repositories/invite.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { Invite } from '#domain/entities/invite.entity';
+import { SystemRoleKeys } from '#domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
-import { EMAIL_PROVIDER } from '../../domain/adapters/email.interface';
-import type { IEmailProvider } from '../../domain/adapters/email.interface';
+import { EMAIL_PROVIDER } from '#domain/adapters/email.interface';
+import type { IEmailProvider } from '#domain/adapters/email.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   FrappSupabaseClient,
@@ -36,7 +36,7 @@ import {
   buildJoinUrl,
 } from '../../infrastructure/email/invite-link.util';
 import { dedupeEmails } from '@repo/validation';
-import { SYSTEM_SENDER_ID } from '../../domain/constants/chat';
+import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 export interface BulkEmailInviteResult {
   invites: Invite[];

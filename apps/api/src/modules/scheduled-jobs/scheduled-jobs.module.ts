@@ -37,6 +37,5 @@ import { PollModule } from '../poll/poll.module';
     PollModule,
   ],
   providers: [ScheduledJobsService, ScheduledJobsRepository],
-  exports: [ScheduledJobsService],
 })
 export class ScheduledJobsModule {}

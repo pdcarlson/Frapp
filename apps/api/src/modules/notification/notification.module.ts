@@ -11,8 +11,8 @@ import {
   PUSH_TOKEN_REPOSITORY,
   NOTIFICATION_PREFERENCE_REPOSITORY,
   USER_SETTINGS_REPOSITORY,
-} from '../../domain/repositories/notification.repository.interface';
-import { NOTIFICATION_PROVIDER } from '../../domain/adapters/notification.interface';
+} from '#domain/repositories/notification.repository.interface';
+import { NOTIFICATION_PROVIDER } from '#domain/adapters/notification.interface';
 import { ExpoPushProvider } from '../../infrastructure/notifications/expo-push.provider';
 import { AuthModule } from '../auth/auth.module';
 import { ChapterModule } from '../chapter/chapter.module';

@@ -933,7 +933,7 @@ export function ReportsPage() {
                 The shared primitive rather than a hand-rolled `<table>`. It
                 brings the `overflow-auto` wrapper that keeps a wide report off
                 the 375px floor, the undiluted `--border` hairline, and the row
-                recipe `components/shared/table-contrast.test.ts` already pins.
+                recipe `components/shared/table-contrast.spec.ts` already pins.
                 The hand-rolled one carried three defects at once: a
                 `bg-secondary/40` header that is 1.000:1 on a card, a
                 `border-border/70` row rule at the diluted alpha §2 forbids,

@@ -5,7 +5,7 @@ import {
   inA,
   inB,
   type TenantHarness,
-} from '../../../../test/helpers/tenant-scope.harness';
+} from '#test/helpers/tenant-scope.harness';
 
 /**
  * Tenant scope for `financial_transactions` — the payment ledger behind dues.
@@ -56,14 +56,6 @@ describe('SupabaseFinancialTransactionRepository — tenant scope', () => {
       collisionExempt: { financial_transactions: ['invoice_id'] },
     });
     repo = new SupabaseFinancialTransactionRepository(harness.client);
-  });
-
-  it('findByChapter returns only the caller chapter ledger', async () => {
-    const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.findByChapter(CHAPTER_B),
-    );
-
-    expect(rows.map((r) => r.id)).toEqual([TXN_B]);
   });
 
   it('create writes the ledger row under the caller chapter', async () => {

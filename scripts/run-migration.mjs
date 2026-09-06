@@ -29,7 +29,7 @@
  * applied migrations to PRODUCTION while every log line said "staging", and the
  * only trace would have been the run's own output saying it was fine.
  *
- * So the ref each environment must have now lives in `ci/environments.json`,
+ * So the ref each environment must have now lives in `.github/environments.json`,
  * and this script compares the injected ref against it and FAILS CLOSED before
  * `link` or `push` is invoked. That the file is not secret is the point: a
  * project ref grants nothing without `SUPABASE_ACCESS_TOKEN`, and naming it in
@@ -138,7 +138,7 @@ export function validateInvocation({
   if (projectRef !== expected.supabaseProjectRef) {
     return fail(
       `SUPABASE_PROJECT_REF does not match the '${args.env}' environment.\n` +
-        `    Expected (ci/environments.json): ${expected.supabaseProjectRef} (${expected.supabaseProjectName})\n` +
+        `    Expected (.github/environments.json): ${expected.supabaseProjectRef} (${expected.supabaseProjectName})\n` +
         `    Injected (SUPABASE_PROJECT_REF): ${projectRef}\n` +
         `\n` +
         `  Refusing to run: a job labelled '${args.env}' that is pointed at another project\n` +
@@ -148,7 +148,7 @@ export function validateInvocation({
         `  Fix ONE of these, whichever is actually wrong:\n` +
         `    * the workflow's Infisical env-slug (production is 'prod', not 'production'), or\n` +
         `    * the SUPABASE_PROJECT_REF stored in that Infisical environment, or\n` +
-        `    * ci/environments.json, if a project was legitimately rotated.`,
+        `    * .github/environments.json, if a project was legitimately rotated.`,
     );
   }
 
@@ -308,7 +308,7 @@ export function runMigrationCli({
   log("══════════════════════════════════════════════════════════");
   log("  Database Migration Runner");
   log(`  Environment: ${target.env} (${target.projectName})`);
-  log(`  Project Ref: ${target.projectRef.substring(0, 8)}... — matches ci/environments.json`);
+  log(`  Project Ref: ${target.projectRef.substring(0, 8)}... — matches .github/environments.json`);
   log(`  Mode: ${target.dryRun ? "DRY RUN" : "LIVE"}${target.includeAll ? " + --include-all" : ""}`);
   log("══════════════════════════════════════════════════════════");
 

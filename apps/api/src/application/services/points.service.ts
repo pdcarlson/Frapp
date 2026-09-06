@@ -11,24 +11,27 @@ import {
 import {
   POINT_TRANSACTION_REPOSITORY,
   PointTransactionDuplicateError,
-} from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
-import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
-import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
+} from '#domain/repositories/point-transaction.repository.interface';
+import type {
+  IPointTransactionRepository,
+  PointsLeaderboardWindow,
+} from '#domain/repositories/point-transaction.repository.interface';
+import { SEMESTER_ARCHIVE_REPOSITORY } from '#domain/repositories/semester-archive.repository.interface';
+import type { ISemesterArchiveRepository } from '#domain/repositories/semester-archive.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import type {
   PointTransaction,
   PointCategory,
-} from '../../domain/entities/point-transaction.entity';
+} from '#domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
-import { clampListLimit } from '../../domain/constants/list-query-limits';
+import { clampListLimit } from '#domain/constants/list-query-limits';
 import {
   resolveWindowSince,
   type PointsWindow,
-} from '../../domain/utils/points-window';
+} from '#domain/utils/points-window';
 import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-range';
 
 // Re-exported so existing importers (points.controller, etc.) keep their path;
@@ -216,6 +219,77 @@ export class PointsService {
     });
   }
 
+  /**
+   * Translate the requested window into the `(since, until]` bounds the
+   * leaderboard aggregation applies in Postgres.
+   *
+   * Mirrors {@link filterByWindow} and {@link filterByArchiveRange} exactly,
+   * because those still serve `getUserSummary` and the two must agree on what a
+   * window means. Three cases produce *no* bounds at all, and conflating them
+   * with "bounded by now" would silently drop future-dated rows a chapter can
+   * see today: `all`, and `semester` on a chapter with no archive yet (where
+   * `filterByWindow` returns the list untouched because `since` is null).
+   *
+   * `now` is read once and used for both the month lower bound and the upper
+   * bound, so a leaderboard cannot be computed against two different instants.
+   */
+  private async resolveLeaderboardWindow(
+    chapterId: string,
+    window: PointsWindow,
+    semesterArchiveId?: string,
+  ): Promise<PointsLeaderboardWindow> {
+    if (semesterArchiveId) {
+      const range = await resolveSemesterArchiveRangeOrThrow(
+        this.semesterArchiveRepo,
+        semesterArchiveId,
+        chapterId,
+      );
+      return {
+        since: range.since.toISOString(),
+        until: range.until.toISOString(),
+      };
+    }
+
+    if (window === 'all') return {};
+
+    const now = new Date();
+    // Branch on each window by name rather than treating "not month" as
+    // semester. `filterByWindow` guards its archive lookup with an explicit
+    // `window === 'semester'`, and collapsing that into an else would hand
+    // semester bounds to any window added later — silently, since only
+    // `resolveWindowSince` has the `never` exhaustiveness check that would
+    // force the author to notice. The leaderboard would then disagree with the
+    // same member's own balance for that new window.
+    let since: Date | null;
+    if (window === 'month') {
+      since = resolveWindowSince('month', { now });
+    } else if (window === 'semester') {
+      since = (await this.getSemesterRange(chapterId))?.after ?? null;
+    } else {
+      const exhaustive: never = window;
+      throw new BadRequestException(
+        `Unsupported points window: ${String(exhaustive)}`,
+      );
+    }
+
+    // No resolvable lower bound — a 'semester' window on a chapter that has not
+    // rolled over yet. That means all-time, which is NO bound on either side:
+    // `filterByWindow` expresses it by returning the list untouched, so a
+    // future-dated row counts. Returning `{ until: now }` here would look
+    // equivalent and quietly drop those rows.
+    if (!since) return {};
+
+    return { since: since.toISOString(), until: now.toISOString() };
+  }
+
+  /**
+   * Per-member point totals for the chapter, ranked.
+   *
+   * The sum happens in Postgres (`get_points_leaderboard`), so this returns one
+   * row per member rather than loading the chapter's full transaction history
+   * into the API process (#522). Only the window boundaries are resolved here —
+   * see {@link resolveLeaderboardWindow} for why they are not re-derived in SQL.
+   */
   async getLeaderboard(
     chapterId: string,
     window: PointsWindow = 'all',
@@ -226,33 +300,13 @@ export class PointsService {
       total: number;
     }[]
   > {
-    const txns = await this.pointTxnRepo.findByChapter(chapterId);
+    const bounds = await this.resolveLeaderboardWindow(
+      chapterId,
+      window,
+      semesterArchiveId,
+    );
 
-    let filtered: PointTransaction[];
-    if (semesterArchiveId) {
-      const range = await resolveSemesterArchiveRangeOrThrow(
-        this.semesterArchiveRepo,
-        semesterArchiveId,
-        chapterId,
-      );
-      filtered = this.filterByArchiveRange(txns, range);
-    } else {
-      const semesterRange =
-        window === 'semester'
-          ? await this.getSemesterRange(chapterId)
-          : undefined;
-      filtered = this.filterByWindow(txns, window, semesterRange);
-    }
-
-    const totals = new Map<string, number>();
-    for (const txn of filtered) {
-      const prev = totals.get(txn.user_id) ?? 0;
-      totals.set(txn.user_id, prev + txn.amount);
-    }
-
-    return Array.from(totals.entries())
-      .map(([user_id, total]) => ({ user_id, total }))
-      .sort((a, b) => b.total - a.total);
+    return this.pointTxnRepo.leaderboard(chapterId, bounds);
   }
 
   private static readonly RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;

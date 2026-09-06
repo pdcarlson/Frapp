@@ -2,8 +2,8 @@ import { Module } from '@nestjs/common';
 import { TaskService } from '../../application/services/task.service';
 import { TaskController } from '../../interface/controllers/task.controller';
 import { SupabaseTaskRepository } from '../../infrastructure/supabase/repositories/supabase-task.repository';
-import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { TASK_REPOSITORY } from '#domain/repositories/task.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { RbacModule } from '../rbac/rbac.module';
 import { NotificationModule } from '../notification/notification.module';
@@ -20,6 +20,5 @@ import { AuthModule } from '../auth/auth.module';
     { provide: TASK_REPOSITORY, useClass: SupabaseTaskRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
-  exports: [TaskService, TASK_REPOSITORY],
 })
 export class TaskModule {}

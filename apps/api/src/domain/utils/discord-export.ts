@@ -15,6 +15,7 @@
  */
 
 import type { DiscordExportPreamble } from '@repo/validation';
+import { asRecord, asString } from './json-guards';
 
 export type { DiscordExportPreamble } from '@repo/validation';
 export { parseExportPreamble } from '@repo/validation';
@@ -91,16 +92,6 @@ export class DiscordExportFormatError extends Error {
  * worth carrying on every read of that row forever.
  */
 export const MAX_SUMMARISED_REACTIONS = 20;
-
-function asString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
 
 /** Parse a whole export part. Throws `DiscordExportFormatError` on junk. */
 export function parseExportPart(bytes: Uint8Array): DiscordExportPart {

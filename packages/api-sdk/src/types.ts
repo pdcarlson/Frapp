@@ -352,7 +352,7 @@ export interface paths {
         };
         /**
          * List chapter audit log entries
-         * @description Officer-action history (config changes, role/field changes, member removal, and similar). Paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).
+         * @description Officer-action history (config changes, role/field changes, member removal, and similar). Optional filters — `actor_user_id`, `action`, and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).
          */
         get: operations["ChapterAuditLogController_list_v1"];
         put?: never;
@@ -3763,7 +3763,7 @@ export interface components {
             row_limit: number;
             /**
              * @description What was cut, when the row count alone does not say it — a roster whose point balances were summed from a truncated read is the right length, so row_limit on its own would describe a cut the document never took. Absent when the row count is the whole story.
-             * @example point balances are incomplete — summed from the first 50,000 transactions
+             * @example point balances are incomplete — summed for the first 50,000 members
              */
             truncation_note?: string;
         };
@@ -4554,7 +4554,15 @@ export interface operations {
     ChapterAuditLogController_list_v1: {
         parameters: {
             query?: {
-                /** @description ISO8601 cursor — return audit entries created before this timestamp */
+                /** @description Filter to entries written by a single actor */
+                actor_user_id?: string;
+                /** @description Filter to a single action verb, e.g. `member_removed`. Matched exactly; an unknown verb returns an empty list. */
+                action?: string;
+                /** @description Inclusive lower bound on `created_at`. Full ISO 8601 timestamp with an explicit UTC offset — a bare date is rejected rather than read as midnight. Filters the range; pair with `before` to page within it. */
+                start_date?: string;
+                /** @description Inclusive upper bound on `created_at`. Full ISO 8601 timestamp with an explicit UTC offset — send `…T23:59:59.999Z` for a whole final day rather than a bare date. Unlike `before`, this bounds the range rather than moving with pagination. */
+                end_date?: string;
+                /** @description Cursor — return audit entries created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received. */
                 before?: string;
                 /** @description Max entries to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
                 limit?: number;

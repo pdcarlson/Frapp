@@ -6,7 +6,7 @@ import { AuthSyncInterceptor } from '../../interface/interceptors/auth-sync.inte
 import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
-} from '../../domain/adapters/analytics.interface';
+} from '#domain/adapters/analytics.interface';
 import { NoopAnalyticsProvider } from '../../infrastructure/analytics/noop-analytics.provider';
 import {
   PosthogAnalyticsProvider,
@@ -14,7 +14,7 @@ import {
 } from '../../infrastructure/analytics/posthog-analytics.provider';
 import { AuthModule } from '../auth/auth.module';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 
 /** Log context for the provider-selection lines emitted by {@link selectAnalyticsProvider}. */
 const ANALYTICS_PROVIDER_LOG_CONTEXT = 'AnalyticsProvider';

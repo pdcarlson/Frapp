@@ -78,21 +78,62 @@ Long` — bracketing the real limit somewhere between, which is why the chunk
 
 The `getRosterReport` method fetches a list of members, and then needs to retrieve details about those users and their point transactions.
 
-To minimize latency for large chapters, the queries for `users` and `point_transactions` are parallelized using `Promise.all()`. They depend on the result of the `members` query, but are independent of each other. This reduces the number of sequential network roundtrips required to build the roster report.
+To minimize latency for large chapters, the queries for `users` and the point
+balances are parallelized using `Promise.all()`. They depend on the result of
+the `members` query, but are independent of each other. This reduces the number
+of sequential network roundtrips required to build the roster report.
 
-Point transactions read under a separate, higher ceiling
-(`REPORT_AGGREGATE_MAX_ROWS`, 50,000) because those rows are summed into a
-balance and never reach the renderer. That bound is a latency budget rather
-than a render cost: the pages are sequential, so 50,000 rows is up to 50
-round-trips (~1.2 s) before anything else happens.
+**Balances are summed by Postgres (#567).** The roster calls
+`get_points_leaderboard` (`20260906120001`) with both bounds null: it groups
+`point_transactions` by `user_id` and returns one row per member, so the roster
+no longer streams the ledger into the API to reduce it here.
 
-A truncated transaction read does not shorten the roster; it leaves every
-balance on it wrong. So it marks the report truncated but reports **its own**
-ceiling and a note naming the balances — labelling a complete 300-line roster
-"capped at 5,000 rows" would read as a false positive and send the reader
-looking for missing members instead of distrusting the numbers.
+It reuses the leaderboard's function rather than adding a roster-only one
+(#1743). A roster balance is the member's all-time chapter total, which is what
+unbounded already means there — a second aggregate would be the same `group by`
+over the same table for the same answer.
 
-The real fix is to stop streaming transactions into the API and let Postgres
-sum them, which removes this read entirely — tracked in #567. It is blocked on
-the same missing key as #747: `get_points_report` returns `member_name` and no
-`user_id`, and display names are not unique.
+That read still pages, under the separate higher ceiling
+(`REPORT_AGGREGATE_MAX_ROWS`, 50,000), because an RPC result set is subject to
+PostgREST's `max_rows` exactly like a table read. That bound remains a latency
+budget rather than a render cost: the pages are sequential, so 50,000 rows is up
+to 50 round-trips (~1.2 s) before anything else happens — unchanged by #567,
+which altered how many rows it takes to reach that number, not the arithmetic.
+
+But the ceiling now counts **scoring members, not transactions** — one row per
+member who has ever scored in the chapter. That still grows over a chapter's
+life, since an alumnus's rows keep their group, but per *member* rather than per
+*entry*: the stream it replaced could cross 50,000 in a single active semester,
+and crossing it meant a roster of the right length carrying wrong balances.
+
+The aggregate needs no new index: `point_transactions` already carries two
+`chapter_id`-leading btrees (`idx_point_transactions_chapter_user` and
+`idx_point_transactions_chapter_created_at`), either of which serves the
+`where chapter_id = ?` filter. The grouping is a separate cost — the observed
+plan sorts by `user_id` before a `GroupAggregate` rather than reading grouped
+order out of an index, so "index-backed" describes the filter, not the group.
+
+Do not read a forced plan as a measurement. Checking this on the sandbox
+required `enable_seqscan = off` against an empty table, which makes the result
+circular: the flag removes the very scan the plan is then said to avoid. On a
+small table a sequential scan is the planner being right. The claim worth making
+is the structural one — the read now returns one row per member instead of one
+per transaction — and that holds regardless of which scan the planner picks.
+
+A short balance read still does not shorten the roster; it leaves balances on it
+wrong. So it marks the report truncated but reports **its own** ceiling and a
+note naming the balances — labelling a complete 300-line roster "capped at 5,000
+rows" would read as a false positive and send the reader looking for missing
+members instead of distrusting the numbers.
+
+The RPC returns `user_id`, so the paged read orders on a column that is unique
+across the result — a **total** order, with no tie for a page boundary to
+duplicate or drop across. The roster's `.order('user_id')` overrides the
+function's own `order by total desc`, which the leaderboard surface needs and
+the roster must not page on, `total` being non-unique. This is what
+`get_points_report` cannot offer at all: it returns no key and can only
+tie-break on display name, which is #747.
+
+The leaderboard's own call site (`SupabasePointTransactionRepository.
+leaderboard`) does **not** page, so it is capped by `max_rows` where this read
+is not. That is tracked separately; it is not a property of the function.

@@ -20,7 +20,7 @@ layering drift into `suggestion` issues, and `/next` reaches them after everythi
 them. Meanwhile the repo has **no dead-code tooling at all**, its anti-pattern catalogue
 (the rule sections of [`spec/engineering.md`](../../../spec/engineering.md), which it says to read
 as a checklist) is enforced only by
-whoever happens to be reading, [`.dependency-cruiser-known-violations.json`](../../../.dependency-cruiser-known-violations.json)
+whoever happens to be reading, [`scripts/dependency-cruiser-known-violations.json`](../../../scripts/dependency-cruiser-known-violations.json)
 "exists to shrink" and does not, and the [`.jscpd.json`](../../../.jscpd.json) threshold only
 ratchets down when someone consolidates. This routine is the scheduled hand that does the
 consolidating.
@@ -65,7 +65,7 @@ design question** — do not ship the mechanical half.
 
 | | |
 | --- | --- |
-| **May edit** | `apps/**` and `packages/**` product code and their tests; under `scripts/**`, dead code and stale allowlist entries only — the check, CI and deploy scripts there *are* the gates, so their logic is never in scope; the gate baselines, downward only (`.dependency-cruiser-known-violations.json` via `--update-baseline` after a clean run, the `.jscpd.json` threshold); **path citations** in any doc — `spec/behavior/**` included — when a fix moves or renames a file (that is doc-sync, not intent), and the **relevant** `docs/` file when a fact it states moved; this skill directory (self-maintenance) |
+| **May edit** | `apps/**` and `packages/**` product code and their tests; under `scripts/**`, dead code and stale allowlist entries only — the check, CI and deploy scripts there *are* the gates, so their logic is never in scope; the gate baselines, downward only (`scripts/dependency-cruiser-known-violations.json` via `--update-baseline` after a clean run, the `.jscpd.json` threshold); **path citations** in any doc — `spec/behavior/**` included — when a fix moves or renames a file (that is doc-sync, not intent), and the **relevant** `docs/` file when a fact it states moved; this skill directory (self-maintenance) |
 | **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (frozen — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); dead code and correctness there are fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · the legacy `@repo/theme` exports landing consumes · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `FRAPP_SKIP_REVIEW_GATE` |
 | **Volume** | at most **one** PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that branch exists); at most **one open** Hygiene Scan PR at a time; at most **~3** net-new issues per run. Never merge — a human does. |
 
@@ -249,7 +249,7 @@ unwrap. Then look for the *parallel path*: an old implementation left live besid
 without a flag or a documented window (`signet-cutover` § Cutover deletes what it replaces).
 
 **L4 · Layering and coupling.** The `dependency-cruiser` rules are the repo's actual boundary
-(`.dependency-cruiser.cjs`); the audit skill's red flags (domain importing `@nestjs/*` or
+(`scripts/dependency-cruiser.cjs`); the audit skill's red flags (domain importing `@nestjs/*` or
 `@supabase/*`, a service importing a DTO, a controller reaching into `infrastructure/`) are the
 intent behind them. Fix toward the rule the repo *enforces*, and when the ideal costs duplication
 (habit 3) the finding is a design question, not a mechanical move.

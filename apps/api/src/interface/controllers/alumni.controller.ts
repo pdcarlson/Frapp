@@ -11,7 +11,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { CurrentChapterId } from '../decorators/current-user.decorator';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Alumni')
 @ApiBearerAuth()

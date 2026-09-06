@@ -1,4 +1,4 @@
-// Environment identity, read from `ci/environments.json`.
+// Environment identity, read from `.github/environments.json`.
 //
 // Before this existed, "which Supabase project is production?" was answered by
 // whatever `SUPABASE_PROJECT_REF` happened to hold in the job's environment —
@@ -21,7 +21,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const CONFIG_PATH = fileURLToPath(new URL("../../../ci/environments.json", import.meta.url));
+const CONFIG_PATH = fileURLToPath(new URL("../../../.github/environments.json", import.meta.url));
 
 /** Environment names this repo deploys. Order is deliberate: staging first. */
 export const ENVIRONMENTS = ["staging", "production"];

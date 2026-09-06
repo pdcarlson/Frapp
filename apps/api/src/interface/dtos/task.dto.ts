@@ -11,7 +11,7 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
-import { TaskStatus } from '../../domain/entities/task.entity';
+import { TaskStatus } from '#domain/entities/task.entity';
 
 export class CreateTaskDto {
   @ApiProperty()

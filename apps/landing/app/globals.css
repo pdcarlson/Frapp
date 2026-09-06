@@ -1,4 +1,4 @@
-@import "../../../packages/theme/src/globals.css";
+@import "@repo/theme/globals.css";
 
 /* See `apps/web/app/globals.css` — v4 needs the JS config named explicitly. */
 @config "../tailwind.config.ts";

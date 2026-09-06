@@ -9,7 +9,7 @@ import {
   inA,
   inB,
   type TenantHarness,
-} from '../../../test/helpers/tenant-scope.harness';
+} from '#test/helpers/tenant-scope.harness';
 
 /** Mirrors `SWEEP_PAGE_SIZE` in the repository under test. */
 const PAGE_SIZE = 500;

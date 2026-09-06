@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IInviteRepository } from '../../../domain/repositories/invite.repository.interface';
-import { Invite } from '../../../domain/entities/invite.entity';
+import { IInviteRepository } from '#domain/repositories/invite.repository.interface';
+import { Invite } from '#domain/entities/invite.entity';
 
 @Injectable()
 export class SupabaseInviteRepository implements IInviteRepository {

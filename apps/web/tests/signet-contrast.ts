@@ -10,7 +10,7 @@ import { signetDarkTokens } from "@repo/theme/signet";
  * Shared fixtures for the Signet contrast guards.
  *
  * The seed corpus and the four thin wrappers around `@repo/color` started life
- * inline in `components/chat/chat-contrast.test.ts`. The Directory & Finance
+ * inline in `components/chat/chat-contrast.spec.ts`. The Directory & Finance
  * slice of #920 added two more guards and, with them, a second and third
  * byte-identical copy of a 19-element array whose whole purpose is to be the
  * *same* list everywhere — so a chapter colour added to two files and missed in

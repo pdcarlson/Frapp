@@ -5,8 +5,8 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import type { IStudySessionRepository } from '../../../domain/repositories/study.repository.interface';
-import type { StudySession } from '../../../domain/entities/study.entity';
+import type { IStudySessionRepository } from '#domain/repositories/study.repository.interface';
+import type { StudySession } from '#domain/entities/study.entity';
 
 @Injectable()
 export class SupabaseStudySessionRepository implements IStudySessionRepository {

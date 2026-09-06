@@ -481,7 +481,6 @@ jobs:
           docker run -d --name frapp-api-ci -p 3001:3001 \
             -e SUPABASE_URL=http://127.0.0.1:1 \
             -e SUPABASE_SERVICE_ROLE_KEY=ci-not-a-real-key \
-            -e SUPABASE_ANON_KEY=ci-not-a-real-key \
             -e STRIPE_SECRET_KEY=sk_test_ci_not_real \
             -e STRIPE_WEBHOOK_SECRET=whsec_ci_not_real \
             -e STRIPE_PRICE_ID=price_ci_not_real \
@@ -581,7 +580,7 @@ jobs:
 
   # ── Architectural boundary linting (dependency-cruiser) ─────────────────
   # HARD GATE from day one, made survivable by a committed baseline:
-  # `.dependency-cruiser-known-violations.json` grandfathers the 7 violations
+  # `scripts/dependency-cruiser-known-violations.json` grandfathers the 7 violations
   # that existed when this landed, and any NEW violation fails.
   #
   # Needs the shared packages built — the cruise resolves workspace imports
@@ -711,7 +710,7 @@ jobs:
   # real findings across 8 files. Those 13 are on already-deployed tables, so
   # blocking today would fail PRs for findings they did not introduce.
   # Promoting this to a gate needs a baseline of the existing 13, the same move
-  # `.dependency-cruiser-known-violations.json` makes for the architecture gate.
+  # `scripts/dependency-cruiser-known-violations.json` makes for the architecture gate.
   # `check-migration-lock-safety.mjs --strict` is the switch when that lands.
   #
   # NOT in scripts/ci/lib/required-checks.mjs, deliberately: an advisory

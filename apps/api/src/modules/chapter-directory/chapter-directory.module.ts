@@ -5,6 +5,5 @@ import { ChapterDirectoryController } from '../../interface/controllers/chapter-
 @Module({
   controllers: [ChapterDirectoryController],
   providers: [ChapterDirectoryService],
-  exports: [ChapterDirectoryService],
 })
 export class ChapterDirectoryModule {}

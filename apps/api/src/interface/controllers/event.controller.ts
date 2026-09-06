@@ -33,7 +33,7 @@ import {
   DeleteEventQueryDto,
   UpdateEventDto,
 } from '../dtos/event.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Events')
 @ApiBearerAuth()

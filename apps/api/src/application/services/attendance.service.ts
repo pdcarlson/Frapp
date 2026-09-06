@@ -7,22 +7,22 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { ATTENDANCE_REPOSITORY } from '../../domain/repositories/attendance.repository.interface';
-import type { IAttendanceRepository } from '../../domain/repositories/attendance.repository.interface';
-import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
-import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import type { EventAttendance } from '../../domain/entities/event-attendance.entity';
+import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
+import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
+import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
+import type { IEventRepository } from '#domain/repositories/event.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
 import { hasRequiredRole } from './event.service';
-import { isValidZone, pointInPolygon } from '../../domain/utils/geofence';
+import { isValidZone, pointInPolygon } from '#domain/utils/geofence';
 import {
   mintCheckInToken,
   verifyCheckInToken,
   verifyManualCode,
   type MintedCheckInToken,
-} from '../../domain/utils/check-in-token';
+} from '#domain/utils/check-in-token';
 
 /**
  * Grace period after `end_time` during which check-in stays open and before

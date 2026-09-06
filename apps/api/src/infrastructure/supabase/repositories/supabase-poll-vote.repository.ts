@@ -6,8 +6,8 @@ import type {
   IPollVoteRepository,
   PollUserVoteRow,
   PollVoteOptionTotalRow,
-} from '../../../domain/repositories/poll-vote.repository.interface';
-import type { PollVote } from '../../../domain/entities/poll-vote.entity';
+} from '#domain/repositories/poll-vote.repository.interface';
+import type { PollVote } from '#domain/entities/poll-vote.entity';
 
 /**
  * PostgREST default `max-rows` is often 1000; page through to avoid silent
@@ -34,6 +34,17 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
     return this.findByMessages([messageId]);
   }
 
+  /**
+   * Batch read backing {@link findByMessage}. Deliberately NOT on
+   * `IPollVoteRepository` — nothing outside this class calls it, and the port
+   * should not carry a method no consumer needs.
+   *
+   * Not `private`, though: its paging is the behaviour #1724 fixed, and this
+   * file's own spec pins that fix by calling it directly — including the
+   * empty-input short circuit, which `findByMessage` can never reach because it
+   * always passes exactly one id. Narrowing the port is what that cut was for;
+   * hiding the method from its own test only cost the coverage.
+   */
   async findByMessages(messageIds: string[]): Promise<PollVote[]> {
     if (messageIds.length === 0) {
       return [];
@@ -128,20 +139,6 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       .delete()
       .eq('message_id', messageId)
       .eq('user_id', userId);
-    if (error) throw error;
-  }
-
-  async deleteByMessageUserAndOption(
-    messageId: string,
-    userId: string,
-    optionIndex: number,
-  ): Promise<void> {
-    const { error } = await this.supabase
-      .from('poll_votes')
-      .delete()
-      .eq('message_id', messageId)
-      .eq('user_id', userId)
-      .eq('option_index', optionIndex);
     if (error) throw error;
   }
 }

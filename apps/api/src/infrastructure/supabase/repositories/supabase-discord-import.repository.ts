@@ -8,18 +8,18 @@ import type {
   ClaimedDiscordImport,
   DiscordImportProgressPatch,
   IDiscordImportRepository,
-} from '../../../domain/repositories/discord-import.repository.interface';
-import { ArchiveQuotaExceededError } from '../../../domain/repositories/discord-import.repository.interface';
+} from '#domain/repositories/discord-import.repository.interface';
+import { ArchiveQuotaExceededError } from '#domain/repositories/discord-import.repository.interface';
 import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
   DiscordImportStatus,
-} from '../../../domain/entities/discord-import.entity';
+} from '#domain/entities/discord-import.entity';
 import type {
   ImportedAttachmentRow,
   ImportedMessageRow,
-} from '../../../domain/utils/discord-export';
+} from '#domain/utils/discord-export';
 
 /**
  * PostgREST caps a response at `max_rows` (1000 — `supabase/config.toml`) and

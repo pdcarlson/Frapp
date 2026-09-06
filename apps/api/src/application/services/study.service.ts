@@ -7,18 +7,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { RbacService } from './rbac.service';
-import { STUDY_GEOFENCE_REPOSITORY } from '../../domain/repositories/study.repository.interface';
-import type { IStudyGeofenceRepository } from '../../domain/repositories/study.repository.interface';
-import { STUDY_SESSION_REPOSITORY } from '../../domain/repositories/study.repository.interface';
-import type { IStudySessionRepository } from '../../domain/repositories/study.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
+import { STUDY_GEOFENCE_REPOSITORY } from '#domain/repositories/study.repository.interface';
+import type { IStudyGeofenceRepository } from '#domain/repositories/study.repository.interface';
+import { STUDY_SESSION_REPOSITORY } from '#domain/repositories/study.repository.interface';
+import type { IStudySessionRepository } from '#domain/repositories/study.repository.interface';
+import { POINT_TRANSACTION_REPOSITORY } from '#domain/repositories/point-transaction.repository.interface';
+import type { IPointTransactionRepository } from '#domain/repositories/point-transaction.repository.interface';
 import type {
   StudyGeofence,
   StudySession,
   GeofenceCoordinate,
-} from '../../domain/entities/study.entity';
-import { pointInPolygon } from '../../domain/utils/geofence';
+} from '#domain/entities/study.entity';
+import { pointInPolygon } from '#domain/utils/geofence';
 
 const HEARTBEAT_STALE_MINUTES = 10;
 const MS_PER_MINUTE = 60 * 1000;

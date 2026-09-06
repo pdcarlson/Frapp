@@ -198,9 +198,3 @@ export interface DiscoveredDiscordChannel {
   discord_category: string | null;
   message_count: number;
 }
-
-/** A Discord role the scan found on a message author. */
-export interface DiscoveredDiscordRole {
-  discord_role_id: string;
-  discord_role_name: string;
-}

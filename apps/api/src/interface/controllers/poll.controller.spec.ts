@@ -6,7 +6,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 describe('PollController', () => {
   let controller: PollController;
