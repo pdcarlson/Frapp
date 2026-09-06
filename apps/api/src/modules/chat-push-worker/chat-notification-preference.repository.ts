@@ -4,7 +4,7 @@ import type {
   FrappSupabaseClient,
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
-import { chunkIds } from '../../domain/utils/chunk-ids';
+import { chunkIds } from '#domain/utils/chunk-ids';
 
 /**
  * Rows per round trip when reading preferences for a batch of users.
