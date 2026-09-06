@@ -481,7 +481,6 @@ jobs:
           docker run -d --name frapp-api-ci -p 3001:3001 \
             -e SUPABASE_URL=http://127.0.0.1:1 \
             -e SUPABASE_SERVICE_ROLE_KEY=ci-not-a-real-key \
-            -e SUPABASE_ANON_KEY=ci-not-a-real-key \
             -e STRIPE_SECRET_KEY=sk_test_ci_not_real \
             -e STRIPE_WEBHOOK_SECRET=whsec_ci_not_real \
             -e STRIPE_PRICE_ID=price_ci_not_real \
