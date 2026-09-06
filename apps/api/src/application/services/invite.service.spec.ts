@@ -130,6 +130,7 @@ describe('InviteService', () => {
       findById: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
+      claimSubscriptionId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };

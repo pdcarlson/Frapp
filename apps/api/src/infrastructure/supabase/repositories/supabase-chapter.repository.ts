@@ -47,6 +47,36 @@ export class SupabaseChapterRepository implements IChapterRepository {
     return data;
   }
 
+  async claimSubscriptionId(
+    chapterId: string,
+    subscriptionId: string,
+    expectedSubscriptionId: string | null,
+  ): Promise<Chapter | null> {
+    const patch: TablesUpdate<'chapters'> = {
+      subscription_id: subscriptionId,
+    };
+
+    // Pin the stored id we read, plus refuse to steal a live subscription.
+    // Two `.neq` filters rather than `NOT IN`: the tenant-scope harness (and
+    // PostgREST) AND them, and `incomplete`/`canceled` pass both. Same live
+    // pair `createCheckoutSession` refuses to reopen.
+    let query = this.supabase
+      .from('chapters')
+      .update(patch)
+      .eq('id', chapterId)
+      .neq('subscription_status', 'active')
+      .neq('subscription_status', 'past_due');
+
+    query =
+      expectedSubscriptionId === null
+        ? query.is('subscription_id', null)
+        : query.eq('subscription_id', expectedSubscriptionId);
+
+    const { data, error } = await query.select('*');
+    if (error) throw error;
+    return Array.isArray(data) && data.length > 0 ? data[0] : null;
+  }
+
   async create(chapterData: TablesInsert<'chapters'>): Promise<Chapter> {
     const { data, error } = await this.supabase
       .from('chapters')

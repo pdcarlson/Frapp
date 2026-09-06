@@ -860,13 +860,19 @@ export class BillingService {
    * *stored* id never reaches this branch at all; `findBySubscriptionId` above
    * resolves it directly.
    *
-   * **The resolved reference is claimed immediately** (`subscription_id` is
-   * written here, not left for the checkout). If the overtaking event's
-   * `created` is later than the checkout's — a slow or retried checkout
-   * delivery — the checkout is then dropped as stale by `isStaleWebhook`, and
-   * without this write nothing would ever record which subscription bills the
-   * chapter: `grantTrial: !chapter.subscription_id` would grant a second trial
-   * on the next checkout, and `getChapterBillingStatus` would report none.
+   * **The resolved reference is claimed immediately**, and the write is a
+   * compare-and-set (`claimSubscriptionId`): it updates only while the stored
+   * `subscription_id` is still the one this read saw (null, or a non-live
+   * leftover) and the chapter is not live. Two events racing the same empty
+   * (or canceled) row cannot both apply — the loser updates zero rows, reloads
+   * by its own subscription id, and continues only when that id owns the
+   * chapter; otherwise it acks as superseded. The claim is not left for the
+   * checkout. If the overtaking event's `created` is later than the checkout's
+   * — a slow or retried checkout delivery — the checkout is then dropped as
+   * stale by `isStaleWebhook`, and without this write nothing would ever
+   * record which subscription bills the chapter: `grantTrial:
+   * !chapter.subscription_id` would grant a second trial on the next checkout,
+   * and `getChapterBillingStatus` would report none.
    *
    * **What remains at `warn`, and why it still raises no Sentry event.** With
    * the race resolved, the unresolvable branch is reached by two things: the
@@ -919,9 +925,25 @@ export class BillingService {
           : '.') +
         ' Claiming the reference.',
     );
-    return this.chapterRepo.update(byCustomer.id, {
-      subscription_id: subscriptionId,
-    });
+
+    const claimed = await this.chapterRepo.claimSubscriptionId(
+      byCustomer.id,
+      subscriptionId,
+      byCustomer.subscription_id,
+    );
+    if (claimed) return claimed;
+
+    // Lost the race: another event claimed this chapter. Continue only when
+    // that claim was for *this* subscription (two deliveries of the same sub);
+    // a different winner is a superseded reference and must not apply.
+    const winner = await this.chapterRepo.findBySubscriptionId(subscriptionId);
+    if (winner) return winner;
+
+    this.logger.warn(
+      `No chapter found for subscription: ${subscriptionId} (customer ${customerId} is chapter ` +
+        `${byCustomer.id}, which lost the subscription_id claim — superseded, acked)`,
+    );
+    return null;
   }
 
   private async notifyChapterPresident(
