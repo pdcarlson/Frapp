@@ -10,12 +10,16 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { CurrentChapterId } from '../decorators/current-user.decorator';
+import {
+  CurrentChapterId,
+  CurrentMember,
+} from '../decorators/current-user.decorator';
 import {
   ChapterAuditLogEntryDto,
   ListChapterAuditLogQueryDto,
 } from '../dtos/chapter-audit-log.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
+import type { Member } from '#domain/entities/member.entity';
 
 @ApiTags('Chapter Audit Log')
 @ApiBearerAuth()
@@ -37,20 +41,28 @@ export class ChapterAuditLogController {
   @ApiOperation({
     summary: 'List chapter audit log entries',
     description:
-      'Officer-action history (config changes, role/field changes, member removal, and similar). Optional filters — `actor_user_id`, `action`, and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).',
+      'Officer-action history (config changes, role/field changes, member removal, and similar). Callers other than the chapter President see only `member_visible` entries; the President sees every entry, including exec-only ones. Optional filters — `actor_user_id`, `action`, and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).',
   })
   @ApiOkResponse({ type: ChapterAuditLogEntryDto, isArray: true })
   async list(
     @CurrentChapterId() chapterId: string,
+    @CurrentMember() member: Member,
     @Query() query: ListChapterAuditLogQueryDto,
   ) {
-    return this.auditLogService.list(chapterId, {
-      before: query.before,
-      actorUserId: query.actor_user_id,
-      action: query.action,
-      startDate: query.start_date,
-      endDate: query.end_date,
-      limit: query.limit,
-    });
+    // Only the seeded-role ids travel: exec-only visibility is decided by the
+    // President role's identity, never by a permission a custom role could
+    // carry (see ChapterAuditLogService.list).
+    return this.auditLogService.list(
+      chapterId,
+      { roleIds: member.role_ids },
+      {
+        before: query.before,
+        actorUserId: query.actor_user_id,
+        action: query.action,
+        startDate: query.start_date,
+        endDate: query.end_date,
+        limit: query.limit,
+      },
+    );
   }
 }
