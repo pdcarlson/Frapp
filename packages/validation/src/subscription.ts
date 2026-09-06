@@ -90,7 +90,9 @@ export type SubscriptionWriteState =
 /**
  * A chapter that lapses to `past_due` gets a 3-day grace window before the hard
  * read-only lock (`spec/behavior/billing.md`, `spec/product/onboarding.md`).
- * Mirrors `GRACE_PERIOD_MS` in `ChapterGuard`; the two must move together.
+ * Mirrors `SUBSCRIPTION_GRACE_PERIOD_MS` in the API's
+ * `#domain/constants/subscription-grace` (read by `ChapterGuard` and by
+ * `InviteService.redeem`); the two must move together.
  */
 export const SUBSCRIPTION_GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
 
