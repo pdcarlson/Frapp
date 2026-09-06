@@ -1,9 +1,9 @@
-import { TaskStatus } from '../../domain/entities/task.entity';
+import { TaskStatus } from '#domain/entities/task.entity';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TaskController } from './task.controller';
 import { TaskService } from '../../application/services/task.service';
 import { RbacService } from '../../application/services/rbac.service';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 import { ForbiddenException } from '@nestjs/common';
 import {
   CreateTaskDto,

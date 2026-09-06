@@ -10,17 +10,17 @@ import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
 } from '@repo/validation';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
-import { User } from '../../domain/entities/user.entity';
+} from '#domain/adapters/storage.interface';
+import { User } from '#domain/entities/user.entity';
 import {
   PROFILES_BUCKET,
   profileFolderPrefix,
-} from '../../domain/constants/storage';
+} from '#domain/constants/storage';
 
 @Injectable()
 export class UserService {

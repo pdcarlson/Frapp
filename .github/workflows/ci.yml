@@ -581,7 +581,7 @@ jobs:
 
   # ── Architectural boundary linting (dependency-cruiser) ─────────────────
   # HARD GATE from day one, made survivable by a committed baseline:
-  # `.dependency-cruiser-known-violations.json` grandfathers the 7 violations
+  # `scripts/dependency-cruiser-known-violations.json` grandfathers the 7 violations
   # that existed when this landed, and any NEW violation fails.
   #
   # Needs the shared packages built — the cruise resolves workspace imports
@@ -713,7 +713,7 @@ jobs:
   # real findings across 8 files. Those 13 are on already-deployed tables, so
   # blocking today would fail PRs for findings they did not introduce.
   # Promoting this to a gate needs a baseline of the existing 13, the same move
-  # `.dependency-cruiser-known-violations.json` makes for the architecture gate.
+  # `scripts/dependency-cruiser-known-violations.json` makes for the architecture gate.
   # `check-migration-lock-safety.mjs --strict` is the switch when that lands.
   #
   # NOT in scripts/ci/lib/required-checks.mjs, deliberately: an advisory

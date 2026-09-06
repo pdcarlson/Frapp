@@ -123,7 +123,7 @@ Established from the Supabase Management API and Supabase's own documentation on
 | `frapp-prod` | `unttyvyfezddlyafcydh`, `us-east-2`, Postgres 17.6.1.063 |
 
 > **Rotating either project is a four-place change.** The ref is recorded in
-> [`ci/environments.json`](../../../ci/environments.json) as well as in Infisical, in this table, and in
+> [`.github/environments.json`](../../../.github/environments.json) as well as in Infisical, in this table, and in
 > [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md)'s egress allowlist. `scripts/run-migration.mjs`
 > compares the injected `SUPABASE_PROJECT_REF` against the committed file and **refuses to run** when they
 > disagree — deliberately, so a staging label can never write to production — so a rotation that updates

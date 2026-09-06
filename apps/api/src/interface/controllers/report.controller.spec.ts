@@ -16,16 +16,16 @@ import {
   PointsReportDto,
   ServiceReportDto,
 } from '../dtos/report.dto';
-import { toCSV } from '../../domain/utils/csv';
+import { toCSV } from '#domain/utils/csv';
 import {
   ATTENDANCE_COLUMNS,
   POINTS_COLUMNS,
   ROSTER_COLUMNS,
   SERVICE_COLUMNS,
-} from '../../domain/constants/report-columns';
+} from '#domain/constants/report-columns';
 
 // Mock the toCSV utility function
-jest.mock('../../domain/utils/csv', () => ({
+jest.mock('#domain/utils/csv', () => ({
   toCSV: jest.fn().mockReturnValue('mocked,csv,content'),
 }));
 

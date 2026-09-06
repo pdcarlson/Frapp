@@ -39,7 +39,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * `--popover`, which is why it has one. (`--info` would need one too — 3.65:1 on
  * `--popover` — but it has no call site, and a kind with no call sites is
  * exactly what slice 2 deleted seven of. Measured in
- * `components/billing/status-contrast.test.ts` so the first consumer inherits
+ * `components/billing/status-contrast.spec.ts` so the first consumer inherits
  * the number rather than the defect.)
  *
  * `mention` landed with the chat slice of #920, which brought its first call

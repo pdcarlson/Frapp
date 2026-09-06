@@ -37,7 +37,7 @@ interface FakeChannel {
 
 /**
  * A minimal fake — a trimmed sibling of the one in
- * `./realtime-manager.test.ts` (kept local on purpose: the traveling suite
+ * `./realtime-manager.spec.ts` (kept local on purpose: the traveling suite
  * must stay byte-identical to its pre-extraction form, so it does not export
  * its fakes). Fresh channels only; the reuse/throw semantics the bigger fake
  * reproduces are out of scope here.

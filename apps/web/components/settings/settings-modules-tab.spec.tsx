@@ -37,7 +37,7 @@ describe("SettingsModulesTab", () => {
   it("paints neither tier in the chapter accent, nor in a semantic hue", () => {
     /*
      * The call-site half of the guard, and the half that matters.
-     * `status-kind.test.ts` asserts `moduleTierKind` never returns `default`
+     * `status-kind.spec.ts` asserts `moduleTierKind` never returns `default`
      * or `secondary`, but the defect it exists for was an inline ternary that
      * never called a mapper at all — `border-primary/40 text-primary` for
      * Chapter Pro and `border-success/50 text-success` for Free. A mapper-level
@@ -45,7 +45,7 @@ describe("SettingsModulesTab", () => {
      * slice found on `/polls`. So this reads the rendered classes.
      *
      * Verified the way that slice verified its own: by reverting the call site
-     * to the ternary and watching this fail while `status-kind.test.ts` stayed
+     * to the ternary and watching this fail while `status-kind.spec.ts` stayed
      * green.
      */
     render(

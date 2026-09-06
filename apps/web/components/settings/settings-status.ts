@@ -11,8 +11,8 @@ export type ModuleTier = "free" | "paid";
  * chapter accent on one chip and a hand-spelled tint on the other, neither of
  * them a §5 kind. The accent half is #1202's defect reached by an inline
  * ternary, and this family had no mapper at all, so
- * `../shared/status-kind.test.ts` had never looked at it. The measurement is in
- * `../billing/status-contrast.test.ts`: under a green seed an accent badge
+ * `../shared/status-kind.spec.ts` had never looked at it. The measurement is in
+ * `../billing/status-contrast.spec.ts`: under a green seed an accent badge
  * sits 1.08:1 from the success badge and under `#CC0000`/`#8B0000`/`#BF0A30`
  * 1.13:1 from danger, so a red-branded chapter read `Chapter Pro` as a
  * failure.
@@ -38,7 +38,7 @@ export type ModuleTier = "free" | "paid";
  * uses `default:` as a *distinct* fallback, so the next reader adding a third
  * tier would find a `default` already handling "everything else" and
  * reasonably leave the mapper alone. The tier would then render as Hairline by
- * accident rather than by the argument above, and `status-kind.test.ts` would
+ * accident rather than by the argument above, and `status-kind.spec.ts` would
  * stay green, because its invariant is "never the accent, never Neutral" and
  * Hairline satisfies it. A single unconditional return says what is true: this
  * vocabulary has no status kinds, so no input has one, including inputs that
@@ -46,7 +46,7 @@ export type ModuleTier = "free" | "paid";
  */
 export function moduleTierKind(tier: ModuleTier | string): BadgeKind {
   // Named rather than omitted: the signature is the contract the other six
-  // mappers share, and `status-kind.test.ts` drives it with real inputs.
+  // mappers share, and `status-kind.spec.ts` drives it with real inputs.
   // Unread rather than switched on, for the reason above — no tier has a
   // status kind, including one the catalog has not grown yet.
   void tier;

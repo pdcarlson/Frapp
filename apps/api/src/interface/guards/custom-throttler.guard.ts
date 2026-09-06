@@ -7,7 +7,7 @@ import {
 import { createHmac } from 'node:crypto';
 import type { Response } from 'express';
 import { getHeaderValue } from '../types/request-context.types';
-import { constantTimeEquals } from '../../domain/utils/constant-time';
+import { constantTimeEquals } from '#domain/utils/constant-time';
 
 /**
  * Methods counted against the `read` bucket; everything else is a `write`.

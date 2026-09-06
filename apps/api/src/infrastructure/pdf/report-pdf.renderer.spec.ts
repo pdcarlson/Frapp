@@ -4,7 +4,7 @@ import {
   formatCell,
   toWinAnsi,
 } from './report-pdf.renderer';
-import type { ReportPdfDocument } from '../../domain/adapters/pdf.interface';
+import type { ReportPdfDocument } from '#domain/adapters/pdf.interface';
 
 const COLUMNS = [
   { key: 'member_name', header: 'Member Name' },

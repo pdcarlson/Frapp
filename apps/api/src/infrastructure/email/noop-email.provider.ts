@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type {
   IEmailProvider,
   SendInviteEmailParams,
-} from '../../domain/adapters/email.interface';
+} from '#domain/adapters/email.interface';
 
 /**
  * Fallback email provider used when no `RESEND_API_KEY` is configured (e.g.

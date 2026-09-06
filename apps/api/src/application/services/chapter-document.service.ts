@@ -15,19 +15,19 @@ import {
 import {
   CHAPTER_DOCUMENT_REPOSITORY,
   type ChapterDocumentFilter,
-} from '../../domain/repositories/chapter-document.repository.interface';
-import type { IChapterDocumentRepository } from '../../domain/repositories/chapter-document.repository.interface';
-import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '../../domain/repositories/chapter-document-folder.repository.interface';
-import type { IChapterDocumentFolderRepository } from '../../domain/repositories/chapter-document-folder.repository.interface';
+} from '#domain/repositories/chapter-document.repository.interface';
+import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
+import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '#domain/repositories/chapter-document-folder.repository.interface';
+import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
 import type {
   ChapterDocument,
   ChapterDocumentFolder,
-} from '../../domain/entities/chapter-document.entity';
+} from '#domain/entities/chapter-document.entity';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
-import { assertSafeStoragePath } from '../../domain/utils/storage-path';
+} from '#domain/adapters/storage.interface';
+import { assertSafeStoragePath } from '#domain/utils/storage-path';
 
 const DOCUMENTS_BUCKET = 'documents';
 

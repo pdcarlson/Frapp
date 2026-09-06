@@ -138,7 +138,7 @@ describe("no salt reaches the bundle", () => {
     // Excluding specs: this file names the forbidden strings in its own
     // assertions, so including it would make the test fail on itself.
     const sources = readdirSync(dir).filter(
-      (f) => f.endsWith(".ts") && !f.endsWith(".test.ts"),
+      (f) => f.endsWith(".ts") && !f.endsWith(".spec.ts"),
     );
     expect(sources.length).toBeGreaterThan(0);
 

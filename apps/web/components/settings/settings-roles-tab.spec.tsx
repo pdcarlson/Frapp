@@ -234,7 +234,7 @@ describe("SettingsRolesTab", () => {
 
 describe("the capability matrix's marks, at the call site", () => {
   /*
-   * `settings-contrast.test.ts` measures the tones; it cannot see which one
+   * `settings-contrast.spec.ts` measures the tones; it cannot see which one
    * the component reaches for. The review proved the gap: reverting the
    * missing-permission mark to `text-muted` — the exact near-miss that file's
    * docstring is written about, 3.568:1 and under §6 — left all of its

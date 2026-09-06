@@ -25,7 +25,7 @@ import { serverMessageOf, statusOf } from "@repo/api-sdk";
  * `packages/` is not the home for four strings.
  *
  * **This is error copy, not a status vocabulary.** It deliberately exports no
- * `*Kind` mapper and does not join `components/shared/status-kind.test.ts`'s
+ * `*Kind` mapper and does not join `components/shared/status-kind.spec.ts`'s
  * `MAPPERS`: nothing here is persisted, badged or coloured, so there is no
  * badge kind to be wrong about. Recorded so the absence reads as a decision —
  * the same call `settings-status.ts` argues for a module tier.

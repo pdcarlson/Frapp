@@ -174,7 +174,7 @@ export const CI_CHECKS = [
   "web-responsive-floor",
   // Architectural boundary linting (dependency-cruiser): the API's layer direction
   // and the monorepo's app/package separation. HARD GATE from day one, which is only
-  // survivable because `.dependency-cruiser-known-violations.json` grandfathers the
+  // survivable because `scripts/dependency-cruiser-known-violations.json` grandfathers the
   // violations that existed when it landed — a baseline is what lets a gate be strict
   // immediately instead of "advisory until someone gets around to it".
   //

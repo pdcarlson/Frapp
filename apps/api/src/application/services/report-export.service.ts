@@ -4,23 +4,20 @@ import {
   REPORT_PDF_RENDERER,
   type IReportPdfRenderer,
   type ReportPdfColumn,
-} from '../../domain/adapters/pdf.interface';
+} from '#domain/adapters/pdf.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 import {
   CHAPTER_REPOSITORY,
   type IChapterRepository,
-} from '../../domain/repositories/chapter.repository.interface';
+} from '#domain/repositories/chapter.repository.interface';
 import {
   REPORT_TITLES,
   type ReportKind,
-} from '../../domain/constants/report-columns';
-import {
-  REPORTS_BUCKET,
-  reportsFolderPrefix,
-} from '../../domain/constants/storage';
+} from '#domain/constants/report-columns';
+import { REPORTS_BUCKET, reportsFolderPrefix } from '#domain/constants/storage';
 import { REPORT_MAX_ROWS } from './report.service';
 
 /**

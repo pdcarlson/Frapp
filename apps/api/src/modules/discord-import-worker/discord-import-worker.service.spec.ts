@@ -8,15 +8,15 @@ import {
   PURGE_BATCH_SIZE,
 } from './discord-import-worker.service';
 import { DiscordExportWorkerService } from './discord-export-worker.service';
-import { DISCORD_IMPORT_REPOSITORY } from '../../domain/repositories/discord-import.repository.interface';
-import { DISCORD_CONNECTION_REPOSITORY } from '../../domain/repositories/discord-connection.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
+import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
+import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type {
   DiscordImport,
   DiscordImportChannel,
   DiscordImportFile,
-} from '../../domain/entities/discord-import.entity';
+} from '#domain/entities/discord-import.entity';
 
 const FIXTURES = join(__dirname, '../../../test/fixtures/discord');
 const CHAPTER = 'chapter-1';

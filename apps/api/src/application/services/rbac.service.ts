@@ -6,20 +6,20 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
-import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
-import { Role } from '../../domain/entities/role.entity';
-import { Member } from '../../domain/entities/member.entity';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '#domain/repositories/role.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import { Role } from '#domain/entities/role.entity';
+import { Member } from '#domain/entities/member.entity';
 import {
   SystemPermissions,
   SystemRoleKeys,
   WILDCARD,
-} from '../../domain/constants/permissions';
-import { flattenPermissionSets } from '../../domain/utils/permissions';
+} from '#domain/constants/permissions';
+import { flattenPermissionSets } from '#domain/utils/permissions';
 import { CustomRoleService } from './custom-role.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 

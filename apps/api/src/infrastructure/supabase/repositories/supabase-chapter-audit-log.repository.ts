@@ -4,8 +4,8 @@ import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import {
   IChapterAuditLogRepository,
   type ListChapterAuditLogOptions,
-} from '../../../domain/repositories/chapter-audit-log.repository.interface';
-import { ChapterAuditLog } from '../../../domain/entities/chapter-audit-log.entity';
+} from '#domain/repositories/chapter-audit-log.repository.interface';
+import { ChapterAuditLog } from '#domain/entities/chapter-audit-log.entity';
 
 @Injectable()
 export class SupabaseChapterAuditLogRepository implements IChapterAuditLogRepository {

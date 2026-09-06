@@ -6,16 +6,16 @@ import {
 } from '@nestjs/common';
 import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import { ChapterDocumentService } from './chapter-document.service';
-import { CHAPTER_DOCUMENT_REPOSITORY } from '../../domain/repositories/chapter-document.repository.interface';
-import type { IChapterDocumentRepository } from '../../domain/repositories/chapter-document.repository.interface';
-import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '../../domain/repositories/chapter-document-folder.repository.interface';
-import type { IChapterDocumentFolderRepository } from '../../domain/repositories/chapter-document-folder.repository.interface';
-import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
-import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
+import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
+import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '#domain/repositories/chapter-document-folder.repository.interface';
+import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
+import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
+import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import type {
   ChapterDocument,
   ChapterDocumentFolder,
-} from '../../domain/entities/chapter-document.entity';
+} from '#domain/entities/chapter-document.entity';
 
 describe('ChapterDocumentService', () => {
   let service: ChapterDocumentService;

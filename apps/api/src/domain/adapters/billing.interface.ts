@@ -113,8 +113,6 @@ export interface IBillingProvider {
   createCustomerPortalSession(
     params: CreateCustomerPortalParams,
   ): Promise<string>;
-  getSubscriptionStatus(subscriptionId: string): Promise<string>;
-  cancelSubscription(subscriptionId: string): Promise<void>;
   createPaymentIntent(
     params: CreatePaymentIntentParams,
   ): Promise<PaymentIntentResult>;

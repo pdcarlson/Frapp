@@ -1,10 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { CHAT_MESSAGE_BOOKMARK_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import type { IChatMessageBookmarkRepository } from '../../domain/repositories/chat.repository.interface';
+import { CHAT_MESSAGE_BOOKMARK_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import type { IChatMessageBookmarkRepository } from '#domain/repositories/chat.repository.interface';
 import type {
   ChatMessageBookmarkRef,
   ChatMessageBookmarkWithMessage,
-} from '../../domain/entities/chat.entity';
+} from '#domain/entities/chat.entity';
 import { ChannelAccessService } from './channel-access.service';
 
 /**

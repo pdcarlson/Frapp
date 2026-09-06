@@ -16,7 +16,7 @@ import {
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
 import { Type } from 'class-transformer';
-import type { DuesCadence } from '../../domain/entities/chapter-dues-config.entity';
+import type { DuesCadence } from '#domain/entities/chapter-dues-config.entity';
 
 /** Matches the `accent_color` column's own validation in `chapter.dto.ts`. */
 const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;

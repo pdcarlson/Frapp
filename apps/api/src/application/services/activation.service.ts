@@ -7,7 +7,7 @@ import {
 import {
   ACTIVATION_MILESTONE_REPOSITORY,
   type IActivationMilestoneRepository,
-} from '../../domain/repositories/activation-milestone.repository.interface';
+} from '#domain/repositories/activation-milestone.repository.interface';
 import { AnalyticsService } from './analytics.service';
 
 /**

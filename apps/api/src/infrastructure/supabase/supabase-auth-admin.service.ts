@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { isAuthApiError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from './supabase.provider';
-import type { IAuthAdminProvider } from '../../domain/adapters/auth-admin.interface';
+import type { IAuthAdminProvider } from '#domain/adapters/auth-admin.interface';
 import type { FrappSupabaseClient } from './database.types';
 
 @Injectable()

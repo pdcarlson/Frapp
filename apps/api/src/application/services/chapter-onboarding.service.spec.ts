@@ -57,7 +57,7 @@ import { ChapterOnboardingService } from './chapter-onboarding.service';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { Chapter } from '../../domain/entities/chapter.entity';
+import type { Chapter } from '#domain/entities/chapter.entity';
 import type { ChapterOnboardingDto } from '../../interface/dtos/chapter-onboarding.dto';
 
 const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';

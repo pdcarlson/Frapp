@@ -37,7 +37,7 @@ describe("the step strip", () => {
   it("carries no fill, and no opacity wash in either Tailwind spelling", () => {
     // `bg-secondary/60` inside a `DialogContent` composited to 1.050:1 —
     // `--secondary` holds `--card`'s value and a dialog is `--popover`. The
-    // class-string guard in `components/profile/family-call-sites.test.ts`
+    // class-string guard in `components/profile/family-call-sites.spec.ts`
     // catches the source; this catches the rendered element, which is the half
     // a conditional could hide from a grep.
     render(<OnboardingTutorial />);
