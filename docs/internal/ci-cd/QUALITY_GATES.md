@@ -254,9 +254,9 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 4.27%** duplicated lines (843 clones, 10,434 duplicated lines, across
-  1,114 files analysed) — measured 2026-09-05.
-- **Threshold: 4.4%**, just above it.
+- **Current measurement: 4.15%** duplicated lines (859 clones, 10,579 duplicated lines, across
+  1,131 files analysed) — measured 2026-09-06.
+- **Threshold: 4.3%**, just above it.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
   make a red run green. Set the new value from a *measured* run, never from a guess, and leave
   enough headroom that ordinary drift does not redden it.
@@ -266,7 +266,10 @@ that fails when exceeded. So the ratchet is:
   1,096 files (checked 2026-09-05). Why they differ has not been established, so treat the 4.37%
   pair as a historical note and **never as a baseline to compare a current run against**. The
   2026-09-05 ratchet to 4.4% was set from a fresh measurement of both sides — 4.30% on `main`,
-  4.27% after deleting the unconsumed `@repo/hooks` / `@repo/chat-core` exports.
+  4.27% after deleting the unconsumed `@repo/hooks` / `@repo/chat-core` exports. The 2026-09-06
+  ratchet to 4.3% closed slack the ratio had shed on `main` rather than slack any one change
+  earned: `npm run check:duplication` measured the same figure either side of that day's diff, so
+  the threshold, not the codebase, was what had drifted.
 
 That mechanism is why this gate is advisory. A repo-wide percentage cannot distinguish one bad
 copy-paste from ordinary drift, which is too coarse to block a merge on.

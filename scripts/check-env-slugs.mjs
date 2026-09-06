@@ -120,10 +120,6 @@ export function canonicalSection(docText) {
   return docText?.split("## Infisical Environments")[1]?.split("\n---")[0] ?? null;
 }
 
-function scanSlugs(file, text, re, context) {
-  for (const v of unknownSlugsIn(text, re)) report(file, v.line, v.found, context);
-}
-
 const IS_ENTRYPOINT =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
