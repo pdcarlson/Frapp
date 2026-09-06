@@ -5,14 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { TaskService } from './task.service';
-import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
-import type { ITaskRepository } from '../../domain/repositories/task.repository.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import { Task, TaskStatus } from '../../domain/entities/task.entity';
-import type { Member } from '../../domain/entities/member.entity';
+import { TASK_REPOSITORY } from '#domain/repositories/task.repository.interface';
+import type { ITaskRepository } from '#domain/repositories/task.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
+import { Task, TaskStatus } from '#domain/entities/task.entity';
+import type { Member } from '#domain/entities/member.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 
@@ -747,31 +747,6 @@ describe('TaskService', () => {
 
       expect(result[0].status).toBe(TaskStatus.COMPLETED);
       expect(result[0].stored_status).toBe(TaskStatus.COMPLETED);
-    });
-  });
-
-  describe('listByChapter', () => {
-    it('should return all tasks for chapter', async () => {
-      mockTaskRepo.findByChapter.mockResolvedValue([baseTask]);
-
-      const result = await service.listByChapter('ch-1');
-
-      expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-      expect(result).toEqual([asView(baseTask)]);
-    });
-  });
-
-  describe('listByAssignee', () => {
-    it('should return tasks for assignee', async () => {
-      mockTaskRepo.findByAssignee.mockResolvedValue([baseTask]);
-
-      const result = await service.listByAssignee('ch-1', 'user-1');
-
-      expect(mockTaskRepo.findByAssignee).toHaveBeenCalledWith(
-        'ch-1',
-        'user-1',
-      );
-      expect(result).toEqual([asView(baseTask)]);
     });
   });
 

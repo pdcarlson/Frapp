@@ -52,10 +52,8 @@ Each topic file is canonical **intended** behavior. Delivery (which is shipped v
 
 ## Dark Mode
 
-- Full dark mode support across web and mobile.
-- Respects the device/OS system preference by default.
-- Manual override available in user settings (Light, Dark, System).
-- Palette, typeface, and dark-first Signet tokens live in [`spec/ui/brand-identity.md`](../ui/brand-identity.md) and [`spec/ui/design-system/`](../ui/design-system/README.md) — do not duplicate values here. The frozen landing site still ships the legacy `@repo/theme` tokens until its reskin; the web dashboard ships Signet dark-only since the #920 shell slice (no theme control).
+- The web dashboard and mobile are dark-only: the dark palette is the only one they ship, and neither offers a theme control, so "support" here does not mean a choice exists. The landing site is the exception — it still renders light, per the bullet below.
+- Palette, typeface, and dark-first Signet tokens live in [`spec/ui/brand-identity.md`](../ui/brand-identity.md) and [`spec/ui/design-system/`](../ui/design-system/README.md) — do not duplicate values here. The frozen landing site still ships the legacy `@repo/theme` tokens until its reskin — their bare `:root` is the light bone palette and `.dark` is opt-in, so with no such class on `apps/landing` the public site renders light-only; the web dashboard ships Signet dark-only since the #920 shell slice (no theme control).
 
 ---
 
@@ -73,7 +71,12 @@ All API errors follow a consistent shape:
 ```
 
 - Internal errors (500) never expose database details or stack traces. The `requestId` enables support to locate the full error in logs.
-- All errors are logged with structured context: `[ServiceName] message | detail: {...} | requestId: ... | error: stack`.
+- Error logging is per status class, not uniform. A 5xx is logged as one flat JSON
+  object by `apps/api/src/interface/filters/all-exceptions.filter.ts`. A 401, 403 or
+  429 instead produces a `security_event` record, whose shape is built and owned by
+  `apps/api/src/infrastructure/observability/security-events.ts`. Other 4xx produce no
+  error record at all — only the per-request log, which is a third record, owned by
+  [`observability.md`](observability.md#structured-logging) § Structured Logging.
 - Validation errors (400) return the full list of field-level issues from the validation pipe.
 - Rate limit errors (429) include a `Retry-After` header.
 
@@ -81,7 +84,8 @@ All API errors follow a consistent shape:
 
 ## Security Invariants
 
-- All API endpoints (except `/health` and webhooks) require authentication.
+- All API endpoints require authentication, except the health routes (`/health` and `/health/ready`), webhooks, and the Discord
+  OAuth callback (`GET /v1/discord/connect/callback`), whose capability is its single-use `state`.
 - All data access is scoped by `chapter_id`. No cross-chapter data access is possible through any endpoint.
 - Webhook endpoints (Stripe) verify signatures before processing. Invalid signatures return 401 and are logged as security events.
 - File uploads are scanned for allowed MIME types and extensions via `@repo/validation` (kinds `image` / `proof` / `document` / `archive`). Disallowed types are rejected before a signed URL is issued; storage buckets enforce the same MIME list and a size cap on the upload itself — 25 MB for the member-upload kinds, with `archive` deliberately held off `MAX_UPLOAD_BYTES` at 100 MB for the Discord importer.
@@ -95,9 +99,10 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | --- | --- | --- |
 | `POST /v1/reports/attendance`, `/points`, `/roster`, `/service` | 5/min | Full-chapter aggregation plus export rendering. |
 | `POST /v1/invites/batch` | 5/min | Mints `count` invite tokens in one call. |
+| `POST /v1/invites/email` | 5/min | Mints a token and sends an email per address in one call. |
 | `POST /v1/invites/redeem` | 10/min | Token-guessing surface. |
 | `POST /v1/events`, `PATCH /v1/events/:id` | 10/min | Each one pushes a notification to every member of the chapter. |
-| Every signed-upload-URL route — `POST /v1/documents/upload-url`, `/v1/backwork/upload-url`, `/v1/channels/:id/upload-url`, `/v1/chapters/current/logo-url`, `/v1/service-entries/proof-upload-url`, `/v1/users/me/avatar-url` | 10/min | Mints signed object-storage URLs. The rule is per-mechanism, not per-module: a new upload route inherits this limit. |
+| The signed-upload-URL routes — `POST /v1/documents/upload-url`, `/v1/backwork/upload-url`, `/v1/channels/:id/upload-url`, `/v1/chapters/current/logo-url`, `/v1/service-entries/proof-upload-url`, `/v1/users/me/avatar-url` | 10/min | Mints signed object-storage URLs. The rule is per-mechanism rather than per-module, but it is a convention applied by hand at each handler — nothing inherits it, and `POST /v1/discord-imports/:id/upload-urls` currently mints signed URLs on the default ([#1709](https://github.com/pdcarlson/Frapp/issues/1709)). |
 | `GET /v1/search` | 20/min | Four full-text (`websearch_to_tsquery`) scans per call. |
 
 `POST /v1/points/adjust` is deliberately absent: its abuse control is the adjustments-per-hour anti-fraud rule in the points service, not the throttler. [`points.md`](points.md) § Anti-Fraud owns the limit and its scoping. `POST /v1/channels/:id/messages` also fans out push notifications but keeps the 30/min default — it is the chat send path, and a lower ceiling would degrade normal use.

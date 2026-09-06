@@ -3,7 +3,7 @@ import type {
   JwtPayload,
 } from '@supabase/supabase-js';
 import type { Request } from 'express';
-import type { SubscriptionStatus } from '../../domain/entities/chapter.entity';
+import type { SubscriptionStatus } from '#domain/entities/chapter.entity';
 
 export interface AppUserContext {
   id: string;

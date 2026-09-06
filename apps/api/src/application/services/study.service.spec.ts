@@ -7,15 +7,15 @@ import {
 } from '@nestjs/common';
 import { StudyService } from './study.service';
 import { RbacService } from './rbac.service';
-import { STUDY_GEOFENCE_REPOSITORY } from '../../domain/repositories/study.repository.interface';
-import type { IStudyGeofenceRepository } from '../../domain/repositories/study.repository.interface';
-import { STUDY_SESSION_REPOSITORY } from '../../domain/repositories/study.repository.interface';
-import type { IStudySessionRepository } from '../../domain/repositories/study.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
-import type { StudyGeofence } from '../../domain/entities/study.entity';
-import type { StudySession } from '../../domain/entities/study.entity';
-import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
+import { STUDY_GEOFENCE_REPOSITORY } from '#domain/repositories/study.repository.interface';
+import type { IStudyGeofenceRepository } from '#domain/repositories/study.repository.interface';
+import { STUDY_SESSION_REPOSITORY } from '#domain/repositories/study.repository.interface';
+import type { IStudySessionRepository } from '#domain/repositories/study.repository.interface';
+import { POINT_TRANSACTION_REPOSITORY } from '#domain/repositories/point-transaction.repository.interface';
+import type { IPointTransactionRepository } from '#domain/repositories/point-transaction.repository.interface';
+import type { StudyGeofence } from '#domain/entities/study.entity';
+import type { StudySession } from '#domain/entities/study.entity';
+import type { PointTransaction } from '#domain/entities/point-transaction.entity';
 
 // `pointInPolygon` moved to `domain/utils/geofence.ts` with #994, when event
 // check-in became its second consumer. Its cases live in `geofence.spec.ts`.
@@ -92,7 +92,7 @@ describe('StudyService', () => {
       create: jest.fn(),
       findByClientMessageId: jest.fn().mockResolvedValue(null),
       findByUser: jest.fn(),
-      findByChapter: jest.fn(),
+      leaderboard: jest.fn(),
       findByChapterFiltered: jest.fn(),
       countRecentAdjustments: jest.fn(),
     };

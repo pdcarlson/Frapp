@@ -1,0 +1,28 @@
+-- Index the Audit tab's action filter.
+--
+-- `GET /v1/audit-log` gained optional `actor_user_id`, `action` and
+-- `start_date`/`end_date` filters, closing the gap against
+-- spec/behavior/settings/README.md ("filter by actor, action type, date
+-- range"). Two of the three were already served:
+--
+--   * the date window and the newest-first ordering ride
+--     idx_audit_log_chapter_created_at (chapter_id, created_at desc);
+--   * an actor lookup rides idx_audit_log_actor_created_at.
+--
+-- `action` was served by nothing, so a filtered read fell back to scanning the
+-- chapter's history in created_at order and discarding non-matching rows on the
+-- heap. That is cheap while a chapter has few entries and unbounded as the log
+-- grows, and it is worst exactly where the filter is most useful: a rare verb,
+-- where the scan runs furthest before collecting `limit` rows.
+--
+-- This is a distinct prefix from idx_audit_log_chapter_created_at, not a
+-- duplicate of it: leading (chapter_id, action) makes the equality a seek, and
+-- the trailing created_at desc still supplies the ORDER BY so the LIMIT stops
+-- early.
+--
+-- `create index`, not CONCURRENTLY -- Supabase applies each migration inside a
+-- transaction and Postgres forbids CONCURRENTLY there. It therefore holds SHARE
+-- for the build, blocking writes to chapter_audit_log; those writes are the
+-- audit inserts on the officer-action path, and the table is small.
+create index idx_audit_log_chapter_action_created_at
+  on chapter_audit_log (chapter_id, action, created_at desc);

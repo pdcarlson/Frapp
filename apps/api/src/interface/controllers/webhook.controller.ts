@@ -16,7 +16,7 @@ import { BillingService } from '../../application/services/billing.service';
 import {
   BILLING_PROVIDER,
   type IBillingProvider,
-} from '../../domain/adapters/billing.interface';
+} from '#domain/adapters/billing.interface';
 import type { WebhookRequest } from '../types/request-context.types';
 
 // Webhooks carry no bearer token, so the global throttler keys them by IP —

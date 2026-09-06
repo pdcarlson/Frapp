@@ -511,7 +511,7 @@ export function ProfilePanel() {
         transcription of the board's `#251E0E` / `#6B5619` / `#F4CB63` — the
         board draws one seed (its header says the demo tenant runs house gold)
         and the engine ships nineteen, so the accent roles are what generalise.
-        Measured across all of them in `profile-contrast.test.ts`.
+        Measured across all of them in `profile-contrast.spec.ts`.
 
         s15's role badge and its three stat cards (points / service hrs /
         attendance) are deliberately NOT here: `GET /v1/users/me` carries none

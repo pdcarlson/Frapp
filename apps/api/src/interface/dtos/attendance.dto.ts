@@ -7,7 +7,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import type { EventAttendanceStatus } from '../../domain/entities/event-attendance.entity';
+import type { EventAttendanceStatus } from '#domain/entities/event-attendance.entity';
 
 /**
  * Self check-in payload.

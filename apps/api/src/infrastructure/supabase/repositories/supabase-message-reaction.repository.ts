@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
-import type { IMessageReactionRepository } from '../../../domain/repositories/chat.repository.interface';
-import { MessageReaction } from '../../../domain/entities/chat.entity';
+import type { IMessageReactionRepository } from '#domain/repositories/chat.repository.interface';
+import { MessageReaction } from '#domain/entities/chat.entity';
 
 @Injectable()
 export class SupabaseMessageReactionRepository implements IMessageReactionRepository {

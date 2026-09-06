@@ -26,7 +26,7 @@ import {
   StudySessionHeartbeatDto,
   ResumeStudySessionDto,
 } from '../dtos/study.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Study Hours')
 @ApiBearerAuth()

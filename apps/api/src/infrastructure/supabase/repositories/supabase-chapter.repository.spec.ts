@@ -4,7 +4,7 @@ import {
   CHAPTER_B,
   createTenantHarness,
   type TenantHarness,
-} from '../../../../test/helpers/tenant-scope.harness';
+} from '#test/helpers/tenant-scope.harness';
 
 /**
  * Tenant scope for `chapters` — the tenant root, so it scopes by its own primary

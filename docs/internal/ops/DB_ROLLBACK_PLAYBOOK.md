@@ -89,7 +89,7 @@ Established from the Supabase Management API and Supabase's own documentation on
 | `frapp-prod` | `unttyvyfezddlyafcydh`, `us-east-2`, Postgres 17.6.1.063 |
 
 > **Rotating either project is a four-place change.** The ref is recorded in
-> [`ci/environments.json`](../../../ci/environments.json) as well as in Infisical, in this table, and in
+> [`.github/environments.json`](../../../.github/environments.json) as well as in Infisical, in this table, and in
 > [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md)'s egress allowlist. `scripts/run-migration.mjs`
 > compares the injected `SUPABASE_PROJECT_REF` against the committed file and **refuses to run** when they
 > disagree — deliberately, so a staging label can never write to production — so a rotation that updates
@@ -106,8 +106,9 @@ Supabase's guidance for the free tier is to do exactly what this repo now does:
 Two consequences worth stating plainly:
 
 - **The nightly offsite dump is not defence-in-depth. It is the only restorable
-  backup either project has.** If it is not running, there is no recovery path
-  from data loss beyond replaying migrations into an empty database.
+  backup `frapp-staging` has, and `frapp-prod` has none at all.** If it is not
+  running, there is no recovery path from data loss beyond replaying migrations
+  into an empty database.
 - Free-tier projects may have up to 7 daily backups taken internally, but
   Supabase makes them accessible **only on upgrade**, and states it "might no
   longer make daily backups for free projects in the future". That is not
@@ -296,6 +297,52 @@ After any rollback event:
   ([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md#where-a-fact-lives) § Where a fact lives)
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
+
+## Rollback `idx_audit_log_chapter_action_created_at`
+
+* **Migration**: `20260906120000_audit_log_chapter_action_created_at_idx.sql`
+* **Action**: `DROP INDEX IF EXISTS idx_audit_log_chapter_action_created_at;`
+* **Note**: Additive index only — no column, constraint or data change, so
+  dropping it loses nothing but the optimization. `GET /v1/audit-log`'s `action`
+  filter keeps returning identical rows; it falls back to scanning the chapter's
+  history in `created_at` order and discarding non-matching rows, which is what
+  it did before this migration. The other three indexes on the table are
+  untouched, so the actor filter, the date window and the newest-first ordering
+  are unaffected. **No API rollback is needed or implied** — nothing in the
+  application references the index by name.
+
+## Rollback the ops-setup nudge dismissals
+
+* **Migration**: `20260905030000_member_dismissed_ops_nudges.sql`
+  (renamed from `20260905020000_` before merge: #1735 landed
+  `20260905020000_point_transactions_client_message_id.sql` on `main` first, and
+  Supabase keys `schema_migrations` by the 14-digit prefix, so two files cannot
+  share one. Nothing had applied this migration yet, so the rename is free.)
+* **Action**: `ALTER TABLE members DROP COLUMN IF EXISTS dismissed_ops_nudges;`
+  **Redeploy the web app at the pre-#492 revision first.** The API degrades gracefully
+  without it — `mapMembershipSummary` normalizes a missing value to `[]` and
+  `MemberService.dismissOpsNudge` reads through `?? []` — but `PATCH
+  /v1/members/me/ops-nudges/dismiss` 500s on the write, so with the old column gone and
+  the new web build still deployed, every officer's Dismiss click fails silently and the
+  card returns on the next refetch. Reads keep working throughout; only the dismissal
+  write is lost.
+* **Note**: Purely additive — one `text[] not null default '{}'` column. No existing
+  column, row, policy, or function is touched, so nothing that predates the migration
+  can be lost and rolling back cannot corrupt anything. What it removes is the memory of
+  which suggestions an officer has already closed: every eligible chapter's officers see
+  the Dues nudge again. Annoying, not damaging, and no data outside this column depends
+  on it.
+* **Data caveat**: the column is the *only* record of a dismissal — there is no second
+  copy and no way to recompute it, because "this officer chose to close this card" is
+  not derivable from any other state. Dropping it is therefore lossy in a way the
+  additive-column rollbacks above are not, and re-applying the migration brings every
+  member back at `'{}'`. If the dismissals matter, snapshot first:
+  `CREATE TABLE members_dismissed_ops_nudges_backup AS SELECT id, dismissed_ops_nudges
+  FROM members WHERE dismissed_ops_nudges <> '{}';` — that predicate keeps the snapshot
+  to the rows that actually carry a choice. Restore with an `UPDATE ... FROM` on `id`.
+  The loss is one UI preference per officer, so prefer simply not rolling this back:
+  hiding the card is a web-side change (stop rendering `OpsSetupNudge`) that needs no
+  migration at all.
 
 ## Rollback the chat-archive upload quota
 
@@ -1236,10 +1283,10 @@ After any rollback event:
   ```
 * **Note**: Grant-only change, no data loss and no function body change — restores the pre-migration Postgres-default EXECUTE-to-PUBLIC behavior for `anon`/`authenticated`. Should not be needed: all three RPCs are `security invoker` (RLS still applies under the caller's own privileges) and both callers (`ReportService.getPointsReport`, `SupabasePollVoteRepository`) already go through the API's `service_role` client, which keeps EXECUTE regardless. Only relevant if some other caller was found to invoke these RPCs directly as `anon`/`authenticated` (e.g. via PostgREST) after this migration shipped — confirm that caller's actual need before rolling back, since re-opening the grant is exactly the convention gap #678 closed.
 
-## Rollback `get_roster_point_balances` RPC
-* **Migration**: `20260905100000_get_roster_point_balances.sql`
-* **Action**: `DROP FUNCTION IF EXISTS get_roster_point_balances(uuid);`
-* **Note**: Purely additive — a new function under a new name. It drops nothing, changes no existing signature, and touches no column or row, so there is no data loss on rollback and no deploy window in which an existing read is missing or ambiguous. **Forward-fix required before dropping it**: `ReportService.getRosterReport` calls this RPC through `fetchAllPages`, which raises on a query error rather than degrading, so dropping the function while the current API revision is live makes every roster export return 500. Deploy an API revision that no longer calls it first — or simply revert the code, which leaves the unused function inert and costs nothing. Not to be confused with `get_points_report` (next section): they aggregate the same table but are independent functions, and this one exists precisely because that one returns no `user_id` key (#747).
+## Rollback `get_points_leaderboard` RPC
+* **Migration**: `20260906120001_get_points_leaderboard.sql`
+* **Action**: `DROP FUNCTION IF EXISTS get_points_leaderboard(uuid, timestamptz, timestamptz);`
+* **Note**: Additive only — one new `security invoker` function, no table, column, row or existing-function change, so there is no data loss on drop. **A bare drop breaks `GET /v1/points/leaderboard` outright**, so this needs a forward-fix rather than a straight rollback: the API calls it from `SupabasePointTransactionRepository.leaderboard` on every leaderboard request, and #522 deleted the previous in-Node path (`IPointTransactionRepository.findByChapter`) in the same change per the cutover discipline — there is no fallback branch left to take. Deploy an API revision that restores the `findByChapter` + reduce-in-Node aggregation **before** dropping the function, or every leaderboard request 500s. **Three surfaces break, not one** — size the blast radius on all of them: the web Points page, the web Members directory, and the **mobile Tasks tab's house-rank card**, which is on every member's home screen rather than an officer-only screen. The balance summary and the Audit tab keep working (they read `findByUser` and `findByChapterFiltered`, which this migration does not touch). Ordering aside, the RPC is pure read: dropping and recreating it at any time is safe for data. The migration creates no index, so there is nothing else to undo.
 
 ## Rollback `get_points_report` RPC `p_until` bound
 * **Migration**: `20260902010001_get_points_report_until.sql` (supersedes `20260604140000_get_points_report_window_filter.sql`)

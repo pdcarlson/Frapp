@@ -665,7 +665,7 @@ export function BackworkPage() {
         problem about a sentence rather than about anything they can do, and
         stacks a duplicate of the chip the gated control already shows. §5 rule
         4's "disable, don't hide" is about controls; supplementary copy has
-        nothing to disable. `can-fallback.test.tsx` derives this rather than
+        nothing to disable. `can-fallback.spec.tsx` derives this rather than
         listing it: a lone `SubscriptionNotice` child both may and must be
         `null` here.
       */}

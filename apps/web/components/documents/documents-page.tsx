@@ -170,7 +170,7 @@ function DownloadButton({ id }: { id: string }) {
  * §2's two row states rather than §7's sidebar item: §7 defines one active
  * fill and a hover that falls back to the card, which a rail already sitting
  * *on* a card cannot use. Hover takes `accent-3`, active `accent-4` plus
- * `accent-11` text — the table recipe `components/shared/table-contrast.test.ts`
+ * `accent-11` text — the table recipe `components/shared/table-contrast.spec.ts`
  * pins. `FOCUS_RING_OFFSET`, not `FOCUS_RING`: these rows carry no border, and
  * `FOCUS_RING`'s indicator is the border swap.
  */
@@ -860,7 +860,7 @@ export function DocumentsPage() {
         problem about a sentence rather than about anything they can do, and
         stacks a duplicate of the chip the gated control already shows. §5 rule
         4's "disable, don't hide" is about controls; supplementary copy has
-        nothing to disable. `can-fallback.test.tsx` derives this rather than
+        nothing to disable. `can-fallback.spec.tsx` derives this rather than
         listing it: a lone `SubscriptionNotice` child both may and must be
         `null` here.
       */}

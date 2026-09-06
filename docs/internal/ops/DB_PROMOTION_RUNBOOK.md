@@ -235,7 +235,7 @@ The script now says so rather than letting you debug it mid-incident.
 Two other refusals, both deliberate:
 
 - **Wrong project.** If `SUPABASE_PROJECT_REF` does not match the ref
-  `ci/environments.json` records for `--env`, the script exits before `link` or
+  `.github/environments.json` records for `--env`, the script exits before `link` or
   `push`. A production ref cannot be applied under a staging label, or the
   reverse.
 - **Wrong directory.** `supabase/migrations/` is resolved from the working
@@ -254,7 +254,24 @@ Two other refusals, both deliberate:
       (`check:migration-safety` requires touching this doc or the rollback
       playbook — it cannot tell which one you owed)
 - [ ] Query/index/policy changes reviewed by at least one backend reviewer
-- [ ] Supabase backups/snapshots confirmed before a **production** promotion
+- [ ] For a **production** promotion, a backup **taken by you**, with the dump path
+      or object key recorded on the PR — or an explicit, written acceptance that
+      there is no recovery path for this promotion. Nothing takes one for you:
+      `db-backup.yml` runs against `frapp-staging` only, and the free plan offers
+      neither a snapshot nor PITR
+      ([`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#backup-reality) § Backup reality),
+      so this box cannot be ticked by having read it. This replaced an older item
+      that asked you to *confirm* Supabase backups: there were none to confirm, so
+      it could only ever be ticked falsely.
+      `scripts/db-backup.sh` can dump any project. It always needs a reachable
+      Docker daemon (`supabase db dump` runs pg_dump in a container). Prefer
+      `--db-url` for a one-off — nothing is left behind **in the tree**, unlike
+      `--linked`, which needs `supabase link` and leaves the link under
+      `supabase/.temp`, so re-link before running anything else from it. (The URL
+      still carries the password on the command line, so it reaches your shell
+      history and the process table like any other argv.) Either way it captures
+      the **database** only; Storage objects need `scripts/storage-backup-run.mjs`,
+      which is what `db-backup.yml`'s second job runs for staging.
 
 ## Local validation
 
@@ -322,8 +339,8 @@ Before you promote — the API does not boot without these:
 - [ ] Every name in `REQUIRED_ENV_VARS`
       ([`apps/api/src/config/env.validation.ts`](../../../apps/api/src/config/env.validation.ts))
       is set **and non-empty** in the target environment's Infisical folder:
-      `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
-      `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
+      `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`,
+      `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
 
 `validateEnv` rejects an **empty string** exactly as it rejects an absent key
 (`typeof value !== 'string' || value.trim().length === 0`), so a name that is
@@ -377,41 +394,60 @@ touch this file **or** [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — 
 backs the habit, it does not prove the log complete. Appending here stays the
 promoter's job.
 
-## 2026-09-05: Roster point balances summed in Postgres (#567)
+## 2026-09-06: Audit-log action filter index
 
-One additive migration. Creates a new function under a new name — no `drop
-function`, no signature change, nothing existing rewritten — so there is no
-deploy window in which a live read is missing or ambiguous. Safe to apply ahead
-of the code: the function is simply uncalled until the API that reads it ships,
-and safe to leave in place if the code is rolled back.
+* **Migration**: `20260906120000_audit_log_chapter_action_created_at_idx.sql`
+* **Purpose**: B-tree on `(chapter_id, action, created_at desc)` so the `action`
+  filter added to `GET /v1/audit-log` seeks rather than scans. The date window
+  and newest-first ordering were already served by
+  `idx_audit_log_chapter_created_at`, and the actor filter by
+  `idx_audit_log_actor_created_at`; `action` was served by nothing.
+* **Checks**: After `db push`, confirm the index exists:
+  `select indexname from pg_indexes where tablename = 'chapter_audit_log' and indexname = 'idx_audit_log_chapter_action_created_at';`
+* **Promoter notes**: Additive and non-blocking in practice — `create index`
+  (not `CONCURRENTLY`, which Postgres forbids inside the transaction Supabase
+  wraps each migration in) holds SHARE on `chapter_audit_log` for the build,
+  blocking the officer-action audit inserts for its duration. The table is
+  small and append-only, so this is short; still, prefer a low-traffic window
+  on production. No backfill, no data change, no API coupling.
+* **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) §
+  Rollback `idx_audit_log_chapter_action_created_at`.
 
-### 20260905100000_get_roster_point_balances.sql
-* **Purpose**: Lets the roster report ask Postgres for one already-summed row
-  per member instead of streaming up to 50,000 `point_transactions` rows into
-  the API and reducing them there. The old ceiling was a **correctness cliff**,
-  not a tuning knob: past it a chapter's roster came back the right length with
-  every balance wrong, footnoted rather than fixed. `GROUP BY user_id` makes the
-  read scale with roster size instead of chapter history.
-  Deliberately a **new function** rather than an extension of `get_points_report`,
-  which returns `member_name` and no key at all (#747) — the roster keys balances
-  by `user_id`, and display names are not unique. Adding a key to that function
-  changes its return type, which needs the drop-and-recreate sequence in
-  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) § Rollback `get_points_report` RPC;
-  keeping these separate leaves #747 independently fixable.
-* **Checks**: After `db push`, confirm the function exists and is locked down —
-  `select to_regprocedure('get_roster_point_balances(uuid)') is not null;` should return `t`.
-  The grant matters as much as the existence: a newly created function carries
-  Postgres's default EXECUTE-to-PUBLIC grant, and this one would be a per-member
-  points oracle for any chapter id if it kept it —
-  `select has_function_privilege('public', 'get_roster_point_balances(uuid)', 'EXECUTE');` must return `f`,
-  `select has_function_privilege('anon', 'get_roster_point_balances(uuid)', 'EXECUTE');` must return `f`, and
-  `select has_function_privilege('service_role', 'get_roster_point_balances(uuid)', 'EXECUTE');` must return `t`.
-  (Verified locally on the sandbox stack at author time: `f`, `f`, `t`.)
+## 2026-09-05: Ops-setup nudge dismissals (#492)
 
-**Rollback**: `drop function if exists get_roster_point_balances(uuid);` — but
-only after the API no longer calls it, since `ReportService.getRosterReport`
-returns a 500 rather than degrading if the RPC is missing. Reverting the code
-alone is sufficient and leaves the unused function inert.
+One additive migration. Adds a single `text[]` column with a literal default to
+an existing table; no backfill, no rewrite, no RLS change, no new policy. Safe to
+apply ahead of the code — the column is simply unread until the API that writes
+it ships, and its `'{}'` default means every existing row reads as "nothing
+dismissed" rather than null.
+
+Promoted alongside `20260905020000_point_transactions_client_message_id.sql`
+above. The two are independent — different tables, no shared object — so either
+order works; the prefixes differ only because this one was renamed off a
+collision with that one before merge.
+
+### 20260905030000_member_dismissed_ops_nudges.sql
+* **Purpose**: Gives `members` the `dismissed_ops_nudges` array that records
+  which ops-setup nudges a member has closed, per `spec/product/modules.md`
+  § "Ops-setup nudges". It lives on `members` rather than `user_settings`
+  because the spec requires the state **per user per chapter** and `members` is
+  `unique (user_id, chapter_id)` — that grain by construction — while
+  `user_settings` is `unique (user_id)` and cannot express it. Same placement as
+  `has_completed_onboarding`, the existing per-member UI-dismissal flag.
+* **Checks**: After `db push`, confirm the column exists with the right type and
+  default —
+  `select column_name, data_type, column_default, is_nullable from information_schema.columns where table_name = 'members' and column_name = 'dismissed_ops_nudges';`
+  should return one row reading `ARRAY` / `'{}'::text[]` / `NO`. The default and
+  the NOT NULL both matter: a null here would reach `selectOpsNudge` through the
+  API's `?? []` and read as "nothing dismissed", so a member's dismissals would
+  silently stop persisting rather than fail loudly.
+  Confirm no rows were left behind by the default —
+  `select count(*) from members where dismissed_ops_nudges is null;` must be 0.
+* **No data migration**: the column starts empty for every member by design.
+  Dismissals accrue only as officers close cards; there is nothing to backfill
+  and no prior state to preserve.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the ops-setup nudge dismissals.
 
 ## 2026-09-05: Points ledger idempotency key (#1719)
 
@@ -445,7 +481,7 @@ enabled with no client policies).
 ### 20260831220000_chapter_documents_metadata.sql
 * **Purpose**: Adds `content_type`, `byte_size`, `document_type`, `effective_date`
   to `chapter_documents`, prerequisite work for the AI corpus retrieval design
-  (ADR-13 §13, #720) which needs a currency signal distinct from upload time and
+  (`spec/architecture/README.md` § 13 AI Corpus Architecture — not ADR-13, which is Repository visibility; #720) which needs a currency signal distinct from upload time and
   provenance metadata beyond a title. `content_type`/`byte_size` are populated
   from what the client already knows about the file (`file.type` / `file.size`);
   `document_type`/`effective_date` are optional form fields, user-supplied and

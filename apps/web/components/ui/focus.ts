@@ -60,7 +60,7 @@ export const FOCUS_RING =
  *
  * It draws in `--ring` (accent-8), **not** `--primary` (accent-9). Measured
  * against `--background` across all 19 seeded chapter accents
- * (`components/ui/focus-contrast.test.ts`): `--primary` fails on five of them
+ * (`components/ui/focus-contrast.spec.ts`): `--primary` fails on five of them
  * — `#800000` at 1.77:1, `#8B0000` 1.94, `#1F4E79` 2.24, `#006400` 2.61,
  * `#8B4513` 2.74 — while `--ring` clears the floor on all nineteen. On those
  * five chapters the accent-9 ring meant a keyboard user got no conforming

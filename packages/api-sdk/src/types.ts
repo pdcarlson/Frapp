@@ -352,7 +352,7 @@ export interface paths {
         };
         /**
          * List chapter audit log entries
-         * @description Officer-action history (config changes, role/field changes, member removal, and similar). Paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).
+         * @description Officer-action history (config changes, role/field changes, member removal, and similar). Optional filters — `actor_user_id`, `action`, and the inclusive `start_date`/`end_date` window — compose as an intersection. Paginate via a cursor (`before` ISO8601), which is separate from the window so paging does not move the filter. Returns newest-first, capped at `limit` (default 50, max 200).
          */
         get: operations["ChapterAuditLogController_list_v1"];
         put?: never;
@@ -568,6 +568,23 @@ export interface paths {
         head?: never;
         /** Update onboarding status */
         patch: operations["MemberController_updateOnboarding_v1"];
+        trace?: never;
+    };
+    "/v1/members/me/ops-nudges/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Dismiss an ops-module setup nudge */
+        patch: operations["MemberController_dismissOpsNudge_v1"];
         trace?: never;
     };
     "/v1/alumni": {
@@ -3158,6 +3175,13 @@ export interface components {
         UpdateOnboardingDto: {
             has_completed_onboarding: boolean;
         };
+        DismissOpsNudgeDto: {
+            /**
+             * @description Module whose ops-setup nudge to dismiss for the caller in the active chapter. Validated against the shared catalog rather than accepted as free text: `members.dismissed_ops_nudges` is an unconstrained `text[]`, so an unchecked value would persist forever and suppress nothing.
+             * @enum {string}
+             */
+            module_key: "dues" | "events" | "tasks" | "points";
+        };
         CreateInviteDto: {
             /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
             role?: string;
@@ -4530,7 +4554,15 @@ export interface operations {
     ChapterAuditLogController_list_v1: {
         parameters: {
             query?: {
-                /** @description ISO8601 cursor — return audit entries created before this timestamp */
+                /** @description Filter to entries written by a single actor */
+                actor_user_id?: string;
+                /** @description Filter to a single action verb, e.g. `member_removed`. Matched exactly; an unknown verb returns an empty list. */
+                action?: string;
+                /** @description Inclusive lower bound on `created_at`. Full ISO 8601 timestamp with an explicit UTC offset — a bare date is rejected rather than read as midnight. Filters the range; pair with `before` to page within it. */
+                start_date?: string;
+                /** @description Inclusive upper bound on `created_at`. Full ISO 8601 timestamp with an explicit UTC offset — send `…T23:59:59.999Z` for a whole final day rather than a bare date. Unlike `before`, this bounds the range rather than moving with pagination. */
+                end_date?: string;
+                /** @description Cursor — return audit entries created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received. */
                 before?: string;
                 /** @description Max entries to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
                 limit?: number;
@@ -4838,6 +4870,27 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateOnboardingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MemberController_dismissOpsNudge_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissOpsNudgeDto"];
             };
         };
         responses: {

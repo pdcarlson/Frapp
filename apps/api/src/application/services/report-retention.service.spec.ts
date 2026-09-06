@@ -7,7 +7,7 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
   type StorageObject,
-} from '../../domain/adapters/storage.interface';
+} from '#domain/adapters/storage.interface';
 
 const NOW = new Date('2026-08-08T12:00:00Z');
 

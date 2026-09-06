@@ -30,7 +30,7 @@ import {
   BulkEmailInviteDto,
   RedeemInviteDto,
 } from '../dtos/invite.dto';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Invites')
 @ApiBearerAuth()

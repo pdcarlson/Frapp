@@ -56,9 +56,6 @@ export const SystemPermissions = {
   ALUMNI_POST: 'alumni:post',
 } as const;
 
-export type SystemPermission =
-  (typeof SystemPermissions)[keyof typeof SystemPermissions];
-
 /**
  * Stable, rename-proof identity for the seeded system roles.
  *
@@ -81,9 +78,6 @@ export const SystemRoleKeys = {
   NEW_MEMBER: 'NEW_MEMBER',
   ALUMNI: 'ALUMNI',
 } as const;
-
-export type SystemRoleKey =
-  (typeof SystemRoleKeys)[keyof typeof SystemRoleKeys];
 
 /**
  * Seeded *display name* of the Alumni system role.

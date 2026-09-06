@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
-import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
-import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -13,7 +13,6 @@ describe('AuthService', () => {
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
-      findByEmail: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       anonymize: jest.fn(),

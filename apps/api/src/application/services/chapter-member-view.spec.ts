@@ -2,7 +2,7 @@ import {
   CHAPTER_MEMBER_VIEW_FIELDS,
   toChapterMemberView,
 } from './chapter-member-view';
-import type { Chapter } from '../../domain/entities/chapter.entity';
+import type { Chapter } from '#domain/entities/chapter.entity';
 
 /**
  * A chapter row as `select('*')` actually returns it — every column populated,

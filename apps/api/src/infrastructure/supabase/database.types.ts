@@ -53,8 +53,8 @@ import type {
   Task,
   User,
   UserSettings,
-} from '../../domain/entities';
-import type { StripeWebhookClaimOutcome } from '../../domain/repositories/stripe-webhook-event.repository.interface';
+} from '#domain/entities';
+import type { StripeWebhookClaimOutcome } from '#domain/repositories/stripe-webhook-event.repository.interface';
 
 export type Json =
   | string
@@ -207,24 +207,21 @@ export interface Database {
         }[];
       };
       /**
-       * `20260905100000` (#567). One row per member holding any transaction in
-       * the chapter, with their whole balance already summed — the roster
-       * report used to stream one row per *transaction* and reduce them in the
-       * API.
-       *
-       * Deliberately keyless-free, unlike {@link get_points_report}: it
-       * returns `user_id`, so a paged read can order on it for a total order
-       * (#747 is that function's missing key). No window parameters — a roster
-       * balance is the member's all-time chapter total.
+       * `20260906120001` — per-member point totals for one chapter, summed in
+       * Postgres. Bounds carry the same semantics as `get_points_report`:
+       * `p_since` exclusive, `p_until` inclusive, either null unbounded. Rows
+       * come back ordered by total descending, then `user_id` ascending.
        */
-      get_roster_point_balances: {
+      get_points_leaderboard: {
         Args: {
           p_chapter_id: string;
+          p_since?: string | null;
+          p_until?: string | null;
         };
         Returns: {
           user_id: string;
           /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
-          total_points: number;
+          total: number;
         }[];
       };
       /**

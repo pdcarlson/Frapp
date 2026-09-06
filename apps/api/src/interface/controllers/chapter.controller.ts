@@ -46,7 +46,7 @@ import {
   UpdateChapterResponseDto,
 } from '../dtos/chapter-response.dto';
 import { toChapterMemberView } from '../../application/services/chapter-member-view';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import { SystemPermissions } from '#domain/constants/permissions';
 
 /**
  * Compile-time guard that every field `PATCH /chapters/current` can write is
