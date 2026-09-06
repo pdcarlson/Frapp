@@ -3,6 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
+const overdueQuery: {
+  data: unknown;
+  isError: boolean;
+  isPending: boolean;
+  fetchStatus: "fetching" | "paused" | "idle";
+} = { data: [], isError: false, isPending: false, fetchStatus: "idle" };
+
 const { mockCurrentChapter, mockTransitionMutate } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockTransitionMutate: vi.fn().mockResolvedValue({}),
@@ -32,7 +39,7 @@ vi.mock("@repo/hooks", () => ({
     isPending: false,
     isError: false,
   }),
-  useOverdueInvoices: () => ({ data: [], isError: false }),
+  useOverdueInvoices: () => overdueQuery,
   useMembers: () => ({ data: [] }),
   useCreateInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTransitionInvoiceStatus: () => ({
@@ -71,6 +78,139 @@ function setChapterLoading() {
 function trigger() {
   return screen.getByRole("button", { name: /create invoice/i });
 }
+
+beforeEach(() => {
+  overdueQuery.data = [];
+  overdueQuery.isError = false;
+  overdueQuery.isPending = false;
+  overdueQuery.fetchStatus = "idle";
+});
+
+/**
+ * #1621 — the overdue read feeds two claims with different thresholds, and
+ * conflating them is a defect in each direction.
+ *
+ * Degrading the badges and the OVERDUE filter only has to mean "we do not
+ * know". The destructive card says the read *failed*, past tense, in
+ * `--destructive` — and `GET /invoices/overdue` applies the chapter's grace
+ * policy, so it is routinely the slowest read on the page. Gating the card on
+ * the weaker flag flashes a red failure notice on ordinary cold loads.
+ */
+describe("InvoiceAdminCard overdue availability (#1621)", () => {
+  const FAILURE_COPY = "Overdue status unavailable";
+
+  it("does not claim failure while the overdue read is still in flight", () => {
+    overdueQuery.data = undefined;
+    overdueQuery.isPending = true;
+    overdueQuery.fetchStatus = "fetching";
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
+  });
+
+  it("claims failure when the overdue read errors, even mid-retry", () => {
+    // `beforeEach` leaves `isPending: false`, which is the realistic shape for
+    // an errored query (status "error", data in hand or not) — and it is what
+    // makes this case pin the `isError` disjunct: with the second disjunct
+    // false regardless of `fetchStatus`, deleting `isError ||` from the
+    // expression fails this test rather than leaving it green on the other
+    // half.
+    overdueQuery.data = undefined;
+    overdueQuery.isError = true;
+    overdueQuery.fetchStatus = "fetching";
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(screen.getByText(FAILURE_COPY)).toBeInTheDocument();
+  });
+
+  // The filter is a Radix `Select`, so its items only mount once the dropdown
+  // is open — unlike the page header's native `<select>`, which is why
+  // `billing/page.spec.tsx` can assert the sibling flag without this step.
+  async function overdueOption() {
+    await userEvent.click(screen.getByRole("combobox", { name: "Filter invoices" }));
+    return screen.getByRole("option", { name: "OVERDUE" });
+  }
+
+  it("degrades the OVERDUE filter while the read is in flight, without the card", async () => {
+    // The weak flag, which the strong one is deliberately *not* allowed to
+    // replace. Both halves of the split need pinning or the split is one
+    // refactor from collapsing back: here the option must already be disabled
+    // (the read has not answered, so "no overdue invoices" would be a fact
+    // derived from nothing) while the failure card must stay away.
+    overdueQuery.data = undefined;
+    overdueQuery.isPending = true;
+    overdueQuery.fetchStatus = "fetching";
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(await overdueOption()).toHaveAttribute("data-disabled");
+    expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
+  });
+
+  it("leaves the OVERDUE filter enabled once the read has answered", async () => {
+    overdueQuery.data = [];
+    overdueQuery.fetchStatus = "idle";
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(await overdueOption()).not.toHaveAttribute("data-disabled");
+  });
+
+  it("claims failure when the read is paused holding nothing", () => {
+    // The paused-offline shape: `isPending && fetchStatus === "paused"`.
+    overdueQuery.data = undefined;
+    overdueQuery.isPending = true;
+    overdueQuery.fetchStatus = "paused";
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(screen.getByText(FAILURE_COPY)).toBeInTheDocument();
+  });
+
+  it("does not claim failure while a cached read refetches offline", async () => {
+    // `fetchStatus === "paused"` cannot carry this on its own. A *background*
+    // refetch paused offline still has `data` in hand, so the query is
+    // "success" and `isPending` is false — and without that half of the guard
+    // the card would paint a red "couldn't load" notice over an overdue list
+    // it is holding and rendering correctly one element below. Reachable on
+    // any cached surface: `refetchOnWindowFocus` starts one of these the
+    // moment the tab is focused.
+    overdueQuery.data = [OPEN_INVOICE];
+    overdueQuery.isPending = false;
+    overdueQuery.fetchStatus = "paused";
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
+    expect(screen.getByText("Overdue invoices")).toBeInTheDocument();
+    expect(await overdueOption()).not.toHaveAttribute("data-disabled");
+  });
+
+  it("does not claim failure for a read that was never started", async () => {
+    // `useOverdueInvoices` is `enabled: !!chapterId`, so a disabled read is
+    // `isPending` with nothing in flight — indistinguishable from the paused
+    // case under `!isFetching`, and a failure notice for a request nobody
+    // made. The weak flag must still degrade the filter: not started is
+    // "we do not know", it is just not "it failed".
+    overdueQuery.data = undefined;
+    overdueQuery.isPending = true;
+    overdueQuery.fetchStatus = "idle";
+    chapterSubscription(mockCurrentChapter).active();
+
+    render(<InvoiceAdminCard />);
+
+    expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
+    expect(await overdueOption()).toHaveAttribute("data-disabled");
+  });
+});
 
 describe("InvoiceAdminCard subscription gating", () => {
   beforeEach(() => vi.clearAllMocks());

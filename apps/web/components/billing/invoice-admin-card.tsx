@@ -45,7 +45,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PermissionsOfflineSurface } from "@/components/shared/async-states";
+import {
+  anyReadUncached,
+  PermissionsOfflineSurface,
+} from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -102,6 +105,35 @@ export function InvoiceAdminCard() {
   // dues grace policy), so badges and the OVERDUE filter derive from that
   // list rather than re-deriving `due_date < now` locally — a local check
   // would contradict the banner for invoices inside the grace window.
+  // Two thresholds, because this card makes two different claims.
+  //
+  // Degrading the badges and the OVERDUE filter is the weak one: it only has to
+  // mean "we do not know", which is honest whether the read failed, is paused,
+  // or simply has not answered. Without it this card and the page header
+  // disagree on one screen — the header reads "Overdue: —" while every badge
+  // here silently vanishes and the filter cheerfully returns nothing.
+  const overdueUnavailable =
+    overdueQuery.isError || anyReadUncached(overdueQuery);
+  // The destructive card is the strong one: it says the read *failed*, in the
+  // past tense, in `--destructive`. A query that has not answered yet has not
+  // failed, and `GET /invoices/overdue` applies the chapter's grace policy so it
+  // is routinely the slowest read on the page — gating the card on the weak
+  // flag would flash a red failure notice on ordinary cold loads, which is this
+  // family's own confidently-wrong signal with the sign flipped. So: failed, or
+  // paused offline holding nothing.
+  //
+  // `fetchStatus === "paused"` and not `!isFetching`, which is broader than it
+  // reads: a query TanStack has never started is `"idle"`, not `"paused"`, and
+  // `useOverdueInvoices` is `enabled: !!chapterId`, so `!isFetching` also
+  // covers a read that was never attempted — the same "asserted from nothing"
+  // signal this flag exists to suppress, one state over. `<Can>` returns its
+  // `deniedFallback` before this renders when no chapter is active, so that is
+  // unreachable today; naming the paused state directly stops it depending on
+  // an unrelated component's early return, and matches the idiom `can.tsx`,
+  // `roles-page.tsx` and `chat-admin-page.tsx` already use.
+  const overdueReadFailed =
+    overdueQuery.isError ||
+    (overdueQuery.isPending && overdueQuery.fetchStatus === "paused");
   const overdueIds = useMemo(
     () => new Set(overdue.map((inv) => inv.id)),
     [overdue],
@@ -229,7 +261,7 @@ export function InvoiceAdminCard() {
       )}
     >
       <div className="space-y-6">
-        {overdueQuery.isError ? (
+        {overdueReadFailed ? (
           <Card className="border-destructive/[.28] bg-destructive/[.13]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-destructive-text">
@@ -288,7 +320,9 @@ export function InvoiceAdminCard() {
                   <SelectItem value="OPEN">OPEN</SelectItem>
                   <SelectItem value="PAID">PAID</SelectItem>
                   <SelectItem value="VOID">VOID</SelectItem>
-                  <SelectItem value="OVERDUE">OVERDUE</SelectItem>
+                  <SelectItem value="OVERDUE" disabled={overdueUnavailable}>
+                    OVERDUE
+                  </SelectItem>
                 </SelectContent>
               </Select>
               <Dialog {...createDialog.dialogProps}>
