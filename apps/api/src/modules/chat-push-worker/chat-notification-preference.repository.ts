@@ -5,6 +5,8 @@ import type {
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
 import { chunkIds } from '#domain/utils/chunk-ids';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { fetchAllPages } from '../../infrastructure/supabase/supabase.utils';
 
 /**
  * Rows per round trip when reading preferences for a batch of users.
@@ -15,15 +17,15 @@ import { chunkIds } from '#domain/utils/chunk-ids';
  * touched — but a batched read multiplies those rows by the chunk size, so the
  * cap becomes reachable and has to be paged for.
  *
- * The page size is a **request, not an assumption**: `readChunk` advances by
- * the rows that arrived and stops only on an *empty* page, so it is correct
- * whatever the server's cap turns out to be. That matters because
- * `supabase/config.toml`'s `max_rows = 1000` governs the **local** stack only —
- * the hosted project's Max rows is a dashboard setting this code cannot read,
- * so "our page size is below the cap" is not a fact any file here can assert.
- * This is the `fetchAllPages` rule from #686 (`report.service.ts`, and
- * `docs/internal/services/report-service-perf.md`), not a fourth variant of it;
- * #1628 tracks collapsing the copies into one shared helper.
+ * The page size is a **request, not an assumption**: the shared
+ * `fetchAllPages` advances by the rows that arrived and stops only on an
+ * *empty* page, so it is correct whatever the server's cap turns out to be.
+ * That matters because `supabase/config.toml`'s `max_rows = 1000` governs the
+ * **local** stack only — the hosted project's Max rows is a dashboard setting
+ * this code cannot read, so "our page size is below the cap" is not a fact any
+ * file here can assert. That rule is #686's, generalised out of
+ * `report.service.ts` into `infrastructure/supabase/supabase.utils.ts` by
+ * #1628; this reads through that helper rather than restating it.
  */
 export const PREFERENCE_PAGE_SIZE = 500;
 
@@ -88,7 +90,9 @@ export class ChatNotificationPreferenceRepository {
     // per-message hot path, and reading them in series would rebuild a smaller
     // version of the serialisation this method exists to remove.
     const chunks = await Promise.all(
-      chunkIds(userIds).map((chunk) => this.readChunk(chunk, chapterId)),
+      chunkIds(userIds).map((chunk) =>
+        this.readChunkIsolated(chunk, chapterId),
+      ),
     );
 
     for (const rows of chunks) {
@@ -109,70 +113,87 @@ export class ChatNotificationPreferenceRepository {
   }
 
   /**
-   * Every preference row for one chunk of users, or `null` if the read failed.
+   * One chunk's rows, or `null` if the *query* failed — the isolation boundary.
    *
-   * **Known limit, shared with every other paged read here.** `range()` is
-   * OFFSET/LIMIT across independent statements, so a row deleted between two
-   * pages shifts the window and the row that follows it is never read. Keyset
-   * paging on `id` would be immune; this stays offset-based to match
-   * `report.service.ts` and `scheduled-jobs.repository.ts` rather than
-   * introducing a third paging shape, and #1628 tracks unifying them. The
-   * exposure is small in practice — a chunk reaches a second page only past
-   * `PREFERENCE_PAGE_SIZE` rows for 100 members — and the failure direction is
-   * a missed mute, the same one the error path already accepts.
+   * Paging is the shared `fetchAllPages`
+   * (`infrastructure/supabase/supabase.utils.ts`), which ends `if (error) throw
+   * error` like every other repository read here
+   * (`.claude/skills/api-development/SKILL.md`: "Always `if (error) throw
+   * error;`") and refuses to let a partial read pass for a complete one.
+   * Expressing the degradation at the call site instead is the policy that
+   * helper documents, and the shape `scheduled-jobs.repository.ts` already uses.
+   *
+   * **The `catch` is narrowed on purpose, and the `instanceof` is the whole
+   * point.** A PostgREST failure arrives as a PLAIN OBJECT: `fetchAllPages`
+   * rethrows the `{ code, message, details, hint }` record verbatim, and
+   * postgrest-js only constructs a `PostgrestError` *instance* on the
+   * `.throwOnError()` path, which nothing in this codebase uses. So an `Error`
+   * instance reaching here means something other than the query failed — a
+   * defect in this file, or the helper's runaway-row guard. Swallowing one
+   * would launder "this read is broken" into "these members stored no
+   * preferences", which `decidePush` reads as *not muted* and pushes the whole
+   * chunk anyway; a non-array 200 body is enough to trigger it. Those rethrow
+   * into the worker's outer handler, which reports them, and only a real query
+   * error degrades.
+   *
+   * `toReportableError` is the repo's own normalizer for a thrown PostgREST
+   * shape: it rebuilds `{ code, message, details, hint }` into an `Error`
+   * messaged `code: message: hint`, leaving out `details` — the field Postgres
+   * fills with the offending row values (`spec/behavior/observability.md`, and
+   * #1669). Logging its `message` is what keeps row data out of plaintext logs.
+   *
+   * That exclusion is **not** unconditional in the helper: an object carrying
+   * none of `code`, `message` or `hint` falls through to `describeOpaque`,
+   * which serializes the whole record, `details` included. Harmless here — not
+   * because the client always fills `message` (an empty response body yields
+   * `{ message: '' }`, which reads as absent), but because no producer of that
+   * object emits `details` without `message`, so the opaque branch has no row
+   * values to leak. #1762 tracks closing it in the shared helper rather than
+   * here: it is shared with Sentry reporting and the global exception filter.
    *
    * All-or-nothing per chunk, deliberately. Failing one chunk costs at most
    * `ID_CHUNK_SIZE` members their preferences for this one message; returning
    * what had been read so far would instead hand back users whose row set is
    * silently incomplete, and abandoning the remaining chunks would strip
    * preferences from members whose query never even ran.
+   *
+   * **Known limit, shared with every other paged read here.** `range()` is
+   * OFFSET/LIMIT across independent statements, so a row deleted between two
+   * pages shifts the window and the row that follows it is never read. Keyset
+   * paging on `id` would be immune; this stays offset-based because that is
+   * what the shared helper does. The exposure is small in practice — a chunk
+   * reaches a second page only past `PREFERENCE_PAGE_SIZE` rows for 100
+   * members — and the failure direction is a missed mute, the same one the
+   * error path already accepts.
    */
-  private async readChunk(
+  private async readChunkIsolated(
     chunk: string[],
     chapterId: string,
   ): Promise<ChatNotificationPreferenceRow[] | null> {
-    const rows: ChatNotificationPreferenceRow[] = [];
-
-    for (let from = 0; ;) {
-      const { data, error } = await this.supabase
-        .from('chat_notification_preferences')
-        .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
-        .in('user_id', chunk)
-        .eq('chapter_id', chapterId)
-        // Offset paging needs a total order or a row sharing a sort value
-        // across a page boundary is served twice or skipped. `id` is the
-        // primary key, so it is unconditionally total and needs no projection —
-        // the same key every other paged read here sorts on.
-        .order('id', { ascending: true })
-        .range(from, from + PREFERENCE_PAGE_SIZE - 1);
-
-      if (error) {
-        // `error.message` and `error.code`, never the error object: a
-        // `PostgrestError` carries `details`, which is Postgres' row-value
-        // channel and can quote the offending row into plaintext logs (#1669).
-        this.logger.warn(
-          `chat-prefs: batch lookup failed for ${chunk.length} users in chapter ${chapterId}` +
-            ` (${error.code ?? 'no code'}: ${error.message})`,
-        );
-        return null;
-      }
-
-      const page = data ?? [];
-      // Only an EMPTY page proves the rows ran out. A short page is
-      // indistinguishable from the server capping the response at its
-      // `max_rows`, and reading it as the end is the #686 bug (#1628 tracks the
-      // copies that still have it). The price is one extra empty request per
-      // chunk; the alternative is being silently wrong about a hosted setting
-      // this code cannot read.
-      if (page.length === 0) break;
-      rows.push(...page);
-      // Advance by what ARRIVED, not by what was asked for: a capped page
-      // leaves the un-returned tail of the requested window unread, and
-      // stepping over it drops those rows outright.
-      from += page.length;
+    try {
+      return await fetchAllPages<ChatNotificationPreferenceRow>(
+        (from, to) =>
+          this.supabase
+            .from('chat_notification_preferences')
+            .select('user_id, chapter_id, scope, scope_id, scope_kind, level')
+            .in('user_id', chunk)
+            .eq('chapter_id', chapterId)
+            // Offset paging needs a total order or a row sharing a sort value
+            // across a page boundary is served twice or skipped. `id` is the
+            // primary key, so it is unconditionally total and needs no
+            // projection — the same key every other paged read here sorts on.
+            .order('id', { ascending: true })
+            .range(from, to),
+        { pageSize: PREFERENCE_PAGE_SIZE },
+      );
+    } catch (error) {
+      if (error instanceof Error) throw error;
+      this.logger.warn(
+        `chat-prefs: batch lookup failed for ${chunk.length} users in chapter ${chapterId}` +
+          ` (${toReportableError(error).message})`,
+      );
+      return null;
     }
-
-    return rows;
   }
 
   /**

@@ -178,8 +178,9 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
      * `pages` is the script ONE chunk walks; each chunk walks it independently.
      *
      * A fresh builder per `select()`, and a page cursor keyed by the chunk's own
-     * id list — deliberately, not incidentally. `readChunk` rebuilds the query
-     * every iteration and the chunks run concurrently under `Promise.all`, so a
+     * id list — deliberately, not incidentally. `fetchAllPages` re-invokes the
+     * query callback every iteration and the chunks run concurrently under
+     * `Promise.all`, so a
      * single shared chain with one counter would hand chunk 2 the page scripted
      * for chunk 1's second iteration. Today's scripts happen not to expose that
      * (every multi-page test uses a single chunk), which is exactly the kind of
@@ -338,8 +339,8 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
       const pagesServed = new Map<string, number>();
       const failingRepo = new ChatNotificationPreferenceRepository({
         from: () => ({
-          // A fresh builder per page — `readChunk` rebuilds the query on every
-          // iteration, so per-chain state would reset and prove nothing.
+          // A fresh builder per page — the paged read rebuilds the query on
+          // every iteration, so per-chain state would reset and prove nothing.
           select: () => {
             let ids: string[] = [];
             const chain: Record<string, unknown> = {
@@ -389,12 +390,60 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
     });
 
     /**
-     * A `PostgrestError` carries `details`, which is Postgres' row-value
+     * The degradation covers a failed QUERY, not a broken read.
+     *
+     * A PostgREST failure arrives as a plain `{ code, message, ... }` object,
+     * so an `Error` instance means something else went wrong — here, a 200
+     * carrying a non-array body, which makes the paging helper's spread throw
+     * `TypeError: … is not iterable`. Swallowing that would hand back an empty
+     * map, and an absent user reads as "stored no preferences", i.e. *not
+     * muted*: every member of the chunk would be pushed for every message,
+     * chapter-wide, behind nothing but a WARN. It has to reach the worker's
+     * outer handler instead, which reports it.
+     */
+    it('rethrows a non-query failure instead of degrading to "no preferences"', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      const chain: Record<string, unknown> = {
+        in: () => chain,
+        eq: () => chain,
+        order: () => chain,
+        // A 200 with a non-array body: postgrest-js reports no error, so the
+        // helper spreads a non-iterable and throws a real `Error`.
+        range: () => Promise.resolve({ data: {}, error: null }),
+      };
+      const brokenRepo = new ChatNotificationPreferenceRepository({
+        from: () => ({ select: () => chain }),
+      } as never);
+
+      try {
+        await expect(
+          brokenRepo.findForUsers(['u1'], CHAPTER_B),
+        ).rejects.toThrow(TypeError);
+        // Not laundered into the degraded path on the way out.
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    /**
+     * A PostgREST error carries `details`, which is Postgres' row-value
      * channel — it can quote the offending row, including a `Key (user_id)=(…)`
      * fragment, into plaintext application logs. #1669 is the open issue for
-     * call sites that hand the whole error object to a logger; this one
-     * interpolates `code` and `message` instead, and this test is what keeps it
-     * that way.
+     * call sites that hand the whole error object to a logger; this one builds
+     * a string through `toReportableError`, which joins `code`, `message` and
+     * `hint` and drops `details`.
+     *
+     * The assertions below pin the property, not the formatting: one string
+     * argument, the diagnostic fields present, the row value absent. That
+     * outlives the interpolation moving into the shared normalizer, which is
+     * exactly what happened to the hand-built `code: message` line this
+     * replaced. `hint` is asserted too, because the shared helper emits it and
+     * the line it replaced did not — a widening worth a test rather than a
+     * silent one.
      */
     it('logs the error message and code, never the raw PostgrestError', async () => {
       const warn = jest
@@ -411,6 +460,7 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
             error: {
               message: 'boom',
               code: '23503',
+              hint: 'Perhaps you meant to reference the column "users.id".',
               details: 'Key (user_id)=(secret-uuid) is not present in "users".',
             },
           }),
@@ -435,6 +485,7 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
         expect(typeof message).toBe('string');
         expect(message).toContain('23503');
         expect(message).toContain('boom');
+        expect(message).toContain('Perhaps you meant');
         expect(message).not.toContain('secret-uuid');
       } finally {
         warn.mockRestore();
