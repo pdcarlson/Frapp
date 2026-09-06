@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import {
@@ -109,6 +110,10 @@ describe('ChapterAuditLogService', () => {
 
       expect(mockRepo.findByChapter).toHaveBeenCalledWith('chapter-1', {
         before: undefined,
+        actorUserId: undefined,
+        action: undefined,
+        startDate: undefined,
+        endDate: undefined,
         limit: 50,
       });
     });
@@ -152,15 +157,143 @@ describe('ChapterAuditLogService', () => {
       );
     });
 
-    it('drops an unparseable before cursor rather than erroring', async () => {
+    it('passes each filter through to the repository', async () => {
       mockRepo.findByChapter.mockResolvedValue([]);
 
-      await service.list('chapter-1', { before: 'not-a-date' });
+      await service.list('chapter-1', {
+        actorUserId: 'actor-1',
+        action: 'member_removed',
+        startDate: '2026-01-01T00:00:00.000Z',
+        endDate: '2026-02-01T00:00:00.000Z',
+      });
 
       expect(mockRepo.findByChapter).toHaveBeenCalledWith(
         'chapter-1',
-        expect.objectContaining({ before: undefined }),
+        expect.objectContaining({
+          actorUserId: 'actor-1',
+          action: 'member_removed',
+          startDate: '2026-01-01T00:00:00.000Z',
+          endDate: '2026-02-01T00:00:00.000Z',
+        }),
       );
+    });
+
+    // Same regression as the `before` pin below, extended to the window: the
+    // bounds are parsed to compare them and must reach the repository as the
+    // caller's original strings. `new Date(x).toISOString()` would truncate
+    // these to millisecond precision.
+    it('passes window bounds through byte-for-byte, microseconds intact', async () => {
+      mockRepo.findByChapter.mockResolvedValue([]);
+
+      await service.list('chapter-1', {
+        startDate: '2026-01-01T00:00:00.123456+00:00',
+        endDate: '2026-02-01T00:00:00.654321+00:00',
+      });
+
+      expect(mockRepo.findByChapter).toHaveBeenCalledWith(
+        'chapter-1',
+        expect.objectContaining({
+          startDate: '2026-01-01T00:00:00.123456+00:00',
+          endDate: '2026-02-01T00:00:00.654321+00:00',
+        }),
+      );
+    });
+
+    it('rejects an inverted window rather than returning nothing', async () => {
+      mockRepo.findByChapter.mockResolvedValue([]);
+
+      await expect(
+        service.list('chapter-1', {
+          startDate: '2026-02-01T00:00:00.000Z',
+          endDate: '2026-01-01T00:00:00.000Z',
+        }),
+        // The TYPE is asserted, not just the message: a plain `Error` here
+        // would surface as a 500 and every message-only assertion would still
+        // pass, which is the opposite of what this test is for.
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.list('chapter-1', {
+          startDate: '2026-02-01T00:00:00.000Z',
+          endDate: '2026-01-01T00:00:00.000Z',
+        }),
+      ).rejects.toThrow('start_date must not be after end_date');
+
+      // The point of the 400: Postgres would accept the inverted range and
+      // return zero rows, which reads as "nothing happened".
+      expect(mockRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('accepts an equal-instant window written with different offsets', async () => {
+      mockRepo.findByChapter.mockResolvedValue([]);
+
+      // Compared as instants, not as strings: '…Z' sorts after '…+00:00'
+      // lexicographically, so a string comparison would 400 this valid range.
+      await expect(
+        service.list('chapter-1', {
+          startDate: '2026-01-01T00:00:00.000Z',
+          endDate: '2026-01-01T00:00:00.000+00:00',
+        }),
+      ).resolves.toEqual([]);
+    });
+
+    // Every one of these is a value the API must NOT accept, and the reason is
+    // the same in each case: a bound the server cannot evaluate used to be
+    // dropped, and a dropped bound WIDENS the result set. The caller receives
+    // rows from outside the window they asked for, behind a 200, with nothing
+    // to tell them. Rejecting is the only answer that cannot mislead.
+    it.each([
+      ['gibberish', 'not-a-date'],
+      // Passes a non-strict ISO8601 check and JS rolls it to March 2 rather
+      // than failing, so it used to reach Postgres and raise 22008 — a 500 on
+      // what is plainly a 400.
+      ['a day that does not exist', '2026-02-30T00:00:00.000Z'],
+      // Reaches a timestamptz column as midnight, so an "inclusive" upper
+      // bound would silently drop the whole final day.
+      ['a bare date', '2026-01-31'],
+      // Resolved in the Node process zone by JS and the session zone by
+      // Postgres: the value compares as one instant and filters as another.
+      ['a time with no offset', '2026-01-31T12:00:00'],
+      // All legal ISO 8601 and all `Invalid Date` in JS.
+      ['an hour-only offset', '2026-01-31T12:00:00+05'],
+      ['an ordinal date', '2026-045T12:00:00Z'],
+      ['a week date', '2026-W05-3T12:00:00Z'],
+      ['basic format', '20260131T120000Z'],
+      ['an impossible hour', '2026-01-31T24:00:00Z'],
+    ])(
+      'rejects %s as a window bound rather than ignoring it',
+      async (_why, value) => {
+        mockRepo.findByChapter.mockResolvedValue([]);
+
+        await expect(
+          service.list('chapter-1', { startDate: value }),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          service.list('chapter-1', { endDate: value }),
+        ).rejects.toThrow(BadRequestException);
+        await expect(
+          service.list('chapter-1', { before: value }),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(mockRepo.findByChapter).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ['seconds and Zulu', '2026-01-31T12:00:00Z'],
+      ['milliseconds and Zulu', '2026-01-31T12:00:00.000Z'],
+      // The form PostgREST actually returns, at the precision the cursor
+      // exists to preserve.
+      ['microseconds and a numeric offset', '2026-01-31T12:00:00.123456+00:00'],
+      ['a non-UTC offset', '2026-01-31T12:00:00-05:00'],
+      ['no seconds', '2026-01-31T12:00Z'],
+      ['a real leap day', '2028-02-29T12:00:00Z'],
+    ])('accepts %s', async (_why, value) => {
+      mockRepo.findByChapter.mockResolvedValue([]);
+
+      await expect(
+        service.list('chapter-1', { startDate: value, before: value }),
+      ).resolves.toEqual([]);
     });
   });
 });
