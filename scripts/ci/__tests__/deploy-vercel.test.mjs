@@ -2,16 +2,26 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DEPLOY_PHASE_ALL,
+  DEPLOY_PHASE_BUILD,
+  DEPLOY_PHASE_UPLOAD,
+  buildVercelProjects,
   classifyVercelState,
   createVercelDeployment,
   deployVercel,
   expectedDeploymentTarget,
+  parseDeployPhase,
   parseDeployTarget,
   pollVercelDeployment,
   resolveDeploymentByHost,
+  stashDirFor,
 } from "../deploy-vercel.mjs";
 import { verifyVercelDeploy } from "../verify-vercel-deploy.mjs";
-import { VERCEL_TARGET_PREVIEW, VERCEL_TARGET_PRODUCTION } from "../lib/vercel-cli.mjs";
+import {
+  VERCEL_TARGET_PREVIEW,
+  VERCEL_TARGET_PRODUCTION,
+  vercelDirFor,
+} from "../lib/vercel-cli.mjs";
 
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 const API_KEY = "test-key";
@@ -441,6 +451,228 @@ describe("deployVercel", () => {
     assert.equal(landing.status, "failure");
     assert.equal(landing.deploymentId, null);
     assert.match(landing.message, /build failed/);
+  });
+});
+
+// ── The two-phase production path ───────────────────────────────────────────
+//
+// deploy-production.yml builds both bundles BEFORE the migration applies and
+// uploads them AFTER Render is healthy, so a build failure can no longer leave a
+// migrated database under half-updated frontends. These tests pin the contract
+// between the two phases: what `build` leaves behind is exactly what `upload`
+// consumes, per project, and nothing else is ever uploaded.
+describe("parseDeployPhase", () => {
+  it("unset means the single-phase behaviour every caller had before", () => {
+    assert.equal(parseDeployPhase(undefined), DEPLOY_PHASE_ALL);
+    assert.equal(parseDeployPhase(""), DEPLOY_PHASE_ALL);
+  });
+
+  it("accepts the three known phases", () => {
+    assert.equal(parseDeployPhase("build"), DEPLOY_PHASE_BUILD);
+    assert.equal(parseDeployPhase("upload"), DEPLOY_PHASE_UPLOAD);
+    assert.equal(parseDeployPhase("all"), DEPLOY_PHASE_ALL);
+  });
+
+  it("throws on anything else rather than guessing which half to run", () => {
+    // A typo defaulting to `upload` would skip the build and ship whatever
+    // `.vercel` holds; defaulting to `build` would build twice and ship nothing.
+    assert.throws(() => parseDeployPhase("deploy"), /Refusing to guess/);
+  });
+});
+
+function makeStashFs(initial = []) {
+  const dirs = new Set(initial);
+  const ops = [];
+  return {
+    dirs,
+    ops,
+    fs: {
+      exists: async (p) => dirs.has(p),
+      remove: async (p) => {
+        ops.push(["remove", p]);
+        dirs.delete(p);
+      },
+      move: async (from, to) => {
+        ops.push(["move", from, to]);
+        if (!dirs.has(from)) throw new Error(`ENOENT: ${from}`);
+        dirs.delete(from);
+        dirs.add(to);
+      },
+    },
+  };
+}
+
+const CWD = "/work/repo";
+const STASH_ROOT = "/tmp/vercel-builds";
+
+describe("buildVercelProjects (the build phase)", () => {
+  const projects = [
+    { projectId: "prj_web", label: "frapp-web" },
+    { projectId: "prj_landing", label: "frapp-landing" },
+  ];
+
+  it("pulls and builds each project in turn, stashing each output, and uploads nothing", async () => {
+    const stash = makeStashFs();
+    const order = [];
+    const runCommand = async ({ args, env }) => {
+      order.push(`${env.VERCEL_PROJECT_ID}:${args[0]}`);
+      if (args[0] === "build") stash.dirs.add(vercelDirFor(CWD));
+      return { code: 0, stdout: "", stderr: "" };
+    };
+
+    const outcome = await buildVercelProjects({
+      apiKey: API_KEY,
+      projects,
+      target: VERCEL_TARGET_PRODUCTION,
+      teamId: TEAM_ID,
+      cwd: CWD,
+      stashRoot: STASH_ROOT,
+      runCommand,
+      stashFs: stash.fs,
+      logger: quiet,
+    });
+
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(order, ["prj_web:pull", "prj_web:build", "prj_landing:pull", "prj_landing:build"]);
+    assert.ok(!order.some((step) => step.endsWith(":deploy")), "nothing was uploaded");
+    // One stash per project, and the working tree's .vercel is empty afterwards —
+    // the second build could not have overwritten the first.
+    assert.ok(stash.dirs.has(stashDirFor(STASH_ROOT, "frapp-web")));
+    assert.ok(stash.dirs.has(stashDirFor(STASH_ROOT, "frapp-landing")));
+    assert.ok(!stash.dirs.has(vercelDirFor(CWD)));
+    assert.deepEqual(
+      outcome.results.map((r) => [r.label, r.status]),
+      [
+        ["frapp-web", "success"],
+        ["frapp-landing", "success"],
+      ],
+    );
+  });
+
+  it("stops at the first failed build and reports the rest as not attempted", async () => {
+    const stash = makeStashFs();
+    const runCommand = async ({ args, env }) => {
+      if (env.VERCEL_PROJECT_ID === "prj_web" && args[0] === "build") {
+        return { code: null, signal: "SIGKILL", stdout: "", stderr: "" };
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    };
+
+    const outcome = await buildVercelProjects({
+      apiKey: API_KEY,
+      projects,
+      target: VERCEL_TARGET_PRODUCTION,
+      teamId: TEAM_ID,
+      cwd: CWD,
+      stashRoot: STASH_ROOT,
+      runCommand,
+      stashFs: stash.fs,
+      logger: quiet,
+    });
+
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.failures.length, 2);
+    assert.match(outcome.results[0].message, /killed by SIGKILL/);
+    assert.match(outcome.results[1].message, /Not attempted/);
+    assert.equal(stash.dirs.size, 0, "no stash was written for either project");
+  });
+
+  it("refuses to run without a stash root", async () => {
+    await assert.rejects(
+      buildVercelProjects({
+        apiKey: API_KEY,
+        projects,
+        target: VERCEL_TARGET_PRODUCTION,
+        teamId: TEAM_ID,
+        cwd: CWD,
+        runCommand: async () => ({ code: 0, stdout: "", stderr: "" }),
+        logger: quiet,
+      }),
+      /VERCEL_BUILD_STASH_DIR/,
+    );
+  });
+});
+
+describe("deployVercel with a stash root (the upload phase)", () => {
+  const projects = [
+    { projectId: "prj_web", label: "frapp-web" },
+    { projectId: "prj_landing", label: "frapp-landing" },
+  ];
+
+  it("restores each project's own stash before its upload, and never builds", async () => {
+    const webStash = stashDirFor(STASH_ROOT, "frapp-web");
+    const landingStash = stashDirFor(STASH_ROOT, "frapp-landing");
+    const stash = makeStashFs([webStash, landingStash]);
+    const order = [];
+    const runCommand = async ({ args, env }) => {
+      order.push(`${env.VERCEL_PROJECT_ID}:${args[0]}`);
+      return { code: 0, stdout: `https://${HOST}\n`, stderr: "" };
+    };
+    const { fetchImpl } = makeFetchStub([
+      okJson({ id: "dpl_x", target: "production", state: "READY", meta: { githubCommitSha: SHA } }),
+    ]);
+
+    const outcome = await deployVercel({
+      apiKey: API_KEY,
+      projects,
+      sha: SHA,
+      target: VERCEL_TARGET_PRODUCTION,
+      teamId: TEAM_ID,
+      cwd: CWD,
+      stashRoot: STASH_ROOT,
+      clock: makeFakeClock(),
+      runCommand,
+      stashFs: stash.fs,
+      fetchImpl,
+      logger: quiet,
+    });
+
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(order, ["prj_web:deploy", "prj_landing:deploy"]);
+    // web's stash was restored for web's upload, then landing's for landing's —
+    // the interleaving is what guarantees each project ships its own bundle.
+    assert.deepEqual(stash.ops, [
+      ["remove", vercelDirFor(CWD)],
+      ["move", webStash, vercelDirFor(CWD)],
+      ["remove", vercelDirFor(CWD)],
+      ["move", landingStash, vercelDirFor(CWD)],
+    ]);
+  });
+
+  it("fails a project whose stash is missing without uploading anything for it, and does not skip the other", async () => {
+    // web's build phase output is gone (or never ran); landing's is present.
+    // web is a failure that shipped nothing — and because a stash restore
+    // failure happens BEFORE any upload, the fail-fast stops landing too: a
+    // half-updated environment is exactly what this phase exists to prevent.
+    const landingStash = stashDirFor(STASH_ROOT, "frapp-landing");
+    const stash = makeStashFs([landingStash]);
+    const { runCommand, calls } = makeRunStub();
+    const { fetchImpl } = makeFetchStub([
+      okJson({ id: "dpl_x", target: "production", state: "READY", meta: { githubCommitSha: SHA } }),
+    ]);
+
+    const outcome = await deployVercel({
+      apiKey: API_KEY,
+      projects,
+      sha: SHA,
+      target: VERCEL_TARGET_PRODUCTION,
+      teamId: TEAM_ID,
+      cwd: CWD,
+      stashRoot: STASH_ROOT,
+      clock: makeFakeClock(),
+      runCommand,
+      stashFs: stash.fs,
+      fetchImpl,
+      logger: quiet,
+    });
+
+    assert.equal(outcome.ok, false);
+    assert.equal(calls.length, 0, "no upload ran at all");
+    const web = outcome.results.find((r) => r.label === "frapp-web");
+    const landing = outcome.results.find((r) => r.label === "frapp-landing");
+    assert.match(web.message, /No prebuilt output/);
+    assert.match(landing.message, /Not attempted: frapp-web failed earlier/);
+    assert.ok(stash.dirs.has(landingStash), "landing's stash is left intact for a retry");
   });
 });
 
