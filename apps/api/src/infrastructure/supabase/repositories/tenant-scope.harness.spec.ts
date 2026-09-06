@@ -188,6 +188,40 @@ describe('tenant-scope harness', () => {
         }),
       ).rejects.toThrow(/returned 1 row\(s\) from another chapter/);
     });
+
+    /**
+     * The same cycle, threaded through PLAIN OBJECTS — and it is a genuinely
+     * different path, not a restatement of the test above.
+     *
+     * That one routes its back-reference through a `Map`, and `JSON.stringify`
+     * serializes a `Map` as `{}`. So the cycle is invisible to the *stringifier*
+     * even though the walk recurses through it: the test proves the `seen`
+     * guard and nothing else. A plain-object cycle reaches both. Before the leak
+     * message was made cycle-safe, the walk completed, the leak was found, and
+     * the message then died with `TypeError: Converting circular structure to
+     * JSON` — the tenancy violation reported as an unrelated crash, one line
+     * past the guard that exists to prevent exactly that.
+     */
+    it('reports a leak whose rows are cyclic, rather than failing to serialize them', async () => {
+      const harness = createTenantHarness({ tables: widgets() });
+
+      const leaked: Record<string, unknown> = {
+        id: ROW_A,
+        chapter_id: CHAPTER_A,
+      };
+      const parent: Record<string, unknown> = { child: leaked };
+      leaked.parent = parent;
+
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, async () => {
+          await (harness.client as any)
+            .from('widgets')
+            .select('*')
+            .eq('chapter_id', CHAPTER_B);
+          return [leaked];
+        }),
+      ).rejects.toThrow(/returned 1 row\(s\) from another chapter/);
+    });
   });
 
   describe('write scoping', () => {

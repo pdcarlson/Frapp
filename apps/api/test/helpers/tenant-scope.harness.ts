@@ -981,6 +981,36 @@ export function createTenantHarness(
     }
   };
 
+  /**
+   * `JSON.stringify` with the cycles dropped.
+   *
+   * The `seen` guard in `collectTenantBearing` gets the *walk* through a cyclic
+   * result, but the walk is not the only thing that touches one: the leak
+   * message below serializes the offending rows, and those rows come from
+   * whatever the call under test returned. A parent ↔ child back-reference
+   * among them makes a plain `JSON.stringify` throw `TypeError: Converting
+   * circular structure to JSON`, which is the same failure the walk's guard
+   * exists to prevent — a tenancy violation reported as an unrelated crash —
+   * moved one line further down. Dropping the repeated reference keeps the row
+   * that matters, `chapter_id` and all, legible in the message.
+   *
+   * The guard is per-serialization, not per-ancestor-chain, so the *same* row
+   * object appearing twice in `leaked` collapses to the marker on its second
+   * occurrence even though nothing about it is cyclic. That is the right trade
+   * here: this string exists to show a reader which rows leaked, and the first
+   * occurrence carries every field. It is a diagnostic, not a wire format.
+   */
+  const safeStringify = (value: unknown): string => {
+    const seen = new WeakSet<object>();
+    return JSON.stringify(value, (_key, val: unknown) => {
+      if (val && typeof val === 'object') {
+        if (seen.has(val)) return '[Circular]';
+        seen.add(val);
+      }
+      return val;
+    });
+  };
+
   const assertReturnedRowsScoped = (result: unknown, chapterId: string) => {
     const leaked = collectTenantBearing(result).filter(
       (row) => row.chapter_id !== chapterId,
@@ -988,7 +1018,7 @@ export function createTenantHarness(
     if (leaked.length > 0) {
       throw new Error(
         `tenant-scope: returned ${leaked.length} row(s) from another chapter ` +
-          `while scoped to ${chapterId}: ${JSON.stringify(leaked)}`,
+          `while scoped to ${chapterId}: ${safeStringify(leaked)}`,
       );
     }
   };

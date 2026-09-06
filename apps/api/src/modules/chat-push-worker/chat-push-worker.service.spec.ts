@@ -74,6 +74,31 @@ describe('ChatPushWorkerService', () => {
     findByChapter.mockResolvedValue(userIds.map((id) => ({ user_id: id })));
   }
 
+  /**
+   * Answer the preference read from the ids it was actually asked about.
+   *
+   * A `mockResolvedValue(new Map([['a', [pref]]]))` answers for `'a'` no matter
+   * who the worker asked about, so a regression to the wrong audience — the
+   * sender's id, `candidateIds` instead of `recipientIds`, an empty array —
+   * leaves every mute test green. `docs/guides/testing.md` names that static
+   * form as the hazard that replaced the old per-user stub's; this is the
+   * `chat-push-worker.realtime.spec.ts` `setPrefs` shape, for the same reason.
+   *
+   * A user with no rows is **absent** from the map rather than present with an
+   * empty array, which is what pins the call site's `?? []` instead of assuming
+   * it.
+   */
+  function setPrefs(byUser: Record<string, ChatNotificationPreferenceRow[]>) {
+    findForUsers.mockImplementation(async (userIds: string[]) => {
+      const map = new Map<string, ChatNotificationPreferenceRow[]>();
+      for (const userId of userIds) {
+        const rows = byUser[userId];
+        if (rows?.length) map.set(userId, rows);
+      }
+      return map;
+    });
+  }
+
   it('does not push the sender on their own message', async () => {
     service.__setChannelForTest(CHANNEL);
     setMembers(['sender', 'recipient']);
@@ -199,7 +224,7 @@ describe('ChatPushWorkerService', () => {
       scope_kind: null,
       level: 'off',
     };
-    findForUsers.mockResolvedValue(new Map([['a', [pref]]]));
+    setPrefs({ a: [pref] });
     await service.handleMessage({
       id: 'm1',
       channel_id: ANNOUNCEMENT_CHANNEL.id,
@@ -253,7 +278,7 @@ describe('ChatPushWorkerService', () => {
       scope_kind: null,
       level: 'off',
     };
-    findForUsers.mockResolvedValue(new Map([['a', [pref]]]));
+    setPrefs({ a: [pref] });
     // `mentions` is a `users.id[]` column on `chat_messages`, resolved by the
     // API at send time (C1 of #937).
     //

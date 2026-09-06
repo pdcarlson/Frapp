@@ -487,6 +487,12 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
         expect(message).toContain('boom');
         expect(message).toContain('Perhaps you meant');
         expect(message).not.toContain('secret-uuid');
+        // The chunk has to be identifiable. This degradation is silent —
+        // its members read as "no stored preferences", which `decidePush`
+        // treats as *not muted* — so the only symptom is a member pushed
+        // despite an explicit `off`, and a line naming a count alone gives an
+        // operator holding that report nothing to correlate against.
+        expect(message).toContain('u1');
       } finally {
         warn.mockRestore();
       }

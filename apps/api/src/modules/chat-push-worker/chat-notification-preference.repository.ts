@@ -72,11 +72,18 @@ export class ChatNotificationPreferenceRepository {
    * `domain/utils/chunk-ids`), and paged because a batched read can reach
    * `max_rows` where a single user's read never could.
    *
-   * Degrades to whatever it managed to read rather than throwing, and never
-   * propagates a database error to the caller — the worker must keep deciding
-   * pushes for the rest of the batch, and a missed mute beats a dropped
-   * notification. The UI reads below throw instead, and the contrast is
-   * deliberate; see {@link findChannelPreferencesForUser}.
+   * **A query error never propagates**: the failing chunk degrades to absent
+   * and the other chunks still return, because the worker must keep deciding
+   * pushes for the rest of the batch and a missed mute beats a dropped
+   * notification. That degradation is scoped to the query, and deliberately no
+   * wider — an `Error` instance means something other than the query broke, and
+   * `readChunkIsolated` rethrows it. Because the chunks run under
+   * `Promise.all`, such a rethrow abandons the whole read, including chunks
+   * that had already succeeded, and reaches `handleMessage`'s handler as a
+   * dropped message rather than a wrong one. Both directions are intended; see
+   * {@link readChunkIsolated} for why the narrowing is the load-bearing part.
+   * The UI reads below throw unconditionally, and the contrast is deliberate;
+   * see {@link findChannelPreferencesForUser}.
    */
   async findForUsers(
     userIds: string[],
@@ -151,11 +158,19 @@ export class ChatNotificationPreferenceRepository {
    * values to leak. #1762 tracks closing it in the shared helper rather than
    * here: it is shared with Sentry reporting and the global exception filter.
    *
-   * All-or-nothing per chunk, deliberately. Failing one chunk costs at most
-   * `ID_CHUNK_SIZE` members their preferences for this one message; returning
-   * what had been read so far would instead hand back users whose row set is
-   * silently incomplete, and abandoning the remaining chunks would strip
-   * preferences from members whose query never even ran.
+   * All-or-nothing per chunk, deliberately, **for a query error**. Failing one
+   * chunk that way costs at most `ID_CHUNK_SIZE` members their preferences for
+   * this one message; returning what had been read so far would instead hand
+   * back users whose row set is silently incomplete, and abandoning the
+   * remaining chunks would strip preferences from members whose query never
+   * even ran.
+   *
+   * The rethrow above is the one case that *does* abandon them, and it is not
+   * an exception to that reasoning but the other side of it: a defect is not a
+   * degraded read, so there is nothing to salvage the other chunks *for*.
+   * `Promise.all` therefore rejects the whole call, discarding chunks that had
+   * already succeeded, and the message is dropped instead of being pushed to
+   * members whose mutes this read cannot vouch for.
    *
    * **Known limit, shared with every other paged read here.** `range()` is
    * OFFSET/LIMIT across independent statements, so a row deleted between two
@@ -190,7 +205,14 @@ export class ChatNotificationPreferenceRepository {
       if (error instanceof Error) throw error;
       this.logger.warn(
         `chat-prefs: batch lookup failed for ${chunk.length} users in chapter ${chapterId}` +
-          ` (${toReportableError(error).message})`,
+          // The chunk's first id, not its length alone. This degradation is
+          // silent by design — its members read as "no stored preferences",
+          // which `decidePush` treats as *not muted* — so the only symptom is a
+          // member pushed despite an explicit `off`. A 1000-member chapter
+          // otherwise emits ten identical `for 100 users` lines per message and
+          // an operator holding such a report can correlate it with none of
+          // them. One id bounds the log line while still identifying the chunk.
+          ` (from ${chunk[0]}) (${toReportableError(error).message})`,
       );
       return null;
     }
