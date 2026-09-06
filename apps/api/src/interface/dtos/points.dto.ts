@@ -154,7 +154,14 @@ export class AdjustPointsResponseDto implements PointTransaction {
   // Echoed back so a caller can match the row it got to the key it sent — which
   // is the whole point of a replay returning the ORIGINAL transaction rather
   // than a new one (#1719). `null` for dashboard adjustments, which send no key.
+  // `type: String` is load-bearing, not decoration. Without it Swagger's
+  // reflection sees `string | null`, cannot pick a primitive, and publishes
+  // `type: "object"` — which openapi-typescript renders as
+  // `Record<string, never> | null`, i.e. a uuid the SDK types as an empty
+  // object. Caught by `check:api-contract` regenerating the artifacts, not by
+  // `tsc`. Same reason `chat.dto.ts:89` spells it out.
   @ApiPropertyOptional({
+    type: String,
     format: 'uuid',
     nullable: true,
     description:

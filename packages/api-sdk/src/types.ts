@@ -3490,7 +3490,12 @@ export interface components {
             };
             /** Format: date-time */
             created_at: string;
-            /** @description Whether the accompanying chat card was posted. Present ONLY when `channel_id` + `client_message_id` were supplied. `false` means the ledger row committed but the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — the caller should drop it and warn. Absent for dashboard adjustments, which post no card. */
+            /**
+             * Format: uuid
+             * @description The idempotency key this row was written under, echoed back. `null` for dashboard adjustments, which send no key and are not deduplicated.
+             */
+            client_message_id?: string | null;
+            /** @description Whether the accompanying chat card was posted. Present ONLY when this request actually attempted one — `channel_id` + `client_message_id` supplied, and not a deduplicated replay. `false` means the ledger row committed but the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — the caller should drop it and warn. Absent means the server reported no outcome (a dashboard adjustment, which posts no card, or a replay, which fires no side effect and records nothing about the original attempt); leave the placeholder for the echo. */
             card_posted?: boolean;
         };
         CreateCheckoutDto: {
