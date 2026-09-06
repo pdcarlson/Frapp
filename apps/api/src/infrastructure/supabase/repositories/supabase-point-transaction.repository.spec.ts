@@ -61,12 +61,27 @@ describe('SupabasePointTransactionRepository — tenant scope', () => {
     repo = new SupabasePointTransactionRepository(harness.client);
   });
 
-  it('findByChapter returns only the caller chapter ledger', async () => {
+  it('leaderboard passes the caller chapter to the aggregation RPC', async () => {
+    // Since #522 the leaderboard sum happens in Postgres, so the chapter
+    // predicate lives in `get_points_leaderboard`'s WHERE clause rather than in
+    // a PostgREST filter this harness can inspect. What is still checkable here
+    // — and is the half that can silently rot — is that the repository actually
+    // forwards the caller's chapter as `p_chapter_id`. Drop that argument and
+    // the RPC aggregates on `null` rather than across chapters, but the scope
+    // the signature promises is gone either way.
+    harness = createTenantHarness({
+      tables: seed(),
+      rpc: {
+        get_points_leaderboard: { data: [{ user_id: USER_SHARED, total: 5 }] },
+      },
+    });
+    repo = new SupabasePointTransactionRepository(harness.client);
+
     const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
-      repo.findByChapter(CHAPTER_B),
+      repo.leaderboard(CHAPTER_B, {}),
     );
 
-    expect(rows.map((r) => r.id)).toEqual([TXN_B]);
+    expect(rows).toEqual([{ user_id: USER_SHARED, total: 5 }]);
   });
 
   it('findByUser scopes a member ledger to the caller chapter', async () => {

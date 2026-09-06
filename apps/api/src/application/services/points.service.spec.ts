@@ -7,10 +7,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PointsService } from './points.service';
+import { SupabasePointTransactionRepository } from '../../infrastructure/supabase/repositories/supabase-point-transaction.repository';
 import {
   POINT_TRANSACTION_REPOSITORY,
   IPointTransactionRepository,
   PointTransactionDuplicateError,
+  type PointsLeaderboardRow,
+  type PointsLeaderboardWindow,
 } from '#domain/repositories/point-transaction.repository.interface';
 import {
   SEMESTER_ARCHIVE_REPOSITORY,
@@ -27,6 +30,48 @@ import {
   ChapterPointsConfigService,
   POINTS_CONFIG_DEFAULTS,
 } from './chapter-points-config.service';
+
+/**
+ * A stand-in for `get_points_leaderboard`, used to test the SERVICE.
+ *
+ * The sum moved into Postgres (#522), so the service no longer sees
+ * transactions — it computes `(since, until]` bounds and hands them to the
+ * repository. Asserting only "was called with these bounds" would leave the
+ * *meaning* of those bounds untested, and the rules are subtle: exclusive
+ * lower, inclusive upper, and either side unbounded when omitted. So the tests
+ * keep their transaction fixtures and this applies the bounds to them.
+ *
+ * **What this does NOT do is test the SQL.** It is a transcription, and a
+ * transcription cannot catch a divergence between itself and the migration —
+ * flip `>` to `>=` in the .sql file and every test here still passes. The real
+ * function is covered against a live database in
+ * `test/integration/points-leaderboard.integration-spec.ts`; that suite, not
+ * this fake, is what makes the SQL's boundary behaviour a tested claim.
+ */
+const applyLeaderboardBounds = (
+  transactions: PointTransaction[],
+  chapterId: string,
+  { since, until }: PointsLeaderboardWindow,
+): PointsLeaderboardRow[] => {
+  const sinceMs = since === undefined ? null : new Date(since).getTime();
+  const untilMs = until === undefined ? null : new Date(until).getTime();
+
+  const totals = new Map<string, number>();
+  for (const txn of transactions) {
+    // The SQL's first predicate. Mirrored so a fixture row planted in another
+    // chapter stays out of the board here too, rather than the fake being
+    // laxer than the thing it stands in for.
+    if (txn.chapter_id !== chapterId) continue;
+    const at = new Date(txn.created_at).getTime();
+    if (sinceMs !== null && !(at > sinceMs)) continue; // exclusive lower
+    if (untilMs !== null && !(at <= untilMs)) continue; // inclusive upper
+    totals.set(txn.user_id, (totals.get(txn.user_id) ?? 0) + txn.amount);
+  }
+
+  return Array.from(totals.entries())
+    .map(([user_id, total]) => ({ user_id, total }))
+    .sort((a, b) => b.total - a.total || a.user_id.localeCompare(b.user_id));
+};
 
 describe('PointsService', () => {
   let service: PointsService;
@@ -81,12 +126,23 @@ describe('PointsService', () => {
     created_at: '2026-02-26T18:00:00.000Z',
   };
 
+  /**
+   * Give the chapter these transactions. The repository mock then aggregates
+   * them under whatever bounds the service actually computed, so a test's
+   * fixtures still decide the board.
+   */
+  const seedTransactions = (transactions: PointTransaction[]) => {
+    mockPointTxnRepo.leaderboard.mockImplementation((chapterId, window) =>
+      Promise.resolve(applyLeaderboardBounds(transactions, chapterId, window)),
+    );
+  };
+
   beforeEach(async () => {
     mockPointTxnRepo = {
       create: jest.fn(),
       findByClientMessageId: jest.fn().mockResolvedValue(null),
       findByUser: jest.fn(),
-      findByChapter: jest.fn(),
+      leaderboard: jest.fn().mockResolvedValue([]),
       findByChapterFiltered: jest.fn(),
       countRecentAdjustments: jest.fn().mockResolvedValue(0),
     };
@@ -285,11 +341,13 @@ describe('PointsService', () => {
 
   describe('getLeaderboard', () => {
     it('should return sorted leaderboard by total points', async () => {
-      mockPointTxnRepo.findByChapter.mockResolvedValue([txn1, txn2, txn3]);
+      seedTransactions([txn1, txn2, txn3]);
 
       const result = await service.getLeaderboard('ch-1', 'all');
 
-      expect(mockPointTxnRepo.findByChapter).toHaveBeenCalledWith('ch-1');
+      // All-time asks Postgres for no bounds at all — not "bounded by now",
+      // which would newly exclude any future-dated row.
+      expect(mockPointTxnRepo.leaderboard).toHaveBeenCalledWith('ch-1', {});
       expect(result).toHaveLength(2);
       expect(result[0].user_id).toBe('user-2');
       expect(result[0].total).toBe(25);
@@ -298,7 +356,7 @@ describe('PointsService', () => {
     });
 
     it('should return empty array when no transactions', async () => {
-      mockPointTxnRepo.findByChapter.mockResolvedValue([]);
+      seedTransactions([]);
 
       const result = await service.getLeaderboard('ch-1');
 
@@ -322,7 +380,7 @@ describe('PointsService', () => {
         ...txn2,
         created_at: '2026-07-01T00:00:00.000Z',
       };
-      mockPointTxnRepo.findByChapter.mockResolvedValue([inRange, outOfRange]);
+      seedTransactions([inRange, outOfRange]);
 
       const result = await service.getLeaderboard('ch-1', 'all', 'sa-1');
 
@@ -1077,12 +1135,7 @@ describe('PointsService', () => {
         ...txn1b, // user-1, amount 5 — after `now`, excluded by the upper bound
         created_at: '2027-06-01T00:00:00.000Z',
       };
-      mockPointTxnRepo.findByChapter.mockResolvedValue([
-        active,
-        onEndDateDay,
-        beforeEnd,
-        future,
-      ]);
+      seedTransactions([active, onEndDateDay, beforeEnd, future]);
 
       const result = await service.getLeaderboard('ch-1', 'semester');
 
@@ -1114,10 +1167,7 @@ describe('PointsService', () => {
         ...txn1, // user-1 — 00:00 next day → active, included
         created_at: '2027-01-01T00:00:00.000Z',
       };
-      mockPointTxnRepo.findByChapter.mockResolvedValue([
-        lastInstantOfEndDay,
-        firstInstantOfNextDay,
-      ]);
+      seedTransactions([lastInstantOfEndDay, firstInstantOfNextDay]);
 
       const result = await service.getLeaderboard('ch-1', 'semester');
 
@@ -1127,7 +1177,7 @@ describe('PointsService', () => {
 
     it('should fall back to all-time when no archive exists', async () => {
       mockSemesterArchiveRepo.findLatestByChapter.mockResolvedValue(null);
-      mockPointTxnRepo.findByChapter.mockResolvedValue([txn1, txn2, txn3]);
+      seedTransactions([txn1, txn2, txn3]);
 
       const result = await service.getLeaderboard('ch-1', 'semester');
 
@@ -1145,7 +1195,7 @@ describe('PointsService', () => {
         end_date: 'not-a-date',
         created_at: '2026-01-01T00:00:00.000Z',
       });
-      mockPointTxnRepo.findByChapter.mockResolvedValue([txn1, txn2, txn3]);
+      seedTransactions([txn1, txn2, txn3]);
 
       const result = await service.getLeaderboard('ch-1', 'semester');
 
@@ -1153,6 +1203,182 @@ describe('PointsService', () => {
       expect(result).toHaveLength(2);
       expect(result[0].user_id).toBe('user-2');
       expect(result[0].total).toBe(25);
+    });
+
+    it('asks for no bounds at all when no archive exists, rather than bounding by now', async () => {
+      // The distinction this pins: 'semester' with no archive falls back to
+      // ALL-TIME, which the old in-Node filter expressed by returning the list
+      // untouched. Bounding it by `now` instead would look equivalent on
+      // ordinary data and silently drop future-dated rows.
+      mockSemesterArchiveRepo.findLatestByChapter.mockResolvedValue(null);
+      seedTransactions([txn1, txn2, txn3]);
+
+      await service.getLeaderboard('ch-1', 'semester');
+
+      expect(mockPointTxnRepo.leaderboard).toHaveBeenCalledWith('ch-1', {});
+    });
+  });
+
+  describe('leaderboard parity with the pre-#522 in-Node aggregation', () => {
+    /**
+     * The aggregation this replaced, verbatim in shape: load every transaction
+     * in the chapter, filter it in JavaScript, reduce into a Map, sort by total
+     * descending. Kept here as the oracle so "identical totals to the current
+     * implementation" is a test rather than a claim in a PR body.
+     */
+    const legacyLeaderboard = (
+      transactions: PointTransaction[],
+      bounds: { since?: Date; until?: Date },
+    ) => {
+      const filtered = transactions.filter((txn) => {
+        const createdAt = new Date(txn.created_at);
+        if (Number.isNaN(createdAt.getTime())) return false;
+        if (bounds.since && !(createdAt > bounds.since)) return false;
+        if (bounds.until && !(createdAt <= bounds.until)) return false;
+        return true;
+      });
+
+      const totals = new Map<string, number>();
+      for (const txn of filtered) {
+        totals.set(txn.user_id, (totals.get(txn.user_id) ?? 0) + txn.amount);
+      }
+      return Array.from(totals.entries()).map(([user_id, total]) => ({
+        user_id,
+        total,
+      }));
+    };
+
+    /** Deterministic pseudo-random source, so a failure is reproducible. */
+    const lcg = (seed: number) => () =>
+      ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) >>> 8) / 0x7fffff;
+
+    const NOW = new Date('2027-01-10T00:00:00.000Z');
+    const ARCHIVE_END = '2026-06-15';
+
+    /** ~2,000 transactions across 40 members, spread over three years. */
+    const buildLargeFixture = (): PointTransaction[] => {
+      const rand = lcg(20260522);
+      const start = new Date('2025-01-01T00:00:00.000Z').getTime();
+      const span = new Date('2027-06-01T00:00:00.000Z').getTime() - start;
+
+      return Array.from({ length: 2000 }, (_, i) => ({
+        id: `pt-${i}`,
+        chapter_id: 'ch-1',
+        // 40 members, so plenty of rows share a user AND plenty of members
+        // land on identical totals — which is where ordering could differ.
+        user_id: `user-${Math.floor(rand() * 40)}`,
+        // Small integer amounts, some negative (fines are allowed to push a
+        // balance negative per spec/behavior/points.md § Edge Cases).
+        amount: Math.floor(rand() * 21) - 5,
+        category: 'MANUAL' as const,
+        description: `txn ${i}`,
+        metadata: {},
+        created_at: new Date(start + rand() * span).toISOString(),
+      }));
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(NOW);
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it.each([
+      ['all', undefined],
+      ['month', undefined],
+      ['semester', undefined],
+      ['all', 'sa-1'],
+    ] as const)(
+      'reproduces the old totals exactly (window=%s, archive=%s)',
+      async (window, archiveId) => {
+        const transactions = buildLargeFixture();
+        seedTransactions(transactions);
+
+        const archive = {
+          id: 'sa-1',
+          chapter_id: 'ch-1',
+          label: 'Spring 2026',
+          start_date: '2026-01-15',
+          end_date: ARCHIVE_END,
+          created_at: '2026-06-15T12:00:00.000Z',
+        };
+        mockSemesterArchiveRepo.findLatestByChapter.mockResolvedValue(archive);
+        mockSemesterArchiveRepo.findById.mockResolvedValue(archive);
+
+        // The bounds the pre-#522 code would have filtered by, derived
+        // independently of the service rather than read back off the mock.
+        const endOfArchiveDay = new Date(`${ARCHIVE_END}T23:59:59.999Z`);
+        const oneMonthAgo = new Date(NOW);
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+        let legacyBounds: { since?: Date; until?: Date };
+        if (archiveId) {
+          legacyBounds = {
+            since: new Date('2026-01-14T23:59:59.999Z'),
+            until: endOfArchiveDay,
+          };
+        } else if (window === 'month') {
+          legacyBounds = { since: oneMonthAgo, until: NOW };
+        } else if (window === 'semester') {
+          legacyBounds = { since: endOfArchiveDay, until: NOW };
+        } else {
+          legacyBounds = {};
+        }
+
+        const expected = legacyLeaderboard(transactions, legacyBounds);
+        const actual = await service.getLeaderboard('ch-1', window, archiveId);
+
+        // Same members, same totals. Compared as maps because the new path
+        // breaks equal-total ties by user_id where the old one used the
+        // incidental `created_at desc` arrival order.
+        expect(
+          Object.fromEntries(actual.map((r) => [r.user_id, r.total])),
+        ).toEqual(
+          Object.fromEntries(expected.map((r) => [r.user_id, r.total])),
+        );
+        expect(actual.length).toBe(expected.length);
+        expect(actual.length).toBeGreaterThan(0);
+      },
+    );
+
+    it('ranks by total descending, breaking ties by user_id', async () => {
+      seedTransactions(buildLargeFixture());
+
+      const result = await service.getLeaderboard('ch-1', 'all');
+
+      for (let i = 1; i < result.length; i++) {
+        const prev = result[i - 1];
+        const cur = result[i];
+        expect(prev.total).toBeGreaterThanOrEqual(cur.total);
+        if (prev.total === cur.total) {
+          expect(prev.user_id.localeCompare(cur.user_id)).toBeLessThan(0);
+        }
+      }
+    });
+
+    it('reads the board with exactly one aggregated call', async () => {
+      seedTransactions(buildLargeFixture());
+      await service.getLeaderboard('ch-1', 'all');
+
+      expect(mockPointTxnRepo.leaderboard).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves no unbounded chapter read on the real repository', () => {
+      // The whole point of #522: no seam remains through which the service can
+      // pull every transaction in the chapter.
+      //
+      // Asserted against the REAL repository's prototype, not the mock literal
+      // in this file. The mock would satisfy a `findByChapter === undefined`
+      // check simply by never listing the key, so that assertion would keep
+      // passing after someone re-added the method to the interface and the
+      // implementation — which is precisely the regression it exists to catch.
+      const methods = Object.getOwnPropertyNames(
+        SupabasePointTransactionRepository.prototype,
+      );
+
+      expect(methods).toContain('leaderboard');
+      expect(methods).not.toContain('findByChapter');
     });
   });
 
