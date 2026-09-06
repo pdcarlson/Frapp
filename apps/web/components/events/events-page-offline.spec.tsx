@@ -7,8 +7,8 @@ import { chapterSubscription } from "@/tests/chapter-subscription";
  * OFFLINE, per `spec/ui/resilience.md` § 2 (OFFLINE ⇒ Read Actions "Enabled
  * (from cache)").
  *
- * A separate file from `events-gating.test.tsx` and
- * `events-page-bulk-actions.test.tsx` because both of those pin
+ * A separate file from `events-gating.spec.tsx` and
+ * `events-page-bulk-actions.spec.tsx` because both of those pin
  * `useNetwork` to a literal `{ isOffline: false }`; this one needs it
  * mutable, and rewriting their harness to add a dimension they do not use
  * would put an unrelated risk into two passing suites.

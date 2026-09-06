@@ -13,7 +13,7 @@ import { chapterSubscription } from "@/tests/chapter-subscription";
  * drops `sessionsQuery` from that list, or reorders the terms, reintroduces
  * #1621 here while every helper test still passes.
  *
- * Separate from `study-page.test.tsx` because that file pins `useNetwork` to a
+ * Separate from `study-page.spec.tsx` because that file pins `useNetwork` to a
  * literal and stubs the two reads as always-cached.
  */
 

@@ -129,7 +129,7 @@ describe("InvoiceAdminCard overdue availability (#1621)", () => {
 
   // The filter is a Radix `Select`, so its items only mount once the dropdown
   // is open — unlike the page header's native `<select>`, which is why
-  // `billing/page.test.tsx` can assert the sibling flag without this step.
+  // `billing/page.spec.tsx` can assert the sibling flag without this step.
   async function overdueOption() {
     await userEvent.click(screen.getByRole("combobox", { name: "Filter invoices" }));
     return screen.getByRole("option", { name: "OVERDUE" });
