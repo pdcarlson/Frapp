@@ -420,7 +420,7 @@ export function ProfilePanel() {
         description="Notification categories are set per chapter, so these switches appear once a chapter is active."
       />
     );
-  } else if (isOffline && preferencesQuery.data === undefined) {
+  } else if (isOffline && anyReadUncached(preferencesQuery)) {
     categoriesState = (
       <NestedOffline
         title="Notification settings unavailable offline"
@@ -432,10 +432,7 @@ export function ProfilePanel() {
     categoriesState = (
       <NestedLoading message="Loading your notification settings..." lines={6} />
     );
-  } else if (
-    preferencesQuery.isError &&
-    preferencesQuery.data === undefined
-  ) {
+  } else if (preferencesQuery.isError && anyReadUncached(preferencesQuery)) {
     categoriesState = (
       <NestedError
         title="Couldn't load your notification settings"

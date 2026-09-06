@@ -260,7 +260,7 @@ type CachedRead = {
  * Test that state as `isPending && fetchStatus === "paused"`, never as
  * `isPending && !isFetching`: a query that was never started is `"idle"` and
  * satisfies the second form too, which conflates "we could not ask" with
- * "we did not ask" (`spec/ui/design-system/README.md` § the same rule). Those guards are
+ * "we did not ask" (`spec/ui/design-system/README.md` § 4, State completeness standard). Those guards are
  * load-bearing: `members-directory.tsx` blocks on its roles and points reads
  * precisely because "the directory still looks healthy while those features
  * are quietly broken" without them.

@@ -13,8 +13,11 @@ import { chapterSubscription } from "@/tests/chapter-subscription";
  * drops `sessionsQuery` from that list, or reorders the terms, reintroduces
  * #1621 here while every helper test still passes.
  *
- * Separate from `study-page.spec.tsx` because that file pins `useNetwork` to a
- * literal and stubs the two reads as always-cached.
+ * Separate from `study-page.spec.tsx` because that file stubs the two reads as
+ * always-cached and mocks no network at all — it renders against the real
+ * `useNetwork`, and passes only because `NetworkContext`'s createContext
+ * default is `isOffline: false` (`network-provider.tsx:22`). Driving the
+ * offline branch there would mean giving it a network mock it does not have.
  */
 
 const networkState = { isOffline: false };
