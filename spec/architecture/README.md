@@ -429,7 +429,7 @@ to go and follow.
 
 - For complex aggregations, computation should be pushed down to the Postgres database via RPC functions using `this.supabase.rpc('func_name')`.
 - This approach avoids querying large amounts of raw data into application memory just to group and calculate totals.
-- Examples of this pattern include `get_points_report` which aggregates point transactions by user and category, and `get_poll_vote_option_totals` / `get_poll_user_votes_for_messages` which aggregate poll votes for the chapter poll list.
+- Examples of this pattern include `get_points_report` which aggregates point transactions by user and category, and `get_poll_vote_option_totals` / `get_poll_user_votes_for_messages` which aggregate poll votes — the former for both the chapter poll list and the single-poll detail view, the latter for the list only.
 
 ## Refactoring Note: TaskStatus Enum
 

@@ -99,7 +99,6 @@ describe('PollService', () => {
     };
 
     mockVoteRepo = {
-      findByMessage: jest.fn(),
       aggregateOptionTotalsByMessages: jest.fn(),
       findUserVotesByMessagesForUser: jest.fn(),
       findByMessageAndUser: jest.fn(),
@@ -576,10 +575,9 @@ describe('PollService', () => {
     it('should return poll with results and user votes', async () => {
       mockMessageRepo.findById.mockResolvedValue(basePollMessage);
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
-      mockVoteRepo.findByMessage.mockResolvedValue([
-        { ...baseVote, option_index: 0 },
-        { ...baseVote, user_id: 'user-3', option_index: 0 },
-        { ...baseVote, option_index: 1 },
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([
+        { message_id: 'msg-1', option_index: 0, vote_count: 2 },
+        { message_id: 'msg-1', option_index: 1, vote_count: 1 },
       ]);
       mockVoteRepo.findByMessageAndUser.mockResolvedValue([
         { ...baseVote, option_index: 1 },
@@ -587,6 +585,9 @@ describe('PollService', () => {
 
       const result = await service.getPoll('msg-1', 'ch-1', 'user-2');
 
+      // An option the RPC returns no row for is 0, not absent: `GROUP BY`
+      // emits nothing for an option nobody picked, so "Wednesday" only ever
+      // reaches the client through the `?? 0` default.
       expect(result.results).toEqual([
         { optionIndex: 0, optionText: 'Monday', voteCount: 2 },
         { optionIndex: 1, optionText: 'Tuesday', voteCount: 1 },
@@ -594,6 +595,116 @@ describe('PollService', () => {
       ]);
       expect(result.userVotes).toEqual([1]);
       expect(result.isExpired).toBe(false);
+    });
+
+    it('tallies in the database rather than reading vote rows back', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+      mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
+
+      await service.getPoll('msg-1', 'ch-1', 'user-2');
+
+      // #568: the detail view used to load every `poll_votes` row and filter
+      // it once per option. It must ask for exactly this poll's totals — a
+      // wider id list would tally other polls' votes into this one.
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
+        ['msg-1'],
+      );
+    });
+
+    it('ignores totals belonging to another poll', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([
+        { message_id: 'msg-1', option_index: 0, vote_count: 2 },
+        // The RPC takes a list and groups by message id. Nothing but the call
+        // site keeps this to one poll, so the tally must scope rather than
+        // trust it — otherwise a widened id list adds a stranger's votes here.
+        { message_id: 'msg-other', option_index: 0, vote_count: 99 },
+      ]);
+      mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
+
+      const result = await service.getPoll('msg-1', 'ch-1', 'user-2');
+
+      expect(result.results[0]).toEqual({
+        optionIndex: 0,
+        optionText: 'Monday',
+        voteCount: 2,
+      });
+    });
+
+    it('propagates an aggregate failure rather than reporting every option at zero', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockRejectedValue(
+        new Error('boom'),
+      );
+      // Stubbed even though `Promise.all` rejects on the other read first:
+      // leaving it undefined would make this pass for the wrong reason if the
+      // two reads were ever resequenced.
+      mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
+
+      // Deliberately unlike `listPolls`, which degrades to zero tallies to keep
+      // the list rendering. On a detail view that is indistinguishable from a
+      // real result, so the error surfaces as it did when this read rows.
+      await expect(service.getPoll('msg-1', 'ch-1', 'user-2')).rejects.toThrow(
+        'boom',
+      );
+    });
+
+    it('propagates a user-vote failure rather than reporting the caller as not having voted', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([
+        { message_id: 'msg-1', option_index: 0, vote_count: 2 },
+      ]);
+      mockVoteRepo.findByMessageAndUser.mockRejectedValue(new Error('boom'));
+
+      // The other half of the divergence from `listPolls`: an empty `userVotes`
+      // is indistinguishable from "this member has not voted yet", which is
+      // what the vote button renders off.
+      await expect(service.getPoll('msg-1', 'ch-1', 'user-2')).rejects.toThrow(
+        'boom',
+      );
+    });
+
+    it('tallies a poll whose id reaches the route in non-canonical case', async () => {
+      // Regression: the tally is keyed on the id the database returned, never
+      // on the route parameter. `polls/:messageId` has no `ParseUUIDPipe`, and
+      // Postgres compares `uuid` case-insensitively while PostgREST renders it
+      // canonically lower-case — so an upper-case id matches the row in
+      // `findById` and matches the votes in the RPC, then arrives back
+      // lower-cased. Comparing it to the raw parameter dropped every row and
+      // rendered a real poll as every option at zero.
+      const canonicalId = '0848ac98-f67e-4dfe-b3df-03cc47c0a9af';
+      const routeId = canonicalId.toUpperCase();
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        id: canonicalId,
+      });
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([
+        { message_id: canonicalId, option_index: 0, vote_count: 2 },
+        { message_id: canonicalId, option_index: 1, vote_count: 1 },
+      ]);
+      mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
+
+      const result = await service.getPoll(routeId, 'ch-1', 'user-2');
+
+      // Both reads go out under the database's spelling of the id, not the URL's.
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
+        [canonicalId],
+      );
+      expect(mockVoteRepo.findByMessageAndUser).toHaveBeenCalledWith(
+        canonicalId,
+        'user-2',
+      );
+      expect(result.results).toEqual([
+        { optionIndex: 0, optionText: 'Monday', voteCount: 2 },
+        { optionIndex: 1, optionText: 'Tuesday', voteCount: 1 },
+        { optionIndex: 2, optionText: 'Wednesday', voteCount: 0 },
+      ]);
     });
 
     it('should throw NotFoundException when poll not found', async () => {
@@ -686,7 +797,9 @@ describe('PollService', () => {
       expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
         manyPolls.map((p) => p.id),
       );
-      expect(mockVoteRepo.findByMessage).not.toHaveBeenCalled();
+      // The row-loading `findByMessage`/`findByMessages` this used to also
+      // assert against are gone from the port entirely (#568), so that half of
+      // the regression is now a compile error rather than a test failure.
       expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
     });
 
@@ -852,7 +965,7 @@ describe('PollService', () => {
       mockMessageRepo.findById.mockResolvedValue(roleGatedPoll);
       mockChannelRepo.findById.mockResolvedValue(roleGatedChannel);
       mockRbac.getEffectivePermissions.mockResolvedValue(['secret:view']);
-      mockVoteRepo.findByMessage.mockResolvedValue([]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
       mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
 
       const result = await service.getPoll('msg-1', 'ch-1', 'user-1');
