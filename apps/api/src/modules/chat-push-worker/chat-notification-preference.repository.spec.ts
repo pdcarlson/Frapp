@@ -523,22 +523,19 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
    */
   it('the UI read throws on error where the worker read degrades', async () => {
     const failing = createTenantHarness({ tables: seed() });
-    // Chainable AND thenable, so the SAME failure lands whatever the builder
-    // depth. The earlier fixed-depth mock only terminated after three `.eq()`
-    // calls: `findChannelPreferencesForUser` makes exactly three and saw the
-    // error, but `findForUser` makes two, so it awaited a plain object, read
-    // `error` as `undefined` and returned through the happy path. An assertion
-    // on it was therefore vacuous — it would have passed even if `findForUser`
-    // threw on error, which is the very thing it is here to pin.
     const failure = { data: null, error: { message: 'boom' } };
-    // Every builder method returns the same chain, so the failure lands
-    // whatever the depth or the call order. Naming them individually is what
-    // the earlier fixed-depth mock got wrong: it terminated after exactly three
-    // `.eq()` calls, so a method with a different builder shape sailed past it
-    // and awaited a plain object, read `error` as `undefined`, and returned
-    // through the happy path — making the assertion on it vacuous.
-    // `findForUsers` has the longest chain here (`in` + `eq` + four `order`s +
-    // `range`), so a depth-sensitive stub would silently stop testing it.
+    // Chainable AND thenable, so the same failure lands whatever the builder
+    // depth or call order. That generality is the point: an earlier fixed-depth
+    // mock terminated after exactly three `.eq()` calls, so
+    // `findChannelPreferencesForUser` (which makes exactly three) saw the error
+    // while a method with any other builder shape sailed past it, awaited a
+    // plain object, read `error` as `undefined`, and returned through the happy
+    // path — leaving the assertion on it vacuous.
+    //
+    // The two methods asserted below have different chain shapes —
+    // `findChannelPreferencesForUser` is `select` + three `eq`,
+    // `findForUsers` is `select` + `in` + `eq` + `order` + `range` — so a
+    // depth-sensitive stub would silently stop testing one of them.
     const chain: Record<string, unknown> = {
       eq: () => chain,
       in: () => chain,
