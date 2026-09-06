@@ -5,21 +5,57 @@ import {
   CHAPTER_AUDIT_LOG_REPOSITORY,
   type IChapterAuditLogRepository,
 } from '#domain/repositories/chapter-audit-log.repository.interface';
+import {
+  ROLE_REPOSITORY,
+  type IRoleRepository,
+} from '#domain/repositories/role.repository.interface';
+import { SystemRoleKeys } from '#domain/constants/permissions';
+import type { Role } from '#domain/entities/role.entity';
+
+// The chapter's seeded President role. Every `list` case below reads as the
+// President unless it says otherwise, so the visibility assertions on the
+// existing filter tests keep meaning "no visibility filter was added".
+const PRESIDENT_ROLE: Role = {
+  id: 'role-president-1',
+  chapter_id: 'chapter-1',
+  name: 'President',
+  permissions: ['*'],
+  is_system: true,
+  system_key: SystemRoleKeys.PRESIDENT,
+  display_order: 0,
+  color: null,
+  created_at: '2026-01-01T00:00:00.000Z',
+};
+const PRESIDENT = { roleIds: [PRESIDENT_ROLE.id] };
+const OFFICER = { roleIds: ['role-treasurer-1'] };
 
 describe('ChapterAuditLogService', () => {
   let service: ChapterAuditLogService;
   let mockRepo: jest.Mocked<IChapterAuditLogRepository>;
+  let mockRoleRepo: jest.Mocked<IRoleRepository>;
 
   beforeEach(async () => {
     mockRepo = {
       create: jest.fn(),
       findByChapter: jest.fn(),
     };
+    mockRoleRepo = {
+      findById: jest.fn(),
+      findByChapter: jest.fn(),
+      findByIds: jest.fn(),
+      findByChapterAndName: jest.fn(),
+      findByChapterAndSystemKey: jest.fn().mockResolvedValue(PRESIDENT_ROLE),
+      create: jest.fn(),
+      createMany: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChapterAuditLogService,
         { provide: CHAPTER_AUDIT_LOG_REPOSITORY, useValue: mockRepo },
+        { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
       ],
     }).compile();
 
@@ -106,7 +142,7 @@ describe('ChapterAuditLogService', () => {
     it('scopes the read to the given chapter and clamps limit to the default', async () => {
       mockRepo.findByChapter.mockResolvedValue([]);
 
-      await service.list('chapter-1', {});
+      await service.list('chapter-1', PRESIDENT, {});
 
       expect(mockRepo.findByChapter).toHaveBeenCalledWith('chapter-1', {
         before: undefined,
@@ -114,14 +150,91 @@ describe('ChapterAuditLogService', () => {
         action: undefined,
         startDate: undefined,
         endDate: undefined,
+        memberVisibleOnly: false,
         limit: 50,
+      });
+    });
+
+    // #1773. The table has no SELECT policy; this service is the visibility
+    // filter the migration comment promised. Exec-only rows are for the
+    // President — identified by the chapter's seeded `PRESIDENT` role, never by
+    // a permission a custom role could be minted with.
+    describe('exec-only visibility (#1773)', () => {
+      beforeEach(() => {
+        mockRepo.findByChapter.mockResolvedValue([]);
+      });
+
+      it('lets the President read exec-only rows', async () => {
+        await service.list('chapter-1', PRESIDENT, {});
+
+        expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledWith(
+          'chapter-1',
+          SystemRoleKeys.PRESIDENT,
+        );
+        expect(mockRepo.findByChapter).toHaveBeenCalledWith(
+          'chapter-1',
+          expect.objectContaining({ memberVisibleOnly: false }),
+        );
+      });
+
+      it('restricts every other officer to member-visible rows', async () => {
+        await service.list('chapter-1', OFFICER, { action: 'member_removed' });
+
+        expect(mockRepo.findByChapter).toHaveBeenCalledWith(
+          'chapter-1',
+          expect.objectContaining({
+            action: 'member_removed',
+            memberVisibleOnly: true,
+          }),
+        );
+      });
+
+      it('restricts a viewer holding the President role of ANOTHER chapter', async () => {
+        // The lookup is chapter-scoped by construction: the role resolved is
+        // chapter-1's President, and a foreign role id simply is not it.
+        mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
+          ...PRESIDENT_ROLE,
+          id: 'role-president-of-chapter-1',
+        });
+
+        await service.list(
+          'chapter-1',
+          { roleIds: ['role-president-of-chapter-2'] },
+          {},
+        );
+
+        expect(mockRepo.findByChapter).toHaveBeenCalledWith(
+          'chapter-1',
+          expect.objectContaining({ memberVisibleOnly: true }),
+        );
+      });
+
+      it('fails closed when the chapter has no President role', async () => {
+        mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
+
+        await service.list('chapter-1', PRESIDENT, {});
+
+        expect(mockRepo.findByChapter).toHaveBeenCalledWith(
+          'chapter-1',
+          expect.objectContaining({ memberVisibleOnly: true }),
+        );
+      });
+
+      it('does not look roles up for a viewer with no seeded roles', async () => {
+        await service.list('chapter-1', { roleIds: [] }, {});
+
+        expect(mockRoleRepo.findByChapterAndSystemKey).not.toHaveBeenCalled();
+        expect(mockRepo.findByChapter).toHaveBeenCalledWith(
+          'chapter-1',
+          expect.objectContaining({ memberVisibleOnly: true }),
+        );
       });
     });
 
     it('clamps an over-large limit to the max', async () => {
       mockRepo.findByChapter.mockResolvedValue([]);
 
-      await service.list('chapter-1', { limit: 10_000 });
+      await service.list('chapter-1', PRESIDENT, { limit: 10_000 });
 
       expect(mockRepo.findByChapter).toHaveBeenCalledWith(
         'chapter-1',
@@ -132,7 +245,7 @@ describe('ChapterAuditLogService', () => {
     it('clamps a zero/negative limit up to the min', async () => {
       mockRepo.findByChapter.mockResolvedValue([]);
 
-      await service.list('chapter-1', { limit: 0 });
+      await service.list('chapter-1', PRESIDENT, { limit: 0 });
 
       expect(mockRepo.findByChapter).toHaveBeenCalledWith(
         'chapter-1',
@@ -147,7 +260,7 @@ describe('ChapterAuditLogService', () => {
       // instant: reformatting this through `new Date(x).toISOString()` would
       // truncate it to '...123Z' and could drop a same-millisecond row off
       // the cursor — the exact regression this test pins against.
-      await service.list('chapter-1', {
+      await service.list('chapter-1', PRESIDENT, {
         before: '2026-01-01T00:00:00.123456+00:00',
       });
 
@@ -160,7 +273,7 @@ describe('ChapterAuditLogService', () => {
     it('passes each filter through to the repository', async () => {
       mockRepo.findByChapter.mockResolvedValue([]);
 
-      await service.list('chapter-1', {
+      await service.list('chapter-1', PRESIDENT, {
         actorUserId: 'actor-1',
         action: 'member_removed',
         startDate: '2026-01-01T00:00:00.000Z',
@@ -185,7 +298,7 @@ describe('ChapterAuditLogService', () => {
     it('passes window bounds through byte-for-byte, microseconds intact', async () => {
       mockRepo.findByChapter.mockResolvedValue([]);
 
-      await service.list('chapter-1', {
+      await service.list('chapter-1', PRESIDENT, {
         startDate: '2026-01-01T00:00:00.123456+00:00',
         endDate: '2026-02-01T00:00:00.654321+00:00',
       });
@@ -203,7 +316,7 @@ describe('ChapterAuditLogService', () => {
       mockRepo.findByChapter.mockResolvedValue([]);
 
       await expect(
-        service.list('chapter-1', {
+        service.list('chapter-1', PRESIDENT, {
           startDate: '2026-02-01T00:00:00.000Z',
           endDate: '2026-01-01T00:00:00.000Z',
         }),
@@ -213,7 +326,7 @@ describe('ChapterAuditLogService', () => {
       ).rejects.toThrow(BadRequestException);
 
       await expect(
-        service.list('chapter-1', {
+        service.list('chapter-1', PRESIDENT, {
           startDate: '2026-02-01T00:00:00.000Z',
           endDate: '2026-01-01T00:00:00.000Z',
         }),
@@ -230,7 +343,7 @@ describe('ChapterAuditLogService', () => {
       // Compared as instants, not as strings: '…Z' sorts after '…+00:00'
       // lexicographically, so a string comparison would 400 this valid range.
       await expect(
-        service.list('chapter-1', {
+        service.list('chapter-1', PRESIDENT, {
           startDate: '2026-01-01T00:00:00.000Z',
           endDate: '2026-01-01T00:00:00.000+00:00',
         }),
@@ -266,13 +379,13 @@ describe('ChapterAuditLogService', () => {
         mockRepo.findByChapter.mockResolvedValue([]);
 
         await expect(
-          service.list('chapter-1', { startDate: value }),
+          service.list('chapter-1', PRESIDENT, { startDate: value }),
         ).rejects.toThrow(BadRequestException);
         await expect(
-          service.list('chapter-1', { endDate: value }),
+          service.list('chapter-1', PRESIDENT, { endDate: value }),
         ).rejects.toThrow(BadRequestException);
         await expect(
-          service.list('chapter-1', { before: value }),
+          service.list('chapter-1', PRESIDENT, { before: value }),
         ).rejects.toThrow(BadRequestException);
 
         expect(mockRepo.findByChapter).not.toHaveBeenCalled();
@@ -292,7 +405,10 @@ describe('ChapterAuditLogService', () => {
       mockRepo.findByChapter.mockResolvedValue([]);
 
       await expect(
-        service.list('chapter-1', { startDate: value, before: value }),
+        service.list('chapter-1', PRESIDENT, {
+          startDate: value,
+          before: value,
+        }),
       ).resolves.toEqual([]);
     });
   });

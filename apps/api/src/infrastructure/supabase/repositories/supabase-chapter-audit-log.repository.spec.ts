@@ -28,6 +28,11 @@ const USER_OTHER = '00000000-0000-4000-8000-0000000000a1';
 // narrowed on `chapter_id` rather than incidentally on the column under test.
 const LOG_A_OTHER_ACTOR = '0a000000-0000-4000-8000-000000000051';
 const LOG_A_OTHER_ACTION = '0a000000-0000-4000-8000-000000000052';
+// One exec-only row per chapter (#1773). Seeded NEWEST so a repository that
+// ignores `memberVisibleOnly` returns it first, where the ordered assertions
+// below cannot miss it.
+const LOG_A_EXEC_ONLY = '0a000000-0000-4000-8000-000000000053';
+const LOG_B_EXEC_ONLY = '0b000000-0000-4000-8000-000000000053';
 
 // One canonical timestamp spelling throughout. The tenant harness compares
 // with `String(a).localeCompare(String(b))`, so it orders ISO strings
@@ -70,6 +75,17 @@ const seed = () => ({
       member_visible: true,
       created_at: '2026-08-01T00:00:00.000Z',
     }),
+    inA({
+      id: LOG_A_EXEC_ONLY,
+      actor_user_id: USER_SHARED,
+      action: 'member_removed',
+      target_type: 'member',
+      target_id: 'member-3',
+      scope: 'chapter',
+      diff: {},
+      member_visible: false,
+      created_at: '2026-09-01T00:00:00.000Z',
+    }),
     inB({
       id: LOG_B,
       actor_user_id: USER_SHARED,
@@ -103,6 +119,17 @@ const seed = () => ({
       member_visible: true,
       created_at: '2026-08-01T00:00:00.000Z',
     }),
+    inB({
+      id: LOG_B_EXEC_ONLY,
+      actor_user_id: USER_SHARED,
+      action: 'member_removed',
+      target_type: 'member',
+      target_id: 'member-3',
+      scope: 'chapter',
+      diff: {},
+      member_visible: false,
+      created_at: '2026-09-01T00:00:00.000Z',
+    }),
   ],
 });
 
@@ -122,12 +149,45 @@ describe('SupabaseChapterAuditLogRepository — tenant scope', () => {
 
     // Asserted in order, not sorted: the route contract says newest-first and
     // the harness's `order()` really sorts, so flipping the repository to
-    // ascending has to fail here. Seeded 06-01 / 07-01 / 08-01.
+    // ascending has to fail here. Seeded 06-01 / 07-01 / 08-01 / 09-01. No
+    // `memberVisibleOnly` means the President's view: the exec-only row is in.
+    expect(rows.map((r) => r.id)).toEqual([
+      LOG_B_EXEC_ONLY,
+      LOG_B_OTHER_ACTION,
+      LOG_B_OTHER_ACTOR,
+      LOG_B,
+    ]);
+  });
+
+  // #1773. This predicate is the whole of what keeps an exec-only row from a
+  // non-president caller: the table has no SELECT policy, and this query runs
+  // as service_role. Assert against seeded rows of BOTH visibilities, newest
+  // first — remove `.eq('member_visible', true)` from the repository and
+  // LOG_B_EXEC_ONLY comes back at the head of the list.
+  it('findByChapter drops exec-only rows when memberVisibleOnly is set', async () => {
+    const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByChapter(CHAPTER_B, { memberVisibleOnly: true, limit: 50 }),
+    );
+
     expect(rows.map((r) => r.id)).toEqual([
       LOG_B_OTHER_ACTION,
       LOG_B_OTHER_ACTOR,
       LOG_B,
     ]);
+  });
+
+  it('findByChapter applies the visibility predicate alongside a targeted filter', async () => {
+    // The reach that made #1773 worth acting on: `?action=member_removed`
+    // asks for exactly the rows a president just retracted.
+    const rows = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByChapter(CHAPTER_B, {
+        action: 'member_removed',
+        memberVisibleOnly: true,
+        limit: 50,
+      }),
+    );
+
+    expect(rows.map((r) => r.id)).toEqual([LOG_B_OTHER_ACTOR, LOG_B]);
   });
 
   it('findByChapter filters by actor alongside the chapter predicate', async () => {
