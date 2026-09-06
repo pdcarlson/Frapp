@@ -52,7 +52,7 @@ applies it — and then, depending on `scope`:
 
 | `scope` | What happens | Use it when |
 | ------- | ------------ | ----------- |
-| `full` (default) | Migrates, deploys the same commit to Render and Vercel, health-checks it, and tags `vX.Y.Z` | Almost always. Migrations and the code that needs them move together |
+| `full` (default) | Builds both Vercel bundles *before* applying (a build failure then ships nothing), migrates, deploys the same commit to Render, health-checks it, uploads the prebuilt bundles to Vercel, and tags `vX.Y.Z` | Almost always. Migrations and the code that needs them move together |
 | `migrations-only` | Migrates and stops. No Render deploy, no Vercel build, **no tag** | Re-running an apply that failed partway; applying a backlog ahead of the code that needs it; applying on a schedule no deploy matches |
 
 There is also a **dry-run-only** mode that validates and rehearses, then stops
