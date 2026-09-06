@@ -186,6 +186,40 @@ From each project's dashboard → Settings → API, note:
 | **anon public key**         | `SUPABASE_ANON_KEY` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`          |
 | **service_role secret key** | `SUPABASE_SERVICE_ROLE_KEY` (API only, never expose to client) |
 
+### Auth settings (hosted, dashboard or Management API)
+
+These live on the project, not in this repo, so they are recorded here with the date they were
+read. Read them back with `GET https://api.supabase.com/v1/projects/<ref>/config/auth` (a
+`SUPABASE_ACCESS_TOKEN` is enough); write with `PATCH` on the same path, or in the dashboard under
+Authentication → URL Configuration / SMTP Settings.
+
+| Setting | `frapp-prod` (read 2026-09-06) | `frapp-staging` (read 2026-09-06) |
+| --- | --- | --- |
+| Site URL | `https://app.frapp.live` | `https://app.staging.frapp.live` |
+| Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`** | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`** |
+| Email confirmations | required (`mailer_autoconfirm: false`) | required |
+| Custom SMTP | **none** | **none** |
+| Auth email rate limit | **2 per hour** | 2 per hour |
+| Password minimum length | 6 | 6 |
+| Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
+
+**`frapp://**` was added to both allow lists on 2026-09-06.** The mobile app's magic-link
+`emailRedirectTo` is `Linking.createURL("/")`, which is `frapp:///` in a build that owns the
+scheme (`spec/ui/mobile/navigation.md` § Magic-link auth callback); without the entry, GoTrue
+rejects the redirect and drops the member on the web Site URL instead. Expo Go's
+`exp://<host>:8081/--/` form is still per-machine and still #765.
+
+**Custom SMTP is the open launch blocker in this table.** With no SMTP configured, Supabase's
+built-in mailer sends auth email — sign-up confirmation, magic link, password reset — at **two
+messages per hour per project**, and confirmations are required, so production can admit at most
+two new sign-ups an hour and the third member to try gets "email rate limit exceeded". The fix is
+dashboard/API-only and needs the Resend credentials this repo already uses for invite email
+(`RESEND_API_KEY`, § Invite Email in `ENV_REFERENCE.md`): host `smtp.resend.com`, port `465`,
+user `resend`, password = the API key, sender on a domain **verified in Resend** (the invite
+default is `invites@frapp.live`; verify `frapp.live` there first). Then raise
+`rate_limit_email_sent` to a real number (Supabase allows it once custom SMTP is set). Do it on
+staging first and send yourself a magic link.
+
 ---
 
 ## 4. Vercel Setup

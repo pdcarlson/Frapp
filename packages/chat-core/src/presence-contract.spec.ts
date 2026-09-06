@@ -3,9 +3,11 @@
  * push worker (`apps/api/src/modules/chat-push-worker/chat-push-worker.service.ts`):
  *
  *   - the channel topic is exactly `chat:channel:<id>`, with the exact
- *     channel config `{ broadcast: { self: false }, presence: { key: "" } }`
+ *     channel config
+ *     `{ private: true, broadcast: { self: false }, presence: { key: "" } }`
  *     (the worker joins the same topic with a byte-identical config to read
- *     presence), and
+ *     presence; `private` is load-bearing since #1552 because private and
+ *     public are separate rooms), and
  *   - the presence payload is exactly `{ userId, ts }` — the worker reads
  *     `userId` (string) to skip recipients already in the channel; `ts` is
  *     written but unconsumed.
@@ -111,8 +113,15 @@ describe("ADR-10 presence contract (read by the push worker)", () => {
     expect(call).toBeDefined();
     expect(call!.topic).toBe("chat:channel:channel-1");
     // Byte-identical to chat-push-worker.service.ts's `ensurePresenceChannel`.
+    // `private: true` is part of the contract since #1552: private and public
+    // are separate rooms, so a worker and a client that disagree on it never
+    // see each other's presence — and push suppression silently stops.
     expect(call!.opts).toEqual({
-      config: { broadcast: { self: false }, presence: { key: "" } },
+      config: {
+        private: true,
+        broadcast: { self: false },
+        presence: { key: "" },
+      },
     });
   });
 

@@ -129,9 +129,10 @@ export function usePushRuntime(): void {
     handlerConfigured = true;
     configureForegroundPresentation();
     // The Android channel is created here, not only inside
-    // `requestPushPermission()`. Its other caller is the primer's "Turn on",
-    // which nothing hosts yet — s03 is #958 — so relying on that alone left the
-    // `"default"` channel uncreated in every build, while `app.json`'s plugin
+    // `requestPushPermission()`. Its other caller is the primer's "Turn on"
+    // (`PushPrimerCard`, hosted on the welcome screen since #958), which a
+    // member may never tap — so relying on that alone would leave the
+    // `"default"` channel uncreated for them, while `app.json`'s plugin
     // config points FCM's `default_notification_channel_id` at it. The
     // study-pause notice (#1065) is a **local** notification that needs no
     // token and therefore works in a real build today; it would have landed in
