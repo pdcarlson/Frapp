@@ -359,8 +359,17 @@ export class ChatPushWorkerService
   private ensurePresenceChannel(channelId: string): void {
     if (this.presenceChannels.has(channelId)) return;
     try {
+      // Same config as chat-core's realtime-manager, `private: true` included
+      // (#1552): the service-role client bypasses realtime.messages RLS so the
+      // join always succeeds, but private and public are separate rooms — a
+      // worker on the public room sees an empty roster while every client is
+      // private, and suppresses nothing.
       const ch = this.supabase.channel(`chat:channel:${channelId}`, {
-        config: { broadcast: { self: false }, presence: { key: '' } },
+        config: {
+          private: true,
+          broadcast: { self: false },
+          presence: { key: '' },
+        },
       });
       ch.subscribe();
       this.presenceChannels.set(channelId, ch);
