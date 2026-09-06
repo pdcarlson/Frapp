@@ -185,10 +185,12 @@ if [ "$DATA_ONLY" -eq 1 ]; then
   # as the load. A freshly pushed schema is not empty: migrations seed rows —
   # today `public.users` carries the system sender (`00000000-…-000000000000`)
   # — and the dump carries the same rows, so COPY would stop on the first
-  # duplicate key. TRUNCATE ... CASCADE on the exact table list the dump names
-  # replaces those seeds with the dump's copy of them. On a fresh project that
-  # is the only thing it removes; on a reused target it is the "REPLACES the
-  # contents" this script's header already promises.
+  # duplicate key. ONE TRUNCATE naming exactly the tables the dump names, and
+  # no CASCADE: a table the dump does not carry that references one of these
+  # makes the statement fail (and the transaction roll back) instead of being
+  # emptied with nothing to refill it. On a fresh project this removes only
+  # the seeds; on a reused target it is the "REPLACES the contents" this
+  # script's header already promises.
   grep -oE '^COPY "[a-z_]+"\."[a-z_]+"' "$WORK/data-only.sql" \
     | sed -E 's/^COPY "([a-z_]+)"\."([a-z_]+)"/\1.\2/' \
     | sort -u > "$WORK/data-tables.txt"
@@ -196,7 +198,7 @@ if [ "$DATA_ONLY" -eq 1 ]; then
     echo 'SET session_replication_role = replica;'
     # The cascade NOTICEs are one line per FK and say nothing an operator needs.
     echo 'SET client_min_messages = warning;'
-    while read -r t; do echo "TRUNCATE TABLE $t CASCADE;"; done < "$WORK/data-tables.txt"
+    echo "TRUNCATE TABLE $(paste -sd, "$WORK/data-tables.txt");"
   } > "$WORK/truncate.sql"
   echo "    emptying $(wc -l < "$WORK/data-tables.txt") target tables before the load"
 

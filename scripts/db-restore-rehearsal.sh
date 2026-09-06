@@ -106,7 +106,11 @@ destroy() {
   # empty auth schema, so it never exercised this). A fresh Supabase project has
   # every one of these tables empty, which is the state this step simulates.
   # `auth.schema_migrations` is deliberately kept: it is GoTrue's, excluded from
-  # the dump, and populated on a fresh project too.
+  # the dump, and populated on a fresh project too. One TRUNCATE naming every
+  # table, no CASCADE: a table outside `auth` that ever grew an FK onto one of
+  # these would make the statement fail here rather than be emptied silently —
+  # and this rehearsal compares only `public` and `auth`, so silent is the one
+  # outcome it could not detect.
   #
   # Dropping `public` CASCADE also drops the `realtime.messages` policy (its
   # predicates live in public) and the publication rows for public tables, and
@@ -119,7 +123,7 @@ destroy() {
     -c "DROP SCHEMA public CASCADE;" \
     -c "CREATE SCHEMA public;" \
     -c "GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;" \
-    -c "DO \$\$ DECLARE t record; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='auth' AND tablename <> 'schema_migrations' LOOP EXECUTE format('TRUNCATE auth.%I CASCADE', t.tablename); END LOOP; END \$\$;" \
+    -c "DO \$\$ DECLARE tables text; BEGIN SELECT string_agg(format('auth.%I', tablename), ', ') INTO tables FROM pg_tables WHERE schemaname='auth' AND tablename <> 'schema_migrations'; EXECUTE 'TRUNCATE ' || tables; END \$\$;" \
     -c "DO \$\$ DECLARE t record; BEGIN FOR t IN SELECT tablename FROM pg_tables WHERE schemaname='supabase_migrations' LOOP EXECUTE format('TRUNCATE supabase_migrations.%I', t.tablename); END LOOP; END \$\$;" \
     -c "SET session_replication_role = replica; DELETE FROM storage.objects; DELETE FROM storage.buckets;" >/dev/null 2>&1
   local remaining
