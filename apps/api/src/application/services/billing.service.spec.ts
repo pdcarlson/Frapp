@@ -1985,6 +1985,9 @@ describe('BillingService', () => {
           last_stripe_webhook_at: LATER_ISO,
           past_due_since: null,
         });
+        expect(
+          mockChapterRepo.claimSubscriptionId.mock.invocationCallOrder[0],
+        ).toBeLessThan(mockChapterRepo.update.mock.invocationCallOrder[0]);
         expect(loggerWarnSpy).not.toHaveBeenCalledWith(
           expect.stringContaining('No chapter found for subscription'),
         );
@@ -2137,6 +2140,9 @@ describe('BillingService', () => {
           past_due_since: LATER_ISO,
           last_stripe_webhook_at: LATER_ISO,
         });
+        expect(
+          mockChapterRepo.claimSubscriptionId.mock.invocationCallOrder[0],
+        ).toBeLessThan(mockChapterRepo.update.mock.invocationCallOrder[0]);
       });
 
       it('applies the event when checkout already wrote this subscription between the two lookups', async () => {
@@ -2239,6 +2245,15 @@ describe('BillingService', () => {
         );
 
         expect(mockChapterRepo.findBySubscriptionId).toHaveBeenCalledTimes(2);
+        expect(mockChapterRepo.findBySubscriptionId).toHaveBeenNthCalledWith(
+          2,
+          'sub_race',
+        );
+        expect(mockChapterRepo.claimSubscriptionId).toHaveBeenCalledWith(
+          'ch-1',
+          'sub_race',
+          null,
+        );
         expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
           subscription_status: 'active',
           last_stripe_webhook_at: LATER_ISO,
@@ -2262,6 +2277,15 @@ describe('BillingService', () => {
           }),
         );
 
+        expect(mockChapterRepo.claimSubscriptionId).toHaveBeenCalledWith(
+          'ch-1',
+          'sub_race',
+          null,
+        );
+        expect(mockChapterRepo.findBySubscriptionId).toHaveBeenNthCalledWith(
+          2,
+          'sub_race',
+        );
         expect(mockChapterRepo.update).not.toHaveBeenCalled();
         expect(loggerWarnSpy).toHaveBeenCalledWith(
           expect.stringMatching(
