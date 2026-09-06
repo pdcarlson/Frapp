@@ -22,12 +22,14 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
   the gate honest _without_ breaking `verify-render-api` (§ Deploy verification), which
   treats "no deploy created for this SHA" as a failure and so rules out turning
   auto-deploy fully off.
-- 🚧 Production API deployment does **not** use auto-deploy. `deploy-production.yml` calls
+- ✅ Production API deployment does **not** use auto-deploy. `deploy-production.yml` calls
   the Render API with an explicit `commitId`, so what ships is the commit a human named.
   This requires `frapp-api-prod` to have auto-deploy **off** and to track `main`;
   `scripts/ci/production-guardrails.mjs` asserts both, on a schedule and again as a
-  preflight before every deploy. Until those dashboard settings are changed by hand, the
-  guardrail check fails by design — see § 5.5.
+  preflight before every deploy. Both dashboard settings have been in place since the
+  #1340 cutover and the scheduled guardrail has been green since #1579 inverted its Vercel
+  half (2026-09-02); the earlier note here that it "fails by design" described the window
+  before those settings were changed and was stale by 2026-09-06.
 - ✅ Infisical is the central secrets store; deploy workflows inject secrets from it, and provider
   syncs are inventoried in [`../environment/SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md).
 - ✅ Staging database migrations apply automatically on every green `main` run (`migrate-staging`
@@ -486,6 +488,13 @@ reachable.
 > health-gated deploys, is **not established here** — `render.com` is unreachable from agent
 > sessions (egress-blocked), so it was not checked against Render's documentation. Confirm before
 > relying on either behaviour. Reconciling the drift is tracked on #1160.
+>
+> **2026-09-06:** the drift was closed from the other side. `PATCH /v1/services/{id}` set
+> `healthCheckPath: /health` on **both** `frapp-api-staging` and `frapp-api-prod` (read back as
+> `/health` on each), so the live services now match the blueprint. Render gates a deploy on that
+> path returning 2xx; `/health` is the plain liveness probe that always does, which is why it — and
+> not `/health/ready` — is the value here (see the health smoke check in `deploy-production.yml`
+> for the readiness half).
 
 ### 5.5 In-process chat workers (Chunk 05)
 
@@ -749,26 +758,38 @@ production** with a commit SHA:
 2. **Commit validation** — the SHA must be an ancestor of `main` *and* have green CI, asserted against the required-check list branch protection uses, intersected with the jobs that commit's own workflows define (`scripts/ci/validate-deploy-sha.mjs`).
 3. **Provider preflight** — Render auto-deploy is off; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the *absence* of a Git link, so a **present** link is the violation.
 4. **Environment approval** — the job pauses on the `production` environment's Required reviewers. This is the only human gate, and it fires here, on a run that names the commit.
-5. **Migration rehearsal** → fence → dry-run → apply.
-6. **Render deploy by `commitId`** → health smoke check → **Vercel production builds** → **tag**.
+5. **Migration rehearsal** → fence → `npm ci` + Vercel CLI → **Vercel production builds** (both
+   projects, `vercel pull --environment=production` + `vercel build --prod`, each `.vercel` stashed
+   under `$RUNNER_TEMP`) → dry-run → apply.
+6. **Render deploy by `commitId`** → health smoke check → **Vercel production uploads** (each stash
+   restored and shipped with `vercel deploy --prebuilt --prod`) → **tag**.
 
 > ℹ️ **`scope: full` reaches a working Vercel step again as of #1578 (2026-09-04).** The two issues
 > ADR-21 left behind are both closed: #1579 removed the step-3 preflight block, and #1578 replaced
 > the `gitSource` POST — which only meant anything while the Git integration existed — with
 > `vercel build --prod` on the runner followed by `vercel deploy --prebuilt --prod`.
 >
-> ⚠️ **What has not changed is that a Vercel failure lands LATE.** Step 6 runs in the same job as
-> step 5, so a failure there arrives **after** production migrations have applied and the Render API
-> has deployed and health-checked — leaving a migrated database and a new API with no `vX.Y.Z` tag
-> naming what is live. That is a property of the one-job design (ADR-20: one job, one approval), not
-> of any particular Vercel breakage, and it is why the release job is separate and why `report`
-> errors loudly when the deploy succeeded and the tag did not.
+> ℹ️ **Since 2026-09-06 the Vercel BUILD happens before the apply.** `deploy-vercel.mjs` runs twice:
+> `DEPLOY_PHASE=build` in step 5, before a byte of production has changed, and `DEPLOY_PHASE=upload`
+> in step 6. The build is the half that fails for reasons unrelated to the commit — the OOM killer,
+> a Production env var the Infisical sync never delivered, a registry blip — and it used to run last,
+> which is how run 33275321347 left a migrated database and a new API under six-month-old frontends
+> with no tag. Now a build failure costs nothing; only the upload, a far smaller surface, can still
+> fail after the apply. That residual is a property of the one-job design (ADR-20: one job, one
+> approval), and it is why the release job is separate and why `report` errors loudly when the
+> deploy succeeded and the tag did not.
 >
 > **The first `full` dispatch after #1578 is the first real exercise of this path** — the CLI deploy
 > has unit coverage but has never run against the live projects. Note that **`dry_run_only` does not
-> cover it**: both Vercel steps carry `if: !inputs.dry_run_only`, so a dry run validates the commit
-> and rehearses the migration and then stops well short of step 6. There is no way to exercise the
-> Vercel path without a real release, so watch step 6 rather than walking away from it.
+> cover it**: the Vercel steps carry `if: !inputs.dry_run_only`, so a dry run validates the commit
+> and rehearses the migration and then stops well short of them. There is no way to exercise the
+> Vercel path without a real release, so watch steps 5 and 6 rather than walking away from them.
+> On 2026-09-06 the `frapp-web` Production scope was found to hold **none** of
+> `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`,
+> `NEXT_PUBLIC_LANDING_URL` (nor `frapp-landing` `NEXT_PUBLIC_APP_URL`) — they existed only on
+> Preview, as manual rows from 2026-02-28 — so the first production build would have compiled a
+> broken bundle. They were written to the Production scope by API that day; the source-of-truth fix
+> is the Infisical `prod` environment (see `SECRETS_MANAGEMENT.md` § Blast radius).
 
 > **Deploying an OLDER commit.** That intersection in step 2 is deliberate, and it is what
 > keeps an incident rollback possible. A required check added *after* a commit was made could
