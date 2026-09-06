@@ -339,8 +339,8 @@ Before you promote — the API does not boot without these:
 - [ ] Every name in `REQUIRED_ENV_VARS`
       ([`apps/api/src/config/env.validation.ts`](../../../apps/api/src/config/env.validation.ts))
       is set **and non-empty** in the target environment's Infisical folder:
-      `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY`,
-      `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
+      `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`,
+      `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`.
 
 `validateEnv` rejects an **empty string** exactly as it rejects an absent key
 (`typeof value !== 'string' || value.trim().length === 0`), so a name that is
@@ -393,6 +393,25 @@ promoter must do by hand. `check:migration-safety` requires a migration PR to
 touch this file **or** [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) — it
 backs the habit, it does not prove the log complete. Appending here stays the
 promoter's job.
+
+## 2026-09-06: Audit-log action filter index
+
+* **Migration**: `20260906120000_audit_log_chapter_action_created_at_idx.sql`
+* **Purpose**: B-tree on `(chapter_id, action, created_at desc)` so the `action`
+  filter added to `GET /v1/audit-log` seeks rather than scans. The date window
+  and newest-first ordering were already served by
+  `idx_audit_log_chapter_created_at`, and the actor filter by
+  `idx_audit_log_actor_created_at`; `action` was served by nothing.
+* **Checks**: After `db push`, confirm the index exists:
+  `select indexname from pg_indexes where tablename = 'chapter_audit_log' and indexname = 'idx_audit_log_chapter_action_created_at';`
+* **Promoter notes**: Additive and non-blocking in practice — `create index`
+  (not `CONCURRENTLY`, which Postgres forbids inside the transaction Supabase
+  wraps each migration in) holds SHARE on `chapter_audit_log` for the build,
+  blocking the officer-action audit inserts for its duration. The table is
+  small and append-only, so this is short; still, prefer a low-traffic window
+  on production. No backfill, no data change, no API coupling.
+* **Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md) §
+  Rollback `idx_audit_log_chapter_action_created_at`.
 
 ## 2026-09-05: Ops-setup nudge dismissals (#492)
 

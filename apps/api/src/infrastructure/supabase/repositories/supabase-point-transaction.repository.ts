@@ -5,6 +5,8 @@ import {
   IPointTransactionRepository,
   PointTransactionDuplicateError,
   type ListChapterPointTransactionsOptions,
+  type PointsLeaderboardRow,
+  type PointsLeaderboardWindow,
 } from '#domain/repositories/point-transaction.repository.interface';
 import { PG_UNIQUE_VIOLATION } from '#domain/repositories/chat.repository.interface';
 import { PointTransaction } from '#domain/entities/point-transaction.entity';
@@ -74,14 +76,17 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
     return data || [];
   }
 
-  async findByChapter(chapterId: string): Promise<PointTransaction[]> {
-    const { data, error } = await this.supabase
-      .from('point_transactions')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .order('created_at', { ascending: false });
+  async leaderboard(
+    chapterId: string,
+    window: PointsLeaderboardWindow,
+  ): Promise<PointsLeaderboardRow[]> {
+    const { data, error } = await this.supabase.rpc('get_points_leaderboard', {
+      p_chapter_id: chapterId,
+      p_since: window.since ?? null,
+      p_until: window.until ?? null,
+    });
     if (error) throw error;
-    return data || [];
+    return data ?? [];
   }
 
   async findByChapterFiltered(

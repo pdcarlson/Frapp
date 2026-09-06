@@ -1,7 +1,6 @@
 const REQUIRED_ENV_VARS = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
-  'SUPABASE_ANON_KEY',
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
   'STRIPE_PRICE_ID',
@@ -48,6 +47,20 @@ const REQUIRED_ENV_VARS = [
 //   - RESEND_API_KEY    enables the Resend transport for invite emails
 //   - RESEND_FROM_EMAIL optional from-address override (default a Frapp address
 //                       that must be verified with Resend before it will send)
+//
+// NOT here, and deliberately absent rather than merely unlisted:
+// SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is
+// built from SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
+// (infrastructure/supabase/supabase.provider.ts). The anon key is the
+// browser's and the mobile app's credential — it identifies a client that
+// authenticates *as a user* and is then constrained by RLS, which is the
+// opposite of what a service-role process does. The rule this encodes:
+// require an environment variable where its value is read, not where a
+// name happens to be associated with the product. Requiring it here blocked
+// boot on a credential no code path in this process ever loads.
+// It is still provisioned — for the clients that do read it. Which names
+// resolve to it, and where, is documented once in
+// docs/internal/environment/ENV_REFERENCE.md; do not restate that mapping here.
 
 type EnvVar = (typeof REQUIRED_ENV_VARS)[number];
 

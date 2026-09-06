@@ -14,7 +14,7 @@ describe('ChatPushWorkerService', () => {
   let service: ChatPushWorkerService;
   let notifyUser: jest.Mock;
   let findByChapter: jest.Mock;
-  let findForUser: jest.Mock;
+  let findForUsers: jest.Mock;
   let getEffectivePermissions: jest.Mock;
 
   const CHANNEL = {
@@ -37,7 +37,7 @@ describe('ChatPushWorkerService', () => {
   beforeEach(async () => {
     notifyUser = jest.fn().mockResolvedValue(undefined);
     findByChapter = jest.fn();
-    findForUser = jest.fn().mockResolvedValue([]);
+    findForUsers = jest.fn().mockResolvedValue(new Map());
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
 
     const mod = await Test.createTestingModule({
@@ -58,7 +58,7 @@ describe('ChatPushWorkerService', () => {
         },
         {
           provide: ChatNotificationPreferenceRepository,
-          useValue: { findForUser },
+          useValue: { findForUsers },
         },
         {
           provide: RbacService,
@@ -72,6 +72,45 @@ describe('ChatPushWorkerService', () => {
 
   function setMembers(userIds: string[]) {
     findByChapter.mockResolvedValue(userIds.map((id) => ({ user_id: id })));
+  }
+
+  /**
+   * Answer the preference read from the ids it was actually asked about.
+   *
+   * A `mockResolvedValue(new Map([['a', [pref]]]))` answers for `'a'` no matter
+   * who the worker asked about, so a regression to the wrong audience — the
+   * sender's id, an empty array — leaves every mute test green.
+   * `docs/guides/testing.md` names that static form as the hazard that replaced
+   * the old per-user stub's; this is the `chat-push-worker.realtime.spec.ts`
+   * `setPrefs` shape, for the same reason.
+   *
+   * **Only for the workers built by the `beforeEach` module.** The nested
+   * `channel cache eviction race (#988)` block compiles its own module with its
+   * own `findForUsers` stub, which this helper does not touch — calling it from
+   * there would configure a mock that worker never consults, and the test would
+   * pass because no preference was read at all. That is the same "green for the
+   * wrong reason" failure this helper exists to remove, so it is worth the two
+   * lines to say it here rather than rediscover it.
+   *
+   * It does **not** discriminate `candidateIds` from `recipientIds`. Both tests
+   * using it run a roster where every candidate can read the channel, so the
+   * two arrays are equal and a swap is invisible — catching that needs a
+   * fixture with a member who cannot read the channel, which is
+   * `filterCanReadChannel`'s own concern rather than this helper's.
+   *
+   * A user with no rows is **absent** from the map rather than present with an
+   * empty array, which is what pins the call site's `?? []` instead of assuming
+   * it.
+   */
+  function setPrefs(byUser: Record<string, ChatNotificationPreferenceRow[]>) {
+    findForUsers.mockImplementation(async (userIds: string[]) => {
+      const map = new Map<string, ChatNotificationPreferenceRow[]>();
+      for (const userId of userIds) {
+        const rows = byUser[userId];
+        if (rows?.length) map.set(userId, rows);
+      }
+      return map;
+    });
   }
 
   it('does not push the sender on their own message', async () => {
@@ -199,7 +238,7 @@ describe('ChatPushWorkerService', () => {
       scope_kind: null,
       level: 'off',
     };
-    findForUser.mockResolvedValue([pref]);
+    setPrefs({ a: [pref] });
     await service.handleMessage({
       id: 'm1',
       channel_id: ANNOUNCEMENT_CHANNEL.id,
@@ -209,6 +248,37 @@ describe('ChatPushWorkerService', () => {
       created_at: '',
     });
     expect(notifyUser).toHaveBeenCalledTimes(0);
+  });
+
+  /**
+   * The point of #552: the preference lookup is made **once per message**, not
+   * once per recipient. It used to be awaited inside the recipient loop, so a
+   * 150-member channel issued ~150 queries per message on a Realtime path with
+   * no backpressure.
+   *
+   * Asserting the call count alone would pass if the worker batched but asked
+   * about the wrong people, so this also pins the argument: every recipient,
+   * and the sender excluded.
+   */
+  it('reads preferences once per message regardless of recipient count', async () => {
+    service.__setChannelForTest(CHANNEL);
+    const recipients = Array.from({ length: 150 }, (_, i) => `user-${i}`);
+    setMembers(['sender', ...recipients]);
+
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: CHANNEL.id,
+      sender_id: 'sender',
+      content: 'hello',
+      kind: 'text',
+      created_at: '',
+    });
+
+    expect(findForUsers).toHaveBeenCalledTimes(1);
+    const [askedFor, chapterId] = findForUsers.mock.calls[0];
+    expect([...askedFor].sort()).toEqual([...recipients].sort());
+    expect(askedFor).not.toContain('sender');
+    expect(chapterId).toBe('chap-1');
   });
 
   it('pushes a per-channel off recipient when they are @mentioned (mute override)', async () => {
@@ -222,7 +292,7 @@ describe('ChatPushWorkerService', () => {
       scope_kind: null,
       level: 'off',
     };
-    findForUser.mockResolvedValue([pref]);
+    setPrefs({ a: [pref] });
     // `mentions` is a `users.id[]` column on `chat_messages`, resolved by the
     // API at send time (C1 of #937).
     //
@@ -240,6 +310,19 @@ describe('ChatPushWorkerService', () => {
       mentions: ['a'],
     };
     await service.handleMessage(row);
+    // The mute has to actually be IN PLAY for this to test an override, and
+    // asserting the ARGUMENT is not enough to establish that — the worker can
+    // ask about `'a'` and be handed nothing back.
+    //
+    // Without this, the test passes with the preference never delivered: `'a'`
+    // falls to the channel default for a `text` message, the mention fires,
+    // and `notifyUser` is called exactly once — the same assertions below,
+    // reached with no mute to override. So assert what the worker was
+    // RETURNED. A future "mentions override mutes anyway, skip the read"
+    // optimisation is exactly what this catches.
+    await expect(findForUsers.mock.results[0]?.value).resolves.toEqual(
+      new Map([['a', [pref]]]),
+    );
     expect(notifyUser).toHaveBeenCalledTimes(1);
     expect(notifyUser).toHaveBeenCalledWith('a', 'chap-1', expect.any(Object));
   });
@@ -302,7 +385,6 @@ describe('ChatPushWorkerService', () => {
       required_permissions: null,
     });
     setMembers(['alice', 'bob', 'carol']);
-    findForUser.mockResolvedValue([]);
 
     await service.handleMessage({
       id: 'm1',
@@ -460,7 +542,7 @@ describe('ChatPushWorkerService', () => {
           },
           {
             provide: ChatNotificationPreferenceRepository,
-            useValue: { findForUser: jest.fn().mockResolvedValue([]) },
+            useValue: { findForUsers: jest.fn().mockResolvedValue(new Map()) },
           },
           {
             provide: RbacService,
