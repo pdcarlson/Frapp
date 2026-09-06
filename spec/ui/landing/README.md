@@ -19,7 +19,7 @@ Source of truth: [`apps/landing/app/page.tsx`](../../../apps/landing/app/page.ts
 | 7 | Pricing (`#pricing`) | **One** card: "Simple chapter pricing", **$149 / per chapter / month**, five bullets (unlimited members and officers; chat, events, points, study tracking, billing; role-based permissions and audit history; reports and exports; priority implementation support), CTA "Start free trial". Beside it, four always-open FAQ cards — not an accordion. No free tier and no second tier render |
 | 8 | Testimonials | H2 "Built for real chapter operations.", disclaimer "Composite feedback—illustrative of officer workflows; not attributed to verified customers until published as such.", three quote cards with name / role / chapter |
 | 9 | Final CTA | Full-bleed navy band, H2 "Ready to run your chapter with clarity, speed, and accountability?", sub paragraph, CTA "Get Started" |
-| 10 | Footer | Four columns — Product (Features, Pricing, Get Started), Resources (Documentation → the GitHub `docs/guides` tree in a new tab, Log In), Legal (Terms of Service, Privacy Policy, FERPA Notice), Contact (`mailto:team@frapp.live`) — over a copyright line |
+| 10 | Footer | Four columns — Product (Features, Pricing, Get Started), Resources (Documentation → the GitHub `docs/guides` tree in a new tab, Log In), Legal (Terms of Service, Privacy Policy, FERPA Notice), Contact (Support → `/support`, `mailto:team@frapp.live`) — over a copyright line |
 
 Two as-built quirks the table would otherwise hide:
 
@@ -28,7 +28,7 @@ Two as-built quirks the table would otherwise hide:
 
 Entrance motion is opt-out throughout: every animated block pairs `motion-safe:animate-fade-up` with `motion-reduce:animate-none`, using the `fade-up` keyframes from the shared preset ([`packages/theme/src/tailwind.config.ts`](../../../packages/theme/src/tailwind.config.ts)).
 
-**Legal routes:** `/terms` (Terms of Service), `/privacy` (Privacy Policy), and `/ferpa` (FERPA Notice) all render through one prose layout, [`LegalDocument`](../../../apps/landing/app/components/legal-document.tsx). That layout has its own narrower header — lockup plus Terms / Privacy / FERPA links — and **no footer and no marketing nav**; it does not reuse the main page's header or footer. [`apps/landing/app/sitemap.ts`](../../../apps/landing/app/sitemap.ts) lists these three alongside `/` — the site's complete public route set.
+**Legal routes:** `/terms` (Terms of Service), `/privacy` (Privacy Policy), `/ferpa` (FERPA Notice) and — since 2026-09-06, because both app stores require a public support URL — `/support` all render through one prose layout, [`LegalDocument`](../../../apps/landing/app/components/legal-document.tsx). That layout has its own narrower header — lockup plus Terms / Privacy / FERPA / Support links — and **no footer and no marketing nav**; it does not reuse the main page's header or footer. [`apps/landing/app/sitemap.ts`](../../../apps/landing/app/sitemap.ts) lists these four alongside `/` — the site's complete public route set.
 
 ## Route facts
 

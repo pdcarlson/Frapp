@@ -26,6 +26,7 @@ export function LegalDocument({
             <Link href="/terms">Terms</Link>
             <Link href="/privacy">Privacy</Link>
             <Link href="/ferpa">FERPA</Link>
+            <Link href="/support">Support</Link>
           </div>
         </div>
       </header>

@@ -322,10 +322,16 @@ either is missing `getSupabaseClient()` returns `null` instead of throwing, so
 is unavailable in that state and the sign-in screen says so.
 
 > One mobile credential lives **outside Infisical entirely**: `eas submit` (Android)
-> reads a Google Play **service-account key** from `apps/mobile/play-service-account.json`
-> (`eas.json` → `submit.production.android.serviceAccountKeyPath`). Keep it on the
-> machine running `eas submit`; it is gitignored and must never be committed. No such
-> key exists yet — it becomes real when Play submission is set up (#938).
+> needs a Google Play **service-account key**. Since 2026-09-06 `eas.json` names no
+> local path for it (`submit.production.android` carries only `track`): upload the key
+> once to the EAS project's credentials (expo.dev → project → Credentials → Android →
+> Google Service Account) so no machine holds it, or pass `--key <path>` to a one-off
+> `eas submit`. `apps/mobile/play-service-account.json` stays gitignored in case a
+> local copy is ever used; it must never be committed. No such key exists yet — it
+> becomes real when Play submission is set up (#938). The iOS submit identifiers
+> (`appleId`, `ascAppId`, `appleTeamId`) are likewise not in `eas.json` any more —
+> `eas submit` reads them from the logged-in Apple account or an App Store Connect API
+> key held in EAS credentials, so the file carries no placeholders.
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of
