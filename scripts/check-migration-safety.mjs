@@ -555,11 +555,13 @@ function validateLedgerManifest() {
  * rollback recipe and nothing else passes while the promotion log never learns
  * the migration exists. Measured over the last 400 commits: nineteen migration
  * commits touched the rollback playbook alone and two the promotion runbook
- * alone, which is how the promotion log came to hold 35 entries against 70
- * migrations on disk (66 of 70 have a rollback recipe; only 33 have both). The
- * most recent migration on `main` exhibits it exactly —
- * `20260905010000_discord_import_archive_quota.sql` has a rollback recipe and
- * no promotion entry.
+ * alone, which is how the promotion log fell behind: when this gate landed it
+ * held 35 entries against 70 migrations on disk (66 with a rollback recipe,
+ * only 33 with both). Those counts are a dated measurement, not a live figure —
+ * the tree grows, so re-derive before quoting them. The migration that motivated
+ * the gate is a standing example: at the time it was the newest on `main`, and
+ * `20260905010000_discord_import_archive_quota.sql` had a rollback recipe and no
+ * promotion entry — which is still true of it today.
  *
  * Whole-tree rather than diff-scoped, and unconditional like the manifest check
  * above, for the same reason: the PR that breaks the ratchet is often not a

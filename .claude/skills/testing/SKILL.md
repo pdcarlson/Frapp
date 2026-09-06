@@ -195,9 +195,17 @@ on every run — including the bare push invocation, not just PRs. Coverage is m
 Migrations predating the gate are grandfathered in `UNLEDGERED` in
 [`scripts/check-migration-safety.mjs`](../../../scripts/check-migration-safety.mjs), which is
 **shrink-only**: `RATCHET_VERSION_CEILING` rejects any entry newer than the gate, so a new migration
-must carry a real entry in both docs rather than an allowlist line. Missing an entry in either doc
-fails ledger coverage with exit **1**. Adding a post-ceiling migration to `UNLEDGERED` instead exits
-**2** ("UNLEDGERED grew").
+must carry a real entry in both docs rather than an allowlist line.
+
+**Exit 1 is `ledger coverage`, and a missing entry is only one of its four cases.** The others are an
+allowlist line for a migration that now *has* an entry (`covered`), an allowlist line for a migration
+no longer on disk (`absent`), and a rollback entry naming a migration that no longer exists
+(`orphan`) — the last three are fixed by editing `UNLEDGERED` or the runbook, not by writing a new
+entry. Read the failure, which names the file and the remedy, rather than assuming you owe an entry.
+
+**Exit 2 is the gate refusing to run at all**, and never your change: a renamed runbook that
+`MIGRATION_DOCS` no longer resolves, a declared doc with no entry shape, a declared ledger that
+cannot be read, or a post-ceiling migration added to `UNLEDGERED` (`UNLEDGERED grew`).
 
 ---
 

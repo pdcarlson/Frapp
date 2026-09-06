@@ -12,7 +12,14 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 
 import {
   LEDGER_ENTRY_PATTERNS,
@@ -29,8 +36,22 @@ import {
 const PROMOTION = MIGRATION_DOCS[0];
 const ROLLBACK = MIGRATION_DOCS[1];
 
+// Two tests below mutate the REAL worktree — the gate resolves its roots from
+// its own location, so there is no temp tree to point it at. A `finally` covers
+// a thrown assertion; it does NOT cover an interrupted run, and an interrupted
+// run leaves DB_ROLLBACK_PLAYBOOK.md renamed or a probe migration on disk, so
+// every later `check:migration-safety` in that checkout fails on state no author
+// created.
+//
+// `exit` alone is not enough for that: Node does not emit it when a signal
+// terminates the process, which is the likely interruption here (Ctrl-C during
+// the ~80ms the test blocks in spawnSync). Verified — a script that registers an
+// `exit` restore and then receives SIGINT dies at 130 with the file still moved.
+// So sweep on the signals too, then re-raise so the exit code still reports the
+// signal rather than masking it as a clean exit.
 const exitCleanups = new Set();
-process.once("exit", () => {
+
+function sweepCleanups() {
   for (const cleanup of exitCleanups) {
     try {
       cleanup();
@@ -38,7 +59,18 @@ process.once("exit", () => {
       // Best-effort only: preserve the original test result during process exit.
     }
   }
-});
+  exitCleanups.clear();
+}
+
+process.once("exit", sweepCleanups);
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  // `once` removes this listener before the re-raise, so the second delivery
+  // hits Node's default handler and terminates with the conventional code.
+  process.once(signal, () => {
+    sweepCleanups();
+    process.kill(process.pid, signal);
+  });
+}
 
 // ── The base contract ───────────────────────────────────────────────────────
 
@@ -446,7 +478,10 @@ test("the shipped gate exits 2, not 1, when a declared ledger cannot be read", (
   // a raw ENOENT at exit 1, blaming a blameless author.
   const ledger = join(REPO_ROOT, MIGRATION_DOCS[1]);
   const moved = `${ledger}.moved`;
-  const restoreLedger = () => renameSync(moved, ledger);
+  // Idempotent: a restore that threw stays registered, so the sweep re-runs it.
+  const restoreLedger = () => {
+    if (existsSync(moved)) renameSync(moved, ledger);
+  };
   exitCleanups.add(restoreLedger);
   renameSync(ledger, moved);
   try {

@@ -103,9 +103,9 @@ The workflow holds the `db-migrate-production` concurrency group with
 > The hand-applied `20260228000000_enable_rls_on_remaining_tables` that used to
 > block `supabase db push` outright is gone from the history (#832).
 >
-> **⚠️ Correction 2026-09-05 — the "nothing pending" half is superseded.** The
+> **⚠️ Correction 2026-09-06 — the "nothing pending" half is superseded.** The
 > **54** above is a real Management API read and is left as recorded, but `main`
-> now carries **70** migrations, newest `20260905010000`. So the applied set no
+> now carries **73** migrations, newest `20260906120000`. So the applied set no
 > longer matches that historical snapshot; current pending status for either
 > project is unverified. **The applied counts have not been re-read** — this
 > correction is derived from the repository alone, which is enough to supersede
