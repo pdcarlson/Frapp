@@ -410,8 +410,22 @@ class ChatRealtimeManager {
     if (!this.ctx) return;
     const { supabase } = this.ctx;
 
+    // `private: true` since #1552: the join, every `track()` and every typing
+    // `send()` are authorised by the `chat:channel:` arms of
+    // `realtime_messages_scoped_select` / `_insert` on `realtime.messages`
+    // (migration 20260906203000, predicate `can_read_chat_channel`). Private
+    // and public are separate rooms on the server, so the push worker's
+    // `ensurePresenceChannel` carries the identical config — a worker left
+    // public would see an empty roster and send every push. Pinned byte-for-
+    // byte by `presence-contract.spec.ts`. `postgres_changes` bound below still
+    // deliver on a private channel; verified against local Realtime before the
+    // flip.
     const channel = supabase.channel(topic, {
-      config: { broadcast: { self: false }, presence: { key: "" } },
+      config: {
+        private: true,
+        broadcast: { self: false },
+        presence: { key: "" },
+      },
     });
 
     channel.on(

@@ -339,6 +339,13 @@ export function useChapterPresence({
         return realtimeChannel;
       },
       {
+        // Private since #1552: the join and every `track()` are
+        // authorised by `realtime_messages_scoped_select` / `_insert` on
+        // `realtime.messages` (migration 20260906203000), behind the chapter-
+        // membership predicate. Without those branches a private topic joins,
+        // reports SUBSCRIBED and delivers nothing — which is why the flag and
+        // the migration shipped together and this comment names the file.
+        private: true,
         // The only moment a publish is both possible and meaningful. The
         // channel is minted on a microtask, so the effect body cannot reach it;
         // and `configure` runs before the join, where a push throws. This fires
