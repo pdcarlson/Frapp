@@ -3628,7 +3628,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdjustPointsResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -8885,6 +8892,65 @@
           "amount",
           "category",
           "reason"
+        ]
+      },
+      "AdjustPointsResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "FINE"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Adjustment metadata — `adjusted_by`, `reason`, and `flagged` when the amount met the chapter anomaly threshold."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The idempotency key this row was written under, echoed back. `null` for dashboard adjustments, which send no key and are not deduplicated."
+          },
+          "card_posted": {
+            "type": "boolean",
+            "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the ledger row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the adjustment failed. Absent means the server reported no outcome (a dashboard adjustment, or a deduplicated replay) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "user_id",
+          "amount",
+          "category",
+          "description",
+          "metadata",
+          "created_at"
         ]
       },
       "CreateCheckoutDto": {

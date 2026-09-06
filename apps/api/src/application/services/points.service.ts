@@ -38,6 +38,21 @@ import { resolveSemesterArchiveRangeOrThrow } from './resolve-semester-archive-r
 // the canonical definition now lives in domain/utils/points-window.
 export type { PointsWindow };
 
+/**
+ * The ledger row, plus whether the chat card that accompanies it was posted.
+ *
+ * `card_posted` is present ONLY when this request actually attempted a card —
+ * chat context supplied (`channelId` + `clientMessageId`) **and** not a replay,
+ * which fires no side effect at all (see {@link PointsService.completeReplay}).
+ * A dashboard adjustment's response shape is therefore unchanged. The card stays
+ * best-effort — a failed post never rolls the ledger back — but the caller now
+ * learns it failed instead of inferring success from the 2xx and leaving its
+ * optimistic placeholder up forever (#544).
+ */
+export type AdjustPointsResult = PointTransaction & {
+  card_posted?: boolean;
+};
+
 interface AdjustPointsInput {
   chapterId: string;
   targetUserId: string;
@@ -311,7 +326,7 @@ export class PointsService {
 
   private static readonly RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
-  async adjustPoints(input: AdjustPointsInput): Promise<PointTransaction> {
+  async adjustPoints(input: AdjustPointsInput): Promise<AdjustPointsResult> {
     if (!input.reason || input.reason.trim().length === 0) {
       throw new BadRequestException('Reason is required for point adjustments');
     }
@@ -421,9 +436,20 @@ export class PointsService {
       );
     } catch {}
 
-    await this.tryPostPointsCard(input, txn);
+    // The card is best-effort and the ledger row is the source of truth, so a
+    // failed post is never rolled back — but the outcome is now REPORTED rather
+    // than swallowed. The client renders an optimistic `loading` placeholder
+    // keyed on `clientMessageId` and waits for the Realtime echo of this card to
+    // reconcile it; when the post fails that echo never arrives, so without an
+    // explicit signal the placeholder is permanent and the officer cannot tell a
+    // committed grant from a lost one (#544).
+    //
+    // `undefined` means no card was attempted (a dashboard adjustment), which is
+    // reported as an ABSENT field rather than a `false` that would claim a card
+    // failed when none was ever due.
+    const cardPosted = await this.tryPostPointsCard(input, txn);
 
-    return txn;
+    return cardPosted === undefined ? txn : { ...txn, card_posted: cardPosted };
   }
 
   private static isFine(input: AdjustPointsInput): boolean {
@@ -490,6 +516,18 @@ export class PointsService {
    * Healing a lost card needs the origin channel recorded on the transaction;
    * until then the ledger row is the durable record and the card is not. See
    * #1734.
+   *
+   * `card_posted` is therefore **absent** on this path, never `false`: no card
+   * was attempted, and the row records nothing about whether the original
+   * attempt landed. Under the field's contract (#544) an absent value means the
+   * server reported no outcome, which is exactly the truth here — so the caller
+   * leaves its placeholder for the original card's echo rather than tearing
+   * down one that may still reconcile.
+   *
+   * The caller's half of that is only correct while the original card DID post.
+   * When it did not, no echo is coming and the placeholder strands — which this
+   * route cannot detect for the reason above, and #1734 is what fixes. Today no
+   * client replays (#1733), so the case is unreachable rather than handled.
    */
   private completeReplay(existing: PointTransaction): PointTransaction {
     return existing;
@@ -500,15 +538,19 @@ export class PointsService {
    * The card is server-originated (a client cannot forge `kind:"points"` — see
    * ChatService.SERVER_ONLY_KINDS) and best-effort: the ledger row is the
    * source of truth, so a failed post is logged and never rolls the txn back.
+   *
+   * Returns whether the card posted, or `undefined` when no card was due
+   * (no chat context) — the three-way distinction `card_posted` publishes.
    */
   private async tryPostPointsCard(
     input: AdjustPointsInput,
     txn: PointTransaction,
-  ): Promise<void> {
-    if (!input.channelId || !input.clientMessageId) return;
+  ): Promise<boolean | undefined> {
+    if (!input.channelId || !input.clientMessageId) return undefined;
 
     try {
       await this.postPointsCard(input, txn, PointsService.isFine(input));
+      return true;
     } catch (error) {
       this.logger.warn('Failed to post points card to chat', {
         transactionId: txn.id,
@@ -516,6 +558,7 @@ export class PointsService {
         chapterId: input.chapterId,
         error: error instanceof Error ? error.message : String(error),
       });
+      return false;
     }
   }
 

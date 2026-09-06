@@ -43,8 +43,19 @@ vi.mock("@repo/hooks", () => ({
 }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
-import { Composer, composerPlaceholder } from "./composer";
+const { captureException } = vi.hoisted(() => ({
+  captureException: vi.fn(),
+}));
+vi.mock("@sentry/nextjs", () => ({ captureException }));
+
+import {
+  Composer,
+  composerPlaceholder,
+  notifyDispatchOutcome,
+  runDispatch,
+} from "./composer";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
+import type { SlashCommand } from "@repo/chat-integrations";
 
 type ComposerProps = Parameters<typeof Composer>[0];
 
@@ -334,5 +345,138 @@ describe("Composer slash refusals cover the palette path too (#489)", () => {
     await user.click(await screen.findByRole("option", { name: /poll/i }));
 
     expect(onSlashDispatch).toHaveBeenCalled();
+  });
+});
+
+/**
+ * #544 — a heavy slash command has THREE outcomes, not two. A committed write
+ * whose chat card failed to post must not be styled as a failure: the officer's
+ * response to a destructive "/points failed" toast is to run the command again,
+ * and that re-typed command mints a FRESH `client_message_id`, so the server's
+ * idempotency index (#1719) does not dedupe it — it writes a second ledger row.
+ */
+describe("notifyDispatchOutcome (#544)", () => {
+  const cmd = "points";
+
+  it("toasts destructively when the command failed", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, { ok: false, error: "Nope" });
+
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "/points failed",
+        description: "Nope",
+        variant: "destructive",
+      }),
+    );
+  });
+
+  it("falls back to generic copy when a failure carries no message", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, { ok: false });
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: "Couldn't run that command.",
+        variant: "destructive",
+      }),
+    );
+  });
+
+  it("toasts a partial success NON-destructively, so it never reads as a failure", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, {
+      ok: true,
+      warning: "Points were recorded, but the chat card couldn't be posted.",
+    });
+
+    expect(toast).toHaveBeenCalledTimes(1);
+    const arg = toast.mock.calls[0]?.[0] as {
+      title: string;
+      description: string;
+      variant?: string;
+    };
+    expect(arg.title).toBe("/points partly succeeded");
+    expect(arg.description).toMatch(/recorded/i);
+    // The load-bearing assertion: anything but absent here turns a committed
+    // grant into something the officer will retry.
+    expect(arg.variant).toBeUndefined();
+  });
+
+  // The dispatcher removes the placeholder before this toast fires, so the
+  // toast is the only surviving evidence that the grant committed. At the
+  // Radix default it auto-dismisses after 5s and the channel goes blank —
+  // indistinguishable from "nothing happened", which is the state that gets
+  // the command re-run.
+  it("makes the partial-success toast sticky, not a 5-second one", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, { ok: true, warning: "Points recorded." });
+
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ duration: Infinity }),
+    );
+  });
+
+  // The mirror: a plain failure committed nothing, so it must NOT pin an
+  // undismissable toast to the corner of the screen.
+  it("leaves the failure toast on the default duration", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, { ok: false, error: "Nope" });
+
+    expect(toast.mock.calls[0]?.[0]).not.toHaveProperty("duration");
+  });
+
+  it("stays silent on an unremarkable success", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, { ok: true });
+
+    expect(toast).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #1718 — `dispatchSlashCommand` claims to be total but `/poll` and `/announce`
+ * can reject: `sendMessage`'s `clearDraft` and outbox `enqueue` sit outside its
+ * own try block. Both call sites here clear the composer (and the persisted
+ * draft) before dispatching, so an unhandled rejection cost the user their text
+ * AND every scrap of feedback.
+ */
+describe("runDispatch (#1718)", () => {
+  const command = { name: "poll" } as SlashCommand;
+
+  it("converts a rejection into a failure outcome instead of propagating", async () => {
+    const dispatch = vi.fn().mockRejectedValue(new Error("QuotaExceededError"));
+
+    await expect(runDispatch(dispatch, command, "args")).resolves.toEqual({
+      ok: false,
+    });
+  });
+
+  // Catching these rejections took them away from Sentry's unhandled-rejection
+  // handler, which was the only place they were recorded. Reporting is what
+  // keeps #1718's failure class visible in production rather than trading a
+  // silent user experience for a silent monitoring one.
+  it("reports the swallowed rejection to Sentry, tagged with the command", async () => {
+    const boom = new Error("QuotaExceededError");
+    const dispatch = vi.fn().mockRejectedValue(boom);
+
+    await runDispatch(dispatch, command, "args");
+
+    // The tag is load-bearing: catching these moves them off Sentry's
+    // `is:unhandled` filter, so it is what keeps the class findable.
+    expect(captureException).toHaveBeenCalledWith(boom, {
+      tags: { slash_command: "poll" },
+    });
+  });
+
+  it("passes a resolved outcome through untouched, warning included", async () => {
+    const result = { ok: true, warning: "partial" };
+    const dispatch = vi.fn().mockResolvedValue(result);
+
+    await expect(runDispatch(dispatch, command, "args")).resolves.toEqual(
+      result,
+    );
+    expect(dispatch).toHaveBeenCalledWith(command, "args");
   });
 });

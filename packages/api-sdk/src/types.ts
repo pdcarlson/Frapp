@@ -3473,6 +3473,31 @@ export interface components {
             /** @description Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud. */
             client_message_id?: string;
         };
+        AdjustPointsResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            user_id: string;
+            amount: number;
+            /** @enum {string} */
+            category: "MANUAL" | "FINE";
+            description: string;
+            /** @description Adjustment metadata — `adjusted_by`, `reason`, and `flagged` when the amount met the chapter anomaly threshold. */
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: uuid
+             * @description The idempotency key this row was written under, echoed back. `null` for dashboard adjustments, which send no key and are not deduplicated.
+             */
+            client_message_id?: string | null;
+            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the ledger row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the adjustment failed. Absent means the server reported no outcome (a dashboard adjustment, or a deduplicated replay) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
+            card_posted?: boolean;
+        };
         CreateCheckoutDto: {
             /** @description Email for the checkout session */
             customer_email: string;
@@ -6262,7 +6287,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AdjustPointsResponseDto"];
+                };
             };
         };
     };
