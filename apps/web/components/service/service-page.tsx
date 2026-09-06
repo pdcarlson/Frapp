@@ -42,6 +42,7 @@ import { NestedEmpty } from "@/components/shared/nested-states";
 import { ServiceGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   ErrorState,
+  anyReadUncached,
   LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
@@ -389,13 +390,23 @@ export function ServiceHoursPage() {
    * This screen had none, so a disconnected member sat on the loading
    * skeleton until the query gave up. Copy is writing.md §7's row.
    */
-  if (isOffline) {
+  /*
+   * `membersQuery` is in this gate because this screen, unlike the points
+   * board and the task board, has no sanctioned fallback label: it renders
+   * `memberNameById.get(entry.user_id) ?? entry.user_id`, so an uncached
+   * roster turns the approval queue into a list of raw UUIDs. The viewer read
+   * is deliberately *not* here — an unresolved viewer already says so in
+   * words on the Approve control ("Checking who you are…"), so that half
+   * degrades honestly on its own.
+   */
+  if (isOffline && anyReadUncached(entriesQuery, membersQuery)) {
     return (
       <OfflineState
         title="Service hours unavailable offline"
         description="Reconnect to log hours and review the approval queue."
         onRetry={() => {
           void entriesQuery.refetch();
+          void membersQuery.refetch();
         }}
       />
     );

@@ -30,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   EmptyState,
   ErrorState,
+  anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -284,7 +285,7 @@ export function EventsPage() {
     }
   }
 
-  if (isOffline) {
+  if (isOffline && anyReadUncached(eventsQuery)) {
     return (
       <OfflineState
         title="Events workspace unavailable offline"

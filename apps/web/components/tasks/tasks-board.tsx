@@ -49,6 +49,7 @@ import { TasksGlyph } from "@/components/events/chapter-ops-glyphs";
 import {
   EmptyState,
   ErrorState,
+  anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -367,13 +368,23 @@ export function TasksBoard() {
    * This screen had none, so a disconnected member sat on the loading
    * skeleton until the query gave up. Copy is writing.md §7's row.
    */
-  if (isOffline) {
+  /*
+   * `currentUser` is in this gate because the board deliberately has no early
+   * return for it: the Confirm gate below fails closed on an unresolved
+   * viewer, so an uncached `/v1/users/me` hides Confirm on *every* row with no
+   * notice saying why (the cost that comment names, tracked as #1346).
+   * Offline that read is paused, not errored, so nothing else would catch it.
+   * `membersQuery` is here for the same reason its assignee labels need it.
+   */
+  if (isOffline && anyReadUncached(tasksQuery, membersQuery, currentUser)) {
     return (
       <OfflineState
         title="Tasks unavailable offline"
         description="Reconnect to load the chapter board and move tasks through it."
         onRetry={() => {
           void tasksQuery.refetch();
+          void membersQuery.refetch();
+          void currentUser.refetch();
         }}
       />
     );

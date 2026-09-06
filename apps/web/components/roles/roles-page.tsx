@@ -37,6 +37,7 @@ import {
 import {
   EmptyState,
   ErrorState,
+  anyReadUncached,
   LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
@@ -416,14 +417,12 @@ export function RolesAndPermissionsPage() {
     disabled query, and inside `<Can>` a chapter is always active, which is the
     only thing these two are gated on.
   */
-  const rolesReady = rolesQuery.data !== undefined;
-  const catalogReady = catalogQuery.data !== undefined;
   const paused =
     (rolesQuery.isPending && rolesQuery.fetchStatus === "paused") ||
     (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
 
   let body: ReactNode;
-  if (isOffline && !(rolesReady && catalogReady)) {
+  if (isOffline && anyReadUncached(rolesQuery, catalogQuery)) {
     body = (
       <OfflineState
         title="Roles unavailable offline"

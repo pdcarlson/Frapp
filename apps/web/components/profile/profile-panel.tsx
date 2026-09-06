@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   ErrorState,
+  anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -154,7 +155,7 @@ export function ProfilePanel() {
    */
   const userPaused =
     userQuery.isPending && userQuery.fetchStatus === "paused";
-  if (isOffline && userQuery.data === undefined) {
+  if (isOffline && anyReadUncached(userQuery)) {
     return (
       <OfflineState
         title="Your profile is unavailable offline"
@@ -166,7 +167,7 @@ export function ProfilePanel() {
   if (userQuery.isLoading || userPaused) {
     return <LoadingState message="Loading your profile..." />;
   }
-  if (userQuery.isError && userQuery.data === undefined) {
+  if (userQuery.isError && anyReadUncached(userQuery)) {
     return (
       <ErrorState
         title="Couldn't load your profile"
@@ -347,7 +348,7 @@ export function ProfilePanel() {
   const settingsPaused =
     settingsQuery.isPending && settingsQuery.fetchStatus === "paused";
   let preferencesState: React.ReactNode = null;
-  if (isOffline && settingsQuery.data === undefined) {
+  if (isOffline && anyReadUncached(settingsQuery)) {
     preferencesState = (
       <NestedOffline
         title="Quiet hours unavailable offline"
@@ -359,7 +360,7 @@ export function ProfilePanel() {
     preferencesState = (
       <NestedLoading message="Loading your preferences..." lines={3} />
     );
-  } else if (settingsQuery.isError && settingsQuery.data === undefined) {
+  } else if (settingsQuery.isError && anyReadUncached(settingsQuery)) {
     preferencesState = (
       <NestedError
         title="Couldn't load your preferences"

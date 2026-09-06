@@ -33,6 +33,7 @@ import { studySessionStatusKind } from "@/components/study/study-status";
 import { NestedEmpty } from "@/components/shared/nested-states";
 import {
   ErrorState,
+  anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -431,13 +432,25 @@ export function StudyPage() {
    * button; `stopSession`'s `finally` clears the session locally even when the
    * server refuses, so ending it offline works.
    */
-  if (isOffline && !activeSession) {
+  /*
+   * `!activeSession` reads like a cache test and is not one — `activeSession`
+   * is local `useState` (see its declaration above), so on its own this
+   * branch blanked the screen for every offline member without a running
+   * timer, cached zones or not. The cache test is `anyReadUncached`; the
+   * running-session carve-out documented above is unchanged.
+   */
+  if (
+    isOffline &&
+    !activeSession &&
+    anyReadUncached(geofencesQuery, sessionsQuery)
+  ) {
     return (
       <OfflineState
         title="Study hours unavailable offline"
         description="Reconnect to start a session — tracking needs a live location check."
         onRetry={() => {
           void geofencesQuery.refetch();
+          void sessionsQuery.refetch();
         }}
       />
     );

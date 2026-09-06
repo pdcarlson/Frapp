@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   EmptyState,
   ErrorState,
+  anyReadUncached,
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
@@ -545,7 +546,7 @@ function CustomView({
     customRolesQuery.isPending && customRolesQuery.fetchStatus === "paused";
 
   let body: ReactNode;
-  if (isOffline && customRolesQuery.data === undefined) {
+  if (isOffline && anyReadUncached(customRolesQuery)) {
     body = (
       <OfflineState
         title="Custom roles unavailable offline"

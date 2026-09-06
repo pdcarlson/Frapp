@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { ErrorState, anyReadUncached, LoadingState, OfflineState } from "@/components/shared/async-states";
 import { NestedEmpty } from "@/components/shared/nested-states";
 import { amountToneClassName } from "@/components/points/amount-tone";
 import {
@@ -248,12 +248,28 @@ export default function PointsPage() {
     );
   }
 
-  if (isOffline) {
+  /*
+   * The roster is deliberately absent from this gate, matching the reasoning
+   * on `isLoading` above: it gates nothing, feeds one column, and its
+   * unresolved label is a real permanent state for a departed member rather
+   * than a broken-looking one. Only the two reads the board and the ledger are
+   * actually made of belong here.
+   */
+  if (isOffline && anyReadUncached(leaderboardQuery, summaryQuery)) {
     return (
       <OfflineState
         title="Points ledger unavailable offline"
         description="Reconnect to refresh leaderboard standings and transaction history."
         onRetry={() => {
+          /*
+           * Both reads key on `window` and `semesterArchiveId`, and the
+           * controls that set them render *below* this card — so changing
+           * either offline swaps to a never-fetched key and this branch
+           * unmounts the only way back. Resetting to the default selection is
+           * what lets Retry reach cached rows; a paused refetch alone cannot.
+           */
+          setWindow("all");
+          setSemesterArchiveId("");
           void leaderboardQuery.refetch();
           void summaryQuery.refetch();
           // Names are refreshed alongside the reads that raised this card, so a

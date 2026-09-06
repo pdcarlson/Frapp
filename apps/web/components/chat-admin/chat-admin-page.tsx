@@ -53,6 +53,7 @@ import {
 import {
   EmptyState,
   ErrorState,
+  anyReadUncached,
   LoadingState,
   OfflineState,
   PermissionsOfflineSurface,
@@ -497,13 +498,11 @@ function ChatAdminBody() {
   // channel management for an admin who has no need to touch a ROLE_GATED
   // channel's permission list. It degrades locally instead, wherever the
   // permission checkboxes actually render.
-  const channelsReady = channelsQuery.data !== undefined;
-  const categoriesReady = categoriesQuery.data !== undefined;
   const paused =
     (channelsQuery.isPending && channelsQuery.fetchStatus === "paused") ||
     (categoriesQuery.isPending && categoriesQuery.fetchStatus === "paused");
 
-  if (isOffline && !(channelsReady && categoriesReady)) {
+  if (isOffline && anyReadUncached(channelsQuery, categoriesQuery)) {
     return (
       <OfflineState
         title="Chat Admin unavailable offline"
