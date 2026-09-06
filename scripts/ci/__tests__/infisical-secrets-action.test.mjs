@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 
 // Pins the second and third cutover of stage 4's composite-action work (#1382):
-// the Infisical preamble+injection (11 call sites across 6 workflows) and the
+// the Infisical preamble+injection (15 call sites across 6 workflows) and the
 // Supabase CLI version pin (4 sites).
 //
 // Why this file has teeth beyond "the copies stayed gone": most of the eleven
@@ -287,6 +287,16 @@ describe("Infisical call sites", () => {
       ["check-migration-drift.yml", "check-drift", "prod"],
       ["db-backup.yml", "backup-staging", "staging"],
       ["db-backup.yml", "backup-staging-storage", "staging"],
+      // The production backup jobs inject TWO environments, in this order:
+      // `staging` carries the offsite bucket (`BACKUP_S3_*` live only there),
+      // `prod` carries the source and overrides every shared name. The
+      // db-offsite-backup / storage-offsite-backup actions then assert the
+      // injected ref against .github/environments.json before linking, so a
+      // reordering here can only fail the job, never mislabel a dump (#1435).
+      ["db-backup.yml", "backup-production", "staging"],
+      ["db-backup.yml", "backup-production", "prod"],
+      ["db-backup.yml", "backup-production-storage", "staging"],
+      ["db-backup.yml", "backup-production-storage", "prod"],
       ["deploy-api.yml", "migrate-staging", "staging"],
       ["deploy-api.yml", "deploy-staging", "staging"],
       ["deploy-production.yml", "deploy", "prod"],
@@ -318,7 +328,7 @@ describe("Infisical call sites", () => {
       "the Infisical call-site roster changed. Each entry is file / job / slug; " +
         "update this list deliberately if a site legitimately moved.",
     );
-    assert.equal(actual.length, 11);
+    assert.equal(actual.length, 15);
   });
 
   it("leaves no hand-written injection or preflight anywhere", () => {
@@ -463,7 +473,13 @@ describe("supabase-cli composite action", () => {
   });
 
   it("is called at all 4 sites", () => {
-    const total = workflows.reduce((n, w) => n + countMatching(w.text, USES_SUPABASE), 0);
+    // Three in workflows; the fourth moved into the db-offsite-backup composite
+    // when db-backup.yml's dump sequence was extracted (#1435), which is why the
+    // sibling actions are counted here too — a call site that migrates into a
+    // composite is still a call site.
+    const total = [...workflows, ...otherActions]
+      .filter(({ name }) => name !== "supabase-cli")
+      .reduce((n, w) => n + countMatching(w.text, USES_SUPABASE), 0);
     assert.equal(total, 4);
   });
 

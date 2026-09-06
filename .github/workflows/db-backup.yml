@@ -1,30 +1,46 @@
 name: Nightly Backup
 
-# Offsite backup of staging: the database (#852) and Storage objects (#1290).
+# Offsite backup of BOTH deployed environments: the database (#852) and Storage
+# objects (#1290), for staging and — since 2026-09-06 — for production (#1435,
+# #1383 stage 5).
 #
-# Two jobs, because they are two genuinely different mechanisms and neither is a
-# flag on the other. `backup-staging` dumps Postgres with the Supabase CLI.
-# `backup-staging-storage` mirrors Storage objects, which a database dump cannot
-# cover -- "Database backups do not include objects you store via the Storage
-# API, as the database only includes metadata about these objects." A restore
-# needs both halves or it produces rows referencing files nobody kept.
+# Two mechanisms per environment, because they are two genuinely different things
+# and neither is a flag on the other. The `backup-*` jobs dump Postgres with the
+# Supabase CLI. The `backup-*-storage` jobs mirror Storage objects, which a
+# database dump cannot cover -- "Database backups do not include objects you store
+# via the Storage API, as the database only includes metadata about these objects."
+# A restore needs both halves or it produces rows referencing files nobody kept.
 #
 # This is not redundancy on top of a provider snapshot. The `Frapp Live` org is on
 # the Supabase FREE plan, which gets no dashboard-accessible daily backups and no
-# PITR — so until that changes, this workflow produces the only restorable backup
-# `frapp-staging` has, and `frapp-prod` has none at all (see the scope note just
-# below). Supabase's own free-tier guidance is exactly this:
+# PITR — so until that changes (#1403), this workflow produces the ONLY restorable
+# backup either project has. Supabase's own free-tier guidance is exactly this:
 # https://supabase.com/docs/guides/platform/backups
 #
-# Production is out of scope for now, but not because it is deferred: `frapp-prod`
-# is `ACTIVE_HEALTHY` and has served production traffic since `deploy-production.yml`
-# shipped (#1340). It is out of scope because naming `environment: production` on a
-# `schedule:`-triggered job would suspend every nightly run on ADR-19's required-
-# reviewer gate — a backup nobody approves in the middle of the night is not a
-# backup. #1435 records
-# that design trap; #1403 (Supabase Pro, for PITR/daily backups) and #1421 (an offsite
-# restore rehearsed at least once, still unproven even for staging) are the other two
-# open blockers. See #1383 (stage 5) for the decision this is waiting on.
+# ── Why the production jobs do NOT say `environment: production` ─────────────
+# ADR-19 put Required reviewers on the `production` GitHub environment, and that
+# gate is not deploy-only: every job naming the environment pauses on it, and an
+# unapproved scheduled run just expires — a workflow that LOOKS like coverage and
+# writes nothing. #1435 records the trap. The production jobs run under a separate
+# `production-backup` environment instead, which GitHub creates on first reference
+# with no protection rules and which must stay that way: it exists precisely so
+# that nothing here needs a human at 02:30. Its only job is to make the read-only
+# intent visible in the Actions UI and in `GET /repos/…/environments`; the deploy
+# gate on `production` is untouched.
+#
+# ── Why the production jobs inject TWO Infisical environments ────────────────
+# The source credentials (SUPABASE_PROJECT_REF, SUPABASE_DB_PASSWORD, SUPABASE_URL,
+# SUPABASE_SERVICE_ROLE_KEY) come from Infisical `prod`. The offsite destination
+# (`BACKUP_S3_*`, provisioned 2026-08-27 in #1287) lives ONLY in Infisical
+# `staging` — one bucket, one token, both environments as prefixes under it. Until
+# those four are copied into `prod`, the production jobs inject `staging` FIRST
+# (for the bucket) and `prod` SECOND, so every shared name resolves to the
+# production value. That ordering is load-bearing, and it is not the only guard:
+# each backup action asserts the injected project ref / URL against
+# `.github/environments.json` before it links, so a missing `prod` value can only
+# fail the job — never dump the staging database under a `production/` label.
+# When `BACKUP_S3_*` land in `prod`, the `staging` injection on those two jobs
+# becomes redundant and can be removed; nothing else changes.
 #
 # Restoring what this produces: docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md.
 
@@ -41,10 +57,11 @@ on:
     inputs:
       storage_rehearsal:
         description: >-
-          Run the Storage restore rehearsal instead of a plain backup: write a
-          canary object, back it up, delete it from Storage, restore it from the
-          offsite copy, and assert the bytes match. This is the drill that turns
-          a copy into a backup -- it writes and deletes only its own canary.
+          Run the Storage restore rehearsal instead of a plain backup, in BOTH
+          environments: write a canary object, back it up, delete it from Storage,
+          restore it from the offsite copy, and assert the bytes match. This is the
+          drill that turns a copy into a backup -- it writes and deletes only its
+          own canary.
         type: boolean
         default: false
 
@@ -54,10 +71,11 @@ permissions:
 concurrency:
   # Never let two dumps of the same database overlap. `cancel-in-progress: false`
   # because a half-uploaded dump that got cancelled is worse than a late one.
-  group: db-backup-staging
+  group: db-backup
   cancel-in-progress: false
 
 jobs:
+  # ── Staging ───────────────────────────────────────────────────────────────
   backup-staging:
     runs-on: ubuntu-latest
     environment: staging
@@ -74,125 +92,10 @@ jobs:
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
 
-      # Checked BEFORE the dump so an unconfigured destination fails in seconds
-      # rather than after several minutes of pg_dump. The failure is deliberate:
-      # a backup job that goes green without writing a backup anywhere is the
-      # precise illusion #852 exists to destroy.
-      - name: Check the offsite destination is configured
-        run: |
-          MISSING=""
-          [ -n "${BACKUP_S3_ENDPOINT:-}" ]          || MISSING="$MISSING BACKUP_S3_ENDPOINT"
-          [ -n "${BACKUP_S3_BUCKET:-}" ]            || MISSING="$MISSING BACKUP_S3_BUCKET"
-          [ -n "${BACKUP_S3_ACCESS_KEY_ID:-}" ]     || MISSING="$MISSING BACKUP_S3_ACCESS_KEY_ID"
-          [ -n "${BACKUP_S3_SECRET_ACCESS_KEY:-}" ] || MISSING="$MISSING BACKUP_S3_SECRET_ACCESS_KEY"
-          if [ -n "$MISSING" ]; then
-            {
-              echo "## Nightly DB backup did not run"
-              echo
-              echo "The offsite destination secrets did not reach this job. Missing:"
-              echo
-              for s in $MISSING; do echo "- \`$s\`"; done
-              echo
-              echo "These were provisioned on 2026-08-27 (#1287: Cloudflare R2 bucket +"
-              echo "bucket-scoped token) and live in Infisical \`staging\` at \`/\` — so this is"
-              echo "a **regression**, not first-time setup. Do not re-provision the bucket."
-              echo "Check that the four secrets still exist in Infisical staging and that the"
-              echo "injection step above authenticated; see"
-              echo "docs/internal/environment/SECRETS_MANAGEMENT.md and"
-              echo "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md § Backups: what exists."
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Offsite backup secrets missing from the job env (missing:$MISSING). Provisioned 2026-08-27 (#1287) — check Infisical staging, do not re-provision."
-            exit 1
-          fi
-
-      - name: Setup Supabase CLI
-        uses: ./.github/actions/supabase-cli
-
-      # `supabase link` rather than a connection string: GitHub runners are
-      # IPv4-only and Supabase direct connections are IPv6-only without the IPv4
-      # add-on, so this has to go through the session pooler — whose hostname
-      # Supabase has renamed before. Letting the CLI resolve it means a pooler
-      # rename cannot silently break the only backup this project has.
-      # SUPABASE_DB_PASSWORD is read from the environment by the CLI; it is
-      # already provisioned for staging and exercised by every migration run.
-      - name: Link to the staging project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
-
-      - name: Dump
-        id: dump
-        run: |
-          set -euo pipefail
-          LABEL="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
-          scripts/db-backup.sh --linked --out-dir "$RUNNER_TEMP/backups" --label "$LABEL"
-
-      - name: Upload offsite
-        env:
-          AWS_ACCESS_KEY_ID: ${{ env.BACKUP_S3_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ env.BACKUP_S3_SECRET_ACCESS_KEY }}
-          # `auto` is correct for Cloudflare R2 and harmless elsewhere; override
-          # with BACKUP_S3_REGION for a provider that pins a real region.
-          AWS_DEFAULT_REGION: ${{ env.BACKUP_S3_REGION || 'auto' }}
-        run: |
-          set -euo pipefail
-          LABEL="${{ steps.dump.outputs.label }}"
-          DEST="s3://$BACKUP_S3_BUCKET/staging/$LABEL/"
-          aws s3 cp "$RUNNER_TEMP/backups/$LABEL/" "$DEST" \
-            --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive --only-show-errors
-          echo "Uploaded to $DEST"
-
-          # Read it straight back. `aws s3 cp` exiting 0 proves the request was
-          # accepted, not that four objects are retrievable from the bucket you
-          # think you configured — and an unverified backup is the thing this
-          # whole issue is about.
-          COUNT="$(aws s3 ls "$DEST" --endpoint-url "$BACKUP_S3_ENDPOINT" | wc -l)"
-          if [ "$COUNT" -lt 4 ]; then
-            echo "::error::Read-back found $COUNT objects at $DEST, expected 4 (roles, schema, data, manifest)."
-            exit 1
-          fi
-          echo "Read-back verified: $COUNT objects."
-
-      - name: Prune backups past the retention window
-        env:
-          AWS_ACCESS_KEY_ID: ${{ env.BACKUP_S3_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ env.BACKUP_S3_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ env.BACKUP_S3_REGION || 'auto' }}
-        run: |
-          set -euo pipefail
-          DAYS="${BACKUP_RETENTION_DAYS:-30}"
-          CUTOFF="$(date -u -d "$DAYS days ago" +%Y-%m-%d)"
-          echo "Pruning staging/ prefixes older than $CUTOFF"
-          # Prefixes are the UTC dump timestamps db-backup.sh generates, so a
-          # lexical comparison is a chronological one — which is why the label
-          # format is fixed rather than cosmetic. Never trust object mtimes here:
-          # they record upload order, not dump order.
-          aws s3 ls "s3://$BACKUP_S3_BUCKET/staging/" \
-            --endpoint-url "$BACKUP_S3_ENDPOINT" \
-            | awk '{print $2}' | tr -d '/' \
-            | while read -r P; do
-                [ -n "$P" ] || continue
-                if [ "${P%%T*}" \< "$CUTOFF" ]; then
-                  echo "  removing $P"
-                  aws s3 rm "s3://$BACKUP_S3_BUCKET/staging/$P/" \
-                    --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive --only-show-errors
-                fi
-              done
-
-      - name: Summary
-        if: success()
-        run: |
-          {
-            echo "## Nightly DB backup"
-            echo
-            echo "- Source: \`frapp-staging\`"
-            echo "- Label: \`${{ steps.dump.outputs.label }}\`"
-            echo "- Destination: \`$BACKUP_S3_BUCKET/staging/\`"
-            echo "- Read-back verified against the bucket."
-            echo
-            echo "Covers application data only. Storage objects are backed up by the"
-            echo "\`backup-staging-storage\` job in this same workflow (#1290); a full"
-            echo "recovery needs both halves. See DB_ROLLBACK_PLAYBOOK.md."
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Dump, upload, verify and prune
+        uses: ./.github/actions/db-offsite-backup
+        with:
+          environment: staging
 
   # Storage objects. Runs independently of the dump above: a failure to back up
   # the database must not skip Storage, and vice versa -- two half-backups are
@@ -215,67 +118,78 @@ jobs:
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
 
-      # Same fail-fast posture as the dump job, and the same reason: a backup
-      # job that goes green without writing a backup anywhere is the illusion
-      # this work exists to destroy. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
-      # are checked alongside the destination because this job needs the source
-      # credentials too -- the dump job gets its source from `supabase link`.
-      - name: Check source and destination are configured
-        run: |
-          MISSING=""
-          [ -n "${SUPABASE_URL:-}" ]                || MISSING="$MISSING SUPABASE_URL"
-          [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]   || MISSING="$MISSING SUPABASE_SERVICE_ROLE_KEY"
-          [ -n "${BACKUP_S3_ENDPOINT:-}" ]          || MISSING="$MISSING BACKUP_S3_ENDPOINT"
-          [ -n "${BACKUP_S3_BUCKET:-}" ]            || MISSING="$MISSING BACKUP_S3_BUCKET"
-          [ -n "${BACKUP_S3_ACCESS_KEY_ID:-}" ]     || MISSING="$MISSING BACKUP_S3_ACCESS_KEY_ID"
-          [ -n "${BACKUP_S3_SECRET_ACCESS_KEY:-}" ] || MISSING="$MISSING BACKUP_S3_SECRET_ACCESS_KEY"
-          if [ -n "$MISSING" ]; then
-            {
-              echo "## Nightly Storage backup did not run"
-              echo
-              echo "Secrets did not reach this job. Missing:"
-              echo
-              for s in $MISSING; do echo "- \`$s\`"; done
-              echo
-              echo "All of these are provisioned in Infisical \`staging\` at \`/\` -- the"
-              echo "\`BACKUP_S3_*\` four since 2026-08-27 (#1287), and the Supabase pair long"
-              echo "before that. So this is a **regression**, not first-time setup: do not"
-              echo "re-provision anything. See docs/internal/environment/SECRETS_MANAGEMENT.md."
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Storage backup secrets missing from the job env (missing:$MISSING). Already provisioned -- check Infisical staging."
-            exit 1
-          fi
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Mirror Storage objects (or rehearse a restore)
+        uses: ./.github/actions/storage-offsite-backup
         with:
-          node-version: 20
+          environment: staging
+          # The pre-existing prefix, kept so staging's mirror history and
+          # tombstones stay continuous.
+          prefix: storage
+          rehearsal: ${{ inputs.storage_rehearsal == true && 'true' || 'false' }}
 
-      - name: Back up Storage objects
-        id: storage
-        env:
-          AWS_ACCESS_KEY_ID: ${{ env.BACKUP_S3_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ env.BACKUP_S3_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ env.BACKUP_S3_REGION || 'auto' }}
-        run: |
-          if [ "${{ inputs.storage_rehearsal }}" = "true" ]; then
-            node scripts/storage-backup-run.mjs rehearse --prefix storage
-          else
-            node scripts/storage-backup-run.mjs backup --prefix storage
-          fi
+  # ── Production ────────────────────────────────────────────────────────────
+  # See the header for why this is `production-backup`, not `production`, and
+  # why two Infisical environments are injected in this order.
+  backup-production:
+    runs-on: ubuntu-latest
+    environment: production-backup
+    timeout-minutes: 30
 
-      - name: Summary
-        if: success()
-        run: |
-          {
-            echo "## Nightly Storage backup"
-            echo
-            echo "- Source: \`frapp-staging\` Storage (all buckets)"
-            echo "- Destination: \`$BACKUP_S3_BUCKET/storage/\`"
-            echo "- Manifest read back from the bucket after upload."
-            echo
-            echo "Incremental: unchanged objects are not re-fetched. Deleted objects are"
-            echo "tombstoned and stay restorable for \`BACKUP_RETENTION_DAYS\` (default 30)."
-            echo
-            echo "Restore: DB_ROLLBACK_PLAYBOOK.md section 'Restoring Storage objects'."
-          } >> "$GITHUB_STEP_SUMMARY"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # FIRST: the offsite destination. `BACKUP_S3_*` live only here for now.
+      - name: Inject the offsite destination from Infisical staging
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "staging"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      # SECOND: the source. Every name both environments define now resolves
+      # to the production value; the action below asserts the ref before it links.
+      - name: Inject production secrets from Infisical
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "prod"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Dump, upload, verify and prune
+        uses: ./.github/actions/db-offsite-backup
+        with:
+          environment: production
+
+  backup-production-storage:
+    runs-on: ubuntu-latest
+    environment: production-backup
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inject the offsite destination from Infisical staging
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "staging"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Inject production secrets from Infisical
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "prod"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+
+      - name: Mirror Storage objects (or rehearse a restore)
+        uses: ./.github/actions/storage-offsite-backup
+        with:
+          environment: production
+          # A sibling of `storage`, not `production/storage`: the database prune
+          # lists `production/` and skips anything that is not a dump label, but
+          # keeping the two namespaces apart means it never has to.
+          prefix: storage-production
+          rehearsal: ${{ inputs.storage_rehearsal == true && 'true' || 'false' }}
