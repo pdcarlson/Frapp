@@ -42,6 +42,12 @@ export class SupabaseChapterAuditLogRepository implements IChapterAuditLogReposi
     if (options.action) {
       q = q.eq('action', options.action);
     }
+    // Visibility is a hard predicate, not a display concern: the table has no
+    // SELECT policy (the API holds the service-role key), so this line is the
+    // only thing standing between a non-president caller and an exec-only row.
+    if (options.memberVisibleOnly) {
+      q = q.eq('member_visible', true);
+    }
     // Bounds are inclusive and compare against `created_at`; `before` is the
     // exclusive cursor and is applied alongside them, not instead of them.
     if (options.startDate) {

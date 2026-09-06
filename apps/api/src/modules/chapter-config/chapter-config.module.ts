@@ -16,6 +16,8 @@ import { ChapterAuditLogService } from '../../application/services/chapter-audit
 import { ChapterAuditLogController } from '../../interface/controllers/chapter-audit-log.controller';
 import { CHAPTER_AUDIT_LOG_REPOSITORY } from '#domain/repositories/chapter-audit-log.repository.interface';
 import { SupabaseChapterAuditLogRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-audit-log.repository';
+import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
 import { ActivationModule } from '../activation/activation.module';
 
 @Module({
@@ -40,6 +42,9 @@ import { ActivationModule } from '../activation/activation.module';
       provide: CHAPTER_AUDIT_LOG_REPOSITORY,
       useClass: SupabaseChapterAuditLogRepository,
     },
+    // `ChapterAuditLogService.list` resolves the chapter's President role to
+    // decide who sees exec-only rows (#1773).
+    { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
   ],
   exports: [
     ChapterWorkflowsService,
