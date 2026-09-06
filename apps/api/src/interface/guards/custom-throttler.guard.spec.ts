@@ -13,6 +13,7 @@ import {
   CustomThrottlerGuard,
   READ_THROTTLE_METHODS,
 } from './custom-throttler.guard';
+import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { WebhookController } from '../controllers/webhook.controller';
 import { ReportController } from '../controllers/report.controller';
 import { SearchController } from '../controllers/search.controller';
@@ -238,6 +239,168 @@ describe('CustomThrottlerGuard', () => {
         ip: '203.0.113.11',
       };
       await expect(guard.track(req)).resolves.toBe('ip:203.0.113.11');
+    });
+  });
+
+  // Both hosted Frapp projects sign access tokens with ES256 (the HS256 secret
+  // is `previously_used` on each), so the HS256 path above never keys a hosted
+  // request per user. Asymmetric tokens go to `supabase.auth.getClaims()`,
+  // which verifies against the project JWKS. The client is mocked here: what
+  // is under test is the routing by `alg`, the trust placed in the verifier's
+  // answer, and every failure landing in per-IP keying rather than a rejection.
+  describe('getTracker — asymmetric (ES256/RS256) tokens via JWKS', () => {
+    let getClaims: jest.Mock;
+    let jwksGuard: TestableGuard;
+
+    /** A token whose header names an asymmetric alg; the signature is opaque
+     * to this guard — the verifier is what decides, and it is mocked. */
+    const asymmetricJwt = (
+      payload: Record<string, unknown>,
+      alg: 'ES256' | 'RS256' = 'ES256',
+    ): string =>
+      `${b64url({ alg, typ: 'JWT', kid: 'key-1' })}.${b64url(payload)}.opaque-signature`;
+
+    beforeEach(async () => {
+      getClaims = jest.fn();
+      const moduleRef: TestingModule = await Test.createTestingModule({
+        providers: [
+          TestableGuard,
+          Reflector,
+          { provide: getOptionsToken(), useValue: [] },
+          { provide: getStorageToken(), useValue: { increment: jest.fn() } },
+          { provide: SUPABASE_CLIENT, useValue: { auth: { getClaims } } },
+        ],
+      }).compile();
+      jwksGuard = moduleRef.get(TestableGuard);
+    });
+
+    it('keys on the sub the verifier returns for an ES256 token', async () => {
+      const token = asymmetricJwt({
+        sub: 'ignored-by-guard',
+        exp: futureExp(),
+      });
+      getClaims.mockResolvedValue({
+        data: { claims: { sub: 'user-es256', exp: futureExp() } },
+        error: null,
+      });
+      await expect(
+        jwksGuard.track({
+          headers: { authorization: `Bearer ${token}` },
+          ip: '203.0.113.20',
+        }),
+      ).resolves.toBe('user:user-es256');
+      // The whole compact token goes to the verifier, untouched.
+      expect(getClaims).toHaveBeenCalledWith(token);
+    });
+
+    it('accepts RS256 through the same verifier', async () => {
+      getClaims.mockResolvedValue({
+        data: { claims: { sub: 'user-rs256', exp: futureExp() } },
+        error: null,
+      });
+      await expect(
+        jwksGuard.track({
+          headers: {
+            authorization: `Bearer ${asymmetricJwt({ sub: 'x', exp: futureExp() }, 'RS256')}`,
+          },
+          ip: '203.0.113.21',
+        }),
+      ).resolves.toBe('user:user-rs256');
+    });
+
+    it('falls back to IP when the verifier rejects the token', async () => {
+      getClaims.mockResolvedValue({
+        data: null,
+        error: { message: 'invalid signature' },
+      });
+      await expect(
+        jwksGuard.track({
+          headers: {
+            authorization: `Bearer ${asymmetricJwt({ sub: 'attacker', exp: futureExp() })}`,
+          },
+          ip: '203.0.113.22',
+        }),
+      ).resolves.toBe('ip:203.0.113.22');
+    });
+
+    it('falls back to IP when the verifier throws (JWKS unreachable on a cold start)', async () => {
+      getClaims.mockRejectedValue(new Error('fetch failed'));
+      await expect(
+        jwksGuard.track({
+          headers: {
+            authorization: `Bearer ${asymmetricJwt({ sub: 'u', exp: futureExp() })}`,
+          },
+          ip: '203.0.113.23',
+        }),
+      ).resolves.toBe('ip:203.0.113.23');
+    });
+
+    it('falls back to IP when the verified claims carry an expired or missing exp', async () => {
+      getClaims.mockResolvedValueOnce({
+        data: {
+          claims: { sub: 'u', exp: Math.floor(Date.now() / 1000) - 60 },
+        },
+        error: null,
+      });
+      await expect(
+        jwksGuard.track({
+          headers: {
+            authorization: `Bearer ${asymmetricJwt({ sub: 'u', exp: 1 })}`,
+          },
+          ip: '203.0.113.24',
+        }),
+      ).resolves.toBe('ip:203.0.113.24');
+
+      getClaims.mockResolvedValueOnce({
+        data: { claims: { sub: 'u' } },
+        error: null,
+      });
+      await expect(
+        jwksGuard.track({
+          headers: {
+            authorization: `Bearer ${asymmetricJwt({ sub: 'u' })}`,
+          },
+          ip: '203.0.113.25',
+        }),
+      ).resolves.toBe('ip:203.0.113.25');
+    });
+
+    it('never sends an HS256 token to the JWKS verifier', async () => {
+      await expect(
+        jwksGuard.track({
+          headers: {
+            authorization: `Bearer ${makeJwt({ sub: 'user-hs', exp: futureExp() })}`,
+          },
+          ip: '203.0.113.26',
+        }),
+      ).resolves.toBe('user:user-hs');
+      expect(getClaims).not.toHaveBeenCalled();
+    });
+
+    it('never sends alg=none or an unknown alg to the JWKS verifier', async () => {
+      for (const alg of ['none', 'HS512', 'PS256']) {
+        await expect(
+          jwksGuard.track({
+            headers: {
+              authorization: `Bearer ${b64url({ alg, typ: 'JWT' })}.${b64url({ sub: 'u', exp: futureExp() })}.sig`,
+            },
+            ip: '203.0.113.27',
+          }),
+        ).resolves.toBe('ip:203.0.113.27');
+      }
+      expect(getClaims).not.toHaveBeenCalled();
+    });
+
+    it('falls back to IP for an ES256 token when no Supabase client is wired', async () => {
+      // `guard` from the outer beforeEach has no SUPABASE_CLIENT provider.
+      await expect(
+        guard.track({
+          headers: {
+            authorization: `Bearer ${asymmetricJwt({ sub: 'u', exp: futureExp() })}`,
+          },
+          ip: '203.0.113.28',
+        }),
+      ).resolves.toBe('ip:203.0.113.28');
     });
   });
 
