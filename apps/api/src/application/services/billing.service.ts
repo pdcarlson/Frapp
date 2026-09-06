@@ -357,6 +357,7 @@ export class BillingService {
     const session = event.data.object as CheckoutSessionWebhookObject;
     const chapterId = session.metadata?.chapter_id;
     const subscriptionId = session.subscription;
+    const sessionCustomerId = customerIdFrom(session.customer);
 
     if (!chapterId) {
       this.logger.warn(
@@ -429,13 +430,13 @@ export class BillingService {
     // acquired a second customer record — exactly the condition this issue
     // exists to prevent, and worth surfacing rather than absorbing.
     if (
-      session.customer &&
+      sessionCustomerId &&
       chapter.stripe_customer_id &&
-      session.customer !== chapter.stripe_customer_id
+      sessionCustomerId !== chapter.stripe_customer_id
     ) {
       this.logger.error(
         `Chapter ${chapterId} completed checkout under customer ` +
-          `${session.customer} while referencing ${chapter.stripe_customer_id}. ` +
+          `${sessionCustomerId} while referencing ${chapter.stripe_customer_id}. ` +
           'A second customer record exists for this chapter; reconcile in Stripe.',
       );
     }
@@ -443,7 +444,7 @@ export class BillingService {
     await this.chapterRepo.update(chapterId, {
       subscription_status: 'active',
       subscription_id: subscriptionId ?? chapter.subscription_id,
-      stripe_customer_id: session.customer ?? chapter.stripe_customer_id,
+      stripe_customer_id: sessionCustomerId ?? chapter.stripe_customer_id,
       last_stripe_webhook_at: this.eventCreatedAt(event),
     });
 
@@ -509,7 +510,7 @@ export class BillingService {
       chapterId,
       detail:
         `chapter ${chapterId} (subscription ${session.subscription ?? 'none'}, ` +
-        `customer ${session.customer ?? 'none'}) — nothing was activated`,
+        `customer ${customerIdFrom(session.customer) ?? 'none'}) — nothing was activated`,
       benignCause:
         'this event belongs to another environment sharing this Stripe account',
       realCause:
@@ -840,14 +841,24 @@ export class BillingService {
    * subscription and invoice payloads both carry `customer`, and the column is
    * `unique`, so the lookup is exact.
    *
-   * The fallback is accepted **only while the chapter references no
-   * subscription at all**. A chapter already pointing at a *different*
-   * subscription is the superseded-reference case: `handleCheckoutCompleted`
-   * overwrites `subscription_id` when a canceled chapter resubscribes and tells
-   * the operator to cancel the old subscription in Stripe, which emits
-   * `customer.subscription.deleted` for the old id. Resolving *that* through the
-   * customer would cancel the chapter's live subscription — so it stays acked
-   * and unresolved, by design.
+   * The fallback is refused **while the chapter's stored subscription is
+   * live** (`active` or `past_due` — exactly the statuses `createCheckoutSession`
+   * refuses to open a second checkout for). A live chapter pointing at a
+   * *different* subscription is the superseded-reference case:
+   * `handleCheckoutCompleted` overwrites `subscription_id` when a canceled
+   * chapter resubscribes and tells the operator to cancel the old subscription
+   * in Stripe, which emits `customer.subscription.deleted` for the old id.
+   * Resolving *that* through the customer would cancel the chapter's live
+   * subscription — so it stays acked and unresolved, by design.
+   *
+   * A chapter whose stored subscription is **not** live (`canceled`, or an
+   * `incomplete` leftover) is the mirror image: the only way its customer
+   * acquires a different subscription is the resubscribe checkout the product
+   * offers it, so an event for a new id is that checkout's own subscription
+   * event overtaking it — the same race as the first checkout, one row later.
+   * The reference is overwritten and the transition applied. An event for the
+   * *stored* id never reaches this branch at all; `findBySubscriptionId` above
+   * resolves it directly.
    *
    * **The resolved reference is claimed immediately** (`subscription_id` is
    * written here, not left for the checkout). If the overtaking event's
@@ -888,20 +899,25 @@ export class BillingService {
       return null;
     }
 
-    if (
-      byCustomer.subscription_id &&
-      byCustomer.subscription_id !== subscriptionId
-    ) {
+    const storedIsLive =
+      byCustomer.subscription_status === 'active' ||
+      byCustomer.subscription_status === 'past_due';
+    if (byCustomer.subscription_id && storedIsLive) {
       this.logger.warn(
         `No chapter found for subscription: ${subscriptionId} (customer ${customerId} is chapter ` +
-          `${byCustomer.id}, which references ${byCustomer.subscription_id} — superseded reference, acked)`,
+          `${byCustomer.id}, which references live subscription ${byCustomer.subscription_id} — ` +
+          'superseded reference, acked)',
       );
       return null;
     }
 
     this.logger.log(
       `Resolved subscription ${subscriptionId} to chapter ${byCustomer.id} via customer ` +
-        `${customerId}: the event overtook its own checkout.session.completed. Claiming the reference.`,
+        `${customerId}: the event overtook its own checkout.session.completed` +
+        (byCustomer.subscription_id
+          ? ` (replacing non-live reference ${byCustomer.subscription_id}).`
+          : '.') +
+        ' Claiming the reference.',
     );
     return this.chapterRepo.update(byCustomer.id, {
       subscription_id: subscriptionId,

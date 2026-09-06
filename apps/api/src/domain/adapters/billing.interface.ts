@@ -45,7 +45,7 @@ export interface CheckoutSessionWebhookObject {
     chapter_id?: string;
   };
   subscription?: string | null;
-  customer?: string | null;
+  customer?: string | { id: string } | null;
 }
 
 export interface SubscriptionWebhookObject {

@@ -2085,6 +2085,45 @@ describe('BillingService', () => {
         ).toBe('processed');
       });
 
+      it('resolves a resubscribe race: a canceled chapter still holding the old id takes the new subscription', async () => {
+        // The chapter canceled, kept `sub_old`, and the president checked out
+        // again. The new subscription's first event outruns its checkout.
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
+        mockChapterRepo.findByCustomerId.mockResolvedValue({
+          ...preCheckoutChapter,
+          subscription_status: 'canceled',
+          subscription_id: 'sub_old',
+          last_stripe_webhook_at: new Date(T_CHECKOUT * 1000).toISOString(),
+        });
+        const claimed = {
+          ...preCheckoutChapter,
+          subscription_status: 'canceled' as const,
+          subscription_id: 'sub_new',
+          last_stripe_webhook_at: new Date(T_CHECKOUT * 1000).toISOString(),
+        };
+        mockChapterRepo.update.mockResolvedValue(claimed);
+        mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
+
+        await service.handleWebhookEvent(
+          subEvent('customer.subscription.updated', {
+            id: 'sub_new',
+            status: 'past_due',
+            customer: 'cus_race',
+          }),
+        );
+
+        expect(mockChapterRepo.update).toHaveBeenNthCalledWith(1, 'ch-1', {
+          subscription_id: 'sub_new',
+        });
+        // The transition the event carried is applied, not reconstructed by the
+        // checkout later (which only ever writes `active`).
+        expect(mockChapterRepo.update).toHaveBeenNthCalledWith(2, 'ch-1', {
+          subscription_status: 'past_due',
+          past_due_since: LATER_ISO,
+          last_stripe_webhook_at: LATER_ISO,
+        });
+      });
+
       it('does not resolve a superseded reference through the customer — that would cancel the live subscription', async () => {
         // A canceled chapter resubscribed: `subscription_id` now names the new
         // subscription, and the operator cancels the old one in Stripe.
@@ -2106,10 +2145,28 @@ describe('BillingService', () => {
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
         expect(loggerWarnSpy).toHaveBeenCalledWith(
           expect.stringMatching(
-            /sub_old.*references sub_new.*superseded reference, acked/,
+            /sub_old.*references live subscription sub_new.*superseded reference, acked/,
           ),
         );
         expect(captureMessage).not.toHaveBeenCalled();
+      });
+
+      it('refuses the fallback for a past_due chapter too — the stored subscription is still live', async () => {
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
+        mockChapterRepo.findByCustomerId.mockResolvedValue({
+          ...preCheckoutChapter,
+          subscription_status: 'past_due',
+          subscription_id: 'sub_live',
+        });
+
+        await service.handleWebhookEvent(
+          subEvent('customer.subscription.deleted', {
+            id: 'sub_other',
+            customer: 'cus_race',
+          }),
+        );
+
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
       });
 
       it('does not consult the customer when the payload carries none', async () => {
