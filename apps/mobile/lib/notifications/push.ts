@@ -98,8 +98,16 @@ function loadNotifications(): NotificationsModule | null {
 export function easProjectId(): string | null {
   const extra = Constants.expoConfig?.extra as
     { eas?: { projectId?: unknown } } | undefined;
-  const id = extra?.eas?.projectId;
-  return typeof id === "string" && id.length > 0 ? id : null;
+  // `expoConfig.extra.eas.projectId` is what `eas init` writes to app.json and
+  // what Expo's own docs read; `easConfig.projectId` is the same value as EAS
+  // Build stamps it into the binary, and is the one that survives when the
+  // config is dynamic or `extra` is stripped. Either is the project.
+  const candidates: unknown[] = [
+    extra?.eas?.projectId,
+    Constants.easConfig?.projectId,
+  ];
+  const id = candidates.find((c) => typeof c === "string" && c.length > 0);
+  return typeof id === "string" ? id : null;
 }
 
 /** Whether this build can register for and receive a remote push. */
