@@ -506,8 +506,10 @@ recurring shapes, all worth checking in any spec of this kind:
   particular hazard — `prefsByUser.get(recipientId) ?? []` reaches exactly one id — and replaces it
   with a subtler one: a **static** Map ignores which ids the caller actually asked for, so a stub can
   answer for a member the code never queried, and a real bug that narrows the audience still looks
-  green. The `setPrefs` helper in `chat-push-worker.realtime.spec.ts` builds its Map from the ids it
-  was passed, for exactly that reason.
+  green. The `setPrefs` helper — in both `chat-push-worker.realtime.spec.ts` and
+  `chat-push-worker.service.spec.ts`, a deliberate per-spec copy in the same shape as the `setMembers`
+  those two files already duplicate — builds its Map from the ids it was passed, for exactly that
+  reason.
 - A double cast (`as unknown as Payload`) that disables checking of the very field the file exists
   to exercise.
 

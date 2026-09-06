@@ -475,7 +475,7 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
       // silencing the diagnostic output of the sibling failure tests at exactly
       // the moment someone is reading them to debug this one.
       try {
-        await failingRepo.findForUsers(['u1'], CHAPTER_B);
+        await failingRepo.findForUsers(['u1', 'u2'], CHAPTER_B);
 
         expect(warn).toHaveBeenCalledTimes(1);
         // One argument, and it is a string: passing the error as a second
@@ -487,12 +487,22 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
         expect(message).toContain('boom');
         expect(message).toContain('Perhaps you meant');
         expect(message).not.toContain('secret-uuid');
-        // The chunk has to be identifiable. This degradation is silent —
+        // The failing chunk has to be locatable. This degradation is silent —
         // its members read as "no stored preferences", which `decidePush`
         // treats as *not muted* — so the only symptom is a member pushed
-        // despite an explicit `off`, and a line naming a count alone gives an
-        // operator holding that report nothing to correlate against.
-        expect(message).toContain('u1');
+        // despite an explicit `off`, and a line naming a bare count leaves an
+        // operator holding that report with nothing to place it against.
+        expect(message).toContain('chunk 1/1');
+        expect(message).toContain('2 users');
+        // And it must stay BOUNDED: no member ids, however few are in play.
+        // A fixture of two ids is what makes this bite — with one, a
+        // `chunk.join(', ')` or `chunk[0]` regression is indistinguishable from
+        // the position form, and both are things a "make this more helpful"
+        // edit reaches for. Ids here would be worse than useless: `findByChapter`
+        // reads the roster unordered, so an id names one member of the chunk
+        // and implies the rest were fine (#1772).
+        expect(message).not.toContain('u1');
+        expect(message).not.toContain('u2');
       } finally {
         warn.mockRestore();
       }

@@ -75,15 +75,13 @@ export class ChatNotificationPreferenceRepository {
    * **A query error never propagates**: the failing chunk degrades to absent
    * and the other chunks still return, because the worker must keep deciding
    * pushes for the rest of the batch and a missed mute beats a dropped
-   * notification. That degradation is scoped to the query, and deliberately no
-   * wider — an `Error` instance means something other than the query broke, and
-   * `readChunkIsolated` rethrows it. Because the chunks run under
-   * `Promise.all`, such a rethrow abandons the whole read, including chunks
-   * that had already succeeded, and reaches `handleMessage`'s handler as a
-   * dropped message rather than a wrong one. Both directions are intended; see
-   * {@link readChunkIsolated} for why the narrowing is the load-bearing part.
-   * The UI reads below throw unconditionally, and the contrast is deliberate;
-   * see {@link findChannelPreferencesForUser}.
+   * notification. That degradation is scoped to the query and deliberately no
+   * wider — anything else rethrows, and the message is dropped rather than
+   * pushed wrongly. {@link readChunkIsolated} is where that narrowing and its
+   * cost are reasoned about; it is the load-bearing part of this method, and
+   * the reasoning is kept in one place so a change of policy has one paragraph
+   * to update. The UI reads below throw unconditionally, and the contrast is
+   * deliberate; see {@link findChannelPreferencesForUser}.
    */
   async findForUsers(
     userIds: string[],
@@ -96,9 +94,10 @@ export class ChatNotificationPreferenceRepository {
     // (`supabase-user.repository.ts`, `report.service.ts`): this is a
     // per-message hot path, and reading them in series would rebuild a smaller
     // version of the serialisation this method exists to remove.
+    const idChunks = chunkIds(userIds);
     const chunks = await Promise.all(
-      chunkIds(userIds).map((chunk) =>
-        this.readChunkIsolated(chunk, chapterId),
+      idChunks.map((chunk, index) =>
+        this.readChunkIsolated(chunk, chapterId, index, idChunks.length),
       ),
     );
 
@@ -184,6 +183,8 @@ export class ChatNotificationPreferenceRepository {
   private async readChunkIsolated(
     chunk: string[],
     chapterId: string,
+    chunkIndex: number,
+    chunkCount: number,
   ): Promise<ChatNotificationPreferenceRow[] | null> {
     try {
       return await fetchAllPages<ChatNotificationPreferenceRow>(
@@ -204,15 +205,28 @@ export class ChatNotificationPreferenceRepository {
     } catch (error) {
       if (error instanceof Error) throw error;
       this.logger.warn(
-        `chat-prefs: batch lookup failed for ${chunk.length} users in chapter ${chapterId}` +
-          // The chunk's first id, not its length alone. This degradation is
-          // silent by design — its members read as "no stored preferences",
-          // which `decidePush` treats as *not muted* — so the only symptom is a
-          // member pushed despite an explicit `off`. A 1000-member chapter
-          // otherwise emits ten identical `for 100 users` lines per message and
-          // an operator holding such a report can correlate it with none of
-          // them. One id bounds the log line while still identifying the chunk.
-          ` (from ${chunk[0]}) (${toReportableError(error).message})`,
+        // Position and scale, NOT member identity — and the distinction is the
+        // whole reason this says `chunk i/n` rather than an id.
+        //
+        // This degradation is silent by design: its members read as "no stored
+        // preferences", which `decidePush` treats as *not muted*, so the only
+        // symptom is a member pushed despite an explicit `off`. A bare
+        // `for 100 users` line left a 1000-member chapter emitting ten
+        // identical warnings per message, which tells an operator holding such
+        // a report nothing at all — hence a handle of some kind.
+        //
+        // But it cannot be a member handle. `findByChapter`
+        // (`supabase-member.repository.ts`) reads the roster with no `.order()`,
+        // so chunk membership is heap order and reshuffles between calls:
+        // logging one id would identify one member of the hundred and imply,
+        // falsely, that the other ninety-nine were unaffected. Position answers
+        // the question this line can actually answer — how much of this
+        // message's audience degraded, and whether it was one chunk or all of
+        // them. Member-level correlation needs that read to carry a total
+        // order, which is #1772.
+        `chat-prefs: batch lookup failed for chunk ${chunkIndex + 1}/${chunkCount}` +
+          ` (${chunk.length} users) in chapter ${chapterId}` +
+          ` (${toReportableError(error).message})`,
       );
       return null;
     }

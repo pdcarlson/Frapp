@@ -212,15 +212,33 @@ describe('tenant-scope harness', () => {
       const parent: Record<string, unknown> = { child: leaked };
       leaked.parent = parent;
 
-      await expect(
-        harness.expectTenantScoped(CHAPTER_B, async () => {
+      const failure = await harness
+        .expectTenantScoped(CHAPTER_B, async () => {
           await (harness.client as any)
             .from('widgets')
             .select('*')
             .eq('chapter_id', CHAPTER_B);
           return [leaked];
-        }),
-      ).rejects.toThrow(/returned 1 row\(s\) from another chapter/);
+        })
+        .then(
+          () => null,
+          (err: unknown) => err as Error,
+        );
+
+      expect(failure?.message).toMatch(
+        /returned 1 row\(s\) from another chapter/,
+      );
+      // Not crashing is only half of it, and asserting only that leaves the
+      // cheapest "simplification" unopposed: a `try { JSON.stringify(v) } catch
+      // { return '[unserializable]' }` — the shape `describeOpaque` in
+      // `infrastructure/observability/reportable-error.ts` already uses, so it
+      // is the form someone reaches for — also survives a
+      // /returned 1 row\(s\)/ assertion, while reporting a leak the reader
+      // cannot act on. The row that leaked has to stay READABLE: which row,
+      // and whose chapter it belongs to, are the two facts this message exists
+      // to carry.
+      expect(failure?.message).toContain(ROW_A);
+      expect(failure?.message).toContain(CHAPTER_A);
     });
   });
 

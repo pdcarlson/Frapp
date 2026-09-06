@@ -79,10 +79,24 @@ describe('ChatPushWorkerService', () => {
    *
    * A `mockResolvedValue(new Map([['a', [pref]]]))` answers for `'a'` no matter
    * who the worker asked about, so a regression to the wrong audience — the
-   * sender's id, `candidateIds` instead of `recipientIds`, an empty array —
-   * leaves every mute test green. `docs/guides/testing.md` names that static
-   * form as the hazard that replaced the old per-user stub's; this is the
-   * `chat-push-worker.realtime.spec.ts` `setPrefs` shape, for the same reason.
+   * sender's id, an empty array — leaves every mute test green.
+   * `docs/guides/testing.md` names that static form as the hazard that replaced
+   * the old per-user stub's; this is the `chat-push-worker.realtime.spec.ts`
+   * `setPrefs` shape, for the same reason.
+   *
+   * **Only for the workers built by the `beforeEach` module.** The nested
+   * `channel cache eviction race (#988)` block compiles its own module with its
+   * own `findForUsers` stub, which this helper does not touch — calling it from
+   * there would configure a mock that worker never consults, and the test would
+   * pass because no preference was read at all. That is the same "green for the
+   * wrong reason" failure this helper exists to remove, so it is worth the two
+   * lines to say it here rather than rediscover it.
+   *
+   * It does **not** discriminate `candidateIds` from `recipientIds`. Both tests
+   * using it run a roster where every candidate can read the channel, so the
+   * two arrays are equal and a swap is invisible — catching that needs a
+   * fixture with a member who cannot read the channel, which is
+   * `filterCanReadChannel`'s own concern rather than this helper's.
    *
    * A user with no rows is **absent** from the map rather than present with an
    * empty array, which is what pins the call site's `?? []` instead of assuming
@@ -296,6 +310,19 @@ describe('ChatPushWorkerService', () => {
       mentions: ['a'],
     };
     await service.handleMessage(row);
+    // The mute has to actually be IN PLAY for this to test an override, and
+    // asserting the ARGUMENT is not enough to establish that — the worker can
+    // ask about `'a'` and be handed nothing back.
+    //
+    // Without this, the test passes with the preference never delivered: `'a'`
+    // falls to the channel default for a `text` message, the mention fires,
+    // and `notifyUser` is called exactly once — the same assertions below,
+    // reached with no mute to override. So assert what the worker was
+    // RETURNED. A future "mentions override mutes anyway, skip the read"
+    // optimisation is exactly what this catches.
+    await expect(findForUsers.mock.results[0]?.value).resolves.toEqual(
+      new Map([['a', [pref]]]),
+    );
     expect(notifyUser).toHaveBeenCalledTimes(1);
     expect(notifyUser).toHaveBeenCalledWith('a', 'chap-1', expect.any(Object));
   });
@@ -358,7 +385,6 @@ describe('ChatPushWorkerService', () => {
       required_permissions: null,
     });
     setMembers(['alice', 'bob', 'carol']);
-    findForUsers.mockResolvedValue(new Map());
 
     await service.handleMessage({
       id: 'm1',
