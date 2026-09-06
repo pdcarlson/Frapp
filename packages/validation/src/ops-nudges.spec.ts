@@ -44,7 +44,7 @@ describe("OPS_NUDGE_MODULES", () => {
   // that drifts the moment the catalog is relabelled, leaving the nudge saying
   // "Enable Dues" while every other surface said something else. This package
   // cannot import `@repo/org-archetypes` (ESM-only dist — see the module
-  // docblock), so `apps/web/components/chat/ops-setup-nudge.test.tsx` carries
+  // docblock), so `apps/web/components/chat/ops-setup-nudge.spec.tsx` carries
   // the cross-check that every key here resolves to a real catalog entry.
   it("carries no label of its own", () => {
     for (const module of OPS_NUDGE_MODULES) {

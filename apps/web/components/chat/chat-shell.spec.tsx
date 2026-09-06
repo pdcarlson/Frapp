@@ -124,7 +124,7 @@ vi.mock("@repo/hooks", () => ({
   // (#492). Left deliberately inert: `useOrgConfig` above returns no
   // `enabled_modules`, so `selectOpsNudge` gets `undefined` and the card is
   // never eligible. These cases are about the shell, and a nudge that never
-  // renders keeps it out of their way — `ops-setup-nudge.test.tsx` is where
+  // renders keeps it out of their way — `ops-setup-nudge.spec.tsx` is where
   // its own behaviour is pinned.
   useAccessibleChapters: () => ({ data: [] }),
   useDismissOpsNudge: () => ({ mutate: vi.fn() }),
