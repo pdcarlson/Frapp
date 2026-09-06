@@ -7,12 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "frapp",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0E0D0B"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "live.frapp.mobile",
@@ -26,7 +20,6 @@
         "monochromeImage": "./assets/images/adaptive-icon-monochrome.png",
         "backgroundColor": "#0F172A"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "live.frapp.mobile"
     },
@@ -82,6 +75,15 @@
         {
           "organization": "frapp-live",
           "project": "frapp-mobile"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0E0D0B",
+          "imageWidth": 200
         }
       ]
     ],
