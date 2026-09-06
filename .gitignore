@@ -51,8 +51,12 @@ supabase/.branches/
 .DS_Store
 *.pem
 
-# Local editor state (incl. the retired Cursor IDE — .cursor/mcp.json can carry credentials)
-.cursor/
+# Local editor state (incl. the retired Cursor IDE — .cursor/mcp.json can carry credentials).
+# Ignore everything under .cursor/ EXCEPT the committed Cloud Agent environment config
+# (.cursor/environment.json is repo-managed and carries no secrets). The `.cursor/*` form
+# (not `.cursor/`) is required so git still descends into the dir to honor the negation.
+.cursor/*
+!.cursor/environment.json
 
 # Agent-local state, never committed:
 #   settings.local.json holds one machine's permission grants (previously ignored
