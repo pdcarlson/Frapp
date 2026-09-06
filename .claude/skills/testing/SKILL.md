@@ -197,15 +197,19 @@ Migrations predating the gate are grandfathered in `UNLEDGERED` in
 **shrink-only**: `RATCHET_VERSION_CEILING` rejects any entry newer than the gate, so a new migration
 must carry a real entry in both docs rather than an allowlist line.
 
-**Exit 1 is `ledger coverage`, and a missing entry is only one of its four cases.** The others are an
-allowlist line for a migration that now *has* an entry (`covered`), an allowlist line for a migration
-no longer on disk (`absent`), and a rollback entry naming a migration that no longer exists
-(`orphan`) — the last three are fixed by editing `UNLEDGERED` or the runbook, not by writing a new
-entry. Read the failure, which names the file and the remedy, rather than assuming you owe an entry.
+**Exit 1 means the change violates a rule**, and several checks use it: an invalid or duplicate
+migration filename, a migration PR that touched neither runbook, and `ledger coverage`. Coverage
+itself has four cases, and only the first is fixed by writing an entry — a migration with no entry
+(`missing`), an allowlist line for a migration that now *has* one (`covered`) or that is no longer on
+disk (`absent`), and a rollback entry naming a migration that does not exist (`orphan`). The other
+three are fixed by editing `UNLEDGERED` or the runbook. Read the failure line, which names both the
+file and the remedy, rather than assuming you owe an entry.
 
-**Exit 2 is the gate refusing to run at all**, and never your change: a renamed runbook that
-`MIGRATION_DOCS` no longer resolves, a declared doc with no entry shape, a declared ledger that
-cannot be read, or a post-ceiling migration added to `UNLEDGERED` (`UNLEDGERED grew`).
+**Exit 2 means the gate cannot do its job** — it is refusing to grade rather than returning a
+verdict: a renamed runbook `MIGRATION_DOCS` no longer resolves, a declared doc with no entry shape, a
+declared ledger that cannot be read, a malformed `--base`/`--head`, or a post-ceiling migration added
+to `UNLEDGERED` (`UNLEDGERED grew`). Some of those *are* your own change — the rename and the
+allowlist line especially — so exit 2 is not a signal to escalate past your own diff.
 
 ---
 

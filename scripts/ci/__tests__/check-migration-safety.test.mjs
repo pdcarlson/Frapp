@@ -37,21 +37,30 @@ const PROMOTION = MIGRATION_DOCS[0];
 const ROLLBACK = MIGRATION_DOCS[1];
 
 // Two tests below mutate the REAL worktree — the gate resolves its roots from
-// its own location, so there is no temp tree to point it at. A `finally` covers
-// a thrown assertion; it does NOT cover an interrupted run, and an interrupted
-// run leaves DB_ROLLBACK_PLAYBOOK.md renamed or a probe migration on disk, so
-// every later `check:migration-safety` in that checkout fails on state no author
-// created.
+// its own location, so there is no temp tree to point it at. One renames
+// DB_ROLLBACK_PLAYBOOK.md away; the other writes a probe migration. Left behind,
+// either makes every later `check:migration-safety` in the checkout fail on
+// state no author created, so each is undone in a `finally`.
 //
-// `exit` alone is not enough for that: Node does not emit it when a signal
-// terminates the process, which is the likely interruption here (Ctrl-C during
-// the ~80ms the test blocks in spawnSync). Verified — a script that registers an
-// `exit` restore and then receives SIGINT dies at 130 with the file still moved.
-// So sweep on the signals too, then re-raise so the exit code still reports the
-// signal rather than masking it as a clean exit.
+// The `exit` sweep covers the one gap a `finally` does not: a `process.exit()`
+// between the mutation and the restore. It does NOT cover a signal, and this
+// deliberately does not try to.
+//
+// Signal handlers were tried here and REVERTED, because they made the case they
+// were meant to fix strictly worse. The mutation window is fully synchronous —
+// `renameSync`, then a blocking `spawnSync`, then the `finally` — so the event
+// loop is never free during it and a JS handler cannot run until the restore has
+// already happened. Installing one only replaces SIGINT's default "terminate"
+// disposition: measured, a process blocked in `spawnSync` dies at 130 on
+// `kill -INT` with no listener, and SURVIVES it with one (needed SIGKILL, 137).
+// So the handler cannot clean up, and it takes away the Ctrl-C that did work.
+//
+// The residual risk is real and accepted: a signal or a hard crash inside that
+// synchronous window leaves the worktree dirty, and no in-process guard can
+// prevent it. `git status` shows it; the restore is a `git checkout` / `mv`.
 const exitCleanups = new Set();
 
-function sweepCleanups() {
+process.once("exit", () => {
   for (const cleanup of exitCleanups) {
     try {
       cleanup();
@@ -59,18 +68,7 @@ function sweepCleanups() {
       // Best-effort only: preserve the original test result during process exit.
     }
   }
-  exitCleanups.clear();
-}
-
-process.once("exit", sweepCleanups);
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  // `once` removes this listener before the re-raise, so the second delivery
-  // hits Node's default handler and terminates with the conventional code.
-  process.once(signal, () => {
-    sweepCleanups();
-    process.kill(process.pid, signal);
-  });
-}
+});
 
 // ── The base contract ───────────────────────────────────────────────────────
 
@@ -289,11 +287,13 @@ test("a migration with no entry and no allowlist line fails", () => {
 });
 
 test("a migration covered in only one ledger still fails for the other", () => {
-  // The exact hole this change closes. It is the state the newest migration on
-  // `main` is actually in — `20260905010000_discord_import_archive_quota.sql`
-  // has a rollback recipe and no promotion entry — but that one is allowlisted
-  // as pre-existing debt, so the assertion uses a synthetic migration to prove
-  // the rule applies to anything NEW.
+  // The exact hole this change closes. It is the state
+  // `20260905010000_discord_import_archive_quota.sql` is in — a rollback recipe
+  // and no promotion entry. That was the newest migration on `main` when the
+  // gate was written and is several behind by now, so do not read it as a
+  // current tip; it is also allowlisted as pre-existing debt, which is why the
+  // assertion uses a synthetic migration to prove the rule applies to anything
+  // NEW.
   const problems = ledgerCoverageProblems(
     ["20260906000000_brand_new.sql"],
     new Map([
