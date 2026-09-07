@@ -207,6 +207,27 @@ describe("resolveReleaseBump", () => {
     );
   });
 
+  it("still throws when GET /issues includes pull_request: null", async () => {
+    await assert.rejects(
+      () =>
+        resolveReleaseBump({
+          currentVersion: "0.1.0",
+          subjects: ["Merge pull request #10 from x"],
+          repo: "o/r",
+          token: "t",
+          logger: quiet,
+          fetchImpl: githubFetch({
+            "/repos/o/r/pulls/10": notFound(),
+            "/repos/o/r/issues/10": okJson({
+              title: "ambiguous",
+              pull_request: null,
+            }),
+          }),
+        }),
+      /missing or unauthorized PR lookup/,
+    );
+  });
+
   it("still throws when GET /issues cannot classify a /pulls 404", async () => {
     await assert.rejects(
       () =>
