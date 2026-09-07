@@ -557,11 +557,13 @@ jobs:
     uses: ./.github/workflows/release.yml
     permissions:
       # A called workflow's job permissions are intersected with what the caller
-      # grants, so both sides need `pull-requests: read` — see the note in
-      # release.yml. Granting it only there would still leave the token unable
-      # to read the `release:*` labels.
+      # grants, so both sides need `pull-requests: read` and `issues: read` —
+      # see the note in release.yml. Granting them only there would still leave
+      # the token unable to read `release:*` labels or classify a /pulls 404
+      # as a bare issue (#1839).
       contents: write
       pull-requests: read
+      issues: read
     with:
       sha: ${{ inputs.sha }}
       bump: ${{ inputs.bump }}

@@ -8,9 +8,10 @@
 // configure-branch-protection.mjs" — an acknowledgement of the drift rather
 // than a fix for it. All four now call `ghRequest` for the request itself,
 // not just its headers; each keeps its own error message and throw-on-failure
-// contract at the call site, since the callers disagree on that (a 404 must
-// throw for `fetchPrLabels`, a fail-safe `{ok:false}` is correct for the
-// watchdogs — see below).
+// contract at the call site, since the callers disagree on that (a 404 on a
+// real PR must throw for `fetchPrLabels`; a 404 that GET /issues/{n} shows is
+// a bare issue is skipped — #1839; a fail-safe `{ok:false}` is correct for
+// the watchdogs — see below).
 //
 // It lives in `lib/` and not in `ci-wake.mjs` for a second reason: `lib/alert-issue.mjs`
 // imported it from `../ci-wake.mjs`, so a library depended on a script. Moving

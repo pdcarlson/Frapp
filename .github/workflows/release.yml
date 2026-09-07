@@ -79,9 +79,13 @@ jobs:
       # this line the default `bump: auto` path is the one that breaks, and it
       # breaks after Render and Vercel have already deployed.
       #
-      # `pr-base-sync.yml` grants exactly this for exactly this endpoint.
+      # `issues: read` is the #1839 classifier: a 404 on /pulls/{n} is checked
+      # against GET /issues/{n} so a squash trailer that named an issue does
+      # not abort the tag. Without this grant that lookup 403s and the 404
+      # still fails closed — the hole this permission exists to close.
       contents: write
       pull-requests: read
+      issues: read
     steps:
       - name: Checkout the deployed commit
         uses: actions/checkout@v4
