@@ -6,8 +6,13 @@ import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useClaimChapterSync } from "@/lib/auth/use-claim-chapter-sync";
 
 export function FrappProvider({ children }: { children: React.ReactNode }) {
+  // The token's `active_chapter_id` claim seeds and corrects the store, so a
+  // member arriving on a fresh browser is already in their chapter — see the
+  // hook for why the store follows the claim and not the other way round.
+  useClaimChapterSync();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const queryClient = useQueryClient();
   const previousChapterId = useRef<string | null | undefined>(undefined);
