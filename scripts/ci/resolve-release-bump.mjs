@@ -97,15 +97,23 @@ export function applyBump(currentVersion, bump) {
 }
 
 /**
- * Labels on one PR.
+ * Labels on one PR, or `null` when that number is not a pull request.
  *
- * A 404 THROWS rather than returning `[]`. Returning an empty list would read
- * as "no release label", i.e. a silent downgrade to `patch` — a `release:major`
- * PR could ship as a patch because a token lacked a scope. The whole point of
- * reading labels is that the answer is trustworthy.
+ * A 404 is skipped, not thrown: squash subjects routinely end `(#N)` for an
+ * *issue* (run 34155737950 died on `#1340` after production had already
+ * shipped — #1340 is an issue). Treating that as empty labels would also be
+ * wrong if it were the *only* number in range, but skipping lets later real
+ * PRs still vote.
+ *
+ * A 403 still THROWS rather than returning `[]`. Returning an empty list would
+ * read as "no release label", i.e. a silent downgrade to `patch` — a
+ * `release:major` PR could ship as a patch because a token lacked a scope.
  */
 export async function fetchPrLabels({ repo, prNumber, token, fetchImpl = fetch }) {
   const result = await ghRequest({ token, fetchImpl, path: `/repos/${repo}/pulls/${prNumber}` });
+  if (result.status === 404) {
+    return null;
+  }
   if (!result.ok) {
     const detail = result.data ? `: ${result.data}` : "";
     throw new Error(`GitHub API returned HTTP ${result.status} for PR #${prNumber}${detail}`);
@@ -145,6 +153,12 @@ export async function resolveReleaseBump({
   const labelSets = [];
   for (const prNumber of prNumbers) {
     const labels = await fetchPrLabels({ repo, prNumber, token, fetchImpl });
+    if (labels === null) {
+      logger.log?.(
+        `#${prNumber} is not a pull request (HTTP 404); skipping — squash subjects often name an issue`,
+      );
+      continue;
+    }
     logger.log?.(`PR #${prNumber} labels: ${labels.join(", ") || "(none)"}`);
     labelSets.push(labels);
   }
