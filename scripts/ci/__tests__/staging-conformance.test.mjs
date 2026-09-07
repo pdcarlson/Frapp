@@ -14,6 +14,7 @@ import {
   buildRunSummary,
   canResolveAlert,
   checkAuthHook,
+  checkAuthRedirects,
   checkAuthSignIn,
   checkInfisicalSyncs,
   checkProjectStatus,
@@ -102,6 +103,67 @@ test("auth hook enabled and correctly pointed passes", async () => {
       }),
   });
   assert.equal(result.status, PASS);
+});
+
+// ── Auth redirect allow list — a bare origin matches only itself ────────────
+
+const authConfig = (uriAllowList, siteUrl = "https://app.staging.frapp.live") =>
+  ok({ site_url: siteUrl, uri_allow_list: uriAllowList });
+
+test("allow list holding only bare origins fails and names what is missing", async () => {
+  const result = await checkAuthRedirects({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      authConfig("https://app.staging.frapp.live,https://api-staging.frapp.live,frapp://**"),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /https:\/\/app\.staging\.frapp\.live\/\*\*/);
+  assert.match(result.detail, /invite/);
+});
+
+test("allow list missing the mobile scheme fails even with the web wildcard present", async () => {
+  const result = await checkAuthRedirects({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      authConfig("https://app.staging.frapp.live,https://app.staging.frapp.live/**"),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /frapp:\/\/\*\*/);
+});
+
+test("allow list with the site-url wildcard and the mobile scheme passes", async () => {
+  const result = await checkAuthRedirects({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      authConfig(
+        "https://app.staging.frapp.live, https://api-staging.frapp.live,exp://localhost:8081,frapp://**,https://app.staging.frapp.live/**",
+      ),
+  });
+  assert.equal(result.status, PASS);
+});
+
+test("a trailing slash on site_url does not produce a double-slash requirement", async () => {
+  const result = await checkAuthRedirects({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      authConfig("frapp://**,https://app.staging.frapp.live/**", "https://app.staging.frapp.live/"),
+  });
+  assert.equal(result.status, PASS);
+});
+
+test("auth redirects check skips without credentials and fails on a non-200", async () => {
+  const skipped = await checkAuthRedirects({ accessToken: "", projectRef: "", fetchImpl: async () => ok({}) });
+  assert.equal(skipped.status, SKIPPED);
+  const failed = await checkAuthRedirects({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => httpError(403),
+  });
+  assert.equal(failed.status, FAIL);
 });
 
 // ── Infisical syncs ─────────────────────────────────────────────────────────
