@@ -31,13 +31,14 @@ across the store. Decide the name first; everything below is written for
 | Marketing URL | https://frapp.live |
 | Support email | team@frapp.live |
 
-> **Sequence: the first `Deploy production` run comes before either store submission.** The
-> privacy, terms and support pages exist on `main`, but production's landing is still a build
-> from 2026-03-04 on which `https://frapp.live/privacy`, `/terms` and `/support` all answer
-> **404** (checked 2026-09-06 23:55Z). Both stores fetch the privacy policy URL when the
-> listing is saved and reviewers open the support URL, so a submission made before the deploy
-> is rejected on the URLs alone — and the app itself points at `api.frapp.live`, which is
-> also the old build until that run. Deploy, confirm the three URLs return 200, then submit.
+> **Production legal URLs (checked 2026-09-07 20:40Z):** `https://frapp.live/privacy`, `/terms`,
+> and `/support` each return **200** after the apex 307 to `www.frapp.live/…`
+> (`curl -sSI -L`; `x-matched-path` is the matching route). The 2026-09-06 23:55Z **404**
+> reading was the March 2026-03-04 landing alias; Deploy production run 34155737950
+> (`f2938a01`) replaced it. Both stores still fetch the privacy URL when the listing is
+> saved and reviewers still open the support URL — those fetches now succeed. The app
+> talks to `api.frapp.live`, whose `/health` and `/health/ready` also return 200 on the
+> same check.
 
 ## Description
 
