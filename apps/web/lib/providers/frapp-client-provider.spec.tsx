@@ -24,6 +24,12 @@ vi.mock("@repo/hooks", () => ({
   },
 }));
 
+// The claim → store sync has its own suite (`lib/auth/use-claim-chapter-sync.spec.tsx`);
+// here it must not observe auth events the mocked client never emits.
+vi.mock("@/lib/auth/use-claim-chapter-sync", () => ({
+  useClaimChapterSync: () => undefined,
+}));
+
 vi.mock("@/lib/supabase/client", () => ({
   createSupabaseBrowserClient: () => ({
     auth: { getSession: async () => ({ data: { session: null } }) },
@@ -157,5 +163,27 @@ describe("FrappProvider chapter-change cache drop", () => {
     });
 
     expect(qc.getQueryData(["channels"])).toEqual([{ id: "ch-1" }]);
+  });
+
+  it("drops the cache when the chapter is cleared (account boundary)", async () => {
+    activeChapterId = "previous-accounts-chapter";
+    const qc = makeClient();
+    const { rerender } = setup(qc);
+    qc.setQueryData(["channels"], [{ id: "ch-1", name: "alpha-only" }]);
+    qc.setQueryData(["user", "me"], { id: "user-a" });
+
+    activeChapterId = null;
+    await act(async () => {
+      rerender(
+        <QueryClientProvider client={qc}>
+          <FrappProvider>
+            <div />
+          </FrappProvider>
+        </QueryClientProvider>,
+      );
+    });
+
+    expect(qc.getQueryData(["channels"])).toBeUndefined();
+    expect(qc.getQueryData(["user", "me"])).toBeUndefined();
   });
 });
