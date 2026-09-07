@@ -343,6 +343,20 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the chapter directory seed rows
+
+* **Migration**: `20260907011500_chapter_directory_seed_rows.sql`
+* **Action**: `delete from chapter_directory where source = 'seed';` — only the
+  rows the loader owns. `chapters.directory_id` references the table `on delete
+  set null`, so any chapter created from a seed row keeps its copied identity and
+  merely loses the link; nothing else references the table.
+* **Note**: Data only, additive, idempotent. There is rarely a reason to roll it
+  back at all — an empty directory is the pre-2026-09-07 state, in which every
+  wizard search fails and the officer types the chapter in by hand. A wrong or
+  offensive seed row is fixed by editing the CSV and shipping a new migration
+  from `npm run load:chapter-directory`, not by rolling this one back. Hand-added
+  rows (`source <> 'seed'`) are untouched by both the migration and this recipe.
+
 ## Rollback the private presence topics
 * **Migration**: `20260906203000_realtime_presence_private.sql`
 * **Action**: Drop the INSERT policy and recreate the SELECT policy with the three original arms only — re-run the `create policy "realtime_messages_scoped_select"` block from `20260816140000_realtime_carrier_repair.sql` after `drop policy if exists "realtime_messages_scoped_select" on realtime.messages; drop policy if exists "realtime_messages_scoped_insert" on realtime.messages;`. `can_read_chat_channel` and the delegating `can_read_chat_message` can stay (same semantics as before); to remove them too, recreate `can_read_chat_message` from `20260827190000_secdef_search_path_pg_temp.sql` first, then `drop function public.can_read_chat_channel(uuid)`.
