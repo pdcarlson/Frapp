@@ -94,16 +94,16 @@ device run, check:
       and open it. This is the one filename contract in the app; a break here is
       invisible until a member taps a calendar entry.
 - [ ] **Single-chapter member**: signs in straight to the tabs and is never
-      asked to choose. This must hold **with `custom_access_token_hook` still
-      disabled** (#805) — the API auto-resolves a sole membership server-side,
-      and the app must not require the claim. Force-quit and reopen: straight to
-      the tabs, no picker flash.
+      asked to choose. This must hold **with or without** an `active_chapter_id`
+      claim — the API auto-resolves a sole membership server-side, and the app
+      must not require the claim (the hook is on in both hosted projects; the
+      playbook still disables it as incident mitigation). Force-quit and reopen:
+      straight to the tabs, no picker flash.
 - [ ] **Chapter picker** (More → Chapter): opens for any member, lists their
       chapters, and Sign out works from it even mid-selection.
-- [ ] **Multi-chapter switch** (needs an account in 2+ chapters **and** #805
-      enabled): pick a chapter and land back in the tabs with that chapter's
-      data. With #805 still disabled the pick should still return you to the
-      tabs rather than spin — the chapter just will not change.
+- [ ] **Multi-chapter switch** (needs an account in 2+ chapters): pick a chapter
+      and land back in the tabs with that chapter's data. If a test token has no
+      claim, the pick should still return you to the tabs rather than spin.
 
 ## Unit tests
 
