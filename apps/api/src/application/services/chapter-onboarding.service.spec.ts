@@ -58,7 +58,7 @@ import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { Chapter } from '#domain/entities/chapter.entity';
-import type { ChapterOnboardingDto } from '../../interface/dtos/chapter-onboarding.dto';
+import type { ChapterOnboardingInput } from './chapter-onboarding.service';
 
 const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -129,10 +129,12 @@ describe('ChapterOnboardingService', () => {
     service = module.get(ChapterOnboardingService);
   });
 
-  const directoryDto: ChapterOnboardingDto = {
+  // No `accept_terms_privacy` here: it is a DTO-level validation gate, not
+  // input this service reads (`ChapterOnboardingInput`'s docstring says why).
+  // The gate itself is covered by `interface/dtos/chapter-onboarding.dto.spec.ts`.
+  const directoryDto: ChapterOnboardingInput = {
     name: 'Sigma Phi Epsilon',
     university: 'UCLA',
-    accept_terms_privacy: true,
     org_archetype: 'nphc',
     directory_id: '11111111-1111-1111-1111-111111111111',
     branding: {
@@ -286,10 +288,9 @@ describe('ChapterOnboardingService', () => {
   });
 
   it('records a directory request for manual entry (no directory_id)', async () => {
-    const manualDto: ChapterOnboardingDto = {
+    const manualDto: ChapterOnboardingInput = {
       name: 'Made Up Chapter Name',
       university: 'Nowhere State',
-      accept_terms_privacy: true,
       org_archetype: 'ifc',
       branding: { greek_letters: 'ΑΒΓ', designation: 'Test', founded_at: 2020 },
     };
@@ -310,10 +311,9 @@ describe('ChapterOnboardingService', () => {
   });
 
   it('records the effective archetype (not null) when the DTO omits one', async () => {
-    const manualDto: ChapterOnboardingDto = {
+    const manualDto: ChapterOnboardingInput = {
       name: 'No Archetype Chapter',
       university: 'Somewhere',
-      accept_terms_privacy: true,
     };
 
     await service.onboard('user-1', manualDto);

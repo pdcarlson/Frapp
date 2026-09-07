@@ -15,13 +15,43 @@ import type {
 } from '../../infrastructure/supabase/database.types';
 import type {
   ChapterCustomField,
+  CustomFieldOptions,
   CustomFieldVisibility,
   MemberCustomFieldValue,
 } from '#domain/entities/chapter-custom-field.entity';
-import type {
-  CreateCustomFieldDto,
-  UpdateCustomFieldDto,
-} from '../../interface/dtos/custom-field.dto';
+
+/**
+ * What `create` needs from a caller. Derived from the entity rather than
+ * restated, so a column added to `ChapterCustomField` cannot leave this shape
+ * behind. `options` narrows the entity's `CustomFieldOptions | null` to the
+ * omit-or-supply form a create takes; the null-to-clear spelling belongs to
+ * `UpdateCustomFieldInput`.
+ *
+ * The interface layer's `CreateCustomFieldDto` is the validated wire shape and
+ * stays there: the application layer may not import it (dependency-cruiser
+ * `api-application-not-to-interface`), and `CustomFieldController` is where the
+ * two meet — passing the DTO into this parameter is what type-checks them
+ * against each other.
+ */
+export interface CreateCustomFieldInput
+  extends
+    Pick<ChapterCustomField, 'key' | 'label' | 'type'>,
+    Partial<
+      Pick<ChapterCustomField, 'required' | 'visibility' | 'sensitive' | 'sort'>
+    > {
+  options?: CustomFieldOptions;
+}
+
+/**
+ * What `update` accepts. `key` and `type` are immutable after creation —
+ * changing `type` would orphan stored member values.
+ */
+export type UpdateCustomFieldInput = Partial<
+  Pick<
+    ChapterCustomField,
+    'label' | 'required' | 'visibility' | 'sensitive' | 'options' | 'sort'
+  >
+>;
 
 // Postgres unique-violation SQLSTATE (raised when (chapter_id, key) collides).
 const UNIQUE_VIOLATION = '23505';
@@ -173,7 +203,7 @@ export class CustomFieldService {
   async create(
     chapterId: string,
     actorUserId: string,
-    dto: CreateCustomFieldDto,
+    dto: CreateCustomFieldInput,
   ): Promise<ChapterCustomField> {
     // Defense-in-depth: a select field is meaningless without choices (the
     // shared zod schema enforces the same on the client/contract boundary).
@@ -233,7 +263,7 @@ export class CustomFieldService {
     id: string,
     chapterId: string,
     actorUserId: string,
-    dto: UpdateCustomFieldDto,
+    dto: UpdateCustomFieldInput,
   ): Promise<ChapterCustomField> {
     const existing = await this.findOne(id, chapterId);
 

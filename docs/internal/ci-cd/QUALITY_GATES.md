@@ -14,7 +14,7 @@ baseline story actually supports.
 
 | Gate | Command | CI job | Posture | Why that posture |
 |---|---|---|---|---|
-| dependency-cruiser | `npm run check:dep-cruiser` | `dependency-cruiser` | **Required** | Has a real baseline; 5 existing violations grandfathered (7 when it landed), new ones fail |
+| dependency-cruiser | `npm run check:dep-cruiser` | `dependency-cruiser` | **Required** | Has a real baseline, and it is **empty** as of 2026-09-07 (7 grandfathered when the gate landed, 5 until then), so every violation now fails |
 | oasdiff breaking changes | `npm run check:api-breaking` | step in `api-contract-check` | **Advisory** | Every consumer is in this repo and ships with the change |
 | `nestjs-typed` response schema | `npm run lint -w apps/api` | step in `lint-and-typecheck` | **`warn`** | A large undecorated-route backlog (count it, see below) and no ESLint baseline mechanism |
 | jscpd duplication | `npm run check:duplication` | `duplicate-detection` | **Advisory** | No clone-level baseline exists; a repo-wide % is too coarse to block on |
@@ -86,8 +86,13 @@ fail — that is how this was caught, and each of the four rule families has bee
 7 then, 5 since #1549 re-recorded it after #1539 had moved
 `apps/api/src/domain/constants/report-columns.ts` out of the interface layer without shrinking it
 (all `api-application-not-to-interface` — services importing
-DTOs from the interface layer). They are
-grandfathered; anything new fails. **The baseline exists to shrink.** Re-record only after *fixing*
+DTOs from the interface layer), and **`[]` since 2026-09-07**, when the last five were fixed rather
+than grandfathered: each of those services now declares its own `…Input` type, which is what the
+other ~20 application services already did, and the controller is where the DTO meets it.
+
+An empty baseline is the goal state, not a special case — the file stays, and the runner records
+into it exactly as before. What changes is that **there is nothing left to grandfather**: every
+violation now fails. **The baseline exists to shrink.** Re-record only after *fixing*
 violations:
 
 ```sh

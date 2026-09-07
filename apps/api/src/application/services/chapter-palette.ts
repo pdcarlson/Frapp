@@ -7,6 +7,26 @@ import { deriveSignetPalette } from '@repo/chapter-theme';
  */
 export type ChapterBrandColors = { accent?: string };
 
+/**
+ * The branding block a chapter submits at onboarding or through the config
+ * PATCH, as the application layer reads it.
+ *
+ * `Chapter.branding` is the persisted `Record<string, unknown>` jsonb column;
+ * this is the typed subset the two writers actually read, and it lives beside
+ * {@link ChapterBrandColors} because the colours half is the part that reaches
+ * the palette. The interface layer's `BrandingDto` is the validated wire shape
+ * and stays there — the application layer may not import it (dependency-cruiser
+ * `api-application-not-to-interface`), and the controllers are where the two
+ * meet.
+ */
+export type ChapterBrandingInput = {
+  greek_letters?: string;
+  designation?: string;
+  school_short?: string;
+  founded_at?: number;
+  colors?: ChapterBrandColors;
+};
+
 /** One Signet §8 text-contrast check that came back below the 4.5:1 AA floor. */
 export type FailedContrastCheck = {
   role: string;

@@ -1,7 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import type { CustomFieldEntry } from '@repo/org-archetypes';
-import { buildChapterPalette } from './chapter-palette';
+import {
+  buildChapterPalette,
+  type ChapterBrandingInput,
+} from './chapter-palette';
 import { buildCustomFieldRows } from './custom-field-provisioning';
 import { LEGAL_POLICY_VERSION } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -12,10 +15,37 @@ import type {
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import type { Chapter } from '#domain/entities/chapter.entity';
-import type { ChapterOnboardingDto } from '../../interface/dtos/chapter-onboarding.dto';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 type Branding = Record<string, unknown>;
+
+/**
+ * What `onboard` needs from the wizard submit.
+ *
+ * `accept_terms_privacy` is deliberately absent: it is a validation gate, not
+ * data this service reads. `ChapterOnboardingDto`'s `@Equals(true)` refuses the
+ * request before it ever arrives here, and the acceptance actually recorded on
+ * the chapter (`legal_accepted_at`, `legal_policy_version`,
+ * `legal_accepted_by`) is stamped below from the session actor and the server
+ * clock, never from the payload — `spec/behavior/legal.md`.
+ *
+ * The interface layer's `ChapterOnboardingDto` is the validated wire shape and
+ * stays there: the application layer may not import it (dependency-cruiser
+ * `api-application-not-to-interface`), and `ChapterController.onboard` is where
+ * the two meet — passing the DTO into this parameter is what type-checks them
+ * against each other.
+ */
+export interface ChapterOnboardingInput {
+  /** Chapter display name (org name). */
+  name: string;
+  /** University / institution name. */
+  university: string;
+  /** Org archetype key (`ifc`, `npc`, …). Defaults to `ifc` when omitted. */
+  org_archetype?: string;
+  /** `chapter_directory` row id when the wizard matched a listed chapter. */
+  directory_id?: string;
+  branding?: ChapterBrandingInput;
+}
 
 /**
  * Orchestrates the onboarding wizard submit (Chunk 03), entirely on the cold
@@ -38,7 +68,7 @@ export class ChapterOnboardingService {
     private readonly activation: ActivationService,
   ) {}
 
-  async onboard(userId: string, dto: ChapterOnboardingDto): Promise<Chapter> {
+  async onboard(userId: string, dto: ChapterOnboardingInput): Promise<Chapter> {
     const archetypeKey = dto.org_archetype ?? 'ifc';
     // buildChapterConfigFromArchetype deep-clones (structuredClone) the seed,
     // so per-chapter edits never leak back into the shared catalog.
@@ -125,7 +155,7 @@ export class ChapterOnboardingService {
   }
 
   private normalizeBranding(
-    branding?: ChapterOnboardingDto['branding'],
+    branding?: ChapterOnboardingInput['branding'],
   ): Branding {
     const result: Branding = {};
     if (!branding) return result;
@@ -238,7 +268,7 @@ export class ChapterOnboardingService {
   private async recordDirectoryRequest(
     chapterId: string,
     userId: string,
-    dto: ChapterOnboardingDto,
+    dto: ChapterOnboardingInput,
     branding: Branding,
     // The archetype actually applied to the created chapter (resolved from the
     // seed, defaulted to `ifc` when the DTO omits one) — not the raw DTO value,

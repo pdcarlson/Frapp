@@ -21,7 +21,9 @@ them. Meanwhile the repo has **no dead-code tooling at all**, its anti-pattern c
 (the rule sections of [`spec/engineering.md`](../../../spec/engineering.md), which it says to read
 as a checklist) is enforced only by
 whoever happens to be reading, [`scripts/dependency-cruiser-known-violations.json`](../../../scripts/dependency-cruiser-known-violations.json)
-"exists to shrink" and does not, and the [`.jscpd.json`](../../../.jscpd.json) threshold only
+"exists to shrink" and only shrinks when a run does it (this routine emptied it on 2026-09-07 —
+keeping it empty is now the job, and a new entry is a regression to refuse, not a baseline to
+re-record), and the [`.jscpd.json`](../../../.jscpd.json) threshold only
 ratchets down when someone consolidates. This routine is the scheduled hand that does the
 consolidating.
 

@@ -16,10 +16,27 @@ import type {
 } from '../../infrastructure/supabase/database.types';
 import type { ChapterCustomRole } from '#domain/entities/chapter-custom-role.entity';
 import { WILDCARD } from '#domain/constants/permissions';
-import type {
-  CreateCustomRoleDto,
-  UpdateCustomRoleDto,
-} from '../../interface/dtos/custom-role.dto';
+
+/**
+ * What `create` needs from a caller. Derived from the entity rather than
+ * restated, so a column added to `ChapterCustomRole` cannot leave this shape
+ * behind. `rank` and `capabilities` are optional here and defaulted below.
+ *
+ * The interface layer's `CreateCustomRoleDto` is the validated wire shape and
+ * stays there: the application layer may not import it (dependency-cruiser
+ * `api-application-not-to-interface`), and `CustomRoleController` is where the
+ * two meet — passing the DTO into this parameter is what type-checks them
+ * against each other.
+ */
+export interface CreateCustomRoleInput
+  extends
+    Pick<ChapterCustomRole, 'key' | 'label'>,
+    Partial<Pick<ChapterCustomRole, 'rank' | 'capabilities'>> {}
+
+/** What `update` accepts. `key` and `core` are not editable. */
+export type UpdateCustomRoleInput = Partial<
+  Pick<ChapterCustomRole, 'label' | 'rank' | 'capabilities'>
+>;
 
 // Postgres unique-violation SQLSTATE (raised when (chapter_id, key) collides).
 const UNIQUE_VIOLATION = '23505';
@@ -85,7 +102,7 @@ export class CustomRoleService {
   async create(
     chapterId: string,
     actorUserId: string,
-    dto: CreateCustomRoleDto,
+    dto: CreateCustomRoleInput,
   ): Promise<ChapterCustomRole> {
     this.assertNoWildcard(dto.capabilities);
     const row: TablesInsert<'chapter_custom_roles'> = {
@@ -131,7 +148,7 @@ export class CustomRoleService {
     id: string,
     chapterId: string,
     actorUserId: string,
-    dto: UpdateCustomRoleDto,
+    dto: UpdateCustomRoleInput,
   ): Promise<ChapterCustomRole> {
     this.assertNoWildcard(dto.capabilities);
     const existing = await this.findOne(id, chapterId);
