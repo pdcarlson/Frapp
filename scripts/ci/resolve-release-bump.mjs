@@ -146,15 +146,27 @@ export async function fetchPrLabels({ repo, prNumber, token, fetchImpl = fetch }
   throw new Error(`GitHub API returned HTTP ${result.status} for PR #${prNumber}${detail}`);
 }
 
-/** True when GET /issues/{n} succeeded and the payload is not a pull request. */
+/**
+ * GitHub's Issues API marks a pull request by the *presence* of `pull_request`,
+ * not by a truthy value. A falsy check would treat `{ pull_request: null }` as a
+ * bare issue and skip — silent patch on a 404 we cannot classify (#1839).
+ */
 function isBareIssuePayload(issue) {
   return Boolean(
-    issue?.ok && issue.data && typeof issue.data === "object" && !issue.data.pull_request,
+    issue?.ok &&
+      issue.data &&
+      typeof issue.data === "object" &&
+      !Object.hasOwn(issue.data, "pull_request"),
   );
 }
 
 function classifyUnreadablePr({ issue, prNumber }) {
-  if (issue?.ok && issue.data?.pull_request) {
+  if (
+    issue?.ok &&
+    issue.data &&
+    typeof issue.data === "object" &&
+    Object.hasOwn(issue.data, "pull_request")
+  ) {
     return ` GET /issues/${prNumber} shows a pull request, so this is a missing or unauthorized PR lookup, not an issue citation.`;
   }
   if (issue && !issue.ok) {
