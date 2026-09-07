@@ -93,9 +93,9 @@ describe("FrappProvider + useClaimChapterSync account boundary", () => {
       expect(qc.getQueryData(["channels"])).toBeUndefined();
       expect(qc.getQueryData(["user", "me"])).toBeUndefined();
     });
-    expect(localStorage.getItem("frapp-active-chapter")).not.toContain(
-      "previous-accounts-chapter",
-    );
+    const persisted = localStorage.getItem("frapp-active-chapter");
+    expect(persisted).toBeTruthy();
+    expect(JSON.parse(persisted as string).state.activeChapterId).toBeNull();
   });
 
   it("leaves persist and cache alone on a claim-less INITIAL_SESSION (steady-state; the picker's case)", async () => {
