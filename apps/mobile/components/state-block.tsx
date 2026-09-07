@@ -176,10 +176,10 @@ export function ErrorState({
 /**
  * "No chapter selected" — its own state because it is neither empty nor an
  * error, and because on this app it is the *common* case rather than an edge
- * one: `custom_access_token_hook` is not enabled in production (#805), so no
- * token carries an `active_chapter_id` claim and every chapter-scoped query
- * stays disabled. A spinner there would hang forever and an error would blame
- * the network for a configuration gap.
+ * one: a token with no `active_chapter_id` claim (no membership yet, or the
+ * hook disabled as incident mitigation) leaves every chapter-scoped query
+ * disabled. A spinner there would hang forever and an error would blame
+ * the network for a missing chapter context.
  *
  * Points at the Chapter row on More, which is the only entry to the picker
  * (`spec/ui/mobile/navigation.md`).
