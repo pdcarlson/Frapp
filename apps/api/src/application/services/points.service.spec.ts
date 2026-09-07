@@ -1598,10 +1598,85 @@ describe('PointsService', () => {
       expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
         'ch-1',
         expect.objectContaining({
-          before: new Date(before).toISOString(),
+          before,
         }),
       );
       expect(result.map((txn) => txn.id)).not.toContain('pt-flagged');
+    });
+
+    it('passes a microsecond before cursor through unchanged', async () => {
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([]);
+
+      // Deliberately microsecond-precision and not a round, millisecond-only
+      // instant: reformatting this through `new Date(x).toISOString()` would
+      // truncate it to '...123Z' and could drop a same-millisecond row off
+      // the cursor — the exact regression this test pins against (#1832).
+      const before = '2026-01-01T00:00:00.123456+00:00';
+      await service.listTransactions('ch-1', { before });
+
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ before }),
+      );
+    });
+
+    it('keeps a same-millisecond sibling when paging across a created_at cursor', async () => {
+      // Two ledger rows inside one JS millisecond. Postgres timestamptz
+      // distinguishes them; `new Date(x).toISOString()` collapses both to
+      // '...123Z', and `created_at < '...123Z'` then misses the earlier
+      // sibling — the page-break case #1832 exists to pin.
+      const later: PointTransaction = {
+        ...txn1,
+        id: 'pt-later-us',
+        created_at: '2026-01-01T00:00:00.123456Z',
+      };
+      const earlier: PointTransaction = {
+        ...txn1,
+        id: 'pt-earlier-us',
+        created_at: '2026-01-01T00:00:00.123001Z',
+      };
+
+      // Pad fractional seconds so lexicographic order matches timestamptz
+      // order. A naive string compare of '...123Z' vs '...123001Z' would
+      // hide the truncation bug: the shorter truncated cursor sorts *after*
+      // the sibling and the mock would still return it.
+      const rank = (iso: string): string =>
+        iso.replace(
+          /(\.\d+)(Z|[+-])/,
+          (_match, frac: string, tz: string) => `${frac.padEnd(7, '0')}${tz}`,
+        );
+
+      mockPointTxnRepo.findByChapterFiltered.mockImplementation(
+        async (_chapterId, opts) => {
+          const rows = [later, earlier].sort((a, b) =>
+            rank(a.created_at) < rank(b.created_at) ? 1 : -1,
+          );
+          const cursor = opts.before;
+          const filtered = cursor
+            ? rows.filter((row) => rank(row.created_at) < rank(cursor))
+            : rows;
+          return filtered.slice(0, opts.limit);
+        },
+      );
+
+      const page1 = await service.listTransactions('ch-1', { limit: 1 });
+      expect(page1.map((row) => row.id)).toEqual(['pt-later-us']);
+
+      const page2 = await service.listTransactions('ch-1', {
+        limit: 1,
+        before: page1[0].created_at,
+      });
+      expect(page2.map((row) => row.id)).toEqual(['pt-earlier-us']);
+    });
+
+    it('rejects a malformed before cursor rather than ignoring it', async () => {
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([]);
+
+      await expect(
+        service.listTransactions('ch-1', { before: 'not-a-date' }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockPointTxnRepo.findByChapterFiltered).not.toHaveBeenCalled();
     });
 
     it('clamps limit to the 1-200 range', async () => {
