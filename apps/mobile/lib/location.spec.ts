@@ -13,6 +13,8 @@ vi.mock("expo-location", () => ({
 }));
 
 import {
+  accuracyMetersOf,
+  latLngOf,
   readForegroundFix,
   readForegroundPermission,
   requestForegroundPermission,
@@ -58,6 +60,29 @@ describe("requestForegroundPermission", () => {
   });
 });
 
+describe("accuracyMetersOf", () => {
+  it("returns a positive finite reading", () => {
+    expect(accuracyMetersOf(12.5)).toBe(12.5);
+  });
+
+  it("omits null, undefined, zero, negative, and non-finite values", () => {
+    expect(accuracyMetersOf(null)).toBeUndefined();
+    expect(accuracyMetersOf(undefined)).toBeUndefined();
+    expect(accuracyMetersOf(0)).toBeUndefined();
+    expect(accuracyMetersOf(-1)).toBeUndefined();
+    expect(accuracyMetersOf(Number.NaN)).toBeUndefined();
+    expect(accuracyMetersOf(Number.POSITIVE_INFINITY)).toBeUndefined();
+  });
+});
+
+describe("latLngOf", () => {
+  it("drops accuracy_meters so undeclared-key POSTs stay legal", () => {
+    expect(
+      latLngOf({ lat: 42.73, lng: -73.68, accuracy_meters: 12 }),
+    ).toEqual({ lat: 42.73, lng: -73.68 });
+  });
+});
+
 describe("readForegroundFix", () => {
   it("reads a Balanced-accuracy fix, never High", async () => {
     await expect(readForegroundFix()).resolves.toEqual({
@@ -65,6 +90,36 @@ describe("readForegroundFix", () => {
       lng: -73.68,
     });
     expect(getCurrentPositionAsync).toHaveBeenCalledWith({ accuracy: 3 });
+  });
+
+  it("includes accuracy_meters when the position carries a usable reading", async () => {
+    getCurrentPositionAsync.mockResolvedValue({
+      coords: { latitude: 42.73, longitude: -73.68, accuracy: 8 },
+    });
+
+    await expect(readForegroundFix()).resolves.toEqual({
+      lat: 42.73,
+      lng: -73.68,
+      accuracy_meters: 8,
+    });
+  });
+
+  it("omits accuracy_meters when the provider reports null or zero", async () => {
+    getCurrentPositionAsync.mockResolvedValue({
+      coords: { latitude: 42.73, longitude: -73.68, accuracy: null },
+    });
+    await expect(readForegroundFix()).resolves.toEqual({
+      lat: 42.73,
+      lng: -73.68,
+    });
+
+    getCurrentPositionAsync.mockResolvedValue({
+      coords: { latitude: 42.73, longitude: -73.68, accuracy: 0 },
+    });
+    await expect(readForegroundFix()).resolves.toEqual({
+      lat: 42.73,
+      lng: -73.68,
+    });
   });
 });
 
@@ -74,10 +129,14 @@ describe("requireForegroundFix", () => {
       granted: true,
       canAskAgain: false,
     });
+    getCurrentPositionAsync.mockResolvedValue({
+      coords: { latitude: 42.73, longitude: -73.68, accuracy: 15 },
+    });
 
     await expect(requireForegroundFix("nope")).resolves.toEqual({
       lat: 42.73,
       lng: -73.68,
+      accuracy_meters: 15,
     });
   });
 

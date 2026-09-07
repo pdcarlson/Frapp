@@ -16,7 +16,45 @@ import * as Location from "expo-location";
  * costs battery a five-minute heartbeat cannot afford.
  */
 
-export type LocationFix = { lat: number; lng: number };
+export type LocationFix = {
+  lat: number;
+  lng: number;
+  /**
+   * Device-reported GPS accuracy in meters. Present only when the provider
+   * gave a usable reading. Heartbeat is the only study DTO that declares this
+   * field; start, resume, and event check-in must send `latLngOf(fix)` because
+   * the API ValidationPipe forbids undeclared keys.
+   */
+  accuracy_meters?: number;
+};
+
+/**
+ * Coordinates only — for POSTs whose DTO does not declare `accuracy_meters`.
+ *
+ * Spreading a `LocationFix` into those bodies 400s once the device reports
+ * accuracy (`forbidNonWhitelisted`).
+ */
+export function latLngOf(fix: LocationFix): { lat: number; lng: number } {
+  return { lat: fix.lat, lng: fix.lng };
+}
+
+/**
+ * Usable GPS accuracy in meters, or `undefined` when the provider did not
+ * report one.
+ *
+ * Some Android providers return `null` (and occasionally `0`) for accuracy.
+ * Sending `0` would look like a perfect fix and skip the optional-field
+ * semantics the server documents: omit → skip the 100m floor; a number →
+ * enforce it (`spec/behavior/study-sessions.md`).
+ */
+export function accuracyMetersOf(
+  accuracy: number | null | undefined,
+): number | undefined {
+  if (typeof accuracy !== "number" || !Number.isFinite(accuracy) || accuracy <= 0) {
+    return undefined;
+  }
+  return accuracy;
+}
 
 export type ForegroundPermission = {
   granted: boolean;
@@ -52,7 +90,14 @@ export async function readForegroundFix(): Promise<LocationFix> {
   const position = await Location.getCurrentPositionAsync({
     accuracy: Location.Accuracy.Balanced,
   });
-  return { lat: position.coords.latitude, lng: position.coords.longitude };
+  const accuracy_meters = accuracyMetersOf(position.coords.accuracy);
+  return accuracy_meters === undefined
+    ? { lat: position.coords.latitude, lng: position.coords.longitude }
+    : {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        accuracy_meters,
+      };
 }
 
 /**
