@@ -73,28 +73,32 @@ runs:
           exit 1
         fi
 
-    # The mislabelling guard. The service-role key reads whichever project
-    # SUPABASE_URL names, and a production job injects two Infisical
-    # environments (see db-backup.yml) — this proves the URL is the project this
-    # environment's prefix claims to hold.
+    # Same fence as the CLI (`assertStorageBackupTarget`). The service-role key
+    # reads whichever project SUPABASE_URL names, and a production job injects
+    # two Infisical environments (see db-backup.yml) — this proves the URL is
+    # the project this environment's prefix claims to hold, and that the prefix
+    # itself belongs to that environment. Do not re-parse the hostname in bash;
+    # a second copy is what a local rehearsal used to skip.
     - name: Assert the injected project URL is this environment's
       shell: bash
       env:
         BACKUP_ENVIRONMENT: ${{ inputs.environment }}
+        STORAGE_PREFIX: ${{ inputs.prefix }}
+        REHEARSAL: ${{ inputs.rehearsal }}
       run: |
         set -euo pipefail
-        EXPECTED="$(node -e '
-          import("./scripts/ci/lib/environments.mjs").then((m) => {
-            process.stdout.write(m.getEnvironment(process.env.BACKUP_ENVIRONMENT).supabaseProjectRef);
+        node --input-type=module -e '
+          import { assertStorageBackupTarget } from "./scripts/storage-backup.mjs";
+          const target = assertStorageBackupTarget({
+            supabaseUrl: process.env.SUPABASE_URL,
+            prefix: process.env.STORAGE_PREFIX,
+            mode: process.env.REHEARSAL === "true" ? "rehearse" : "backup",
+            expectedEnvironment: process.env.BACKUP_ENVIRONMENT,
           });
-        ')"
-        HOST="${SUPABASE_URL#https://}"; HOST="${HOST#http://}"; HOST="${HOST%%/*}"
-        REF="${HOST%%.*}"
-        if [ "$REF" != "$EXPECTED" ]; then
-          echo "::error::SUPABASE_URL in the job env names project ${REF:0:8}…, not the ${BACKUP_ENVIRONMENT} project (${EXPECTED:0:8}…) in .github/environments.json. A mirror taken now would be mislabelled; refusing."
-          exit 1
-        fi
-        echo "Project URL matches .github/environments.json for ${BACKUP_ENVIRONMENT}."
+          console.log(
+            `Project URL matches prefix ${process.env.STORAGE_PREFIX} and .github/environments.json for ${target.environment} (${target.projectRef}).`,
+          );
+        '
 
     - name: Setup Node
       uses: actions/setup-node@v4
@@ -104,6 +108,7 @@ runs:
     - name: Back up Storage objects
       shell: bash
       env:
+        BACKUP_ENVIRONMENT: ${{ inputs.environment }}
         STORAGE_PREFIX: ${{ inputs.prefix }}
         REHEARSAL: ${{ inputs.rehearsal }}
       run: |

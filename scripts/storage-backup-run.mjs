@@ -34,6 +34,7 @@ import {
   REHEARSAL_CONTENT_TYPE,
   REHEARSAL_PREFIX,
   assertSafeObjectPath,
+  assertStorageBackupTarget,
   backupKey,
   checkDeletionSanity,
   downloadObject,
@@ -326,6 +327,22 @@ const run = modes[opts.mode];
 if (!run) {
   console.error(`Usage: storage-backup-run.mjs <backup|restore|rehearse> [options]`);
   process.exit(2);
+}
+
+try {
+  // Before any Storage or R2 write. The GHA action used to be the only place
+  // that compared SUPABASE_URL to .github/environments.json; a local rehearsal
+  // with production credentials would otherwise write a canary into production.
+  const target = assertStorageBackupTarget({
+    supabaseUrl: process.env.SUPABASE_URL,
+    prefix: opts.prefix,
+    mode: opts.mode,
+    expectedEnvironment: process.env.BACKUP_ENVIRONMENT || undefined,
+  });
+  console.log(`Target: ${target.environment} (${target.projectRef}) prefix '${opts.prefix}'.`);
+} catch (err) {
+  console.error(`::error::${err.message}`);
+  process.exit(1);
 }
 
 run(opts).catch((err) => {
