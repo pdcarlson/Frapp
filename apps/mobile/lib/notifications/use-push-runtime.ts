@@ -27,7 +27,8 @@
  * the session has restored, and dropped if the member signs out first. It waits
  * on the chapter claim having been *read*, never on it having a value — see the
  * comment on the release effect, and `lib/auth-gate.ts` for why the difference
- * is the whole ballgame while #805 is open.
+ * is the whole ballgame: a missing claim is a normal working state, not a
+ * reason to hold a deep link forever (`lib/auth-gate.ts`).
  *
  * ## The token lifecycle
  *
@@ -172,10 +173,10 @@ export function usePushRuntime(): void {
       return;
     }
     // Wait on the claim *read*, never on the claim's value. `lib/auth-gate.ts`
-    // spells out why at length: `custom_access_token_hook` is disabled in
-    // production (#805 is open and `[human]`), so **no token carries
-    // `active_chapter_id` today** and `chapterId` is `null` for every signed-in
-    // member. Gating on it would have made this effect return on 100% of taps —
+    // spells out why at length: a token with no `active_chapter_id` is a
+    // normal working state (no membership yet, or the hook disabled as
+    // incident mitigation), so `chapterId` can be `null` for a signed-in
+    // member. Gating on it would have made this effect return on those taps —
     // the same outage that gate refuses to ship, reintroduced in a second
     // place. The API resolves a sole membership server-side, so a null claim is
     // a normal working state, not a reason to swallow a deep link.

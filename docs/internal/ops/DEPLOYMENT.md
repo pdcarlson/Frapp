@@ -193,7 +193,7 @@ read. Read them back with `GET https://api.supabase.com/v1/projects/<ref>/config
 `SUPABASE_ACCESS_TOKEN` is enough); write with `PATCH` on the same path, or in the dashboard under
 Authentication → URL Configuration / SMTP Settings.
 
-| Setting | `frapp-prod` (read 2026-09-06) | `frapp-staging` (read 2026-09-06) |
+| Setting | `frapp-prod` (read 2026-09-07) | `frapp-staging` (read 2026-09-07) |
 | --- | --- | --- |
 | Site URL | `https://app.frapp.live` | `https://app.staging.frapp.live` |
 | Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** |

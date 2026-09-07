@@ -14,25 +14,24 @@
  * to the chapter picker. That is wrong while the claim is optional, and it
  * would have been an outage rather than a bug:
  *
- * - `custom_access_token_hook` is not enabled in production yet (#805 is open
- *   and `[human]`), so **no** token carries the claim today.
+ * - The hook is enabled on both hosted projects (#805's dashboard toggle,
+ *   verified 2026-09-07 via Management API). It still issues no claim when the user
+ *   has no membership — production is in that state until the first onboard
+ *   — and `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md` still disables the hook as the first
+ *   auth-incident mitigation, which returns every token to claim-absence.
  * - `ChapterGuard.resolveChapterContext` (apps/api) treats that as normal: with
  *   neither claim nor `x-chapter-id` it auto-resolves a sole membership
- *   server-side, which is why single-chapter members work fine right now.
- * - `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md` makes *disabling* that hook the
- *   first mitigation for an auth incident, on the stated grounds that an absent
- *   claim is safe.
+ *   server-side, which is why single-chapter members work with or without the
+ *   claim.
  *
- * Forcing the picker on claim-absence would therefore have bricked every member
- * in the current production configuration — and again during any incident that
- * followed the playbook — because activating a chapter cannot produce a claim
- * while the hook is off, so the picker could never satisfy its own gate.
+ * Forcing the picker on claim-absence would therefore brick every member with
+ * no chapter, and every member during an incident that followed the playbook,
+ * because the picker could not satisfy its own gate until a later token
+ * carried the claim.
  *
  * So the claim is treated as an optimization, not a requirement: when it is
  * absent the app proceeds and lets the API resolve context. The picker stays a
  * deliberate destination (reached from the More hub) rather than a forced one.
- * Once #805 lands, promoting it back to automatic is a small, safe change —
- * tracked as a follow-up.
  *
  * ## First-run (s03) and join (s02)
  *

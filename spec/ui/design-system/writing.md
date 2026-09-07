@@ -304,7 +304,7 @@ different", the member surface gets its own rows rather than inline strings.
 | State | Title | Description |
 |---|---|---|
 | Loading | — | Skeleton (`components/state-block.tsx`); no loading copy. |
-| Module off | `Study hours are turned off` | `Your chapter isn't tracking study hours right now. An officer can turn the module back on.` The same sentence is what a failed Start renders when the server refuses with `chapter.module.disabled` — the empty state is unreachable while #805 keeps `useCurrentChapter` disabled, so the error path has to carry the member-facing wording rather than relaying the guard's officer instructions ("Re-enable it in Settings → Modules"). |
+| Module off | `Study hours are turned off` | `Your chapter isn't tracking study hours right now. An officer can turn the module back on.` The same sentence is what a failed Start renders when the server refuses with `chapter.module.disabled` — the empty state is unreachable while `useCurrentChapter` is disabled (no claim on the token), so the error path has to carry the member-facing wording rather than relaying the guard's officer instructions ("Re-enable it in Settings → Modules"). |
 | No zones | `No study zones yet` | `Sessions are tracked inside a zone. An officer with geofences:manage can add one.` |
 | Error (sessions) | `Couldn't load study hours` | `Your sessions are still recorded — this was a problem fetching them.` |
 | Error (zones) | `Couldn't load study zones` | `A session has to start inside a zone, so this has to load first.` |
