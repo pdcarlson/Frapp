@@ -120,7 +120,7 @@ summary before running anything from this family.
 > `deploy-production.yml` deploys production from a dispatched SHA. Both run
 > `scripts/ci/deploy-vercel.mjs`. Live exercise of the production upload, and the
 > Actions-list trap when tagging fails afterward:
-> [`DEPLOYMENT.md`](../../ops/DEPLOYMENT.md) § 10 (2026-09-07, run 34155737950).
+> [`DEPLOYMENT.md`](../ops/DEPLOYMENT.md) § 10 (2026-09-07, run 34155737950).
 >
 > This does **not** retire the "dashboard-only, fail-open settings" framing the guardrail row sits
 > inside. While the projects stay unlinked there is no Production Branch left to point at `main` —
