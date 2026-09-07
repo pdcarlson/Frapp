@@ -18,11 +18,15 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
-# Play service-account key referenced by eas.json submit config — a real key
-# dropped at this path must never be stageable. (Deliberately NOT named
-# google-services.json: that is Firebase's client config, which EAS builds
-# would need packaged, i.e. tracked.)
+# Play service-account key for `eas submit` — a real key dropped at this path
+# must never be stageable.
 play-service-account.json
+
+# Firebase's Android client config, read by app.config.js when present so a
+# local build can package it. Production builds get it from the EAS file
+# environment variable GOOGLE_SERVICES_JSON instead (ENV_REFERENCE.md § Mobile);
+# it carries a Google API key that gitleaks flags, so it stays untracked.
+google-services.json
 
 # Written at prebuild by the @sentry/react-native/expo config plugin, at the
 # project root rather than inside the ignored /ios and /android output. Both are
