@@ -13,7 +13,9 @@ action file is not on disk yet when the runner resolves it.
 | Action | What it does |
 | --- | --- |
 | [`turbo-packages-build`](./turbo-packages-build/action.yml) | ADR-15 lever (A): restores the `.turbo` cache and builds `packages/*`. One producer (`packages-build`, `save: "true"`) and seven consumers. |
-| [`infisical-secrets`](./infisical-secrets/action.yml) | The credential preflight plus the `Infisical/secrets-action` injection for one environment. 11 call sites across 6 workflows. |
+| [`infisical-secrets`](./infisical-secrets/action.yml) | The credential preflight plus the `Infisical/secrets-action` injection for one environment. 15 call sites across 6 workflows — the roster is `EXPECTED` in `scripts/ci/__tests__/infisical-secrets-action.test.mjs`. |
+| [`db-offsite-backup`](./db-offsite-backup/action.yml) | Dump one Supabase project with the Supabase CLI, upload to the offsite bucket under `<environment>/<label>/`, read it back, prune past retention. Asserts the injected `SUPABASE_PROJECT_REF` against `.github/environments.json` before linking. 2 call sites (staging, production) in `db-backup.yml`. |
+| [`storage-offsite-backup`](./storage-offsite-backup/action.yml) | Mirror one project's Storage objects to a per-environment prefix, or run the restore rehearsal. Asserts the injected `SUPABASE_URL` against `.github/environments.json`. 2 call sites in `db-backup.yml`. |
 | [`supabase-cli`](./supabase-cli/action.yml) | Installs the Supabase CLI at the one pinned version. 4 call sites. Takes **no inputs** — see below. |
 
 ## Rules that are enforced, not just documented

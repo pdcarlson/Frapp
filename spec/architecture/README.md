@@ -1041,7 +1041,7 @@ the ones a later reader would otherwise re-litigate.
 | # | Decision | Date | Why |
 | --- | --- | --- | --- |
 | 1 | Leave production blocked rather than hand-unblock it, until the pipeline fix landed | 2026-08-29 | Hand-unblocking would have spent the one forcing function that made the redesign urgent, and would have deployed through the path under suspicion |
-| 2 | Defer production backups to stage 5, as an accepted risk | 2026-08-29 | `db-backup.yml` covers staging only, and the free tier has neither PITR nor daily backups. Until stage 5, a `frapp-prod` data-loss event is **unrecoverable**. Recorded as a risk taken knowingly, not an oversight |
+| 2 | Defer production backups to stage 5, as an accepted risk | 2026-08-29 | `db-backup.yml` covers staging only, and the free tier has neither PITR nor daily backups. Until stage 5, a `frapp-prod` data-loss event is **unrecoverable**. Recorded as a risk taken knowingly, not an oversight. **Amended 2026-09-06:** `db-backup.yml` now dumps and mirrors `frapp-prod` nightly under a reviewer-free `production-backup` environment (the design #1435 asked an owner to choose — a separate reviewer-free environment rather than `environment: production` — shipped for the owner to ratify by merging; #1435 stays open until its last acceptance criterion, an unattended run that produces a restorable artifact, is met). The risk retires the night the first scheduled production dump reads back from the bucket; a production *restore* is still unrehearsed (#1421), so "recoverable" is not yet "proven recoverable" |
 | 3 | Make CI production-shaped; leave staging preview-based | 2026-08-29 | `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install. Staging keeps preview builds, so a build-shape difference between the two environments persists — a recorded trade-off, not a bug to rediscover |
 | 4 | Six stages, sequenced, each independently valuable and revertable | 2026-08-29 | A single change large enough to carry all of it could not be reviewed or reverted; the sequence is what makes the scale safe (`spec/engineering.md` § Changing existing code) |
 | 5 | Demote `migration-drift` from required to reporting-only | 2026-08-30 | It measures whether staging is behind `main` — a question no PR contains or can change. As a required check it was a merge-freeze switch, not a gate: on 2026-08-29 it turned every open PR unmergeable over state none of them touched. Detection is not lost; `check-migration-drift.yml` covers both environments daily |
@@ -1072,7 +1072,9 @@ the ones a later reader would otherwise re-litigate.
   authenticated and unauthenticated requests alike from a cloud sandbox, and the GitHub MCP exposes
   no branch-protection tool. Step 4 of any rollout is evidenced only by a human's own run output.
   This is why #813, #1166 and #1138 recur.
-- **A `frapp-prod` data-loss event is unrecoverable until stage 5.** `frapp-prod` is
+- **A `frapp-prod` data-loss event is unrecoverable until stage 5** — amended 2026-09-06: the
+  nightly production dump job now exists (decision 2's amendment); the exposure closes on its first
+  successful scheduled run and stays "unrehearsed" until #1421. `frapp-prod` is
   `ACTIVE_HEALTHY` and held 54 migrations when the Management API was last read (2026-08-29) — so
   this is a live exposure, not a hypothetical about a paused project. **"held 54 … when last read"
   is a dated snapshot, not current state:** `main` has moved past the `20260829002000` high-water
