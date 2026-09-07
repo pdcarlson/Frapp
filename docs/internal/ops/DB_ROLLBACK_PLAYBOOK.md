@@ -139,10 +139,13 @@ Supabase's guidance for the free tier is to do exactly what this repo now does:
 
 Two consequences worth stating plainly:
 
-- **The nightly offsite dump is not defence-in-depth. It is the only restorable
-  backup `frapp-staging` has, and `frapp-prod` has none at all.** If it is not
-  running, there is no recovery path from data loss beyond replaying migrations
-  into an empty database.
+- **The offsite dump is not defence-in-depth. It is the only restorable backup
+  either project has.** For `frapp-staging` it is nightly. For `frapp-prod` there
+  is, as of 2026-09-06, exactly **one**: `production/2026-09-06T22-22-57Z/`, taken by hand from
+  an agent session (§ Backups: what exists) — a scheduled production job does not
+  exist yet (#1794). Anything written to production after that label is not
+  backed up anywhere. If the workflow is not running, there is no recovery path
+  from data loss beyond replaying migrations into an empty database.
 - Free-tier projects may have up to 7 daily backups taken internally, but
   Supabase makes them accessible **only on upgrade**, and states it "might no
   longer make daily backups for free projects in the future". That is not
@@ -159,7 +162,7 @@ Two consequences worth stating plainly:
 | Scope | `frapp-staging` only — not deferred by choice: `frapp-prod` is `ACTIVE_HEALTHY` and serving traffic, but a `schedule:`-triggered job naming `environment: production` would suspend on ADR-19's required-reviewer gate every night. See #1435 (the design trap), #1403 (Supabase Pro / PITR) and #1421 (an offsite restore rehearsed at least once) |
 | Destination | A private Cloudflare R2 bucket, outside Supabase on purpose — Supabase deletes its own backups with the project. Provisioned 2026-08-27 (#1287): scoped API token (object read/write on that one bucket), `BACKUP_S3_*` secrets in Infisical `staging` at `/` — see [`ENV_REFERENCE.md`](../environment/ENV_REFERENCE.md) § Offsite Backup Secrets |
 | Retention | `BACKUP_RETENTION_DAYS`, default 30, pruned by the same workflow |
-| First verified run | [2026-08-27, run 1](https://github.com/pdcarlson/Frapp/actions/runs/33116113194) — upload plus independent read-back listing all 4 objects |
+| First verified run | Staging: [2026-08-27, run 1](https://github.com/pdcarlson/Frapp/actions/runs/33116113194) — upload plus independent read-back listing all 4 objects. **Production: `production/2026-09-06T22-22-57Z/`, taken 2026-09-06 by hand from an agent session** with the same `scripts/db-backup.sh --linked` the nightly job runs, uploaded with read-back (4 objects, manifest byte-identical to the local copy), plus the Storage mirror manifest under `storage-production/` (0 objects — production Storage was empty). That dump held 54 ledger rows and one `public.users` row (the migration-seeded system sender) and nothing else: production had no sign-ups yet. It exists so that the first scheduled production run (#1794) is not also the first production backup |
 
 If the `BACKUP_S3_*` secrets ever go missing the workflow still **fails loudly
 before dumping** rather than going green. A backup job that reports success
@@ -186,21 +189,56 @@ prevent.
 
 ## Restoring from an offsite dump
 
+Two shapes. **Use the first.** The second is the fallback for when the repository
+is not to hand, and it leaves work behind that the first does not.
+
+**Preferred — schema from the repo, data from the dump:**
+
 ```bash
 # 1. Fetch the dump you want (labels are UTC and sort chronologically).
-aws s3 cp "s3://$BACKUP_S3_BUCKET/staging/<label>/" ./restore/ \
+aws s3 cp "s3://$BACKUP_S3_BUCKET/<staging|production>/<label>/" ./restore/ \
   --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive
 
-# 2. Restore. Verifies checksums and preconditions before touching the target.
-scripts/db-restore.sh --backup-dir ./restore --db-url "<target-url>" --force
+# 2. Check out the commit that was live when the dump was taken (the release tag,
+#    or the SHA deploy-production.yml recorded), and point the repo's migrations
+#    at the fresh project. This recreates EVERYTHING the migrations own, including
+#    the objects inside Supabase-managed schemas that the dump cannot carry.
+supabase link --project-ref <fresh-project-ref>
+supabase db push --include-all
+
+# 3. Load the data. Refuses unless the target's migration ledger and the dump's
+#    name the same migrations; empties each table it is about to fill (a fresh
+#    push seeds `public.users` with the system sender, which the dump also
+#    carries) and skips the dump's copy of the ledger.
+scripts/db-restore.sh --backup-dir ./restore --db-url "<target-url>" --force --data-only
 ```
 
-**The target must be a Supabase-provisioned database** — a freshly created
-project, or a reset local stack. These dumps are *not* self-contained:
-`supabase db dump` excludes Supabase-managed schemas, so the schema dump references
-`auth`, `storage` and `extensions` without creating them, and restoring into a
-bare `CREATE DATABASE` dies partway through. The restore script checks this up front
-rather than letting you discover it mid-replay.
+**Fallback — dump only** (`scripts/db-restore.sh --backup-dir ./restore --db-url
+"<target-url>" --force`, replaying roles → schema → data): use it when the repo at
+the right commit is unavailable. **Know what it leaves out.** `supabase db dump`
+excludes the Supabase-managed schemas, and that exclusion covers every object our
+own migrations create *inside* them: the `realtime_messages_scoped_select` policy on
+`realtime.messages` — without it every private change-ping topic joins, reports
+`SUBSCRIBED` and delivers nothing (#867's shape) — and all eight `storage.buckets`
+rows, without which every upload fails. The 2026-09-06 rehearsal measured exactly
+those nine objects missing after a row-for-row-identical dump-only restore. And
+because the dump restores `supabase_migrations.schema_migrations`, a later
+`supabase db push` believes those migrations already ran and never recreates
+them. After a dump-only restore, recreate them by hand from the migrations that
+own them before declaring the restore complete.
+
+**Either way the target must be a Supabase-provisioned database** — a freshly
+created project, or a reset local stack. The dumps are *not* self-contained: the
+schema dump references `auth`, `storage` and `extensions` without creating them,
+and restoring into a bare `CREATE DATABASE` dies partway through. The restore
+script checks this up front rather than letting you discover it mid-replay.
+
+**"Reset local stack" means `supabase db reset`, or the rehearsal's own wipe — not a
+hand-typed `DROP SCHEMA public CASCADE; CREATE SCHEMA public`.** Recreating the schema
+by hand drops Supabase's default privileges on it, so every table the migrations then
+create is readable by `postgres` alone and the API gets `42501 permission denied`
+through PostgREST while every row count matches (rehearsal log, 2026-09-06). A fresh
+hosted project has the defaults; a hand-recreated local schema does not.
 
 `--force` is required for any non-local target. That is not ceremony: the script
 replaces the contents of the database it is pointed at, and the difference
@@ -301,13 +339,21 @@ Record each run in the rehearsal log below.
 
 A backup you have never restored is a rumor. Re-run
 [`scripts/db-restore-rehearsal.sh`](../../../scripts/db-restore-rehearsal.sh)
-after changing any dump flag or the restore order — it backs up the local stack,
-drops the application schema, restores from the dump alone, and diffs row counts
-table-by-table, exiting non-zero on any drift.
+after changing any dump flag, the restore order, or a migration that creates an
+object inside a Supabase-managed schema — it backs up the local stack and then
+runs both restore shapes above against a wiped database: pass A replays the dump
+alone and diffs row counts table-by-table; pass B rebuilds the schema with
+`supabase db push --local --include-all`, loads the dump with `--data-only`, and
+diffs the rows **and** the managed objects (`realtime`/`storage` policies, the
+`supabase_realtime` publication membership, `storage.buckets`). It exits non-zero
+on any drift in pass B; pass A's missing managed objects are reported as the
+known limitation of a dump-only restore.
 
 | Date | Result | Notes |
 | --- | --- | --- |
 | 2026-08-27 | **PASS** | 24 tables identical row-for-row. `auth.users` restored with `encrypted_password` intact. Took five iterations; each failure was a real defect in the recipe (see #852). Local stack, Postgres 17.6 — same major/minor as staging. Not yet rehearsed against a real Supabase project — unblocked since 2026-08-27, when #1287 provisioned the offsite bucket. |
+| 2026-09-06 | **FAIL, then PASS** | First run against a local database that had actually been used through the API (two GoTrue sign-ins, a chapter created via `POST /v1/chapters`, an invite minted and redeemed, chat messages, a config PATCH with its audit row): the restore aborted on `auth.audit_log_entries_pkey`. The rehearsal's "destroy" step truncated only `auth.users`, and `audit_log_entries` (like `flow_state`, `instances` and the SSO/OAuth tables) has no FK to users, so the rows survived and collided with the dump's copy — the 2026-08-27 pass had an empty auth schema and never exercised this. A fresh Supabase project has every auth data table empty, so the step now truncates all of them except GoTrue's `schema_migrations`. Re-run: **18 non-empty tables identical row-for-row**, and the API served a sign-in, channel history and the member list from the restored database. Because `db-restore.sh` runs in one transaction, the failed attempt left the target untouched apart from the rehearsal's own wipe; the kept dump restored it. **Then a second gap, invisible to a row-count diff:** after that identical restore, `pg_policies` on `realtime` was empty — the dump excludes managed schemas, so the realtime authorisation policy and all eight `storage.buckets` rows were gone, and the restored ledger would have stopped `db push` from ever recreating them. The rehearsal now runs two passes and compares the managed objects too: pass A (dump only) reports the 9 missing objects as the known limitation; pass B (`supabase db push --local --include-all`, then `db-restore.sh --data-only`) **restored 18 tables row-for-row AND all 12 managed objects identical**. Pass B is now the documented recovery. Still local only — a restore into a disposable hosted project remains undone (#1421). |
+| 2026-09-06 (later) | **PASS on the real production dump; a third gap found and closed** | The first production dump (`production/2026-09-06T22-22-57Z/`, above) was restored locally the preferred way: the local database was wiped, the schema was rebuilt from the repo **at production's applied commit** (`c563e589`, whose `supabase/migrations/` is exactly production's 54 versions — `supabase db push --db-url … --include-all` works from any checkout, no linked project needed), then `db-restore.sh --data-only` loaded the dump: checksums verified, ledger 54/54 matched, 72 tables emptied and loaded, state equal to the dump, 8 buckets and the realtime policy present. **The third gap:** with the database then rebuilt at `main`, the running API answered `42501 permission denied for table chapters` through PostgREST. Recreating `public` with `DROP SCHEMA … CASCADE; CREATE SCHEMA public` drops Supabase's DEFAULT PRIVILEGES on the schema, so every table `db push` created afterwards was readable by `postgres` alone — and the rehearsal, comparing rows and policies but not grants, had called that a PASS. A fresh hosted project *has* those defaults, so this is a fidelity bug in the local simulation, not in the restore procedure; the destroy step now restores them and the managed-object inventory includes every (table, client role) grant, plus a `set role service_role` read as PostgREST would issue it. Re-run: pass B 75/75 migrations, rows identical, 169 managed objects identical, service_role read OK, API readiness green afterwards. Still local only for the hosted half (#1421). |
 
 ## Immediate response steps
 
