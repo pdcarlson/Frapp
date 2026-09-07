@@ -1,4 +1,8 @@
 name: Deploy production
+# The Actions list otherwise shows one red row named "Deploy production" when
+# tagging fails after a live ship (run 34155737950, 2026-09-07). Scope + SHA
+# in the run title is what you read before opening the jobs.
+run-name: "${{ inputs.scope }} ${{ inputs.sha }}"
 
 # The ONLY path to production. A human opens Actions, names a commit, types a
 # confirmation, and approves the `production` environment. Nothing here fires on
@@ -125,6 +129,7 @@ env:
 
 jobs:
   deploy:
+    name: Migrate, then ship Render + Vercel
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 75
@@ -540,6 +545,7 @@ jobs:
   # that was deployed — so `vX.Y.Z` now means "this is live", where it used to
   # mean "this was merged and we hoped it would ship".
   release:
+    name: Mint v* tag (does not roll back a live ship)
     needs: deploy
     # The scope clause is not decoration. A tag means "this is what is live",
     # and a migrations-only run changes the database without changing a single
@@ -570,6 +576,7 @@ jobs:
   # Actions list and emails the actor, which is thin for the only path to
   # production — and it cannot express "deployed fine, then failed to tag".
   report:
+    name: Summarize — red if the tag failed even when live
     needs: [deploy, release]
     if: always() && needs.deploy.result != 'skipped'
     runs-on: ubuntu-latest

@@ -1437,9 +1437,14 @@ Two consequences this ADR's own requirements produce, recorded here because this
 
 **Not done, and not doable by CI:** the Definition of Done's final clause — one production deploy
 dispatched successfully through the new path — needs the `production` environment's required-reviewer
-approval. The CLI deploy has unit coverage but has **never run against the live projects**, so the
-first `full` dispatch is its first real exercise. `deploy-production.yml`'s `dry_run_only` stops
-before the Vercel step and so does not cover it either.
+approval. `deploy-production.yml`'s `dry_run_only` still stops before the Vercel step.
+
+**Correction 2026-09-07:** the CLI deploy **has** now run against the live projects. Run
+[34155737950](https://github.com/pdcarlson/Frapp/actions/runs/34155737950) (`scope: full`, SHA
+`f2938a01`) applied, shipped Render, and uploaded both Vercel production bundles with
+`--prebuilt --prod`. The tag job failed afterward (`GET /pulls/1340`); that does not un-exercise
+the upload path. Canonical timestamps and the Actions-list trap:
+[`docs/internal/ops/DEPLOYMENT.md`](../../docs/internal/ops/DEPLOYMENT.md) § 10.
 
 **Trigger to revisit:** CI-driven deploys prove unworkable and re-linking Git is considered. That
 supersedes this ADR rather than amending it — and re-linking restores both Vercel settings, the
