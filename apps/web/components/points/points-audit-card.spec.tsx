@@ -159,6 +159,23 @@ describe("PointsAuditCard pagination", () => {
     expect(fixtures.lastOptions?.before).toBeUndefined();
   });
 
+  it("keeps Newer available when an older page fails to load", async () => {
+    const user = userEvent.setup();
+    fixtures.data = page(AUDIT_PAGE_SIZE, MICROSECOND_CURSOR);
+    const view = render(<PointsAuditCard />);
+
+    await user.click(screen.getByRole("button", { name: "Older transactions" }));
+
+    fixtures.isError = true;
+    fixtures.data = [];
+    view.rerender(<PointsAuditCard />);
+
+    expect(screen.getByText("Audit unavailable")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Newer transactions" }));
+
+    expect(fixtures.lastOptions?.before).toBeUndefined();
+  });
+
   it("does not offer Older transactions on a short first page", () => {
     fixtures.data = page(3);
     render(<PointsAuditCard />);
