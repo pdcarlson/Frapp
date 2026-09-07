@@ -101,8 +101,11 @@ Interceptors:
 - **RequestIdInterceptor** — attaches/propagates `x-request-id`.
 - **LoggingInterceptor** — structured JSON logging with latency and status code.
 - **AuthSyncInterceptor** — auto-creates/syncs the `users` row from Supabase Auth on first
-  authenticated request. Not global: applied per-controller/per-route via `@UseInterceptors` —
-  see [`.claude/skills/api-development/SKILL.md`](../../.claude/skills/api-development/SKILL.md)
+  authenticated request. Parallel first requests can both miss the row and collide on
+  `users_supabase_auth_id_key`; `AuthService.syncUser` treats that unique violation as
+  "the other request won" and returns the existing id (Sentry FRAPP-API-3). Not global:
+  applied per-controller/per-route via `@UseInterceptors` — see
+  [`.claude/skills/api-development/SKILL.md`](../../.claude/skills/api-development/SKILL.md)
   § "Auth and guard chain" for where.
 
 ### Rate limiting

@@ -3,6 +3,12 @@ import { AuthService } from './auth.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 
+const AUTH_ID_UNIQUE_VIOLATION = {
+  code: '23505',
+  message:
+    'duplicate key value violates unique constraint "users_supabase_auth_id_key"',
+};
+
 describe('AuthService', () => {
   let service: AuthService;
   let mockRepo: jest.Mocked<IUserRepository>;
@@ -102,5 +108,52 @@ describe('AuthService', () => {
         display_name: 'jane.doe',
       }),
     );
+  });
+
+  it('returns the winner when a parallel first-request insert collides', async () => {
+    const racedUser = {
+      id: 'user-4',
+      supabase_auth_id: 'auth-race',
+      email: 'race@example.com',
+      display_name: 'race',
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    mockRepo.findBySupabaseAuthId
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(racedUser);
+    mockRepo.create.mockRejectedValue(AUTH_ID_UNIQUE_VIOLATION);
+
+    const result = await service.syncUser('auth-race', 'race@example.com');
+
+    expect(result).toEqual({ id: 'user-4' });
+    expect(mockRepo.create).toHaveBeenCalledTimes(1);
+    expect(mockRepo.findBySupabaseAuthId).toHaveBeenCalledTimes(2);
+  });
+
+  it('rethrows a unique violation if the colliding row cannot be read back', async () => {
+    const collision = AUTH_ID_UNIQUE_VIOLATION;
+    mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
+    mockRepo.create.mockRejectedValue(collision);
+
+    await expect(
+      service.syncUser('auth-missing', 'missing@example.com'),
+    ).rejects.toEqual(collision);
+  });
+
+  it('rethrows non-unique insert errors', async () => {
+    const boom = { code: '42501', message: 'permission denied' };
+    mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
+    mockRepo.create.mockRejectedValue(boom);
+
+    await expect(
+      service.syncUser('auth-denied', 'denied@example.com'),
+    ).rejects.toEqual(boom);
+    expect(mockRepo.findBySupabaseAuthId).toHaveBeenCalledTimes(1);
   });
 });
