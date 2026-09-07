@@ -16,7 +16,10 @@ port = 54323
 [auth]
 enabled = true
 site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:3000", "http://localhost:3001", "exp://localhost:8081"]
+# Each entry is a glob, and a bare origin matches only itself — the web app's
+# email links land on `http://localhost:3000/auth/callback?next=…`, which needs
+# the `/**` entry. Hosted projects carry the same shape (DEPLOYMENT.md § Auth).
+additional_redirect_urls = ["http://localhost:3000", "http://localhost:3000/**", "http://localhost:3001", "exp://localhost:8081"]
 jwt_expiry = 3600
 enable_signup = true
 
