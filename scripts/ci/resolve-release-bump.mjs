@@ -26,6 +26,14 @@
 // some unrelated issue's labels. So: parse the SUBJECT LINE only, and handle
 // both shapes explicitly.
 //
+// A remaining hole in that subject-line rule (#1839): squash trailers are
+// `(#N)` whether N is the PR or an issue the author cited instead. Proven on
+// production run 34155737950 — `e5cba789` ended `(#1340)`, GET /pulls/1340
+// 404'd, and the Release job died after Render and Vercel were already live.
+// A 404 still throws when the number is a real PR (or we cannot tell):
+// returning `[]` would silently downgrade `release:major` to patch. A 404
+// that GET /issues/N confirms is a bare issue is skipped, loudly.
+//
 // Semantics: the pure functions below. Unit tests:
 // `scripts/ci/__tests__/resolve-release-bump.test.mjs`.
 
@@ -97,31 +105,61 @@ export function applyBump(currentVersion, bump) {
 }
 
 /**
- * Labels on one PR, or `null` when that number is not a pull request.
+ * Labels on one PR, or `null` when `{n}` is an issue that is not a PR.
  *
- * A 404 is skipped, not thrown: squash subjects routinely end `(#N)` for an
- * *issue* (run 34155737950 died on `#1340` after production had already
- * shipped — #1340 is an issue). Treating that as empty labels would also be
- * wrong if it were the *only* number in range, but skipping lets later real
- * PRs still vote.
- *
- * A 403 still THROWS rather than returning `[]`. Returning an empty list would
- * read as "no release label", i.e. a silent downgrade to `patch` — a
- * `release:major` PR could ship as a patch because a token lacked a scope.
+ * A 404 on GET /pulls/{n} THROWS rather than returning `[]`, except when GET
+ * /issues/{n} confirms a bare issue (no `pull_request` key). Returning an
+ * empty list would read as "no release label", i.e. a silent downgrade to
+ * `patch` — a `release:major` PR could ship as a patch because a token lacked
+ * a scope. Skipping a squash trailer that named an issue is the other hole
+ * (#1839): that 404 is not an auth failure, and throwing it aborts the tag
+ * after production is already live. A 404 we cannot classify as a bare issue
+ * still fails closed. The operator escape is `bump=minor` (or patch/major).
  */
 export async function fetchPrLabels({ repo, prNumber, token, fetchImpl = fetch }) {
   const result = await ghRequest({ token, fetchImpl, path: `/repos/${repo}/pulls/${prNumber}` });
+  if (result.ok) {
+    if (!Array.isArray(result.data?.labels)) {
+      throw new Error(`Unexpected pull request payload for PR #${prNumber}`);
+    }
+    return result.data.labels.map((label) => label?.name).filter(Boolean);
+  }
+
   if (result.status === 404) {
-    return null;
-  }
-  if (!result.ok) {
+    const issue = await ghRequest({
+      token,
+      fetchImpl,
+      path: `/repos/${repo}/issues/${prNumber}`,
+    });
+    if (isBareIssuePayload(issue)) {
+      return null;
+    }
     const detail = result.data ? `: ${result.data}` : "";
-    throw new Error(`GitHub API returned HTTP ${result.status} for PR #${prNumber}${detail}`);
+    const classified = classifyUnreadablePr({ issue, prNumber });
+    throw new Error(
+      `GitHub API returned HTTP 404 for PR #${prNumber}${detail}.${classified} Re-run Release with bump=minor (or patch/major) instead of auto.`,
+    );
   }
-  if (!Array.isArray(result.data?.labels)) {
-    throw new Error(`Unexpected pull request payload for PR #${prNumber}`);
+
+  const detail = result.data ? `: ${result.data}` : "";
+  throw new Error(`GitHub API returned HTTP ${result.status} for PR #${prNumber}${detail}`);
+}
+
+/** True when GET /issues/{n} succeeded and the payload is not a pull request. */
+function isBareIssuePayload(issue) {
+  return Boolean(
+    issue?.ok && issue.data && typeof issue.data === "object" && !issue.data.pull_request,
+  );
+}
+
+function classifyUnreadablePr({ issue, prNumber }) {
+  if (issue?.ok && issue.data?.pull_request) {
+    return ` GET /issues/${prNumber} shows a pull request, so this is a missing or unauthorized PR lookup, not an issue citation.`;
   }
-  return result.data.labels.map((label) => label?.name).filter(Boolean);
+  if (issue && !issue.ok) {
+    return ` GET /issues/${prNumber} returned HTTP ${issue.status}, so this number could not be classified as a bare issue.`;
+  }
+  return "";
 }
 
 /**
@@ -151,20 +189,33 @@ export async function resolveReleaseBump({
   }
 
   const labelSets = [];
+  const readPrNumbers = [];
+  const skippedIssues = [];
   for (const prNumber of prNumbers) {
     const labels = await fetchPrLabels({ repo, prNumber, token, fetchImpl });
     if (labels === null) {
+      skippedIssues.push(prNumber);
       logger.log?.(
-        `#${prNumber} is not a pull request (HTTP 404); skipping — squash subjects often name an issue`,
+        `::warning::#${prNumber} is an issue, not a pull request — skipping for bump labels. Re-run Release with bump=minor (or patch/major) if this range should not be a patch.`,
       );
       continue;
     }
     logger.log?.(`PR #${prNumber} labels: ${labels.join(", ") || "(none)"}`);
     labelSets.push(labels);
+    readPrNumbers.push(prNumber);
+  }
+
+  if (labelSets.length === 0) {
+    logger.log?.(
+      skippedIssues.length > 0
+        ? `Range cited issue(s) ${skippedIssues.map((n) => `#${n}`).join(", ")}, not PRs — defaulting to a patch bump.`
+        : "No PR numbers found in range — defaulting to a patch bump.",
+    );
+    return { bump: "patch", version: applyBump(currentVersion, "patch"), prNumbers: [] };
   }
 
   const bump = highestBump(labelSets);
-  return { bump, version: applyBump(currentVersion, bump), prNumbers };
+  return { bump, version: applyBump(currentVersion, bump), prNumbers: readPrNumbers };
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────

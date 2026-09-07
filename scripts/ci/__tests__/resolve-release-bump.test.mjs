@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   applyBump,
+  fetchPrLabels,
   highestBump,
   prNumberFromSubject,
   prNumbersFromSubjects,
@@ -19,6 +20,19 @@ const quiet = { log: () => {} };
 // JSON-parses it — not `.json()`. Test doubles must be `.text()`-shaped.
 function okJson(body) {
   return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+}
+
+function notFound() {
+  return { ok: false, status: 404, text: async () => "" };
+}
+
+function githubFetch(routes) {
+  return async (url) => {
+    const path = new URL(url).pathname;
+    const response = routes[path];
+    if (!response) throw new Error(`unexpected fetch: ${url}`);
+    return response;
+  };
 }
 
 describe("prNumberFromSubject", () => {
@@ -128,41 +142,8 @@ describe("resolveReleaseBump", () => {
     assert.equal(fetched, false);
   });
 
-  // Run 34155737950: squash subject `(#1340)` named an issue, GET /pulls/1340
-  // 404'd, and the tag job died after Render and Vercel had already shipped.
-  it("skips a 404 (the number is not a pull request) and still reads later PRs", async () => {
-    const result = await resolveReleaseBump({
-      currentVersion: "0.1.0",
-      subjects: ["Retire the production branch (#1340)", "docs(backup): restore dump-era (#1836)"],
-      repo: "o/r",
-      token: "t",
-      logger: quiet,
-      fetchImpl: async (url) => {
-        const n = url.split("/").pop();
-        if (n === "1340") return { ok: false, status: 404, text: async () => "" };
-        return okJson({ labels: [{ name: "release:minor" }] });
-      },
-    });
-    assert.equal(result.bump, "minor");
-    assert.equal(result.version, "0.2.0");
-    assert.deepEqual(result.prNumbers, [1340, 1836]);
-  });
-
-  it("falls back to patch when every named number 404s (issues, not PRs)", async () => {
-    const result = await resolveReleaseBump({
-      currentVersion: "0.1.0",
-      subjects: ["Retire the production branch (#1340)"],
-      repo: "o/r",
-      token: "t",
-      logger: quiet,
-      fetchImpl: async () => ({ ok: false, status: 404, text: async () => "" }),
-    });
-    assert.equal(result.bump, "patch");
-    assert.equal(result.version, "0.1.1");
-  });
-
-  // A silent downgrade is the dangerous failure: a release:major PR shipping as
-  // a patch because a token lacked a scope, with nothing red anywhere.
+  // #1840 kept a 403 throw after it started skipping every 404. The classifier
+  // still must not silent-downgrade when the token lacks pull-requests.
   it("throws when a PR in range cannot be read, rather than defaulting to patch", async () => {
     await assert.rejects(
       () =>
@@ -175,6 +156,86 @@ describe("resolveReleaseBump", () => {
           fetchImpl: async () => ({ ok: false, status: 403, text: async () => "" }),
         }),
       /HTTP 403 for PR #10/,
+    );
+  });
+
+  // #1839: squash subject `e5cba789` cited issue #1340. GET /pulls/1340 404s;
+  // GET /issues/1340 is a bare issue. Throwing aborted the tag after a green
+  // production deploy. Skipping the issue and reading remaining PRs is the fix.
+  it("skips a squash trailer that names an issue, and still reads other PRs", async () => {
+    const logs = [];
+    const result = await resolveReleaseBump({
+      currentVersion: "0.1.0",
+      subjects: [
+        "Retire the production branch: deploy a named commit from main (#1340)",
+        "thing (#11)",
+      ],
+      repo: "o/r",
+      token: "t",
+      logger: { log: (line) => logs.push(line) },
+      fetchImpl: githubFetch({
+        "/repos/o/r/pulls/1340": notFound(),
+        "/repos/o/r/issues/1340": okJson({ title: "issue only" }),
+        "/repos/o/r/pulls/11": okJson({ labels: [{ name: "release:minor" }] }),
+      }),
+    });
+    assert.equal(result.bump, "minor");
+    assert.equal(result.version, "0.2.0");
+    assert.deepEqual(result.prNumbers, [11]);
+    assert.match(logs[0], /::warning::#1340 is an issue, not a pull request/);
+  });
+
+  it("defaults to patch when every squash trailer in range names an issue", async () => {
+    const result = await resolveReleaseBump({
+      currentVersion: "1.0.0",
+      subjects: ["Retire the production branch: deploy a named commit from main (#1340)"],
+      repo: "o/r",
+      token: "t",
+      logger: quiet,
+      fetchImpl: githubFetch({
+        "/repos/o/r/pulls/1340": notFound(),
+        "/repos/o/r/issues/1340": okJson({ title: "issue only" }),
+      }),
+    });
+    assert.equal(result.bump, "patch");
+    assert.equal(result.version, "1.0.1");
+    assert.deepEqual(result.prNumbers, []);
+  });
+
+  it("still throws when GET /pulls 404s but GET /issues shows a pull request", async () => {
+    await assert.rejects(
+      () =>
+        resolveReleaseBump({
+          currentVersion: "0.1.0",
+          subjects: ["Merge pull request #10 from x"],
+          repo: "o/r",
+          token: "t",
+          logger: quiet,
+          fetchImpl: githubFetch({
+            "/repos/o/r/pulls/10": notFound(),
+            "/repos/o/r/issues/10": okJson({
+              title: "a real PR",
+              pull_request: { url: "https://api.github.com/repos/o/r/pulls/10" },
+            }),
+          }),
+        }),
+      /missing or unauthorized PR lookup/,
+    );
+  });
+
+  it("still throws when GET /issues cannot classify a /pulls 404", async () => {
+    await assert.rejects(
+      () =>
+        fetchPrLabels({
+          repo: "o/r",
+          prNumber: 10,
+          token: "t",
+          fetchImpl: githubFetch({
+            "/repos/o/r/pulls/10": notFound(),
+            "/repos/o/r/issues/10": { ok: false, status: 403, text: async () => "nope" },
+          }),
+        }),
+      /could not be classified as a bare issue/,
     );
   });
 
@@ -220,13 +281,16 @@ describe("the workflows that run this script grant the scope it needs", () => {
     [".github/workflows/release.yml", "release"],
     [".github/workflows/deploy-production.yml", "release"],
   ]) {
-    it(`${file} grants pull-requests: read on its \`${job}\` job`, () => {
+    it(`${file} grants pull-requests: read and issues: read on its \`${job}\` job`, () => {
       const text = readFileSync(join(repoRoot, file), "utf8");
       const jobStart = text.indexOf(`\n  ${job}:\n`);
       assert.notEqual(jobStart, -1, `job \`${job}\` not found in ${file}`);
       const jobBody = text.slice(jobStart, jobStart + 2000);
       assert.match(jobBody, /permissions:/);
       assert.match(jobBody, /pull-requests: read/);
+      // #1839: classify a /pulls 404 as a bare issue. Exhaustive `permissions:`
+      // would otherwise set issues to none and the classifier would 403.
+      assert.match(jobBody, /issues: read/);
     });
   }
 });
