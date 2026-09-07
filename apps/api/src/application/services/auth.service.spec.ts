@@ -3,6 +3,12 @@ import { AuthService } from './auth.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 
+const AUTH_ID_UNIQUE_VIOLATION = {
+  code: '23505',
+  message:
+    'duplicate key value violates unique constraint "users_supabase_auth_id_key"',
+};
+
 describe('AuthService', () => {
   let service: AuthService;
   let mockRepo: jest.Mocked<IUserRepository>;
@@ -121,10 +127,7 @@ describe('AuthService', () => {
     mockRepo.findBySupabaseAuthId
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(racedUser);
-    mockRepo.create.mockRejectedValue({
-      code: '23505',
-      message: 'duplicate key value violates unique constraint "users_supabase_auth_id_key"',
-    });
+    mockRepo.create.mockRejectedValue(AUTH_ID_UNIQUE_VIOLATION);
 
     const result = await service.syncUser('auth-race', 'race@example.com');
 
@@ -134,10 +137,7 @@ describe('AuthService', () => {
   });
 
   it('rethrows a unique violation if the colliding row cannot be read back', async () => {
-    const collision = {
-      code: '23505',
-      message: 'duplicate key value violates unique constraint "users_supabase_auth_id_key"',
-    };
+    const collision = AUTH_ID_UNIQUE_VIOLATION;
     mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
     mockRepo.create.mockRejectedValue(collision);
 
