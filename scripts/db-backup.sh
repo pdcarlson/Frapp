@@ -13,10 +13,10 @@
 #   https://supabase.com/docs/guides/platform/backups
 #
 # So this is not defence-in-depth on top of a provider snapshot. Until the org is
-# upgraded, it is the ONLY restorable backup `frapp-staging` has — and `frapp-prod`
-# has none at all, because db-backup.yml runs against staging only. This script can
-# dump any project; nothing schedules it against prod. See DB_ROLLBACK_PLAYBOOK.md
-# § Backup reality.
+# upgraded, it is the ONLY source of a restorable backup either project has:
+# db-backup.yml schedules it against `frapp-staging` (since 2026-08-27) and
+# `frapp-prod` (since 2026-09-06, #1435) through the db-offsite-backup action.
+# See DB_ROLLBACK_PLAYBOOK.md § Backup reality.
 #
 # Three files, per Supabase's documented backup recipe (same link, and
 # /guides/platform/migrating-within-supabase/backup-restore). They are separate
