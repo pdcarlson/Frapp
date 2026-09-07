@@ -1,4 +1,5 @@
 import { deriveSignetPalette } from '@repo/chapter-theme';
+import type { ChapterBranding } from '@repo/validation';
 
 /**
  * The brand colors a chapter stores. `accent` is the accent engine's seed, and
@@ -6,6 +7,32 @@ import { deriveSignetPalette } from '@repo/chapter-theme';
  * legacy web token map and went with it in the #920 slice-9 cutover.
  */
 export type ChapterBrandColors = { accent?: string };
+
+/**
+ * The branding block a chapter submits at onboarding or through the config
+ * PATCH, as the application layer reads it.
+ *
+ * Reused from `@repo/validation` rather than restated: `ChapterBrandingSchema`
+ * is what web and mobile already parse `chapters.branding` with, so this binds
+ * the two writers here to the same declaration the clients use. `NonNullable`
+ * because that schema is `.optional()` at its use site and the optionality
+ * belongs to the field, not the shape. `Chapter.branding` stays the untyped
+ * `Record<string, unknown>` jsonb column it is persisted as.
+ *
+ * The interface layer's `BrandingDto` remains the request-time class-validator
+ * surface — the application layer may not import it (dependency-cruiser
+ * `api-application-not-to-interface`), and the controllers are where the two
+ * meet; `interface/dtos/service-input-coverage.ts` is what proves the DTO's
+ * keys are all present here.
+ *
+ * **Known divergence, not introduced here:** `ChapterBrandingSchema` accepts a
+ * 3-digit hex accent (`#ABC`); `BrandingColorsDto`'s `HEX_COLOR_PATTERN`
+ * requires 6. A client that validates locally against the schema can therefore
+ * send an accent the API rejects with a 400. The shapes agree, so this type
+ * reuse is sound; the regexes are a separate decision about which spellings
+ * Frapp accepts.
+ */
+export type ChapterBrandingInput = NonNullable<ChapterBranding>;
 
 /** One Signet §8 text-contrast check that came back below the 4.5:1 AA floor. */
 export type FailedContrastCheck = {
@@ -39,9 +66,14 @@ export type ChapterPaletteBuild = {
  * the legacy map was produced only when a brand colour was supplied, so a
  * palette could hold one map or both.
  *
- * **Never throws.** `ChapterOnboardingService.buildPalette` wraps its call in a
- * try/catch that returns `null`, so a throw here would not surface as an error
- * — it would silently onboard a chapter with no palette at all.
+ * **Never throws, and nothing catches it if it did.** All three writers call it
+ * bare: `ChapterOnboardingService.buildPalette`,
+ * `ChapterConfigService.recomputePalette`, and `ChapterService`'s accent save.
+ * Onboarding is the worst of the three — its call runs *before*
+ * `ChapterService.create`, so a throw here fails chapter creation outright
+ * rather than degrading the palette. (This paragraph used to claim onboarding
+ * wrapped the call in a try/catch returning `null`; it never has — corrected
+ * 2026-09-07. The rule is unchanged, only the consequence it names.)
  */
 export function buildChapterPalette(
   colors: ChapterBrandColors,

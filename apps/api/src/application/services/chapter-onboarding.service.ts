@@ -1,7 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import type { CustomFieldEntry } from '@repo/org-archetypes';
-import { buildChapterPalette } from './chapter-palette';
+import {
+  buildChapterPalette,
+  type ChapterBrandingInput,
+} from './chapter-palette';
 import { buildCustomFieldRows } from './custom-field-provisioning';
 import { LEGAL_POLICY_VERSION } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -12,10 +15,48 @@ import type {
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
 import type { Chapter } from '#domain/entities/chapter.entity';
-import type { ChapterOnboardingDto } from '../../interface/dtos/chapter-onboarding.dto';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 type Branding = Record<string, unknown>;
+
+/**
+ * What `onboard` needs from the wizard submit.
+ *
+ * `accept_terms_privacy` is **required here even though this service never
+ * reads it**, and that is deliberate. `onboard` stamps `legal_accepted_at`,
+ * `legal_policy_version` and `legal_accepted_by` unconditionally
+ * (`spec/behavior/legal.md`), so the acceptance record it writes is only
+ * truthful because `ChapterOnboardingDto`'s `@Equals(true)` refused the request
+ * otherwise. Dropping the field from this signature would leave that gate
+ * enforceable by exactly one controller, and a second caller — a backfill, a
+ * seed, a partner-provisioning route with its own DTO — could then compile a
+ * call that writes a legal acceptance for an acceptance that never happened.
+ * Keeping it in the signature is what makes such a caller state the claim.
+ * (It is `boolean`, not the literal `true`, only so the DTO stays assignable;
+ * `@Equals(true)` is what enforces the value.)
+ *
+ * The interface layer's `ChapterOnboardingDto` is the validated wire shape and
+ * stays there: the application layer may not import it (dependency-cruiser
+ * `api-application-not-to-interface`), and `ChapterController.onboard` is where the two
+ * meet. That call site checks assignability, which is **one-directional**:
+ * it catches a field this type requires that the DTO stopped supplying, and
+ * it does not catch a field added to the DTO and never added here — that one
+ * validates on the wire and is silently dropped before it reaches this
+ * service. Widen the DTO and this type together.
+ */
+export interface ChapterOnboardingInput {
+  /** Chapter display name (org name). */
+  name: string;
+  /** University / institution name. */
+  university: string;
+  /** Org archetype key (`ifc`, `npc`, …). Defaults to `ifc` when omitted. */
+  org_archetype?: string;
+  /** `chapter_directory` row id when the wizard matched a listed chapter. */
+  directory_id?: string;
+  branding?: ChapterBrandingInput;
+  /** The admin accepted the Terms of Service and Privacy Policy. See above. */
+  accept_terms_privacy: boolean;
+}
 
 /**
  * Orchestrates the onboarding wizard submit (Chunk 03), entirely on the cold
@@ -38,7 +79,7 @@ export class ChapterOnboardingService {
     private readonly activation: ActivationService,
   ) {}
 
-  async onboard(userId: string, dto: ChapterOnboardingDto): Promise<Chapter> {
+  async onboard(userId: string, dto: ChapterOnboardingInput): Promise<Chapter> {
     const archetypeKey = dto.org_archetype ?? 'ifc';
     // buildChapterConfigFromArchetype deep-clones (structuredClone) the seed,
     // so per-chapter edits never leak back into the shared catalog.
@@ -125,7 +166,7 @@ export class ChapterOnboardingService {
   }
 
   private normalizeBranding(
-    branding?: ChapterOnboardingDto['branding'],
+    branding?: ChapterOnboardingInput['branding'],
   ): Branding {
     const result: Branding = {};
     if (!branding) return result;
@@ -238,7 +279,7 @@ export class ChapterOnboardingService {
   private async recordDirectoryRequest(
     chapterId: string,
     userId: string,
-    dto: ChapterOnboardingDto,
+    dto: ChapterOnboardingInput,
     branding: Branding,
     // The archetype actually applied to the created chapter (resolved from the
     // seed, defaulted to `ifc` when the DTO omits one) — not the raw DTO value,
