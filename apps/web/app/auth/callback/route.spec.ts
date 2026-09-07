@@ -42,7 +42,7 @@ describe("GET /auth/callback", () => {
 
   it("never redirects off-origin, however `next` is shaped", async () => {
     exchangeCodeForSession.mockResolvedValue({ error: null });
-    for (const next of ["https://evil.example/x", "//evil.example/x", "evil"]) {
+    for (const next of ["https://evil.example/x", "//evil.example/x", "/\\evil.example/x", "evil"]) {
       const { url } = await callback(`code=abc123&next=${encodeURIComponent(next)}`);
       expect(url.origin).toBe(ORIGIN);
       expect(url.pathname).toBe("/chat");

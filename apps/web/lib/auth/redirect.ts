@@ -9,15 +9,38 @@ const DEFAULT_DASHBOARD_PATH = "/chat";
 export const AUTH_CALLBACK_PATH = "/auth/callback";
 
 /**
+ * A host that no real URL resolves against; the guard's only use for it is
+ * detecting when a candidate path escaped it.
+ */
+const GUARD_ORIGIN = "https://redirect-guard.invalid";
+
+/**
  * The open-redirect guard the proxy applies, applied again wherever a
  * `redirectTo` value is consumed: anything that is not a same-origin path
  * falls back to the dashboard default.
+ *
+ * Decided by the URL parser, not by string prefixes. `startsWith("/")` admits
+ * `//evil.example` (protocol-relative) and `/\evil.example` (the WHATWG parser
+ * treats `\` as `/` in https URLs), and both leave the origin the moment
+ * something does `new URL(value, origin)` — which `/auth/callback` must, to
+ * build its redirect. Resolving the candidate against a sentinel origin and
+ * checking the origin survived catches every such shape at once, and the
+ * value handed back is the parser's own normalised path + query + fragment.
  */
 export function resolveRedirectPath(value: string | null | undefined): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+  if (!value || !value.startsWith("/")) {
     return DEFAULT_DASHBOARD_PATH;
   }
-  return value;
+  let parsed: URL;
+  try {
+    parsed = new URL(value, GUARD_ORIGIN);
+  } catch {
+    return DEFAULT_DASHBOARD_PATH;
+  }
+  if (parsed.origin !== GUARD_ORIGIN) {
+    return DEFAULT_DASHBOARD_PATH;
+  }
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
 
 /**
