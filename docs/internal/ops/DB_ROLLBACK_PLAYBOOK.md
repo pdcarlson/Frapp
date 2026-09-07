@@ -224,11 +224,14 @@ if you want dump-era fidelity. Do it **after** the data load, never before:
 `--data-only` refuses a newer ledger on purpose (rehearsed 2026-09-07: a
 76-migration `main` was refused for the 54-migration production dump and the
 target was left untouched). Checking out the newer commit and pushing *before*
-the load is the failure that guard exists to catch.
+the load is the failure that guard exists to catch. Name the same
+`<target-url>` as step 3: `db push` without `--db-url` uses whatever
+`supabase link` last pointed at, which is not always the database you just
+restored.
 
 ```bash
 git checkout <desired-commit>
-supabase db push --include-all
+supabase db push --db-url "<target-url>" --include-all
 ```
 
 **Fallback — dump only** (`scripts/db-restore.sh --backup-dir ./restore --db-url
