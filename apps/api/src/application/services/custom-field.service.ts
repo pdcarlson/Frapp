@@ -18,10 +18,27 @@ import type {
   CustomFieldVisibility,
   MemberCustomFieldValue,
 } from '#domain/entities/chapter-custom-field.entity';
-import type {
-  CreateCustomFieldDto,
-  UpdateCustomFieldDto,
-} from '../../interface/dtos/custom-field.dto';
+import type { CreateCustomField, UpdateCustomField } from '@repo/validation';
+
+/**
+ * What `create` and `update` accept.
+ *
+ * Reused from `@repo/validation` rather than restated: `CreateCustomFieldSchema`
+ * is what the web Fields tab already validates its POST body with, so binding
+ * the service to the same declaration is what keeps the client's idea of the
+ * payload and the server's from drifting. The interface layer's
+ * `CreateCustomFieldDto` / `UpdateCustomFieldDto` remain the request-time
+ * class-validator surface — the application layer may not import them
+ * (dependency-cruiser `api-application-not-to-interface`), and
+ * `CustomFieldController` is where the two meet. That call site checks
+ * assignability, which is **one-directional**: it catches a field these types
+ * require that a DTO stopped supplying, and it does not catch a field added to
+ * a DTO and never added to the schema — that one validates on the wire and is
+ * silently dropped before it reaches this service. Widen the schema and the DTO
+ * together.
+ */
+export type CreateCustomFieldInput = CreateCustomField;
+export type UpdateCustomFieldInput = UpdateCustomField;
 
 // Postgres unique-violation SQLSTATE (raised when (chapter_id, key) collides).
 const UNIQUE_VIOLATION = '23505';
@@ -173,7 +190,7 @@ export class CustomFieldService {
   async create(
     chapterId: string,
     actorUserId: string,
-    dto: CreateCustomFieldDto,
+    dto: CreateCustomFieldInput,
   ): Promise<ChapterCustomField> {
     // Defense-in-depth: a select field is meaningless without choices (the
     // shared zod schema enforces the same on the client/contract boundary).
@@ -233,7 +250,7 @@ export class CustomFieldService {
     id: string,
     chapterId: string,
     actorUserId: string,
-    dto: UpdateCustomFieldDto,
+    dto: UpdateCustomFieldInput,
   ): Promise<ChapterCustomField> {
     const existing = await this.findOne(id, chapterId);
 
