@@ -45,16 +45,29 @@ export interface CheckoutSessionWebhookObject {
     chapter_id?: string;
   };
   subscription?: string | null;
-  customer?: string | null;
+  customer?: string | { id: string } | null;
 }
 
 export interface SubscriptionWebhookObject {
   id: string;
   status?: string;
+  // Stripe sends the customer as an id string on webhook payloads, an expanded
+  // object only under explicit expansion, or null for a deleted customer —
+  // normalize via customerIdFrom. Read by `findChapterBySubscription`'s
+  // customer fallback (#1738).
+  customer?: string | { id: string } | null;
 }
 
 export interface InvoiceWebhookObject {
   subscription?: string | null;
+  customer?: string | { id: string } | null;
+}
+
+/** Normalize a Stripe `customer` reference (id, expanded object, or null). */
+export function customerIdFrom(
+  customer: string | { id: string } | null | undefined,
+): string | null {
+  return typeof customer === 'string' ? customer : (customer?.id ?? null);
 }
 
 export interface PaymentIntentWebhookObject {
