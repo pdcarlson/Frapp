@@ -39,19 +39,19 @@ import { StatusChip } from "@/components/status-chip";
  * chapter** (#1084) so a first officer who landed in the tabs (the pre-#958
  * gate) still has a door. The picker is deliberately not forced on members
  * whose token lacks an `active_chapter_id` claim — see `lib/auth-gate.ts` for
- * why that would be an outage rather than a feature while #805 is open — so it
- * needs a door.
+ * why that would be an outage rather than a feature when the claim is absent —
+ * so it needs a door.
  *
- * ## The admin section, and why it may look empty in production
+ * ## The admin section, and why it may look empty
  *
  * The gate is `usePermissionList()` + `can`, the pattern `host-check-in.tsx`
  * established. The underlying `useMyPermissions` hook is `enabled:
- * !!chapterId`, and no production token
- * carries an `active_chapter_id` claim while #805 is open — so in that
- * configuration the permission set is empty and this section renders for
- * nobody, Presidents included. It fails closed, which is the right direction,
- * but it does mean the section only appears once #805 lands (or on a local
- * stack, where `supabase/config.toml` enables the hook).
+ * !!chapterId`. A user with no claim (no membership yet, or a hook-off
+ * incident) therefore gets an empty permission set and this section renders
+ * for nobody, Presidents included. It fails closed, which is the right
+ * direction. After the first membership exists the hook stamps the claim
+ * (#805 is closed) and the section appears; a local stack with the hook
+ * enabled in `supabase/config.toml` behaves the same.
  *
  * ## What is still not the drawn s09
  *

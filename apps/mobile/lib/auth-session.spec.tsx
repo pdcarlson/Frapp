@@ -473,9 +473,9 @@ describe("AuthSessionProvider — chapter context", () => {
     // re-read set the flag again, the whole tab navigator would unmount roughly
     // once an hour, losing composer drafts and scroll position.
     //
-    // Note the claim is deliberately ABSENT here: that is production's current
-    // shape (#805 is open, so no token carries it), and it is exactly the case
-    // where "we already have a chapter" cannot be what skips the wait.
+    // Note the claim is deliberately ABSENT here: that is the empty-prod /
+    // incident-disable shape, and it is exactly the case where "we already
+    // have a chapter" cannot be what skips the wait.
     mockState.initialSession = SESSION;
     mockState.claims = { sub: "user-1" };
 

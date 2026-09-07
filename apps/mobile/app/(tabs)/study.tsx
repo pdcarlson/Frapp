@@ -581,17 +581,18 @@ export default function StudyScreen() {
       { enabled_modules?: Record<string, boolean> } | undefined
   )?.enabled_modules;
   // Fails open, and deliberately: `useCurrentChapter` is `enabled: !!chapterId`
-  // and no production token carries the claim while #805 is open, so a strict
-  // read would hide the screen from everyone. The writes are gated server-side
-  // regardless — this only avoids offering a surface a chapter switched off.
+  // and a missing claim (no membership yet, or a hook-off incident) would hide
+  // the screen from everyone if we required it. The writes are gated
+  // server-side regardless — this only avoids offering a surface a chapter
+  // switched off.
   const hoursEnabled = isModuleEnabled(enabledModules, "hours");
 
   function renderBody() {
     // No `NoChapterState` branch. `GET /v1/study-sessions` resolves a sole
     // membership server-side, so it works without an `active_chapter_id` claim —
-    // and `chapterId` is null for *every* production member while #805 is open,
-    // so any such branch would swallow every genuine fetch failure into
-    // "No chapter selected", which carries no retry control.
+    // and `chapterId` is null whenever that claim is absent, so any such
+    // branch would swallow every genuine fetch failure into "No chapter
+    // selected", which carries no retry control.
     if (!hoursEnabled) {
       return (
         <EmptyState
