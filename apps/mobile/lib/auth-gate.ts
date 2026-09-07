@@ -17,7 +17,7 @@
  * - The hook is enabled on both hosted projects (#805's dashboard toggle,
  *   verified 2026-09-07 via Management API). It still issues no claim when the user
  *   has no membership — production is in that state until the first onboard
- *   — and `DB_ROLLBACK_PLAYBOOK.md` still disables the hook as the first
+ *   — and `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md` still disables the hook as the first
  *   auth-incident mitigation, which returns every token to claim-absence.
  * - `ChapterGuard.resolveChapterContext` (apps/api) treats that as normal: with
  *   neither claim nor `x-chapter-id` it auto-resolves a sole membership

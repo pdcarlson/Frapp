@@ -103,7 +103,8 @@ device run, check:
       chapters, and Sign out works from it even mid-selection.
 - [ ] **Multi-chapter switch** (needs an account in 2+ chapters): pick a chapter
       and land back in the tabs with that chapter's data. If a test token has no
-      claim, the pick should still return you to the tabs rather than spin.
+      claim, the pick should still return you to the tabs rather than spin —
+      the chapter just will not change until a later token carries the claim.
 
 ## Unit tests
 
