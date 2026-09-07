@@ -809,6 +809,23 @@ jobs:
       - name: Mobile unit tests
         run: npm run test -w apps/mobile
 
+      # EAS Build regenerates the native projects from app.json with exactly
+      # this command before it compiles anything, using this lockfile. Nothing
+      # else in CI exercises the config plugins, so a plugin that fails at
+      # prebuild time is a build that fails on EAS's runner instead of here —
+      # which is how a root `overrides` entry broke every iOS build without a
+      # single red check (`@xmldom/xmldom` 0.9 under `@expo/plist`, see
+      # docs/internal/security/SECURITY_FIXES.md). `--no-install` skips
+      # CocoaPods and the Gradle wrapper, so this needs no native toolchain
+      # and finishes in seconds. The tree is not committed; `--clean` keeps a
+      # cached runner from masking a plugin that only works incrementally.
+      - name: Native projects generate from app.json (expo prebuild)
+        working-directory: apps/mobile
+        env:
+          CI: "1"
+          EXPO_NO_TELEMETRY: "1"
+        run: npx expo prebuild --no-install --clean --platform all
+
   # ── Deploy-gate script unit tests ───────────────────────────────────────
   ci-scripts-tests:
     runs-on: ubuntu-latest
