@@ -1,0 +1,139 @@
+name: Offsite Storage backup
+description: >
+  Mirror one Supabase project's Storage objects to the offsite bucket under a
+  per-environment prefix (or run the restore rehearsal against them). The
+  preflight + run sequence used to be written once, for staging, inside
+  db-backup.yml; extracting it is what lets a production job run the same code
+  path rather than a second copy (#1435, #1383).
+
+  Expects the job to have ALREADY injected the environment's secrets (the
+  `infisical-secrets` action): SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY for
+  the source, and BACKUP_S3_ENDPOINT, BACKUP_S3_BUCKET, BACKUP_S3_ACCESS_KEY_ID,
+  BACKUP_S3_SECRET_ACCESS_KEY (optionally BACKUP_S3_REGION,
+  BACKUP_RETENTION_DAYS) for the destination. It injects nothing itself, so the
+  Infisical slug stays a quoted literal at the call site.
+
+inputs:
+  environment:
+    description: >
+      `staging` or `production`. The injected SUPABASE_URL must be that
+      environment's project (asserted against `.github/environments.json`) —
+      the same mislabelling guard as the database action, for the same reason.
+    required: true
+  prefix:
+    description: >
+      Bucket prefix the mirror lives under. Staging keeps the pre-existing
+      `storage` so its history and tombstones stay continuous; production uses
+      its own so neither environment's manifest can overwrite the other's.
+    required: true
+  rehearsal:
+    description: >
+      `"true"` runs the restore rehearsal instead of a plain backup: write a
+      canary object, back it up, delete it from Storage, restore it from the
+      offsite copy, and assert the bytes match. Writes and deletes only its own
+      canary.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # Same fail-fast posture as the database action, and the same reason: a
+    # backup job that goes green without writing a backup anywhere is the
+    # illusion this work exists to destroy. SUPABASE_URL and
+    # SUPABASE_SERVICE_ROLE_KEY are checked alongside the destination because
+    # this action needs the source credentials too — the dump action gets its
+    # source from `supabase link`.
+    - name: Check source and destination are configured
+      shell: bash
+      env:
+        BACKUP_ENVIRONMENT: ${{ inputs.environment }}
+      run: |
+        MISSING=""
+        [ -n "${SUPABASE_URL:-}" ]                || MISSING="$MISSING SUPABASE_URL"
+        [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]   || MISSING="$MISSING SUPABASE_SERVICE_ROLE_KEY"
+        [ -n "${BACKUP_S3_ENDPOINT:-}" ]          || MISSING="$MISSING BACKUP_S3_ENDPOINT"
+        [ -n "${BACKUP_S3_BUCKET:-}" ]            || MISSING="$MISSING BACKUP_S3_BUCKET"
+        [ -n "${BACKUP_S3_ACCESS_KEY_ID:-}" ]     || MISSING="$MISSING BACKUP_S3_ACCESS_KEY_ID"
+        [ -n "${BACKUP_S3_SECRET_ACCESS_KEY:-}" ] || MISSING="$MISSING BACKUP_S3_SECRET_ACCESS_KEY"
+        if [ -n "$MISSING" ]; then
+          {
+            echo "## Nightly Storage backup (${BACKUP_ENVIRONMENT}) did not run"
+            echo
+            echo "Secrets did not reach this job. Missing:"
+            echo
+            for s in $MISSING; do echo "- \`$s\`"; done
+            echo
+            echo "All of these are provisioned in Infisical at \`/\` — the \`BACKUP_S3_*\`"
+            echo "four since 2026-08-27 (#1287), and the Supabase pair long before that."
+            echo "So this is a **regression**, not first-time setup: do not re-provision"
+            echo "anything. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Storage backup secrets missing from the job env (missing:$MISSING). Already provisioned — check Infisical."
+          exit 1
+        fi
+
+    # The mislabelling guard. The service-role key reads whichever project
+    # SUPABASE_URL names, and a production job injects two Infisical
+    # environments (see db-backup.yml) — this proves the URL is the project this
+    # environment's prefix claims to hold.
+    - name: Assert the injected project URL is this environment's
+      shell: bash
+      env:
+        BACKUP_ENVIRONMENT: ${{ inputs.environment }}
+      run: |
+        set -euo pipefail
+        EXPECTED="$(node -e '
+          import("./scripts/ci/lib/environments.mjs").then((m) => {
+            process.stdout.write(m.getEnvironment(process.env.BACKUP_ENVIRONMENT).supabaseProjectRef);
+          });
+        ')"
+        HOST="${SUPABASE_URL#https://}"; HOST="${HOST#http://}"; HOST="${HOST%%/*}"
+        REF="${HOST%%.*}"
+        if [ "$REF" != "$EXPECTED" ]; then
+          echo "::error::SUPABASE_URL in the job env names project ${REF:0:8}…, not the ${BACKUP_ENVIRONMENT} project (${EXPECTED:0:8}…) in .github/environments.json. A mirror taken now would be mislabelled; refusing."
+          exit 1
+        fi
+        echo "Project URL matches .github/environments.json for ${BACKUP_ENVIRONMENT}."
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Back up Storage objects
+      shell: bash
+      env:
+        STORAGE_PREFIX: ${{ inputs.prefix }}
+        REHEARSAL: ${{ inputs.rehearsal }}
+      run: |
+        set -euo pipefail
+        # From the process environment, not `${{ env.* }}` — see the database
+        # action's upload step for why.
+        export AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY"
+        export AWS_DEFAULT_REGION="${BACKUP_S3_REGION:-auto}"
+        if [ "$REHEARSAL" = "true" ]; then
+          node scripts/storage-backup-run.mjs rehearse --prefix "$STORAGE_PREFIX"
+        else
+          node scripts/storage-backup-run.mjs backup --prefix "$STORAGE_PREFIX"
+        fi
+
+    - name: Summary
+      shell: bash
+      env:
+        BACKUP_ENVIRONMENT: ${{ inputs.environment }}
+        STORAGE_PREFIX: ${{ inputs.prefix }}
+      run: |
+        {
+          echo "## Nightly Storage backup — ${BACKUP_ENVIRONMENT}"
+          echo
+          echo "- Source: ${BACKUP_ENVIRONMENT} Storage (all buckets)"
+          echo "- Destination: \`$BACKUP_S3_BUCKET/${STORAGE_PREFIX}/\`"
+          echo "- Manifest read back from the bucket after upload."
+          echo
+          echo "Incremental: unchanged objects are not re-fetched. Deleted objects are"
+          echo "tombstoned and stay restorable for \`BACKUP_RETENTION_DAYS\` (default 30)."
+          echo
+          echo "Restore: DB_ROLLBACK_PLAYBOOK.md section 'Restoring Storage objects'."
+        } >> "$GITHUB_STEP_SUMMARY"

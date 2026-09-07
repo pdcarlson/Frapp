@@ -7,10 +7,10 @@ import { dirname, join } from "node:path";
 import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 
 // Pins the second and third cutover of stage 4's composite-action work (#1382):
-// the Infisical preamble+injection (11 call sites across 6 workflows) and the
+// the Infisical preamble+injection (15 call sites across 6 workflows) and the
 // Supabase CLI version pin (4 sites).
 //
-// Why this file has teeth beyond "the copies stayed gone": most of the eleven
+// Why this file has teeth beyond "the copies stayed gone": most of the eleven original (fifteen since #1435)
 // Infisical call sites never run on a pull request.
 //
 //   * ONE runs on every same-repo PR -- `migration-drift` in
@@ -25,7 +25,7 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 //     production deploy path, which no PR ever exercises.
 //
 // So CI can prove the mechanism but not the TRANSCRIPTION, and this file has to:
-// that all eleven were converted, that none was left hand-written, that each
+// that all eleven original were converted, that none was left hand-written, that each
 // still passes what it used to pass, and that each still asks for the
 // environment its job actually needs.
 //
@@ -34,7 +34,7 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 // in `.github/workflows` and `.github/actions`. Inside the action the value is
 // `${{ inputs.env-slug }}`, which that scan cannot match -- by design, because
 // the real literals survive as the `with:` values at the call sites. Rename the
-// action's input and all eleven literals leave the gate's reach at once: it
+// action's input and all fifteen literals leave the gate's reach at once: it
 // then scans zero bytes and passes. That is the vacuous green its own section 0
 // exists to refuse, and nothing else in the repo would notice.
 
@@ -100,14 +100,14 @@ describe("infisical-secrets composite action", () => {
       /^ {2}env-slug:$/m,
       "the input must be named `env-slug`: check-env-slugs.mjs matches the literal " +
         "`env-slug: \"<slug>\"` at the call sites, and renaming this input moves all " +
-        "eleven slugs out of that gate's reach while it keeps exiting 0.",
+        "fifteen slugs out of that gate's reach while it keeps exiting 0.",
     );
   });
 
   it("passes every input the hand-written call sites used to pass", () => {
     // The extraction is only lossless if the constants the call sites carried
     // are still carried. `include-imports: true` in particular was written at
-    // all eleven sites and is NOT the action's default.
+    // all fifteen sites and is NOT the action's default.
     for (const [key, value] of [
       ["method", '"universal"'],
       ["project-slug", '"frapp-live-ej-ls"'],
@@ -152,7 +152,7 @@ describe("infisical-secrets composite action", () => {
   });
 
   it("defaults `on-missing-credentials` to `error`", () => {
-    // Ten of the eleven call sites pass nothing and rely entirely on this
+    // Fourteen of the fifteen call sites pass nothing and rely entirely on this
     // default. Nothing asserted it, so flipping it to `warn` made every site —
     // deploy-production's `prod` injection included — continue past absent
     // credentials into `supabase db push`, with the suite green. The shell
@@ -287,6 +287,16 @@ describe("Infisical call sites", () => {
       ["check-migration-drift.yml", "check-drift", "prod"],
       ["db-backup.yml", "backup-staging", "staging"],
       ["db-backup.yml", "backup-staging-storage", "staging"],
+      // The production backup jobs inject TWO environments, in this order:
+      // `staging` carries the offsite bucket (`BACKUP_S3_*` live only there),
+      // `prod` carries the source and overrides every shared name. The
+      // db-offsite-backup / storage-offsite-backup actions then assert the
+      // injected ref against .github/environments.json before linking, so a
+      // reordering here can only fail the job, never mislabel a dump (#1435).
+      ["db-backup.yml", "backup-production", "staging"],
+      ["db-backup.yml", "backup-production", "prod"],
+      ["db-backup.yml", "backup-production-storage", "staging"],
+      ["db-backup.yml", "backup-production-storage", "prod"],
       ["deploy-api.yml", "migrate-staging", "staging"],
       ["deploy-api.yml", "deploy-staging", "staging"],
       ["deploy-production.yml", "deploy", "prod"],
@@ -318,7 +328,7 @@ describe("Infisical call sites", () => {
       "the Infisical call-site roster changed. Each entry is file / job / slug; " +
         "update this list deliberately if a site legitimately moved.",
     );
-    assert.equal(actual.length, 11);
+    assert.equal(actual.length, 15);
   });
 
   it("leaves no hand-written injection or preflight anywhere", () => {
@@ -463,7 +473,13 @@ describe("supabase-cli composite action", () => {
   });
 
   it("is called at all 4 sites", () => {
-    const total = workflows.reduce((n, w) => n + countMatching(w.text, USES_SUPABASE), 0);
+    // Three in workflows; the fourth moved into the db-offsite-backup composite
+    // when db-backup.yml's dump sequence was extracted (#1435), which is why the
+    // sibling actions are counted here too — a call site that migrates into a
+    // composite is still a call site.
+    const total = [...workflows, ...otherActions]
+      .filter(({ name }) => name !== "supabase-cli")
+      .reduce((n, w) => n + countMatching(w.text, USES_SUPABASE), 0);
     assert.equal(total, 4);
   });
 

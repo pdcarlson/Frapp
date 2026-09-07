@@ -1,0 +1,196 @@
+name: Offsite database backup
+description: >
+  Dump one Supabase project with the Supabase CLI and copy the dump to the
+  offsite bucket under `<environment>/<label>/`, reading it straight back and
+  pruning prefixes past the retention window. The dump/upload/verify/prune
+  sequence used to be written out once, for staging, inside db-backup.yml;
+  extracting it is what lets a production job run the same code path rather
+  than a second copy with a hardcoded `staging/` prefix (#1435, #1383).
+
+  Expects the job to have ALREADY injected the environment's secrets (the
+  `infisical-secrets` action): SUPABASE_PROJECT_REF, SUPABASE_ACCESS_TOKEN,
+  SUPABASE_DB_PASSWORD for the source, and BACKUP_S3_ENDPOINT, BACKUP_S3_BUCKET,
+  BACKUP_S3_ACCESS_KEY_ID, BACKUP_S3_SECRET_ACCESS_KEY (optionally
+  BACKUP_S3_REGION, BACKUP_RETENTION_DAYS) for the destination. It does not
+  inject anything itself, so the Infisical slug stays a quoted literal at the
+  call site where scripts/check-env-slugs.mjs can see it.
+
+inputs:
+  environment:
+    description: >
+      Which deployed environment is being backed up: `staging` or `production`.
+      Three things hang off it — the expected SUPABASE_PROJECT_REF is looked up
+      in `.github/environments.json` and asserted against the injected one, the
+      dump lands under this prefix in the bucket, and the retention prune is
+      scoped to the same prefix. The assertion is the load-bearing part: a
+      production job injects TWO Infisical environments (see db-backup.yml), and
+      this is what proves the project actually linked is the one the job claims.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # Checked BEFORE the dump so an unconfigured destination fails in seconds
+    # rather than after several minutes of pg_dump. The failure is deliberate:
+    # a backup job that goes green without writing a backup anywhere is the
+    # precise illusion #852 exists to destroy.
+    - name: Check the offsite destination is configured
+      shell: bash
+      env:
+        BACKUP_ENVIRONMENT: ${{ inputs.environment }}
+      run: |
+        MISSING=""
+        [ -n "${BACKUP_S3_ENDPOINT:-}" ]          || MISSING="$MISSING BACKUP_S3_ENDPOINT"
+        [ -n "${BACKUP_S3_BUCKET:-}" ]            || MISSING="$MISSING BACKUP_S3_BUCKET"
+        [ -n "${BACKUP_S3_ACCESS_KEY_ID:-}" ]     || MISSING="$MISSING BACKUP_S3_ACCESS_KEY_ID"
+        [ -n "${BACKUP_S3_SECRET_ACCESS_KEY:-}" ] || MISSING="$MISSING BACKUP_S3_SECRET_ACCESS_KEY"
+        if [ -n "$MISSING" ]; then
+          {
+            echo "## Nightly DB backup (${BACKUP_ENVIRONMENT}) did not run"
+            echo
+            echo "The offsite destination secrets did not reach this job. Missing:"
+            echo
+            for s in $MISSING; do echo "- \`$s\`"; done
+            echo
+            echo "These were provisioned on 2026-08-27 (#1287: Cloudflare R2 bucket +"
+            echo "bucket-scoped token) and live in Infisical \`staging\` at \`/\` — so this is"
+            echo "a **regression**, not first-time setup. Do not re-provision the bucket."
+            echo "Check that the four secrets still exist in Infisical and that the"
+            echo "injection step(s) above authenticated; see"
+            echo "docs/internal/environment/SECRETS_MANAGEMENT.md and"
+            echo "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md § Backups: what exists."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Offsite backup secrets missing from the job env (missing:$MISSING). Provisioned 2026-08-27 (#1287) — check Infisical, do not re-provision."
+          exit 1
+        fi
+
+    # The guard that makes a two-environment injection safe. `.github/environments.json`
+    # is the one place each environment's project ref is named; if the ref the job
+    # is about to `link` is not that environment's, this dump would be labelled as
+    # one database while containing another — and a mislabelled backup is worse
+    # than none, because someone will restore it. Fails closed on any mismatch,
+    # including an empty ref.
+    - name: Assert the injected project ref is this environment's
+      shell: bash
+      env:
+        BACKUP_ENVIRONMENT: ${{ inputs.environment }}
+      run: |
+        set -euo pipefail
+        EXPECTED="$(node -e '
+          import("./scripts/ci/lib/environments.mjs").then((m) => {
+            process.stdout.write(m.getEnvironment(process.env.BACKUP_ENVIRONMENT).supabaseProjectRef);
+          });
+        ')"
+        if [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+          echo "::error::SUPABASE_PROJECT_REF is empty after secret injection; refusing to link anything."
+          exit 1
+        fi
+        if [ "$SUPABASE_PROJECT_REF" != "$EXPECTED" ]; then
+          echo "::error::SUPABASE_PROJECT_REF in the job env (${SUPABASE_PROJECT_REF:0:8}…) is not the ${BACKUP_ENVIRONMENT} project (${EXPECTED:0:8}…) named in .github/environments.json. A dump taken now would be mislabelled; refusing."
+          exit 1
+        fi
+        echo "Project ref matches .github/environments.json for ${BACKUP_ENVIRONMENT}."
+
+    - name: Setup Supabase CLI
+      uses: ./.github/actions/supabase-cli
+
+    # `supabase link` rather than a connection string: GitHub runners are
+    # IPv4-only and Supabase direct connections are IPv6-only without the IPv4
+    # add-on, so this has to go through the session pooler — whose hostname
+    # Supabase has renamed before. Letting the CLI resolve it means a pooler
+    # rename cannot silently break the only backup a project has.
+    # SUPABASE_DB_PASSWORD is read from the environment by the CLI.
+    - name: Link to the project
+      shell: bash
+      run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+    - name: Dump
+      id: dump
+      shell: bash
+      run: |
+        set -euo pipefail
+        LABEL="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+        echo "label=$LABEL" >> "$GITHUB_OUTPUT"
+        scripts/db-backup.sh --linked --out-dir "$RUNNER_TEMP/backups" --label "$LABEL"
+
+    - name: Upload offsite
+      shell: bash
+      env:
+        BACKUP_ENVIRONMENT: ${{ inputs.environment }}
+        LABEL: ${{ steps.dump.outputs.label }}
+      run: |
+        set -euo pipefail
+        # Mapped in the shell, from the process environment, not through
+        # `${{ env.* }}`: the BACKUP_S3_* values arrive via $GITHUB_ENV from the
+        # calling job, and inside a composite action the expression context is
+        # not guaranteed to see them — an empty AWS_ACCESS_KEY_ID here would
+        # fail the upload after a several-minute dump. `auto` is correct for
+        # Cloudflare R2 and harmless elsewhere; BACKUP_S3_REGION overrides it.
+        export AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY"
+        export AWS_DEFAULT_REGION="${BACKUP_S3_REGION:-auto}"
+        DEST="s3://$BACKUP_S3_BUCKET/$BACKUP_ENVIRONMENT/$LABEL/"
+        aws s3 cp "$RUNNER_TEMP/backups/$LABEL/" "$DEST" \
+          --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive --only-show-errors
+        echo "Uploaded to $DEST"
+
+        # Read it straight back. `aws s3 cp` exiting 0 proves the request was
+        # accepted, not that four objects are retrievable from the bucket you
+        # think you configured — and an unverified backup is the thing this
+        # whole issue is about.
+        COUNT="$(aws s3 ls "$DEST" --endpoint-url "$BACKUP_S3_ENDPOINT" | wc -l)"
+        if [ "$COUNT" -lt 4 ]; then
+          echo "::error::Read-back found $COUNT objects at $DEST, expected 4 (roles, schema, data, manifest)."
+          exit 1
+        fi
+        echo "Read-back verified: $COUNT objects."
+
+    - name: Prune backups past the retention window
+      shell: bash
+      env:
+        BACKUP_ENVIRONMENT: ${{ inputs.environment }}
+      run: |
+        set -euo pipefail
+        export AWS_ACCESS_KEY_ID="$BACKUP_S3_ACCESS_KEY_ID"
+        export AWS_SECRET_ACCESS_KEY="$BACKUP_S3_SECRET_ACCESS_KEY"
+        export AWS_DEFAULT_REGION="${BACKUP_S3_REGION:-auto}"
+        DAYS="${BACKUP_RETENTION_DAYS:-30}"
+        CUTOFF="$(date -u -d "$DAYS days ago" +%Y-%m-%d)"
+        echo "Pruning $BACKUP_ENVIRONMENT/ prefixes older than $CUTOFF"
+        # Prefixes are the UTC dump timestamps db-backup.sh generates, so a
+        # lexical comparison is a chronological one — which is why the label
+        # format is fixed rather than cosmetic. Never trust object mtimes here:
+        # they record upload order, not dump order. Anything that is not a
+        # dump label (no `T` in it) is skipped rather than compared, so a
+        # non-dump prefix can never be pruned by accident.
+        aws s3 ls "s3://$BACKUP_S3_BUCKET/$BACKUP_ENVIRONMENT/" \
+          --endpoint-url "$BACKUP_S3_ENDPOINT" \
+          | awk '{print $2}' | tr -d '/' \
+          | while read -r P; do
+              [ -n "$P" ] || continue
+              case "$P" in *T*) ;; *) echo "  skipping non-dump prefix $P"; continue ;; esac
+              if [ "${P%%T*}" \< "$CUTOFF" ]; then
+                echo "  removing $P"
+                aws s3 rm "s3://$BACKUP_S3_BUCKET/$BACKUP_ENVIRONMENT/$P/" \
+                  --endpoint-url "$BACKUP_S3_ENDPOINT" --recursive --only-show-errors
+              fi
+            done
+
+    - name: Summary
+      shell: bash
+      env:
+        BACKUP_ENVIRONMENT: ${{ inputs.environment }}
+        LABEL: ${{ steps.dump.outputs.label }}
+      run: |
+        {
+          echo "## Nightly DB backup — ${BACKUP_ENVIRONMENT}"
+          echo
+          echo "- Source: Supabase project \`${SUPABASE_PROJECT_REF:0:8}…\` (${BACKUP_ENVIRONMENT}, per .github/environments.json)"
+          echo "- Label: \`${LABEL}\`"
+          echo "- Destination: \`$BACKUP_S3_BUCKET/${BACKUP_ENVIRONMENT}/\`"
+          echo "- Read-back verified against the bucket."
+          echo
+          echo "Covers application data only. Storage objects are backed up by the"
+          echo "storage job for the same environment in this workflow (#1290); a full"
+          echo "recovery needs both halves. See DB_ROLLBACK_PLAYBOOK.md."
+        } >> "$GITHUB_STEP_SUMMARY"

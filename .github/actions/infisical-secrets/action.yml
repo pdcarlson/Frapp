@@ -19,7 +19,7 @@ inputs:
       is not meant to -- the real literals survive as the `with:` values at each
       call site,
       where the gate still reads them. Rename this input to anything else and
-      all eleven literals move out of its reach at once: the gate then scans
+      all fifteen literals move out of its reach at once: the gate then scans
       zero bytes and passes, which is the vacuous-green failure its own section
       0 exists to refuse. Pinned by
       `scripts/ci/__tests__/infisical-secrets-action.test.mjs`.
@@ -124,7 +124,7 @@ runs:
     # `migration-drift-gate.yml`'s `migration-drift` job, whose injection carries
     # no step-level `if:` and whose very next step reads `SUPABASE_PROJECT_REF`.
     #
-    # `include-imports: true` is not a default -- it was written at all eleven
+    # `include-imports: true` is not a default -- it was written at all eleven original (now fifteen)
     # call sites and is kept here for all of them.
     - name: Inject ${{ inputs.env-slug }} secrets from Infisical
       uses: Infisical/secrets-action@v1.0.12
