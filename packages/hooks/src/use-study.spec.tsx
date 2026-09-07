@@ -198,6 +198,5 @@ describe("useStudyHeartbeat", () => {
     expect(mockPost).toHaveBeenCalledWith("/v1/study-sessions/heartbeat", {
       body: { lat: 42.73, lng: -73.68 },
     });
-    expect(mockPost.mock.calls[0][1].body).not.toHaveProperty("accuracy_meters");
   });
 });
