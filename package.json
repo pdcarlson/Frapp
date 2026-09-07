@@ -68,6 +68,9 @@
     "path-to-regexp": "^8.4.0",
     "yaml": "^2.9.0",
     "@xmldom/xmldom": ">=0.8.13",
+    "@expo/plist": {
+      "@xmldom/xmldom": "^0.8.15"
+    },
     "@nestjs/swagger": {
       "js-yaml": "^5.2.2"
     },
