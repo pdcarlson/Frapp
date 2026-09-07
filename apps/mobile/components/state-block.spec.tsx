@@ -156,9 +156,10 @@ describe("EmptyState", () => {
 });
 
 describe("NoChapterState", () => {
-  // Not an edge case on this app: no token carries an `active_chapter_id` claim
-  // in production (#805), so every chapter-scoped query stays disabled and this
-  // is what a member actually sees.
+  // Not an edge case on this app: production tokens still lack an
+  // `active_chapter_id` claim (empty prod / playbook, not a disabled hook), so
+  // every chapter-scoped query stays disabled and this is what a member
+  // actually sees.
   it("names the missing chapter and points at the picker", () => {
     const tree = render(<NoChapterState noun="the directory" />);
     const copy = texts(tree).join(" ");

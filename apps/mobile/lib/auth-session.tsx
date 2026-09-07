@@ -179,9 +179,10 @@ export function AuthSessionProvider({
    * confirms or changes a chapter, so only the first one is worth waiting for.
    *
    * The distinction is load-bearing rather than theoretical: `chapterId` is
-   * always null in the current production configuration (#805 is open, so no
-   * token carries the claim), which means "we already have a chapter" cannot be
-   * the thing that skips the wait — this has to be.
+   * still null in the current production configuration (empty prod until first
+   * onboard, or the playbook has disabled the hook — not the hook being off),
+   * which means "we already have a chapter" cannot be the thing that skips the
+   * wait — this has to be.
    */
   const [claimReadForUserId, setClaimReadForUserId] = useState<string | null>(
     null,
