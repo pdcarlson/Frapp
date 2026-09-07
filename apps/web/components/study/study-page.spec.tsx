@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
 const {
@@ -83,7 +83,25 @@ vi.mock("@/components/shared/can", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
-const { StudyPage } = await import("./study-page");
+const { StudyPage, accuracyMetersOf, studyHeartbeatBody } = await import(
+  "./study-page"
+);
+
+function stubGeolocation(accuracy?: number | null) {
+  Object.defineProperty(navigator, "geolocation", {
+    configurable: true,
+    value: {
+      getCurrentPosition: (onSuccess: PositionCallback) =>
+        onSuccess({
+          coords: {
+            latitude: 42.73,
+            longitude: -73.68,
+            ...(accuracy === undefined ? {} : { accuracy }),
+          },
+        } as GeolocationPosition),
+    },
+  });
+}
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
@@ -108,15 +126,7 @@ describe("StudyPage subscription gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockStart.mockResolvedValue(LIVE_SESSION);
-    Object.defineProperty(navigator, "geolocation", {
-      configurable: true,
-      value: {
-        getCurrentPosition: (onSuccess: PositionCallback) =>
-          onSuccess({
-            coords: { latitude: 42.73, longitude: -73.68 },
-          } as GeolocationPosition),
-      },
-    });
+    stubGeolocation();
   });
 
   it("leaves the session controls alone on an active chapter", () => {
@@ -204,5 +214,128 @@ describe("StudyPage subscription gating", () => {
 
     expect(startButton()).toBeDisabled();
     expect(screen.getByText(/past due/i)).toBeInTheDocument();
+  });
+});
+
+describe("accuracyMetersOf / studyHeartbeatBody (#1852)", () => {
+  it("returns a positive finite reading", () => {
+    expect(accuracyMetersOf(12.5)).toBe(12.5);
+  });
+
+  it("omits null, undefined, zero, negative, and non-finite values", () => {
+    expect(accuracyMetersOf(null)).toBeUndefined();
+    expect(accuracyMetersOf(undefined)).toBeUndefined();
+    expect(accuracyMetersOf(0)).toBeUndefined();
+    expect(accuracyMetersOf(-1)).toBeUndefined();
+    expect(accuracyMetersOf(Number.NaN)).toBeUndefined();
+    expect(accuracyMetersOf(Number.POSITIVE_INFINITY)).toBeUndefined();
+  });
+
+  it("includes accuracy_meters only when the reading is usable", () => {
+    expect(
+      studyHeartbeatBody({
+        latitude: 42.73,
+        longitude: -73.68,
+        accuracy: 12,
+      }),
+    ).toEqual({ lat: 42.73, lng: -73.68, accuracy_meters: 12 });
+    expect(
+      studyHeartbeatBody({
+        latitude: 42.73,
+        longitude: -73.68,
+        accuracy: 0,
+      }),
+    ).toEqual({ lat: 42.73, lng: -73.68 });
+    expect(
+      studyHeartbeatBody({ latitude: 42.73, longitude: -73.68 }),
+    ).toEqual({ lat: 42.73, lng: -73.68 });
+  });
+});
+
+describe("StudyPage heartbeat accuracy (#1852)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStart.mockResolvedValue(LIVE_SESSION);
+    mockHeartbeat.mockResolvedValue({});
+    mockResume.mockResolvedValue({});
+    mockPause.mockResolvedValue({});
+    chapter.active();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("starts with lat/lng only even when the browser reports accuracy", async () => {
+    stubGeolocation(12);
+    render(<StudyPage />);
+    await userEvent.click(startButton());
+    await screen.findByRole("button", { name: /stop &/i });
+
+    expect(mockStart).toHaveBeenCalledWith({
+      geofence_id: ZONE.id,
+      lat: 42.73,
+      lng: -73.68,
+    });
+    expect(mockStart.mock.calls[0]?.[0]).not.toHaveProperty("accuracy_meters");
+  });
+
+  it("resumes with lat/lng only even when the browser reports accuracy", async () => {
+    stubGeolocation(12);
+    await renderWithLiveSession();
+
+    await userEvent.click(pauseButton());
+    await waitFor(() => expect(mockPause).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole("button", { name: /resume timer/i }));
+    await waitFor(() =>
+      expect(mockResume).toHaveBeenCalledWith({
+        lat: 42.73,
+        lng: -73.68,
+      }),
+    );
+    expect(mockResume.mock.calls[0]?.[0]).not.toHaveProperty("accuracy_meters");
+  });
+
+  it("posts accuracy_meters on heartbeat when the browser reports a positive finite reading", async () => {
+    stubGeolocation(12);
+    // Fake only the heartbeat/elapsed intervals so userEvent and waitFor keep
+    // using real timeouts.
+    vi.useFakeTimers({ toFake: ["setInterval"] });
+    render(<StudyPage />);
+    await userEvent.click(startButton());
+    await screen.findByRole("button", { name: /stop &/i });
+    mockHeartbeat.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    });
+
+    expect(mockHeartbeat).toHaveBeenCalledWith({
+      lat: 42.73,
+      lng: -73.68,
+      accuracy_meters: 12,
+    });
+  });
+
+  it("omits accuracy_meters on heartbeat when the reading is zero", async () => {
+    stubGeolocation(0);
+    vi.useFakeTimers({ toFake: ["setInterval"] });
+    render(<StudyPage />);
+    await userEvent.click(startButton());
+    await screen.findByRole("button", { name: /stop &/i });
+    mockHeartbeat.mockClear();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    });
+
+    expect(mockHeartbeat).toHaveBeenCalledWith({
+      lat: 42.73,
+      lng: -73.68,
+    });
+    expect(mockHeartbeat.mock.calls[0]?.[0]).not.toHaveProperty(
+      "accuracy_meters",
+    );
   });
 });
