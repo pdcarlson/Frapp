@@ -131,6 +131,33 @@ The workflow holds the `db-migrate-production` concurrency group with
 > release. Like every number in this block, this one is a dated read, not a live
 > fact; the API of record is the Management API, not this page. (#1620.)
 >
+> **Re-read 2026-09-07 (production Postgres via the session pooler).** Ledger:
+> `select version from supabase_migrations.schema_migrations` → **54** rows,
+> newest `20260829002000`. Compared with `supabase/migrations/*.sql` on
+> `origin/main` `a9fe5ff2`: no applied version lacks a file (foreign none);
+> **22** files have a version newer than that high-water mark (the 09-06 twenty
+> plus `20260906203000_realtime_presence_private.sql` and
+> `20260907011500_chapter_directory_seed_rows.sql`). `select count(*) from
+> public.users` → 1; `select count(*) from public.chapters` → 0. Management API
+> from this environment still 403; this is a SQL read, not that endpoint.
+>
+> The one pending file that `DROP FUNCTION`s is
+> `20260902010001_get_points_report_until.sql` (3-arg → 4-arg, `p_until` defaults
+> null). Live API is Render `frapp-api-prod` deploy `971d7d5a` (Render API
+> 2026-09-07; `/health` uptime still that 2026-08-29 ship). That revision's
+> `ReportService.getPointsReport` sends three named args. On a local database
+> that already had those 22 applied, PostgREST
+> `POST /rest/v1/rpc/get_points_report` with `{p_chapter_id, p_user_id, p_since}`
+> returned 200; Postgres accepts the 3-arg call via the default. That is the
+> live argument list against the new signature, not a run of the `971d7d5a`
+> binary. `20260906203000` adds RLS arms for *private* presence topics; the
+> migration states public rooms stay a separate room, and `971d7d5a`'s
+> `packages/chat-core` has no `private: true`, so a `migrations-only` apply
+> does not by itself put live clients on the private path. Still run `full`
+> promptly — the window is apply-then-code, not a place to linger. This does
+> not replace the workflow's `check-migration-replay` against hosted
+> production.
+>
 > This block previously warned that production was ~49 migrations behind and
 > that both paths above would fail on the dry run. That was true on 2026-08-24
 > and is not true now — left here as a correction rather than deleted, because
