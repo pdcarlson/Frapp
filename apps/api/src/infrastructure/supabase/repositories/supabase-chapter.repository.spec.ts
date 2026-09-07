@@ -11,15 +11,17 @@ import {
  * key rather than by a `chapter_id` column. `tenantColumns` says so explicitly
  * instead of letting the harness assume the default and quietly check nothing.
  *
- * The Stripe lookup is the interesting case. It resolves a chapter *from* an
- * external identifier, so it is cross-tenant by construction: a Stripe webhook
- * has no chapter context until `findBySubscriptionId` answers, through
- * `BillingService.findChapterBySubscription`. Orphan `findByStripeCustomerId`
- * was deleted — it had no production caller (#1088).
+ * The Stripe lookups are the interesting case. They resolve a chapter *from*
+ * an external identifier, so they are cross-tenant by construction: a Stripe
+ * webhook has no chapter context until `findBySubscriptionId` or
+ * `findByCustomerId` answers, through `BillingService.findChapterBySubscription`.
+ * Orphan `findByStripeCustomerId` was deleted (#1088); `findByCustomerId` is
+ * the production caller that replaced it (#1738).
  *
- * The subscription lookup is asserted as a deliberate unscoped surface rather
- * than left to look like an oversight, and the Stripe distinguishing columns
- * are declared `collisionExempt` so the fixture states that decision out loud.
+ * Those lookups are asserted as deliberate unscoped surfaces rather than left
+ * to look like an oversight, and the Stripe distinguishing columns are
+ * declared `collisionExempt` so the fixture states that decision out loud.
+ * `claimSubscriptionId` is scoped by primary key — the tenant root.
  */
 
 const STRIPE_CUSTOMER_B = 'cus_chapter_b';
@@ -86,9 +88,79 @@ describe('SupabaseChapterRepository — tenant scope', () => {
     expect(rows.find((r) => r.id === CHAPTER_A)?.accent_color).toBeNull();
   });
 
+  describe('claimSubscriptionId', () => {
+    it('claims a null subscription_id on only the requested chapter', async () => {
+      await repo.update(CHAPTER_B, {
+        subscription_id: null,
+        subscription_status: 'incomplete',
+      });
+
+      const claimed = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.claimSubscriptionId(CHAPTER_B, 'sub_claimed', null),
+      );
+
+      expect(claimed?.id).toBe(CHAPTER_B);
+      expect(claimed?.subscription_id).toBe('sub_claimed');
+      const rows = harness.rows('chapters');
+      expect(rows.find((r) => r.id === CHAPTER_B)?.subscription_id).toBe(
+        'sub_claimed',
+      );
+      expect(rows.find((r) => r.id === CHAPTER_A)?.subscription_id).toBe(
+        'sub_chapter_a',
+      );
+    });
+
+    it('returns null when another subscription already owns the row', async () => {
+      const claimed = await repo.claimSubscriptionId(
+        CHAPTER_B,
+        'sub_other',
+        null,
+      );
+
+      expect(claimed).toBeNull();
+      expect(
+        harness.rows('chapters').find((r) => r.id === CHAPTER_B)
+          ?.subscription_id,
+      ).toBe(SUBSCRIPTION_B);
+    });
+
+    it('overwrites a canceled leftover and refuses a live one', async () => {
+      await repo.update(CHAPTER_B, {
+        subscription_status: 'canceled',
+      });
+
+      const overwritten = await repo.claimSubscriptionId(
+        CHAPTER_B,
+        'sub_resubscribe',
+        SUBSCRIPTION_B,
+      );
+      expect(overwritten?.subscription_id).toBe('sub_resubscribe');
+
+      await repo.update(CHAPTER_A, {
+        subscription_status: 'active',
+      });
+      const refused = await repo.claimSubscriptionId(
+        CHAPTER_A,
+        'sub_steal',
+        'sub_chapter_a',
+      );
+      expect(refused).toBeNull();
+      expect(
+        harness.rows('chapters').find((r) => r.id === CHAPTER_A)
+          ?.subscription_id,
+      ).toBe('sub_chapter_a');
+    });
+  });
+
   describe('deliberately unscoped surfaces', () => {
     it('findBySubscriptionId resolves the chapter for a webhook that has no chapter context', async () => {
       const chapter = await repo.findBySubscriptionId(SUBSCRIPTION_B);
+
+      expect(chapter?.id).toBe(CHAPTER_B);
+    });
+
+    it('findByCustomerId resolves the chapter for a webhook that has no chapter context', async () => {
+      const chapter = await repo.findByCustomerId(STRIPE_CUSTOMER_B);
 
       expect(chapter?.id).toBe(CHAPTER_B);
     });
