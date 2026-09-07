@@ -154,7 +154,7 @@ Before touching anything, run and **write down** the numbers you will compare ag
 | --- | --- | --- |
 | Types | `npm run check-types` | must be clean |
 | Lint | `npm run lint` | clean, **plus the `apps/api` warning count** — that workspace's lint script has no `--max-warnings 0`, so warnings pass silently; the run must not add one |
-| Layering | `npm run check:dep-cruiser` | the grandfathered entries still reported, and any **stale** entries it lists (a stale entry is a free baseline shrink) |
+| Layering | `npm run check:dep-cruiser` | the violation / baselined / new counts. The baseline is **empty** as of 2026-09-07, so the expected reading is `0 violation(s), 0 baselined, 0 new` — a non-zero `violation(s)` is a regression on `main` to report, and a non-zero `baselined` means someone re-recorded rather than fixed. If entries are ever back, also record any **stale** ones it lists (a stale entry is a free baseline shrink) |
 | Duplication | `npm run check:duplication` | the measured percentage and the clone list (`npx jscpd --config .jscpd.json --reporters consoleFull` for every clone) |
 | Tests | `npm run test -w <workspace>` for each workspace in the slice | pass, and the count |
 | Coverage ledgers | read the backlog tables in [`tenant-scope-coverage.spec.ts`](../../../apps/api/src/infrastructure/supabase/repositories/tenant-scope-coverage.spec.ts), [`no-as-never.spec.ts`](../../../apps/api/src/infrastructure/supabase/repositories/no-as-never.spec.ts), [`dto-constraint-coverage.spec.ts`](../../../apps/api/src/interface/dtos/dto-constraint-coverage.spec.ts), [`signet.css.spec.ts`](../../../packages/theme/src/signet.css.spec.ts) | every deferred entry is a standing finding with its reason already written |
@@ -211,9 +211,11 @@ consumers, name the rule. A candidate without a rule and a consumer check is not
 
 ### Repo-wide signal lenses — every run, whatever the slice
 
-- **Gate output.** Every grandfathered `dependency-cruiser` entry, every `jscpd` clone above
-  `minLines`, every `apps/api` lint warning, every coverage-ledger backlog entry. These are
-  findings the repo has *already made* — you are choosing which one to close.
+- **Gate output.** Every `jscpd` clone above `minLines`, every `apps/api` lint warning, every
+  coverage-ledger backlog entry, and any `dependency-cruiser` entry that has come back (the
+  baseline has been empty since 2026-09-07, so there should be none — one that reappears is a
+  finding about how it got there, not a violation to grandfather). These are findings the repo has
+  *already made* — you are choosing which one to close.
 - **Named anti-patterns, by grep.** The canonical bad forms from `spec/engineering.md`'s rule
   sections (`+e.target.value`, an unguarded `ARCHETYPES[…]` subscript, a hardcoded actor
   id, a `<div onClick>`, a division without a zero guard, a `.single()` where the row may be
@@ -327,10 +329,12 @@ decision" and says why is a pass; a run that manufactures a change to show work 
    `npm run check-types`; `npm run lint` (the `apps/api` warning count did not rise);
    `npm run test -w <workspace> --if-present` for every workspace touched (some packages have no
    suite — say so, don't record a missing script as a failure); `npm run check:dep-cruiser` **plain
-   first**, and only when it reports `0 new` run `-- --update-baseline` for a grandfathered or
-   stale entry that is gone — the runner re-records *every* current violation, so a re-record with
-   a new violation present grows the baseline without a red signal; the JSON diff must be
-   **deletions only**, and anything else is a fix to back out; `npm run check:duplication` (the
+   first**. The baseline is empty, so the normal outcome is that you never run
+   `-- --update-baseline` at all: re-recording is how a violation gets tolerated, and there is
+   nothing left to tolerate. Run it only to *remove* an entry that is gone, only when the plain
+   run reports `0 new`, and check the JSON diff is **deletions only** — the runner re-records
+   *every* current violation, so a re-record with a new violation present grows the baseline with
+   no red signal. A diff that adds an entry is a fix to back out, never a baseline to accept; `npm run check:duplication` (the
    percentage did not rise; lower the `.jscpd.json` threshold to just above the new number when a
    consolidation moved it, never below it); `npm run check:api-contract` when any file under
    `apps/api/src` changed (a changed artifact means the contract changed — back the fix out);

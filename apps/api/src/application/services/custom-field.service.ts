@@ -15,43 +15,30 @@ import type {
 } from '../../infrastructure/supabase/database.types';
 import type {
   ChapterCustomField,
-  CustomFieldOptions,
   CustomFieldVisibility,
   MemberCustomFieldValue,
 } from '#domain/entities/chapter-custom-field.entity';
+import type { CreateCustomField, UpdateCustomField } from '@repo/validation';
 
 /**
- * What `create` needs from a caller. Derived from the entity rather than
- * restated, so a column added to `ChapterCustomField` cannot leave this shape
- * behind. `options` narrows the entity's `CustomFieldOptions | null` to the
- * omit-or-supply form a create takes; the null-to-clear spelling belongs to
- * `UpdateCustomFieldInput`.
+ * What `create` and `update` accept.
  *
- * The interface layer's `CreateCustomFieldDto` is the validated wire shape and
- * stays there: the application layer may not import it (dependency-cruiser
- * `api-application-not-to-interface`), and `CustomFieldController` is where the
- * two meet — passing the DTO into this parameter is what type-checks them
- * against each other.
+ * Reused from `@repo/validation` rather than restated: `CreateCustomFieldSchema`
+ * is what the web Fields tab already validates its POST body with, so binding
+ * the service to the same declaration is what keeps the client's idea of the
+ * payload and the server's from drifting. The interface layer's
+ * `CreateCustomFieldDto` / `UpdateCustomFieldDto` remain the request-time
+ * class-validator surface — the application layer may not import them
+ * (dependency-cruiser `api-application-not-to-interface`), and
+ * `CustomFieldController` is where the two meet. That call site checks
+ * assignability, which is **one-directional**: it catches a field these types
+ * require that a DTO stopped supplying, and it does not catch a field added to
+ * a DTO and never added to the schema — that one validates on the wire and is
+ * silently dropped before it reaches this service. Widen the schema and the DTO
+ * together.
  */
-export interface CreateCustomFieldInput
-  extends
-    Pick<ChapterCustomField, 'key' | 'label' | 'type'>,
-    Partial<
-      Pick<ChapterCustomField, 'required' | 'visibility' | 'sensitive' | 'sort'>
-    > {
-  options?: CustomFieldOptions;
-}
-
-/**
- * What `update` accepts. `key` and `type` are immutable after creation —
- * changing `type` would orphan stored member values.
- */
-export type UpdateCustomFieldInput = Partial<
-  Pick<
-    ChapterCustomField,
-    'label' | 'required' | 'visibility' | 'sensitive' | 'options' | 'sort'
-  >
->;
+export type CreateCustomFieldInput = CreateCustomField;
+export type UpdateCustomFieldInput = UpdateCustomField;
 
 // Postgres unique-violation SQLSTATE (raised when (chapter_id, key) collides).
 const UNIQUE_VIOLATION = '23505';

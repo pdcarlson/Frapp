@@ -149,9 +149,12 @@ export type ChapterBetaConfigPatch = {
  *
  * The interface layer's `PatchChapterConfigDto` is the validated wire shape and
  * stays there: the application layer may not import it (dependency-cruiser
- * `api-application-not-to-interface`), and `ChapterConfigController` is where
- * the two meet — passing the DTO into this parameter is what type-checks them
- * against each other.
+ * `api-application-not-to-interface`), and `ChapterConfigController` is where the two
+ * meet. That call site checks assignability, which is **one-directional**:
+ * it catches a field this type requires that the DTO stopped supplying, and
+ * it does not catch a field added to the DTO and never added here — that one
+ * validates on the wire and is silently dropped before it reaches this
+ * service. Widen the DTO and this type together.
  */
 export interface PatchChapterConfigInput {
   org_archetype?: string;
@@ -560,7 +563,12 @@ export class ChapterConfigService {
         }
       }
       if (DUES_FIELDS.some((key) => next[key] !== current[key])) {
-        duesUpsert = { chapter_id: chapterId, ...next };
+        // `chapter_id` last, not first: `next` is built from a client-supplied
+        // `Partial<…Config>`, so spreading it over the scoped key would let any
+        // future `chapter_id`-shaped addition to that config type upsert onto
+        // another chapter's row. No such key exists today; the order is what
+        // keeps it from mattering if one is ever added.
+        duesUpsert = { ...next, chapter_id: chapterId };
         diff['dues'] = { from: current, to: next };
       }
     }
@@ -577,7 +585,12 @@ export class ChapterConfigService {
         }
       }
       if (SERVICE_CONFIG_FIELDS.some((key) => next[key] !== current[key])) {
-        serviceUpsert = { chapter_id: chapterId, ...next };
+        // `chapter_id` last, not first: `next` is built from a client-supplied
+        // `Partial<…Config>`, so spreading it over the scoped key would let any
+        // future `chapter_id`-shaped addition to that config type upsert onto
+        // another chapter's row. No such key exists today; the order is what
+        // keeps it from mattering if one is ever added.
+        serviceUpsert = { ...next, chapter_id: chapterId };
         diff['service'] = { from: current, to: next };
       }
     }
@@ -596,7 +609,12 @@ export class ChapterConfigService {
         }
       }
       if (POINTS_CONFIG_FIELDS.some((key) => next[key] !== current[key])) {
-        pointsUpsert = { chapter_id: chapterId, ...next };
+        // `chapter_id` last, not first: `next` is built from a client-supplied
+        // `Partial<…Config>`, so spreading it over the scoped key would let any
+        // future `chapter_id`-shaped addition to that config type upsert onto
+        // another chapter's row. No such key exists today; the order is what
+        // keeps it from mattering if one is ever added.
+        pointsUpsert = { ...next, chapter_id: chapterId };
         diff['points'] = { from: current, to: next };
       }
     }

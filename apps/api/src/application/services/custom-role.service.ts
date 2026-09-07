@@ -16,27 +16,29 @@ import type {
 } from '../../infrastructure/supabase/database.types';
 import type { ChapterCustomRole } from '#domain/entities/chapter-custom-role.entity';
 import { WILDCARD } from '#domain/constants/permissions';
+import type { CreateCustomRole, UpdateCustomRole } from '@repo/validation';
 
 /**
- * What `create` needs from a caller. Derived from the entity rather than
- * restated, so a column added to `ChapterCustomRole` cannot leave this shape
- * behind. `rank` and `capabilities` are optional here and defaulted below.
+ * What `create` and `update` accept.
  *
- * The interface layer's `CreateCustomRoleDto` is the validated wire shape and
- * stays there: the application layer may not import it (dependency-cruiser
- * `api-application-not-to-interface`), and `CustomRoleController` is where the
- * two meet — passing the DTO into this parameter is what type-checks them
- * against each other.
+ * Reused from `@repo/validation` rather than restated: `CreateCustomRoleSchema`
+ * is what the web Roles tab already validates its POST body with, so binding the
+ * service to the same declaration is what keeps the client's idea of the payload
+ * and the server's from drifting — `ROLE_KEY_MAX_LENGTH` / `ROLE_NAME_MAX_LENGTH`
+ * are already shared from that package into `custom-role.dto.ts`, so the limits
+ * were single-sourced while the shape was not. The interface layer's
+ * `CreateCustomRoleDto` / `UpdateCustomRoleDto` remain the request-time
+ * class-validator surface — the application layer may not import them
+ * (dependency-cruiser `api-application-not-to-interface`), and
+ * `CustomRoleController` is where the two meet. That call site checks
+ * assignability, which is **one-directional**: it catches a field these types
+ * require that a DTO stopped supplying, and it does not catch a field added to a
+ * DTO and never added to the schema — that one validates on the wire and is
+ * silently dropped before it reaches this service. Widen the schema and the DTO
+ * together.
  */
-export interface CreateCustomRoleInput
-  extends
-    Pick<ChapterCustomRole, 'key' | 'label'>,
-    Partial<Pick<ChapterCustomRole, 'rank' | 'capabilities'>> {}
-
-/** What `update` accepts. `key` and `core` are not editable. */
-export type UpdateCustomRoleInput = Partial<
-  Pick<ChapterCustomRole, 'label' | 'rank' | 'capabilities'>
->;
+export type CreateCustomRoleInput = CreateCustomRole;
+export type UpdateCustomRoleInput = UpdateCustomRole;
 
 // Postgres unique-violation SQLSTATE (raised when (chapter_id, key) collides).
 const UNIQUE_VIOLATION = '23505';
