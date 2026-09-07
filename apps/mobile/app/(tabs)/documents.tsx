@@ -26,8 +26,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * `useDocuments` and `useDocumentFolders` are deliberately not gated on a
  * resolved `chapterId`: the route resolves the chapter from the request header,
  * and `ChapterGuard` auto-resolves a single-membership member server-side. So a
- * member with one chapter gets their real library even though the mobile client
- * has no `active_chapter_id` claim to read (#805). Rendering "no chapter
+ * member with one chapter gets their real library even when the mobile client
+ * has no `active_chapter_id` claim to read (no membership on the token yet,
+ * or a hook-off incident — #805 itself is closed). Rendering "no chapter
  * selected" over that would contradict the folder chips sitting above it, and
  * point at a picker that would not change the outcome. A member who genuinely
  * has no resolvable chapter gets a `400` instead, which the error state covers.

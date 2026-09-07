@@ -127,9 +127,9 @@ export default function ProfileScreen() {
 
       {!chapterId ? (
         // Points are chapter-scoped, so without one the card would sit on a
-        // dash forever with nothing explaining why. No token carries an
-        // `active_chapter_id` claim while #805 is open, so this is the common
-        // case in production rather than an edge one.
+        // dash forever with nothing explaining why. The claim is absent until
+        // a membership exists (and during a hook-off incident), so this is
+        // the empty-prod case rather than an edge one.
         <Text style={styles.statNote}>
           Choose a chapter from More → Chapter to see your points.
         </Text>
