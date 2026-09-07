@@ -48,14 +48,42 @@ type TransactionRow = {
   created_at?: string;
 };
 
+type AuditPaging = {
+  before: string | undefined;
+  history: Array<string | undefined>;
+};
+
+export const AUDIT_PAGE_SIZE = 100;
+
+/**
+ * Cursor for the next (older) page: the oldest `created_at` on a full page,
+ * returned **verbatim**. The API compares with `created_at < before`, and
+ * Postgres `timestamptz` is microsecond; running this through `Date` drops
+ * the last three digits and can skip a same-millisecond sibling (#1832 / #1480).
+ *
+ * A short page, or a full page whose oldest row has no `created_at`, means
+ * there is nothing further to request.
+ */
+export function olderAuditCursor(
+  rows: readonly Pick<TransactionRow, "created_at">[],
+  pageSize: number = AUDIT_PAGE_SIZE,
+): string | undefined {
+  if (rows.length < pageSize) return undefined;
+  const oldest = rows[rows.length - 1]?.created_at;
+  return typeof oldest === "string" && oldest.length > 0 ? oldest : undefined;
+}
+
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
+
+const INITIAL_PAGING: AuditPaging = { before: undefined, history: [] };
 
 export function PointsAuditCard() {
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | Category>("ALL");
   const [userFilter, setUserFilter] = useState<string>("ALL");
+  const [paging, setPaging] = useState<AuditPaging>(INITIAL_PAGING);
 
   // The display roster, not `useMembers`: this card needs a name per row and a
   // name per filter option, and `GET /v1/members` would put every member's
@@ -96,8 +124,35 @@ export function PointsAuditCard() {
     userId: userFilter === "ALL" ? undefined : userFilter,
     category: categoryFilter === "ALL" ? undefined : categoryFilter,
     flagged: flaggedOnly ? true : undefined,
-    limit: 100,
+    before: paging.before,
+    limit: AUDIT_PAGE_SIZE,
   });
+
+  const rows = asArray<TransactionRow>(transactionsQuery.data);
+  const olderCursor = olderAuditCursor(rows);
+  const canGoNewer = paging.history.length > 0;
+  const canGoOlder = olderCursor !== undefined;
+
+  function resetPaging() {
+    setPaging(INITIAL_PAGING);
+  }
+
+  function goOlder(createdAt: string) {
+    setPaging((current) => ({
+      before: createdAt,
+      history: [...current.history, current.before],
+    }));
+  }
+
+  function goNewer() {
+    setPaging((current) => {
+      if (current.history.length === 0) return current;
+      return {
+        before: current.history[current.history.length - 1],
+        history: current.history.slice(0, -1),
+      };
+    });
+  }
 
   return (
     <Can
@@ -154,7 +209,10 @@ export function PointsAuditCard() {
             <Button
               variant={flaggedOnly ? "default" : "secondary"}
               size="sm"
-              onClick={() => setFlaggedOnly((prev) => !prev)}
+              onClick={() => {
+                setFlaggedOnly((prev) => !prev);
+                resetPaging();
+              }}
               aria-pressed={flaggedOnly}
               className="gap-2"
             >
@@ -182,9 +240,10 @@ export function PointsAuditCard() {
           <div className="grid gap-3 md:grid-cols-2">
             <Select
               value={categoryFilter}
-              onValueChange={(value) =>
-                setCategoryFilter(value as "ALL" | Category)
-              }
+              onValueChange={(value) => {
+                setCategoryFilter(value as "ALL" | Category);
+                resetPaging();
+              }}
             >
               <SelectTrigger aria-label="Filter audit by category">
                 <SelectValue />
@@ -199,7 +258,13 @@ export function PointsAuditCard() {
                 <SelectItem value="FINE">Fine</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={userFilter} onValueChange={setUserFilter}>
+            <Select
+              value={userFilter}
+              onValueChange={(value) => {
+                setUserFilter(value);
+                resetPaging();
+              }}
+            >
               <SelectTrigger aria-label="Filter audit by member">
                 <SelectValue />
               </SelectTrigger>
@@ -223,27 +288,23 @@ export function PointsAuditCard() {
               onRetry={() => void transactionsQuery.refetch()}
             />
           ) : (
-            (() => {
-              const rows = asArray<TransactionRow>(transactionsQuery.data);
-              if (rows.length === 0) {
-                return (
-                  <NestedEmpty
-                    title={
-                      flaggedOnly
-                        ? "No flagged transactions in this window"
-                        : "No transactions match this filter"
-                    }
-                    description={
-                      flaggedOnly
-                        ? policyKnown
-                          ? `Single adjustments of |amount| ≥ ${pointsPolicy.anomaly_threshold} are flagged here automatically.`
-                          : "Large single adjustments are flagged here automatically."
-                        : "Try relaxing the category or member filter."
-                    }
-                  />
-                );
-              }
-              return (
+            <>
+              {rows.length === 0 ? (
+                <NestedEmpty
+                  title={
+                    flaggedOnly
+                      ? "No flagged transactions in this window"
+                      : "No transactions match this filter"
+                  }
+                  description={
+                    flaggedOnly
+                      ? policyKnown
+                        ? `Single adjustments of |amount| ≥ ${pointsPolicy.anomaly_threshold} are flagged here automatically.`
+                        : "Large single adjustments are flagged here automatically."
+                      : "Try relaxing the category or member filter."
+                  }
+                />
+              ) : (
                 <ul className="divide-y divide-border">
                   {rows.map((row) => {
                     const flagged = row.metadata?.flagged === true;
@@ -292,8 +353,30 @@ export function PointsAuditCard() {
                     );
                   })}
                 </ul>
-              );
-            })()
+              )}
+              {canGoNewer || canGoOlder ? (
+                <div className="flex items-center justify-between gap-2 border-t border-border pt-4">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!canGoNewer || transactionsQuery.isFetching}
+                    onClick={goNewer}
+                  >
+                    Newer transactions
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!canGoOlder || transactionsQuery.isFetching}
+                    onClick={() => {
+                      if (olderCursor !== undefined) goOlder(olderCursor);
+                    }}
+                  >
+                    Older transactions
+                  </Button>
+                </div>
+              ) : null}
+            </>
           )}
         </CardContent>
       </Card>
