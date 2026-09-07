@@ -51,8 +51,27 @@
 //   SUPABASE_URL                  required, e.g. https://<ref>.supabase.co
 //   SUPABASE_SERVICE_ROLE_KEY     required, bypasses RLS -- never log it
 //   BACKUP_RETENTION_DAYS         optional, default 30
+//   BACKUP_ENVIRONMENT            optional; when set, must match the prefix
+//                                 (`staging` ↔ `storage`, `production` ↔
+//                                 `storage-production`)
+//   STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL
+//                                 optional; a rehearsal against production is
+//                                 refused without this. The nightly production
+//                                 job hard-codes rehearsal: false because it
+//                                 has no reviewer and the rehearsal writes.
 
 import { createHash } from "node:crypto";
+
+import { getEnvironment, SUPABASE_PROJECT_REF_PATTERN } from "./ci/lib/environments.mjs";
+
+/** R2 prefix each environment's Storage mirror lives under. The inverse of
+ *  `environmentForStoragePrefix`. Staging keeps the pre-existing `storage` so
+ *  its history stays continuous; production uses a sibling so neither
+ *  environment's manifest can overwrite the other's. */
+export const STORAGE_BACKUP_PREFIXES = {
+  staging: "storage",
+  production: "storage-production",
+};
 
 export const DEFAULT_RETENTION_DAYS = 30;
 
@@ -232,6 +251,130 @@ export function checkDeletionSanity({ manifest, tombstone, maxRatio = 0.5, minCo
       `mass deletion. Nothing has been changed offsite. If the deletion is genuine, ` +
       `re-run with STORAGE_BACKUP_ALLOW_MASS_DELETE=true.`,
   };
+}
+
+/**
+ * Which environment a Storage backup prefix claims to hold.
+ *
+ * `storage` is staging; `storage-production` is production. Anything else is
+ * unknown — a local `--prefix tmp` would otherwise write a canary into whichever
+ * project `SUPABASE_URL` names and label the mirror as if it were staging.
+ */
+export function environmentForStoragePrefix(prefix) {
+  for (const [name, known] of Object.entries(STORAGE_BACKUP_PREFIXES)) {
+    if (known === prefix) return name;
+  }
+  return null;
+}
+
+/**
+ * The Supabase project ref named by `SUPABASE_URL`.
+ *
+ * Only `{ref}.supabase.co` (and `.supabase.net`) hosts are accepted. A local
+ * stack URL (`http://127.0.0.1:54321`) must not be read as a truncated ref —
+ * the first DNS label of `127.0.0.1` is `127`, which would fail the later
+ * environments.json comparison with a confusing message instead of "this is
+ * not a hosted project".
+ */
+export function projectRefFromSupabaseUrl(supabaseUrl) {
+  if (typeof supabaseUrl !== "string" || supabaseUrl.trim() === "") {
+    throw new Error(
+      "SUPABASE_URL is missing; refusing to run a Storage backup against an unnamed project.",
+    );
+  }
+
+  let url;
+  try {
+    url = new URL(supabaseUrl);
+  } catch {
+    throw new Error(
+      "SUPABASE_URL is not a valid URL; refusing to run a Storage backup against an unnamed project.",
+    );
+  }
+
+  const host = url.hostname;
+  if (!host.endsWith(".supabase.co") && !host.endsWith(".supabase.net")) {
+    throw new Error(
+      `SUPABASE_URL host '${host}' is not a hosted Supabase project. ` +
+        `Storage backup refuses local and unknown hosts so a rehearsal cannot write a canary to the wrong place.`,
+    );
+  }
+
+  const ref = host.split(".")[0];
+  if (!SUPABASE_PROJECT_REF_PATTERN.test(ref)) {
+    throw new Error(
+      `SUPABASE_URL host '${host}' does not start with a 15-20 character project ref; refusing.`,
+    );
+  }
+  return ref;
+}
+
+/**
+ * Fail closed before any Storage or R2 write.
+ *
+ * The GHA action used to parse the hostname in bash and compare it to
+ * `inputs.environment`. The CLI did not, so a local
+ * `rehearse --prefix storage` against production `SUPABASE_URL` would write a
+ * canary into production Storage. One function now is that fence for both.
+ *
+ * Invariants:
+ *   - prefix `storage` ↔ staging ref in `.github/environments.json`
+ *   - prefix `storage-production` ↔ production ref
+ *   - an unknown prefix is refused, not treated as a scratch namespace
+ *   - `expectedEnvironment` (GHA `inputs.environment` / `BACKUP_ENVIRONMENT`)
+ *     must match the prefix when set
+ *   - `rehearse` against production is refused unless
+ *     `STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL=true`
+ */
+export function assertStorageBackupTarget({
+  supabaseUrl,
+  prefix,
+  mode,
+  expectedEnvironment,
+  allowProductionRehearsal,
+  lookupEnvironment = getEnvironment,
+} = {}) {
+  const envFromPrefix = environmentForStoragePrefix(prefix);
+  if (!envFromPrefix) {
+    const known = Object.entries(STORAGE_BACKUP_PREFIXES)
+      .map(([name, p]) => `${p} (${name})`)
+      .join(", ");
+    throw new Error(
+      `Unknown Storage backup prefix '${prefix}'. Known: ${known}. ` +
+        `A run with an unrecognised prefix would mislabel the mirror; refusing.`,
+    );
+  }
+
+  if (expectedEnvironment && expectedEnvironment !== envFromPrefix) {
+    throw new Error(
+      `Storage prefix '${prefix}' belongs to ${envFromPrefix}, but this run named environment ` +
+        `'${expectedEnvironment}'. Refusing so a staging job cannot write the production prefix ` +
+        `(or the reverse).`,
+    );
+  }
+
+  const envName = expectedEnvironment || envFromPrefix;
+  const expected = lookupEnvironment(envName);
+  const actualRef = projectRefFromSupabaseUrl(supabaseUrl);
+  if (actualRef !== expected.supabaseProjectRef) {
+    throw new Error(
+      `SUPABASE_URL names project ${actualRef}, not the ${envName} project ` +
+        `(${expected.supabaseProjectRef}, ${expected.supabaseProjectName}) that prefix '${prefix}' ` +
+        `maps to in .github/environments.json. A mirror taken now would be mislabelled; refusing.`,
+    );
+  }
+
+  const allow =
+    allowProductionRehearsal ?? process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL === "true";
+  if (mode === "rehearse" && envName === "production" && !allow) {
+    throw new Error(
+      "Refusing a Storage rehearsal against production. The rehearsal writes and deletes a canary. " +
+        "The production nightly job hard-codes rehearsal: false for this reason (no reviewer). " +
+        "If you meant to, set STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL=true.",
+    );
+  }
+
+  return { environment: envName, projectRef: actualRef };
 }
 
 /**

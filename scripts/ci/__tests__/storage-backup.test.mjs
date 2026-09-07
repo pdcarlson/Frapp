@@ -7,7 +7,10 @@ import {
   DEFAULT_RETENTION_DAYS,
   REHEARSAL_BUCKET,
   REHEARSAL_CONTENT_TYPE,
+  STORAGE_BACKUP_PREFIXES,
   assertSafeObjectPath,
+  assertStorageBackupTarget,
+  environmentForStoragePrefix,
   LIST_PAGE_SIZE,
   backupKey,
   checkDeletionSanity,
@@ -15,6 +18,7 @@ import {
   listBucketObjects,
   parseObjectPage,
   planSync,
+  projectRefFromSupabaseUrl,
 } from "../../storage-backup.mjs";
 
 const DAY = 86_400_000;
@@ -420,4 +424,138 @@ test("a restore refuses an object path that would escape the directory", () => {
 test("ordinary object paths are accepted unchanged", () => {
   assert.equal(assertSafeObjectPath("chapter-1/bylaws.pdf"), "chapter-1/bylaws.pdf");
   assert.equal(assertSafeObjectPath("file with spaces.png"), "file with spaces.png");
+});
+
+// -- assertStorageBackupTarget ----------------------------------------------
+
+const STAGING_REF = "stagingrefaaaaaa";
+const PRODUCTION_REF = "productionrefbbb";
+const lookupEnvironment = (name) => {
+  if (name === "staging") {
+    return { name, supabaseProjectRef: STAGING_REF, supabaseProjectName: "frapp-staging" };
+  }
+  if (name === "production") {
+    return { name, supabaseProjectRef: PRODUCTION_REF, supabaseProjectName: "frapp-prod" };
+  }
+  throw new Error(`Unknown environment "${name}"`);
+};
+const stagingUrl = `https://${STAGING_REF}.supabase.co`;
+const productionUrl = `https://${PRODUCTION_REF}.supabase.co`;
+const fence = (over = {}) =>
+  assertStorageBackupTarget({
+    supabaseUrl: stagingUrl,
+    prefix: "storage",
+    mode: "backup",
+    lookupEnvironment,
+    allowProductionRehearsal: false,
+    ...over,
+  });
+
+test("prefix storage is staging and storage-production is production", () => {
+  assert.equal(environmentForStoragePrefix("storage"), "staging");
+  assert.equal(environmentForStoragePrefix("storage-production"), "production");
+  assert.equal(environmentForStoragePrefix("tmp"), null);
+  assert.equal(STORAGE_BACKUP_PREFIXES.staging, "storage");
+  assert.equal(STORAGE_BACKUP_PREFIXES.production, "storage-production");
+});
+
+test("projectRefFromSupabaseUrl reads the first label of a hosted host", () => {
+  assert.equal(projectRefFromSupabaseUrl(stagingUrl), STAGING_REF);
+  assert.equal(projectRefFromSupabaseUrl(`${stagingUrl}/`), STAGING_REF);
+});
+
+test("a local stack URL is refused, not parsed as a truncated ref", () => {
+  // The first DNS label of 127.0.0.1 is `127`. Treating that as a project ref
+  // would fail the environments.json comparison with a confusing message
+  // instead of "this is not a hosted project".
+  assert.throws(() => projectRefFromSupabaseUrl("http://127.0.0.1:54321"), /not a hosted Supabase project/);
+  assert.throws(() => projectRefFromSupabaseUrl("http://localhost:54321"), /not a hosted Supabase project/);
+});
+
+test("a missing or unparseable SUPABASE_URL is refused before any write", () => {
+  assert.throws(() => projectRefFromSupabaseUrl(""), /SUPABASE_URL is missing/);
+  assert.throws(() => projectRefFromSupabaseUrl("not a url"), /not a valid URL/);
+});
+
+test("THE POINT: a staging prefix against the production URL is refused", () => {
+  // The failure the CLI used to permit: a local `rehearse --prefix storage`
+  // with production SUPABASE_URL would write a canary into production Storage.
+  assert.throws(
+    () => fence({ supabaseUrl: productionUrl, prefix: "storage", mode: "rehearse" }),
+    /names project productionrefbbb[\s\S]*staging project/,
+  );
+});
+
+test("a production prefix against the staging URL is refused", () => {
+  assert.throws(
+    () => fence({ prefix: "storage-production" }),
+    /names project stagingrefaaaaaa[\s\S]*production project/,
+  );
+});
+
+test("matching prefix and URL is accepted for backup and restore", () => {
+  assert.deepEqual(fence(), { environment: "staging", projectRef: STAGING_REF });
+  assert.deepEqual(
+    fence({ supabaseUrl: productionUrl, prefix: "storage-production", mode: "restore" }),
+    { environment: "production", projectRef: PRODUCTION_REF },
+  );
+});
+
+test("a staging rehearsal against the staging URL is accepted", () => {
+  assert.equal(fence({ mode: "rehearse" }).environment, "staging");
+});
+
+test("a production rehearsal is refused unless the override is set", () => {
+  assert.throws(
+    () =>
+      fence({
+        supabaseUrl: productionUrl,
+        prefix: "storage-production",
+        mode: "rehearse",
+        allowProductionRehearsal: false,
+      }),
+    /Refusing a Storage rehearsal against production/,
+  );
+  assert.equal(
+    fence({
+      supabaseUrl: productionUrl,
+      prefix: "storage-production",
+      mode: "rehearse",
+      allowProductionRehearsal: true,
+    }).environment,
+    "production",
+  );
+});
+
+test("an unknown prefix is refused rather than treated as a scratch namespace", () => {
+  assert.throws(() => fence({ prefix: "scratch" }), /Unknown Storage backup prefix 'scratch'/);
+});
+
+test("BACKUP_ENVIRONMENT must match the prefix when set", () => {
+  assert.throws(
+    () => fence({ expectedEnvironment: "production" }),
+    /prefix 'storage' belongs to staging/,
+  );
+  assert.deepEqual(fence({ expectedEnvironment: "staging" }), {
+    environment: "staging",
+    projectRef: STAGING_REF,
+  });
+});
+
+test("the committed staging URL is accepted by the default lookup", () => {
+  // No injected lookup — this is the fence a local rehearsal actually hits.
+  const got = assertStorageBackupTarget({
+    supabaseUrl: "https://hnoyzpidbmizhbqaiity.supabase.co",
+    prefix: "storage",
+    mode: "rehearse",
+    allowProductionRehearsal: false,
+  });
+  assert.equal(got.environment, "staging");
+  assert.equal(got.projectRef, "hnoyzpidbmizhbqaiity");
+});
+
+test("the GHA action uses the same assertStorageBackupTarget fence as the CLI", () => {
+  const yml = readFileSync(".github/actions/storage-offsite-backup/action.yml", "utf8");
+  assert.match(yml, /assertStorageBackupTarget/);
+  assert.doesNotMatch(yml, /REF="\$\{HOST%%\.\*\}"/);
 });
