@@ -9,8 +9,9 @@
 // than a fix for it. All four now call `ghRequest` for the request itself,
 // not just its headers; each keeps its own error message and throw-on-failure
 // contract at the call site, since the callers disagree on that (`fetchPrLabels`
-// skips a 404 — that number is not a pull request — and throws on 403, while a
-// fail-safe `{ok:false}` is correct for the watchdogs — see below).
+// skips a /pulls 404 only when GET /issues/{n} confirms a bare issue — #1839 —
+// and throws on 403 or an unclassifiable 404, while a fail-safe `{ok:false}`
+// is correct for the watchdogs — see below).
 //
 // It lives in `lib/` and not in `ci-wake.mjs` for a second reason: `lib/alert-issue.mjs`
 // imported it from `../ci-wake.mjs`, so a library depended on a script. Moving
