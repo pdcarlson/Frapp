@@ -364,9 +364,13 @@ ever touches `documents/_backup-rehearsal/`. (`documents` rather than `reports`
 because every bucket here pins `allowed_mime_types` and `reports` permits only
 `application/pdf`.)
 
-Before a local run, assert `SUPABASE_URL`'s host is the staging project in
-`.github/environments.json` (`hnoyzpidbmizhbqaiity`). The production prefix is
-`storage-production`; do not point this script at `unttyvyfezddlyafcydh`.
+The script itself refuses a mismatch: prefix `storage` must be the staging
+project in `.github/environments.json` (`hnoyzpidbmizhbqaiity`); prefix
+`storage-production` must be production (`unttyvyfezddlyafcydh`). A rehearsal
+against production is refused unless
+`STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL=true` — the nightly production job
+hard-codes `rehearsal: false` for the same reason (no reviewer, and the
+rehearsal writes).
 
 Record each run in the rehearsal log below.
 
