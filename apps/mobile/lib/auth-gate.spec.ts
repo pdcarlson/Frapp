@@ -75,14 +75,13 @@ describe("resolveAuthGate", () => {
   /**
    * The outage guard, and the reason this file exists in its current shape.
    *
-   * `custom_access_token_hook` is not enabled in production (#805), so no token
-   * carries `active_chapter_id` today — and the API is fine with that, because
-   * `ChapterGuard` auto-resolves a sole membership when neither the claim nor
-   * `x-chapter-id` is present. A gate that demanded the claim would strand every
-   * member on a picker that cannot possibly satisfy it, since activating a
-   * chapter produces no claim while the hook is off. The rollback playbook also
-   * prescribes disabling that hook during an auth incident, so this would fire
-   * exactly when the app most needs to work.
+   * `custom_access_token_hook` is enabled on both hosted projects, but a token
+   * still has no `active_chapter_id` when the user has no membership — and the
+   * API is fine with that, because `ChapterGuard` auto-resolves a sole
+   * membership when neither the claim nor `x-chapter-id` is present. A gate that
+   * demanded the claim would strand every member on a picker that cannot
+   * possibly satisfy it whenever the claim is absent (no chapter yet, or the
+   * rollback playbook has disabled the hook during an auth incident).
    *
    * Memberships still decide join vs welcome vs tabs. A missing *claim* with a
    * completed sole membership is tabs, not the picker.
