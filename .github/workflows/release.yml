@@ -27,7 +27,11 @@ name: Release
 #      no tag would ever be created. Silently. The guard is gone.
 #   2. Checkout had no `ref:`, which under `workflow_call` resolves to the
 #      caller's branch tip — so it would tag whatever main happened to be
-#      rather than what was deployed. It now checks out `inputs.sha`.
+#      rather than what was deployed. It now checks out `inputs.sha` for
+#      history and the tag. The bump classifier is a separate overlay from
+#      `github.sha` (see the step below): tagging the live SHA with that
+#      SHA's own `resolve-release-bump.mjs` is how run 34155737950 died on
+#      issue #1340 after Render and Vercel were already serving traffic.
 #   3. `v0.1.0` dereferences to the old `production` head, which is NOT an
 #      ancestor of main: `git describe --tags` from a main commit fails
 #      outright. Tag discovery therefore uses `git tag --list`, which needs no
@@ -98,6 +102,32 @@ jobs:
       # it is a version that silently restarts at 0.0.0.
       - name: Fetch tags
         run: git fetch --tags --force origin
+
+      # The live-SHA checkout is load-bearing for the tag, and it is the wrong
+      # tree for the bump classifier. Proven 2026-09-07 on run 34155737950:
+      # production was already on f2938a01, then this job checked that SHA out
+      # and ran its pre-#1844 script, which died on issue #1340. A retry of
+      # Release from main with bump=auto would have repeated it, because
+      # `node scripts/ci/resolve-release-bump.mjs` would still execute the live
+      # SHA's copy. Overlay the classifier (and the modules it imports) from
+      # the workflow revision that is running. `github.sha` is the branch
+      # selected in the Actions UI under `workflow_dispatch`, and the caller's
+      # SHA under `workflow_call`. History and `git tag` stay on `inputs.sha`.
+      - name: Use the running workflow's bump classifier
+        env:
+          WORKFLOW_SHA: ${{ github.sha }}
+          LIVE_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$WORKFLOW_SHA" = "$LIVE_SHA" ]; then
+            echo "Workflow revision is the live SHA — classifier already matches."
+            exit 0
+          fi
+          git fetch --no-tags origin "$WORKFLOW_SHA":refs/tmp/workflow-sha
+          git checkout refs/tmp/workflow-sha -- \
+            scripts/ci/resolve-release-bump.mjs \
+            scripts/ci/lib
+          echo "Overlaid bump classifier from $WORKFLOW_SHA onto live tree $LIVE_SHA."
 
       - name: Setup Node
         uses: actions/setup-node@v4

@@ -315,4 +315,16 @@ describe("the workflows that run this script grant the scope it needs", () => {
       assert.match(jobBody, /issues: read/);
     });
   }
+
+  // Run 34155737950 tagged nothing because `auto` executed the live SHA's
+  // pre-#1844 script. The overlay from `github.sha` is what makes a retry of
+  // Release from main able to classify that same SHA.
+  it("release.yml overlays the bump classifier from github.sha onto the live SHA checkout", () => {
+    const text = readFileSync(join(repoRoot, ".github/workflows/release.yml"), "utf8");
+    assert.match(text, /ref: \$\{\{ inputs\.sha \}\}/);
+    assert.match(text, /WORKFLOW_SHA: \$\{\{ github\.sha \}\}/);
+    assert.match(text, /LIVE_SHA: \$\{\{ inputs\.sha \}\}/);
+    assert.match(text, /scripts\/ci\/resolve-release-bump\.mjs/);
+    assert.match(text, /scripts\/ci\/lib/);
+  });
 });

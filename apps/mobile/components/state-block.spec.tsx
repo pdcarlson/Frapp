@@ -156,9 +156,9 @@ describe("EmptyState", () => {
 });
 
 describe("NoChapterState", () => {
-  // Not an edge case on this app: no token carries an `active_chapter_id` claim
-  // in production (#805), so every chapter-scoped query stays disabled and this
-  // is what a member actually sees.
+  // Not an edge case: a missing `active_chapter_id` claim (no membership yet,
+  // or a hook-off incident) leaves every chapter-scoped query disabled, and
+  // this is what that member actually sees.
   it("names the missing chapter and points at the picker", () => {
     const tree = render(<NoChapterState noun="the directory" />);
     const copy = texts(tree).join(" ");

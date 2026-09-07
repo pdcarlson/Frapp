@@ -40,17 +40,16 @@ export function useStudySessions() {
   // `apps/web`'s provider does (#1042) — so on mobile the stale rows are what
   // the member actually sees.
   //
-  // Deliberately **not** `enabled: !!chapterId`: no production token carries an
-  // `active_chapter_id` claim while #805 is open, and `ChapterGuard` resolves a
+  // Deliberately **not** `enabled: !!chapterId`: the claim is absent with no
+  // membership and during a hook-off incident, and `ChapterGuard` resolves a
   // sole membership server-side, so gating on the claim would blank the screen
-  // for every member instead of scoping it.
+  // for those users instead of scoping it.
   //
-  // Which means the scoping above is **correct but currently inert**: with no
-  // claim the segment is always `null`, so it cannot separate two chapters
-  // today. It starts working the moment #805 lands, and it is the shape every
-  // sibling read already uses — but do not read this key as evidence that
-  // #1042's leak is handled. On mobile it is not, and the fix for that is a
-  // cache clear on chapter switch, not a key.
+  // Which means the scoping above is **correct but inert** whenever the claim
+  // is missing: the segment is `null`, so it cannot separate two chapters.
+  // It works as soon as the token carries a claim. Do not read this key as
+  // evidence that #1042's leak is handled. On mobile it is not, and the fix
+  // for that is a cache clear on chapter switch, not a key.
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["study-sessions", chapterId],

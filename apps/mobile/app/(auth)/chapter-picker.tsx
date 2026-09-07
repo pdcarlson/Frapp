@@ -21,10 +21,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Reached deliberately, from the More hub — **not** forced on members whose
  * token lacks an `active_chapter_id` claim. `lib/auth-gate.ts` explains why
- * that distinction is load-bearing rather than a preference: no token carries
- * the claim while `custom_access_token_hook` is disabled (#805), so a forced
- * redirect would trap every member on a screen that cannot satisfy its own
- * exit condition.
+ * that distinction is load-bearing rather than a preference: a missing claim
+ * is still normal (no membership yet, or a playbook that disables the hook),
+ * so a forced redirect would trap those users on a screen that cannot satisfy
+ * its own exit condition.
  *
  * There is no local write on selection — see `lib/select-chapter.ts`. Because
  * the gate exempts this route, it will not push the member back out when a
@@ -77,10 +77,8 @@ export default function ChapterPicker() {
 
       // Leave under our own steam rather than waiting to be redirected. The
       // gate exempts this route so a member can open it deliberately from More,
-      // which also means it will not push them back out when the switch lands —
-      // and it could not be relied on anyway, since no token carries the new
-      // claim while `custom_access_token_hook` is disabled (#805). An earlier
-      // version waited for that redirect and spun forever.
+      // which also means it will not push them back out when the switch lands.
+      // An earlier version waited for that redirect and spun forever.
       //
       // Prefer going back over replacing: arriving from More means `(tabs)` is
       // already on the stack underneath, and replacing would leave a second
