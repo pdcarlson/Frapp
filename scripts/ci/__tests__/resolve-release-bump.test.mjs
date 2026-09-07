@@ -128,6 +128,39 @@ describe("resolveReleaseBump", () => {
     assert.equal(fetched, false);
   });
 
+  // Run 34155737950: squash subject `(#1340)` named an issue, GET /pulls/1340
+  // 404'd, and the tag job died after Render and Vercel had already shipped.
+  it("skips a 404 (the number is not a pull request) and still reads later PRs", async () => {
+    const result = await resolveReleaseBump({
+      currentVersion: "0.1.0",
+      subjects: ["Retire the production branch (#1340)", "docs(backup): restore dump-era (#1836)"],
+      repo: "o/r",
+      token: "t",
+      logger: quiet,
+      fetchImpl: async (url) => {
+        const n = url.split("/").pop();
+        if (n === "1340") return { ok: false, status: 404, text: async () => "" };
+        return okJson({ labels: [{ name: "release:minor" }] });
+      },
+    });
+    assert.equal(result.bump, "minor");
+    assert.equal(result.version, "0.2.0");
+    assert.deepEqual(result.prNumbers, [1340, 1836]);
+  });
+
+  it("falls back to patch when every named number 404s (issues, not PRs)", async () => {
+    const result = await resolveReleaseBump({
+      currentVersion: "0.1.0",
+      subjects: ["Retire the production branch (#1340)"],
+      repo: "o/r",
+      token: "t",
+      logger: quiet,
+      fetchImpl: async () => ({ ok: false, status: 404, text: async () => "" }),
+    });
+    assert.equal(result.bump, "patch");
+    assert.equal(result.version, "0.1.1");
+  });
+
   // A silent downgrade is the dangerous failure: a release:major PR shipping as
   // a patch because a token lacked a scope, with nothing red anywhere.
   it("throws when a PR in range cannot be read, rather than defaulting to patch", async () => {
@@ -139,9 +172,9 @@ describe("resolveReleaseBump", () => {
           repo: "o/r",
           token: "t",
           logger: quiet,
-          fetchImpl: async () => ({ ok: false, status: 404, text: async () => "" }),
+          fetchImpl: async () => ({ ok: false, status: 403, text: async () => "" }),
         }),
-      /HTTP 404 for PR #10/,
+      /HTTP 403 for PR #10/,
     );
   });
 
