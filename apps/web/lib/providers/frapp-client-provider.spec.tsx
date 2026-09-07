@@ -24,6 +24,12 @@ vi.mock("@repo/hooks", () => ({
   },
 }));
 
+// The claim → store sync has its own suite (`lib/auth/use-claim-chapter-sync.spec.tsx`);
+// here it must not observe auth events the mocked client never emits.
+vi.mock("@/lib/auth/use-claim-chapter-sync", () => ({
+  useClaimChapterSync: () => undefined,
+}));
+
 vi.mock("@/lib/supabase/client", () => ({
   createSupabaseBrowserClient: () => ({
     auth: { getSession: async () => ({ data: { session: null } }) },
