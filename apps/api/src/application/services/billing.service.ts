@@ -10,6 +10,7 @@ import * as Sentry from '@sentry/nestjs';
 import {
   BILLING_PROVIDER,
   chargeIdFromLatestCharge,
+  customerIdFrom,
   type IBillingProvider,
   type WebhookEvent,
   type CheckoutSessionWebhookObject,
@@ -356,6 +357,7 @@ export class BillingService {
     const session = event.data.object as CheckoutSessionWebhookObject;
     const chapterId = session.metadata?.chapter_id;
     const subscriptionId = session.subscription;
+    const sessionCustomerId = customerIdFrom(session.customer);
 
     if (!chapterId) {
       this.logger.warn(
@@ -384,6 +386,19 @@ export class BillingService {
     // (e.g. Stripe retries an old checkout after the API restart cleared the
     // in-memory idempotency set, when the subscription has since moved on).
     if (this.isStaleWebhook(chapter, event, 'checkout.session.completed')) {
+      // One case is not a replay of history but the tail of a race: a
+      // subscription event for THIS checkout arrived first, was resolved through
+      // the customer and claimed `subscription_id` (see
+      // `findChapterBySubscription`), then advanced the high-water mark past
+      // this event's `created`. The status and the reference are already right;
+      // the only thing this checkout still owes is the conversion milestone,
+      // which is keyed uniquely per chapter and so safe to record from here.
+      if (subscriptionId && chapter.subscription_id === subscriptionId) {
+        await this.activation.record(
+          chapterId,
+          'activation-checkout-completed',
+        );
+      }
       return;
     }
 
@@ -415,13 +430,13 @@ export class BillingService {
     // acquired a second customer record — exactly the condition this issue
     // exists to prevent, and worth surfacing rather than absorbing.
     if (
-      session.customer &&
+      sessionCustomerId &&
       chapter.stripe_customer_id &&
-      session.customer !== chapter.stripe_customer_id
+      sessionCustomerId !== chapter.stripe_customer_id
     ) {
       this.logger.error(
         `Chapter ${chapterId} completed checkout under customer ` +
-          `${session.customer} while referencing ${chapter.stripe_customer_id}. ` +
+          `${sessionCustomerId} while referencing ${chapter.stripe_customer_id}. ` +
           'A second customer record exists for this chapter; reconcile in Stripe.',
       );
     }
@@ -429,7 +444,7 @@ export class BillingService {
     await this.chapterRepo.update(chapterId, {
       subscription_status: 'active',
       subscription_id: subscriptionId ?? chapter.subscription_id,
-      stripe_customer_id: session.customer ?? chapter.stripe_customer_id,
+      stripe_customer_id: sessionCustomerId ?? chapter.stripe_customer_id,
       last_stripe_webhook_at: this.eventCreatedAt(event),
     });
 
@@ -469,8 +484,8 @@ export class BillingService {
    * Both are properties of *this* handler, which resolves the chapter from
    * `metadata.chapter_id` written at checkout creation. They do **not**
    * generalise to the subscription-resolved handlers, whose unknown-reference
-   * branch mixes an expected case with a transient one and is deliberately left
-   * quiet — see `findChapterBySubscription` and #1738.
+   * branch is reached only by expected traffic now that the checkout race is
+   * resolved through the customer — see `findChapterBySubscription` (#1738).
    *
    * The spec's old remedy ("upsert logic … retry naturally") was never built
    * and would be wrong here if it were: upserting would mint a chapter row out
@@ -495,7 +510,7 @@ export class BillingService {
       chapterId,
       detail:
         `chapter ${chapterId} (subscription ${session.subscription ?? 'none'}, ` +
-        `customer ${session.customer ?? 'none'}) — nothing was activated`,
+        `customer ${customerIdFrom(session.customer) ?? 'none'}) — nothing was activated`,
       benignCause:
         'this event belongs to another environment sharing this Stripe account',
       realCause:
@@ -507,11 +522,13 @@ export class BillingService {
    * The reporting seam for "a live Stripe object names a chapter this database
    * cannot resolve".
    *
-   * **Only the checkout path reports today.** `findChapterBySubscription`
-   * deliberately does not call this — see its docblock and #1738 — so do not
-   * read this as covering the subscription-resolved handlers. It is written as
-   * a seam rather than inlined because #1738 is expected to add the second
-   * caller once that branch can tell its two causes apart.
+   * **Only the checkout path reports.** `findChapterBySubscription`
+   * deliberately does not call this — see its docblock — so do not read this as
+   * covering the subscription-resolved handlers. Since #1738 the transient miss
+   * on that path is resolved through the customer rather than reported, and
+   * what still falls through (a superseded reference, a foreign subscription)
+   * is expected traffic. The seam stays because a second caller is cheap to add
+   * if a genuinely alertable case appears there.
    *
    * **The cooldown is load-bearing, not tidiness.** Local dev and staging share
    * a Stripe test-mode account *and* a Sentry DSN (`ENV_REFERENCE.md`: both are
@@ -620,7 +637,10 @@ export class BillingService {
       );
       return;
     }
-    const chapter = await this.findChapterBySubscription(subscription.id);
+    const chapter = await this.findChapterBySubscription(
+      subscription.id,
+      customerIdFrom(subscription.customer),
+    );
     if (!chapter) return;
 
     if (!subscription.status) {
@@ -682,7 +702,10 @@ export class BillingService {
       );
       return;
     }
-    const chapter = await this.findChapterBySubscription(subscription.id);
+    const chapter = await this.findChapterBySubscription(
+      subscription.id,
+      customerIdFrom(subscription.customer),
+    );
     if (!chapter) return;
 
     // FRA-242: an older/retried delivery must not overwrite a newer status.
@@ -711,7 +734,10 @@ export class BillingService {
     const subscriptionId = invoice.subscription;
     if (!subscriptionId) return;
 
-    const chapter = await this.findChapterBySubscription(subscriptionId);
+    const chapter = await this.findChapterBySubscription(
+      subscriptionId,
+      customerIdFrom(invoice.customer),
+    );
     if (!chapter) return;
 
     // FRA-242: a stale invoice payment must not reactivate a chapter whose
@@ -726,7 +752,24 @@ export class BillingService {
     const update: Partial<Chapter> = {
       last_stripe_webhook_at: this.eventCreatedAt(event),
     };
-    if (chapter.subscription_status === 'past_due') {
+    // A paid invoice for the chapter's subscription means that subscription is
+    // live, so it lifts both non-live states this handler can meet:
+    //
+    //  - `past_due`: the dunning recovery this handler has always done.
+    //  - `incomplete`: the first invoice of a checkout whose `invoice.paid`
+    //    overtook its own `checkout.session.completed` (#1738). The resolver
+    //    above has just claimed `subscription_id` and this write advances the
+    //    high-water mark past the checkout's `created`, so the checkout will be
+    //    dropped as stale — if activation were left to it, the chapter would
+    //    stay `incomplete` under a paid subscription for good. The same rule
+    //    also covers a checkout that Stripe itself left `incomplete` (initial
+    //    payment failed) and the member then paid: `invoice.paid` and
+    //    `customer.subscription.updated` (`active`) both arrive, and it is
+    //    correct for either to activate.
+    if (
+      chapter.subscription_status === 'past_due' ||
+      chapter.subscription_status === 'incomplete'
+    ) {
       update.subscription_status = 'active';
       update.past_due_since = null;
     }
@@ -734,9 +777,9 @@ export class BillingService {
     await this.chapterRepo.update(chapter.id, update);
 
     if (update.subscription_status === 'active') {
-      // Reactivation via payment is expected and intentionally silent — president
+      // Activation via payment is expected and intentionally silent — president
       // status-change alerts are limited to the subscription updated/deleted paths.
-      this.logger.log(`Chapter ${chapter.id} reactivated via invoice payment`);
+      this.logger.log(`Chapter ${chapter.id} activated via invoice payment`);
     }
   }
 
@@ -784,35 +827,132 @@ export class BillingService {
   /**
    * Resolve the chapter a subscription-shaped event belongs to.
    *
-   * **This miss is a different problem from the checkout one, and it is not
-   * fixed here — see #1738.** `chapters.subscription_id` is written *only* by
-   * `handleCheckoutCompleted`, and Stripe guarantees no ordering between
-   * `checkout.session.completed` and the subscription events for the same
-   * checkout, so an event that overtakes its own checkout finds no row and its
-   * caller acks — losing that status transition permanently. That miss is
-   * **transient**, so the checkout path's terminal reasoning does not carry
-   * over and neither does its answer.
+   * **The primary key is `subscription_id`, and it has a gap (#1738).** That
+   * column is written by `handleCheckoutCompleted`, and Stripe guarantees no
+   * ordering between `checkout.session.completed` and the subscription events
+   * for the same checkout. An event that overtakes its own checkout therefore
+   * finds no row by subscription — and acking it there would lose that status
+   * transition permanently, because Stripe never redelivers an acked event.
    *
-   * **This deliberately stays at `warn` rather than joining the `error` +
-   * Sentry reporting above**, which an earlier draft of #1710 did and which
-   * review caught as wrong. An unresolvable subscription here is *routinely*
-   * expected: `handleCheckoutCompleted` overwrites `subscription_id` when a
-   * canceled chapter resubscribes, and its own log tells the operator to go
-   * cancel the superseded subscription in Stripe. Doing so emits
-   * `customer.subscription.deleted` for a subscription no chapter references —
-   * so alerting on this branch would fire, at critical, on an expected flow the
-   * product itself instructs. Separating "superseded reference" from "lost
-   * transition" needs the resolution work in #1738; until then a false alert
-   * every resubscribe would be worse than the quiet this leaves.
+   * **The fallback is the customer, and it works because of write order.**
+   * `createCheckoutSession` resolves the Stripe customer and persists
+   * `stripe_customer_id` *before* the session is created, so the column is
+   * populated in exactly the ordering that leaves `subscription_id` empty. The
+   * subscription and invoice payloads both carry `customer`, and the column is
+   * `unique`, so the lookup is exact.
+   *
+   * The fallback is refused **while the chapter's stored subscription is
+   * live** (`active` or `past_due` — exactly the statuses `createCheckoutSession`
+   * refuses to open a second checkout for). A live chapter pointing at a
+   * *different* subscription is the superseded-reference case:
+   * `handleCheckoutCompleted` overwrites `subscription_id` when a canceled
+   * chapter resubscribes and tells the operator to cancel the old subscription
+   * in Stripe, which emits `customer.subscription.deleted` for the old id.
+   * Resolving *that* through the customer would cancel the chapter's live
+   * subscription — so it stays acked and unresolved, by design.
+   *
+   * A chapter whose stored subscription is **not** live (`canceled`, or an
+   * `incomplete` leftover) is the mirror image: the only way its customer
+   * acquires a different subscription is the resubscribe checkout the product
+   * offers it, so an event for a new id is that checkout's own subscription
+   * event overtaking it — the same race as the first checkout, one row later.
+   * The reference is overwritten and the transition applied. An event for the
+   * *stored* id never reaches this branch at all; `findBySubscriptionId` above
+   * resolves it directly. The same-id live case can still land here if checkout
+   * commits between those two lookups — that is already ours and is returned,
+   * not refused.
+   *
+   * **The resolved reference is claimed immediately**, and the write is a
+   * compare-and-set (`claimSubscriptionId`): it updates only while the stored
+   * `subscription_id` is still the one this read saw (null, or a non-live
+   * leftover) and the chapter is not live. Two events racing the same empty
+   * (or canceled) row cannot both apply — the loser updates zero rows, reloads
+   * by its own subscription id, and continues only when that id owns the
+   * chapter; otherwise it acks as superseded. The claim is not left for the
+   * checkout. If the overtaking event's `created` is later than the checkout's
+   * — a slow or retried checkout delivery — the checkout is then dropped as
+   * stale by `isStaleWebhook`, and without this write nothing would ever
+   * record which subscription bills the chapter: `grantTrial:
+   * !chapter.subscription_id` would grant a second trial on the next checkout,
+   * and `getChapterBillingStatus` would report none.
+   *
+   * **What remains at `warn`, and why it still raises no Sentry event.** With
+   * the race resolved, the unresolvable branch is reached by two things: the
+   * superseded reference above (expected — the product instructs the flow that
+   * produces it) and a subscription genuinely foreign to this database
+   * (cross-environment delivery on the shared test-mode account, see
+   * `reportUnknownChapterCheckout`). Both are correctly acked and neither is a
+   * lost transition, so alerting here would page on expected traffic.
    */
   private async findChapterBySubscription(
     subscriptionId: string,
+    customerId: string | null,
   ): Promise<Chapter | null> {
-    const chapter = await this.chapterRepo.findBySubscriptionId(subscriptionId);
-    if (!chapter) {
-      this.logger.warn(`No chapter found for subscription: ${subscriptionId}`);
+    const bySubscription =
+      await this.chapterRepo.findBySubscriptionId(subscriptionId);
+    if (bySubscription) return bySubscription;
+
+    if (!customerId) {
+      this.logger.warn(
+        `No chapter found for subscription: ${subscriptionId} (event carried no customer to fall back on)`,
+      );
+      return null;
     }
-    return chapter;
+
+    const byCustomer = await this.chapterRepo.findByCustomerId(customerId);
+    if (!byCustomer) {
+      this.logger.warn(
+        `No chapter found for subscription: ${subscriptionId} (customer ${customerId} is unknown here — foreign subscription, acked)`,
+      );
+      return null;
+    }
+
+    if (byCustomer.subscription_id === subscriptionId) {
+      // Checkout (or a sibling event) wrote this id between our miss-by-sub
+      // lookup and the customer fallback. Already ours — do not treat it as a
+      // superseded reference, and do not try to claim a live row.
+      return byCustomer;
+    }
+
+    const storedIsLive =
+      byCustomer.subscription_status === 'active' ||
+      byCustomer.subscription_status === 'past_due';
+    if (byCustomer.subscription_id && storedIsLive) {
+      this.logger.warn(
+        `No chapter found for subscription: ${subscriptionId} (customer ${customerId} is chapter ` +
+          `${byCustomer.id}, which references live subscription ${byCustomer.subscription_id} — ` +
+          'superseded reference, acked)',
+      );
+      return null;
+    }
+
+    this.logger.log(
+      `Resolved subscription ${subscriptionId} to chapter ${byCustomer.id} via customer ` +
+        `${customerId}: the event overtook its own checkout.session.completed` +
+        (byCustomer.subscription_id
+          ? ` (replacing non-live reference ${byCustomer.subscription_id}).`
+          : '.') +
+        ' Claiming the reference.',
+    );
+
+    const claimed = await this.chapterRepo.claimSubscriptionId(
+      byCustomer.id,
+      subscriptionId,
+      byCustomer.subscription_id,
+    );
+    if (claimed) return claimed;
+
+    // Lost the race: another event claimed this chapter. Continue only when
+    // that claim was for *this* subscription (two deliveries of the same sub);
+    // a different winner is a superseded reference and must not apply.
+    const winner = await this.chapterRepo.findBySubscriptionId(subscriptionId);
+    if (winner) return winner;
+
+    this.logger.warn(
+      `No chapter found for subscription: ${subscriptionId} (customer ${customerId} is chapter ` +
+        `${byCustomer.id}, which lost the subscription_id claim — superseded, acked)`,
+    );
+    return null;
   }
 
   private async notifyChapterPresident(
