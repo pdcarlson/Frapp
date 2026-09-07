@@ -29,6 +29,10 @@ import { ChatService } from './chat.service';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import {
+  ISO_INSTANT_MESSAGE,
+  parseIsoInstant,
+} from '#domain/constants/iso-instant';
+import {
   resolveWindowSince,
   type PointsWindow,
 } from '#domain/utils/points-window';
@@ -217,11 +221,14 @@ export class PointsService {
   ): Promise<PointTransaction[]> {
     const limit = clampListLimit(options.limit);
 
-    let beforeIso: string | undefined;
-    if (options.before) {
-      const parsed = new Date(options.before);
-      if (!Number.isNaN(parsed.getTime())) {
-        beforeIso = parsed.toISOString();
+    // Parsed ONLY to validate. The timestamp reaches the repository as the
+    // caller's original string: `new Date(x).toISOString()` truncates a
+    // `timestamptz`'s microseconds to milliseconds, which can drop a
+    // same-millisecond row off the created_at cursor (#1832; same pin as
+    // chapter-audit-log.service.ts).
+    if (options.before !== undefined) {
+      if (parseIsoInstant(options.before) === null) {
+        throw new BadRequestException(`before ${ISO_INSTANT_MESSAGE}`);
       }
     }
 
@@ -229,7 +236,7 @@ export class PointsService {
       userId: options.userId,
       category: options.category,
       flagged: options.flagged,
-      before: beforeIso,
+      before: options.before,
       limit,
     });
   }
