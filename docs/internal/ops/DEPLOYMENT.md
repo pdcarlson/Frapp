@@ -872,11 +872,21 @@ production** with a commit SHA:
 > approval), and it is why the release job is separate and why `report` errors loudly when the
 > deploy succeeded and the tag did not.
 >
-> **The first `full` dispatch after #1578 is the first real exercise of this path** — the CLI deploy
-> has unit coverage but has never run against the live projects. Note that **`dry_run_only` does not
-> cover it**: the Vercel steps carry `if: !inputs.dry_run_only`, so a dry run validates the commit
-> and rehearses the migration and then stops well short of them. There is no way to exercise the
-> Vercel path without a real release, so watch steps 5 and 6 rather than walking away from them.
+> **2026-09-07 observation (run [34155737950](https://github.com/pdcarlson/Frapp/actions/runs/34155737950)).**
+> First live `full` after #1578. Applied production migrations at 19:33:13Z, Render at 19:33:20Z
+> (`dep-dafh307qj5pc73fall9g`), Vercel `--prebuilt --prod` upload at 19:36:02Z, then tagging failed on
+> `GET /pulls/1340` (an issue number in a squash subject). The Actions list row stayed named
+> **Deploy production** and concluded **failure**. That is not "API before DB" and not a
+> rolled-back ship: open the run, read `report` (`DEPLOY_RESULT: success`, *Production IS
+> updated*). Re-run the **Release** workflow with the live SHA. Job ids stay `deploy` /
+> `release` / `report` (`needs:` keys those); the UI labels now say migrate-then-ship,
+> mint-tag, and summarize. `run-name` is `{scope} {sha}`. `dry_run_only` still does not cover
+> the Vercel path (those steps carry `if: !inputs.dry_run_only`).
+>
+> The similarly named **Deploy API** workflow is staging only (`deploy-api.yml`,
+> `frapp-api-staging` after green CI on `main`). Its alert-issue title is an exact-match lookup
+> key and is not renamed (`scripts/ci/deploy-alert.mjs`).
+>
 > On 2026-09-06 the `frapp-web` Production scope was found to hold **none** of
 > `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`,
 > `NEXT_PUBLIC_LANDING_URL` (nor `frapp-landing` `NEXT_PUBLIC_APP_URL`) — they existed only on

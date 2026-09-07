@@ -118,8 +118,9 @@ summary before running anything from this family.
 > [#1381](https://github.com/pdcarlson/Frapp/issues/1381) epic:
 > `.github/workflows/deploy-vercel-staging.yml` deploys staging after green CI on `main`, and
 > `deploy-production.yml` deploys production from a dispatched SHA. Both run
-> `scripts/ci/deploy-vercel.mjs`. Note it has **never run against the live projects** — the first
-> real exercise of either path is its first run.
+> `scripts/ci/deploy-vercel.mjs`. Live exercise of the production upload, and the
+> Actions-list trap when tagging fails afterward:
+> [`DEPLOYMENT.md`](../../ops/DEPLOYMENT.md) § 10 (2026-09-07, run 34155737950).
 >
 > This does **not** retire the "dashboard-only, fail-open settings" framing the guardrail row sits
 > inside. While the projects stay unlinked there is no Production Branch left to point at `main` —
