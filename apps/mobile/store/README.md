@@ -68,7 +68,7 @@ First release.
 
 ## Review notes (App Store Connect → App Review Information)
 
-- The app is invite-only. A reviewer account and a test chapter invite are provided in the Notes field at submission time; the invite link opens the app to the join screen.
+- The app is invite-only. A reviewer account and a test chapter invite are provided in the Notes field at submission time. Give the reviewer the **invite token** (or the full `https://app.frapp.live/join?token=…` link to paste): the join screen accepts either and extracts the token from a pasted link. Universal links are not configured, so tapping an `https://` invite link opens the web app, not this app — do not describe the link as opening the app.
 - Camera is used only to scan a chapter's event check-in QR code. Location is used only while the app is open, to confirm the member is inside a chapter study zone or at the event being checked in to; there is no background location.
 - Sign in with Apple is not offered because the app has no third-party sign-in of any kind: accounts are email + password through the chapter's invite.
 - No in-app purchases and no digital goods. The app does take **chapter dues** by card (Stripe PaymentSheet on the Dues tab): these are membership dues owed to the member's own real-world organization, i.e. goods and services consumed outside the app (guideline 3.1.5), not digital content. Chapter *subscriptions* to Frapp itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
