@@ -103,9 +103,10 @@ describe("useStudySessions", () => {
   });
 
   it("still fetches when no chapter claim is present", async () => {
-    // #805: no production token carries `active_chapter_id`, and ChapterGuard
-    // resolves a sole membership server-side. An `enabled: !!chapterId` guard
-    // here would blank the screen for every member in production.
+    // Production tokens still lack `active_chapter_id` (empty prod / playbook,
+    // not a disabled hook), and ChapterGuard resolves a sole membership
+    // server-side. An `enabled: !!chapterId` guard here would blank the screen
+    // for every member in production.
     const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
     const { result } = renderHook(() => useStudySessions(), {
       wrapper: makeWrapper(
