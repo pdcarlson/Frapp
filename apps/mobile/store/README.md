@@ -31,6 +31,14 @@ across the store. Decide the name first; everything below is written for
 | Marketing URL | https://frapp.live |
 | Support email | team@frapp.live |
 
+> **Sequence: the first `Deploy production` run comes before either store submission.** The
+> privacy, terms and support pages exist on `main`, but production's landing is still a build
+> from 2026-03-04 on which `https://frapp.live/privacy`, `/terms` and `/support` all answer
+> **404** (checked 2026-09-06 23:55Z). Both stores fetch the privacy policy URL when the
+> listing is saved and reviewers open the support URL, so a submission made before the deploy
+> is rejected on the URLs alone — and the app itself points at `api.frapp.live`, which is
+> also the old build until that run. Deploy, confirm the three URLs return 200, then submit.
+
 ## Description
 
 Frapp is the app your chapter actually runs on.
@@ -60,7 +68,7 @@ First release.
 
 ## Review notes (App Store Connect → App Review Information)
 
-- The app is invite-only. A reviewer account and a test chapter invite are provided in the Notes field at submission time; the invite link opens the app to the join screen.
+- The app is invite-only. A reviewer account and a test chapter invite are provided in the Notes field at submission time. Give the reviewer the **invite token** (or the full `https://app.frapp.live/join?token=…` link to paste): the join screen accepts either and extracts the token from a pasted link. Universal links are not configured, so tapping an `https://` invite link opens the web app, not this app — do not describe the link as opening the app.
 - Camera is used only to scan a chapter's event check-in QR code. Location is used only while the app is open, to confirm the member is inside a chapter study zone or at the event being checked in to; there is no background location.
 - Sign in with Apple is not offered because the app has no third-party sign-in of any kind: accounts are email + password through the chapter's invite.
 - No in-app purchases and no digital goods. The app does take **chapter dues** by card (Stripe PaymentSheet on the Dues tab): these are membership dues owed to the member's own real-world organization, i.e. goods and services consumed outside the app (guideline 3.1.5), not digital content. Chapter *subscriptions* to Frapp itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
