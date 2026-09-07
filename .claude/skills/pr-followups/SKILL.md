@@ -66,7 +66,10 @@ the Human Action List.
 
 All cross-run state lives in one **pinned GitHub issue** titled
 **"PR Follow-ups — Human Action List"** (find it with
-`search_issues query:"PR Follow-ups — Human Action List in:title"`; create it on first run with
+`search_issues query:"PR Follow-ups — Human Action List in:title"` — and if that returns nothing,
+confirm with a `list_issues` sweep for the `routine-state` label before concluding it is missing:
+a search false-zero here would trigger the bootstrap below, duplicating the tracking issue and
+silently resetting the watermark. Create it only on a confirmed miss, with
 `issue_write` — label it **`routine-state`** and nothing else: that label marks routine
 infrastructure, which `/next` and the triage routine both skip, so the tracking issue can never be
 claimed or promoted as work — and ask the maintainer to pin it). Its body carries, in an HTML
@@ -113,16 +116,23 @@ If the issue or marker is missing, bootstrap: window = PRs updated in the last 8
 
 ## Job 1 — Audit previously harvested items
 
-Fetch open issues whose description contains the `fp=pr-followup/` **or `fp=human/`** marker
-(`search_issues query:"fp=pr-followup in:body state:open"` **and**
-`search_issues query:"fp=human in:body state:open"`, plus a description check).
+Fetch the open namespace items by **listing, not searching**: page `list_issues state:OPEN`
+(fields `number,title,labels,updated_at`) and filter client-side on the `[pr-followup]` /
+`[pr-followup][human]` / `[human]` **title prefixes**. Marker-based `search_issues` queries are a
+cross-check only.
 
-> **These queries may not see comment-form markers.** Items filed before 2026-08-20 may carry
-> `fp=` inside an `<!-- … -->` comment. The read that deleted those recovered on 2026-09-05, but
-> whether the **search index** matches text inside a comment was not re-measured with it — so
-> treat this coverage as unknown. **Do not read a miss as "never filed."** Cross-check the `[pr-followup]` / `[human]` **title** prefixes, which are visible and
-> reliable, before concluding an item is unharvested; when you touch such an issue for any other
-> reason, promote its marker to the visible form.
+> **Prefix searches against the semantic index return false zeros — measured 2026-09-07.** That
+> run's `search_issues query:"fp=pr-followup in:body state:open"` and
+> `query:"[pr-followup] in:title state:open"` both returned **0** while dozens of such issues were
+> open with visible-line markers (direct `issue_read` confirmed them open). Exact full-fingerprint
+> lookups still resolve — the marker-count guard's control (a complete `fp=docs/…` string) passed
+> in the same session — so dedup by exact `fp=` string keeps working; it is *prefix* and
+> *title-token* queries the semantic matcher drops. **An empty prefix search is not evidence of an
+> empty namespace** — a run that trusts one audits nothing and silently skips Job 1.
+>
+> The older caveat stands too: items filed before 2026-08-20 may carry `fp=` inside an
+> `<!-- … -->` comment the index may not see. When you touch such an issue for any other reason,
+> promote its marker to the visible form.
 
 For each,
 decide **from current code, config, CI history, or runtime evidence** — never from the issue's
@@ -182,7 +192,9 @@ For each surviving item:
 3. **Dedup** — fingerprint `fp=pr-followup/<slug>` (slug from the action, not the PR title).
    Before filing, `search_issues` open **and** closed for the `fp=` string **and** for the PR
    number; a near-match open issue gets refreshed (comment + link), not duplicated. Also check
-   issues the PR itself references.
+   issues the PR itself references. Treat only *hits* as meaningful: a bare PR number is a token
+   query of the class Job 1's blockquote measures as false-zeroing, so a zero from it clears
+   nothing — the exact-`fp=` search and the PR's own issue links are the legs that count.
 4. **File** via `issue_write` create:
    - Title: `[pr-followup] <imperative action>` — human-action items get `[pr-followup][human]`.
    - Labels: **`triage`** + **`suggestion`** + one `area:<x>` + a priority label (don't inflate;
