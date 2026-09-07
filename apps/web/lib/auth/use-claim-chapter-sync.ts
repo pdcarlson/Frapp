@@ -28,29 +28,51 @@ import { readActiveChapterClaim } from "@/lib/auth/active-chapter-claim";
  * is recovered, by which point the synchronous localStorage rehydration has
  * long completed; `TOKEN_REFRESHED` covers a switch made in another tab, and
  * `useSelectChapter`'s own `refreshSession()` lands here as well, one tick
- * before it writes the same value itself. No claim (no membership, or several
- * without a live persisted choice) leaves the store alone: that is what the
- * switcher's picker is for.
+ * before it writes the same value itself.
+ *
+ * A token with no claim means "no live selection" — no membership, or several
+ * memberships without a persisted choice — and that is what the switcher's
+ * picker is for, so on the steady-state events (`INITIAL_SESSION`,
+ * `TOKEN_REFRESHED`, `USER_UPDATED`) it leaves the store alone rather than
+ * fight a picker the member is about to use. The two account-boundary events
+ * are different: `SIGNED_OUT` clears the store, and a `SIGNED_IN` whose token
+ * carries no claim clears it too, so the previous account's chapter id never
+ * survives in this browser's storage into the next account's session (and the
+ * `FrappProvider` cache drop that keys on the store change runs). Clearing
+ * only at the boundary, not on every claim-less refresh, is deliberate: if the
+ * access-token hook were ever switched off (it is a dashboard toggle the
+ * conformance job watches), every token would lack the claim and a
+ * clear-on-refresh would undo each selection the moment `useSelectChapter`
+ * refreshed the session.
  */
 export function useClaimChapterSync(): void {
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
-    const apply = (token: string | null | undefined) => {
-      const claim = readActiveChapterClaim(token);
-      if (!claim) return;
+    const write = (next: string | null) => {
       const store = useChapterStore.getState();
-      if (store.activeChapterId !== claim) store.setActiveChapterId(claim);
+      if (store.activeChapterId !== next) store.setActiveChapterId(next);
     };
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        write(null);
+        return;
+      }
       if (
-        event === "INITIAL_SESSION" ||
-        event === "SIGNED_IN" ||
-        event === "TOKEN_REFRESHED" ||
-        event === "USER_UPDATED"
+        event !== "INITIAL_SESSION" &&
+        event !== "SIGNED_IN" &&
+        event !== "TOKEN_REFRESHED" &&
+        event !== "USER_UPDATED"
       ) {
-        apply(session?.access_token);
+        return;
+      }
+      if (!session) return;
+      const claim = readActiveChapterClaim(session.access_token);
+      if (claim) {
+        write(claim);
+      } else if (event === "SIGNED_IN") {
+        write(null);
       }
     });
     return () => subscription.unsubscribe();

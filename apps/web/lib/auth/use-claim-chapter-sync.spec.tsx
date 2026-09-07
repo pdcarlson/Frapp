@@ -72,13 +72,53 @@ describe("useClaimChapterSync", () => {
     expect(store.setActiveChapterId).not.toHaveBeenCalled();
   });
 
-  it("leaves the store alone when the token has no claim or there is no session", () => {
+  it("leaves the store alone on a steady-state event whose token has no claim", () => {
     store.activeChapterId = "chap-1";
     renderHook(() => useClaimChapterSync());
-    emit("INITIAL_SESSION"); // token without the claim (several chapters, no live choice)
-    emit("SIGNED_OUT", null);
+    emit("INITIAL_SESSION"); // several chapters, no live choice — the picker's case
+    emit("TOKEN_REFRESHED");
+    emit("USER_UPDATED");
     expect(store.setActiveChapterId).not.toHaveBeenCalled();
     expect(store.activeChapterId).toBe("chap-1");
+  });
+
+  it("leaves the store alone when an event arrives with no session at all", () => {
+    store.activeChapterId = "chap-1";
+    renderHook(() => useClaimChapterSync());
+    emit("INITIAL_SESSION", null);
+    expect(store.setActiveChapterId).not.toHaveBeenCalled();
+  });
+
+  // The account boundary: the previous account's chapter must not survive in
+  // this browser's storage into the next account's session.
+  it("clears the store on SIGNED_OUT", () => {
+    store.activeChapterId = "chap-1";
+    renderHook(() => useClaimChapterSync());
+    emit("SIGNED_OUT", null);
+    expect(store.setActiveChapterId).toHaveBeenCalledWith(null);
+    expect(store.activeChapterId).toBeNull();
+  });
+
+  it("clears the store when a SIGNED_IN token carries no claim (a different account, or one with no chapter)", () => {
+    store.activeChapterId = "previous-accounts-chapter";
+    renderHook(() => useClaimChapterSync());
+    emit("SIGNED_IN");
+    expect(store.setActiveChapterId).toHaveBeenCalledWith(null);
+  });
+
+  it("replaces the previous account's chapter with the new account's claim on SIGNED_IN", () => {
+    store.activeChapterId = "previous-accounts-chapter";
+    renderHook(() => useClaimChapterSync());
+    emit("SIGNED_IN", "new-accounts-chapter");
+    expect(store.setActiveChapterId).toHaveBeenCalledWith("new-accounts-chapter");
+  });
+
+  it("does not write null twice", () => {
+    store.activeChapterId = null;
+    renderHook(() => useClaimChapterSync());
+    emit("SIGNED_OUT", null);
+    emit("SIGNED_IN");
+    expect(store.setActiveChapterId).not.toHaveBeenCalled();
   });
 
   it("ignores events that carry no fresh token decision", () => {
