@@ -28,6 +28,7 @@ import { WeekSummary } from "@/components/study/week-summary";
 import { ZonePickerSheet } from "@/components/study/zone-picker-sheet";
 import { LocationPrimerSheet } from "@/components/study/location-primer-sheet";
 import {
+  latLngOf,
   readForegroundFix,
   readForegroundPermission,
   requestForegroundPermission,
@@ -381,7 +382,9 @@ export default function StudyScreen() {
           // heartbeat banks the whole background gap as study time — the exact
           // accrual the pause exists to prevent.
           if (cancelled || appStateRef.current === "background") return;
-          response = await apiRef.current.resume(fix);
+          // Resume DTO is lat/lng only — accuracy_meters is heartbeat-only
+          // (`forbidNonWhitelisted` 400s an undeclared key).
+          response = await apiRef.current.resume(latLngOf(fix));
           // Cleared on the way back in, so a member who returns inside the
           // grace window does not find a stale "paused" notice waiting.
           void clearStudyPausedNotification();
@@ -448,7 +451,7 @@ export default function StudyScreen() {
       requestSeqRef.current += 1;
       const response = await apiRef.current.start({
         geofence_id: selectedZoneId,
-        ...fix,
+        ...latLngOf(fix),
       });
       const next = narrowSession(response);
       if (next) {

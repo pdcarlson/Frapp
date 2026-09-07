@@ -159,7 +159,12 @@ export function useStartStudySession() {
 export function useStudyHeartbeat() {
   const client = useFrappClient();
   return useMutation({
-    mutationFn: async (body: { lat: number; lng: number }) => {
+    mutationFn: async (body: {
+      lat: number;
+      lng: number;
+      /** GPS accuracy in meters for this fix. Omit when the device did not report one. */
+      accuracy_meters?: number;
+    }) => {
       const { data, error } = await client.POST(
         "/v1/study-sessions/heartbeat",
         { body },

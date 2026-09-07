@@ -19,7 +19,7 @@ import {
 } from "@/lib/events/check-in-code";
 import { createScanLatch } from "@/lib/events/scan-latch";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
-import { requireForegroundFix } from "@/lib/location";
+import { latLngOf, requireForegroundFix } from "@/lib/location";
 import { selectEventDetail } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -114,9 +114,11 @@ export default function CheckInScreen() {
   const resolveLocation = useCallback(async () => {
     if (!needsLocation) return {};
 
-    return requireForegroundFix(
+    const fix = await requireForegroundFix(
       "This event checks you in by location. Allow location access to check in.",
     );
+    // Check-in DTO is lat/lng only — spreading accuracy_meters 400s.
+    return latLngOf(fix);
   }, [needsLocation]);
 
   const submit = useCallback(
