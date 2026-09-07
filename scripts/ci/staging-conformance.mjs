@@ -246,6 +246,62 @@ export async function checkAuthHook({ accessToken, projectRef, fetchImpl = fetch
 }
 
 /**
+ * The redirect allow list covers every URL the clients ask GoTrue to send a
+ * member back to.
+ *
+ * GoTrue matches an allow-list entry as a glob, and a bare origin is a glob
+ * that matches only itself: `https://app.frapp.live` admits exactly that
+ * string, not `https://app.frapp.live/chat`. Every web `emailRedirectTo` is
+ * `${origin}${redirectTo}` — `/chat` by default, `/join?token=…` from an
+ * invite — so with only the bare origin listed, GoTrue silently swapped each of
+ * those for the Site URL: the magic link still signed the member in, but at
+ * `/`, and a sign-up made from an invite link arrived without its token. Both
+ * hosted projects were in that state until 2026-09-06 (verified with
+ * `GET /auth/v1/verify?…&redirect_to=<url>`, which redirects to `redirect_to`
+ * when it is allowed and to the Site URL when it is not). The mobile app needs
+ * `frapp://**` for the same reason (its callback is `frapp:///`). Both are
+ * dashboard settings no migration performs, so like the hook above they can
+ * revert, or be forgotten on a new project, while every workflow stays green.
+ *
+ * Read-only: the same GET `checkAuthHook` makes.
+ */
+export async function checkAuthRedirects({ accessToken, projectRef, fetchImpl = fetch }) {
+  const label = "Redirect allow list covers the web app's paths and the mobile scheme";
+  if (!accessToken || !projectRef) {
+    return result("auth-redirects", label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set");
+  }
+  const response = await fetchImpl(
+    `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
+    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
+  );
+  if (!response.ok) {
+    return result("auth-redirects", label, FAIL, `Management API returned HTTP ${response.status}`);
+  }
+  const data = await response.json();
+  const siteUrl = typeof data?.site_url === "string" ? data.site_url.replace(/\/+$/, "") : "";
+  if (!siteUrl) {
+    return result("auth-redirects", label, FAIL, "site_url is not set");
+  }
+  const allowed = String(data?.uri_allow_list ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const required = [`${siteUrl}/**`, "frapp://**"];
+  const missing = required.filter((entry) => !allowed.includes(entry));
+  if (missing.length > 0) {
+    return result(
+      "auth-redirects",
+      label,
+      FAIL,
+      `uri_allow_list is missing ${missing.map((m) => `"${m}"`).join(" and ")} — a bare origin ` +
+        "matches only itself, so GoTrue is dropping the web emailRedirectTo paths (and any invite " +
+        "token in them) onto the Site URL. See docs/internal/ops/DEPLOYMENT.md § Auth settings.",
+    );
+  }
+  return result("auth-redirects", label, PASS, `site_url=${siteUrl}; ${required.join(", ")} present`);
+}
+
+/**
  * Every Infisical secret sync reports a succeeded status.
  *
  * Catches the #834 class: a sync failing *now*. It deliberately does not claim
@@ -689,6 +745,12 @@ export async function runStagingConformance({
       }) },
     { id: "auth-hook", label: "custom_access_token_hook is enabled", run: () =>
       checkAuthHook({
+        accessToken: env.SUPABASE_ACCESS_TOKEN,
+        projectRef: env.SUPABASE_PROJECT_REF,
+        fetchImpl,
+      }) },
+    { id: "auth-redirects", label: "Redirect allow list covers the web app's paths and the mobile scheme", run: () =>
+      checkAuthRedirects({
         accessToken: env.SUPABASE_ACCESS_TOKEN,
         projectRef: env.SUPABASE_PROJECT_REF,
         fetchImpl,

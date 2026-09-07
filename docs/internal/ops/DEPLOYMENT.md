@@ -196,7 +196,7 @@ Authentication → URL Configuration / SMTP Settings.
 | Setting | `frapp-prod` (read 2026-09-06) | `frapp-staging` (read 2026-09-06) |
 | --- | --- | --- |
 | Site URL | `https://app.frapp.live` | `https://app.staging.frapp.live` |
-| Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`** | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`** |
+| Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** |
 | Email confirmations | required (`mailer_autoconfirm: false`) | required |
 | Custom SMTP | **none** | **none** |
 | Auth email rate limit | **2 per hour** | 2 per hour |
@@ -208,6 +208,20 @@ Authentication → URL Configuration / SMTP Settings.
 scheme (`spec/ui/mobile/navigation.md` § Magic-link auth callback); without the entry, GoTrue
 rejects the redirect and drops the member on the web Site URL instead. Expo Go's
 `exp://<host>:8081/--/` form is still per-machine and still #765.
+
+**`https://app.frapp.live/**` and `https://app.staging.frapp.live/**` were added on 2026-09-06
+(late), for the web app.** GoTrue matches an allow-list entry as a glob, and a bare origin is a
+glob that matches only itself — `https://app.frapp.live` admits exactly that string. Every web
+`emailRedirectTo` is `${origin}${redirectTo}`: `/chat` by default, `/join?token=…` from an invite
+link (`apps/web/app/sign-in/page.tsx`, `sign-up/page.tsx`). With only the bare origin listed, GoTrue
+silently swapped each of those for the Site URL — the magic link still signed the member in, but at
+`/`, and a sign-up made from an invite link arrived without its token. Verified before and after
+with the unauthenticated probe `GET /auth/v1/verify?token=<invalid>&type=magiclink&redirect_to=<url>`
+(with a valid `apikey`): GoTrue answers with a redirect to `redirect_to` when it is allowed and to
+the Site URL when it is not, so `redirect_to=https://api-staging.frapp.live/anything` (a path under
+a bare entry) went to the Site URL while `…/app.staging.frapp.live/join?token=abc` now goes through.
+`scripts/ci/staging-conformance.mjs` asserts both wildcards daily (`auth-redirects`), so this cannot
+silently revert or be forgotten on a new project.
 
 **Custom SMTP is the open launch blocker in this table.** With no SMTP configured, Supabase's
 built-in mailer sends auth email — sign-up confirmation, magic link, password reset — at **two

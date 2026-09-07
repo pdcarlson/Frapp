@@ -48,6 +48,11 @@ npm run load:chapter-directory         # print the load SQL to stdout
 Both `scripts/cloud-sandbox-up.sh` and `scripts/local-dev-setup.sh` run the load
 automatically after migrations apply, via `frapp_load_chapter_directory` in
 `scripts/lib/local-seed-data.sh`. Set `FRAPP_SKIP_DIRECTORY_LOAD=1` to skip it.
+Hosted projects never ran either script, so their table stayed empty until
+`20260907011500_chapter_directory_seed_rows.sql` carried the same generated SQL
+as a migration — the one path that reaches staging and production. A changed CSV
+ships the same way: regenerate with `npm run load:chapter-directory` into a new
+migration; the local bootstrap's own run then finds nothing left to do.
 
 Three things about it are load-bearing:
 
