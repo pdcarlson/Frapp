@@ -13,7 +13,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getErrorMessage } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
-import { resolveRedirectPath } from "@/lib/auth/redirect";
+import { buildAuthCallbackUrl, resolveRedirectPath } from "@/lib/auth/redirect";
 
 /**
  * Create an account — s01's grammar, one step along.
@@ -30,7 +30,10 @@ import { resolveRedirectPath } from "@/lib/auth/redirect";
  * Both post-submit branches are unchanged: a session in the response means
  * Supabase is not confirming email, so the member goes straight to
  * `redirectTo`; otherwise they are told to check their inbox and bounced to
- * sign-in with `redirectTo` intact.
+ * sign-in with `redirectTo` intact. The confirmation email's link lands on
+ * `/auth/callback?next=<redirectTo>` (`buildAuthCallbackUrl`), which exchanges
+ * the PKCE code and then delivers the member to `redirectTo` signed in — for an
+ * invited member that is `/join?token=…`, token intact.
  */
 function SignUpPageContent() {
   const router = useRouter();
@@ -50,7 +53,7 @@ function SignUpPageContent() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}${redirectTo}`,
+          emailRedirectTo: buildAuthCallbackUrl(window.location.origin, redirectTo),
         },
       });
       if (error) throw error;
