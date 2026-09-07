@@ -21,8 +21,8 @@ import { isModuleEnabled } from '@repo/validation';
 import {
   buildChapterPalette,
   logChapterPaletteWarnings,
+  type ChapterBrandingInput,
 } from './chapter-palette';
-import type { PatchChapterConfigDto } from '../../interface/dtos/chapter-config.dto';
 import {
   SERVICE_CONFIG_DEFAULTS,
   SERVICE_CONFIG_FIELDS,
@@ -123,6 +123,53 @@ const DUES_DEFAULTS: DuesConfig = {
   grace_days: 7,
   scholarship_pool_cents: 0,
 };
+
+/** One incoming workflow toggle in a config PATCH. */
+export type ChapterWorkflowPatch = {
+  key: string;
+  enabled: boolean;
+  /** Omitted means "leave the current threshold alone", not "clear it". */
+  threshold?: number;
+};
+
+/** The beta-rollout block, stored as loose jsonb on `chapters.beta_config`. */
+export type ChapterBetaConfigPatch = {
+  enabled?: boolean;
+  style?: string;
+};
+
+/**
+ * What `patchConfig` accepts. Every key is optional and absent means "leave it
+ * alone", which is what makes the JSON columns merge rather than replace.
+ *
+ * The three singleton blocks reuse the config types this layer already owns
+ * ({@link DuesConfig}, `ServiceConfig`, `PointsConfig`) instead of restating
+ * their fields, which is also what lets `patchConfig` drop the
+ * `as Partial<…>` casts it used to need on each one.
+ *
+ * The interface layer's `PatchChapterConfigDto` is the validated wire shape and
+ * stays there: the application layer may not import it (dependency-cruiser
+ * `api-application-not-to-interface`), and `ChapterConfigController` is where the two
+ * meet. That call site checks assignability, which is **one-directional**:
+ * it catches a field this type requires that the DTO stopped supplying, and
+ * it does not catch a field added to the DTO and never added here — that one
+ * validates on the wire and is silently dropped before it reaches this
+ * service. Widen the DTO and this type together.
+ */
+export interface PatchChapterConfigInput {
+  org_archetype?: string;
+  enabled_modules?: Record<string, boolean>;
+  vocabulary?: Record<string, string>;
+  branding?: ChapterBrandingInput;
+  beta_config?: ChapterBetaConfigPatch;
+  dues?: Partial<DuesConfig>;
+  service?: Partial<ServiceConfig>;
+  points?: Partial<PointsConfig>;
+  workflows?: ChapterWorkflowPatch[];
+  analytics_opt_out?: boolean;
+  /** `null` clears the default rather than meaning "not supplied" (#422). */
+  default_invite_role_id?: string | null;
+}
 
 @Injectable()
 export class ChapterConfigService {
@@ -347,7 +394,7 @@ export class ChapterConfigService {
   async patchConfig(
     chapterId: string,
     actorUserId: string,
-    dto: PatchChapterConfigDto,
+    dto: PatchChapterConfigInput,
   ) {
     const existing = await this.getConfig(chapterId);
 
@@ -510,13 +557,18 @@ export class ChapterConfigService {
       const current = existing.dues;
       const next: DuesConfig = { ...current };
       for (const key of DUES_FIELDS) {
-        const incoming = (dto.dues as Partial<DuesConfig>)[key];
+        const incoming = dto.dues[key];
         if (incoming !== undefined) {
           (next as unknown as Record<string, unknown>)[key] = incoming;
         }
       }
       if (DUES_FIELDS.some((key) => next[key] !== current[key])) {
-        duesUpsert = { chapter_id: chapterId, ...next };
+        // `chapter_id` last, not first: `next` is built from a client-supplied
+        // `Partial<…Config>`, so spreading it over the scoped key would let any
+        // future `chapter_id`-shaped addition to that config type upsert onto
+        // another chapter's row. No such key exists today; the order is what
+        // keeps it from mattering if one is ever added.
+        duesUpsert = { ...next, chapter_id: chapterId };
         diff['dues'] = { from: current, to: next };
       }
     }
@@ -527,13 +579,18 @@ export class ChapterConfigService {
       const current = existing.service;
       const next: ServiceConfig = { ...current };
       for (const key of SERVICE_CONFIG_FIELDS) {
-        const incoming = (dto.service as Partial<ServiceConfig>)[key];
+        const incoming = dto.service[key];
         if (incoming !== undefined) {
           (next as unknown as Record<string, unknown>)[key] = incoming;
         }
       }
       if (SERVICE_CONFIG_FIELDS.some((key) => next[key] !== current[key])) {
-        serviceUpsert = { chapter_id: chapterId, ...next };
+        // `chapter_id` last, not first: `next` is built from a client-supplied
+        // `Partial<…Config>`, so spreading it over the scoped key would let any
+        // future `chapter_id`-shaped addition to that config type upsert onto
+        // another chapter's row. No such key exists today; the order is what
+        // keeps it from mattering if one is ever added.
+        serviceUpsert = { ...next, chapter_id: chapterId };
         diff['service'] = { from: current, to: next };
       }
     }
@@ -546,13 +603,18 @@ export class ChapterConfigService {
       const current = existing.points;
       const next: PointsConfig = { ...current };
       for (const key of POINTS_CONFIG_FIELDS) {
-        const incoming = (dto.points as Partial<PointsConfig>)[key];
+        const incoming = dto.points[key];
         if (incoming !== undefined) {
           (next as unknown as Record<string, unknown>)[key] = incoming;
         }
       }
       if (POINTS_CONFIG_FIELDS.some((key) => next[key] !== current[key])) {
-        pointsUpsert = { chapter_id: chapterId, ...next };
+        // `chapter_id` last, not first: `next` is built from a client-supplied
+        // `Partial<…Config>`, so spreading it over the scoped key would let any
+        // future `chapter_id`-shaped addition to that config type upsert onto
+        // another chapter's row. No such key exists today; the order is what
+        // keeps it from mattering if one is ever added.
+        pointsUpsert = { ...next, chapter_id: chapterId };
         diff['points'] = { from: current, to: next };
       }
     }
