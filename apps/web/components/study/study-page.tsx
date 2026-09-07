@@ -84,7 +84,8 @@ const TERMINAL_STATUSES: StudySession["status"][] = [
   "LOCATION_INVALID",
 ];
 
-const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes, matches mobile
+/** 5 minutes, matches mobile. Exported so specs can fire this interval without faking timers. */
+export const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * Usable GPS accuracy in meters, or `undefined` when the browser did not

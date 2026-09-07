@@ -83,9 +83,12 @@ vi.mock("@/components/shared/can", () => ({
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
-const { StudyPage, accuracyMetersOf, studyHeartbeatBody } = await import(
-  "./study-page"
-);
+const {
+  StudyPage,
+  accuracyMetersOf,
+  studyHeartbeatBody,
+  HEARTBEAT_INTERVAL_MS,
+} = await import("./study-page");
 
 function stubGeolocation(accuracy?: number | null) {
   Object.defineProperty(navigator, "geolocation", {
@@ -253,18 +256,45 @@ describe("accuracyMetersOf / studyHeartbeatBody (#1852)", () => {
 });
 
 describe("StudyPage heartbeat accuracy (#1852)", () => {
+  // `findBy*` / `waitFor` poll with `setInterval`. Faking that API hangs those
+  // queries until the 5s test timeout (CI `web-tests` on #1853). Capture the
+  // page's heartbeat tick instead and invoke it after start settles.
+  const nativeSetInterval = globalThis.setInterval.bind(globalThis);
+  const capturedIntervals: Array<{ handler: TimerHandler; delay: number }> = [];
+
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedIntervals.length = 0;
     mockStart.mockResolvedValue(LIVE_SESSION);
     mockHeartbeat.mockResolvedValue({});
     mockResume.mockResolvedValue({});
     mockPause.mockResolvedValue({});
     chapter.active();
+    vi.spyOn(globalThis, "setInterval").mockImplementation(
+      ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+        capturedIntervals.push({ handler, delay: Number(delay) });
+        return nativeSetInterval(handler, delay, ...(args as []));
+      }) as typeof setInterval,
+    );
   });
 
   afterEach(() => {
-    vi.useRealTimers();
+    vi.mocked(globalThis.setInterval).mockRestore();
   });
+
+  async function startLiveSessionAndFireHeartbeat() {
+    render(<StudyPage />);
+    await userEvent.click(startButton());
+    await screen.findByRole("button", { name: /stop &/i });
+    mockHeartbeat.mockClear();
+    const tick = capturedIntervals.find(
+      (entry) => entry.delay === HEARTBEAT_INTERVAL_MS,
+    );
+    expect(tick).toBeDefined();
+    await act(async () => {
+      (tick!.handler as () => void)();
+    });
+  }
 
   it("starts with lat/lng only even when the browser reports accuracy", async () => {
     stubGeolocation(12);
@@ -299,41 +329,27 @@ describe("StudyPage heartbeat accuracy (#1852)", () => {
 
   it("posts accuracy_meters on heartbeat when the browser reports a positive finite reading", async () => {
     stubGeolocation(12);
-    // Fake only the heartbeat/elapsed intervals so userEvent and waitFor keep
-    // using real timeouts.
-    vi.useFakeTimers({ toFake: ["setInterval"] });
-    render(<StudyPage />);
-    await userEvent.click(startButton());
-    await screen.findByRole("button", { name: /stop &/i });
-    mockHeartbeat.mockClear();
+    await startLiveSessionAndFireHeartbeat();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-    });
-
-    expect(mockHeartbeat).toHaveBeenCalledWith({
-      lat: 42.73,
-      lng: -73.68,
-      accuracy_meters: 12,
-    });
+    await waitFor(() =>
+      expect(mockHeartbeat).toHaveBeenCalledWith({
+        lat: 42.73,
+        lng: -73.68,
+        accuracy_meters: 12,
+      }),
+    );
   });
 
   it("omits accuracy_meters on heartbeat when the reading is zero", async () => {
     stubGeolocation(0);
-    vi.useFakeTimers({ toFake: ["setInterval"] });
-    render(<StudyPage />);
-    await userEvent.click(startButton());
-    await screen.findByRole("button", { name: /stop &/i });
-    mockHeartbeat.mockClear();
+    await startLiveSessionAndFireHeartbeat();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-    });
-
-    expect(mockHeartbeat).toHaveBeenCalledWith({
-      lat: 42.73,
-      lng: -73.68,
-    });
+    await waitFor(() =>
+      expect(mockHeartbeat).toHaveBeenCalledWith({
+        lat: 42.73,
+        lng: -73.68,
+      }),
+    );
     expect(mockHeartbeat.mock.calls[0]?.[0]).not.toHaveProperty(
       "accuracy_meters",
     );
