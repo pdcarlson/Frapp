@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { AuthDivider, AuthScreen } from "@/components/auth/auth-screen";
@@ -12,7 +12,11 @@ import { SkeletonText } from "@/components/shared/async-states";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { getErrorMessage } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { resolveRedirectPath } from "@/lib/auth/redirect";
+import {
+  buildAuthCallbackUrl,
+  describeAuthError,
+  resolveRedirectPath,
+} from "@/lib/auth/redirect";
 
 /**
  * s01 — Sign in (`spec/ui/design-system/reference/canvas-screens.dc.html`).
@@ -27,11 +31,14 @@ import { resolveRedirectPath } from "@/lib/auth/redirect";
  * already had. The slot is the same and the geometry is the drawing's — this is
  * a transcription of the screen, not of the identity providers on it.
  *
- * The redirect plumbing is unchanged and is a data contract
+ * The redirect plumbing is a data contract
  * (`spec/ui/web-dashboard/README.md` §Gating & routing semantics):
  * `resolveRedirectPath` applies the open-redirect guard the proxy applies, the
- * value survives the sign-in ↔ sign-up hop, and it is reused verbatim as the
- * magic link's `emailRedirectTo`.
+ * value survives the sign-in ↔ sign-up hop, and the magic link carries it as
+ * the `next` of `/auth/callback` (`buildAuthCallbackUrl`) — the route that
+ * exchanges the PKCE code the link comes back with. `/auth/callback` sends a
+ * failed link back here with `authError` set; the toast below is the only
+ * place that code is read.
  */
 function SignInPageContent() {
   const router = useRouter();
@@ -42,6 +49,19 @@ function SignInPageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMagicLinkPending, setIsMagicLinkPending] = useState(false);
   const redirectTo = resolveRedirectPath(searchParams.get("redirectTo"));
+  const authError = searchParams.get("authError");
+
+  // A link that could not be turned into a session lands here with the reason.
+  // Shown once, on arrival; the parameter is not carried into the next hop.
+  useEffect(() => {
+    if (!authError) return;
+    toast({
+      title: "That link didn't sign you in",
+      description: describeAuthError(authError),
+      variant: "destructive",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- arrival only
+  }, [authError]);
 
   async function handlePasswordSignIn(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -87,7 +107,7 @@ function SignInPageContent() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}${redirectTo}`,
+          emailRedirectTo: buildAuthCallbackUrl(window.location.origin, redirectTo),
         },
       });
       if (error) throw error;
