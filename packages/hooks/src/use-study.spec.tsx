@@ -4,7 +4,11 @@ import type { createFrappClient } from "@repo/api-sdk";
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappClientProvider } from "./use-frapp-client";
-import { useStudySessions, useStopStudySession } from "./use-study";
+import {
+  useStudyHeartbeat,
+  useStudySessions,
+  useStopStudySession,
+} from "./use-study";
 
 /**
  * These pin one property that is invisible until a member switches chapters:
@@ -144,6 +148,56 @@ describe("useStopStudySession", () => {
     expect(mockPost).toHaveBeenCalledWith("/v1/study-sessions/stop");
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: ["study-sessions"],
+    });
+  });
+});
+
+describe("useStudyHeartbeat", () => {
+  it("posts accuracy_meters when the client supplies a reading", async () => {
+    const queryClient = makeQueryClient();
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: { id: "ss-1", status: "ACTIVE" }, error: null });
+
+    const { result } = renderHook(() => useStudyHeartbeat(), {
+      wrapper: makeWrapper(
+        queryClient,
+        { POST: mockPost },
+        CHAPTER_ID,
+        "UseStudyHeartbeatAccuracyWrapper",
+      ),
+    });
+
+    await result.current.mutateAsync({
+      lat: 42.73,
+      lng: -73.68,
+      accuracy_meters: 12,
+    });
+
+    expect(mockPost).toHaveBeenCalledWith("/v1/study-sessions/heartbeat", {
+      body: { lat: 42.73, lng: -73.68, accuracy_meters: 12 },
+    });
+  });
+
+  it("omits accuracy_meters when the client does not supply one", async () => {
+    const queryClient = makeQueryClient();
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({ data: { id: "ss-1", status: "ACTIVE" }, error: null });
+
+    const { result } = renderHook(() => useStudyHeartbeat(), {
+      wrapper: makeWrapper(
+        queryClient,
+        { POST: mockPost },
+        CHAPTER_ID,
+        "UseStudyHeartbeatOmitWrapper",
+      ),
+    });
+
+    await result.current.mutateAsync({ lat: 42.73, lng: -73.68 });
+
+    expect(mockPost).toHaveBeenCalledWith("/v1/study-sessions/heartbeat", {
+      body: { lat: 42.73, lng: -73.68 },
     });
   });
 });
