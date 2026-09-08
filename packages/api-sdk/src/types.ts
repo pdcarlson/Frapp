@@ -3143,7 +3143,7 @@ export interface components {
             needs_president: boolean;
             /** @description Whether the caller holds the chapter's next-highest-ranked role with a live member, and may call POST /v1/roles/claim-presidency right now. */
             eligible: boolean;
-            /** @description Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case). */
+            /** @description Name of the eligible role, or null when no role below President has any member at all (the "Signet support intervenes" case). */
             next_role_name: string | null;
         };
         MemberCustomFieldValueDto: {
