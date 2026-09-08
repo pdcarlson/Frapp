@@ -6,7 +6,7 @@ import type {
 
 export interface ResendProviderOptions {
   apiKey: string;
-  /** e.g. `"Signet <invites@frapp.live>"`. Must be on a domain verified with Resend. */
+  /** e.g. `"Signet <invites@mail.frapp.live>"`. Must be on a domain verified with Resend. */
   fromAddress: string;
 }
 
