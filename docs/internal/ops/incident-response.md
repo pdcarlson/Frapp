@@ -12,7 +12,7 @@ Database rollback and restore are their own procedures:
 
 ### Detection signals
 
-- Uptime monitor fails `/health/ready` — **not `/health`**, which is Render's own `healthCheckPath` and is specified to always return 2xx while the process is up, so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency — or read the body, not the status
+- Uptime monitor fails `/health/ready` — **not `/health`**, which is Render's own `healthCheckPath` and is specified to always return 2xx while the process is up, so an HTTP-status monitor on it only ever catches a process that is down. Of the four root causes below it sees the two that kill the process (missing env vars, crash loop) and neither of the other two: an upstream Supabase outage returns `200` with `status: "degraded"` in the **body**, and a migration/schema mismatch typically returns `200 "ok"` outright, because `probeDatabase` is a single-row read of `chapters` rather than a schema check. Watch `/health/ready`, which 503s on a degraded dependency — or read the body, not the status. In-repo monitor: `.github/workflows/production-uptime.yml` (every 15 minutes; alert title *Production /health/ready is failing*). A Sentry 60s check is still the finer-grained human path
 - Render service marked unhealthy
 - Elevated 5xx alerts
 

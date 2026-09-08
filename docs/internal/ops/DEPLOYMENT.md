@@ -810,7 +810,7 @@ of the three secrets or `API_URL` / `APP_URL` is unset in that environment — s
 
 - [ ] Store Render deploy hook URLs as GitHub secrets
 - [ ] Verify CI workflow runs on PRs
-- [ ] Set up uptime monitoring (e.g., BetterUptime, Checkly)
+- [x] In-repo uptime: `.github/workflows/production-uptime.yml` GETs `https://api.frapp.live/health/ready` every 15 minutes and upserts a `routine-state` alert. A Sentry 60s monitor is still the finer-grained human path (quota; ask before creating)
 
 ---
 
