@@ -345,10 +345,36 @@ describe("the workflows that run this script grant the scope it needs", () => {
     const step = next === -1 ? text.slice(start) : text.slice(start, next);
     assert.match(step, /git\/tags/);
     assert.match(step, /git\/refs/);
-    assert.match(step, /GH_TOKEN:/);
+    assert.match(step, /RELEASE_GITHUB_TOKEN/);
+    assert.match(step, /export GH_TOKEN="\$RELEASE_GITHUB_TOKEN"/);
+    assert.match(step, /export GH_TOKEN="\$GITHUB_TOKEN"/);
     assert.match(step, /git fetch origin "refs\/tags\/\$\{TAG\}:refs\/tags\/\$\{TAG\}"/);
     assert.doesNotMatch(step, /git push origin/);
     assert.doesNotMatch(step, /git tag -a/);
-    assert.doesNotMatch(text, /workflows:\s*write/);
+    // A permissions grant, not the prose that forbids one.
+    assert.doesNotMatch(text, /^[ \t]+workflows:[ \t]*write[ \t]*$/m);
+  });
+
+  // Run 34254679932: POST /git/tags succeeded; POST /git/refs 403'd on the
+  // Actions App. The caller must pass the optional user-PAT secret through.
+  it("deploy-production.yml forwards RELEASE_GITHUB_TOKEN into release.yml", () => {
+    const text = readFileSync(
+      join(repoRoot, ".github/workflows/deploy-production.yml"),
+      "utf8",
+    );
+    const start = text.indexOf("\n  release:\n");
+    assert.notEqual(start, -1);
+    const jobBody = text.slice(start, start + 2500);
+    assert.match(jobBody, /secrets:/);
+    assert.match(jobBody, /RELEASE_GITHUB_TOKEN: \$\{\{ secrets\.RELEASE_GITHUB_TOKEN \}\}/);
+    assert.doesNotMatch(text, /^[ \t]+workflows:[ \t]*write[ \t]*$/m);
+  });
+
+  it("release.yml declares RELEASE_GITHUB_TOKEN as an optional workflow_call secret", () => {
+    const text = readFileSync(join(repoRoot, ".github/workflows/release.yml"), "utf8");
+    const call = text.slice(text.indexOf("workflow_call:"), text.indexOf("workflow_dispatch:"));
+    assert.match(call, /secrets:/);
+    assert.match(call, /RELEASE_GITHUB_TOKEN:/);
+    assert.match(call, /required: false/);
   });
 });

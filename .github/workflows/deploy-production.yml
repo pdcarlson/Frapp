@@ -631,6 +631,10 @@ jobs:
       contents: write
       pull-requests: read
       issues: read
+    secrets:
+      # User PAT for POST /git/refs when the Actions App 403s (run 34254679932).
+      # Empty until Paul adds the secret (#1896). Do not grant workflows: write.
+      RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}
     with:
       sha: ${{ needs.deploy.outputs.sha }}
       bump: ${{ inputs.bump }}
