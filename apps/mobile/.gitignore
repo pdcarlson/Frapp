@@ -24,7 +24,7 @@ play-service-account.json
 
 # Firebase's Android client config, read by app.config.js when present so a
 # local build can package it. Production builds get it from the EAS file
-# environment variable GOOGLE_SERVICES_JSON instead (ENV_REFERENCE.md § Mobile);
+# environment variable GOOGLE_SERVICES_JSON instead (ENV_REFERENCE.md § apps/mobile);
 # it carries a Google API key that gitleaks flags, so it stays untracked.
 google-services.json
 

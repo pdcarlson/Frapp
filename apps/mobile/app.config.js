@@ -22,26 +22,66 @@
 //      `gcp-api-key` rule flags, so committing it needs an entry in
 //      `.gitleaks.toml`; the file-variable path avoids the question.
 //
+// An EAS **production Android** build (`EAS_BUILD_PROFILE=production` and
+// `EAS_BUILD_PLATFORM` not `ios`) refuses to evaluate this config when neither
+// path exists. That is the store-binary fence: a production APK cannot ship
+// with silent-dead push. CI (`npx expo prebuild`) and `expo start` do not set
+// `EAS_BUILD_PROFILE`, so they still omit the field. iOS production builds
+// skip the fence — APNs does not use this file. Preview/development omit the
+// field when the file is absent, so an internal tester APK can still compile
+// before the Firebase project exists (#1826).
+//
 // The FCM V1 *service account* key (what Expo's push service uses to send) is
 // a separate upload under EAS credentials → Android → FCM V1; it never touches
 // this repo. iOS needs neither: EAS generates the APNs key on the first
 // `eas build -p ios` against the Apple account.
 //
 // Source of truth for the credential inventory:
-// docs/internal/environment/ENV_REFERENCE.md § Mobile.
+// docs/internal/environment/ENV_REFERENCE.md § apps/mobile.
 const fs = require("node:fs");
 const path = require("node:path");
 
-function resolveGoogleServicesFile() {
-  const fromEnv = process.env.GOOGLE_SERVICES_JSON;
-  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
-  const local = path.join(__dirname, "google-services.json");
-  if (fs.existsSync(local)) return "./google-services.json";
+const PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR = [
+  "EAS production Android builds require Firebase client config.",
+  "Set GOOGLE_SERVICES_JSON as an EAS environment variable of type File",
+  "(scoped to the production environment this profile binds to), or place",
+  "apps/mobile/google-services.json.",
+  "Without it the APK compiles, getExpoPushTokenAsync throws, and members never receive push.",
+  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile and GitHub issue #1826.",
+].join(" ");
+
+function resolveGoogleServicesFile({
+  env = process.env,
+  existsSync = fs.existsSync,
+  localPath = path.join(__dirname, "google-services.json"),
+} = {}) {
+  const fromEnv = env.GOOGLE_SERVICES_JSON;
+  if (fromEnv && existsSync(fromEnv)) return fromEnv;
+  if (existsSync(localPath)) return "./google-services.json";
   return undefined;
 }
 
-module.exports = ({ config }) => {
-  const googleServicesFile = resolveGoogleServicesFile();
+function assertProductionAndroidGoogleServices({
+  easBuildProfile,
+  easBuildPlatform,
+  googleServicesFile,
+} = {}) {
+  if (easBuildProfile !== "production") return;
+  if (easBuildPlatform === "ios") return;
+  if (googleServicesFile) return;
+  throw new Error(PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR);
+}
+
+function applyMobileConfig(
+  config,
+  { env = process.env, existsSync = fs.existsSync } = {},
+) {
+  const googleServicesFile = resolveGoogleServicesFile({ env, existsSync });
+  assertProductionAndroidGoogleServices({
+    easBuildProfile: env.EAS_BUILD_PROFILE,
+    easBuildPlatform: env.EAS_BUILD_PLATFORM,
+    googleServicesFile,
+  });
   return {
     ...config,
     android: {
@@ -49,4 +89,17 @@ module.exports = ({ config }) => {
       ...(googleServicesFile ? { googleServicesFile } : {}),
     },
   };
-};
+}
+
+function applyExpoConfig({ config }) {
+  return applyMobileConfig(config);
+}
+
+applyExpoConfig.resolveGoogleServicesFile = resolveGoogleServicesFile;
+applyExpoConfig.assertProductionAndroidGoogleServices =
+  assertProductionAndroidGoogleServices;
+applyExpoConfig.applyMobileConfig = applyMobileConfig;
+applyExpoConfig.PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR =
+  PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR;
+
+module.exports = applyExpoConfig;
