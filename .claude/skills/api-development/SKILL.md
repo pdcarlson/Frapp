@@ -86,7 +86,13 @@ Conventions:
 - Always `if (error) throw error;`
 - Return `data ?? []` for lists, `data` for singles
 - Write methods take `TablesInsert<'widgets'>` / `TablesUpdate<'widgets'>`
-  and pass them to `.insert()` / `.update()` with no `as never`. Domain
+  and pass them to `.insert()` / `.update()` with **no cast and no
+  `@ts-expect-error`** — `as never`, `as any`, `as unknown as …` and the
+  expanded `Database['public']['Tables'][…]['Insert']` all erase the same
+  checking, and `no-as-never.spec.ts` catches each of them at the write call
+  (`as const` excepted — it narrows rather than erases). It is a text scan
+  with gaps it names in its own docblock, so it is a backstop, not a licence
+  to cast where it happens not to look. Domain
   interfaces stay `Partial<Widget>`. Do not extract a generic base
   repository for this.
 
@@ -318,10 +324,14 @@ Two constraints worth knowing before you fight the compiler:
   comment to this effect.
 * **Do not introduce a generic base repository.** Each repository keeps
   its own query logic. The type wiring is per-call: parameterize the
-  write method, leave the rest of the class alone. Every repository under
-  `infrastructure/supabase/repositories/` follows this; `no-as-never.spec.ts`
-  fails the suite if the file count drifts, a file injects a bare
-  `SupabaseClient`, or an `as never` write cast returns. Direct
+  write method, leave the rest of the class alone. Every `*.repository.ts`
+  under `apps/api/src` follows this — including the module-local ones in
+  `modules/scheduled-jobs` and `modules/chat-push-worker`; `no-as-never.spec.ts`
+  fails the suite if the repository count drifts, a file injects a bare
+  `SupabaseClient`, or a write call carries a cast or a type suppression. It
+  discovers that corpus through `#test/helpers/repository-corpus`, the same
+  walk `tenant-scope-coverage.spec.ts` uses, so a new repository joins both
+  ledgers wherever it lives. Direct
   service-layer writes (chapter config, custom fields/roles, chapter-create
   channel seed, onboarding, chat-bridge, scheduled-jobs) use the same
   `TablesInsert` / `TablesUpdate` locals.

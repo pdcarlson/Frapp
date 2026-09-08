@@ -473,7 +473,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
 
     const { data, error } = await this.supabase
       .from('chat_messages')
-      .insert(deduped as unknown as TablesInsert<'chat_messages'>[])
+      .insert(deduped)
       .select('id, external_message_id');
     if (error) throw error;
     for (const row of data ?? []) {
@@ -517,7 +517,7 @@ export class SupabaseDiscordImportRepository implements IDiscordImportRepository
     if (rows.length === 0) return 0;
     const { data, error } = await this.supabase
       .from('chat_message_attachments')
-      .upsert(rows as unknown as TablesInsert<'chat_message_attachments'>[], {
+      .upsert(rows, {
         onConflict: 'message_id,bucket,storage_path',
         ignoreDuplicates: true,
       })
