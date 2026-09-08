@@ -477,6 +477,15 @@ test("a missing or unparseable SUPABASE_URL is refused before any write", () => 
   assert.throws(() => projectRefFromSupabaseUrl("not a url"), /not a valid URL/);
 });
 
+test("a hosted http URL is refused so the service-role key is not sent in the clear", () => {
+  // Host check passes (`<ref>.supabase.co`); protocol must still be https.
+  // Local-stack http URLs fail the host check first — that assertion is above.
+  assert.throws(
+    () => projectRefFromSupabaseUrl(`http://${STAGING_REF}.supabase.co`),
+    /uses http: rather than https:/,
+  );
+});
+
 test("THE POINT: a staging prefix against the production URL is refused", () => {
   // The failure the CLI used to permit: a local `rehearse --prefix storage`
   // with production SUPABASE_URL would write a canary into production Storage.
@@ -527,6 +536,38 @@ test("a production rehearsal is refused unless the override is set", () => {
   );
 });
 
+test("the production rehearsal override can come from the environment", () => {
+  // The CLI omits allowProductionRehearsal; the env var is the path a real
+  // local rehearsal takes. Passing false above never executes the ?? fallback.
+  const prev = process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL;
+  try {
+    delete process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL;
+    assert.throws(
+      () =>
+        fence({
+          supabaseUrl: productionUrl,
+          prefix: "storage-production",
+          mode: "rehearse",
+          allowProductionRehearsal: undefined,
+        }),
+      /Refusing a Storage rehearsal against production/,
+    );
+    process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL = "true";
+    assert.equal(
+      fence({
+        supabaseUrl: productionUrl,
+        prefix: "storage-production",
+        mode: "rehearse",
+        allowProductionRehearsal: undefined,
+      }).environment,
+      "production",
+    );
+  } finally {
+    if (prev === undefined) delete process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL;
+    else process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL = prev;
+  }
+});
+
 test("an unknown prefix is refused rather than treated as a scratch namespace", () => {
   assert.throws(() => fence({ prefix: "scratch" }), /Unknown Storage backup prefix 'scratch'/);
 });
@@ -558,4 +599,8 @@ test("the GHA action uses the same assertStorageBackupTarget fence as the CLI", 
   const yml = readFileSync(".github/actions/storage-offsite-backup/action.yml", "utf8");
   assert.match(yml, /assertStorageBackupTarget/);
   assert.doesNotMatch(yml, /REF="\$\{HOST%%\.\*\}"/);
+  const setup = yml.indexOf("actions/setup-node@v4");
+  const fence = yml.indexOf("assertStorageBackupTarget");
+  assert.ok(setup !== -1 && fence !== -1 && setup < fence, "Setup Node must run before the fence import");
+  assert.equal((yml.match(/actions\/setup-node@v4/g) || []).length, 1, "one Setup Node step, not a leftover duplicate");
 });
