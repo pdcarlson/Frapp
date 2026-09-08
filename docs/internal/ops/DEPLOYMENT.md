@@ -534,7 +534,8 @@ The API exposes `GET /health`, which answers `200` in both states — `status: o
 round-trip succeeds, `status: degraded` when it does not
 ([`health.controller.ts`](../../../apps/api/src/interface/controllers/health.controller.ts)). It
 never throws, so a `200` proves the process booted and Nest is serving, not that the database is
-reachable.
+reachable. The JSON body is the liveness payload in
+[`spec/behavior/observability.md`](../../../spec/behavior/observability.md) § Health Check.
 
 > **This section previously claimed Render auto-detects the health check from the Dockerfile
 > `HEALTHCHECK` directive. That claim is unverified and the configuration contradicts it.** Render

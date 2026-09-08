@@ -53,6 +53,38 @@ describe('HealthController', () => {
         database: 'connected',
         storage: 'connected',
       });
+      expect(result).not.toHaveProperty('commit');
+    });
+
+    it('includes commit when Render injected a git SHA', async () => {
+      const previous = process.env.RENDER_GIT_COMMIT;
+      process.env.RENDER_GIT_COMMIT =
+        '0ca478e9105105ff7013834615eee81499813d0e';
+      try {
+        const result = await controller.check();
+        expect(result.commit).toBe('0ca478e9105105ff7013834615eee81499813d0e');
+      } finally {
+        if (previous === undefined) {
+          delete process.env.RENDER_GIT_COMMIT;
+        } else {
+          process.env.RENDER_GIT_COMMIT = previous;
+        }
+      }
+    });
+
+    it('omits commit when RENDER_GIT_COMMIT is not a git SHA', async () => {
+      const previous = process.env.RENDER_GIT_COMMIT;
+      process.env.RENDER_GIT_COMMIT = 'not-a-sha';
+      try {
+        const result = await controller.check();
+        expect(result).not.toHaveProperty('commit');
+      } finally {
+        if (previous === undefined) {
+          delete process.env.RENDER_GIT_COMMIT;
+        } else {
+          process.env.RENDER_GIT_COMMIT = previous;
+        }
+      }
     });
 
     it('reports degraded, but still resolves (never throws), when the database is unreachable', async () => {
@@ -106,6 +138,7 @@ describe('HealthController', () => {
         database: 'connected',
         storage: 'connected',
       });
+      expect(result).not.toHaveProperty('commit');
     });
 
     it('throws ServiceUnavailableException when the database is unreachable', async () => {

@@ -33,7 +33,10 @@ describe('Health (e2e)', () => {
     await app.close();
   });
 
-  it('/health (GET)', () => {
-    return request(app.getHttpServer()).get('/health').expect(200);
+  it('/health (GET)', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/health')
+      .expect(200);
+    expect(response.body).not.toHaveProperty('commit');
   });
 });
