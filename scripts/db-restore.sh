@@ -23,8 +23,8 @@
 # between a rehearsal and an outage is one mistyped host. --force is not enough
 # for production: a URL that names the production project in
 # .github/environments.json is refused unless DB_RESTORE_ALLOW_PRODUCTION=true.
-# Staging still uses --force alone. Storage restore has the same second hop
-# (STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL).
+# Staging still uses --force alone. Storage restore of prefix storage-production
+# has the same second hop (STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE).
 #
 # ── `--data-only`: schema from the repo, data from the dump ──────────────────
 # `supabase db dump` excludes the Supabase-managed schemas, and that exclusion

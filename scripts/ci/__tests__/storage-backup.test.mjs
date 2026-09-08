@@ -448,6 +448,7 @@ const fence = (over = {}) =>
     mode: "backup",
     lookupEnvironment,
     allowProductionRehearsal: false,
+    allowProductionRestore: false,
     ...over,
   });
 
@@ -502,10 +503,23 @@ test("a production prefix against the staging URL is refused", () => {
   );
 });
 
-test("matching prefix and URL is accepted for backup and restore", () => {
+test("matching prefix and URL is accepted for backup; restore of production needs the override", () => {
   assert.deepEqual(fence(), { environment: "staging", projectRef: STAGING_REF });
   assert.deepEqual(
-    fence({ supabaseUrl: productionUrl, prefix: "storage-production", mode: "restore" }),
+    fence({ supabaseUrl: productionUrl, prefix: "storage-production", mode: "backup" }),
+    { environment: "production", projectRef: PRODUCTION_REF },
+  );
+  assert.throws(
+    () => fence({ supabaseUrl: productionUrl, prefix: "storage-production", mode: "restore" }),
+    /Refusing a Storage restore against production/,
+  );
+  assert.deepEqual(
+    fence({
+      supabaseUrl: productionUrl,
+      prefix: "storage-production",
+      mode: "restore",
+      allowProductionRestore: true,
+    }),
     { environment: "production", projectRef: PRODUCTION_REF },
   );
 });
@@ -565,6 +579,36 @@ test("the production rehearsal override can come from the environment", () => {
   } finally {
     if (prev === undefined) delete process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL;
     else process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL = prev;
+  }
+});
+
+test("the production restore override can come from the environment", () => {
+  const prev = process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE;
+  try {
+    delete process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE;
+    assert.throws(
+      () =>
+        fence({
+          supabaseUrl: productionUrl,
+          prefix: "storage-production",
+          mode: "restore",
+          allowProductionRestore: undefined,
+        }),
+      /Refusing a Storage restore against production/,
+    );
+    process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE = "true";
+    assert.equal(
+      fence({
+        supabaseUrl: productionUrl,
+        prefix: "storage-production",
+        mode: "restore",
+        allowProductionRestore: undefined,
+      }).environment,
+      "production",
+    );
+  } finally {
+    if (prev === undefined) delete process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE;
+    else process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE = prev;
   }
 });
 
