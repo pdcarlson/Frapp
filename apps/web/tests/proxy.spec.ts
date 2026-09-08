@@ -51,4 +51,30 @@ describe("apps/web/proxy.ts", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("location")).toBeNull();
   });
+
+  test("unsigned /join?token= bounce keeps the invite only inside redirectTo", async () => {
+    const { buildSignInRedirectUrl } = await import("../proxy");
+    const inbound = new URL("https://app.frapp.live/join?token=abc");
+    const out = buildSignInRedirectUrl(inbound);
+
+    expect(out.origin).toBe("https://app.frapp.live");
+    expect(out.pathname).toBe("/sign-in");
+    expect(out.searchParams.get("redirectTo")).toBe("/join?token=abc");
+    expect(out.searchParams.get("token")).toBeNull();
+    expect([...out.searchParams.keys()]).toEqual(["redirectTo"]);
+  });
+
+  test("unsigned bounce drops every inbound query key, not only token", async () => {
+    const { buildSignInRedirectUrl } = await import("../proxy");
+    const inbound = new URL(
+      "https://app.frapp.live/join?token=abc&utm_source=officer#frag",
+    );
+    const out = buildSignInRedirectUrl(inbound);
+
+    expect(out.hash).toBe("");
+    expect(out.searchParams.get("utm_source")).toBeNull();
+    expect(out.searchParams.get("redirectTo")).toBe(
+      "/join?token=abc&utm_source=officer",
+    );
+  });
 });
