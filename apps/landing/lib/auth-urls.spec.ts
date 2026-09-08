@@ -123,5 +123,8 @@ describe("buildJoinUrl", () => {
     expect(
       buildJoinUrl("http://[::1]:3000", { token: "local-token" }),
     ).toBe("http://[::1]:3000/join?token=local-token");
+    expect(() =>
+      buildJoinUrl("http://app.localhost", { token: "secret-invite" }),
+    ).toThrow(/must use https:/);
   });
 });

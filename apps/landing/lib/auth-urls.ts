@@ -111,12 +111,7 @@ function isLoopbackHostname(hostname: string): boolean {
   // Node's URL.hostname for IPv6 includes the brackets (`[::1]`). Strip
   // them so `http://[::1]:3000` matches the same as `::1`.
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  return (
-    host === "localhost" ||
-    host === "127.0.0.1" ||
-    host === "::1" ||
-    host.endsWith(".localhost")
-  );
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
 }
 
 function applyJoinSearch(url: URL, search: JoinSearch): void {
