@@ -89,7 +89,7 @@ reach); the sweep above is what normally closes the gap.
 PDF reports use a clean, branded template with:
 
 - Chapter name, university, and logo (if uploaded) in the header.
-- Frapp branding and a page counter in the footer.
+- Signet branding and a page counter in the footer.
 - Report title and a scope line naming the date range and any member/event filter.
 - Tabular data with alternating row shading for readability, paginated across
   landscape US Letter pages.
