@@ -862,3 +862,57 @@ describe("MessageItem unconfirmed rows (#1733)", () => {
     release();
   });
 });
+
+/**
+ * Regression guards from the #1733 review: an unconfirmed row must not look
+ * like one still in flight, and its note must actually be announced.
+ */
+describe("MessageItem unconfirmed presentation (#1733 review)", () => {
+  it("does not render the row as busy", () => {
+    const { container } = renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    // A shimmer under aria-busy reads as "still working", so an officer waits
+    // instead of pressing Retry — and a possibly-committed grant gets re-typed.
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  it("announces the unconfirmed note in a live region", () => {
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    const note = screen.getByText(/couldn't confirm/i);
+    expect(note.closest("[aria-live]")).not.toBeNull();
+  });
+
+  it("keeps a genuinely pending row busy", () => {
+    const { container } = renderItemWithProps({
+      message: unconfirmedMessage({
+        _status: "pending",
+        _error: undefined,
+        _replay: undefined,
+      } as Partial<ChatMessage>),
+    });
+
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+  });
+
+  it("swallows a rejected retry rather than leaving it unhandled", async () => {
+    const onRetryUnconfirmed = vi.fn(() => Promise.reject(new Error("boom")));
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    // The button must return to a usable state; the handler owns reporting.
+    expect(
+      await screen.findByRole("button", { name: /^retry$/i }),
+    ).toBeEnabled();
+  });
+});

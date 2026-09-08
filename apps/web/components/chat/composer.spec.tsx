@@ -480,3 +480,67 @@ describe("runDispatch (#1718)", () => {
     expect(dispatch).toHaveBeenCalledWith(command, "args");
   });
 });
+
+/**
+ * #1733 review — an UNKNOWN outcome must not borrow either neighbour's title.
+ */
+describe("notifyDispatchOutcome — unconfirmed (#1733)", () => {
+  const cmd = "points";
+
+  it("does not title an unknown outcome as a failure", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, {
+      ok: true,
+      unconfirmed: true,
+      warning: "We couldn't confirm whether these points were recorded.",
+    });
+
+    const arg = toast.mock.calls[0]![0];
+    expect(arg.title).not.toMatch(/failed/i);
+    expect(arg.variant).toBeUndefined();
+  });
+
+  // The mirror hazard: "partly succeeded" asserts the write committed. On a
+  // `/points deduct` that reads as "the fine landed", and it is silently lost.
+  it("does not title an unknown outcome as a partial success", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, {
+      ok: true,
+      unconfirmed: true,
+      warning: "We couldn't confirm whether these points were recorded.",
+    });
+
+    const arg = toast.mock.calls[0]![0];
+    expect(arg.title).not.toMatch(/succeeded/i);
+    expect(arg.title).toMatch(/not confirmed/i);
+  });
+
+  // Sticky only when no row survived to carry the notice; otherwise it would
+  // camp the single toast slot (TOAST_LIMIT = 1) restating the row's own text.
+  it("is sticky only when nothing was left in the timeline", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, {
+      ok: true,
+      unconfirmed: true,
+      warning: "x",
+    });
+    expect(toast.mock.calls[0]![0].duration).toBeUndefined();
+
+    const durableToast = vi.fn();
+    notifyDispatchOutcome(durableToast, cmd, {
+      ok: true,
+      unconfirmed: true,
+      warning: "x",
+      durable: true,
+    });
+    expect(durableToast.mock.calls[0]![0].duration).toBe(Infinity);
+  });
+
+  it("reports a resolved retry rather than staying silent", () => {
+    const toast = vi.fn();
+    notifyDispatchOutcome(toast, cmd, { ok: true, resolved: "Points recorded." });
+
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast.mock.calls[0]![0].title).toMatch(/recorded/i);
+  });
+});

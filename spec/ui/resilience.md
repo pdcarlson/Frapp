@@ -259,6 +259,25 @@ Chat messages are the most latency-sensitive and loss-sensitive data in the app.
 | SENT | Single checkmark (✓) | None needed |
 | DELIVERED | Double checkmark (✓✓) — future, requires read receipts | None needed |
 | FAILED | Red warning icon (⚠) + "Failed to send" | [Retry] [Delete] buttons |
+| UNCONFIRMED | Neutral note + "outcome unknown" — **never red** | [Retry] only — **never Delete** |
+
+`UNCONFIRMED` is the one row in this table where the action column is a safety
+rule rather than a convenience. It is reached when a heavy slash command's
+response was lost, so the write may already have committed
+([`chat/integrations.md`](../behavior/chat/integrations.md) § Slash command
+dispatch, [#1733](https://github.com/pdcarlson/Frapp/issues/1733)):
+
+- **No Delete.** The row can be the only trace of a committed ledger write. The
+  `FAILED` row above may offer it because `FAILED` asserts nothing was written.
+- **Not red.** A destructive presentation is what makes an officer re-type the
+  command, and a re-typed `/points` mints a fresh idempotency key, misses the
+  dedupe index and double-grants into an append-only ledger.
+- **Retry replays the original request**, under its original
+  `client_message_id` — not a fresh send.
+
+Note the table's state names are the spec's own vocabulary and do not match the
+`MessageStatus` union in `@repo/chat-core` one-for-one (`pending`, `confirmed`,
+`failed`, `unconfirmed`); only the last is named identically in both.
 
 **Implementation:**
 

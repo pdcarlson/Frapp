@@ -104,21 +104,43 @@ export function mergeServerRows(
   return rows.reduce((acc, row) => mergeServerRow(acc, row), cache);
 }
 
+/**
+ * Apply a patch to one optimistic row, keyed by `client_message_id`.
+ *
+ * The single place row bookkeeping happens, so the status transitions below
+ * cannot drift apart as that bookkeeping changes. Returns the cache untouched
+ * when the row is gone — `mergeServerRow` deletes the client-keyed entry the
+ * moment the server echo re-keys it under the server id, which is a race every
+ * caller can lose.
+ */
+function patchRow(
+  cache: ChannelCache,
+  clientMessageId: string,
+  patch: Partial<ChatMessage>,
+): ChannelCache {
+  const existing = cache.byId[clientMessageId];
+  if (!existing) return cache;
+  return {
+    ...cache,
+    byId: { ...cache.byId, [clientMessageId]: { ...existing, ...patch } },
+  };
+}
+
+/** Whether an optimistic row is still in the cache under its client key. */
+export function hasOptimisticRow(
+  cache: ChannelCache,
+  clientMessageId: string,
+): boolean {
+  return cache.byId[clientMessageId] !== undefined;
+}
+
 /** Marks an optimistic message as failed (4xx) so the UI can offer retry. */
 export function markFailed(
   cache: ChannelCache,
   clientMessageId: string,
   error: string,
 ): ChannelCache {
-  const existing = cache.byId[clientMessageId];
-  if (!existing) return cache;
-  return {
-    ...cache,
-    byId: {
-      ...cache.byId,
-      [clientMessageId]: { ...existing, _status: "failed", _error: error },
-    },
-  };
+  return patchRow(cache, clientMessageId, { _status: "failed", _error: error });
 }
 
 /**
@@ -139,20 +161,31 @@ export function markUnconfirmed(
   replay: ReplayRequest,
   note: string,
 ): ChannelCache {
-  const existing = cache.byId[clientMessageId];
-  if (!existing) return cache;
-  return {
-    ...cache,
-    byId: {
-      ...cache.byId,
-      [clientMessageId]: {
-        ...existing,
-        _status: "unconfirmed",
-        _error: note,
-        _replay: replay,
-      },
-    },
-  };
+  return patchRow(cache, clientMessageId, {
+    _status: "unconfirmed",
+    _error: note,
+    _replay: replay,
+  });
+}
+
+/**
+ * Return a resolved retry's row to `pending`, clearing the unconfirmed note and
+ * its replay handle.
+ *
+ * Without this a successful retry leaves the row asserting "we couldn't confirm
+ * whether these points were recorded" with a live Retry control — and a second
+ * press would take the replay branch and report the card as missing, which by
+ * then is false.
+ */
+export function markPending(
+  cache: ChannelCache,
+  clientMessageId: string,
+): ChannelCache {
+  return patchRow(cache, clientMessageId, {
+    _status: "pending",
+    _error: undefined,
+    _replay: undefined,
+  });
 }
 
 /** Removes a message by cache key (server id or client_message_id). */

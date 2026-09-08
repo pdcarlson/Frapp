@@ -23,6 +23,8 @@ import {
   insertLocalPlaceholder,
   removeLocalPlaceholder,
   markLocalUnconfirmed,
+  markLocalPending,
+  isClientError,
   type ChatActionContext,
 } from "./chat-client";
 import { randomClientId } from "./random-id";
@@ -39,6 +41,28 @@ export interface DispatchResult {
    * would duplicate it. Callers surface it as a non-destructive notice.
    */
   warning?: string;
+  /**
+   * The outcome is **unknown** — the response was lost, so the write may or may
+   * not have committed (#1733).
+   *
+   * A third thing again, and it must not be collapsed into either neighbour.
+   * `error` would title the notice "failed" and invite the re-typed command
+   * that double-grants; `warning` alone would title it "partly succeeded",
+   * asserting a write that may never have happened — which on a `/points
+   * deduct` reads as "the fine landed" and silently loses it. Callers give this
+   * its own copy.
+   */
+  unconfirmed?: boolean;
+  /**
+   * The notice must not auto-dismiss: it is the only surviving trace of the
+   * outcome, because no row was left in the timeline to carry it.
+   */
+  durable?: boolean;
+  /**
+   * A retry resolved the row it was fired from. Callers report it explicitly —
+   * silence after a retry is indistinguishable from a retry that did nothing.
+   */
+  resolved?: string;
 }
 
 /**
@@ -264,19 +288,21 @@ export async function retryPointsDispatch(
  * {@link retryPointsDispatch} so the two cannot disagree about what a given
  * response means.
  *
- * Seven outcomes, and the distinctions all exist because the ledger is
- * append-only (`spec/behavior/points.md` § Anti-Fraud) — a wrongly-invited
- * retry writes a second row that no API call can undo:
+ * The distinctions all exist because the ledger is append-only
+ * (`spec/behavior/points.md` § Anti-Fraud): a wrongly-invited retry writes a
+ * second row that no API call can undo, and a wrongly-suppressed one silently
+ * loses an adjustment. **`isReplay` changes what several statuses mean**, which
+ * is the subtlety worth reading twice — a refusal of a *retry* says nothing
+ * about whether the *original* attempt committed.
  *
- * | Response | Ledger | Placeholder | Result |
- * | --- | --- | --- | --- |
- * | 4xx, not 409 | did not commit | removed | `ok:false` — re-typing is correct |
- * | 409 | did not commit; key spent | removed | `ok:false`, "run it again" (a fresh key) |
- * | 5xx / transport throw | **unknown** | kept, `unconfirmed` | `ok:true` + warning, retry *this row* |
- * | `card_posted:false` | committed, card lost | removed | `ok:true` + warning |
- * | `card_posted` absent, replay | committed | removed | `ok:true` + warning |
- * | `card_posted` absent, first try | no outcome reported | kept for the echo | `ok:true` |
- * | `card_posted:true` | committed + carded | kept for the echo | `ok:true` |
+ * | Response | First attempt | Replay |
+ * | --- | --- | --- |
+ * | 409 | removed, `ok:false` — key spent, run it again | same: replaying can never succeed |
+ * | other 4xx | removed, `ok:false` — validated and rejected, nothing written | **kept `unconfirmed`** — says nothing about the original |
+ * | 5xx / transport | kept `unconfirmed` | kept `unconfirmed` |
+ * | `card_posted:false` | removed, committed-card-lost warning | same |
+ * | `card_posted` absent | kept for the echo — no outcome reported | removed, committed-card-unknown warning |
+ * | `card_posted:true` | kept for the echo | row cleared, explicit success |
  */
 async function submitPointsAdjustment(
   ctx: ChatActionContext,
@@ -285,55 +311,63 @@ async function submitPointsAdjustment(
 ): Promise<DispatchResult> {
   const { channelId, clientMessageId } = replay;
 
-  let cardPosted: boolean | undefined;
+  let data: PointsAdjustResponse | undefined;
+  let status: number | undefined;
   try {
-    const { data, error, response } = await ctx.apiClient.POST(
-      "/v1/points/adjust",
-      { body: replay.body },
-    );
-    // Read the status BEFORE narrowing on `error`. The generated contract
+    // Narrow to the network call ONLY. A wider `try` would catch a cache-layer
+    // or programmer error below and report it as a lost response — asserting a
+    // possible ledger write where no request was ever sent.
+    const result = await ctx.apiClient.POST("/v1/points/adjust", {
+      body: replay.body,
+    });
+    data = result.data as PointsAdjustResponse | undefined;
+    // Read the status without narrowing on `error`: the generated contract
     // declares no error responses for this route, so `error` is typed `never`
-    // and `if (error)` alone narrows the whole branch — `response` included — to
-    // `never`. The repo's other openapi-fetch call sites use `error || !data`
-    // for the same reason (`chat-client.ts` `sendMessage`, `react`).
-    const status: number | undefined = response?.status;
-    if (error || !data) {
-      // A key already spent on a DIFFERENT adjustment (`PointsService`
-      // `resolveReplay`). Nothing committed under this request, and replaying it
-      // never will — the correct recovery is a fresh key, which is what running
-      // the command again mints. Surfaced separately from a transport failure
-      // precisely so the copy can say that (#1733 AC 4).
-      if (status === CONFLICT) {
-        removeLocalPlaceholder(ctx, channelId, clientMessageId);
-        return {
-          ok: false,
-          error:
-            "That points command was already used for a different adjustment. Run the command again to record a new one.",
-        };
-      }
-
-      // Any other 4xx is a definitive refusal: validated, rejected, nothing
-      // written. Safe to tear down and let the officer re-type.
-      if (isTerminalStatus(status)) {
-        removeLocalPlaceholder(ctx, channelId, clientMessageId);
-        return {
-          ok: false,
-          error: apiErrorMessage(error, "Couldn't adjust points"),
-        };
-      }
-
-      // 5xx, or a status we could not read. `openapi-fetch` RESOLVES rather than
-      // throws on a non-2xx, so a gateway 502/504 — the commonest way to lose a
-      // response to a request that already committed — arrives HERE, not in the
-      // `catch` below. Treating it as failure is what invites the re-typed
-      // command and the double-grant.
-      return unconfirmed(ctx, replay);
-    }
-    cardPosted = data?.card_posted;
-  } catch {
+    // and `if (result.error)` would narrow the whole branch — `response`
+    // included — to `never`.
+    status = result.response?.status;
+    if (result.error) status ??= 0;
+  } catch (cause) {
     // Transport-level: the request may or may not have reached the server.
+    return unconfirmed(ctx, replay, cause);
+  }
+
+  const succeeded = typeof status === "number" && status >= 200 && status < 300;
+  if (!succeeded) {
+    // A key already spent on a DIFFERENT adjustment (`PointsService`
+    // `resolveReplay`). Nothing committed under this request, and replaying it
+    // never will — the correct recovery is a fresh key, which is what running
+    // the command again mints. True on a replay as much as a first attempt, so
+    // this is the one refusal that tears the row down either way.
+    if (status === CONFLICT) {
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return { ok: false, error: KEY_SPENT_ERROR };
+    }
+
+    // Any other 4xx on a FIRST attempt is a definitive refusal: validated,
+    // rejected, nothing written. Safe to tear down and let the officer re-type.
+    //
+    // On a REPLAY it is nothing of the kind. A 401 (session expired while the
+    // row sat there), a 403 (grant revoked, or the subscription lapsed) or a
+    // 429 from the global throttler — which answers before `adjustPoints` runs
+    // at all, so the service's own replay-aware re-check never fires — all
+    // refuse the *retry* while saying nothing about the *original* attempt.
+    // Removing the row there would delete the only trace of a write that may
+    // have committed, and the officer's next move is re-typing: a fresh key,
+    // no dedupe, a second append-only row. Keep it retryable instead.
+    if (isTerminalStatus(status) && !isReplay) {
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return { ok: false, error: REFUSED_ERROR };
+    }
+
+    // 5xx, an unreadable status, or any refusal of a replay. `openapi-fetch`
+    // RESOLVES rather than throws on a non-2xx, so a gateway 502/504 — the
+    // commonest way to lose a response to a request that already committed —
+    // arrives HERE, not in the `catch` above.
     return unconfirmed(ctx, replay);
   }
+
+  const cardPosted = data?.card_posted;
 
   // The ledger row is committed either way — the card is best-effort and is
   // never rolled back. But the placeholder is reconciled by the Realtime echo of
@@ -351,21 +385,33 @@ async function submitPointsAdjustment(
   //   - On a replay it means `completeReplay` short-circuited: the ledger row
   //     exists (that is what made it a replay), the request fired no side
   //     effect, and the row records nothing about whether the ORIGINAL
-  //     attempt's card posted. If that first card failed, no echo is ever
-  //     coming and leaving the placeholder up strands it on "Granting…"
-  //     forever — #544's exact bug, which is why the coupling comment on #1733
-  //     required this guard before key reuse could ship. The server cannot
-  //     answer until the ledger row records its origin channel (#1734); the
-  //     client does not need it to, because the client knows it is replaying.
-  //     Treat it as committed-with-unknown-card: the `card_posted:false` copy
-  //     is already exactly true.
+  //     attempt's card posted. Leaving the placeholder up would strand it on
+  //     "Granting…" forever if that first card failed — #544's bug arriving
+  //     through the replay branch, which is why the coupling comment on #1733
+  //     required this guard before key reuse could ship.
+  //
+  //     Note the copy says the card's fate is UNKNOWN, not that it failed: the
+  //     server omits the field because it knows nothing about the original
+  //     attempt, and asserting failure would send an officer to audit a
+  //     discrepancy that usually is not there (the card most often did post).
   //
   //   - On a first attempt it means a dashboard-shaped call (no chat context)
   //     or a pre-#544 server. No side effect was skipped, so the echo may still
   //     arrive; leave the placeholder for it, exactly as before.
   if (cardPosted === undefined && isReplay) {
     removeLocalPlaceholder(ctx, channelId, clientMessageId);
-    return { ok: true, warning: CARD_LOST_WARNING };
+    return { ok: true, warning: REPLAY_ACCEPTED_WARNING };
+  }
+
+  // A replay that reached here committed as a FIRST write (the original never
+  // landed) and carded successfully. The row is still sitting there marked
+  // `unconfirmed` with a Retry control, so clear it back to pending and report
+  // explicitly — `notifyDispatchOutcome` is silent on a bare `ok:true`, and
+  // silence after a retry is indistinguishable from a retry that did nothing.
+  // The echo reconciles it from pending exactly as it would a first dispatch.
+  if (isReplay) {
+    markLocalPending(ctx, channelId, clientMessageId);
+    return { ok: true, resolved: RETRY_RESOLVED_NOTE };
   }
 
   // Success: the server posts the `points` card (same client_message_id); the
@@ -373,36 +419,78 @@ async function submitPointsAdjustment(
   return { ok: true };
 }
 
+/** Minimal shape this module reads off the adjust response. */
+interface PointsAdjustResponse {
+  card_posted?: boolean;
+}
+
 /** HTTP 409 — `PointsService.resolveReplay`'s key-reused-for-something-else refusal. */
 const CONFLICT = 409;
 
-function isTerminalStatus(status: number | undefined): boolean {
-  return typeof status === "number" && status >= 400 && status < 500;
-}
+const KEY_SPENT_ERROR =
+  "That points command was already used for a different adjustment. Run the command again to record a new one.";
+
+const REFUSED_ERROR = "Couldn't adjust points — nothing was recorded.";
 
 const CARD_LOST_WARNING =
   "Points were recorded, but the chat card couldn't be posted. Check the points ledger to confirm — don't run the command again.";
 
+const REPLAY_ACCEPTED_WARNING =
+  "These points were already recorded — the retry didn't add a second entry. Whether the original chat card posted isn't something the server can tell us, so check the channel or the points ledger if you need to be sure.";
+
+const RETRY_RESOLVED_NOTE = "Points recorded.";
+
+/**
+ * The row is gone — the card's Realtime echo reconciled it while the request
+ * was still in flight, or the channel query was rebuilt underneath us. Pointing
+ * the officer at a Retry control that no longer exists is worse than saying
+ * nothing, so the copy has to stand on its own.
+ */
+const UNCONFIRMED_NO_ROW_WARNING =
+  "We couldn't confirm whether these points were recorded. Check the points ledger before running the command again — running it again would record them twice.";
+
+/**
+ * The row is still there and carries the original key, so an explicit Retry is
+ * the safe recovery. The second sentence is not padding: the row lives only in
+ * the in-memory cache today, and a reconnect or reload rebuilds the channel
+ * from the server and takes it with it (#1909), so the copy must not promise a
+ * Retry that may be gone by the time the officer looks.
+ */
 const UNCONFIRMED_WARNING =
-  "We couldn't confirm whether these points were recorded. The message is still in the channel — use Retry on it rather than running the command again, so it can't be counted twice.";
+  "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice. If the message is gone, check the points ledger before re-running.";
+
+function isTerminalStatus(status: number | undefined): boolean {
+  return typeof status === "number" && isClientError(status);
+}
 
 /**
  * Park the placeholder as `unconfirmed` and report it as a non-failure.
  *
- * `ok: true` is deliberate and is AC 2 of #1733. `notifyDispatchOutcome` derives
- * its "/points failed" title and destructive styling purely from `ok: false`, so
- * returning a failure here would put a red "failed" toast in front of a write
- * that may have committed — and the retry an officer performs after seeing one
- * is re-typing the command, which mints a fresh key, misses the dedupe index and
- * double-grants. The write is not known to have failed, so we must not say it
- * did.
+ * `ok: true` is deliberate and is AC 2 of #1733: `notifyDispatchOutcome`
+ * derives its "/points failed" title and destructive styling purely from
+ * `ok: false`, and the retry an officer performs after seeing a red toast is
+ * re-typing the command, which mints a fresh key and double-grants.
+ *
+ * `unconfirmed: true` is equally deliberate. Routing this through `warning`
+ * alone would title the toast "/points partly succeeded" — an assertion that
+ * the write committed, which is exactly what is NOT known here. On a transport
+ * failure where nothing was written that reads as "the fine landed", and the
+ * adjustment is silently lost: the mirror of the double-grant.
  */
 function unconfirmed(
   ctx: ChatActionContext,
   replay: ReplayRequest,
+  cause?: unknown,
 ): DispatchResult {
-  markLocalUnconfirmed(ctx, replay, UNCONFIRMED_WARNING);
-  return { ok: true, warning: UNCONFIRMED_WARNING };
+  const marked = markLocalUnconfirmed(ctx, replay, UNCONFIRMED_WARNING, cause);
+  return {
+    ok: true,
+    unconfirmed: true,
+    warning: marked ? UNCONFIRMED_WARNING : UNCONFIRMED_NO_ROW_WARNING,
+    // A row we could not mark cannot be retried from the timeline, so the
+    // notice is the only trace and must not auto-dismiss.
+    durable: !marked,
+  };
 }
 
 /**

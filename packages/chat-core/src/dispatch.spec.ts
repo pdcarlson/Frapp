@@ -74,7 +74,7 @@ describe("dispatchPoints — card_posted (#544)", () => {
   it("leaves the placeholder for the Realtime echo when the card posted", async () => {
     const post = vi
       .fn()
-      .mockResolvedValue({ data: { card_posted: true }, error: null });
+      .mockResolvedValue({ data: { card_posted: true }, error: null, response: { status: 200 } });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -88,7 +88,7 @@ describe("dispatchPoints — card_posted (#544)", () => {
   it("drops the placeholder and warns when the card did not post", async () => {
     const post = vi
       .fn()
-      .mockResolvedValue({ data: { card_posted: false }, error: null });
+      .mockResolvedValue({ data: { card_posted: false }, error: null, response: { status: 200 } });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -105,7 +105,7 @@ describe("dispatchPoints — card_posted (#544)", () => {
   it("does not report the committed grant as a failure", async () => {
     const post = vi
       .fn()
-      .mockResolvedValue({ data: { card_posted: false }, error: null });
+      .mockResolvedValue({ data: { card_posted: false }, error: null, response: { status: 200 } });
 
     const result = await dispatchGrant(buildCtx(post));
 
@@ -116,7 +116,7 @@ describe("dispatchPoints — card_posted (#544)", () => {
   // Pre-#544 servers (and any response that omits the field) must keep the old
   // behaviour rather than having their placeholder torn down under them.
   it("treats an absent card_posted as success", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const post = vi.fn().mockResolvedValue({ data: {}, error: null, response: { status: 200 } });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -184,6 +184,9 @@ describe("dispatchPoints — unconfirmed outcomes (#1733)", () => {
     expect(result.ok).toBe(true);
     expect(result.error).toBeUndefined();
     expect(result.warning).toMatch(/couldn't confirm/i);
+    // Not the `warning`-only channel: that titles the toast "partly
+    // succeeded", asserting a write that may never have happened.
+    expect(result.unconfirmed).toBe(true);
     expect(placeholderCount(ctx)).toBe(1);
   });
 
@@ -233,7 +236,7 @@ describe("dispatchPoints — unconfirmed outcomes (#1733)", () => {
     await dispatchGrant(ctx);
     const replay = onlyRow(ctx)._replay!;
 
-    post.mockResolvedValue({ data: { card_posted: true }, error: null });
+    post.mockResolvedValue({ data: { card_posted: true }, error: null, response: { status: 200 } });
     await retryPointsDispatch(ctx, replay);
 
     const [first, second] = post.mock.calls;
@@ -257,18 +260,22 @@ describe("dispatchPoints — unconfirmed outcomes (#1733)", () => {
     await dispatchGrant(ctx);
     const replay = onlyRow(ctx)._replay!;
 
-    post.mockResolvedValue({ data: {}, error: null });
+    post.mockResolvedValue({ data: {}, error: null, response: { status: 200 } });
     const result = await retryPointsDispatch(ctx, replay);
 
     expect(result.ok).toBe(true);
-    expect(result.warning).toMatch(/recorded/i);
+    expect(result.warning).toMatch(/already recorded/i);
+    // The server omits `card_posted` because it knows NOTHING about the
+    // original attempt — not because that card failed. Asserting failure sends
+    // an officer to audit a discrepancy that usually is not there.
+    expect(result.warning).not.toMatch(/couldn't be posted/i);
     expect(placeholderCount(ctx)).toBe(0);
   });
 
   // Same absent field, first attempt: nothing was skipped, the echo may still
   // arrive. The two must not be collapsed — this is why `isReplay` exists.
   it("still waits for the echo when a FIRST attempt reports no card outcome", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: null });
+    const post = vi.fn().mockResolvedValue({ data: {}, error: null, response: { status: 200 } });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -293,5 +300,146 @@ describe("dispatchPoints — unconfirmed outcomes (#1733)", () => {
     expect(result.error).toMatch(/run the command again/i);
     expect(result.warning).toBeUndefined();
     expect(placeholderCount(ctx)).toBe(0);
+  });
+});
+
+/**
+ * Regression guards for the defects `/diff-review` found in the first cut of
+ * #1733. Every one of these is a path where the wrong answer re-opens the
+ * append-only double-grant the change exists to prevent.
+ */
+describe("dispatchPoints — replay refusals and resolution (#1733 review)", () => {
+  async function parkUnconfirmed(post: ReturnType<typeof vi.fn>) {
+    const ctx = buildCtx(post);
+    post.mockResolvedValue(LOST_RESPONSE);
+    await dispatchGrant(ctx);
+    return { ctx, replay: onlyRow(ctx)._replay! };
+  }
+
+  // THE critical one: a refusal of the RETRY says nothing about whether the
+  // ORIGINAL attempt committed. 429 is routine — the global throttler answers
+  // before the service's own replay-aware re-check ever runs.
+  it.each([
+    [429, "throttled"],
+    [401, "session expired"],
+    [403, "permission revoked"],
+  ])("keeps the row when a replay is refused %i (%s)", async (status) => {
+    const post = vi.fn();
+    const { ctx, replay } = await parkUnconfirmed(post);
+
+    post.mockResolvedValue({
+      data: undefined,
+      error: { message: "no" },
+      response: { status },
+    });
+    const result = await retryPointsDispatch(ctx, replay);
+
+    // Removing it here would delete the only trace of a possibly-committed
+    // grant, and the officer's next move is re-typing: fresh key, no dedupe,
+    // a second ledger row.
+    expect(placeholderCount(ctx)).toBe(1);
+    expect(onlyRow(ctx)._status).toBe("unconfirmed");
+    expect(result.ok).toBe(true);
+    expect(result.unconfirmed).toBe(true);
+  });
+
+  // The same statuses on a FIRST attempt are definitive: nothing was written.
+  it("still tears down on a first-attempt 429", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "slow down" },
+      response: { status: 429 },
+    });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchGrant(ctx);
+
+    expect(result.ok).toBe(false);
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  // 409 is the one refusal that tears the row down on a replay too: the key is
+  // spent on a different adjustment, so replaying can never succeed.
+  it("tears down on a 409 even when replaying", async () => {
+    const post = vi.fn();
+    const { ctx, replay } = await parkUnconfirmed(post);
+
+    post.mockResolvedValue({
+      data: undefined,
+      error: { message: "different adjustment" },
+      response: { status: 409 },
+    });
+    const result = await retryPointsDispatch(ctx, replay);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/run the command again/i);
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  // A retry that commits as a first write must clear the row and say so.
+  // Leaving it `unconfirmed` means a second press takes the replay branch and
+  // reports the card missing — false by then.
+  it("clears the row and reports explicitly when a retry succeeds", async () => {
+    const post = vi.fn();
+    const { ctx, replay } = await parkUnconfirmed(post);
+
+    post.mockResolvedValue({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 200 },
+    });
+    const result = await retryPointsDispatch(ctx, replay);
+
+    expect(result.resolved).toBeTruthy();
+    const row = onlyRow(ctx);
+    expect(row._status).toBe("pending");
+    expect(row._replay).toBeUndefined();
+    expect(row._error).toBeUndefined();
+  });
+
+  // When the echo already reconciled the row, "use Retry on the message" points
+  // at a control that does not exist. The copy has to stand on its own, and the
+  // notice becomes the only trace, so it must not auto-dismiss.
+  it("uses standalone copy when there is no row left to retry", async () => {
+    const post = vi.fn().mockResolvedValue(LOST_RESPONSE);
+    const ctx = buildCtx(post);
+    const result = await dispatchSlashCommand(ctx, {
+      command: POINTS_COMMAND,
+      args: "grant @bobby 5 for great work",
+      channelId: CHANNEL_ID,
+      announcementsChannelId: null,
+      resolveMember: () => ({ user_id: "user-2", display_name: "Bobby" }),
+    });
+    expect(result.warning).toMatch(/use retry/i);
+    expect(result.durable).toBeFalsy();
+
+    // Now the same failure with no placeholder to mark (userId absent, so
+    // `insertLocalPlaceholder` returned early).
+    const ctxNoRow = buildCtx(post);
+    (ctxNoRow as { userId: string | null }).userId = null;
+    const noRow = await dispatchSlashCommand(ctxNoRow, {
+      command: POINTS_COMMAND,
+      args: "grant @bobby 5 for great work",
+      channelId: CHANNEL_ID,
+      announcementsChannelId: null,
+      resolveMember: () => ({ user_id: "user-2", display_name: "Bobby" }),
+    });
+
+    expect(noRow.warning).not.toMatch(/use retry/i);
+    expect(noRow.warning).toMatch(/points ledger/i);
+    expect(noRow.durable).toBe(true);
+  });
+
+  // A 2xx whose body did not parse is a SUCCESS, not a lost response.
+  it("does not call a bodyless 2xx unconfirmed", async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValue({ data: undefined, error: null, response: { status: 204 } });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchGrant(ctx);
+
+    expect(result.unconfirmed).toBeFalsy();
+    expect(result.ok).toBe(true);
   });
 });

@@ -34,7 +34,9 @@ import {
   applyActionUpdate,
   applyReactionInsert,
   emptyCache,
+  hasOptimisticRow,
   markFailed,
+  markPending,
   markUnconfirmed,
   mergeServerRow,
   removeMessage,
@@ -135,6 +137,21 @@ interface FunctionsErrorWithStatus extends Error {
   response?: { status?: number };
 }
 
+/**
+ * Whether a status is a client error (4xx) — i.e. the server refused, and the
+ * request is not worth repeating unchanged.
+ *
+ * Exported so `dispatch.ts` shares this definition rather than restating the
+ * band. "4xx means do not retry" is one policy, and two copies of it drift: the
+ * likely edit is carving 429 (or 408) out as retryable, and a copy that missed
+ * that change would tell a rate-limited `/points` caller their grant failed —
+ * whose next move is re-typing the command, minting a fresh idempotency key and
+ * writing a second append-only ledger row.
+ */
+export function isClientError(status: number): boolean {
+  return status >= 400 && status < 500;
+}
+
 function extractMessage(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
   const candidate = (value as { message?: unknown }).message;
@@ -181,7 +198,7 @@ function classify(error: unknown): {
     extractMessage(error) ??
     extractMessage((error as { error?: unknown }).error) ??
     "Couldn't reach chat server";
-  const terminal = typeof status === "number" && status >= 400 && status < 500;
+  const terminal = typeof status === "number" && isClientError(status);
   return { terminal, status, message };
 }
 
@@ -405,9 +422,52 @@ export function markLocalUnconfirmed(
   ctx: ChatActionContext,
   replay: ReplayRequest,
   note: string,
+  cause?: unknown,
+): boolean {
+  // Whether the row is still there decides what the caller may honestly say, so
+  // check BEFORE patching rather than reporting a mark that silently no-opped.
+  // Two ordinary races remove it: the card's Realtime echo arriving while the
+  // HTTP response was still in flight (`mergeServerRow` re-keys the row under
+  // the server id), and the channel query being rebuilt or garbage-collected.
+  // Telling an officer to "use Retry on the message" when no such message
+  // exists is worse than saying nothing.
+  const existing = ctx.queryClient.getQueryData<ChannelCache>(
+    chatMessagesKey(replay.channelId),
+  );
+  const present =
+    existing !== undefined &&
+    hasOptimisticRow(existing, replay.clientMessageId);
+
+  if (present) {
+    patchCache(ctx.queryClient, replay.channelId, (cache) =>
+      markUnconfirmed(cache, replay.clientMessageId, replay, note),
+    );
+  }
+
+  // A lost response is not a silent event: without this, the only signal that
+  // a heavy command's outcome is unknown is a toast the officer may miss.
+  // `sendMessage` reports its own failures the same way.
+  if (cause !== undefined) {
+    ctx.onError?.({
+      title: "Couldn't confirm a points adjustment",
+      description: note,
+    });
+  }
+
+  return present;
+}
+
+/**
+ * Clear a resolved retry's row back to `pending`, so the Realtime echo
+ * reconciles it exactly as it would a first dispatch.
+ */
+export function markLocalPending(
+  ctx: ChatActionContext,
+  channelId: string,
+  clientMessageId: string,
 ): void {
-  patchCache(ctx.queryClient, replay.channelId, (cache) =>
-    markUnconfirmed(cache, replay.clientMessageId, replay, note),
+  patchCache(ctx.queryClient, channelId, (cache) =>
+    markPending(cache, clientMessageId),
   );
 }
 

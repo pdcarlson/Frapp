@@ -538,7 +538,16 @@ export function MessageItem({
    */
   const unconfirmedFooter =
     isUnconfirmed && message._replay ? (
-      <div className="ml-1 mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+      <div
+        className="ml-1 mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground"
+        // Its own live region. The failed footers sit inside the one opened
+        // around the pending/failed line, so without this a screen reader
+        // announces "Send failed" for a text message but stays SILENT for an
+        // unconfirmed grant — the state where silence costs most, since the
+        // officer's fallback is re-typing the command.
+        role="status"
+        aria-live="polite"
+      >
         <span>{message._error ?? "Not confirmed"}</span>
         {onRetryUnconfirmed ? (
           <button
@@ -554,9 +563,15 @@ export function MessageItem({
               const replay = message._replay;
               if (!replay || isRetrying) return;
               setIsRetrying(true);
-              void Promise.resolve(onRetryUnconfirmed(replay)).finally(() => {
-                setIsRetrying(false);
-              });
+              // `.finally()` re-rejects, so a bare `void ....finally(...)` turns
+              // a handler rejection into an unhandled rejection: no toast, no
+              // Sentry, and a spinner that just blinks. The officer reads that
+              // as "Retry is broken" and re-types the command — a fresh key,
+              // no dedupe, a second append-only ledger row. The handler owns
+              // reporting; this only has to not swallow the rejection.
+              void Promise.resolve(onRetryUnconfirmed(replay))
+                .catch(() => {})
+                .finally(() => setIsRetrying(false));
             }}
           >
             {isRetrying ? (

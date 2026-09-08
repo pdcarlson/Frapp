@@ -279,6 +279,27 @@ export function notifyDispatchOutcome(
     });
     return;
   }
+  if (result.resolved) {
+    toast({ title: `/${commandName} recorded`, description: result.resolved });
+    return;
+  }
+  // An UNKNOWN outcome is neither of the two above, and titling it as either is
+  // a real hazard rather than a wording nit (#1733). "failed" invites the
+  // re-typed command that double-grants; "partly succeeded" asserts a write
+  // that may never have happened, which on a `/points deduct` reads as "the
+  // fine landed" and silently loses it.
+  if (result.unconfirmed) {
+    toast({
+      title: `/${commandName} not confirmed`,
+      description: result.warning ?? "Couldn't confirm that command.",
+      // Sticky ONLY when nothing was left in the timeline to carry the notice.
+      // When the row survives it says the same sentence inline, and a
+      // never-dismissing duplicate would camp the single toast slot
+      // (`TOAST_LIMIT = 1`) and suppress the next command's feedback.
+      ...(result.durable ? { duration: Infinity } : {}),
+    });
+    return;
+  }
   if (result.warning) {
     toast({
       title: `/${commandName} partly succeeded`,
