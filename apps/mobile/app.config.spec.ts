@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { PRODUCTION_APP_ORIGIN as SHARED_PRODUCTION_APP_ORIGIN } from "@repo/validation";
 import { afterEach, describe, expect, it } from "vitest";
 
 /**
@@ -39,6 +40,8 @@ function loadConfig() {
     PRODUCTION_SUPABASE_URL_ERROR: string;
     PRODUCTION_API_ORIGIN: string;
     PRODUCTION_SUPABASE_ORIGIN: string;
+    PRODUCTION_APP_ORIGIN: string;
+    PRODUCTION_APP_URL_ERROR: string;
     assertProductionApiUrl: (opts?: {
       easBuildProfile?: string;
       apiUrl?: string;
@@ -47,6 +50,10 @@ function loadConfig() {
       easBuildProfile?: string;
       supabaseUrl?: string;
       supabaseAnonKey?: string;
+    }) => void;
+    assertProductionAppUrl: (opts?: {
+      easBuildProfile?: string;
+      appUrl?: string;
     }) => void;
   };
 }
@@ -312,6 +319,21 @@ describe("applyMobileConfig", () => {
     ).toThrow(PRODUCTION_SUPABASE_URL_ERROR);
   });
 
+  it("refuses iOS production when EXPO_PUBLIC_APP_URL is staging", () => {
+    const { applyMobileConfig, PRODUCTION_APP_URL_ERROR } = loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: {
+          ...productionPublicEnv,
+          EAS_BUILD_PROFILE: "production",
+          EAS_BUILD_PLATFORM: "ios",
+          EXPO_PUBLIC_APP_URL: "https://app.staging.frapp.live",
+        },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_APP_URL_ERROR);
+  });
+
   it("refuses production Android with a google-services file when the API origin is wrong", () => {
     const { applyMobileConfig, PRODUCTION_API_URL_ERROR } = loadConfig();
     expect(() =>
@@ -502,5 +524,64 @@ describe("PRODUCTION_API_ORIGIN", () => {
     expect(PRODUCTION_API_ORIGIN).toBe(
       eas.build.production.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, ""),
     );
+  });
+});
+
+describe("assertProductionAppUrl", () => {
+  it("allows CI when the profile is unset", () => {
+    const { assertProductionAppUrl } = loadConfig();
+    expect(() => assertProductionAppUrl({})).not.toThrow();
+  });
+
+  it("allows preview pointed at staging", () => {
+    const { assertProductionAppUrl } = loadConfig();
+    expect(() =>
+      assertProductionAppUrl({
+        easBuildProfile: "preview",
+        appUrl: "https://app.staging.frapp.live",
+      }),
+    ).not.toThrow();
+  });
+
+  it("allows production when APP_URL is unset or the production origin", () => {
+    const { assertProductionAppUrl, PRODUCTION_APP_ORIGIN } = loadConfig();
+    expect(() =>
+      assertProductionAppUrl({ easBuildProfile: "production" }),
+    ).not.toThrow();
+    expect(() =>
+      assertProductionAppUrl({
+        easBuildProfile: "production",
+        appUrl: "",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertProductionAppUrl({
+        easBuildProfile: "production",
+        appUrl: `${PRODUCTION_APP_ORIGIN}/`,
+      }),
+    ).not.toThrow();
+  });
+
+  it("refuses a production build that inlines staging or localhost", () => {
+    const { assertProductionAppUrl, PRODUCTION_APP_URL_ERROR } = loadConfig();
+    expect(() =>
+      assertProductionAppUrl({
+        easBuildProfile: "production",
+        appUrl: "https://app.staging.frapp.live",
+      }),
+    ).toThrow(PRODUCTION_APP_URL_ERROR);
+    expect(() =>
+      assertProductionAppUrl({
+        easBuildProfile: "production",
+        appUrl: "http://localhost:3000",
+      }),
+    ).toThrow(PRODUCTION_APP_URL_ERROR);
+  });
+});
+
+describe("PRODUCTION_APP_ORIGIN", () => {
+  it("matches @repo/validation so the CommonJS duplicate cannot drift", () => {
+    const { PRODUCTION_APP_ORIGIN } = loadConfig();
+    expect(PRODUCTION_APP_ORIGIN).toBe(SHARED_PRODUCTION_APP_ORIGIN);
   });
 });

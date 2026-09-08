@@ -39,7 +39,9 @@
 // not the `frapp-prod` origin from `.github/environments.json`. Presence
 // alone used to accept a staging project URL. Those values are inlined
 // into the store binary; a missing or staging value is a first-user dead
-// sign-in, not a dashboard that can be fixed later.
+// sign-in, not a dashboard that can be fixed later. A set
+// `EXPO_PUBLIC_APP_URL` must be `https://app.frapp.live`; unset still
+// falls back at runtime.
 //
 // The FCM V1 *service account* key (what Expo's push service uses to send) is
 // a separate upload under EAS credentials → Android → FCM V1; it never touches
@@ -143,6 +145,19 @@ const PRODUCTION_SUPABASE_URL_ERROR = [
   "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
 ].join(" ");
 
+// Same origin @repo/validation exports as PRODUCTION_APP_ORIGIN. This file
+// is CommonJS evaluated by Expo before that package's dist is a given, so
+// the string is duplicated here and the validation spec pins the constant.
+const PRODUCTION_APP_ORIGIN = "https://app.frapp.live";
+
+const PRODUCTION_APP_URL_ERROR = [
+  `EAS production builds require EXPO_PUBLIC_APP_URL unset or ${PRODUCTION_APP_ORIGIN}`,
+  "(trailing slash ignored) when the variable is set.",
+  "A store binary that inlines https://app.staging.frapp.live shares first-officer",
+  "invite links into staging. Unset still falls back to the production origin at runtime.",
+  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+].join(" ");
+
 function assertProductionApiUrl({ easBuildProfile, apiUrl } = {}) {
   if (easBuildProfile !== "production") return;
   if (normalizePublicOrigin(apiUrl) === PRODUCTION_API_ORIGIN) return;
@@ -178,6 +193,25 @@ function assertProductionSupabasePublic({
   }
 }
 
+function productionAppOrigin(url) {
+  try {
+    const parsed = new URL(String(url || "").trim());
+    parsed.username = "";
+    parsed.password = "";
+    return parsed.origin;
+  } catch {
+    return "";
+  }
+}
+
+function assertProductionAppUrl({ easBuildProfile, appUrl } = {}) {
+  if (easBuildProfile !== "production") return;
+  const trimmed = String(appUrl || "").trim();
+  if (!trimmed) return;
+  if (productionAppOrigin(trimmed) === PRODUCTION_APP_ORIGIN) return;
+  throw new Error(PRODUCTION_APP_URL_ERROR);
+}
+
 function applyMobileConfig(
   config,
   { env = process.env, existsSync = fs.existsSync } = {},
@@ -197,6 +231,10 @@ function applyMobileConfig(
     supabaseUrl: env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   });
+  assertProductionAppUrl({
+    easBuildProfile: env.EAS_BUILD_PROFILE,
+    appUrl: env.EXPO_PUBLIC_APP_URL,
+  });
   return {
     ...config,
     android: {
@@ -215,6 +253,7 @@ applyExpoConfig.assertProductionAndroidGoogleServices =
   assertProductionAndroidGoogleServices;
 applyExpoConfig.assertProductionApiUrl = assertProductionApiUrl;
 applyExpoConfig.assertProductionSupabasePublic = assertProductionSupabasePublic;
+applyExpoConfig.assertProductionAppUrl = assertProductionAppUrl;
 applyExpoConfig.applyMobileConfig = applyMobileConfig;
 applyExpoConfig.PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR =
   PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR;
@@ -222,7 +261,9 @@ applyExpoConfig.PRODUCTION_API_URL_ERROR = PRODUCTION_API_URL_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_PUBLIC_ERROR =
   PRODUCTION_SUPABASE_PUBLIC_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_URL_ERROR = PRODUCTION_SUPABASE_URL_ERROR;
+applyExpoConfig.PRODUCTION_APP_URL_ERROR = PRODUCTION_APP_URL_ERROR;
 applyExpoConfig.PRODUCTION_API_ORIGIN = PRODUCTION_API_ORIGIN;
 applyExpoConfig.PRODUCTION_SUPABASE_ORIGIN = PRODUCTION_SUPABASE_ORIGIN;
+applyExpoConfig.PRODUCTION_APP_ORIGIN = PRODUCTION_APP_ORIGIN;
 
 module.exports = applyExpoConfig;

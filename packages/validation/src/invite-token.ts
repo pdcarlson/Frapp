@@ -34,6 +34,65 @@ export function assertHttpsJoinOrigin(url: URL): URL {
 }
 
 /**
+ * Dashboard origin first users redeem invites against. Shared so API
+ * `APP_URL`, landing `NEXT_PUBLIC_APP_URL`, and mobile `EXPO_PUBLIC_APP_URL`
+ * cannot drift from the fallback they already used.
+ */
+export const PRODUCTION_APP_ORIGIN = "https://app.frapp.live";
+
+/**
+ * Same value as `.github/environments.json`
+ * `environments.production.supabaseProjectRef`. Duplicated here because the
+ * API Docker image does not copy `.github/` (`apps/api/Dockerfile`), and boot
+ * still has to know which Supabase host is production. The invite-token spec
+ * pins the two together.
+ */
+export const PRODUCTION_SUPABASE_PROJECT_REF = "unttyvyfezddlyafcydh";
+
+/**
+ * True only for the production project's HTTPS origin. A substring match on
+ * the raw URL would let a query or a suffix-host spoof the fence.
+ */
+export function isProductionSupabaseUrl(supabaseUrl: string): boolean {
+  try {
+    const url = new URL(supabaseUrl.trim());
+    if (url.protocol !== "https:") return false;
+    return url.hostname === `${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Production invite/join/CTAs must land on `app.frapp.live`. `https:` alone
+ * still allows `https://app.staging.frapp.live`. Call only after the caller
+ * knows this process is production (production Supabase, `VERCEL_ENV`, or
+ * `EAS_BUILD_PROFILE=production`). Error interpolates `protocol` + `host`,
+ * never userinfo or a query.
+ *
+ * Unset `APP_URL` is not this function's job — callers skip it when the
+ * value is empty so the production-origin fallback still applies.
+ */
+export function assertProductionAppOrigin(raw: string, label: string): URL {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    throw new Error(
+      `${label} must be ${PRODUCTION_APP_ORIGIN} in production (got unparseable).`,
+    );
+  }
+  url.username = "";
+  url.password = "";
+  if (url.origin !== PRODUCTION_APP_ORIGIN) {
+    throw new Error(
+      `${label} must be ${PRODUCTION_APP_ORIGIN} in production (got ${url.protocol}//${url.host}).`,
+    );
+  }
+  return url;
+}
+
+/**
  * Officers mint `${origin}/join?token=…`. Resolve the origin first, drop
  * userinfo / search / hash, then attach the token with `encodeURIComponent`
  * so a space stays `%20`. `URLSearchParams.set` would encode space as `+`,

@@ -1,5 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildAuthUrls, buildJoinUrl } from "./auth-urls";
+
+const originalVercelEnv = process.env.VERCEL_ENV;
+
+beforeEach(() => {
+  delete process.env.VERCEL_ENV;
+});
+
+afterAll(() => {
+  if (originalVercelEnv === undefined) {
+    delete process.env.VERCEL_ENV;
+  } else {
+    process.env.VERCEL_ENV = originalVercelEnv;
+  }
+});
 
 describe("buildAuthUrls", () => {
   it("targets the real web auth routes for an explicit base URL", () => {
@@ -60,6 +74,24 @@ describe("buildAuthUrls", () => {
     expect(buildAuthUrls("https://user@app.frapp.live").signupUrl).toBe(
       "https://app.frapp.live/sign-up",
     );
+  });
+
+  it("refuses production Vercel CTAs pointed at staging", () => {
+    expect(() =>
+      buildAuthUrls("https://app.staging.frapp.live", {
+        vercelEnv: "production",
+      }),
+    ).toThrow(/NEXT_PUBLIC_APP_URL[\s\S]*app\.staging\.frapp\.live/);
+  });
+
+  it("allows production Vercel CTAs when the base is unset or the production origin", () => {
+    expect(
+      buildAuthUrls(undefined, { vercelEnv: "production" }).signupUrl,
+    ).toBe("https://app.frapp.live/sign-up");
+    expect(
+      buildAuthUrls("https://app.frapp.live/", { vercelEnv: "production" })
+        .loginUrl,
+    ).toBe("https://app.frapp.live/sign-in");
   });
 });
 
@@ -126,5 +158,46 @@ describe("buildJoinUrl", () => {
     expect(() =>
       buildJoinUrl("http://app.localhost", { token: "secret-invite" }),
     ).toThrow(/must use https:/);
+  });
+
+  it("refuses a production Vercel deploy pointed at staging before copying the token", () => {
+    expect(() =>
+      buildJoinUrl(
+        "https://app.staging.frapp.live",
+        { token: "secret-invite" },
+        { vercelEnv: "production" },
+      ),
+    ).toThrow(/NEXT_PUBLIC_APP_URL[\s\S]*app\.staging\.frapp\.live/);
+    try {
+      buildJoinUrl(
+        "https://app.staging.frapp.live",
+        { token: "secret-invite" },
+        { vercelEnv: "production" },
+      );
+      throw new Error("expected refuse");
+    } catch (error) {
+      expect(String(error)).not.toContain("secret-invite");
+    }
+  });
+
+  it("still allows a preview deploy to forward to staging", () => {
+    expect(
+      buildJoinUrl(
+        "https://app.staging.frapp.live",
+        { token: "staging-token" },
+        { vercelEnv: "preview" },
+      ),
+    ).toBe("https://app.staging.frapp.live/join?token=staging-token");
+  });
+
+  it("allows a production Vercel deploy when the base is the production origin or unset", () => {
+    expect(
+      buildJoinUrl(undefined, { token: "prod-token" }, { vercelEnv: "production" }),
+    ).toBe("https://app.frapp.live/join?token=prod-token");
+    expect(
+      buildJoinUrl("https://app.frapp.live/", { token: "prod-token" }, {
+        vercelEnv: "production",
+      }),
+    ).toBe("https://app.frapp.live/join?token=prod-token");
   });
 });

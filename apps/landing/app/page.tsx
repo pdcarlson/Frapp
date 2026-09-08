@@ -106,7 +106,9 @@ const faqs = [
 ];
 
 export default function Home() {
-  const { signupUrl, loginUrl } = buildAuthUrls(process.env.NEXT_PUBLIC_APP_URL);
+  const { signupUrl, loginUrl } = buildAuthUrls(process.env.NEXT_PUBLIC_APP_URL, {
+    vercelEnv: process.env.VERCEL_ENV,
+  });
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",

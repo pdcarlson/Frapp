@@ -61,6 +61,8 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 | `API_URL`                   | `http://localhost:3001`                                                                                                                                                                                                | `https://api-staging.frapp.live`                                                                                                                                                                                               | `https://api.frapp.live`                                                                                                                                     |
 | `APP_URL`                   | `http://localhost:3000`                                                                                                                                                                                                | `https://app.staging.frapp.live`                                                                                                                                                                                               | `https://app.frapp.live`                                                                                                                                     |
 
+> **Production `APP_URL` is fenced at API boot.** When `SUPABASE_URL` is the `frapp-prod` origin from `.github/environments.json`, a set `APP_URL` must be `https://app.frapp.live` (path and trailing slash ignored; origin compared). Unset still falls back to that origin for invite emails. `https:` alone would still allow `https://app.staging.frapp.live`, which would send the first cohort's invite tokens to staging. Landing `NEXT_PUBLIC_APP_URL` uses the same origin rule when `VERCEL_ENV=production`; a set `EXPO_PUBLIC_APP_URL` on an EAS production build does too.
+
 > ⚠️ **`API_URL` is the bare origin — no `/v1`, no trailing slash.** The generated
 > OpenAPI contract carries the version in the path (`/v1/users/me`, and so on;
 > only `/health` sits outside it) and declares no `servers` entry, so the SDK
@@ -367,8 +369,9 @@ is unavailable in that state and the sign-in screen says so.
 > `EXPO_PUBLIC_SUPABASE_ANON_KEY` are empty, or when `EXPO_PUBLIC_SUPABASE_URL`
 > is not the `frapp-prod` origin from `.github/environments.json`
 > (`apps/mobile/app.config.js`). Presence alone used to accept the staging
-> project URL. CI and `expo start` still evaluate; those vars stay optional at
-> boot for the reasons in the table.
+> project URL. A set `EXPO_PUBLIC_APP_URL` must be `https://app.frapp.live`;
+> unset still falls back at runtime. CI and `expo start` still evaluate; those
+> vars stay optional at boot for the reasons in the table.
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of
