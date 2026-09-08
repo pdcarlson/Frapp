@@ -318,13 +318,17 @@ describe("InviteMemberDialog copy payload", () => {
 
   it("copies a /join?token= URL with role and expiry, not a bare code", async () => {
     await openDialog();
-    await userEvent.click(screen.getAllByRole("button", { name: /copy link/i })[0]);
+    const copyButton = screen.getAllByRole("button", { name: /copy link/i })[0];
+    if (!copyButton) {
+      throw new Error("expected a Copy link button on an active invite");
+    }
+    await userEvent.click(copyButton);
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
-    const payload = vi.mocked(navigator.clipboard.writeText).mock.calls[0][0];
-    expect(payload).toContain(`/join?token=${INVITE.token}`);
-    expect(payload).toContain(`Role: ${INVITE.role}`);
-    expect(payload).toContain("Expires:");
+    const payload = vi.mocked(navigator.clipboard.writeText).mock.calls[0]?.[0];
+    expect(payload).toEqual(expect.stringContaining(`/join?token=${INVITE.token}`));
+    expect(payload).toEqual(expect.stringContaining(`Role: ${INVITE.role}`));
+    expect(payload).toEqual(expect.stringContaining("Expires:"));
     expect(payload).not.toMatch(/Invite code:/);
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Invite link copied" }),
