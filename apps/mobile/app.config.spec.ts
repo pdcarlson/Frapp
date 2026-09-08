@@ -63,13 +63,24 @@ const productionPublicEnv = {
   EXPO_PUBLIC_SUPABASE_ANON_KEY: "test-anon-key",
 };
 
+const restoredEnvKeys = [
+  "EAS_BUILD_PROFILE",
+  "EAS_BUILD_PLATFORM",
+  "GOOGLE_SERVICES_JSON",
+  "EXPO_PUBLIC_API_URL",
+  "EXPO_PUBLIC_SUPABASE_URL",
+  "EXPO_PUBLIC_SUPABASE_ANON_KEY",
+] as const;
+const initialEnv = Object.fromEntries(
+  restoredEnvKeys.map((name) => [name, process.env[name]]),
+);
+
 afterEach(() => {
-  delete process.env.EAS_BUILD_PROFILE;
-  delete process.env.EAS_BUILD_PLATFORM;
-  delete process.env.GOOGLE_SERVICES_JSON;
-  delete process.env.EXPO_PUBLIC_API_URL;
-  delete process.env.EXPO_PUBLIC_SUPABASE_URL;
-  delete process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  for (const name of restoredEnvKeys) {
+    const value = initialEnv[name];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 });
 
 describe("assertProductionAndroidGoogleServices", () => {
