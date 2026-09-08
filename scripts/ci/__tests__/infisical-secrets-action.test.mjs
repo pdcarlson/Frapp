@@ -9,10 +9,10 @@ import { dirname, join } from "node:path";
 import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 
 // Pins the second and third cutover of stage 4's composite-action work (#1382):
-// the Infisical preamble+injection (15 call sites across 6 workflows) and the
+// the Infisical preamble+injection (16 call sites across 7 workflows) and the
 // Supabase CLI version pin (4 sites).
 //
-// Why this file has teeth beyond "the copies stayed gone": most of the eleven original (fifteen since #1435)
+// Why this file has teeth beyond "the copies stayed gone": most of the eleven original (sixteen since production Auth conformance)
 // Infisical call sites never run on a pull request.
 //
 //   * ONE runs on every same-repo PR -- `migration-drift` in
@@ -23,7 +23,7 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 //     are step-gated on `steps.touched.outputs.run == 'true'`, so they run only
 //     on a PR that touches `supabase/migrations/`.
 //   * TWO are `workflow_run`, firing after merge (deploy-api.yml).
-//   * The remaining SIX are scheduled or dispatch-only, two of them on the
+//   * The rest are scheduled or dispatch-only, two of them on the
 //     production deploy path, which no PR ever exercises.
 //
 // So CI can prove the mechanism but not the TRANSCRIPTION, and this file has to:
@@ -36,7 +36,7 @@ import { INFISICAL_ENV_SLUGS } from "../../check-env-slugs.mjs";
 // in `.github/workflows` and `.github/actions`. Inside the action the value is
 // `${{ inputs.env-slug }}`, which that scan cannot match -- by design, because
 // the real literals survive as the `with:` values at the call sites. Rename the
-// action's input and all fifteen literals leave the gate's reach at once: it
+// action's input and all sixteen literals leave the gate's reach at once: it
 // then scans zero bytes and passes. That is the vacuous green its own section 0
 // exists to refuse, and nothing else in the repo would notice.
 
@@ -102,14 +102,14 @@ describe("infisical-secrets composite action", () => {
       /^ {2}env-slug:$/m,
       "the input must be named `env-slug`: check-env-slugs.mjs matches the literal " +
         "`env-slug: \"<slug>\"` at the call sites, and renaming this input moves all " +
-        "fifteen slugs out of that gate's reach while it keeps exiting 0.",
+        "sixteen slugs out of that gate's reach while it keeps exiting 0.",
     );
   });
 
   it("passes every input the hand-written call sites used to pass", () => {
     // The extraction is only lossless if the constants the call sites carried
     // are still carried. `include-imports: true` in particular was written at
-    // all fifteen sites and is NOT the action's default.
+    // all sixteen sites and is NOT the action's default.
     for (const [key, value] of [
       ["method", '"universal"'],
       ["project-slug", '"frapp-live-ej-ls"'],
@@ -154,7 +154,7 @@ describe("infisical-secrets composite action", () => {
   });
 
   it("defaults `on-missing-credentials` to `error`", () => {
-    // Fourteen of the fifteen call sites pass nothing and rely entirely on this
+    // Fourteen of the sixteen call sites pass nothing and rely entirely on this
     // default. Nothing asserted it, so flipping it to `warn` made every site —
     // deploy-production's `prod` injection included — continue past absent
     // credentials into `supabase db push`, with the suite green. The shell
@@ -163,8 +163,8 @@ describe("infisical-secrets composite action", () => {
     assert.match(
       infisicalAction,
       /on-missing-credentials:[\s\S]*?\n\s+default:\s*["']?error["']?\s*$/m,
-      "the default must be `error`; only staging-conformance opts into `warn`, " +
-        "explicitly, at its call site",
+      "the default must be `error`; only the conformance watchdogs opt into `warn`, " +
+        "explicitly, at their call sites",
     );
   });
 
@@ -308,6 +308,7 @@ describe("Infisical call sites", () => {
       ["migration-drift-gate.yml", "migration-replay", "prod"],
       ["migration-drift-gate.yml", "migration-order", "prod"],
       ["staging-conformance.yml", "conformance", "staging"],
+      ["production-auth-conformance.yml", "auth-conformance", "prod"],
     ];
 
     const actual = [];
@@ -332,7 +333,7 @@ describe("Infisical call sites", () => {
       "the Infisical call-site roster changed. Each entry is file / job / slug; " +
         "update this list deliberately if a site legitimately moved.",
     );
-    assert.equal(actual.length, 15);
+    assert.equal(actual.length, 16);
   });
 
   it("leaves no hand-written injection or preflight anywhere", () => {
@@ -387,11 +388,15 @@ describe("Infisical call sites", () => {
     }
   });
 
-  it("only staging-conformance downgrades a missing credential to a warning", () => {
+  it("only the conformance watchdogs downgrade a missing credential to a warning", () => {
     // Every other site fails closed on a missing credential, and must keep
-    // doing so. staging-conformance is the deliberate exception: it exists to
-    // REPORT credential drift, so it needs the run to continue -- see its own
-    // comment and the input's.
+    // doing so. The two conformance watchdogs are the deliberate exception:
+    // they exist to REPORT credential drift, so they need the run to continue
+    // -- see their own comments and the input's.
+    const warnOnMissing = new Set([
+      "staging-conformance.yml",
+      "production-auth-conformance.yml",
+    ]);
     for (const { name, text } of workflows) {
       // Non-comment lines ONLY. staging-conformance.yml's own comment explains
       // why it passes `on-missing-credentials: warn`, and reading raw text let
@@ -406,14 +411,14 @@ describe("Infisical call sites", () => {
       const uses = codeLines(text).some((l) =>
         /on-missing-credentials:\s*["']?warn["']?\s*(#.*)?$/.test(l),
       );
-      if (name === "staging-conformance.yml") {
-        assert.ok(uses, "staging-conformance.yml must keep on-missing-credentials: warn");
+      if (warnOnMissing.has(name)) {
+        assert.ok(uses, `${name} must keep on-missing-credentials: warn`);
         // codeLines again, for the same reason as above: this file's own comment
         // explains the continue-on-error, and reading raw text let that prose
         // satisfy the assertion after the real key was deleted.
         assert.ok(
           codeLines(text).some((l) => /continue-on-error:\s*true/.test(l)),
-          "…and its continue-on-error, which covers the injection half",
+          `${name} must keep continue-on-error, which covers the injection half`,
         );
       } else {
         assert.ok(

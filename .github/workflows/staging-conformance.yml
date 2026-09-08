@@ -10,20 +10,20 @@ name: Staging conformance
 # Semantics live in scripts/ci/staging-conformance.mjs.
 # Unit tests: scripts/ci/__tests__/staging-conformance.test.mjs (`npm run test:ci-scripts`).
 #
-# Scope is frapp-staging ONLY — not because frapp-prod is inactive (it is
-# `ACTIVE_HEALTHY` and has served production traffic since deploy-production.yml
-# shipped, #1340) but because this workflow has not yet been extended to it.
-# Extending it needs its assertions and its alert-issue title/marker parameterized
-# per target so a production failure doesn't collide with or mask a staging one —
-# real design work, tracked as remaining scope in #1384. Doc pointer:
-# docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+# Scope is frapp-staging ONLY. Production Auth hook + redirect allow list (and
+# ACTIVE_HEALTHY) are a sibling: production-auth-conformance.yml, own alert
+# title, 07:45 UTC. Production SMTP / Infisical / smoke are still not asserted
+# here — a production SMTP row would stay red until #1824. Remaining parity
+# on #1384. Doc pointer: docs/internal/ci-cd/AGENT_INFRA.md § Scheduled
+# conformance.
 
 on:
   schedule:
     # 07:30 UTC daily — after any overnight provider maintenance window, early
-    # enough that a drifted staging is known before the working day, and the last
-    # of the daily staggered Management-API watchdogs: 15 minutes past its closest
-    # neighbor production-guardrails.yml (07:15), an hour past
+    # enough that a drifted staging is known before the working day. One of the
+    # daily staggered Management-API watchdogs: 15 minutes past
+    # production-guardrails.yml (07:15), 15 minutes before
+    # production-auth-conformance.yml (07:45), an hour past
     # check-migration-drift.yml (07:00), and an hour past db-backup.yml's pg_dump
     # (06:30) — so this workflow's Management API reads never overlap another
     # daily watchdog's own reads or the backup. `production-uptime.yml` probes live
