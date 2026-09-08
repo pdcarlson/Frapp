@@ -820,25 +820,51 @@ export function canResolveAlert({ results, failingIds }) {
 
 const ICON = { [PASS]: "✅", [FAIL]: "❌", [SKIPPED]: "⏭️", [DELEGATED]: "↗️" };
 
-export function buildRunSummary({ outcome, results, runUrl }) {
+// Voice for the step summary and the alert issue/comments. Production Auth
+// conformance calls these builders with PRODUCTION_AUTH_COPY rather than
+// string-replacing staging prose after the fact — a missed replaceAll left
+// "frapp-staging" in a production incident body.
+export const STAGING_COPY = Object.freeze({
+  summaryHeading: "## Staging conformance",
+  drifted: (failedCount, ownedCount) =>
+    `**frapp-staging has drifted** — ${failedCount} of ${ownedCount} assertions failed.`,
+  healthy: (passedCount, ownedCount) =>
+    `**frapp-staging is conformant** — ${passedCount} of ${ownedCount} assertions passed.`,
+  inconclusive: (ownedCount) =>
+    `**Inconclusive — nothing was asserted.** All ${ownedCount} assertions skipped, so this run ` +
+    "proves nothing about staging. Any open alert is left open deliberately.",
+  unprovenRecovery: (passedCount, resultsCount) =>
+    `**Nothing failed, but the open alert is not cleared.** ${passedCount} of ${resultsCount} ` +
+    "assertions passed; the ones this alert was raised for could not be asserted, so closing it " +
+    "would report a recovery nobody proved.",
+  issueHeading: "## Staging conformance is failing",
+  issueWorkflow:
+    "This issue is **opened and closed automatically** by `.github/workflows/staging-conformance.yml`",
+  issueDriftLine:
+    "(`scripts/ci/staging-conformance.mjs`). While it is open, `frapp-staging` has drifted from the",
+  whySee: "after #643 shipped (#805). See #838.",
+  commentReopened: "**Staging conformance is failing again** — reopening.",
+  commentFailedAgain: "**Staging conformance failed again.**",
+  commentFooter:
+    "_Posted automatically by `scripts/ci/staging-conformance.mjs`. Closes itself on the next clean run._",
+  recoveryHeadline: "**Staging conformance recovered.** Closing.",
+  recoveryFooter:
+    "_Closed automatically by `scripts/ci/staging-conformance.mjs` after a clean run._",
+});
+
+export function buildRunSummary({ outcome, results, runUrl, copy = STAGING_COPY }) {
   const { failed, skipped, passed, delegated } = classifyConformance(results);
   // Denominator counts assertions this workflow owns; delegated rows are listed
   // but never inflate or deflate the score.
   const owned = results.length - delegated.length;
   const headline = {
-    failed: `**frapp-staging has drifted** — ${failed.length} of ${owned} assertions failed.`,
-    healthy: `**frapp-staging is conformant** — ${passed.length} of ${owned} assertions passed.`,
-    inconclusive:
-      `**Inconclusive — nothing was asserted.** All ${owned} assertions skipped, so this run ` +
-      "proves nothing about staging. Any open alert is left open deliberately.",
-    "unproven-recovery":
-      `**Nothing failed, but the open alert is not cleared.** ${passed.length} of ${results.length} ` +
-      "assertions passed; the ones this alert was raised for could not be asserted, so closing it " +
-      "would report a recovery nobody proved.",
-  }[outcome] ??
-    `**frapp-staging is conformant** — ${passed.length} of ${owned} assertions passed.`;
+    failed: copy.drifted(failed.length, owned),
+    healthy: copy.healthy(passed.length, owned),
+    inconclusive: copy.inconclusive(owned),
+    "unproven-recovery": copy.unprovenRecovery(passed.length, results.length),
+  }[outcome] ?? copy.healthy(passed.length, owned);
   const lines = [
-    "## Staging conformance",
+    copy.summaryHeading,
     "",
     headline,
     "",
@@ -874,7 +900,7 @@ export function buildRunSummary({ outcome, results, runUrl }) {
  * drop `auth-hook` from the gate, and the run after that would close it while
  * the hook was still disabled. An id leaves the marker only by PASSing.
  */
-export function buildAlertIssueBody({ results, runUrl, previousBody = null }) {
+export function buildAlertIssueBody({ results, runUrl, previousBody = null, copy = STAGING_COPY }) {
   const { failed } = classifyConformance(results);
   const passingNow = new Set(
     results.filter((r) => r.status === PASS).map((r) => r.id),
@@ -884,10 +910,10 @@ export function buildAlertIssueBody({ results, runUrl, previousBody = null }) {
   );
   const markerIds = [...new Set([...failed.map((r) => r.id), ...carriedOver])];
   const lines = [
-    "## Staging conformance is failing",
+    copy.issueHeading,
     "",
-    "This issue is **opened and closed automatically** by `.github/workflows/staging-conformance.yml`",
-    "(`scripts/ci/staging-conformance.mjs`). While it is open, `frapp-staging` has drifted from the",
+    copy.issueWorkflow,
+    copy.issueDriftLine,
     "state the repository expects. It closes itself on the next clean scheduled run.",
     "",
     "Do not claim this issue as backlog work — it carries `routine-state` and tracks live state, not a",
@@ -915,7 +941,7 @@ export function buildAlertIssueBody({ results, runUrl, previousBody = null }) {
     "Every other check in this repo is push-triggered, so environment drift was invisible until",
     "someone happened to push: staging sat 38 migrations behind with all checks green, the Infisical",
     "credential was dead for 71 days (#696/#763), and `custom_access_token_hook` was never enabled",
-    "after #643 shipped (#805). See #838.",
+    copy.whySee,
     "",
     "### Recovery state",
     "",
@@ -934,27 +960,27 @@ export function buildAlertIssueBody({ results, runUrl, previousBody = null }) {
   return lines.join("\n");
 }
 
-export function buildAlertCommentBody({ results, runUrl, reopened }) {
+export function buildAlertCommentBody({ results, runUrl, reopened, copy = STAGING_COPY }) {
   const { failed } = classifyConformance(results);
   const lines = [
-    reopened ? "**Staging conformance is failing again** — reopening." : "**Staging conformance failed again.**",
+    reopened ? copy.commentReopened : copy.commentFailedAgain,
     "",
     ...failed.map((r) => `- **${r.label}** — ${r.detail}`),
   ];
   if (runUrl) lines.push("", `- Run: ${runUrl}`);
-  lines.push("", "_Posted automatically by `scripts/ci/staging-conformance.mjs`. Closes itself on the next clean run._");
+  lines.push("", copy.commentFooter);
   return lines.join("\n");
 }
 
-export function buildRecoveryCommentBody({ results, runUrl }) {
+export function buildRecoveryCommentBody({ results, runUrl, copy = STAGING_COPY }) {
   const { passed, skipped } = classifyConformance(results);
   const lines = [
-    "**Staging conformance recovered.** Closing.",
+    copy.recoveryHeadline,
     "",
     `${passed.length} assertion(s) passed${skipped.length > 0 ? `, ${skipped.length} skipped` : ""}.`,
   ];
   if (runUrl) lines.push("", `- Run: ${runUrl}`);
-  lines.push("", "_Closed automatically by `scripts/ci/staging-conformance.mjs` after a clean run._");
+  lines.push("", copy.recoveryFooter);
   return lines.join("\n");
 }
 
