@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
 import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { getErrorMessage } from "@/lib/utils";
+import { buildJoinUrl } from "@/lib/invite-link";
 
 type RoleRow = {
   id: string;
@@ -81,14 +82,13 @@ function normalizeInvites(input: unknown): InviteRow[] {
   });
 }
 
-function buildInviteShareMessage(invite: InviteRow): string {
+function buildInviteShareMessage(invite: InviteRow, origin: string): string {
   const expirationText = formatDate(invite.expires_at);
   return [
     "Frapp member invite",
     `Role: ${invite.role}`,
-    `Invite code: ${invite.token}`,
+    buildJoinUrl(origin, invite.token),
     `Expires: ${expirationText}`,
-    "Open the join page and enter this code to redeem.",
   ].join("\n");
 }
 
@@ -269,7 +269,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         title: created.length > 1 ? "Invites generated" : "Invite generated",
         description:
           created.length > 1
-            ? `${created.length} invite tokens are ready to share.`
+            ? `${created.length} invite links are ready to share.`
             : "Copy the invite link and send it to a new member.",
       });
     } catch (error) {
@@ -283,15 +283,17 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
 
   async function handleCopyInvite(invite: InviteRow) {
     try {
-      await navigator.clipboard.writeText(buildInviteShareMessage(invite));
+      await navigator.clipboard.writeText(
+        buildInviteShareMessage(invite, window.location.origin),
+      );
       toast({
-        title: "Invite code copied",
-        description: "Share the code through a secure channel.",
+        title: "Invite link copied",
+        description: "Share the join link through a secure channel.",
       });
     } catch {
       toast({
         title: "Clipboard unavailable",
-        description: "Copy the invite code manually from the list.",
+        description: "Copy the invite link manually from the list.",
         variant: "destructive",
       });
     }
@@ -324,7 +326,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
             Invite members
           </DialogTitle>
           <DialogDescription>
-            Generate secure invite tokens and assign a default role before members join.
+            Generate a join link and assign a default role before members join.
           </DialogDescription>
         </DialogHeader>
 
@@ -399,7 +401,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                   </div>
                   <Button size="sm" variant="secondary" onClick={() => handleCopyInvite(invite)}>
                     <Copy className="h-3.5 w-3.5" />
-                    Copy code
+                    Copy link
                   </Button>
                 </div>
               ))}
@@ -437,7 +439,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="secondary" onClick={() => handleCopyInvite(invite)}>
                     <Copy className="h-3.5 w-3.5" />
-                    Copy code
+                    Copy link
                   </Button>
                   <Button
                     size="sm"

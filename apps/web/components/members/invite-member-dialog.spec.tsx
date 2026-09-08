@@ -3,10 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockOrgConfig, mockRoles } = vi.hoisted(() => ({
+const { mockCurrentChapter, mockOrgConfig, mockRoles, mockToast } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockOrgConfig: vi.fn(),
   mockRoles: vi.fn(),
+  mockToast: vi.fn(),
 }));
 
 const INVITE = {
@@ -37,7 +38,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: "chap-1" }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
 
 const { InviteMemberDialog } = await import("./invite-member-dialog");
 
@@ -301,5 +302,36 @@ describe("InviteMemberDialog default role", () => {
     await openDialog();
 
     expect(rolePicker().value).toBe("Member");
+  });
+});
+
+describe("InviteMemberDialog copy payload", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    chapter.active();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+  });
+
+  it("copies a /join?token= URL with role and expiry, not a bare code", async () => {
+    await openDialog();
+    const copyButton = screen.getAllByRole("button", { name: /copy link/i })[0];
+    if (!copyButton) {
+      throw new Error("expected a Copy link button on an active invite");
+    }
+    await userEvent.click(copyButton);
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
+    const payload = vi.mocked(navigator.clipboard.writeText).mock.calls[0]?.[0];
+    expect(payload).toEqual(expect.stringContaining(`/join?token=${INVITE.token}`));
+    expect(payload).toEqual(expect.stringContaining(`Role: ${INVITE.role}`));
+    expect(payload).toEqual(expect.stringContaining("Expires:"));
+    expect(payload).not.toMatch(/Invite code:/);
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Invite link copied" }),
+    );
   });
 });
