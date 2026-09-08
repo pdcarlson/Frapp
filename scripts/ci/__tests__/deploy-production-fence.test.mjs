@@ -300,8 +300,11 @@ describe("SHA validation runs before the production environment (run 34234768094
     const body = uncommented(jobBody("validate"));
     assert.match(body, /name: Confirm and validate the SHA/);
     assert.doesNotMatch(body, /^\s+environment:/m);
+    assert.match(body, /- name: Verify confirmation phrase/);
     assert.match(body, /- name: Validate the commit/);
     assert.match(body, /- name: Trim the SHA/);
+    assert.match(body, /outputs:\s*\n\s+sha:\s*\$\{\{\s*steps\.sha\.outputs\.sha\s*\}\}/);
+    assert.doesNotMatch(uncommented(jobBody("deploy")), /- name: Verify confirmation phrase/);
   });
 
   it("deploy needs validate and is the only production-environment job", () => {
@@ -320,7 +323,7 @@ describe("SHA validation runs before the production environment (run 34234768094
 
   it("the shipping job records needs.validate.outputs.sha, not inputs.sha", () => {
     const script = extractStepScript("Record the validated SHA");
-    assert.match(script, /echo "sha=\$SHA"/);
+    assert.match(script, /echo "sha=\$SHA" >> "\$GITHUB_OUTPUT"/);
     assert.match(uncommented(jobBody("deploy")), /SHA:\s*\$\{\{\s*needs\.validate\.outputs\.sha\s*\}\}/);
     assert.doesNotMatch(script, /inputs\.sha/);
   });

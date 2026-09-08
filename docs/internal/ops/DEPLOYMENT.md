@@ -839,7 +839,7 @@ of the three secrets or `API_URL` / `APP_URL` is unset in that environment — s
 4. **Staging pipeline**: DB migration (dry-run → apply) → API deploy (Render) → frontends auto-deploy to Preview (Vercel).
 
 > ⚠️ **2026-09-02:** step 4's "frontends auto-deploy to Preview (Vercel)" no longer happens — both
-> Vercel projects are unlinked from Git (ADR-21). The provider preflight in step 3 of the production
+> Vercel projects are unlinked from Git (ADR-21). The provider preflight in the production
 > list below briefly failed on every run for the same reason, blocking production deploys; #1579
 > inverted that assertion the same day, so it passes against the unlinked state. See the dated note
 > at the top of §4.
@@ -847,10 +847,10 @@ of the three secrets or `API_URL` / `APP_URL` is unset in that environment — s
 **Production** is gated behind a person, and runs only when asked. Dispatch **Deploy
 production** with a commit SHA:
 
-1. **Typed confirmation** (`DEPLOY TO PRODUCTION`) — checked before any secret is read.
-2. **Commit validation** — the SHA must be an ancestor of `main` *and* have green CI, asserted against the required-check list branch protection uses, intersected with the jobs that commit's own workflows define (`scripts/ci/validate-deploy-sha.mjs`).
-3. **Provider preflight** — Render auto-deploy is off; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the *absence* of a Git link, so a **present** link is the violation.
-4. **Environment approval** — the job pauses on the `production` environment's Required reviewers. This is the only human gate, and it fires here, on a run that names the commit.
+1. **Typed confirmation** (`DEPLOY TO PRODUCTION`) — checked in an unscoped `validate` job before any secret is read and before GitHub asks anyone to Approve.
+2. **Commit validation** — trim, then the SHA must be an ancestor of `main` *and* have green CI, asserted against the required-check list branch protection uses, intersected with the jobs that commit's own workflows define (`scripts/ci/validate-deploy-sha.mjs`). Still unscoped. A bad paste fails here with no reviewer request (run 34234768094 sat on Approve, then died at Validate).
+3. **Environment approval** — the shipping job (`deploy`) pauses on the `production` environment's Required reviewers. This is the only human gate, and it fires after `validate` succeeds, on a run that names the commit. Do not put `environment: production` on `validate`.
+4. **Provider preflight** — Render auto-deploy is off; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the *absence* of a Git link, so a **present** link is the violation.
 5. **Migration rehearsal** → fence → `npm ci` + Vercel CLI → **Vercel production builds** (both
    projects, `vercel pull --environment=production` + `vercel build --prod`, each `.vercel` stashed
    under `$RUNNER_TEMP`) → dry-run → apply.
@@ -858,7 +858,7 @@ production** with a commit SHA:
    restored and shipped with `vercel deploy --prebuilt --prod`) → **tag**.
 
 > ℹ️ **`scope: full` reaches a working Vercel step again as of #1578 (2026-09-04).** The two issues
-> ADR-21 left behind are both closed: #1579 removed the step-3 preflight block, and #1578 replaced
+> ADR-21 left behind are both closed: #1579 removed the provider-preflight block, and #1578 replaced
 > the `gitSource` POST — which only meant anything while the Git integration existed — with
 > `vercel build --prod` on the runner followed by `vercel deploy --prebuilt --prod`.
 >
@@ -868,8 +868,11 @@ production** with a commit SHA:
 > a Production env var the Infisical sync never delivered, a registry blip — and it used to run last,
 > which is how run 33275321347 left a migrated database and a new API under six-month-old frontends
 > with no tag. Now a build failure costs nothing; only the upload, a far smaller surface, can still
-> fail after the apply. That residual is a property of the one-job design (ADR-20: one job, one
-> approval), and it is why the release job is separate and why `report` errors loudly when the
+> fail after the apply. That residual is a property of the shipping path's one-job design
+> (ADR-20: migrate / Render / Vercel / verify stay one `environment: production` job so one
+> approval; SHA confirmation, trim, and validation are a prior unscoped job). Splitting the
+> shipping job would still turn one approval into four. **Amended 2026-09-08.** `release` is
+> separate because `workflow_call` cannot be a step, and `report` errors loudly when the
 > deploy succeeded and the tag did not.
 >
 > **2026-09-07 observation (run [34155737950](https://github.com/pdcarlson/Frapp/actions/runs/34155737950)).**
@@ -878,9 +881,11 @@ production** with a commit SHA:
 > `GET /pulls/1340` (an issue number in a squash subject). The Actions list row stayed named
 > **Deploy production** and concluded **failure**. That is not "API before DB" and not a
 > rolled-back ship: open the run, read `report` (`DEPLOY_RESULT: success`, *Production IS
-> updated*). Re-run the **Release** workflow with the live SHA. Job ids stay `deploy` /
+> updated*). Re-run the **Release** workflow with the live SHA. Job ids on that run were `deploy` /
 > `release` / `report` (`needs:` keys those); the UI labels now say migrate-then-ship,
-> mint-tag, and summarize. `run-name` is `{scope} {sha}`. `dry_run_only` still does not cover
+> mint-tag, and summarize. **Amended 2026-09-08:** an unscoped `validate` job now runs first
+> (confirm / trim / `validate-deploy-sha.mjs`); `release` and `report` still consume
+> `needs.deploy.outputs.*`. `run-name` is `{scope} {sha}`. `dry_run_only` still does not cover
 > the Vercel path (those steps carry `if: !inputs.dry_run_only`).
 >
 > The similarly named **Deploy API** workflow is staging only (`deploy-api.yml`,

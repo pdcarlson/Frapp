@@ -303,9 +303,9 @@ jobs:
       #     one `migration-replay` rehearsed with. That is the drift the action
       #     exists to remove, reintroduced at the one site that matters most.
       #
-      # Running them here also matches this job's existing trust argument: the
-      # validator above deliberately runs from already-trusted code, and so now
-      # do these. Both steps are tree-independent — one exports environment
+      # Running them here also matches this workflow's trust argument: the
+      # validator in `validate` deliberately runs from already-trusted code, and
+      # so now do these. Both steps are tree-independent — one exports environment
       # variables, the other puts a binary on PATH — so neither cares that the
       # workspace moves underneath it afterwards.
       #
