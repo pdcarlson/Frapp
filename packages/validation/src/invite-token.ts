@@ -16,6 +16,47 @@
 
 const TOKEN_QUERY_KEYS = ["token", "invite", "code"] as const;
 
+/**
+ * Invite tokens travel in the query string of a join URL. A public `http:`
+ * origin would put them on the wire in the clear. Loopback `http:` is local
+ * Infisical `APP_URL` (`http://localhost:3000`) and never leaves the machine.
+ *
+ * Call this before attaching `token`. Returns the same URL so callers can
+ * chain. Does not mutate.
+ */
+export function assertHttpsJoinOrigin(url: URL): URL {
+  if (url.protocol === "https:") return url;
+  if (url.protocol === "http:" && isLoopbackHostname(url.hostname)) return url;
+  throw new Error(
+    `Join URL origin must use https: (got ${url.protocol}//${url.host}). ` +
+      `An http: origin would put the invite token on the wire in the clear.`,
+  );
+}
+
+/**
+ * Officers mint `${origin}/join?token=…`. Resolve the origin first, drop
+ * userinfo / search / hash, then attach the token with `encodeURIComponent`
+ * so a space stays `%20`. `URLSearchParams.set` would encode space as `+`,
+ * which `extractInviteToken` still accepts but the minting tests pin `%20`.
+ *
+ * Throws before the token is attached when the origin is public `http:`.
+ */
+export function mintJoinUrl(origin: string, token: string): string {
+  const url = new URL("/join", origin);
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  assertHttpsJoinOrigin(url);
+  return `${url.origin}/join?token=${encodeURIComponent(token)}`;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  // Node's URL.hostname for IPv6 includes the brackets (`[::1]`).
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
 export function extractInviteToken(raw: string | null | undefined): string | null {
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();

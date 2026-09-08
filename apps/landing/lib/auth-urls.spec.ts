@@ -102,7 +102,7 @@ describe("buildJoinUrl", () => {
     ).toThrow(/must use https:/);
     expect(() =>
       buildJoinUrl("http://app.example.com", { token: "secret-invite" }),
-    ).toThrow(/http:\/\/app\.example\.com/);
+    ).toThrow(/NEXT_PUBLIC_APP_URL[\s\S]*http:\/\/app\.example\.com/);
     // The throw happens before the query is copied, so the token is not in
     // the error either — a 500 page must not echo it.
     try {

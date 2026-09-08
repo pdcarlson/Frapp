@@ -1,4 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
+import { mintJoinUrl } from '@repo/validation';
 
 /**
  * Mirrors `apps/mobile/lib/onboarding/chapter-wizard/invite-link.ts`: the web
@@ -18,5 +19,5 @@ export function resolveAppOrigin(config: ConfigService): string {
 }
 
 export function buildJoinUrl(token: string, origin: string): string {
-  return `${origin}/join?token=${encodeURIComponent(token)}`;
+  return mintJoinUrl(origin, token);
 }

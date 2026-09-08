@@ -37,7 +37,7 @@ import {
   resolveAppOrigin,
   buildJoinUrl,
 } from '../../infrastructure/email/invite-link.util';
-import { dedupeEmails } from '@repo/validation';
+import { assertHttpsJoinOrigin, dedupeEmails } from '@repo/validation';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 export interface BulkEmailInviteResult {
@@ -231,6 +231,11 @@ export class InviteService {
     const inviteData = uniqueEmails.map(() =>
       this.prepareInviteData(chapterId, createdBy, role),
     );
+    const origin = resolveAppOrigin(this.config);
+    // Refuse a public http: APP_URL before inserting tokens. mintJoinUrl
+    // would otherwise throw inside the send loop, after createMany, and
+    // bypass the per-address `.catch` on sendInviteEmail.
+    assertHttpsJoinOrigin(new URL(origin));
     const invites = await this.inviteRepo.createMany(inviteData);
 
     // Correlate by token rather than by array position: each token was
@@ -243,7 +248,6 @@ export class InviteService {
       inviteData.map((data, i) => [data.token as string, uniqueEmails[i]]),
     );
 
-    const origin = resolveAppOrigin(this.config);
     const deliveries = await mapWithConcurrency(
       invites,
       EMAIL_SEND_CONCURRENCY,

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   extractInviteToken,
   extractInviteTokenFromQuery,
+  assertHttpsJoinOrigin,
+  mintJoinUrl,
 } from "./invite-token";
 
 describe("extractInviteToken", () => {
@@ -108,5 +110,82 @@ describe("extractInviteTokenFromQuery", () => {
   it("returns null when no alias is present", () => {
     expect(fromSearch("role=President")).toBeNull();
     expect(fromSearch("")).toBeNull();
+  });
+});
+
+describe("assertHttpsJoinOrigin", () => {
+  it("allows https: and loopback http:", () => {
+    expect(
+      assertHttpsJoinOrigin(new URL("https://app.frapp.live/join")).href,
+    ).toBe("https://app.frapp.live/join");
+    expect(
+      assertHttpsJoinOrigin(new URL("http://localhost:3000/join")).href,
+    ).toBe("http://localhost:3000/join");
+    expect(
+      assertHttpsJoinOrigin(new URL("http://127.0.0.1:3000/join")).href,
+    ).toBe("http://127.0.0.1:3000/join");
+    expect(
+      assertHttpsJoinOrigin(new URL("http://[::1]:3000/join")).href,
+    ).toBe("http://[::1]:3000/join");
+  });
+
+  it("refuses a public http: origin and does not echo a token", () => {
+    expect(() =>
+      assertHttpsJoinOrigin(new URL("http://app.frapp.live/join?token=secret-invite")),
+    ).toThrow(/must use https:/);
+    try {
+      assertHttpsJoinOrigin(
+        new URL("http://app.example.com/join?token=secret-invite"),
+      );
+      throw new Error("expected refuse");
+    } catch (error) {
+      expect(String(error)).toMatch(/http:\/\/app\.example\.com/);
+      expect(String(error)).not.toContain("secret-invite");
+    }
+    expect(() =>
+      assertHttpsJoinOrigin(new URL("http://app.localhost/join")),
+    ).toThrow(/must use https:/);
+  });
+});
+
+describe("mintJoinUrl", () => {
+  it("builds a /join?token= URL and percent-encodes the token", () => {
+    expect(mintJoinUrl("https://app.frapp.live", "ABC123")).toBe(
+      "https://app.frapp.live/join?token=ABC123",
+    );
+    expect(mintJoinUrl("https://app.frapp.live", "a b/c")).toBe(
+      "https://app.frapp.live/join?token=a%20b%2Fc",
+    );
+  });
+
+  it("round-trips through extractInviteToken", () => {
+    expect(extractInviteToken(mintJoinUrl("https://app.frapp.live", "a b/c"))).toBe(
+      "a b/c",
+    );
+  });
+
+  it("strips userinfo, a base path, and an existing query before attaching token", () => {
+    expect(
+      mintJoinUrl("https://u:p@app.frapp.live/dashboard?x=1#hash", "t"),
+    ).toBe("https://app.frapp.live/join?token=t");
+  });
+
+  it("refuses a public http: origin before attaching the token", () => {
+    expect(() => mintJoinUrl("http://app.frapp.live", "secret-invite")).toThrow(
+      /must use https:/,
+    );
+    try {
+      mintJoinUrl("http://app.example.com", "secret-invite");
+      throw new Error("expected refuse");
+    } catch (error) {
+      expect(String(error)).toMatch(/http:\/\/app\.example\.com/);
+      expect(String(error)).not.toContain("secret-invite");
+    }
+  });
+
+  it("allows loopback http: so local Infisical APP_URL still mints", () => {
+    expect(mintJoinUrl("http://localhost:3000", "local-token")).toBe(
+      "http://localhost:3000/join?token=local-token",
+    );
   });
 });

@@ -1,3 +1,5 @@
+import { mintJoinUrl } from "@repo/validation";
+
 /**
  * Invite URLs the first-officer wizard shares.
  *
@@ -23,7 +25,7 @@ export function webJoinUrl(
   token: string,
   origin: string = webAppOrigin(),
 ): string {
-  return `${origin}/join?token=${encodeURIComponent(token)}`;
+  return mintJoinUrl(origin, token);
 }
 
 export function inviteTokenOf(result: unknown): string | null {

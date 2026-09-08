@@ -22,4 +22,22 @@ describe("buildJoinUrl", () => {
       "a b/c",
     );
   });
+
+  it("refuses a public http: origin before attaching the token", () => {
+    expect(() =>
+      buildJoinUrl("http://app.frapp.live", "secret-invite"),
+    ).toThrow(/must use https:/);
+    try {
+      buildJoinUrl("http://app.example.com", "secret-invite");
+      throw new Error("expected refuse");
+    } catch (error) {
+      expect(String(error)).not.toContain("secret-invite");
+    }
+  });
+
+  it("allows loopback http: so local Infisical APP_URL still copies", () => {
+    expect(buildJoinUrl("http://localhost:3000", "local-token")).toBe(
+      "http://localhost:3000/join?token=local-token",
+    );
+  });
 });
