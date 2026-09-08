@@ -12,11 +12,19 @@ const DEFAULT_APP_BASE_URL = "https://app.frapp.live";
 
 const SIGN_UP_PATH = "/sign-up";
 const SIGN_IN_PATH = "/sign-in";
+const JOIN_PATH = "/join";
 
 export interface AuthUrls {
   signupUrl: string;
   loginUrl: string;
 }
+
+type JoinSearch =
+  | string
+  | URLSearchParams
+  | Record<string, string | string[] | undefined>
+  | null
+  | undefined;
 
 /**
  * @param rawAppBaseUrl typically `process.env.NEXT_PUBLIC_APP_URL`. Defaults to
@@ -36,6 +44,21 @@ export function buildAuthUrls(rawAppBaseUrl?: string | null): AuthUrls {
     signupUrl: authUrl(SIGN_UP_PATH, appBaseUrl),
     loginUrl: authUrl(SIGN_IN_PATH, appBaseUrl),
   };
+}
+
+/**
+ * Marketing `/join` is not a landing page. Officers mint
+ * `app.frapp.live/join?token=…`; people still type or paste the apex host.
+ * Forward to the web app origin with the query intact so a still-valid
+ * token does not 404 on `frapp.live`.
+ */
+export function buildJoinUrl(
+  rawAppBaseUrl?: string | null,
+  search?: JoinSearch,
+): string {
+  const url = new URL(authUrl(JOIN_PATH, rawAppBaseUrl ?? DEFAULT_APP_BASE_URL));
+  applyJoinSearch(url, search);
+  return url.toString();
 }
 
 /**
@@ -61,4 +84,24 @@ function authUrl(path: string, base: string): string {
   url.username = "";
   url.password = "";
   return url.toString();
+}
+
+function applyJoinSearch(url: URL, search: JoinSearch): void {
+  if (search == null || search === "") return;
+  if (typeof search === "string") {
+    url.search = search.startsWith("?") ? search.slice(1) : search;
+    return;
+  }
+  if (search instanceof URLSearchParams) {
+    url.search = search.toString();
+    return;
+  }
+  for (const [key, value] of Object.entries(search)) {
+    if (value === undefined) continue;
+    const values = Array.isArray(value) ? value : [value];
+    for (const item of values) {
+      if (item === "") continue;
+      url.searchParams.append(key, item);
+    }
+  }
 }
