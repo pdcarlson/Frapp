@@ -168,6 +168,42 @@ test("auth redirects check skips without credentials and fails on a non-200", as
   assert.equal(failed.status, FAIL);
 });
 
+test("expectedSiteUrl fails when site_url is a different origin even with matching wildcards", async () => {
+  const result = await checkAuthRedirects({
+    accessToken: "t",
+    projectRef: "ref",
+    expectedSiteUrl: "https://app.frapp.live",
+    fetchImpl: async () =>
+      authConfig(
+        "https://app.staging.frapp.live,https://app.staging.frapp.live/**,frapp://**",
+        "https://app.staging.frapp.live",
+      ),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /app\.staging\.frapp\.live/);
+  assert.match(result.detail, /app\.frapp\.live/);
+});
+
+test("expectedSiteUrl still requires the wildcards when the Site URL matches", async () => {
+  const missing = await checkAuthRedirects({
+    accessToken: "t",
+    projectRef: "ref",
+    expectedSiteUrl: "https://app.frapp.live",
+    fetchImpl: async () => authConfig("https://app.frapp.live", "https://app.frapp.live"),
+  });
+  assert.equal(missing.status, FAIL);
+  assert.match(missing.detail, /https:\/\/app\.frapp\.live\/\*\*/);
+
+  const okResult = await checkAuthRedirects({
+    accessToken: "t",
+    projectRef: "ref",
+    expectedSiteUrl: "https://app.frapp.live/",
+    fetchImpl: async () =>
+      authConfig("frapp://**,https://app.frapp.live/**", "https://app.frapp.live/"),
+  });
+  assert.equal(okResult.status, PASS);
+});
+
 // ── Auth SMTP — hosted 2/hour cap vs proven Resend 300/hour ─────────────────
 
 const smtpConfig = (overrides = {}) =>

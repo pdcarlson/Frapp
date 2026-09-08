@@ -65,9 +65,10 @@ name: Nightly Backup
 on:
   schedule:
     # 06:30 UTC — 02:30 ET, off-peak for a US-college user base, clear of the deploy
-    # pipeline, and 30 minutes ahead of the three 07:00/07:15/07:30 watchdogs
-    # (check-migration-drift, production-guardrails, staging-conformance, in that
-    # order) so a pg_dump never overlaps a Management API read of the same project.
+    # pipeline, and 30 minutes ahead of the 07:00/07:15/07:30/07:45 watchdogs
+    # (check-migration-drift, production-guardrails, staging-conformance,
+    # production-auth-conformance, in that order) so a pg_dump never overlaps a
+    # Management API read of the same project.
     # Full schedule documented in docs/internal/ci-cd/AGENT_INFRA.md § Scheduled
     # conformance.
     - cron: "30 6 * * *"

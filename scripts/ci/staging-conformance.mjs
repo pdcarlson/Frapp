@@ -264,8 +264,18 @@ export async function checkAuthHook({ accessToken, projectRef, fetchImpl = fetch
  * revert, or be forgotten on a new project, while every workflow stays green.
  *
  * Read-only: the same GET `checkAuthHook` makes.
+ *
+ * `expectedSiteUrl` (optional): when set, `site_url` must equal that origin
+ * (trailing slash ignored). Without this, a production project whose Site URL
+ * is the staging origin can still PASS if its allow list holds matching
+ * staging wildcards.
  */
-export async function checkAuthRedirects({ accessToken, projectRef, fetchImpl = fetch }) {
+export async function checkAuthRedirects({
+  accessToken,
+  projectRef,
+  fetchImpl = fetch,
+  expectedSiteUrl,
+} = {}) {
   const label = "Redirect allow list covers the web app's paths and the mobile scheme";
   if (!accessToken || !projectRef) {
     return result("auth-redirects", label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set");
@@ -281,6 +291,20 @@ export async function checkAuthRedirects({ accessToken, projectRef, fetchImpl = 
   const siteUrl = typeof data?.site_url === "string" ? data.site_url.replace(/\/+$/, "") : "";
   if (!siteUrl) {
     return result("auth-redirects", label, FAIL, "site_url is not set");
+  }
+  // Optional pin: a production project whose Site URL is the staging origin
+  // can still hold matching wildcards for that staging origin, so matching
+  // the allow list against whatever `site_url` happens to be is not enough.
+  if (typeof expectedSiteUrl === "string" && expectedSiteUrl.trim()) {
+    const expected = expectedSiteUrl.replace(/\/+$/, "");
+    if (siteUrl !== expected) {
+      return result(
+        "auth-redirects",
+        label,
+        FAIL,
+        `site_url is "${siteUrl}", expected "${expected}" — GoTrue would send members to the wrong host.`,
+      );
+    }
   }
   const allowed = String(data?.uri_allow_list ?? "")
     .split(",")
