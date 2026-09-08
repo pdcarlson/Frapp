@@ -450,6 +450,7 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 |---|---|---|
 | Idle | `Join your chapter` | `Enter the invite your officer sent. Invites expire after 24 hours and work once.` |
 | Invite-link hint | — | `Got an invite link? Open it and this page fills itself in.` |
+| Create a chapter (secondary) | — | `Starting a chapter?` + `Create a chapter` (returns to `/chat`, which remounts the first-officer wizard). |
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
 | Session check failed, error | `Couldn't check your session` | `We couldn't reach the API to confirm you're signed in. Retry in a moment.` |
@@ -477,6 +478,7 @@ The two status rows are the reason this table exists. Both are routine, both wer
 | Directory search, no results | — | `We couldn't find "<query>" in our directory.` with `Enter chapter details manually` |
 | Directory search, error | `Couldn't reach the directory` | `Retry the search, or enter your chapter's details by hand.` |
 | Progress | — | `Step N of 4`, stated in words beside the bars and never only by them |
+| Have an invite | — | `I have an invite` (find-step secondary; opens `/join`) |
 
 ### App error boundary (`global-error`)
 

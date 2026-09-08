@@ -350,9 +350,11 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
   return (
     // Radix Dialog gives us focus trap, initial-focus, focus restore on close,
-    // and an inert (aria-hidden) background for free. The flow is intentionally
-    // non-dismissable — a user with no chapter must finish setup — so Escape and
-    // outside interaction are suppressed and no close button is rendered.
+    // and an inert (aria-hidden) background for free. Escape and outside
+    // interaction stay suppressed so a first officer cannot abandon mid-create
+    // by accident. Invited members leave on the find step via "I have an
+    // invite" → `/join` (the overlay lives in DashboardShell and does not
+    // mount on that route).
     <DialogPrimitive.Root open>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Content
@@ -440,7 +442,11 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
             </main>
 
             <footer className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-4">
-              {step !== "find" && step !== "invite" ? (
+              {step === "find" ? (
+                <Button variant="ghost" onClick={() => router.push("/join")}>
+                  I have an invite
+                </Button>
+              ) : step !== "invite" ? (
                 <Button variant="ghost" onClick={goBack}>
                   <ArrowLeft className="h-4 w-4" />
                   Back
