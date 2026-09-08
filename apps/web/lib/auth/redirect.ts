@@ -16,6 +16,26 @@ function isAuthRoutePath(pathname: string): boolean {
 export const AUTH_CALLBACK_PATH = "/auth/callback";
 
 /**
+ * `verifyOtp` email types GoTrue will accept on `/auth/callback?token_hash=…`.
+ * Anything else is rejected before the client call so a crafted `type` cannot
+ * be forwarded.
+ */
+export const EMAIL_OTP_TYPES = [
+  "signup",
+  "invite",
+  "magiclink",
+  "recovery",
+  "email_change",
+  "email",
+] as const;
+
+export type EmailOtpType = (typeof EMAIL_OTP_TYPES)[number];
+
+export function isEmailOtpType(value: string): value is EmailOtpType {
+  return (EMAIL_OTP_TYPES as readonly string[]).includes(value);
+}
+
+/**
  * A host that no real URL resolves against; the guard's only use for it is
  * detecting when a candidate path escaped it.
  */
@@ -133,6 +153,8 @@ export function describeAuthError(code: string): string {
       return "Email links are switched off for this project. Sign in with your password.";
     case "exchange_failed":
       return "The link has to be opened in the browser you requested it from. Request a new one here, or sign in with your password.";
+    case "verify_failed":
+      return "The link could not be used. Request a new one below, or sign in with your password.";
     case "missing_code":
       return "The link was incomplete. Request a new one below.";
     default:

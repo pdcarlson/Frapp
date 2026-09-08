@@ -75,10 +75,27 @@ const NOT_CONFIGURED_MESSAGE =
  * the query string, so both halves are checked. `Linking.parse` only reads the
  * query string and would silently miss every magic-link callback.
  */
+const EMAIL_OTP_TYPES = [
+  "signup",
+  "invite",
+  "magiclink",
+  "recovery",
+  "email_change",
+  "email",
+] as const;
+
+type EmailOtpType = (typeof EMAIL_OTP_TYPES)[number];
+
+function isEmailOtpType(value: string): value is EmailOtpType {
+  return (EMAIL_OTP_TYPES as readonly string[]).includes(value);
+}
+
 function readAuthParams(url: string): {
   accessToken: string | null;
   refreshToken: string | null;
   code: string | null;
+  tokenHash: string | null;
+  otpType: string | null;
   errorDescription: string | null;
 } {
   const hashIndex = url.indexOf("#");
@@ -99,6 +116,8 @@ function readAuthParams(url: string): {
     accessToken: read("access_token"),
     refreshToken: read("refresh_token"),
     code: read("code"),
+    tokenHash: read("token_hash"),
+    otpType: read("type"),
     // URLSearchParams already decodes '+' to a space and %2B to a literal '+',
     // so no extra unescaping here — doing it again would turn an encoded plus
     // sign in the provider's message into a space.
@@ -118,17 +137,33 @@ async function createSessionFromUrl(
   supabase: SupabaseClient,
   url: string,
 ): Promise<string | null> {
-  const { accessToken, refreshToken, code, errorDescription } =
-    readAuthParams(url);
+  const {
+    accessToken,
+    refreshToken,
+    code,
+    tokenHash,
+    otpType,
+    errorDescription,
+  } = readAuthParams(url);
 
   if (errorDescription) return errorDescription;
-  if (!accessToken && !refreshToken && !code) return null;
+  if (!accessToken && !refreshToken && !code && !tokenHash) return null;
 
   try {
     if (accessToken && refreshToken) {
       const { error } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
+      });
+      return error ? error.message : null;
+    }
+    if (tokenHash) {
+      if (!otpType || !isEmailOtpType(otpType)) {
+        return "That sign-in link could not be used. Request a new one.";
+      }
+      const { error } = await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: otpType,
       });
       return error ? error.message : null;
     }
@@ -398,9 +433,16 @@ export function AuthSessionProvider({
       if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
       // A fresh request supersedes whatever the last dead link reported.
       setCallbackError(null);
+      // The hosted Magic Link template appends `&token_hash=…&type=magiclink`
+      // onto `{{ .RedirectTo }}`. Web's callback already has `?next=`; this
+      // URL must also carry `?` or the `&` produces `frapp:///&token_hash=`.
+      const redirectTo = Linking.createURL("/");
+      const emailRedirectTo = redirectTo.includes("?")
+        ? redirectTo
+        : `${redirectTo}?`;
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: Linking.createURL("/") },
+        options: { emailRedirectTo },
       });
       if (error) throw error;
     },

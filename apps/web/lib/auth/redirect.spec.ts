@@ -115,7 +115,14 @@ describe("buildAuthCallbackUrl", () => {
 
 describe("describeAuthError", () => {
   it("has member-facing wording for every code the callback emits", () => {
-    for (const code of ["otp_expired", "access_denied", "otp_disabled", "exchange_failed", "missing_code"]) {
+    for (const code of [
+      "otp_expired",
+      "access_denied",
+      "otp_disabled",
+      "exchange_failed",
+      "verify_failed",
+      "missing_code",
+    ]) {
       expect(describeAuthError(code)).not.toMatch(/^Request a new link below, or sign in/);
     }
     expect(describeAuthError("something_else")).toMatch(/Request a new link/);

@@ -198,16 +198,17 @@ Authentication → URL Configuration / SMTP Settings.
 | Site URL | `https://app.frapp.live` | `https://app.staging.frapp.live` |
 | Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** |
 | Email confirmations | required (`mailer_autoconfirm: false`) | required |
-| Custom SMTP | **none** (hosted 2/hour; #1824) | **on** — Resend `smtp.resend.com`, From `invites@frapp.live` (read 2026-09-08) |
-| Auth email rate limit | **2 per hour** | **≥300 per hour** (asserted daily; #1824) |
+| Custom SMTP | **none** (still hosted 2/hour; #1824) | **on** — Resend `smtp.resend.com:465`, From `Signet <invites@frapp.live>` (read 2026-09-08) |
+| Auth email rate limit | **2 per hour** | **300 per hour** (read 2026-09-08; asserted daily as `auth-smtp`) |
 | Password minimum length | 6 | 6 |
 | Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
 
 **`frapp://**` was added to both allow lists on 2026-09-06.** The mobile app's magic-link
-`emailRedirectTo` is `Linking.createURL("/")`, which is `frapp:///` in a build that owns the
-scheme (`spec/ui/mobile/navigation.md` § Magic-link auth callback); without the entry, GoTrue
-rejects the redirect and drops the member on the web Site URL instead. Expo Go's
-`exp://<host>:8081/--/` form is still per-machine and still #765.
+`emailRedirectTo` is `Linking.createURL("/")` with a trailing `?` (`frapp:///?` in a build that
+owns the scheme; see `spec/ui/mobile/navigation.md` § Magic-link auth callback) so the hosted
+template can append `&token_hash=`. Without the allow-list entry, GoTrue rejects the redirect
+and drops the member on the web Site URL instead. Expo Go's `exp://<host>:8081/--/` form is
+still per-machine and still #765.
 
 **`https://app.frapp.live/**` and `https://app.staging.frapp.live/**` were added on 2026-09-06
 (late), for the web app.** GoTrue matches an allow-list entry as a glob, and a bare origin is a
@@ -224,11 +225,26 @@ a bare entry) went to the Site URL while `…/app.staging.frapp.live/join?token=
 silently revert or be forgotten on a new project.
 
 **Custom SMTP is proven on staging, not on production.** Staging Auth SMTP is Resend
-(`smtp.resend.com`, sender `invites@frapp.live`) and the send cap is at least 300/hour;
-`staging-conformance.mjs` asserts those three fields daily (`auth-smtp`) so a revert to the hosted
-2/hour mailer cannot sit green. Production Auth is still the hosted cap — dashboard-only, #1824;
-do not put the SMTP password in Slack or git. `RESEND_API_KEY` on Render is a separate invite-mail
-path and is still absent on both API services.
+(`smtp.resend.com:465`, sender `Signet <invites@frapp.live>`), `rate_limit_email_sent` is 300/hour,
+and `_dmarc.frapp.live` is `v=DMARC1; p=none;`. `staging-conformance.mjs` asserts the host, From
+address, and send cap daily (`auth-smtp`) so a revert to the hosted 2/hour mailer cannot sit green.
+Production Auth is still the hosted 2/hour cap.
+The remaining all-users inbox-placement work is the Magic Link *href*: leave
+`{{ .ConfirmationURL }}` and the click is `*.supabase.co/auth/v1/verify`, which Gmail treats as
+the default Supabase phishing shape even when SPF/DKIM pass. After `/auth/callback` accepts
+`token_hash` (this repo), the staging/prod Magic Link template should be:
+
+Subject: `Sign in to Signet`
+
+Body: `<h2>Sign in to Signet</h2><p>Use this one-time link to sign in. It expires soon.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Signet</a></p><p>If you did not ask to sign in, you can ignore this email.</p>`
+
+Paste this only on the **Magic Link** template. Confirm signup / invite / recovery keep their
+own `type` (`signup`, `invite`, `recovery`) — copying this body onto those breaks them.
+Do **not** paste that on a host whose web deploy does not yet include the `token_hash` handler.
+Leave Resend open/click tracking off (single-use links). Production SMTP is the same Resend
+key and From, then 300/hour — dashboard-only; do not put the key in Slack or git.
+`RESEND_API_KEY` on Render is a separate invite-mail path and is still absent on both API
+services.
 
 ---
 
