@@ -26,7 +26,7 @@ import { ChapterAuditLogService } from './chapter-audit-log.service';
 /** The chapter's next-highest-ranked role that has at least one live holder,
  * once the (now-vacant) President role is excluded — the pool a presidency
  * claim may be made from. `null` when no other role has any members at all
- * (spec/behavior/rbac.md: "If no suitable member exists, Frapp support
+ * (spec/behavior/rbac.md: "If no suitable member exists, Signet support
  * intervenes"). */
 interface EligibleClaimants {
   role: Role;
