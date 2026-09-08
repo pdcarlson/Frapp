@@ -198,7 +198,7 @@ Authentication → URL Configuration / SMTP Settings.
 | Site URL | `https://app.frapp.live` | `https://app.staging.frapp.live` |
 | Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** |
 | Email confirmations | required (`mailer_autoconfirm: false`) | required |
-| Custom SMTP | **none** (still hosted 2/hour; #1824) | **on** — Resend `smtp.resend.com:465`, From still `Signet <invites@frapp.live>` (read 2026-09-08; moving to `signin@mail.staging.frapp.live`) |
+| Custom SMTP | **none** (still hosted 2/hour; #1824) | **on** — Resend `smtp.resend.com:465`, From `Signet <no-reply@mail.staging.frapp.live>` (read 2026-09-08) |
 | Auth email rate limit | **2 per hour** | **300 per hour** (read 2026-09-08; asserted daily as `auth-smtp`) |
 | Password minimum length | 6 | 6 |
 | Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
@@ -225,28 +225,24 @@ a bare entry) went to the Site URL while `…/app.staging.frapp.live/join?token=
 silently revert or be forgotten on a new project.
 
 **Custom SMTP is proven on staging, not on production.** Staging Auth SMTP is Resend
-(`smtp.resend.com:465`, sender still `Signet <invites@frapp.live>` as of 2026-09-08),
+(`smtp.resend.com:465`, sender `Signet <no-reply@mail.staging.frapp.live>` as of 2026-09-08),
 `rate_limit_email_sent` is 300/hour, and `_dmarc.frapp.live` is `v=DMARC1; p=none;`.
 `staging-conformance.mjs` asserts the host, that live From, and the send cap daily (`auth-smtp`)
-so a revert to the hosted 2/hour mailer cannot sit green. Production Auth is still the
-hosted 2/hour cap.
+so a revert to the hosted 2/hour mailer or the burned apex From cannot sit green.
+Production Auth is still the hosted 2/hour cap.
 
-The Magic Link *href* on staging is already `app.staging.frapp.live/auth/callback`
-(`token_hash`, #1916). Gmail still filed those sends as Spam because it trained the apex
-From `invites@frapp.live` on the first generic hosted templates. Resend domains
-`mail.staging.frapp.live` and `mail.frapp.live` were created 2026-09-08 (tracking off)
-so staging tests cannot burn production reputation. Intended From once their DNS
-verifies — do not send From the apex:
+The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`
+(`token_hash`, #1916). Gmail trained the apex From `invites@frapp.live` on the first
+generic hosted templates, so sending now uses mail subdomains (Resend domains
+`mail.staging.frapp.live` and `mail.frapp.live`, created 2026-09-08, tracking off)
+and staging tests cannot burn production reputation. Do not send From the apex:
 
-- Staging Auth: `Signet <signin@mail.staging.frapp.live>`
-- Prod Auth: `Signet <signin@mail.frapp.live>`
+- Staging Auth: `Signet <no-reply@mail.staging.frapp.live>`
+- Prod Auth (when enabled): `Signet <no-reply@mail.frapp.live>`
 - API invite default: `Signet <invites@mail.frapp.live>` (staging API sets
   `RESEND_FROM_EMAIL` to `Signet <invites@mail.staging.frapp.live>`)
 
-Leave the existing `frapp.live` Resend domain in place until nothing uses it. After
-the staging SMTP sender flips, move `AUTH_SMTP_ADMIN_EMAIL` in
-`scripts/ci/staging-conformance.mjs` to `signin@mail.staging.frapp.live` in the same
-change — not before, or the daily check fails against the still-live apex From.
+Leave the existing `frapp.live` Resend domain in place until nothing uses it.
 
 The Magic Link template (already on staging; same body on prod when SMTP is enabled):
 
