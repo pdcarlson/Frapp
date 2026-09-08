@@ -9,6 +9,7 @@ A standalone marketing site (`apps/landing`). Deployed independently from the ap
 - Pricing (single plan: flat monthly per chapter).
 - Stats row and testimonial quotes are included in the marketing build and **must** reflect verified metrics and real customers, or be clearly labeled as illustrative until validated (see [`spec/ui/brand-identity.md`](../ui/brand-identity.md)).
 - CTA: "Get Started" (redirects to `app.frapp.live/sign-up`) and "Log In" (redirects to `app.frapp.live/sign-in`). These must match the web app's actual auth routes — there is no `/signup` or `/login` route.
+- `/join` (including `?token=` / `?invite=` / `?code=`) permanently redirects to the web app's `/join` on `NEXT_PUBLIC_APP_URL` (production default `app.frapp.live`) with the query string intact. The marketing site has no redeem UI; officers still mint `app.frapp.live/join?token=…`.
 - **Legal pages:** Terms of Service (`/terms`), Privacy Policy (`/privacy`), FERPA Notice (`/ferpa`). Linked from the site footer.
 
 ## Web App — app.frapp.live

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAuthUrls } from "./auth-urls";
+import { buildAuthUrls, buildJoinUrl } from "./auth-urls";
 
 describe("buildAuthUrls", () => {
   it("targets the real web auth routes for an explicit base URL", () => {
@@ -60,5 +60,39 @@ describe("buildAuthUrls", () => {
     expect(buildAuthUrls("https://user@app.frapp.live").signupUrl).toBe(
       "https://app.frapp.live/sign-up",
     );
+  });
+});
+
+describe("buildJoinUrl", () => {
+  it("falls back to the production app origin when no base is provided", () => {
+    expect(buildJoinUrl(undefined)).toBe("https://app.frapp.live/join");
+    expect(buildJoinUrl(null)).toBe("https://app.frapp.live/join");
+  });
+
+  it("keeps the invite query on the web app origin", () => {
+    expect(
+      buildJoinUrl("https://app.example.com", { token: "abc123" }),
+    ).toBe("https://app.example.com/join?token=abc123");
+    expect(
+      buildJoinUrl("https://app.frapp.live", "?invite=from-alias"),
+    ).toBe("https://app.frapp.live/join?invite=from-alias");
+    expect(
+      buildJoinUrl(
+        "https://app.staging.frapp.live",
+        new URLSearchParams("code=xyz"),
+      ),
+    ).toBe("https://app.staging.frapp.live/join?code=xyz");
+  });
+
+  it("strips userinfo and a base path the same way auth CTAs do", () => {
+    expect(buildJoinUrl("https://u:p@app.frapp.live/x", { token: "t" })).toBe(
+      "https://app.frapp.live/join?token=t",
+    );
+  });
+
+  it("skips empty query values so a blank token= does not poison the redirect", () => {
+    expect(
+      buildJoinUrl("https://app.frapp.live", { token: "", invite: "kept" }),
+    ).toBe("https://app.frapp.live/join?invite=kept");
   });
 });
