@@ -34,10 +34,12 @@
 //
 // Every EAS **production** build (iOS and Android) also refuses when
 // `EXPO_PUBLIC_API_URL` is not the origin in `eas.json` →
-// `build.production.env`, or when `EXPO_PUBLIC_SUPABASE_URL` /
-// `EXPO_PUBLIC_SUPABASE_ANON_KEY` are empty. Those are inlined into the
-// store binary; a missing or staging value is a first-user dead sign-in,
-// not a dashboard that can be fixed later.
+// `build.production.env`, when `EXPO_PUBLIC_SUPABASE_URL` /
+// `EXPO_PUBLIC_SUPABASE_ANON_KEY` are empty, or when the Supabase URL is
+// not the `frapp-prod` origin from `.github/environments.json`. Presence
+// alone used to accept a staging project URL. Those values are inlined
+// into the store binary; a missing or staging value is a first-user dead
+// sign-in, not a dashboard that can be fixed later.
 //
 // The FCM V1 *service account* key (what Expo's push service uses to send) is
 // a separate upload under EAS credentials → Android → FCM V1; it never touches
@@ -113,10 +115,50 @@ const PRODUCTION_SUPABASE_PUBLIC_ERROR = [
   "docs/internal/environment/ENV_REFERENCE.md § Mobile.",
 ].join(" ");
 
+// Same file `scripts/ci/lib/environments.mjs` reads. A project ref is not a
+// secret. Do not add a third copy of the ref in this file.
+const environmentsJson = require(
+  path.join(__dirname, "../../.github/environments.json"),
+);
+
+function productionSupabaseOriginFromEnvironments(
+  config = environmentsJson,
+) {
+  const ref = config?.environments?.production?.supabaseProjectRef;
+  if (typeof ref !== "string" || !/^[a-z0-9]{15,20}$/.test(ref)) {
+    throw new Error(
+      "apps/mobile/app.config.js: .github/environments.json production.supabaseProjectRef must be 15-20 lowercase alphanumeric characters.",
+    );
+  }
+  return `https://${ref}.supabase.co`;
+}
+
+const PRODUCTION_SUPABASE_ORIGIN = productionSupabaseOriginFromEnvironments();
+
+const PRODUCTION_SUPABASE_URL_ERROR = [
+  `EAS production builds require EXPO_PUBLIC_SUPABASE_URL=${PRODUCTION_SUPABASE_ORIGIN}`,
+  "(the frapp-prod origin from .github/environments.json).",
+  "A store binary pointed at staging, localhost, or another project signs",
+  "members into the wrong database. Do not override it in the EAS dashboard.",
+  "See docs/internal/environment/ENV_REFERENCE.md § Mobile.",
+].join(" ");
+
 function assertProductionApiUrl({ easBuildProfile, apiUrl } = {}) {
   if (easBuildProfile !== "production") return;
   if (normalizePublicOrigin(apiUrl) === PRODUCTION_API_ORIGIN) return;
   throw new Error(PRODUCTION_API_URL_ERROR);
+}
+
+function supabasePublicOrigin(url) {
+  try {
+    const parsed = new URL(String(url || "").trim());
+    if (parsed.protocol !== "https:") return "";
+    const pathname = parsed.pathname.replace(/\/+$/, "") || "";
+    if (pathname !== "") return "";
+    return `https://${parsed.hostname}`;
+  } catch {
+    return "";
+  }
 }
 
 function assertProductionSupabasePublic({
@@ -126,12 +168,14 @@ function assertProductionSupabasePublic({
 } = {}) {
   if (easBuildProfile !== "production") return;
   if (
-    String(supabaseUrl || "").trim() &&
-    String(supabaseAnonKey || "").trim()
+    !String(supabaseUrl || "").trim() ||
+    !String(supabaseAnonKey || "").trim()
   ) {
-    return;
+    throw new Error(PRODUCTION_SUPABASE_PUBLIC_ERROR);
   }
-  throw new Error(PRODUCTION_SUPABASE_PUBLIC_ERROR);
+  if (supabasePublicOrigin(supabaseUrl) !== PRODUCTION_SUPABASE_ORIGIN) {
+    throw new Error(PRODUCTION_SUPABASE_URL_ERROR);
+  }
 }
 
 function applyMobileConfig(
@@ -177,6 +221,8 @@ applyExpoConfig.PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR =
 applyExpoConfig.PRODUCTION_API_URL_ERROR = PRODUCTION_API_URL_ERROR;
 applyExpoConfig.PRODUCTION_SUPABASE_PUBLIC_ERROR =
   PRODUCTION_SUPABASE_PUBLIC_ERROR;
+applyExpoConfig.PRODUCTION_SUPABASE_URL_ERROR = PRODUCTION_SUPABASE_URL_ERROR;
 applyExpoConfig.PRODUCTION_API_ORIGIN = PRODUCTION_API_ORIGIN;
+applyExpoConfig.PRODUCTION_SUPABASE_ORIGIN = PRODUCTION_SUPABASE_ORIGIN;
 
 module.exports = applyExpoConfig;

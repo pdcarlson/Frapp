@@ -36,7 +36,9 @@ function loadConfig() {
     PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR: string;
     PRODUCTION_API_URL_ERROR: string;
     PRODUCTION_SUPABASE_PUBLIC_ERROR: string;
+    PRODUCTION_SUPABASE_URL_ERROR: string;
     PRODUCTION_API_ORIGIN: string;
+    PRODUCTION_SUPABASE_ORIGIN: string;
     assertProductionApiUrl: (opts?: {
       easBuildProfile?: string;
       apiUrl?: string;
@@ -57,9 +59,17 @@ const easProductionApiUrl = (
     build: { production: { env: { EXPO_PUBLIC_API_URL: string } } };
   }
 ).build.production.env.EXPO_PUBLIC_API_URL;
+const environmentsJson = requireConfig("../../.github/environments.json") as {
+  environments: {
+    staging: { supabaseProjectRef: string };
+    production: { supabaseProjectRef: string };
+  };
+};
+const easProductionSupabaseOrigin = `https://${environmentsJson.environments.production.supabaseProjectRef}.supabase.co`;
+const easStagingSupabaseOrigin = `https://${environmentsJson.environments.staging.supabaseProjectRef}.supabase.co`;
 const productionPublicEnv = {
   EXPO_PUBLIC_API_URL: easProductionApiUrl,
-  EXPO_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+  EXPO_PUBLIC_SUPABASE_URL: easProductionSupabaseOrigin,
   EXPO_PUBLIC_SUPABASE_ANON_KEY: "test-anon-key",
 };
 
@@ -287,6 +297,21 @@ describe("applyMobileConfig", () => {
     ).toThrow(PRODUCTION_SUPABASE_PUBLIC_ERROR);
   });
 
+  it("refuses iOS production when EXPO_PUBLIC_SUPABASE_URL is the staging project", () => {
+    const { applyMobileConfig, PRODUCTION_SUPABASE_URL_ERROR } = loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: {
+          ...productionPublicEnv,
+          EAS_BUILD_PROFILE: "production",
+          EAS_BUILD_PLATFORM: "ios",
+          EXPO_PUBLIC_SUPABASE_URL: easStagingSupabaseOrigin,
+        },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_URL_ERROR);
+  });
+
   it("refuses production Android with a google-services file when the API origin is wrong", () => {
     const { applyMobileConfig, PRODUCTION_API_URL_ERROR } = loadConfig();
     expect(() =>
@@ -408,15 +433,63 @@ describe("assertProductionSupabasePublic", () => {
     ).toThrow(PRODUCTION_SUPABASE_PUBLIC_ERROR);
   });
 
-  it("allows a production build when both Supabase public values are set", () => {
-    const { assertProductionSupabasePublic } = loadConfig();
+  it("allows the frapp-prod origin, ignoring a trailing slash", () => {
+    const { assertProductionSupabasePublic, PRODUCTION_SUPABASE_ORIGIN } =
+      loadConfig();
+    expect(() =>
+      assertProductionSupabasePublic({
+        easBuildProfile: "production",
+        supabaseUrl: `${PRODUCTION_SUPABASE_ORIGIN}/`,
+        supabaseAnonKey: "test-anon-key",
+      }),
+    ).not.toThrow();
+  });
+
+  it("refuses a production build pointed at staging, localhost, another project, or http", () => {
+    const { assertProductionSupabasePublic, PRODUCTION_SUPABASE_URL_ERROR } =
+      loadConfig();
+    expect(() =>
+      assertProductionSupabasePublic({
+        easBuildProfile: "production",
+        supabaseUrl: easStagingSupabaseOrigin,
+        supabaseAnonKey: "test-anon-key",
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_URL_ERROR);
+    expect(() =>
+      assertProductionSupabasePublic({
+        easBuildProfile: "production",
+        supabaseUrl: "http://127.0.0.1:54321",
+        supabaseAnonKey: "test-anon-key",
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_URL_ERROR);
     expect(() =>
       assertProductionSupabasePublic({
         easBuildProfile: "production",
         supabaseUrl: "https://example.supabase.co",
         supabaseAnonKey: "test-anon-key",
       }),
-    ).not.toThrow();
+    ).toThrow(PRODUCTION_SUPABASE_URL_ERROR);
+    expect(() =>
+      assertProductionSupabasePublic({
+        easBuildProfile: "production",
+        supabaseUrl: easProductionSupabaseOrigin.replace("https://", "http://"),
+        supabaseAnonKey: "test-anon-key",
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_URL_ERROR);
+    expect(() =>
+      assertProductionSupabasePublic({
+        easBuildProfile: "production",
+        supabaseUrl: `${easProductionSupabaseOrigin}/rest/v1`,
+        supabaseAnonKey: "test-anon-key",
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_URL_ERROR);
+  });
+});
+
+describe("PRODUCTION_SUPABASE_ORIGIN", () => {
+  it("is the frapp-prod origin from .github/environments.json", () => {
+    const { PRODUCTION_SUPABASE_ORIGIN } = loadConfig();
+    expect(PRODUCTION_SUPABASE_ORIGIN).toBe(easProductionSupabaseOrigin);
   });
 });
 
