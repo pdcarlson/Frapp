@@ -229,6 +229,8 @@ silently revert or be forgotten on a new project.
 `rate_limit_email_sent` is 300/hour, and `_dmarc.frapp.live` is `v=DMARC1; p=none;`.
 `staging-conformance.mjs` asserts the host, that live From, and the send cap daily (`auth-smtp`)
 so a revert to the hosted 2/hour mailer or the burned apex From cannot sit green.
+It also asserts the Magic Link subject and `token_hash` href daily (`auth-magic-link`) so a
+dashboard reset to `{{ .ConfirmationURL }}` cannot sit green.
 Production Auth is still the hosted 2/hour cap. The 07:45
 `production-auth-conformance.yml` watchdog skip-asserts that: empty SMTP is
 SKIPPED (the job stays green). Once SMTP is on, the same check requires
