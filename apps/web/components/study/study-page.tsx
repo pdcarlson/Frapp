@@ -84,7 +84,58 @@ const TERMINAL_STATUSES: StudySession["status"][] = [
   "LOCATION_INVALID",
 ];
 
-const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes, matches mobile
+/** 5 minutes, matches mobile. Exported so specs can fire this interval without faking timers. */
+export const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * Usable GPS accuracy in meters, or `undefined` when the browser did not
+ * report one.
+ *
+ * `GeolocationCoordinates.accuracy` is a required W3C attribute (meters,
+ * non-negative). Incomplete mocks, and the occasional `0`, still show up;
+ * sending `0` would look like a perfect fix and skip the optional-field
+ * semantics the server documents: omit → skip the 100m floor; a number →
+ * enforce it (`spec/behavior/study-sessions.md` § Edge Cases). Same predicate
+ * as mobile `accuracyMetersOf` — copied, not imported, because web must not
+ * depend on `apps/mobile`.
+ */
+export function accuracyMetersOf(
+  accuracy: number | null | undefined,
+): number | undefined {
+  if (
+    typeof accuracy !== "number" ||
+    !Number.isFinite(accuracy) ||
+    accuracy <= 0
+  ) {
+    return undefined;
+  }
+  return accuracy;
+}
+
+/**
+ * Coordinates only — for POSTs whose DTO does not declare `accuracy_meters`.
+ *
+ * Spreading a heartbeat body into start/resume 400s once the browser reports
+ * accuracy (`forbidNonWhitelisted`).
+ */
+function latLngOf(coords: {
+  latitude: number;
+  longitude: number;
+}): { lat: number; lng: number } {
+  return { lat: coords.latitude, lng: coords.longitude };
+}
+
+/** Heartbeat body: lat/lng plus `accuracy_meters` only when the reading is usable. */
+export function studyHeartbeatBody(coords: {
+  latitude: number;
+  longitude: number;
+  accuracy?: number | null;
+}): { lat: number; lng: number; accuracy_meters?: number } {
+  const accuracy_meters = accuracyMetersOf(coords.accuracy);
+  return accuracy_meters === undefined
+    ? latLngOf(coords)
+    : { ...latLngOf(coords), accuracy_meters };
+}
 
 function getCurrentPosition(): Promise<GeolocationPosition> {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -230,10 +281,9 @@ export function StudyPage() {
   const sendHeartbeat = useCallback(async () => {
     try {
       const pos = await getCurrentPosition();
-      const result = await apiRef.current.heartbeat({
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-      });
+      const result = await apiRef.current.heartbeat(
+        studyHeartbeatBody(pos.coords),
+      );
       setGeolocationError(null);
       // A heartbeat can come back terminal (stale, outside the polygon, or a
       // grace window that lapsed) — surface that instead of ticking on.
@@ -276,10 +326,9 @@ export function StudyPage() {
         const result = foreground
           ? await (async () => {
               const pos = await getCurrentPosition();
-              return apiRef.current.resume({
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-              });
+              // Resume DTO is lat/lng only — accuracy_meters is heartbeat-only
+              // (`forbidNonWhitelisted` 400s an undeclared key).
+              return apiRef.current.resume(latLngOf(pos.coords));
             })()
           : await apiRef.current.pause();
         if (activeSessionIdRef.current !== issuedFor) return;
@@ -362,8 +411,7 @@ export function StudyPage() {
       const pos = await getCurrentPosition();
       const session = await startSession.mutateAsync({
         geofence_id: zoneId,
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
+        ...latLngOf(pos.coords),
       });
       const normalized =
         session && typeof session === "object"
