@@ -1,7 +1,7 @@
 import { TasksBoard } from "@/components/tasks/tasks-board";
 
 export const metadata = {
-  title: "Tasks — Frapp",
+  title: "Tasks — Signet",
 };
 
 export default function TasksPage() {
