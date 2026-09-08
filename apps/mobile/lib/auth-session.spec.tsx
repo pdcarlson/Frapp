@@ -113,6 +113,7 @@ vi.mock("./supabase", async () => {
       }),
       setSession: vi.fn(async () => ({ data: {}, error: null })),
       exchangeCodeForSession: vi.fn(async () => ({ data: {}, error: null })),
+      verifyOtp: vi.fn(async () => ({ data: {}, error: null })),
       startAutoRefresh: vi.fn(async () => undefined),
       stopAutoRefresh: vi.fn(async () => undefined),
     },
@@ -601,7 +602,7 @@ describe("AuthSessionProvider — sign-in", () => {
     expect(mockState.signInWithOtpCalls).toEqual([
       {
         email: "officer@university.edu",
-        options: { emailRedirectTo: "frapp:///" },
+        options: { emailRedirectTo: "frapp:///?" },
       },
     ]);
     expect(result.current.status).toBe("unauthenticated");
@@ -702,6 +703,26 @@ describe("AuthSessionProvider — magic-link callback", () => {
     const { getSupabaseClient } = await import("./supabase");
     const client = vi.mocked(getSupabaseClient)();
     expect(client!.auth.setSession).not.toHaveBeenCalled();
+    expect(client!.auth.exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(client!.auth.verifyOtp).not.toHaveBeenCalled();
+    expect(result.current.callbackError).toBeNull();
+  });
+
+  it("verifies a token_hash on the app scheme without going through supabase.co", async () => {
+    mockState.deepLinkUrl =
+      "frapp:///?token_hash=pkce_hash&type=magiclink";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    await waitFor(() =>
+      expect(client!.auth.verifyOtp).toHaveBeenCalledWith({
+        token_hash: "pkce_hash",
+        type: "magiclink",
+      }),
+    );
     expect(client!.auth.exchangeCodeForSession).not.toHaveBeenCalled();
     expect(result.current.callbackError).toBeNull();
   });

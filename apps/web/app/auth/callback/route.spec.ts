@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const exchangeCodeForSession = vi.fn();
+const verifyOtp = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
-    auth: { exchangeCodeForSession },
+    auth: { exchangeCodeForSession, verifyOtp },
   })),
 }));
 
@@ -22,6 +23,7 @@ async function callback(query: string) {
 describe("GET /auth/callback", () => {
   beforeEach(() => {
     exchangeCodeForSession.mockReset();
+    verifyOtp.mockReset();
   });
 
   it("exchanges the PKCE code and sends the member on to `next`, signed in", async () => {
@@ -69,6 +71,38 @@ describe("GET /auth/callback", () => {
   it("treats a link with no code as incomplete", async () => {
     const { url } = await callback("next=%2Fchat");
     expect(exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(verifyOtp).not.toHaveBeenCalled();
     expect(url.searchParams.get("authError")).toBe("missing_code");
+  });
+
+  it("verifies a token_hash on this host and sends the member on to `next`", async () => {
+    verifyOtp.mockResolvedValue({ error: null });
+    const { status, url } = await callback(
+      "token_hash=pkce_hash&type=magiclink&next=%2Fjoin%3Ftoken%3Dinv-1",
+    );
+    expect(verifyOtp).toHaveBeenCalledWith({
+      token_hash: "pkce_hash",
+      type: "magiclink",
+    });
+    expect(exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(status).toBeGreaterThanOrEqual(300);
+    expect(url.origin).toBe(ORIGIN);
+    expect(url.pathname).toBe("/join");
+    expect(url.searchParams.get("token")).toBe("inv-1");
+  });
+
+  it("refuses a crafted token_hash type before calling Auth", async () => {
+    const { url } = await callback("token_hash=pkce_hash&type=not-a-type");
+    expect(verifyOtp).not.toHaveBeenCalled();
+    expect(url.pathname).toBe("/sign-in");
+    expect(url.searchParams.get("authError")).toBe("verify_failed");
+  });
+
+  it("sends a failed hash verify to sign-in without attempting a PKCE exchange", async () => {
+    verifyOtp.mockResolvedValue({ error: { message: "otp_expired" } });
+    const { url } = await callback("token_hash=stale&type=magiclink&next=%2Fchat");
+    expect(exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(url.pathname).toBe("/sign-in");
+    expect(url.searchParams.get("authError")).toBe("verify_failed");
   });
 });
