@@ -275,9 +275,23 @@ dispatch, [#1733](https://github.com/pdcarlson/Frapp/issues/1733)):
 - **Retry replays the original request**, under its original
   `client_message_id` — not a fresh send.
 
-Note the table's state names are the spec's own vocabulary and do not match the
-`MessageStatus` union in `@repo/chat-core` one-for-one (`pending`, `confirmed`,
-`failed`, `unconfirmed`); only the last is named identically in both.
+**Shipped on web only.** `apps/web` renders this state; `apps/mobile` has no
+branch for it and currently draws such a row as fully delivered — no note, no
+Retry — which is the worst available presentation for a write that may not have
+landed ([#1910](https://github.com/pdcarlson/Frapp/issues/1910)). Do not read
+this row as a cross-platform contract until that closes.
+
+**The state machine above does not produce `UNCONFIRMED`.** It models the
+outbox path (`SENDING → SENT`, timeout → `FAILED`), which heavy slash commands
+deliberately bypass — they call an RPC directly rather than queueing. This state
+is reached only from a heavy command whose HTTP response was lost; wiring it off
+the send-timeout edge would be wrong.
+
+The table's names are the spec's own vocabulary and map loosely onto the
+`MessageStatus` union in `@repo/chat-core` (`pending`, `confirmed`, `failed`,
+`unconfirmed`): `FAILED`/`failed` and `UNCONFIRMED`/`unconfirmed` correspond,
+`SENDING` is roughly `pending`, and `SENT`/`DELIVERED` have no separate code
+state — both are `confirmed`.
 
 **Implementation:**
 

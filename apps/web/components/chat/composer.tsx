@@ -292,11 +292,17 @@ export function notifyDispatchOutcome(
     toast({
       title: `/${commandName} not confirmed`,
       description: result.warning ?? "Couldn't confirm that command.",
-      // Sticky ONLY when nothing was left in the timeline to carry the notice.
-      // When the row survives it says the same sentence inline, and a
-      // never-dismissing duplicate would camp the single toast slot
-      // (`TOAST_LIMIT = 1`) and suppress the next command's feedback.
-      ...(result.durable ? { duration: Infinity } : {}),
+      // Sticky, like the committed-write warning below and for the same reason:
+      // an outcome nobody can reconstruct must not disappear on a 5s timer.
+      //
+      // Sticky is NOT durable, and the difference matters here. `use-toast`'s
+      // reducer is `[action.toast, ...state.toasts].slice(0, TOAST_LIMIT)` with
+      // a limit of 1, so the NEXT toast — any toast — evicts this one outright,
+      // with no dismissal and no animation. `duration: Infinity` survives time,
+      // not other toasts (#1789). So this notice cannot be the plan: the copy
+      // is written to stand alone and send the officer to the ledger, and the
+      // timeline row is the real trace where one survives (#1909).
+      duration: Infinity,
     });
     return;
   }

@@ -524,31 +524,21 @@ export function MessageItem({
   );
 
   /**
-   * Footer for an `unconfirmed` heavy-command row (#1733).
+   * Retry control for an `unconfirmed` heavy-command row (#1733).
    *
-   * Three deliberate differences from the `failed` footer above:
+   * Deliberately NOT a live region and NOT red. The note itself is announced
+   * through the row's existing `role="status"` region below — a second region
+   * mounted already populated is not reliably announced at all, and in a
+   * virtualized list (Virtuoso remounts rows on scroll) the ones that are get
+   * re-read on every pass. The comment on that region says as much.
    *
-   * 1. **Not `text-destructive-text`.** Nothing is known to have failed, and
-   *    red is precisely what prompts an officer to re-type the command — which
-   *    mints a fresh idempotency key, misses the server's dedupe index, and
-   *    writes a second append-only ledger row.
-   * 2. **No Discard.** The row may be the only trace of a committed write.
-   * 3. **Retry replays `_replay`**, not `client_message_id` alone, so the
-   *    request goes back under its original key and the server can recognise it.
+   * Two other rules: no Discard, because the row may be the only trace of a
+   * committed ledger write; and Retry replays `_replay`, not the cache key, so
+   * the request goes back under its original idempotency key.
    */
   const unconfirmedFooter =
     isUnconfirmed && message._replay ? (
-      <div
-        className="ml-1 mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground"
-        // Its own live region. The failed footers sit inside the one opened
-        // around the pending/failed line, so without this a screen reader
-        // announces "Send failed" for a text message but stays SILENT for an
-        // unconfirmed grant — the state where silence costs most, since the
-        // officer's fallback is re-typing the command.
-        role="status"
-        aria-live="polite"
-      >
-        <span>{message._error ?? "Not confirmed"}</span>
+      <div className="ml-1 mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
         {onRetryUnconfirmed ? (
           <button
             type="button"
@@ -563,15 +553,18 @@ export function MessageItem({
               const replay = message._replay;
               if (!replay || isRetrying) return;
               setIsRetrying(true);
-              // `.finally()` re-rejects, so a bare `void ....finally(...)` turns
-              // a handler rejection into an unhandled rejection: no toast, no
-              // Sentry, and a spinner that just blinks. The officer reads that
-              // as "Retry is broken" and re-types the command — a fresh key,
-              // no dedupe, a second append-only ledger row. The handler owns
-              // reporting; this only has to not swallow the rejection.
-              void Promise.resolve(onRetryUnconfirmed(replay))
-                .catch(() => {})
-                .finally(() => setIsRetrying(false));
+              // Both failure shapes have to reset the button, and they are
+              // different: `.catch` covers a rejected promise, while a handler
+              // that throws SYNCHRONOUSLY escapes before `Promise.resolve` is
+              // ever evaluated — the prop type admits a non-async handler — and
+              // would pin the control on "Retrying…" forever with no toast.
+              try {
+                void Promise.resolve(onRetryUnconfirmed(replay))
+                  .catch(() => {})
+                  .finally(() => setIsRetrying(false));
+              } catch {
+                setIsRetrying(false);
+              }
             }}
           >
             {isRetrying ? (
@@ -632,6 +625,9 @@ export function MessageItem({
                   · {message._error ?? "Send failed"}
                 </span>
               ) : null}
+              {isUnconfirmed ? (
+                <span>· {message._error ?? "Not confirmed"}</span>
+              ) : null}
             </span>
           </div>
           {isFailed ? (
@@ -657,7 +653,6 @@ export function MessageItem({
               ) : null}
             </div>
           ) : null}
-          {unconfirmedFooter}
         </div>
       </div>
     );
@@ -710,6 +705,11 @@ export function MessageItem({
             <p className="ml-1 mt-1 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
               Sending…
+            </p>
+          ) : null}
+          {isUnconfirmed ? (
+            <p className="ml-1 mt-1 text-[12.5px] text-muted-foreground">
+              {message._error ?? "Not confirmed"}
             </p>
           ) : null}
           {isFailed ? (

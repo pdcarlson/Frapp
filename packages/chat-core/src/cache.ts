@@ -126,12 +126,34 @@ function patchRow(
   };
 }
 
-/** Whether an optimistic row is still in the cache under its client key. */
-export function hasOptimisticRow(
-  cache: ChannelCache,
+/**
+ * Where a `client_message_id` currently lives in the cache.
+ *
+ * The three answers are genuinely different and a caller that collapses them
+ * gets the wrong copy (#1733 review):
+ *
+ * - `"optimistic"` — still keyed by the client id, so it can be marked and
+ *   retried from the timeline.
+ * - `"confirmed"` — `mergeServerRow` re-keyed it under the server id, which
+ *   only happens when the server's card actually arrived. That is *positive
+ *   evidence the write committed and carded*, not an absence.
+ * - `"absent"` — no trace, which proves nothing either way.
+ */
+export type RowPlacement = "optimistic" | "confirmed" | "absent";
+
+export function locateRow(
+  cache: ChannelCache | undefined,
   clientMessageId: string,
-): boolean {
-  return cache.byId[clientMessageId] !== undefined;
+): RowPlacement {
+  if (!cache) return "absent";
+  if (cache.byId[clientMessageId] !== undefined) return "optimistic";
+  // A server row keeps the `client_message_id` it was posted with, so a
+  // re-keyed row is still findable by it — the evidence a key-only lookup
+  // throws away.
+  const merged = Object.values(cache.byId).some(
+    (row) => row.client_message_id === clientMessageId,
+  );
+  return merged ? "confirmed" : "absent";
 }
 
 /** Marks an optimistic message as failed (4xx) so the UI can offer retry. */
@@ -165,26 +187,6 @@ export function markUnconfirmed(
     _status: "unconfirmed",
     _error: note,
     _replay: replay,
-  });
-}
-
-/**
- * Return a resolved retry's row to `pending`, clearing the unconfirmed note and
- * its replay handle.
- *
- * Without this a successful retry leaves the row asserting "we couldn't confirm
- * whether these points were recorded" with a live Retry control — and a second
- * press would take the replay branch and report the card as missing, which by
- * then is false.
- */
-export function markPending(
-  cache: ChannelCache,
-  clientMessageId: string,
-): ChannelCache {
-  return patchRow(cache, clientMessageId, {
-    _status: "pending",
-    _error: undefined,
-    _replay: undefined,
   });
 }
 

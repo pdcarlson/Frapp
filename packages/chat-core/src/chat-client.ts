@@ -34,10 +34,10 @@ import {
   applyActionUpdate,
   applyReactionInsert,
   emptyCache,
-  hasOptimisticRow,
+  locateRow,
   markFailed,
-  markPending,
   markUnconfirmed,
+  type RowPlacement,
   mergeServerRow,
   removeMessage,
   toggleReactionLocal,
@@ -417,58 +417,30 @@ export function removeLocalPlaceholder(
  * removing the placeholder there would erase the only trace of a write that may
  * have committed, and the officer's "retry" then becomes re-typing the command,
  * which mints a fresh key and double-grants.
+ *
+ * Returns where the row actually is, because the caller's copy depends on it —
+ * and the three answers are not interchangeable. A row already re-keyed under
+ * its server id (`"confirmed"`) means the card arrived, so the write is not
+ * unknown at all; treating that as "no row" produced a never-dismissing "we
+ * couldn't confirm" notice sitting above a visibly successful card.
  */
 export function markLocalUnconfirmed(
   ctx: ChatActionContext,
   replay: ReplayRequest,
   note: string,
-  cause?: unknown,
-): boolean {
-  // Whether the row is still there decides what the caller may honestly say, so
-  // check BEFORE patching rather than reporting a mark that silently no-opped.
-  // Two ordinary races remove it: the card's Realtime echo arriving while the
-  // HTTP response was still in flight (`mergeServerRow` re-keys the row under
-  // the server id), and the channel query being rebuilt or garbage-collected.
-  // Telling an officer to "use Retry on the message" when no such message
-  // exists is worse than saying nothing.
+): RowPlacement {
   const existing = ctx.queryClient.getQueryData<ChannelCache>(
     chatMessagesKey(replay.channelId),
   );
-  const present =
-    existing !== undefined &&
-    hasOptimisticRow(existing, replay.clientMessageId);
+  const placement = locateRow(existing, replay.clientMessageId);
 
-  if (present) {
+  if (placement === "optimistic") {
     patchCache(ctx.queryClient, replay.channelId, (cache) =>
       markUnconfirmed(cache, replay.clientMessageId, replay, note),
     );
   }
 
-  // A lost response is not a silent event: without this, the only signal that
-  // a heavy command's outcome is unknown is a toast the officer may miss.
-  // `sendMessage` reports its own failures the same way.
-  if (cause !== undefined) {
-    ctx.onError?.({
-      title: "Couldn't confirm a points adjustment",
-      description: note,
-    });
-  }
-
-  return present;
-}
-
-/**
- * Clear a resolved retry's row back to `pending`, so the Realtime echo
- * reconciles it exactly as it would a first dispatch.
- */
-export function markLocalPending(
-  ctx: ChatActionContext,
-  channelId: string,
-  clientMessageId: string,
-): void {
-  patchCache(ctx.queryClient, channelId, (cache) =>
-    markPending(cache, clientMessageId),
-  );
+  return placement;
 }
 
 function coerceKind(kind: string | undefined): ChatMessageKind {

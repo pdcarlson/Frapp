@@ -187,10 +187,15 @@ export interface ChatMessage {
  * Deliberately a single-member union rather than a bare interface: `/points` is
  * the only command with a server-side dedupe index today
  * (`idx_point_transactions_dedupe`, #1719). `/task` and `/event` have none, so
- * replaying one would create a *second* task or event rather than deduplicating
- * — which is why #1717 owns their half and why widening this union without
- * widening the server contract first would be a bug. The discriminant makes
- * that a compile-time decision rather than a silent one.
+ * replaying one would create a *second* task or event rather than
+ * deduplicating.
+ *
+ * **Do not widen this union until the route you are adding has a server-side
+ * dedupe index.** No open issue owns task/event idempotency — #1717 is scoped
+ * to their response DTOs and `card_posted`, not to a dedupe key, and #1734's
+ * body still names #1733 as what would give them one, which is no longer true
+ * (#1733 shipped the `/points` half only). The discriminant makes widening a
+ * compile-time decision rather than a silent one.
  */
 export type ReplayRequest = {
   command: "points";

@@ -515,25 +515,18 @@ describe("notifyDispatchOutcome — unconfirmed (#1733)", () => {
     expect(arg.title).toMatch(/not confirmed/i);
   });
 
-  // Sticky only when no row survived to carry the notice; otherwise it would
-  // camp the single toast slot (TOAST_LIMIT = 1) restating the row's own text.
-  it("is sticky only when nothing was left in the timeline", () => {
+  // Sticky so an unreconstructable outcome does not vanish on a 5s timer.
+  // Sticky is NOT durable: `use-toast` evicts on the next ADD_TOAST regardless
+  // of duration (#1789), which is why the copy has to stand alone.
+  it("does not let an unknown outcome expire on a timer", () => {
     const toast = vi.fn();
     notifyDispatchOutcome(toast, cmd, {
       ok: true,
       unconfirmed: true,
       warning: "x",
     });
-    expect(toast.mock.calls[0]![0].duration).toBeUndefined();
 
-    const durableToast = vi.fn();
-    notifyDispatchOutcome(durableToast, cmd, {
-      ok: true,
-      unconfirmed: true,
-      warning: "x",
-      durable: true,
-    });
-    expect(durableToast.mock.calls[0]![0].duration).toBe(Infinity);
+    expect(toast.mock.calls[0]![0].duration).toBe(Infinity);
   });
 
   it("reports a resolved retry rather than staying silent", () => {

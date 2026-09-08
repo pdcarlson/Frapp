@@ -23,7 +23,6 @@ import {
   insertLocalPlaceholder,
   removeLocalPlaceholder,
   markLocalUnconfirmed,
-  markLocalPending,
   isClientError,
   type ChatActionContext,
 } from "./chat-client";
@@ -53,11 +52,6 @@ export interface DispatchResult {
    * its own copy.
    */
   unconfirmed?: boolean;
-  /**
-   * The notice must not auto-dismiss: it is the only surviving trace of the
-   * outcome, because no row was left in the timeline to carry it.
-   */
-  durable?: boolean;
   /**
    * A retry resolved the row it was fired from. Callers report it explicitly —
    * silence after a retry is indistinguishable from a retry that did nothing.
@@ -279,8 +273,28 @@ export async function retryPointsDispatch(
   ctx: ChatActionContext,
   replay: ReplayRequest,
 ): Promise<DispatchResult> {
-  return submitPointsAdjustment(ctx, replay, true);
+  // The button's own disabled state cannot carry this guard: the timeline is
+  // virtualized (Virtuoso unmounts off-screen rows), so scrolling away and back
+  // remounts the row with fresh state and re-enables Retry while the first
+  // replay is still in flight. Two concurrent replays cannot double-grant —
+  // they share a key — but their responses race, and the loser can overwrite a
+  // clean resolution with "the card's fate is unknown". Keyed here because this
+  // module outlives every row that renders it.
+  if (REPLAYS_IN_FLIGHT.has(replay.clientMessageId)) {
+    return { ok: true, unconfirmed: true, warning: RETRY_IN_FLIGHT_NOTE };
+  }
+  REPLAYS_IN_FLIGHT.add(replay.clientMessageId);
+  try {
+    return await submitPointsAdjustment(ctx, replay, true);
+  } finally {
+    REPLAYS_IN_FLIGHT.delete(replay.clientMessageId);
+  }
 }
+
+const REPLAYS_IN_FLIGHT = new Set<string>();
+
+const RETRY_IN_FLIGHT_NOTE =
+  "That retry is still running — give it a moment rather than running the command again.";
 
 /**
  * POST an adjustment and translate the outcome into cache state + a
@@ -314,9 +328,16 @@ async function submitPointsAdjustment(
   let data: PointsAdjustResponse | undefined;
   let status: number | undefined;
   try {
-    // Narrow to the network call ONLY. A wider `try` would catch a cache-layer
-    // or programmer error below and report it as a lost response — asserting a
-    // possible ledger write where no request was ever sent.
+    // Narrow to the network call ONLY, so a cache-layer or programmer error
+    // below is not reported as a lost response.
+    //
+    // This does NOT fully separate "never sent" from "sent, outcome unknown":
+    // `apiClient.POST` runs auth middleware that awaits a token, so a session
+    // refresh failure rejects before a socket opens and lands in the same
+    // catch. Both are treated as unknown, which is the safe direction —
+    // claiming a committed write failed is what causes the re-typed command
+    // and the double-grant, while an over-cautious "unknown" costs one
+    // unnecessary ledger check.
     const result = await ctx.apiClient.POST("/v1/points/adjust", {
       body: replay.body,
     });
@@ -327,9 +348,9 @@ async function submitPointsAdjustment(
     // included — to `never`.
     status = result.response?.status;
     if (result.error) status ??= 0;
-  } catch (cause) {
+  } catch {
     // Transport-level: the request may or may not have reached the server.
-    return unconfirmed(ctx, replay, cause);
+    return unconfirmed(ctx, replay);
   }
 
   const succeeded = typeof status === "number" && status >= 200 && status < 300;
@@ -410,7 +431,14 @@ async function submitPointsAdjustment(
   // silence after a retry is indistinguishable from a retry that did nothing.
   // The echo reconciles it from pending exactly as it would a first dispatch.
   if (isReplay) {
-    markLocalPending(ctx, channelId, clientMessageId);
+    // Remove rather than return it to `pending`. A pending row still renders
+    // `LoadingCard`'s shimmer under `aria-busy`, and both the Retry footer and
+    // the replay handle are gone — so if the card's echo never arrives (likely,
+    // since the same outage produced the original lost response) it strands on
+    // "Granting…" with no affordance at all: #544's bug, re-created at the end
+    // of the path that exists to prevent it. The card is committed and will
+    // arrive by echo or on the next channel load.
+    removeLocalPlaceholder(ctx, channelId, clientMessageId);
     return { ok: true, resolved: RETRY_RESOLVED_NOTE };
   }
 
@@ -459,8 +487,21 @@ const UNCONFIRMED_NO_ROW_WARNING =
 const UNCONFIRMED_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice. If the message is gone, check the points ledger before re-running.";
 
+/**
+ * Statuses in the 4xx band that an INTERMEDIARY emits after the origin may
+ * already have committed. They look like refusals and are not: a proxy request
+ * timeout is the same "response lost after a successful write" event as a 502,
+ * merely numbered in the client-error band. `408` is the standard one; `499`
+ * (nginx) and `460` (AWS ALB) are the client-disconnect equivalents.
+ */
+const INCONCLUSIVE_CLIENT_ERRORS = new Set([408, 499, 460]);
+
 function isTerminalStatus(status: number | undefined): boolean {
-  return typeof status === "number" && isClientError(status);
+  return (
+    typeof status === "number" &&
+    isClientError(status) &&
+    !INCONCLUSIVE_CLIENT_ERRORS.has(status)
+  );
 }
 
 /**
@@ -480,16 +521,24 @@ function isTerminalStatus(status: number | undefined): boolean {
 function unconfirmed(
   ctx: ChatActionContext,
   replay: ReplayRequest,
-  cause?: unknown,
 ): DispatchResult {
-  const marked = markLocalUnconfirmed(ctx, replay, UNCONFIRMED_WARNING, cause);
+  const placement = markLocalUnconfirmed(ctx, replay, UNCONFIRMED_WARNING);
+
+  // The echo already re-keyed the row under its server id. That is not a
+  // missing row — it is proof the server posted the card, which it only does
+  // after the ledger row commits. The outcome is therefore NOT unknown: we lost
+  // the HTTP response to a request we can see succeeded. Reporting "we couldn't
+  // confirm" here would put a warning above a visibly successful points card
+  // and send the officer to audit a ledger that is correct.
+  if (placement === "confirmed") return { ok: true };
+
   return {
     ok: true,
     unconfirmed: true,
-    warning: marked ? UNCONFIRMED_WARNING : UNCONFIRMED_NO_ROW_WARNING,
-    // A row we could not mark cannot be retried from the timeline, so the
-    // notice is the only trace and must not auto-dismiss.
-    durable: !marked,
+    warning:
+      placement === "optimistic"
+        ? UNCONFIRMED_WARNING
+        : UNCONFIRMED_NO_ROW_WARNING,
   };
 }
 

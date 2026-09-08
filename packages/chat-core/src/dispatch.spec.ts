@@ -9,7 +9,7 @@ import {
   type ChannelCache,
   type ChatMessage,
 } from "./types";
-import { selectMessages } from "./cache";
+import { selectMessages, mergeServerRow } from "./cache";
 
 /**
  * #544 — a `/points` grant whose ledger row commits but whose chat card fails to
@@ -163,6 +163,42 @@ function onlyRow(ctx: ChatActionContext): ChatMessage {
   const rows = selectMessages(cache);
   expect(rows).toHaveLength(1);
   return rows[0]!;
+}
+
+
+/** Simulate the server card's Realtime echo for a client id. */
+function patchWithServerEcho(ctx: ChatActionContext, clientId: string): void {
+  const key = chatMessagesKey(CHANNEL_ID);
+  const cache = ctx.queryClient.getQueryData<ChannelCache>(key)!;
+  ctx.queryClient.setQueryData<ChannelCache>(
+    key,
+    mergeServerRow(cache, {
+      id: "server-1",
+      channel_id: CHANNEL_ID,
+      sender_id: "user-1",
+      content: "+5 points",
+      kind: "points",
+      client_message_id: clientId,
+      created_at: new Date().toISOString(),
+    } as never),
+  );
+}
+
+/** The replay descriptor for a client id, rebuilt after the row was re-keyed. */
+function onlyRowReplay(ctx: ChatActionContext, clientId: string) {
+  return {
+    command: "points" as const,
+    channelId: CHANNEL_ID,
+    clientMessageId: clientId,
+    body: {
+      target_user_id: "user-2",
+      amount: 5,
+      category: "MANUAL" as const,
+      reason: "great work",
+      channel_id: CHANNEL_ID,
+      client_message_id: clientId,
+    },
+  };
 }
 
 const LOST_RESPONSE = {
@@ -391,43 +427,48 @@ describe("dispatchPoints — replay refusals and resolution (#1733 review)", () 
     const result = await retryPointsDispatch(ctx, replay);
 
     expect(result.resolved).toBeTruthy();
-    const row = onlyRow(ctx);
-    expect(row._status).toBe("pending");
-    expect(row._replay).toBeUndefined();
-    expect(row._error).toBeUndefined();
+    // Removed, not returned to `pending`: a pending row renders the busy
+    // shimmer with no Retry and no replay handle, so a lost echo would strand
+    // it on "Granting…" — #544's bug at the end of the path that prevents it.
+    expect(placeholderCount(ctx)).toBe(0);
   });
 
-  // When the echo already reconciled the row, "use Retry on the message" points
-  // at a control that does not exist. The copy has to stand on its own, and the
-  // notice becomes the only trace, so it must not auto-dismiss.
-  it("uses standalone copy when there is no row left to retry", async () => {
+  // When the echo already reconciled the row, the outcome is NOT unknown: the
+  // server only posts the card after the ledger row commits, so a re-keyed row
+  // is positive evidence the write landed. Reporting "we couldn't confirm"
+  // would put a warning above a visibly successful card.
+  it("reports success when the echo already merged the row", async () => {
     const post = vi.fn().mockResolvedValue(LOST_RESPONSE);
     const ctx = buildCtx(post);
-    const result = await dispatchSlashCommand(ctx, {
-      command: POINTS_COMMAND,
-      args: "grant @bobby 5 for great work",
-      channelId: CHANNEL_ID,
-      announcementsChannelId: null,
-      resolveMember: () => ({ user_id: "user-2", display_name: "Bobby" }),
-    });
-    expect(result.warning).toMatch(/use retry/i);
-    expect(result.durable).toBeFalsy();
+    // Park a dispatch, then let the real card echo arrive: `mergeServerRow`
+    // re-keys the row under the server id while keeping its client id.
+    const pending = dispatchGrant(ctx);
+    const result = await pending;
+    const clientId = onlyRow(ctx)._replay!.clientMessageId;
 
-    // Now the same failure with no placeholder to mark (userId absent, so
-    // `insertLocalPlaceholder` returned early).
-    const ctxNoRow = buildCtx(post);
-    (ctxNoRow as { userId: string | null }).userId = null;
-    const noRow = await dispatchSlashCommand(ctxNoRow, {
-      command: POINTS_COMMAND,
-      args: "grant @bobby 5 for great work",
-      channelId: CHANNEL_ID,
-      announcementsChannelId: null,
-      resolveMember: () => ({ user_id: "user-2", display_name: "Bobby" }),
+    patchWithServerEcho(ctx, clientId);
+    const afterEcho = await retryPointsDispatch(ctx, {
+      ...onlyRowReplay(ctx, clientId),
     });
 
-    expect(noRow.warning).not.toMatch(/use retry/i);
-    expect(noRow.warning).toMatch(/points ledger/i);
-    expect(noRow.durable).toBe(true);
+    expect(result.unconfirmed).toBe(true);
+    // The retry hits the same lost response, but the row is now server-keyed.
+    expect(afterEcho.unconfirmed).toBeFalsy();
+    expect(afterEcho.ok).toBe(true);
+  });
+
+  // Genuinely no trace: the copy must stand on its own rather than pointing at
+  // a Retry control that does not exist.
+  it("uses standalone copy when there is no row at all", async () => {
+    const post = vi.fn().mockResolvedValue(LOST_RESPONSE);
+    const ctx = buildCtx(post);
+    (ctx as { userId: string | null }).userId = null;
+
+    const result = await dispatchGrant(ctx);
+
+    expect(result.unconfirmed).toBe(true);
+    expect(result.warning).not.toMatch(/use retry/i);
+    expect(result.warning).toMatch(/points ledger/i);
   });
 
   // A 2xx whose body did not parse is a SUCCESS, not a lost response.
@@ -441,5 +482,60 @@ describe("dispatchPoints — replay refusals and resolution (#1733 review)", () 
 
     expect(result.unconfirmed).toBeFalsy();
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("dispatchPoints — second-pass review fixes (#1733)", () => {
+  // A 4xx an INTERMEDIARY emits after the origin may already have committed is
+  // not a refusal. Same "lost response" event as a 502, different band.
+  it.each([408, 499, 460])(
+    "treats an inconclusive %i as lost, not as a refusal",
+    async (status) => {
+      const post = vi.fn().mockResolvedValue({
+        data: undefined,
+        error: { message: "timeout" },
+        response: { status },
+      });
+      const ctx = buildCtx(post);
+
+      const result = await dispatchGrant(ctx);
+
+      expect(result.ok).toBe(true);
+      expect(result.unconfirmed).toBe(true);
+      expect(placeholderCount(ctx)).toBe(1);
+    },
+  );
+
+  // The Retry button's disabled state cannot carry this: the timeline is
+  // virtualized, so scrolling away and back remounts the row with fresh state.
+  it("refuses a concurrent replay of the same key", async () => {
+    const post = vi.fn().mockResolvedValue(LOST_RESPONSE);
+    const ctx = buildCtx(post);
+    await dispatchGrant(ctx);
+    const replay = onlyRow(ctx)._replay!;
+
+    let release: (v: unknown) => void = () => {};
+    post.mockReturnValue(new Promise((r) => (release = r)));
+    const first = retryPointsDispatch(ctx, replay);
+    const second = await retryPointsDispatch(ctx, replay);
+
+    expect(second.warning).toMatch(/still running/i);
+    // Exactly one request in flight for this key, not two racing responses.
+    expect(post).toHaveBeenCalledTimes(2); // the original dispatch + one replay
+    release({ data: { card_posted: true }, error: null, response: { status: 200 } });
+    await first;
+  });
+
+  // Once it settles, the key is retryable again.
+  it("releases the in-flight guard after the replay settles", async () => {
+    const post = vi.fn().mockResolvedValue(LOST_RESPONSE);
+    const ctx = buildCtx(post);
+    await dispatchGrant(ctx);
+    const replay = onlyRow(ctx)._replay!;
+
+    await retryPointsDispatch(ctx, replay);
+    const again = await retryPointsDispatch(ctx, replay);
+
+    expect(again.warning).not.toMatch(/still running/i);
   });
 });
