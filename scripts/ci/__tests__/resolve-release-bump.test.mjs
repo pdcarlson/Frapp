@@ -334,9 +334,11 @@ describe("the workflows that run this script grant the scope it needs", () => {
     assert.match(text, /scripts\/ci\/lib/);
   });
 
-  // Run 34247752847: Packet B shipped 0ca478e9, then `git push origin v1.0.0`
+  // Run 34247752847: Packet B shipped 0ca478e9, then receive-pack of v1.0.0
   // was rejected because the GitHub App token cannot update workflow files
-  // and that SHA's release.yml differed from main. Contents API + contents:write.
+  // and that SHA's release.yml differed from main. Run 34254679932: POST
+  // /git/tags succeeded (object bca315f9) and POST /git/refs still 403'd.
+  // Contents API + contents:write is not enough; a user PAT is.
   it("release.yml mints the tag via the Contents API, not git push", () => {
     const text = readFileSync(join(repoRoot, ".github/workflows/release.yml"), "utf8");
     const start = text.indexOf("- name: Create tag");
@@ -346,9 +348,32 @@ describe("the workflows that run this script grant the scope it needs", () => {
     assert.match(step, /git\/tags/);
     assert.match(step, /git\/refs/);
     assert.match(step, /GH_TOKEN:/);
+    assert.match(step, /secrets\.RELEASE_GITHUB_TOKEN \|\| secrets\.GITHUB_TOKEN/);
+    assert.match(step, /34254679932/);
     assert.match(step, /git fetch origin "refs\/tags\/\$\{TAG\}:refs\/tags\/\$\{TAG\}"/);
     assert.doesNotMatch(step, /git push origin/);
     assert.doesNotMatch(step, /git tag -a/);
     assert.doesNotMatch(text, /workflows:\s*write/);
+    assert.match(text, /RELEASE_GITHUB_TOKEN:\s*\n\s*required: false/);
+    const tokenFallbacks = text.match(
+      /secrets\.RELEASE_GITHUB_TOKEN \|\| secrets\.GITHUB_TOKEN/g,
+    );
+    assert.equal(
+      tokenFallbacks?.length,
+      2,
+      "Create tag and Create GitHub Release must both use the user-PAT fallback",
+    );
+    const releaseStart = text.indexOf("- name: Create GitHub Release");
+    assert.notEqual(releaseStart, -1);
+    const releaseStep = text.slice(releaseStart);
+    assert.match(releaseStep, /if: steps\.tag\.outputs\.created == 'true'/);
+    const deploy = readFileSync(
+      join(repoRoot, ".github/workflows/deploy-production.yml"),
+      "utf8",
+    );
+    assert.ok(
+      deploy.includes("RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}"),
+      "deploy-production.yml must pass RELEASE_GITHUB_TOKEN into the reusable Release workflow",
+    );
   });
 });
