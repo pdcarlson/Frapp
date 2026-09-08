@@ -263,7 +263,12 @@ hosted project has the defaults; a hand-recreated local schema does not.
 
 `--force` is required for any non-local target. That is not ceremony: the script
 replaces the contents of the database it is pointed at, and the difference
-between a rehearsal and an outage is one mistyped host.
+between a rehearsal and an outage is one mistyped host. `--force` is not
+enough for production: if `--db-url` names the production project in
+[`.github/environments.json`](../../../.github/environments.json), the script
+also refuses unless `DB_RESTORE_ALLOW_PRODUCTION=true`. Staging still uses
+`--force` alone. Storage restore has the same second hop
+(`STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL=true`).
 
 ## Restoring Storage objects
 

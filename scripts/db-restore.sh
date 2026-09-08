@@ -20,7 +20,11 @@
 #
 # THIS OVERWRITES THE TARGET DATABASE. It refuses to run against anything that is
 # not obviously a local database unless --force is passed, because the difference
-# between a rehearsal and an outage is one mistyped host.
+# between a rehearsal and an outage is one mistyped host. --force is not enough
+# for production: a URL that names the production project in
+# .github/environments.json is refused unless DB_RESTORE_ALLOW_PRODUCTION=true.
+# Staging still uses --force alone. Storage restore has the same second hop
+# (STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL).
 #
 # ── `--data-only`: schema from the repo, data from the dump ──────────────────
 # `supabase db dump` excludes the Supabase-managed schemas, and that exclusion
@@ -67,7 +71,6 @@ done
 [ -n "$BACKUP_DIR" ] || { echo "Error: --backup-dir is required" >&2; exit 2; }
 [ -n "$DB_URL" ]     || { echo "Error: --db-url is required" >&2; exit 2; }
 [ -d "$BACKUP_DIR" ] || { echo "Error: no such backup directory: $BACKUP_DIR" >&2; exit 2; }
-command -v psql >/dev/null 2>&1 || { echo "Error: psql not found" >&2; exit 1; }
 
 # The blast-radius guard. Matching on the host is deliberate: a restore is the
 # one operation here that destroys data, and the only safe default is to assume
@@ -80,13 +83,30 @@ if [ "$LOCAL_TARGET" -eq 0 ] && [ "$FORCE" -eq 0 ]; then
   cat >&2 <<'GUARD'
 Error: refusing to restore into a non-local database without --force.
 
-This command REPLACES the contents of the target database. Restoring staging or
-production is a real incident-response action: announce it, freeze writes, and
-follow docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md rather than running this from a
-shell on a hunch. Re-run with --force once that is true.
+This command REPLACES the contents of the target database. Restoring staging
+is a real incident-response action: announce it, freeze writes, and follow
+docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md. Re-run with --force once that is
+true. Restoring production additionally requires DB_RESTORE_ALLOW_PRODUCTION=true;
+--force alone is not enough.
 GUARD
   exit 2
 fi
+
+# Second hop: --force is true of staging and of production. A URL that names
+# the production project (direct host or pooler username, including an SSH
+# tunnel whose host looks local) is refused unless the operator also set
+# DB_RESTORE_ALLOW_PRODUCTION=true. Runs before `psql` so a mistyped hosted
+# restore cannot connect. Fail closed if node cannot load the fence.
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+command -v node >/dev/null 2>&1 || {
+  echo "Error: node is required to resolve the production restore fence from .github/environments.json" >&2
+  exit 1
+}
+if ! DB_URL="$DB_URL" node "$SCRIPT_DIR/ci/lib/db-restore-target.mjs"; then
+  exit 1
+fi
+
+command -v psql >/dev/null 2>&1 || { echo "Error: psql not found" >&2; exit 1; }
 
 SAFE_URL="$(printf '%s' "$DB_URL" | sed -E 's#(://[^:]+:)[^@]+@#\1***@#')"
 
