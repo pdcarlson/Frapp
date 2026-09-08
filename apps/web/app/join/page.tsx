@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useRedeemInvite } from "@repo/hooks";
@@ -185,6 +186,17 @@ function JoinPageContent() {
     <AuthScreen
       title="Join your chapter"
       subtitle="Enter the invite your officer sent. Invites expire after 24 hours and work once."
+      footer={
+        <>
+          Starting a chapter?{" "}
+          <Link
+            href="/chat"
+            className="font-semibold text-accent-text hover:underline"
+          >
+            Create a chapter
+          </Link>
+        </>
+      }
     >
       <form className="flex flex-col gap-4" onSubmit={handleRedeem}>
         <div className="space-y-1.5">
