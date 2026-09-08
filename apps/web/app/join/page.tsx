@@ -4,7 +4,10 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useRedeemInvite } from "@repo/hooks";
-import { extractInviteToken } from "@repo/validation";
+import {
+  extractInviteToken,
+  extractInviteTokenFromQuery,
+} from "@repo/validation";
 import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
 import { joinErrorCopy, redeemChapterId } from "@/components/auth/join-errors";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
@@ -58,10 +61,10 @@ function JoinPageContent() {
   const { isOffline } = useNetwork();
   const redeemInviteMutation = useRedeemInvite();
   const selectChapter = useSelectChapter();
-  const initialToken = useMemo(() => {
-    const raw = searchParams.get("token") ?? "";
-    return extractInviteToken(raw) ?? raw;
-  }, [searchParams]);
+  const initialToken = useMemo(
+    () => extractInviteTokenFromQuery((key) => searchParams.get(key)) ?? "",
+    [searchParams],
+  );
   const [editedToken, setEditedToken] = useState<string | null>(null);
   const token = editedToken ?? initialToken;
   const [sessionState, setSessionState] = useState<"checking" | "ready" | "failed">(

@@ -12,7 +12,10 @@
  * same reason.
  */
 
-export { extractInviteToken } from "@repo/validation";
+export {
+  extractInviteToken,
+  extractInviteTokenFromQuery,
+} from "@repo/validation";
 
 let rememberedToken: string | null = null;
 

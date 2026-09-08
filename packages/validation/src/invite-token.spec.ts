@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { extractInviteToken } from "./invite-token";
+import {
+  extractInviteToken,
+  extractInviteTokenFromQuery,
+} from "./invite-token";
 
 describe("extractInviteToken", () => {
   it("returns a pasted bare token", () => {
@@ -64,5 +67,46 @@ describe("extractInviteToken", () => {
         "app.frapp.live/join?token=550e8400-e29b-41d4-a716-446655440000",
       ),
     ).toBe("550e8400-e29b-41d4-a716-446655440000");
+  });
+});
+
+describe("extractInviteTokenFromQuery", () => {
+  function fromSearch(query: string): string | null {
+    const params = new URLSearchParams(query);
+    return extractInviteTokenFromQuery((key) => params.get(key));
+  }
+
+  it("seeds token, invite, and code aliases", () => {
+    expect(fromSearch("token=invite-from-token")).toBe("invite-from-token");
+    expect(fromSearch("invite=invite-from-invite")).toBe("invite-from-invite");
+    expect(fromSearch("code=invite-from-code")).toBe("invite-from-code");
+  });
+
+  it("prefers token over invite and code", () => {
+    expect(fromSearch("token=from-token&invite=from-invite&code=from-code")).toBe(
+      "from-token",
+    );
+  });
+
+  it("skips an empty token key and reads invite", () => {
+    expect(fromSearch("token=&invite=from-invite")).toBe("from-invite");
+    expect(fromSearch("token=   &invite=from-invite")).toBe("from-invite");
+  });
+
+  it("keeps a present but unparseable alias so the form can show it", () => {
+    expect(fromSearch("token=abc")).toBe("abc");
+  });
+
+  it("extracts a full join URL stuffed into invite=", () => {
+    expect(
+      fromSearch(
+        "invite=https://app.frapp.live/join?token=550e8400-e29b-41d4-a716-446655440000",
+      ),
+    ).toBe("550e8400-e29b-41d4-a716-446655440000");
+  });
+
+  it("returns null when no alias is present", () => {
+    expect(fromSearch("role=President")).toBeNull();
+    expect(fromSearch("")).toBeNull();
   });
 });

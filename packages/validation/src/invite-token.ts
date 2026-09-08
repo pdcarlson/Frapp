@@ -35,6 +35,23 @@ export function extractInviteToken(raw: string | null | undefined): string | nul
   return null;
 }
 
+/**
+ * Seed a join field from a URL query. Officers mint `?token=`; mobile and
+ * older links also used `invite` and `code`. First non-empty key wins, same
+ * order as `tokenFromUrl`. Web `/join` used to read only `token`, so a
+ * direct `/join?invite=` or `/join?code=` left the field empty.
+ */
+export function extractInviteTokenFromQuery(
+  get: (key: (typeof TOKEN_QUERY_KEYS)[number]) => string | null | undefined,
+): string | null {
+  for (const key of TOKEN_QUERY_KEYS) {
+    const raw = get(key);
+    if (typeof raw !== "string" || raw.trim().length === 0) continue;
+    return extractInviteToken(raw) ?? raw.trim();
+  }
+  return null;
+}
+
 function unwrapClipboardPart(value: string): string {
   return value.replace(/^[<(["']+/, "").replace(/[.,);>'"]+$/, "");
 }

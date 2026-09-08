@@ -17,6 +17,7 @@ import { useAuthSession } from "@/lib/auth-session";
 import {
   consumeRememberedInviteToken,
   extractInviteToken,
+  extractInviteTokenFromQuery,
   rememberInviteToken,
 } from "@/lib/onboarding/invite-token";
 import { joinErrorCopy, redeemChapterId } from "@/lib/onboarding/join-errors";
@@ -41,19 +42,37 @@ export default function JoinChapter() {
   const { status, signOut } = useAuthSession();
   const redeemInvite = useRedeemInvite();
   const selectChapter = useSelectChapter();
-  const params = useLocalSearchParams<{ token?: string; invite?: string }>();
+  const params = useLocalSearchParams<{
+    token?: string | string[];
+    invite?: string | string[];
+    code?: string | string[];
+  }>();
   const deepLinkUrl = Linking.useURL();
 
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const paramValue = (
+      value: string | string[] | undefined,
+    ): string | null => {
+      if (typeof value === "string") return value;
+      if (Array.isArray(value) && typeof value[0] === "string") {
+        return value[0];
+      }
+      return null;
+    };
     const fromParams = extractInviteToken(
-      typeof params.token === "string"
-        ? params.token
-        : typeof params.invite === "string"
-          ? params.invite
-          : "",
+      extractInviteTokenFromQuery((key) => {
+        switch (key) {
+          case "token":
+            return paramValue(params.token);
+          case "invite":
+            return paramValue(params.invite);
+          case "code":
+            return paramValue(params.code);
+        }
+      }),
     );
     const fromLink = extractInviteToken(deepLinkUrl);
     const next = fromParams ?? fromLink ?? consumeRememberedInviteToken();
@@ -62,7 +81,7 @@ export default function JoinChapter() {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- seed an empty field from the invite URL; keep text the member already typed
       setToken((current) => (current.length > 0 ? current : next));
     }
-  }, [deepLinkUrl, params.invite, params.token]);
+  }, [deepLinkUrl, params.code, params.invite, params.token]);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   consumeRememberedInviteToken,
   extractInviteToken,
+  extractInviteTokenFromQuery,
   peekRememberedInviteToken,
   rememberInviteToken,
 } from "./invite-token";
@@ -15,6 +16,18 @@ describe("extractInviteToken", () => {
     expect(
       extractInviteToken("https://app.frapp.live/join?token=invite-abc"),
     ).toBe("invite-abc");
+  });
+
+  it("re-exports query seeding so ?invite= and ?code= fill the field", () => {
+    const params = new URLSearchParams("invite=from-invite");
+    expect(extractInviteTokenFromQuery((key) => params.get(key))).toBe(
+      "from-invite",
+    );
+    expect(
+      extractInviteTokenFromQuery((key) =>
+        new URLSearchParams("code=from-code").get(key),
+      ),
+    ).toBe("from-code");
   });
 });
 

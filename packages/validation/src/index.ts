@@ -1007,7 +1007,7 @@ export type { DiscordExportPreamble } from "./discord-export";
 
 // Invite paste/URL extraction, shared so web `/join` and mobile s02 cannot
 // drift on what a copied join link is. See ./invite-token.
-export { extractInviteToken } from "./invite-token";
+export { extractInviteToken, extractInviteTokenFromQuery } from "./invite-token";
 
 // Event recurrence: the rule catalog the DTOs validate against, the child
 // counts the series generator materializes, and the RFC 5545 RRULE the two
