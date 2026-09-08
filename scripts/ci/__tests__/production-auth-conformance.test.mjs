@@ -5,13 +5,23 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getEnvironment } from "../lib/environments.mjs";
-import { ALERT_ISSUE_TITLE as STAGING_ALERT_TITLE, FAIL, PASS, SKIPPED } from "../staging-conformance.mjs";
+import {
+  ALERT_ISSUE_TITLE as STAGING_ALERT_TITLE,
+  FAIL,
+  PASS,
+  SKIPPED,
+  STAGING_COPY,
+} from "../staging-conformance.mjs";
 import {
   ALERT_ISSUE_TITLE,
   DEFAULT_CHECK_IDS,
+  PRODUCTION_AUTH_COPY,
   PRODUCTION_AUTH_SMTP_ADMIN_EMAIL,
   PRODUCTION_SITE_URL,
+  buildAlertCommentBody,
   buildAlertIssueBody,
+  buildRecoveryCommentBody,
+  buildRunSummary,
   productionProjectRef,
   runProductionAuthConformance,
 } from "../production-auth-conformance.mjs";
@@ -540,8 +550,65 @@ describe("alert contract", () => {
     assert.doesNotMatch(body, /frapp-staging has drifted/);
     assert.match(body, /conformance-failing:\s*auth-hook/);
     assert.doesNotMatch(body, /smtp_pass/);
+    assertNoStagingVoice(body);
+  });
+
+  it("summary, comments, and recovery own production voice — they do not rewrite staging strings", () => {
+    const results = [{ id: "auth-hook", status: FAIL, label: "hook", detail: "disabled" }];
+    const passing = [{ id: "auth-hook", status: PASS, label: "hook", detail: "enabled" }];
+    const summary = buildRunSummary({ outcome: "failed", results, runUrl: "" });
+    const comment = buildAlertCommentBody({ results, runUrl: "", reopened: true });
+    const failedAgain = buildAlertCommentBody({ results, runUrl: "", reopened: false });
+    const recovery = buildRecoveryCommentBody({ results: passing, runUrl: "" });
+    const inconclusive = buildRunSummary({
+      outcome: "inconclusive",
+      results: [{ id: "auth-smtp", status: SKIPPED, label: "smtp", detail: "unset" }],
+      runUrl: "",
+    });
+
+    assert.match(summary, /## Production Auth conformance/);
+    assert.match(summary, /frapp-prod Auth settings have drifted/);
+    assert.match(comment, /Production Auth settings have drifted again/);
+    assert.match(failedAgain, /Production Auth settings failed again/);
+    assert.match(recovery, /Production Auth settings recovered/);
+    assert.match(inconclusive, /proves nothing about production Auth/);
+    for (const text of [summary, comment, failedAgain, recovery, inconclusive]) {
+      assertNoStagingVoice(text);
+    }
+  });
+
+  it("production copy defines every staging copy key so a new phrase cannot leak", () => {
+    assert.deepEqual(
+      Object.keys(PRODUCTION_AUTH_COPY).sort(),
+      Object.keys(STAGING_COPY).sort(),
+    );
+    for (const [key, value] of Object.entries(PRODUCTION_AUTH_COPY)) {
+      const rendered =
+        typeof value === "function" ? String(value(1, 2)) : String(value);
+      assertNoStagingVoice(rendered);
+      assert.ok(rendered.length > 0, `${key} must not be empty`);
+    }
+  });
+
+  it("ignores a caller-supplied staging copy so production voice cannot be overridden", () => {
+    const body = buildAlertIssueBody({
+      results: [{ id: "auth-hook", status: FAIL, label: "hook", detail: "disabled" }],
+      runUrl: "",
+      copy: STAGING_COPY,
+    });
+    assertNoStagingVoice(body);
+    assert.match(body, /frapp-prod/);
   });
 });
+
+function assertNoStagingVoice(text) {
+  assert.doesNotMatch(text, /frapp-staging/);
+  assert.doesNotMatch(text, /Staging conformance/);
+  assert.doesNotMatch(text, /staging-conformance\.yml/);
+  assert.doesNotMatch(text, /staging-conformance\.mjs/);
+  assert.doesNotMatch(text, /proves nothing about staging/);
+  assert.doesNotMatch(text, /See #838\./);
+}
 
 describe("workflow wiring", () => {
   const workflow = readFileSync(WORKFLOW, "utf8");
@@ -592,6 +659,12 @@ describe("workflow wiring", () => {
 
   it("the script refuses a GitHub closer in its alert copy", () => {
     assert.doesNotMatch(script, /\b(fixes|closes|close|fix|fixed|resolve|resolves|resolved)\s+#/i);
+  });
+
+  it("owns production voice instead of replaceAll-rewriting staging strings", () => {
+    assert.doesNotMatch(script, /rewriteStagingCopy/);
+    assert.doesNotMatch(script, /replaceAll\(/);
+    assert.match(script, /PRODUCTION_AUTH_COPY/);
   });
 
   it("requires GitHub credentials before asserting when invoked as main", () => {
