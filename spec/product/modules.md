@@ -174,7 +174,7 @@
 ## Reports & Export
 
 - Admins export data as CSV or PDF: attendance, points, member roster, service hours.
-- Exported PDFs use a branded template with chapter name, logo, and Frapp footer.
+- Exported PDFs use a branded template with chapter name, logo, and Signet footer. Layout: [`../behavior/reports.md`](../behavior/reports.md) § PDF Formatting.
 - API generates the file and returns a signed download URL.
 
 ## Alumni

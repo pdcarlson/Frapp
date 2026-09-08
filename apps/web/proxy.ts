@@ -39,6 +39,27 @@ function isAuthRoute(pathname: string) {
   );
 }
 
+/**
+ * Where an unsigned request for a gated path is sent.
+ *
+ * `NextURL.clone()` keeps the inbound query string. An invite link
+ * `/join?token=…` would otherwise land on
+ * `/sign-in?token=…&redirectTo=/join?token=…`, putting the invite token in
+ * two places. The sign-in page does not read `token`, but Vercel logs,
+ * Referer headers, and any future auth-token parser would. The invite belongs
+ * only inside `redirectTo`, which is how the join page itself builds this
+ * hop (`app/join/page.tsx`).
+ */
+export function buildSignInRedirectUrl(requestUrl: URL): URL {
+  const destination = new URL(requestUrl.href);
+  const redirectTo = `${requestUrl.pathname}${requestUrl.search}`;
+  destination.pathname = "/sign-in";
+  destination.search = "";
+  destination.hash = "";
+  destination.searchParams.set("redirectTo", redirectTo);
+  return destination;
+}
+
 type CookieTuple = { name: string; value: string; options: CookieOptions };
 
 type ResponseHolder = { current: NextResponse };
@@ -116,7 +137,7 @@ export async function proxy(request: NextRequest) {
     }),
   };
 
-  const { pathname, search } = request.nextUrl;
+  const { pathname } = request.nextUrl;
   const env = readSupabaseEnv();
 
   // Environments without Supabase credentials, or with SUPABASE_AUTH_BYPASS
@@ -134,9 +155,7 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getSession();
 
   if (needsAuth(pathname) && !session) {
-    const signInUrl = request.nextUrl.clone();
-    signInUrl.pathname = "/sign-in";
-    signInUrl.searchParams.set("redirectTo", `${pathname}${search}`);
+    const signInUrl = buildSignInRedirectUrl(request.nextUrl);
     return NextResponse.redirect(signInUrl, {
       headers: responseHolder.current.headers,
     });

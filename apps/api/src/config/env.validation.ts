@@ -50,7 +50,7 @@ const REQUIRED_ENV_VARS = [
 // so local dev / tests / CI never need a real email credential — the invite
 // tokens still get created either way, only delivery is skipped.
 //   - RESEND_API_KEY    enables the Resend transport for invite emails
-//   - RESEND_FROM_EMAIL optional from-address override (default a Frapp address
+//   - RESEND_FROM_EMAIL optional from-address override (default a Signet address
 //                       that must be verified with Resend before it will send)
 //
 // NOT here, and deliberately absent rather than merely unlisted:

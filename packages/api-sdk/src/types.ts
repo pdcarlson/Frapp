@@ -2768,6 +2768,21 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        HealthPayloadDto: {
+            /** @enum {string} */
+            status: "ok" | "degraded";
+            /** @enum {string} */
+            database: "connected" | "error";
+            /** @enum {string} */
+            storage: "connected" | "error";
+            /** @description Process uptime in seconds */
+            uptime: number;
+            /**
+             * @description Deployed git SHA when Render set RENDER_GIT_COMMIT. Omitted when unset so local and CI do not invent a SHA.
+             * @example 0ca478e9105105ff7013834615eee81499813d0e
+             */
+            commit?: string;
+        };
         MyPermissionsDto: {
             /**
              * @description Caller's effective permission set for the active chapter. Contains the wildcard `*` for Presidents. Empty array means no active roles.
@@ -3974,7 +3989,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HealthPayloadDto"];
+                };
             };
         };
     };
@@ -3991,7 +4008,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HealthPayloadDto"];
+                };
             };
         };
     };
