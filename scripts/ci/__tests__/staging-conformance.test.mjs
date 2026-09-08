@@ -17,6 +17,7 @@ import {
   checkAuthRedirects,
   checkAuthSignIn,
   checkAuthSmtp,
+  checkAuthMagicLink,
   checkInfisicalSyncs,
   checkProjectStatus,
   checkSchemaDrift,
@@ -294,6 +295,91 @@ test("auth SMTP check skips without credentials and fails on a non-200", async (
   const skipped = await checkAuthSmtp({ accessToken: "", projectRef: "", fetchImpl: async () => ok({}) });
   assert.equal(skipped.status, SKIPPED);
   const failed = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => httpError(401),
+  });
+  assert.equal(failed.status, FAIL);
+});
+
+// ── Magic Link template — token_hash on the app host, not ConfirmationURL ───
+
+const magicLinkConfig = (overrides = {}) =>
+  ok({
+    mailer_subjects_magic_link: "Sign in to Signet",
+    mailer_templates_magic_link_content:
+      '<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Signet</a>',
+    smtp_pass: "must-never-appear-in-detail",
+    ...overrides,
+  });
+
+test("Magic Link subject + token_hash href pass without leaking smtp_pass or the body", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => magicLinkConfig(),
+  });
+  assert.equal(result.status, PASS);
+  assert.match(result.detail, /token_hash href/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
+  assert.doesNotMatch(result.detail, /RedirectTo/);
+});
+
+test("hosted Magic Link subject fails", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => magicLinkConfig({ mailer_subjects_magic_link: "Your Magic Link" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /Your Magic Link/);
+});
+
+test("empty Magic Link body fails and names ConfirmationURL", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => magicLinkConfig({ mailer_templates_magic_link_content: "   " }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /ConfirmationURL/);
+});
+
+test("ConfirmationURL in the Magic Link body fails", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      magicLinkConfig({
+        mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
+      }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /ConfirmationURL/);
+  assert.match(result.detail, /supabase\.co/);
+});
+
+test("token_hash without type=magiclink fails", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      magicLinkConfig({
+        mailer_templates_magic_link_content: '<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}">Sign in</a>',
+      }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /type=magiclink/);
+});
+
+test("Magic Link check skips without credentials and fails on a non-200", async () => {
+  const skipped = await checkAuthMagicLink({
+    accessToken: "",
+    projectRef: "",
+    fetchImpl: async () => ok({}),
+  });
+  assert.equal(skipped.status, SKIPPED);
+  const failed = await checkAuthMagicLink({
     accessToken: "t",
     projectRef: "ref",
     fetchImpl: async () => httpError(401),

@@ -426,6 +426,89 @@ export async function checkAuthSmtp({ accessToken, projectRef, fetchImpl = fetch
   );
 }
 
+export const AUTH_MAGIC_LINK_SUBJECT = "Sign in to Signet";
+
+/**
+ * Staging Magic Link template stays on the app host via `token_hash`.
+ *
+ * The hosted default href is `{{ .ConfirmationURL }}` → `*.supabase.co/auth/v1/verify`.
+ * That From/link-domain mismatch is the leftover all-users spam shape after
+ * SMTP and copy were already Signet (#1824, #1916). Dashboard-only; same GET
+ * `checkAuthSmtp` makes. Never put `smtp_pass` or the full template HTML in
+ * the detail string.
+ *
+ * Production is deliberately not asserted here: its template is still the
+ * hosted default until SMTP is enabled.
+ */
+export async function checkAuthMagicLink({ accessToken, projectRef, fetchImpl = fetch }) {
+  const label = "Magic Link template uses token_hash on the app host";
+  if (!accessToken || !projectRef) {
+    return result(
+      "auth-magic-link",
+      label,
+      SKIPPED,
+      "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set",
+    );
+  }
+  const response = await fetchImpl(
+    `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
+    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
+  );
+  if (!response.ok) {
+    return result("auth-magic-link", label, FAIL, `Management API returned HTTP ${response.status}`);
+  }
+  const data = await response.json();
+  const subject =
+    typeof data?.mailer_subjects_magic_link === "string"
+      ? data.mailer_subjects_magic_link.trim()
+      : "";
+  if (subject !== AUTH_MAGIC_LINK_SUBJECT) {
+    return result(
+      "auth-magic-link",
+      label,
+      FAIL,
+      `mailer_subjects_magic_link is "${subject || "(empty)"}", expected "${AUTH_MAGIC_LINK_SUBJECT}"`,
+    );
+  }
+  const content =
+    typeof data?.mailer_templates_magic_link_content === "string"
+      ? data.mailer_templates_magic_link_content
+      : "";
+  if (!content.trim()) {
+    return result(
+      "auth-magic-link",
+      label,
+      FAIL,
+      "mailer_templates_magic_link_content is empty — the hosted default href is ConfirmationURL on *.supabase.co",
+    );
+  }
+  if (/ConfirmationURL/i.test(content)) {
+    return result(
+      "auth-magic-link",
+      label,
+      FAIL,
+      "mailer_templates_magic_link_content still uses ConfirmationURL (href lands on *.supabase.co)",
+    );
+  }
+  if (!/TokenHash/i.test(content)) {
+    return result(
+      "auth-magic-link",
+      label,
+      FAIL,
+      "mailer_templates_magic_link_content is missing TokenHash",
+    );
+  }
+  if (!/type=magiclink/i.test(content)) {
+    return result(
+      "auth-magic-link",
+      label,
+      FAIL,
+      "mailer_templates_magic_link_content is missing type=magiclink",
+    );
+  }
+  return result("auth-magic-link", label, PASS, `subject=${subject}; token_hash href`);
+}
+
 /**
  * Every Infisical secret sync reports a succeeded status.
  *
@@ -882,6 +965,12 @@ export async function runStagingConformance({
       }) },
     { id: "auth-smtp", label: "Custom SMTP is Resend and the send cap is at least 300/hour", run: () =>
       checkAuthSmtp({
+        accessToken: env.SUPABASE_ACCESS_TOKEN,
+        projectRef: env.SUPABASE_PROJECT_REF,
+        fetchImpl,
+      }) },
+    { id: "auth-magic-link", label: "Magic Link template uses token_hash on the app host", run: () =>
+      checkAuthMagicLink({
         accessToken: env.SUPABASE_ACCESS_TOKEN,
         projectRef: env.SUPABASE_PROJECT_REF,
         fetchImpl,

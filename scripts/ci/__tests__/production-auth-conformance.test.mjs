@@ -106,6 +106,7 @@ describe("identity", () => {
       "auth-redirects",
     ]);
     assert.ok(!DEFAULT_CHECK_IDS.includes("auth-smtp"));
+    assert.ok(!DEFAULT_CHECK_IDS.includes("auth-magic-link"));
     assert.ok(!DEFAULT_CHECK_IDS.includes("auth-signin"));
     assert.ok(!DEFAULT_CHECK_IDS.includes("infisical-syncs"));
   });
