@@ -90,7 +90,7 @@ link rather than assuming the 07:15 window.
 (07:00 UTC) owns migration parity for *every* environment; `production-guardrails.yml` (07:15) owns
 provider-side production settings; `staging-conformance.yml` (07:30) owns everything else about
 staging and deliberately does **not** re-run the drift comparison; `production-auth-conformance.yml`
-(07:45) owns Auth hook + redirect allow list + skip-until-on SMTP on `frapp-prod`. One real drift still raises exactly
+(07:45) owns Auth hook + redirect allow list + skip-until-on SMTP + skip-until-SMTP-on Magic Link on `frapp-prod`. One real drift still raises exactly
 one alert. If several of these alerts are open at once they are telling you about different
 problems. The staggering has more than one reason — the full schedule and its rationale are
 [`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance, which owns that fact.

@@ -11,10 +11,11 @@ name: Staging conformance
 # Unit tests: scripts/ci/__tests__/staging-conformance.test.mjs (`npm run test:ci-scripts`).
 #
 # Scope is frapp-staging ONLY. Production Auth hook, redirect allow list,
-# ACTIVE_HEALTHY, and skip-until-on SMTP are a sibling:
-# production-auth-conformance.yml, own alert title, 07:45 UTC. Empty
-# production SMTP is SKIPPED there (hosted 2/hour cap) so the sibling stays
-# green until #1824; SMTP on with the burned apex From fails. Infisical /
+# ACTIVE_HEALTHY, skip-until-on SMTP, and skip-until-SMTP-on Magic Link are
+# a sibling: production-auth-conformance.yml, own alert title, 07:45 UTC.
+# Empty production SMTP is SKIPPED there (hosted 2/hour cap) so the
+# sibling stays green until #1824; SMTP on with the burned apex From fails,
+# and SMTP on without token_hash in the Magic Link template fails. Infisical /
 # smoke stay production-unwatched. Remaining parity on #1384. Doc pointer:
 # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
 
