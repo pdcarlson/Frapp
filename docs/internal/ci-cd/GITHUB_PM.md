@@ -41,8 +41,14 @@ GitHub Issues (canonical: planning, status, Triage intake)
   instead — `/next` and the routines skip them entirely.
 - **Work is closed by the PR that does it** (`Fixes #N` in the PR **body** — native GitHub
   close-on-merge, one line per issue the PR closes; GitHub ignores closing keywords in the PR
-  *title*, so the body is load-bearing). GitHub also honours `Fixes` **only on merge into the
-  default branch** (#962) — that is issue-close
+  *title*, so the body is load-bearing). The match is a substring: `close` / `fix` / `resolve`
+  next to `#N` still completes the issue when the sentence is a negation. Do not write
+  `Does not close #N`, `will not fix #N`, or `does not resolve #N`. Only write those verbs next
+  to an issue number when the PR should complete that issue. Safe leftover wording names the
+  leftover work and the numbers without those verbs — for example, "Leaves store-name, domain,
+  and USPTO on their own issues (1829, 1843, 1901)." Incidents: #1829 completed by #1900,
+  #1843 by #1899; both were reopened because the leftover decision had not happened. GitHub
+  also honours `Fixes` **only on merge into the default branch** (#962) — that is issue-close
   semantics when the code still reaches `main` via a parent. Squash-merging a PR whose base is
   a feature branch is a **different, worse bug**: CI never runs (`pull_request.branches` is
   `[main]`) and the work never reaches `main` even though GitHub shows MERGED.
@@ -214,7 +220,8 @@ document wins** and `next.md` is the bug — fix the command, don't fork policy 
   `AGENT-RECLAIM`; an `in-progress` issue with no claim comment and no linked PR for 72h is
   swept back to Backlog (label removed) with an `AGENT-STALE-FLAG`.
 - **Closing:** on merge, `Fixes #N` closes each named issue as `completed` natively — no tool call
-  needed. Direct closes use
+  needed. A negated closer still matches; the rule and the safe leftover wording live in
+  [The model](#the-model). Direct closes use
   `issue_write` with `state: closed` + the right `state_reason` (`completed` / `not_planned` /
   `duplicate` + `duplicate_of`).
 
