@@ -23,7 +23,7 @@ import {
   insertLocalPlaceholder,
   removeLocalPlaceholder,
   markLocalUnconfirmed,
-  isClientError,
+  isDefinitiveClientError,
   type ChatActionContext,
 } from "./chat-client";
 import { randomClientId } from "./random-id";
@@ -222,7 +222,10 @@ async function dispatchPoints(
   }
   const member = resolveMember(parsed.value.memberToken);
   if (!member) {
-    return { ok: false, error: `No member matches @${parsed.value.memberToken}` };
+    return {
+      ok: false,
+      error: `No member matches @${parsed.value.memberToken}`,
+    };
   }
   if (ctx.userId && member.user_id === ctx.userId) {
     return { ok: false, error: "You can't adjust your own points" };
@@ -368,7 +371,7 @@ async function submitPointsAdjustment(
 
     // A definitive 4xx on a FIRST attempt means the origin validated the
     // request and rejected it: nothing written, safe to tear down and let the
-    // officer re-type. `isClientError` deliberately excludes 408/499/460, which
+    // officer re-type. `isDefinitiveClientError` deliberately excludes 408/499/460, which
     // an intermediary can emit after the origin already committed — those fall
     // through to the lost-response branch below.
     //
@@ -498,12 +501,13 @@ const UNCONFIRMED_WARNING =
  * toast's three sentences on the row duplicates them verbatim on screen and,
  * under `aria-atomic`, in the announcement.
  */
-const UNCONFIRMED_ROW_NOTE = "Not confirmed — these points may or may not have been recorded.";
+const UNCONFIRMED_ROW_NOTE =
+  "Not confirmed — these points may or may not have been recorded.";
 
 function isTerminalStatus(status: number | undefined): boolean {
-  // `isClientError` already excludes the statuses an intermediary can emit
+  // `isDefinitiveClientError` already excludes the statuses an intermediary can emit
   // after the origin may have committed (408/499/460) — see its docblock.
-  return typeof status === "number" && isClientError(status);
+  return typeof status === "number" && isDefinitiveClientError(status);
 }
 
 /**
@@ -539,7 +543,9 @@ function unconfirmed(
     // watched "Retrying…" spin and needs to know it landed, and this module's
     // own rule is that silence after a retry is indistinguishable from a retry
     // that did nothing.
-    return isReplay ? { ok: true, resolved: RETRY_RESOLVED_NOTE } : { ok: true };
+    return isReplay
+      ? { ok: true, resolved: RETRY_RESOLVED_NOTE }
+      : { ok: true };
   }
 
   return {
@@ -605,7 +611,10 @@ async function dispatchTask(
     });
     if (error) {
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
-      return { ok: false, error: apiErrorMessage(error, "Couldn't create task") };
+      return {
+        ok: false,
+        error: apiErrorMessage(error, "Couldn't create task"),
+      };
     }
   } catch {
     removeLocalPlaceholder(ctx, channelId, clientMessageId);
@@ -664,7 +673,10 @@ async function dispatchEvent(
   const parsed = parseEventArgs(args);
   if (!parsed.ok) return { ok: false, error: parsed.error };
 
-  const startIso = localDateTimeToIso(parsed.value.date, parsed.value.startTime);
+  const startIso = localDateTimeToIso(
+    parsed.value.date,
+    parsed.value.startTime,
+  );
   const endIso = localDateTimeToIso(parsed.value.date, parsed.value.endTime);
   if (startIso === null || endIso === null) {
     return { ok: false, error: "Couldn't read the event date or time" };
@@ -697,7 +709,10 @@ async function dispatchEvent(
     });
     if (error) {
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
-      return { ok: false, error: apiErrorMessage(error, "Couldn't create event") };
+      return {
+        ok: false,
+        error: apiErrorMessage(error, "Couldn't create event"),
+      };
     }
   } catch {
     removeLocalPlaceholder(ctx, channelId, clientMessageId);

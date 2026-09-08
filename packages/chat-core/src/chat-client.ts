@@ -157,7 +157,7 @@ const INCONCLUSIVE_CLIENT_ERRORS = new Set([408, 499, 460]);
  * 408 treated as definitive tells a caller their write failed when it may have
  * landed, and the retry that follows is a fresh attempt rather than a replay.
  */
-export function isClientError(status: number): boolean {
+export function isDefinitiveClientError(status: number): boolean {
   return (
     status >= 400 && status < 500 && !INCONCLUSIVE_CLIENT_ERRORS.has(status)
   );
@@ -209,7 +209,8 @@ function classify(error: unknown): {
     extractMessage(error) ??
     extractMessage((error as { error?: unknown }).error) ??
     "Couldn't reach chat server";
-  const terminal = typeof status === "number" && isClientError(status);
+  const terminal =
+    typeof status === "number" && isDefinitiveClientError(status);
   return { terminal, status, message };
 }
 
