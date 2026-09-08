@@ -9,12 +9,14 @@ const {
   emailInvitesMutate,
   activateMutate,
   refreshSession,
+  routerPush,
 } = vi.hoisted(() => ({
   onboardMutate: vi.fn(),
   createInviteMutate: vi.fn(),
   emailInvitesMutate: vi.fn(),
   activateMutate: vi.fn(),
   refreshSession: vi.fn(),
+  routerPush: vi.fn(),
 }));
 
 // useSelectChapter refreshes the Supabase session so the new chapter's
@@ -48,7 +50,7 @@ vi.mock("@repo/org-archetypes", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn(), push: routerPush }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -91,6 +93,13 @@ describe("ChapterWizard legal acceptance gate", () => {
     onboardMutate.mockResolvedValue({ id: "ch-1" });
     createInviteMutate.mockReset();
     emailInvitesMutate.mockReset();
+    routerPush.mockReset();
+  });
+
+  it("sends an invited member to /join instead of forcing chapter create", () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "I have an invite" }));
+    expect(routerPush).toHaveBeenCalledWith("/join");
   });
 
   it("blocks Create chapter until Terms/Privacy is accepted", () => {
