@@ -1,0 +1,91 @@
+name: Production Auth conformance
+
+# Sibling of staging-conformance.yml for the Auth settings first users actually
+# hit: custom_access_token_hook and the redirect allow list on frapp-prod.
+# Staging already watches those (plus SMTP, Infisical, and a sign-in probe).
+# Production SMTP is still the hosted 2/hour cap (#1824) and is not asserted
+# here — a row for it would stay red until that human work lands.
+#
+# Own alert title. A shared one would let a recovered staging close a live
+# production incident. Project ref comes from .github/environments.json, not
+# from injected SUPABASE_PROJECT_REF.
+#
+# ── Why this job does NOT say `environment: production` ─────────────────────
+# ADR-19 put Required reviewers on the `production` GitHub environment. A
+# `schedule:` job that names it suspends on that gate and expires without
+# probing (#1435). Infisical `env-slug: "prod"` is the folder, not that
+# GitHub environment.
+#
+# Semantics live in scripts/ci/production-auth-conformance.mjs.
+# Unit tests: scripts/ci/__tests__/production-auth-conformance.test.mjs
+# (`npm run test:ci-scripts`).
+#
+# Not a required PR check.
+
+on:
+  schedule:
+    # 07:45 UTC daily — 15 minutes past staging-conformance.yml (07:30), last
+    # of the daily staggered Management-API watchdogs. `production-uptime.yml`
+    # probes live `/health/ready` on its own cadence and does not share this
+    # stagger (it also fires at :45). Full schedule:
+    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    - cron: "45 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Same as staging-conformance: the alert upsert is comment-then-PATCH. A
+  # cancellation between them leaves a recovered comment on an open issue, or
+  # a reopen with no statement of what failed.
+  group: production-auth-conformance
+  cancel-in-progress: false
+
+jobs:
+  auth-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # The only write scope in this workflow, job-scoped: the alert issue.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # continue-on-error is load-bearing, not laziness. A revoked or rotated
+      # machine identity — the #696/#763 incident this family exists to catch —
+      # makes this action exit non-zero. Failing the job here would kill the run
+      # BEFORE production-auth-conformance.mjs could report the credential
+      # failure, so the single most likely drift class would produce a red run
+      # and no issue. Letting it through means the script runs, finds the
+      # credential rejected, and files the alert that says so.
+      #
+      # `on-missing-credentials: warn` is the other half of that argument.
+      # See staging-conformance.yml and the input's own comment in the action.
+      - name: Inject production secrets from Infisical
+        continue-on-error: true
+        uses: ./.github/actions/infisical-secrets
+        with:
+          env-slug: "prod"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          on-missing-credentials: warn
+
+      - name: Assert production Auth conformance
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # Injected above: SUPABASE_ACCESS_TOKEN. SUPABASE_PROJECT_REF is also
+          # injected; the script ignores it and reads the production ref from
+          # .github/environments.json so a wrong env-slug cannot retarget it.
+        run: node scripts/ci/production-auth-conformance.mjs
