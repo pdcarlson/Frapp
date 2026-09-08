@@ -893,7 +893,7 @@ function SettingsPageContent() {
                 </Can>
                 <p className="flex items-start gap-2 text-sm text-muted-foreground">
                   <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
-                  Chapter deactivation is a supported-by-Frapp action. Contact
+                  Chapter deactivation is a supported-by-Signet action. Contact
                   support from the billing portal — data is preserved
                   indefinitely in read-only mode (see privacy policy).
                 </p>
@@ -973,7 +973,7 @@ function SettingsPageContent() {
                 <CardDescription>
                   Shown on primary buttons, chat name tags, and branded PDF
                   reports. Must meet WCAG AA contrast against white; invalid
-                  colors fall back to the Frapp default. Full theme
+                  colors fall back to the Signet default. Full theme
                   customization (chapter palette) arrives in Chunk 07.
                 </CardDescription>
               </CardHeader>

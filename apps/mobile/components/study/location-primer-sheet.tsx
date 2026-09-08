@@ -58,14 +58,14 @@ export const LocationPrimerSheet = forwardRef<
         />
 
         <Text style={styles.copy}>
-          Frapp confirms you&apos;re in the study zone when you start, and again
+          Signet confirms you&apos;re in the study zone when you start, and again
           every five minutes while you study. That check is what turns your time
           into chapter points.
         </Text>
 
         <View style={styles.points}>
           <Text style={styles.point}>
-            · Location is read only while Frapp is open — never in the background.
+            · Location is read only while Signet is open — never in the background.
           </Text>
           <Text style={styles.point}>
             · Nothing is stored beyond the zone check itself.
@@ -82,7 +82,7 @@ export const LocationPrimerSheet = forwardRef<
         ) : (
           <>
             <Text style={styles.blocked}>
-              Location is turned off for Frapp, and iOS won&apos;t ask again.
+              Location is turned off for Signet, and iOS won&apos;t ask again.
               Turn it on in Settings → Frapp → Location, then start your session.
             </Text>
             <Pressable

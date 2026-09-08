@@ -9,7 +9,7 @@ import {
 } from "@/components/shared/async-states";
 import { useTapRevealedMessage } from "@/hooks/use-tap-revealed-message";
 import { MessageItem } from "./message-item";
-import type { ChatMessage } from "@repo/chat-core/types";
+import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import { authorGroupingKey, useAuthorAvatars } from "@repo/hooks";
 
 const GROUPING_GAP_MS = 5 * 60 * 1000;
@@ -90,6 +90,8 @@ export interface MessageTimelineProps {
   onOpenThread?: (message: ChatMessage) => void;
   onRetry?: (clientMessageId: string) => void;
   onDiscard?: (clientMessageId: string) => void;
+  /** Replays an `unconfirmed` heavy-command row under its original key (#1733). */
+  onRetryUnconfirmed?: (replay: ReplayRequest) => void | Promise<void>;
   onAct?: (
     messageId: string,
     actionType: string,
@@ -139,6 +141,7 @@ export const MessageTimeline = forwardRef<
     onOpenThread,
     onRetry,
     onDiscard,
+    onRetryUnconfirmed,
     onAct,
     onEdit,
     onDelete,
@@ -296,6 +299,7 @@ export const MessageTimeline = forwardRef<
               }
               onRetry={onRetry}
               onDiscard={onDiscard}
+              onRetryUnconfirmed={onRetryUnconfirmed}
               onAct={onAct}
               onEdit={onEdit}
               onDelete={onDelete}

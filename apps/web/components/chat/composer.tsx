@@ -279,6 +279,42 @@ export function notifyDispatchOutcome(
     });
     return;
   }
+  if (result.resolved) {
+    toast({
+      title: `/${commandName} recorded`,
+      description: result.resolved,
+      // Sticky for the same reason as the branches below: the retry removed the
+      // placeholder, and the outage that lost the original response is likely to
+      // have dropped the card's Realtime echo too — so for a moment this notice
+      // can be the only visible evidence of a real ledger write. Five seconds
+      // later the officer would see an empty channel and re-type.
+      duration: Infinity,
+    });
+    return;
+  }
+  // An UNKNOWN outcome is neither of the two above, and titling it as either is
+  // a real hazard rather than a wording nit (#1733). "failed" invites the
+  // re-typed command that double-grants; "partly succeeded" asserts a write
+  // that may never have happened, which on a `/points deduct` reads as "the
+  // fine landed" and silently loses it.
+  if (result.unconfirmed) {
+    toast({
+      title: `/${commandName} not confirmed`,
+      description: result.warning ?? "Couldn't confirm that command.",
+      // Sticky, like the committed-write warning below and for the same reason:
+      // an outcome nobody can reconstruct must not disappear on a 5s timer.
+      //
+      // Sticky is NOT durable, and the difference matters here. `use-toast`'s
+      // reducer is `[action.toast, ...state.toasts].slice(0, TOAST_LIMIT)` with
+      // a limit of 1, so the NEXT toast — any toast — evicts this one outright,
+      // with no dismissal and no animation. `duration: Infinity` survives time,
+      // not other toasts (#1789). So this notice cannot be the plan: the copy
+      // is written to stand alone and send the officer to the ledger, and the
+      // timeline row is the real trace where one survives (#1909).
+      duration: Infinity,
+    });
+    return;
+  }
   if (result.warning) {
     toast({
       title: `/${commandName} partly succeeded`,

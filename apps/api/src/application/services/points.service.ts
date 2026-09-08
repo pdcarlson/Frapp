@@ -531,10 +531,14 @@ export class PointsService {
    * leaves its placeholder for the original card's echo rather than tearing
    * down one that may still reconcile.
    *
-   * The caller's half of that is only correct while the original card DID post.
-   * When it did not, no echo is coming and the placeholder strands — which this
-   * route cannot detect for the reason above, and #1734 is what fixes. Today no
-   * client replays (#1733), so the case is unreachable rather than handled.
+   * The caller's half of that used to be correct only while the original card
+   * DID post: when it did not, no echo was coming and the placeholder stranded.
+   * #1733 closed that on the client rather than here — `dispatchPoints` now
+   * knows whether it is replaying, and on a replay it reads this absent field
+   * as committed-with-unknown-card instead of waiting for an echo. So clients
+   * DO replay now, and that is safe. This route still cannot detect the case
+   * itself, for the reason above; #1734 would let it answer properly, and is
+   * now an improvement rather than a prerequisite.
    */
   private completeReplay(existing: PointTransaction): PointTransaction {
     return existing;
