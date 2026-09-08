@@ -91,10 +91,19 @@ jobs:
       pull-requests: read
       issues: read
     steps:
+      - name: Trim the SHA
+        id: sha
+        env:
+          RAW_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          SHA="$(printf '%s' "$RAW_SHA" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
       - name: Checkout the deployed commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.sha }}
+          ref: ${{ steps.sha.outputs.sha }}
           fetch-depth: 0
 
       # `fetch-depth: 0` fetches tags in most cases, but not reliably for a
@@ -116,7 +125,7 @@ jobs:
       - name: Use the running workflow's bump classifier
         env:
           WORKFLOW_SHA: ${{ github.sha }}
-          LIVE_SHA: ${{ inputs.sha }}
+          LIVE_SHA: ${{ steps.sha.outputs.sha }}
         run: |
           set -euo pipefail
           if [ "$WORKFLOW_SHA" = "$LIVE_SHA" ]; then
@@ -151,7 +160,7 @@ jobs:
           CURRENT_VERSION: ${{ steps.current.outputs.version }}
           BUMP_OVERRIDE: ${{ inputs.bump }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHA: ${{ inputs.sha }}
+          SHA: ${{ steps.sha.outputs.sha }}
         run: |
           set -euo pipefail
           LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n1)
@@ -170,7 +179,7 @@ jobs:
       - name: Create tag
         id: tag
         env:
-          SHA: ${{ inputs.sha }}
+          SHA: ${{ steps.sha.outputs.sha }}
           VERSION: ${{ steps.bump.outputs.version }}
         run: |
           set -euo pipefail
@@ -193,7 +202,7 @@ jobs:
 
       - name: Generate changelog
         env:
-          SHA: ${{ inputs.sha }}
+          SHA: ${{ steps.sha.outputs.sha }}
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail

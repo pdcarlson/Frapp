@@ -8,6 +8,7 @@ import {
   CANCELLED_CONCLUSIONS,
   isFullSha,
   jobIdsAtRef,
+  normalizeSha,
   validateDeploySha,
 } from "../validate-deploy-sha.mjs";
 
@@ -49,6 +50,17 @@ describe("isFullSha", () => {
   it("rejects a path-traversal attempt", () =>
     assert.equal(isFullSha("../../etc/passwd"), false));
   it("rejects undefined", () => assert.equal(isFullSha(undefined), false));
+  it("rejects a trailing space (the raw Actions paste)", () =>
+    assert.equal(isFullSha(`${SHA} `), false));
+});
+
+describe("normalizeSha", () => {
+  it("strips a trailing space", () => assert.equal(normalizeSha(`${SHA} `), SHA));
+  it("strips a leading space and a trailing newline", () =>
+    assert.equal(normalizeSha(` ${SHA}\n`), SHA));
+  it("does not smash internal whitespace into a different SHA", () =>
+    assert.equal(normalizeSha("abc def"), "abc def"));
+  it("returns empty for a non-string", () => assert.equal(normalizeSha(undefined), ""));
 });
 
 describe("checkAncestry", () => {
@@ -195,6 +207,21 @@ describe("validateDeploySha", () => {
     });
     assert.equal(result.ok, false);
     assert.equal(calls.length, 0);
+  });
+
+  // Run 34234768094: the dispatch text box kept a trailing space, so the
+  // validator rejected a real, CI-green SHA as malformed before git ran.
+  it("accepts a full SHA with leading/trailing whitespace", async () => {
+    const { git, calls } = makeGit();
+    const result = await validateDeploySha({
+      sha: ` ${SHA}\n`, repo: "o/r", token: "t", required, git, logger: quiet,
+      fetchImpl: async () => okJson({ check_runs: [{ name: "ci-a", status: "completed", conclusion: "success" }] }),
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(
+      calls.find((args) => args[0] === "merge-base"),
+      ["merge-base", "--is-ancestor", SHA, "origin/main"],
+    );
   });
 
   it("rejects a merged commit whose CI is red", async () => {
