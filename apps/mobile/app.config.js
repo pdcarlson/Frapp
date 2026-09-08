@@ -37,7 +37,7 @@
 // `eas build -p ios` against the Apple account.
 //
 // Source of truth for the credential inventory:
-// docs/internal/environment/ENV_REFERENCE.md § apps/mobile.
+// docs/internal/environment/ENV_REFERENCE.md § Mobile.
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -47,7 +47,7 @@ const PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR = [
   "(scoped to the production environment this profile binds to), or place",
   "apps/mobile/google-services.json.",
   "Without it the APK compiles, getExpoPushTokenAsync throws, and members never receive push.",
-  "See docs/internal/environment/ENV_REFERENCE.md § apps/mobile and GitHub issue #1826.",
+  "See docs/internal/environment/ENV_REFERENCE.md § Mobile and GitHub issue #1826.",
 ].join(" ");
 
 function resolveGoogleServicesFile({
