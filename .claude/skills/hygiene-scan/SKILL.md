@@ -219,7 +219,10 @@ consumers, name the rule. A candidate without a rule and a consumer check is not
 - **Named anti-patterns, by grep.** The canonical bad forms from `spec/engineering.md`'s rule
   sections (`+e.target.value`, an unguarded `ARCHETYPES[…]` subscript, a hardcoded actor
   id, a `<div onClick>`, a division without a zero guard, a `.single()` where the row may be
-  absent, an `as never` write cast, a bare `SupabaseClient` injection, a raw `fetch` where
+  absent, a cast or `@ts-expect-error` on a `.insert`/`.update`/`.upsert` payload — `as never` is
+  only one spelling; `as any`, `as unknown as …` and the expanded
+  `Database[…]['Insert']` erase as much, and `no-as-never.spec.ts` covers only
+  `*.repository.ts`, so service-layer writes are yours to grep — a bare `SupabaseClient` injection, a raw `fetch` where
   `@repo/hooks` owns the data layer) and the layering red flags from
   [`api-development`](../api-development/SKILL.md) and [`audit`](../audit/SKILL.md).
 - **Two ways to do one thing.** A helper in `packages/*` reimplemented locally; the same guard
