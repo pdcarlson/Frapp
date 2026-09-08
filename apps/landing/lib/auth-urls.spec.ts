@@ -95,4 +95,36 @@ describe("buildJoinUrl", () => {
       buildJoinUrl("https://app.frapp.live", { token: "", invite: "kept" }),
     ).toBe("https://app.frapp.live/join?invite=kept");
   });
+
+  it("refuses a public http: base before attaching the invite token", () => {
+    expect(() =>
+      buildJoinUrl("http://app.frapp.live", { token: "secret-invite" }),
+    ).toThrow(/must use https:/);
+    expect(() =>
+      buildJoinUrl("http://app.example.com", { token: "secret-invite" }),
+    ).toThrow(/http:\/\/app\.example\.com/);
+    // The throw happens before the query is copied, so the token is not in
+    // the error either — a 500 page must not echo it.
+    try {
+      buildJoinUrl("http://app.frapp.live", { token: "secret-invite" });
+      throw new Error("expected refuse");
+    } catch (error) {
+      expect(String(error)).not.toContain("secret-invite");
+    }
+  });
+
+  it("allows loopback http: so local Infisical APP_URL still redirects", () => {
+    expect(
+      buildJoinUrl("http://localhost:3000", { token: "local-token" }),
+    ).toBe("http://localhost:3000/join?token=local-token");
+    expect(
+      buildJoinUrl("http://127.0.0.1:3000", { token: "local-token" }),
+    ).toBe("http://127.0.0.1:3000/join?token=local-token");
+    expect(
+      buildJoinUrl("http://[::1]:3000", { token: "local-token" }),
+    ).toBe("http://[::1]:3000/join?token=local-token");
+    expect(() =>
+      buildJoinUrl("http://app.localhost", { token: "secret-invite" }),
+    ).toThrow(/must use https:/);
+  });
 });
