@@ -595,6 +595,11 @@ reachable. The JSON body is the liveness payload in
 > the Dockerfile `HEALTHCHECK` directive at all, so whether Render reads it remains unestablished.
 > `/health` is the right value here because it is the plain liveness probe that always 2xxs; the
 > readiness half is the `/health/ready` smoke loop in `deploy-production.yml`.
+>
+> **2026-09-08:** `scripts/ci/production-guardrails.mjs` asserts the live
+> `serviceDetails.healthCheckPath` on `frapp-api-prod` is `/health`, daily at 07:15
+> and as the `deploy-production.yml` preflight. Empty (TCP-only) and `/health/ready`
+> both fail the run. The alert title was not renamed — it is the lookup key.
 
 ### 5.5 In-process chat workers (Chunk 05)
 
@@ -884,7 +889,7 @@ production** with a commit SHA:
 1. **Typed confirmation** (`DEPLOY TO PRODUCTION`) — checked in an unscoped `validate` job before any secret is read and before GitHub asks anyone to Approve.
 2. **Commit validation** — trim, then the SHA must be an ancestor of `main` *and* have green CI, asserted against the required-check list branch protection uses, intersected with the jobs that commit's own workflows define (`scripts/ci/validate-deploy-sha.mjs`). Still unscoped. A bad paste fails here with no reviewer request (run 34234768094 sat on Approve, then died at Validate).
 3. **Environment approval** — the shipping job (`deploy`) pauses on the `production` environment's Required reviewers. This is the only human gate, and it fires after `validate` succeeds, on a run that names the commit. Do not put `environment: production` on `validate`.
-4. **Provider preflight** — Render auto-deploy is off; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the *absence* of a Git link, so a **present** link is the violation.
+4. **Provider preflight** — Render auto-deploy is off; `healthCheckPath` is `/health`; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the *absence* of a Git link, so a **present** link is the violation.
 5. **Migration rehearsal** → fence → `npm ci` + Vercel CLI → **Vercel production builds** (both
    projects, `vercel pull --environment=production` + `vercel build --prod`, each `.vercel` stashed
    under `$RUNNER_TEMP`) → dry-run → apply.

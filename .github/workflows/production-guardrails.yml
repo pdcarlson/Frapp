@@ -1,6 +1,7 @@
 name: Production guardrails
 
-# Watchdog for the two provider settings that make deploy-off-`main` safe.
+# Watchdog for the provider settings that make deploy-off-`main` safe, plus
+# the Render health-check path that keeps a production deploy HTTP-gated.
 #
 # Since #1340, `deploy-production.yml` is meant to be the ONLY way code reaches
 # production. That is true only while two dashboard settings stay put, and both
@@ -10,6 +11,9 @@ name: Production guardrails
 #
 #   * Render `frapp-api-prod` must have auto-deploy OFF and track `main`.
 #   * Vercel `frapp-web` and `frapp-landing` must NOT be linked to Git.
+#   * Render `frapp-api-prod` `serviceDetails.healthCheckPath` must be `/health`.
+#     Empty is a TCP socket check (documented 2026-09-06); `/health/ready`
+#     would cancel a deploy when a dependency is degraded.
 #
 # The Vercel assertion was inverted on 2026-09-02 (#1579). It used to read
 # "Production Branch must not be `main`"; ADR-21 then retired the Git
@@ -18,9 +22,10 @@ name: Production guardrails
 # absence of a link, so a PRESENT link is the violation — staying unlinked is
 # still unversioned dashboard state, so it still needs a watchdog.
 #
-# Neither is expressible in this repository: `render.yaml` is not applied to the
-# already-created service, and the Vercel Git connection lives only in the
-# dashboard. So they cannot be enforced, only asserted — which is what this does.
+# None of these is expressible in this repository: `render.yaml` is not applied
+# to the already-created service, and the Vercel Git connection lives only in
+# the dashboard. So they cannot be enforced, only asserted — which is what this
+# does.
 #
 # `deploy-production.yml` runs the same script as a preflight, so a deploy
 # cannot proceed against drifted settings. This schedule is for the gap between
