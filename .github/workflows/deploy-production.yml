@@ -145,6 +145,7 @@ jobs:
       group: db-migrate-production
       cancel-in-progress: false
     outputs:
+      sha: ${{ steps.sha.outputs.sha }}
       render-deploy-id: ${{ steps.render.outputs.deploy_id }}
       replay-outcome: ${{ steps.replay.outputs.outcome }}
       applied: ${{ steps.apply.outcome }}
@@ -159,6 +160,19 @@ jobs:
             echo "::error::Confirmation phrase did not match. Type exactly: DEPLOY TO PRODUCTION"
             exit 1
           fi
+
+      # The Actions text box keeps a trailing space/newline from paste
+      # (run 34234768094 died on 40 hex + one space before any production
+      # write). Strip ends only — not internal spaces — then every later
+      # step, the release job, and the report job use this output.
+      - name: Trim the SHA
+        id: sha
+        env:
+          RAW_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          SHA="$(printf '%s' "$RAW_SHA" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       # Checked out at the DISPATCHED ref (main), not at `inputs.sha`. The
       # validation below decides whether that SHA is trustworthy, so it has to
@@ -182,7 +196,7 @@ jobs:
       # API is a failure rather than a pass.
       - name: Validate the commit
         env:
-          DEPLOY_SHA: ${{ inputs.sha }}
+          DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/ci/validate-deploy-sha.mjs
 
@@ -265,7 +279,7 @@ jobs:
       # see the block above. `infisical-secrets-action.test.mjs` enforces it.
       - name: Check out the commit being deployed
         env:
-          DEPLOY_SHA: ${{ inputs.sha }}
+          DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
         run: |
           git checkout --detach "$DEPLOY_SHA"
           git --no-pager log -1 --format='Deploying %H%n%s'
@@ -429,7 +443,7 @@ jobs:
           {
             echo "### Dry run only — nothing was applied and nothing was deployed"
             echo ""
-            echo "Commit: \`${{ inputs.sha }}\` · scope: \`${{ inputs.scope }}\`"
+            echo "Commit: \`${{ steps.sha.outputs.sha }}\` · scope: \`${{ inputs.scope }}\`"
             echo ""
             echo "The commit passed validation, the migration replay ran against production's"
             echo "applied state, and the pending set is listed in the previous step's log."
@@ -457,7 +471,7 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ env.RENDER_PROD_SERVICE_ID }}
           SERVICE_LABEL: frapp-api-prod
-          DEPLOY_SHA: ${{ inputs.sha }}
+          DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
         run: |
           set -euo pipefail
           node scripts/ci/deploy-render-production.mjs | tee "${RUNNER_TEMP:-/tmp}/render.log"
@@ -535,7 +549,7 @@ jobs:
           DEPLOY_TARGET: production
           DEPLOY_PHASE: upload
           VERCEL_BUILD_STASH_DIR: ${{ runner.temp }}/vercel-builds
-          DEPLOY_SHA: ${{ inputs.sha }}
+          DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
         run: node scripts/ci/deploy-vercel.mjs
 
   # Tagging is a separate job only because `workflow_call` cannot be a step. It
@@ -571,7 +585,7 @@ jobs:
       pull-requests: read
       issues: read
     with:
-      sha: ${{ inputs.sha }}
+      sha: ${{ needs.deploy.outputs.sha }}
       bump: ${{ inputs.bump }}
 
   # Terminal reporting. A `workflow_dispatch` failure reds one row in the
@@ -593,7 +607,7 @@ jobs:
           APPLIED: ${{ needs.deploy.outputs.applied }}
           DRY_RUN: ${{ inputs.dry_run_only }}
           SCOPE: ${{ inputs.scope }}
-          SHA: ${{ inputs.sha }}
+          SHA: ${{ needs.deploy.outputs.sha }}
         run: |
           {
             echo "### Production deploy — \`$SHA\`"

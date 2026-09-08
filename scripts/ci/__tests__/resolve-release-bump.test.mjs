@@ -321,9 +321,15 @@ describe("the workflows that run this script grant the scope it needs", () => {
   // Release from main able to classify that same SHA.
   it("release.yml overlays the bump classifier from github.sha onto the live SHA checkout", () => {
     const text = readFileSync(join(repoRoot, ".github/workflows/release.yml"), "utf8");
-    assert.match(text, /ref: \$\{\{ inputs\.sha \}\}/);
+    // Checkout and LIVE_SHA must be the trimmed output. Raw `inputs.sha` is
+    // what left a trailing space on run 34234768094; overlaying onto that
+    // would tag the wrong ref (or fail git) after Render/Vercel already
+    // shipped.
+    assert.match(text, /ref: \$\{\{ steps\.sha\.outputs\.sha \}\}/);
     assert.match(text, /WORKFLOW_SHA: \$\{\{ github\.sha \}\}/);
-    assert.match(text, /LIVE_SHA: \$\{\{ inputs\.sha \}\}/);
+    assert.match(text, /LIVE_SHA: \$\{\{ steps\.sha\.outputs\.sha \}\}/);
+    assert.doesNotMatch(text, /ref: \$\{\{ inputs\.sha \}\}/);
+    assert.doesNotMatch(text, /LIVE_SHA: \$\{\{ inputs\.sha \}\}/);
     assert.match(text, /scripts\/ci\/resolve-release-bump\.mjs/);
     assert.match(text, /scripts\/ci\/lib/);
   });

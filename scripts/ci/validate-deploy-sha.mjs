@@ -58,6 +58,21 @@ import { ghRequest } from "./lib/github.mjs";
 
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
+/**
+ * Strip leading/trailing whitespace from a dispatch SHA.
+ *
+ * The Actions `workflow_dispatch` text box keeps a trailing space or newline
+ * from paste (run 34234768094: `0ca478e9…` + one space, 41 chars). Internal
+ * whitespace is left in place so `"abc def"` cannot be smashed into a different
+ * 40-hex string. Case is not folded: uppercase still fails `isFullSha`, so a
+ * deploy record stays matchable against Render `commitId` / Vercel
+ * `githubCommitSha`.
+ */
+export function normalizeSha(value) {
+  if (typeof value !== "string") return "";
+  return value.trim();
+}
+
 // GitHub counts all three as satisfying a required check, and so does branch
 // protection. `skipped` is the load-bearing one: this repo path-gates several
 // required jobs with a job-level `if:`, and a job skipped that way reports
@@ -358,12 +373,14 @@ export async function validateDeploySha({
   fetchImpl = resilientFetch,
   logger = console,
 }) {
-  if (!isFullSha(sha)) {
+  const normalized = normalizeSha(sha);
+  if (!isFullSha(normalized)) {
     return {
       ok: false,
       reason: `'${sha}' is not a 40-character lowercase hex commit SHA. Paste the full SHA.`,
     };
   }
+  sha = normalized;
 
   const ancestry = checkAncestry({ sha, mainRef, git });
   if (!ancestry.ok) return { ok: false, reason: ancestry.reason };
@@ -419,7 +436,7 @@ export async function validateDeploySha({
 
 async function main() {
   const result = await validateDeploySha({
-    sha: requireEnv("DEPLOY_SHA"),
+    sha: normalizeSha(requireEnv("DEPLOY_SHA")),
     repo: requireEnv("GITHUB_REPOSITORY"),
     token: requireEnv("GITHUB_TOKEN"),
     mainRef: process.env.DEPLOY_MAIN_REF ?? "origin/main",

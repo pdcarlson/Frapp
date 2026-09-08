@@ -33,6 +33,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".."
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "deploy-production.yml");
 
 const STEP_NAME = "Fence — the working tree must be intact before anything is applied";
+const SHA = "0ca478e9105105ff7013834615eee81499813d0e";
 
 /** Pull a named step's `run:` block out of the workflow, as text. */
 function extractStepScript(stepName) {
@@ -217,5 +218,63 @@ describe("the confirmation-phrase step", () => {
   it("references no secret, so a typo costs nothing", () => {
     const source = extractStepScript(CONFIRM_STEP);
     assert.ok(!/secrets\./.test(source));
+  });
+});
+
+describe("the SHA-trim step (run 34234768094)", () => {
+  const TRIM_STEP = "Trim the SHA";
+
+  function runTrim(raw) {
+    const path = join(workspace, "trim-sha.sh");
+    writeFileSync(path, extractStepScript(TRIM_STEP).replace(/\$\{\{[^}]*\}\}/g, ""));
+    const outFile = join(workspace, "sha-output.txt");
+    try {
+      const output = execFileSync("bash", [path], {
+        encoding: "utf8",
+        stdio: "pipe",
+        env: { ...process.env, RAW_SHA: raw, GITHUB_OUTPUT: outFile },
+      });
+      return {
+        code: 0,
+        output,
+        githubOutput: readFileSync(outFile, "utf8"),
+      };
+    } catch (error) {
+      return {
+        code: error.status ?? 1,
+        output: `${error.stdout ?? ""}${error.stderr ?? ""}`,
+        githubOutput: "",
+      };
+    }
+  }
+
+  it("strips a trailing space from a pasted SHA", () => {
+    const { code, githubOutput } = runTrim(`${SHA} `);
+    assert.equal(code, 0);
+    assert.match(githubOutput, new RegExp(`^sha=${SHA}$`, "m"));
+  });
+
+  it("strips a trailing newline", () => {
+    const { code, githubOutput } = runTrim(`${SHA}\n`);
+    assert.equal(code, 0);
+    assert.match(githubOutput, new RegExp(`^sha=${SHA}$`, "m"));
+  });
+
+  it("does not smash an internal space", () => {
+    const { code, githubOutput } = runTrim("abc def");
+    assert.equal(code, 0);
+    assert.match(githubOutput, /^sha=abc def$/m);
+  });
+
+  // Later steps must consume the trimmed output. Assigning `inputs.sha` again
+  // would reintroduce the trailing space that killed 34234768094.
+  it("no later DEPLOY_SHA assignment reads inputs.sha", () => {
+    const text = readFileSync(WORKFLOW, "utf8");
+    const trimAt = text.indexOf("- name: Trim the SHA");
+    assert.notEqual(trimAt, -1);
+    const after = text.slice(trimAt);
+    assert.doesNotMatch(after, /DEPLOY_SHA:\s*\$\{\{\s*inputs\.sha\s*\}\}/);
+    assert.match(after, /DEPLOY_SHA:\s*\$\{\{\s*steps\.sha\.outputs\.sha\s*\}\}/);
+    assert.match(text, /sha:\s*\$\{\{\s*needs\.deploy\.outputs\.sha\s*\}\}/);
   });
 });
