@@ -8,6 +8,8 @@
  * the same `mergeServerRow` in `./cache`, reconciled by `client_message_id`.
  */
 
+import type { components } from "@repo/api-sdk/types";
+
 export const CHAT_MESSAGE_QUERY_ROOT = "chat" as const;
 
 /** Query key for a channel's normalized message cache. */
@@ -204,15 +206,27 @@ export type ReplayRequest = {
   body: PointsAdjustBody;
 };
 
-/** The `POST /v1/points/adjust` body, as `dispatchPoints` builds it. */
-export interface PointsAdjustBody {
-  target_user_id: string;
-  amount: number;
-  category: "MANUAL" | "FINE";
-  reason: string;
+/**
+ * The `POST /v1/points/adjust` body, as `dispatchPoints` builds it.
+ *
+ * Derived from the generated contract rather than restated, so a change to the
+ * route's DTO reaches this type. The call site alone does not cover that: it
+ * would catch a rename or a new required field, but a *widened* member — a
+ * third `category`, say — leaves a hand-written copy silently narrower, still
+ * assignable to the POST and quietly unable to replay the new value.
+ *
+ * The two overrides are the difference between the route's contract and this
+ * one. `AdjustPointsDto` marks both optional because a dashboard adjustment
+ * sends neither; a replay is meaningless without both, since the whole point is
+ * to re-send the original key to the original channel.
+ */
+export type PointsAdjustBody = Omit<
+  components["schemas"]["AdjustPointsDto"],
+  "channel_id" | "client_message_id"
+> & {
   channel_id: string;
   client_message_id: string;
-}
+};
 
 /**
  * Normalized per-channel cache. `order` holds the cache key of each message
