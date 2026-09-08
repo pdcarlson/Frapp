@@ -38,7 +38,8 @@ npm run check-types -w apps/mobile
 ## Build/submit configuration
 
 - EAS profiles: `apps/mobile/eas.json`
-- Expo app metadata: `apps/mobile/app.json` (static), extended by `apps/mobile/app.config.js` for the one
-  field that depends on the machine — Firebase's `android.googleServicesFile`. When that field is
-  set, and when an EAS production Android build refuses to start without it:
+- Expo app metadata: `apps/mobile/app.json` (static), extended by `apps/mobile/app.config.js` for
+  fields that cannot be static — Firebase's `android.googleServicesFile` (set only when the file
+  exists; an EAS production Android build fails during config evaluation when it is absent) and
+  the EAS production public-env fences. See
   [`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) § apps/mobile.

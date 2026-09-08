@@ -360,6 +360,13 @@ is unavailable in that state and the sign-in screen says so.
 > yet; both are console steps that become real with the store submission (#938 / #1826).
 > The fail-closed path is the reminder that #1826 has to happen before the first
 > production Android binary, not a substitute for it.
+>
+> **2026-09-08:** every EAS production build (iOS and Android) also refuses when
+> `EXPO_PUBLIC_API_URL` is not the origin in `apps/mobile/eas.json`
+> `build.production.env`, or when `EXPO_PUBLIC_SUPABASE_URL` /
+> `EXPO_PUBLIC_SUPABASE_ANON_KEY` are empty (`apps/mobile/app.config.js`). CI and
+> `expo start` still evaluate; those vars stay optional at boot for the reasons
+> in the table.
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of
