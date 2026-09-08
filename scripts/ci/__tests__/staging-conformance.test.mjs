@@ -505,6 +505,7 @@ test("default staging toRun includes auth-magic-link — the function alone is n
   );
   const toRun = source.slice(source.indexOf("const toRun = checks ??"));
   assert.match(toRun, /id: "auth-magic-link"/);
+  assert.match(toRun, /checkAuthMagicLink\(/);
 });
 
 // ── Infisical syncs ─────────────────────────────────────────────────────────
