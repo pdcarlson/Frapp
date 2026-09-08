@@ -58,10 +58,21 @@ describe("extractInviteToken", () => {
 
   it("reads token= out of the Members Copy-link clipboard payload", () => {
     const pasted = [
-      "Frapp member invite",
+      "Signet member invite",
       "Role: President",
       "https://app.frapp.live/join?token=550e8400-e29b-41d4-a716-446655440000",
       "Expires: Sep 9, 2026",
+    ].join("\n");
+    expect(extractInviteToken(pasted)).toBe(
+      "550e8400-e29b-41d4-a716-446655440000",
+    );
+  });
+
+  it("still extracts from an older Frapp-named clipboard payload", () => {
+    const pasted = [
+      "Frapp member invite",
+      "Role: Member",
+      "https://app.frapp.live/join?token=550e8400-e29b-41d4-a716-446655440000",
     ].join("\n");
     expect(extractInviteToken(pasted)).toBe(
       "550e8400-e29b-41d4-a716-446655440000",

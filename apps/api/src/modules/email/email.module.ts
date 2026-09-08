@@ -12,7 +12,7 @@ import { ResendEmailProvider } from '../../infrastructure/email/resend-email.pro
 const EMAIL_PROVIDER_LOG_CONTEXT = 'EmailProvider';
 
 /** Used when `RESEND_FROM_EMAIL` is unset — a from-address on a domain Resend has not verified will bounce at send time, so this is a placeholder that makes the misconfiguration visible in the failure, not silent. */
-const DEFAULT_FROM_ADDRESS = 'Frapp <invites@frapp.live>';
+const DEFAULT_FROM_ADDRESS = 'Signet <invites@frapp.live>';
 
 /**
  * Choose the invite-email transport: Resend when an API key is configured,

@@ -39,7 +39,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Frapp uses the camera to scan the check-in code at chapter events.",
+          "cameraPermission": "Signet uses the camera to scan the check-in code at chapter events.",
           "recordAudioAndroid": false,
           "microphonePermission": false
         }
@@ -54,7 +54,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Frapp uses your photo library so you can choose a profile photo or attach an image.",
+          "photosPermission": "Signet uses your photo library so you can choose a profile photo or attach an image.",
           "cameraPermission": false,
           "microphonePermission": false
         }
@@ -62,7 +62,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
+          "locationWhenInUsePermission": "Signet confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false,
           "locationAlwaysAndWhenInUsePermission": false,
