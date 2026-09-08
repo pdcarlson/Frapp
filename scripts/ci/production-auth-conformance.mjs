@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Scheduled conformance check for frapp-prod Auth hook + redirect allow list.
+// Scheduled conformance check for frapp-prod Auth hook, redirect allow list,
+// and Auth SMTP (skip-until-on).
 //
 // Staging-conformance.yml watches these on frapp-staging. Production first
 // users hit frapp-prod (`unttyvyfezddlyafcydh` in .github/environments.json).
@@ -9,8 +10,11 @@
 //
 // This is a sibling, not an extension of staging-conformance.yml: a shared
 // alert title would let a recovered staging close a live production incident.
-// Production SMTP is deliberately not asserted — it is still the hosted
-// 2/hour cap (#1824) and would stay red until that human work lands.
+// Production SMTP is skip-until-on: empty host (hosted 2/hour cap) is
+// SKIPPED so the 07:45 watchdog stays green until #1824. The moment SMTP
+// is on, the same check FAILs a burned apex From (`invites@frapp.live`)
+// and requires `no-reply@mail.frapp.live` at >=300/hour. Staging already
+// FAILs on empty SMTP.
 //
 // ── Why this job does NOT say `environment: production` ─────────────────────
 // ADR-19 put Required reviewers on the `production` GitHub environment. A
@@ -46,6 +50,7 @@ import {
   canResolveAlert,
   checkAuthHook,
   checkAuthRedirects,
+  checkAuthSmtp,
   checkProjectStatus,
   classifyConformance,
   parseFailingIds,
@@ -53,10 +58,13 @@ import {
 } from "./staging-conformance.mjs";
 
 export const PRODUCTION_SITE_URL = "https://app.frapp.live";
+export const PRODUCTION_AUTH_SMTP_ADMIN_EMAIL = "no-reply@mail.frapp.live";
+
 export const DEFAULT_CHECK_IDS = Object.freeze([
   "project-status",
   "auth-hook",
   "auth-redirects",
+  "auth-smtp",
 ]);
 
 // Title is the lookup key. Must not equal staging-conformance's title.
@@ -142,11 +150,23 @@ function defaultChecks({ accessToken, projectRef, fetchImpl }) {
           expectedSiteUrl: PRODUCTION_SITE_URL,
         }),
     },
+    {
+      id: "auth-smtp",
+      label: "Custom SMTP is Resend at no-reply@mail.frapp.live (skip while unset)",
+      run: () =>
+        checkAuthSmtp({
+          accessToken,
+          projectRef,
+          fetchImpl,
+          expectedAdminEmail: PRODUCTION_AUTH_SMTP_ADMIN_EMAIL,
+          whenUnset: "skip",
+        }),
+    },
   ];
 }
 
 /**
- * Runs the three production Auth assertions, reports, and upserts/resolves
+ * Runs the four production Auth assertions, reports, and upserts/resolves
  * the alert issue. Same skip ≠ pass / failed-lookup-must-not-close contract
  * as staging-conformance; different title and default `toRun`.
  */

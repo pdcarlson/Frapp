@@ -229,7 +229,11 @@ silently revert or be forgotten on a new project.
 `rate_limit_email_sent` is 300/hour, and `_dmarc.frapp.live` is `v=DMARC1; p=none;`.
 `staging-conformance.mjs` asserts the host, that live From, and the send cap daily (`auth-smtp`)
 so a revert to the hosted 2/hour mailer or the burned apex From cannot sit green.
-Production Auth is still the hosted 2/hour cap.
+Production Auth is still the hosted 2/hour cap. The 07:45
+`production-auth-conformance.yml` watchdog skip-asserts that: empty SMTP is
+SKIPPED (the job stays green). Once SMTP is on, the same check requires
+`no-reply@mail.frapp.live` at ≥300/hour and fails a burned apex From.
+Turning SMTP on is still human work (#1824).
 
 The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`
 (`token_hash`, #1916). Gmail trained the apex From `invites@frapp.live` on the first

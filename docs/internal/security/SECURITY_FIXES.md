@@ -130,14 +130,9 @@ Two gotchas worth not re-learning:
 
 When the gate goes red on a PR that did not touch dependencies, read the **exit code** before anything else. **Exit 2 means no report was obtained** — nothing has been established about the lockfile either way, and the gate's own message says whether re-running can help. **Only exit 1 is a finding.** (Before #1638 both were exit 1, so a registry outage read as an advisory report — twice, blocking two merges.) On exit 1, a new advisory was published upstream against the existing lockfile: fix it in-range if `npm audit fix`/`npm update <pkg>` can (see the #245/#684/#291 playbooks above), otherwise file or link the tracking issue and add a time-boxed allowlist entry in the same PR. Never widen an entry beyond the single GHSA id, and never land an entry without a tracking issue. The gate only fires on PR/push activity, so advisories against an untouched lockfile surface on the next PR — Dependabot (#848) is the tracked complement for proactive detection and bumps.
 
-### js-yaml 4.3.2 + sharp 0.35.4 (2026-09-08, #1923)
+> **2026-09-08 (#1921).** Two new highs against an untouched lockfile: `js-yaml` 4.3.1 (`GHSA-2883-xcg3-v3hh`, patched 4.3.2) and `sharp` `<0.35.4` (`GHSA-rgj7-g3m4-5g8c`, patched 0.35.4). Cleared with a targeted lockfile bump — hoisted `js-yaml` 4.3.2, swagger-nested `js-yaml` 5.4.1, `sharp` 0.35.4 and its `@img/sharp-*` / libvips 1.3.3 optional binaries. No full lockfile rebuild. `@next/swc-*` stayed at 8 platform entries.
 
-Two new highs landed against an untouched lockfile and turned `dependency-audit` red on `main`:
-
-- **GHSA-2883-xcg3-v3hh** (`js-yaml` merge-key CPU DoS). Patched on the 4.x line at **4.3.2** (3.x already sat at 3.15.2 under istanbul). The hoisted copy moved 4.3.1 → 4.3.2. `@redocly/openapi-core@1.34.19` still *declares* `js-yaml@4.3.1` exactly; a scoped root override keeps it on that hoisted 4.3.2 so a later `npm install` cannot nest 4.3.1. The swagger scoped override moved `^5.2.2` → `^5.4.1` and the nested copy resolved to 5.4.1 (`npm view js-yaml version` was 5.4.1 at the bump). GHSA-2883 itself lists only the 3.x / 4.x lines.
-- **GHSA-rgj7-g3m4-5g8c** (`sharp` / bundled libheif). Next's optional `sharp@^0.35.3` resolved to 0.35.3; a root override pins **0.35.4**.
-
-Targeted `npm update js-yaml sharp --package-lock-only` + the overrides — no lockfile delete. Measured against `main`: `@next/swc-*` stayed at 8 (darwin included); the `@img/sharp-*` *platform* packages (darwin/linux/win32/wasm/freebsd) moved 0.35.3 → 0.35.4 in place; `@img/sharp-libvips-*` moved 1.3.2 → 1.3.3. The nested `@img/sharp-wasm32` `@emnapi/runtime` hoisted, which added nested emnapi copies under the existing wasm32-wasi optional packages — no platform binary disappeared.
+The lockfile versions alone do not hold after a later `npm install`: `@redocly/openapi-core@1.34.19` still *declares* `js-yaml@4.3.1` exactly, and Next's optional `sharp` range is `^0.35.3`. Root overrides keep the hoisted 4.3.2 / 0.35.4 copies (swagger nest `^5.4.1`). GHSA-2883 lists only the 3.x / 4.x lines; istanbul was already on 3.15.2.
 
 ## `@sentry/nestjs` v9 → v10 (issue #682)
 

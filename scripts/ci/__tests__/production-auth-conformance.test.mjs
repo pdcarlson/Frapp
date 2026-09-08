@@ -9,6 +9,7 @@ import { ALERT_ISSUE_TITLE as STAGING_ALERT_TITLE, FAIL, PASS, SKIPPED } from ".
 import {
   ALERT_ISSUE_TITLE,
   DEFAULT_CHECK_IDS,
+  PRODUCTION_AUTH_SMTP_ADMIN_EMAIL,
   PRODUCTION_SITE_URL,
   buildAlertIssueBody,
   productionProjectRef,
@@ -31,8 +32,8 @@ const HEALTHY_AUTH = {
   hook_custom_access_token_uri: "pg-functions://postgres/public/custom_access_token_hook",
   site_url: PRODUCTION_SITE_URL,
   uri_allow_list: `${PRODUCTION_SITE_URL},${PRODUCTION_SITE_URL}/**,frapp://**`,
-  // Hosted-cap SMTP on purpose: if this suite accidentally ran auth-smtp,
-  // the default run would FAIL. Production SMTP is still #1824.
+  // Hosted-cap SMTP on purpose: the default run must SKIP auth-smtp, not
+  // FAIL, until #1824 turns production SMTP on.
   smtp_host: "",
   smtp_admin_email: "",
   rate_limit_email_sent: 2,
@@ -93,19 +94,23 @@ describe("identity", () => {
     assert.equal(PRODUCTION_SITE_URL, "https://app.frapp.live");
   });
 
+  it("pins the production Auth SMTP From first users must not burn", () => {
+    assert.equal(PRODUCTION_AUTH_SMTP_ADMIN_EMAIL, "no-reply@mail.frapp.live");
+  });
+
   it("reads the production ref from environments.json, never from the argument name", () => {
     assert.equal(productionProjectRef(), PRODUCTION_REF);
     assert.notEqual(PRODUCTION_REF, STAGING_REF);
     assert.match(PRODUCTION_REF, /^[a-z0-9]{15,20}$/);
   });
 
-  it("default checks are project-status, auth-hook, auth-redirects — not SMTP", () => {
+  it("default checks include skip-until-on SMTP, not staging-only probes", () => {
     assert.deepEqual([...DEFAULT_CHECK_IDS], [
       "project-status",
       "auth-hook",
       "auth-redirects",
+      "auth-smtp",
     ]);
-    assert.ok(!DEFAULT_CHECK_IDS.includes("auth-smtp"));
     assert.ok(!DEFAULT_CHECK_IDS.includes("auth-signin"));
     assert.ok(!DEFAULT_CHECK_IDS.includes("infisical-syncs"));
   });
@@ -135,19 +140,22 @@ describe("default assertions", () => {
     assert.equal(outcome, "healthy");
     assert.deepEqual(
       results.map((r) => r.id),
-      ["project-status", "auth-hook", "auth-redirects"],
+      ["project-status", "auth-hook", "auth-redirects", "auth-smtp"],
     );
-    assert.equal(results.every((r) => r.status === PASS), true);
+    const smtp = results.find((r) => r.id === "auth-smtp");
+    assert.equal(smtp.status, SKIPPED);
+    assert.match(smtp.detail, /2\/hour cap/);
+    assert.match(smtp.detail, /no-reply@mail\.frapp\.live/);
+    assert.doesNotMatch(smtp.detail, /must-never-appear-in-detail/);
+    assert.equal(
+      results.filter((r) => r.id !== "auth-smtp").every((r) => r.status === PASS),
+      true,
+    );
     assert.ok(seen.some((u) => u.includes(PRODUCTION_REF)));
     assert.equal(
       seen.filter((u) => u.includes("api.supabase.com") && u.includes(STAGING_REF)).length,
       0,
       "injected staging ref must not retarget the Management API calls",
-    );
-    assert.equal(
-      results.some((r) => r.id === "auth-smtp"),
-      false,
-      "hosted-cap SMTP on the payload must not be asserted",
     );
   });
 
@@ -263,6 +271,117 @@ describe("default assertions", () => {
     assert.equal(redirects.status, FAIL);
     assert.match(redirects.detail, /app\.staging\.frapp\.live/);
     assert.match(redirects.detail, /app\.frapp\.live/);
+  });
+
+  it("fails the run when production SMTP is on with the burned apex From", async () => {
+    const { fetchImpl } = combinedFetch({
+      auth: {
+        ...HEALTHY_AUTH,
+        smtp_host: "smtp.resend.com",
+        smtp_admin_email: "invites@frapp.live",
+        rate_limit_email_sent: 300,
+      },
+      githubRoutes: [
+        { method: "GET", path: "/issues?state=all", body: [] },
+        { method: "POST", path: "/issues", body: { number: 904 } },
+      ],
+    });
+    const { outcome, results } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "failed");
+    const smtp = results.find((r) => r.id === "auth-smtp");
+    assert.equal(smtp.status, FAIL);
+    assert.match(smtp.detail, /invites@frapp\.live/);
+    assert.match(smtp.detail, /no-reply@mail\.frapp\.live/);
+    assert.doesNotMatch(smtp.detail, /must-never-appear-in-detail/);
+  });
+
+  it("fails the run when production SMTP uses the staging From", async () => {
+    const { fetchImpl } = combinedFetch({
+      auth: {
+        ...HEALTHY_AUTH,
+        smtp_host: "smtp.resend.com",
+        smtp_admin_email: "no-reply@mail.staging.frapp.live",
+        rate_limit_email_sent: 300,
+      },
+      githubRoutes: [
+        { method: "GET", path: "/issues?state=all", body: [] },
+        { method: "POST", path: "/issues", body: { number: 905 } },
+      ],
+    });
+    const { outcome, results } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "failed");
+    const smtp = results.find((r) => r.id === "auth-smtp");
+    assert.equal(smtp.status, FAIL);
+    assert.match(smtp.detail, /mail\.staging\.frapp\.live/);
+    assert.match(smtp.detail, /no-reply@mail\.frapp\.live/);
+  });
+
+  it("passes auth-smtp when production SMTP is Resend, mail.frapp.live, and 300/hour", async () => {
+    const { fetchImpl } = combinedFetch({
+      auth: {
+        ...HEALTHY_AUTH,
+        smtp_host: "smtp.resend.com",
+        smtp_admin_email: "no-reply@mail.frapp.live",
+        rate_limit_email_sent: 300,
+      },
+      githubRoutes: [{ method: "GET", path: "/issues?state=all", body: [] }],
+    });
+    const { outcome, results } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "healthy");
+    const smtp = results.find((r) => r.id === "auth-smtp");
+    assert.equal(smtp.status, PASS);
+    assert.match(smtp.detail, /no-reply@mail\.frapp\.live/);
+    assert.match(smtp.detail, /300\/hour/);
+    assert.doesNotMatch(smtp.detail, /must-never-appear-in-detail/);
+    assert.equal(results.every((r) => r.status === PASS), true);
+  });
+
+  it("fails when production SMTP is on but still at the hosted 2/hour cap", async () => {
+    const { fetchImpl } = combinedFetch({
+      auth: {
+        ...HEALTHY_AUTH,
+        smtp_host: "smtp.resend.com",
+        smtp_admin_email: "no-reply@mail.frapp.live",
+        rate_limit_email_sent: 2,
+      },
+      githubRoutes: [
+        { method: "GET", path: "/issues?state=all", body: [] },
+        { method: "POST", path: "/issues", body: { number: 906 } },
+      ],
+    });
+    const { outcome, results } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "failed");
+    const smtp = results.find((r) => r.id === "auth-smtp");
+    assert.equal(smtp.status, FAIL);
+    assert.match(smtp.detail, /2\/hour/);
   });
 });
 
