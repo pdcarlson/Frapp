@@ -1,5 +1,6 @@
 import { Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { isProductionSupabaseUrl } from '@repo/validation';
 import {
   EMAIL_PROVIDER,
   type IEmailProvider,
@@ -16,12 +17,23 @@ const DEFAULT_FROM_ADDRESS = 'Frapp <invites@frapp.live>';
 /**
  * Choose the invite-email transport: Resend when an API key is configured,
  * otherwise the no-op provider — same posture as `selectAnalyticsProvider`,
- * so local dev, tests, and CI run without any email secret.
+ * so local dev, tests, and CI run without any email secret. On production
+ * Supabase the no-op reports delivery failure (#1889).
  */
 export function selectEmailProvider(config: ConfigService): IEmailProvider {
   const apiKey = config.get<string>('RESEND_API_KEY');
 
   if (!apiKey) {
+    const production = isProductionSupabaseUrl(
+      config.get<string>('SUPABASE_URL') ?? '',
+    );
+    if (production) {
+      Logger.log(
+        'RESEND_API_KEY not set — production invite emails report delivery failure (tokens still created).',
+        EMAIL_PROVIDER_LOG_CONTEXT,
+      );
+      return new NoopEmailProvider(true);
+    }
     Logger.log(
       'RESEND_API_KEY not set — invite emails use the no-op provider.',
       EMAIL_PROVIDER_LOG_CONTEXT,
