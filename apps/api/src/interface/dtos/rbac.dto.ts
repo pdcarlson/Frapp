@@ -86,7 +86,7 @@ export class PresidencyClaimStatusDto {
     type: String,
     nullable: true,
     description:
-      'Name of the eligible role, or null when no role below President has any member at all (the "Frapp support intervenes" case).',
+      'Name of the eligible role, or null when no role below President has any member at all (the "Signet support intervenes" case).',
   })
   next_role_name: string | null;
 }
