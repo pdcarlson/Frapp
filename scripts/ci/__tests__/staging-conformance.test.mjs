@@ -496,6 +496,18 @@ test("staging default still asserts the template when smtp_host is empty", async
   assert.match(result.detail, /ConfirmationURL/);
 });
 
+test("default staging toRun includes auth-magic-link — the function alone is not enough", () => {
+  // #1927 shipped checkAuthMagicLink and wired only production. A revert that
+  // leaves the function but drops the daily row would sit green.
+  const source = readFileSync(
+    new URL("../staging-conformance.mjs", import.meta.url),
+    "utf8",
+  );
+  const toRun = source.slice(source.indexOf("const toRun = checks ??"));
+  assert.match(toRun, /id: "auth-magic-link"/);
+  assert.match(toRun, /checkAuthMagicLink\(/);
+});
+
 // ── Infisical syncs ─────────────────────────────────────────────────────────
 
 const infisicalFetch = (syncPayload, { loginStatus = 200 } = {}) => async (url) => {

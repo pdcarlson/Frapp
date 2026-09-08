@@ -456,8 +456,9 @@ export const AUTH_MAGIC_LINK_SUBJECT = "Sign in to Signet";
  *
  * The hosted default href is `{{ .ConfirmationURL }}` → `*.supabase.co/auth/v1/verify`.
  * That From/link-domain mismatch is the leftover all-users spam shape after
- * SMTP and copy were already Signet. Dashboard-only; same GET `checkAuthSmtp`
- * makes. Never put `smtp_pass` or the full template HTML in the detail string.
+ * SMTP and copy were already Signet (#1824, #1916). Dashboard-only; same GET
+ * `checkAuthSmtp` makes. Never put `smtp_pass` or the full template HTML in
+ * the detail string.
  *
  * `whenSmtpUnset`:
  * - `"fail"` (default, staging): empty `smtp_host` does not skip this check.
@@ -1006,6 +1007,12 @@ export async function runStagingConformance({
       }) },
     { id: "auth-smtp", label: "Custom SMTP is Resend and the send cap is at least 300/hour", run: () =>
       checkAuthSmtp({
+        accessToken: env.SUPABASE_ACCESS_TOKEN,
+        projectRef: env.SUPABASE_PROJECT_REF,
+        fetchImpl,
+      }) },
+    { id: "auth-magic-link", label: "Magic Link template uses token_hash on the app host", run: () =>
+      checkAuthMagicLink({
         accessToken: env.SUPABASE_ACCESS_TOKEN,
         projectRef: env.SUPABASE_PROJECT_REF,
         fetchImpl,
