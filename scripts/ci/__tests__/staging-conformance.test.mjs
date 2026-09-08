@@ -349,10 +349,11 @@ test("expectedAdminEmail is the From this check compares", async () => {
   assert.doesNotMatch(right.detail, /must-never-appear-in-detail/);
 });
 
-// ── Magic Link template — token_hash on the app host, not ConfirmationURL ───
+// ── Magic Link template — token_hash on the app host, not ConfirmationURL ──
 
 const magicLinkConfig = (overrides = {}) =>
   ok({
+    smtp_host: "smtp.resend.com",
     mailer_subjects_magic_link: "Sign in to Signet",
     mailer_templates_magic_link_content:
       '<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Signet</a>',
@@ -404,6 +405,7 @@ test("ConfirmationURL in the Magic Link body fails", async () => {
   assert.equal(result.status, FAIL);
   assert.match(result.detail, /ConfirmationURL/);
   assert.match(result.detail, /supabase\.co/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
 });
 
 test("type=magiclink without TokenHash fails", async () => {
@@ -446,6 +448,63 @@ test("Magic Link check skips without credentials and fails on a non-200", async 
     fetchImpl: async () => httpError(401),
   });
   assert.equal(failed.status, FAIL);
+});
+
+test("whenSmtpUnset skip leaves hosted SMTP as SKIPPED even with ConfirmationURL", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    whenSmtpUnset: "skip",
+    fetchImpl: async () =>
+      magicLinkConfig({
+        smtp_host: "",
+        mailer_subjects_magic_link: "Your Magic Link",
+        mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
+      }),
+  });
+  assert.equal(result.status, SKIPPED);
+  assert.match(result.detail, /smtp_host is empty/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
+  assert.doesNotMatch(result.detail, /ConfirmationURL/);
+});
+
+test("whenSmtpUnset skip still FAILs ConfirmationURL once SMTP is on", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    whenSmtpUnset: "skip",
+    fetchImpl: async () =>
+      magicLinkConfig({
+        mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
+      }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /ConfirmationURL/);
+});
+
+test("staging default still asserts the template when smtp_host is empty", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      magicLinkConfig({
+        smtp_host: "",
+        mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
+      }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /ConfirmationURL/);
+});
+
+test("default staging toRun includes auth-magic-link — the function alone is not enough", () => {
+  // #1927 shipped checkAuthMagicLink and wired only production. A revert that
+  // leaves the function but drops the daily row would sit green.
+  const source = readFileSync(
+    new URL("../staging-conformance.mjs", import.meta.url),
+    "utf8",
+  );
+  const toRun = source.slice(source.indexOf("const toRun = checks ??"));
+  assert.match(toRun, /id: "auth-magic-link"/);
 });
 
 // ── Infisical syncs ─────────────────────────────────────────────────────────

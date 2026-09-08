@@ -67,6 +67,7 @@
     "undici": ">=7.29.0 <8.0.0",
     "path-to-regexp": "^8.4.0",
     "yaml": "^2.9.0",
+    "multer": ">=2.3.0 <3.0.0",
     "@xmldom/xmldom": ">=0.8.13",
     "@expo/plist": {
       "@xmldom/xmldom": "^0.8.15"

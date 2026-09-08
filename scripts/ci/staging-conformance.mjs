@@ -452,7 +452,7 @@ export async function checkAuthSmtp({
 export const AUTH_MAGIC_LINK_SUBJECT = "Sign in to Signet";
 
 /**
- * Staging Magic Link template stays on the app host via `token_hash`.
+ * Magic Link template stays on the app host via `token_hash`.
  *
  * The hosted default href is `{{ .ConfirmationURL }}` → `*.supabase.co/auth/v1/verify`.
  * That From/link-domain mismatch is the leftover all-users spam shape after
@@ -460,10 +460,20 @@ export const AUTH_MAGIC_LINK_SUBJECT = "Sign in to Signet";
  * `checkAuthSmtp` makes. Never put `smtp_pass` or the full template HTML in
  * the detail string.
  *
- * Production is deliberately not asserted here: its template is still the
- * hosted default until SMTP is enabled.
+ * `whenSmtpUnset`:
+ * - `"fail"` (default, staging): empty `smtp_host` does not skip this check.
+ *   Staging SMTP is on; a ConfirmationURL template is a FAIL.
+ * - `"skip"` (production until #1824): empty `smtp_host` is SKIPPED so the
+ *   07:45 watchdog stays green on today's hosted default. The moment SMTP is
+ *   on, ConfirmationURL fails and the body must carry TokenHash +
+ *   `type=magiclink`.
  */
-export async function checkAuthMagicLink({ accessToken, projectRef, fetchImpl = fetch }) {
+export async function checkAuthMagicLink({
+  accessToken,
+  projectRef,
+  fetchImpl = fetch,
+  whenSmtpUnset = "fail",
+} = {}) {
   const label = "Magic Link template uses token_hash on the app host";
   if (!accessToken || !projectRef) {
     return result(
@@ -481,6 +491,15 @@ export async function checkAuthMagicLink({ accessToken, projectRef, fetchImpl = 
     return result("auth-magic-link", label, FAIL, `Management API returned HTTP ${response.status}`);
   }
   const data = await response.json();
+  const host = typeof data?.smtp_host === "string" ? data.smtp_host.trim() : "";
+  if (!host && whenSmtpUnset === "skip") {
+    return result(
+      "auth-magic-link",
+      label,
+      SKIPPED,
+      "smtp_host is empty; Magic Link template not asserted until SMTP is on. See #1824.",
+    );
+  }
   const subject =
     typeof data?.mailer_subjects_magic_link === "string"
       ? data.mailer_subjects_magic_link.trim()
