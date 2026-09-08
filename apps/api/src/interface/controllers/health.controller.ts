@@ -4,18 +4,11 @@ import {
   Inject,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
-
-type DependencyStatus = 'connected' | 'error';
-
-interface HealthPayload {
-  status: 'ok' | 'degraded';
-  database: DependencyStatus;
-  storage: DependencyStatus;
-  uptime: number;
-}
+import { readDeployedCommit } from './deployed-commit';
+import { HealthPayloadDto, type DependencyStatus } from '../dtos/health.dto';
 
 // The Supabase client (apps/api/src/infrastructure/supabase/supabase.provider.ts)
 // sets no `db.timeout`, so a probe's underlying fetch has no bound of its own —
@@ -41,7 +34,8 @@ export class HealthController {
   @ApiOperation({
     summary: 'Liveness check (always 2xx while the process is up)',
   })
-  async check(): Promise<HealthPayload> {
+  @ApiOkResponse({ type: HealthPayloadDto })
+  async check(): Promise<HealthPayloadDto> {
     return this.buildPayload();
   }
 
@@ -57,7 +51,8 @@ export class HealthController {
   @ApiOperation({
     summary: 'Readiness check (503 when a dependency is degraded)',
   })
-  async ready(): Promise<HealthPayload> {
+  @ApiOkResponse({ type: HealthPayloadDto })
+  async ready(): Promise<HealthPayloadDto> {
     const payload = await this.buildPayload();
 
     if (payload.status === 'degraded') {
@@ -70,19 +65,24 @@ export class HealthController {
     return payload;
   }
 
-  private async buildPayload(): Promise<HealthPayload> {
+  private async buildPayload(): Promise<HealthPayloadDto> {
     const [database, storage] = await Promise.all([
       this.probeDatabase(),
       this.probeStorage(),
     ]);
 
-    return {
+    const payload: HealthPayloadDto = {
       status:
         database === 'connected' && storage === 'connected' ? 'ok' : 'degraded',
       database,
       storage,
       uptime: Math.floor((Date.now() - this.startedAt) / 1000),
     };
+    const commit = readDeployedCommit();
+    if (commit) {
+      payload.commit = commit;
+    }
+    return payload;
   }
 
   private async probeDatabase(): Promise<DependencyStatus> {
