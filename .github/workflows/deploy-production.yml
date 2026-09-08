@@ -248,9 +248,12 @@ jobs:
           node-version: 20
 
       # Also from trusted code, and before anything is applied or built. Both
-      # settings fail OPEN: if Render's auto-deploy is back on, or a Vercel
-      # project's Production Branch has become `main`, ordinary merges are
+      # auto-deploy and the Vercel Git-link fail OPEN: if Render's auto-deploy
+      # is back on, or a Vercel project is re-linked, ordinary merges are
       # already shipping to production and this workflow is not the only path.
+      # The same preflight asserts `serviceDetails.healthCheckPath` is `/health`
+      # (empty is a TCP-only probe; `/health/ready` would cancel on a degraded
+      # dependency).
       #
       # Under `migrations-only` exactly ONE assertion is dropped:
       # frapp-LANDING's Vercel Production Branch. Render's stays, because
