@@ -1,0 +1,9 @@
+# CodeRabbit posts on ready PRs (OSS tier on this public repo). It must not
+# submit GitHub review events: a write-access CHANGES_REQUESTED blocks squash
+# via the ruleset "1 review requesting changes by reviewers with write access"
+# (#1875, #1880). Drafts stay skipped so they do not consume the 1/hour slot.
+language: "en-US"
+reviews:
+  request_changes_workflow: false
+  auto_review:
+    drafts: false
