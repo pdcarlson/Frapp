@@ -1,4 +1,4 @@
-import { mintJoinUrl } from "@repo/validation";
+import { mintJoinUrl, PRODUCTION_APP_ORIGIN } from "@repo/validation";
 
 /**
  * Invite URLs the first-officer wizard shares.
@@ -8,8 +8,6 @@ import { mintJoinUrl } from "@repo/validation";
  * (Infisical reference `${APP_URL}`); otherwise the production dashboard origin
  * so a generated link still redeems. Do not invent a staging URL here.
  */
-
-const PRODUCTION_APP_ORIGIN = "https://app.frapp.live";
 
 export function webAppOrigin(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,

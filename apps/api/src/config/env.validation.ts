@@ -1,3 +1,8 @@
+import {
+  assertProductionAppOrigin,
+  isProductionSupabaseUrl,
+} from '@repo/validation';
+
 const REQUIRED_ENV_VARS = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
@@ -74,6 +79,23 @@ export function validateEnv(config: Record<string, unknown>) {
     throw new Error(
       `Missing required environment variables: ${missingVars.join(', ')}`,
     );
+  }
+
+  // Production invite emails are built from APP_URL. https: alone still
+  // allows https://app.staging.frapp.live, which would send the first cohort
+  // to staging. Unset APP_URL keeps the production-origin fallback in
+  // invite-link.util.ts. The Docker image does not copy .github/, so the
+  // production Supabase host is identified by @repo/validation (pinned to
+  // environments.json in that package's tests).
+  const supabaseUrl = config.SUPABASE_URL;
+  const appUrl = config.APP_URL;
+  if (
+    typeof supabaseUrl === 'string' &&
+    isProductionSupabaseUrl(supabaseUrl) &&
+    typeof appUrl === 'string' &&
+    appUrl.trim().length > 0
+  ) {
+    assertProductionAppOrigin(appUrl, 'APP_URL');
   }
 
   return config;

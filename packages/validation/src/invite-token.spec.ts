@@ -1,9 +1,16 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   extractInviteToken,
   extractInviteTokenFromQuery,
   assertHttpsJoinOrigin,
   mintJoinUrl,
+  PRODUCTION_APP_ORIGIN,
+  PRODUCTION_SUPABASE_PROJECT_REF,
+  isProductionSupabaseUrl,
+  assertProductionAppOrigin,
 } from "./invite-token";
 
 describe("extractInviteToken", () => {
@@ -187,5 +194,79 @@ describe("mintJoinUrl", () => {
     expect(mintJoinUrl("http://localhost:3000", "local-token")).toBe(
       "http://localhost:3000/join?token=local-token",
     );
+  });
+});
+
+describe("production app origin", () => {
+  it("matches .github/environments.json production.supabaseProjectRef", () => {
+    const configPath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../.github/environments.json",
+    );
+    const parsed = JSON.parse(readFileSync(configPath, "utf8")) as {
+      environments: { production: { supabaseProjectRef: string } };
+    };
+    expect(PRODUCTION_SUPABASE_PROJECT_REF).toBe(
+      parsed.environments.production.supabaseProjectRef,
+    );
+    expect(PRODUCTION_APP_ORIGIN).toBe("https://app.frapp.live");
+  });
+
+  it("recognizes only the production Supabase HTTPS origin", () => {
+    expect(
+      isProductionSupabaseUrl(
+        `https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co/`,
+      ),
+    ).toBe(true);
+    expect(
+      isProductionSupabaseUrl(
+        `http://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`,
+      ),
+    ).toBe(false);
+    expect(
+      isProductionSupabaseUrl(
+        `https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co.evil.example`,
+      ),
+    ).toBe(false);
+    expect(isProductionSupabaseUrl("https://example.supabase.co")).toBe(false);
+    expect(isProductionSupabaseUrl("not a url")).toBe(false);
+    expect(
+      isProductionSupabaseUrl(
+        `https://evil.example/?host=${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`,
+      ),
+    ).toBe(false);
+  });
+
+  it("allows the production dashboard origin, ignoring a trailing slash", () => {
+    expect(
+      assertProductionAppOrigin(
+        `${PRODUCTION_APP_ORIGIN}/`,
+        "APP_URL",
+      ).origin,
+    ).toBe(PRODUCTION_APP_ORIGIN);
+  });
+
+  it("refuses staging, localhost, and unparseable values without echoing a token", () => {
+    expect(() =>
+      assertProductionAppOrigin(
+        "https://app.staging.frapp.live",
+        "APP_URL",
+      ),
+    ).toThrow(/app\.staging\.frapp\.live/);
+    expect(() =>
+      assertProductionAppOrigin("http://localhost:3000", "APP_URL"),
+    ).toThrow(/localhost/);
+    expect(() =>
+      assertProductionAppOrigin("not a url", "NEXT_PUBLIC_APP_URL"),
+    ).toThrow(/NEXT_PUBLIC_APP_URL[\s\S]*unparseable/);
+    try {
+      assertProductionAppOrigin(
+        "https://app.staging.frapp.live/join?token=secret-invite",
+        "APP_URL",
+      );
+      throw new Error("expected refuse");
+    } catch (error) {
+      expect(String(error)).not.toContain("secret-invite");
+    }
   });
 });

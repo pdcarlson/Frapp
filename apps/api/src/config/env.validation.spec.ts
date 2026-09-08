@@ -1,3 +1,7 @@
+import {
+  PRODUCTION_APP_ORIGIN,
+  PRODUCTION_SUPABASE_PROJECT_REF,
+} from '@repo/validation';
 import { validateEnv } from './env.validation';
 
 // `validateEnv` is the first thing that runs on boot (ConfigModule.forRoot in
@@ -88,5 +92,46 @@ describe('validateEnv', () => {
     ).toThrow(
       'Missing required environment variables: SUPABASE_SERVICE_ROLE_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_ID',
     );
+  });
+
+  const productionSupabase = `https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`;
+
+  it('allows production Supabase with unset or production APP_URL', () => {
+    expect(() =>
+      validateEnv({ ...complete, SUPABASE_URL: productionSupabase }),
+    ).not.toThrow();
+    expect(() =>
+      validateEnv({
+        ...complete,
+        SUPABASE_URL: productionSupabase,
+        APP_URL: `${PRODUCTION_APP_ORIGIN}/`,
+      }),
+    ).not.toThrow();
+  });
+
+  it('refuses production Supabase with a staging or localhost APP_URL', () => {
+    expect(() =>
+      validateEnv({
+        ...complete,
+        SUPABASE_URL: productionSupabase,
+        APP_URL: 'https://app.staging.frapp.live',
+      }),
+    ).toThrow(/APP_URL[\s\S]*app\.staging\.frapp\.live/);
+    expect(() =>
+      validateEnv({
+        ...complete,
+        SUPABASE_URL: productionSupabase,
+        APP_URL: 'http://localhost:3000',
+      }),
+    ).toThrow(/APP_URL/);
+  });
+
+  it('does not fence APP_URL when SUPABASE_URL is not production', () => {
+    expect(() =>
+      validateEnv({
+        ...complete,
+        APP_URL: 'https://app.staging.frapp.live',
+      }),
+    ).not.toThrow();
   });
 });

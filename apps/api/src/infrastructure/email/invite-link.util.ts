@@ -1,5 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
-import { mintJoinUrl } from '@repo/validation';
+import { mintJoinUrl, PRODUCTION_APP_ORIGIN } from '@repo/validation';
 
 /**
  * Mirrors `apps/mobile/lib/onboarding/chapter-wizard/invite-link.ts`: the web
@@ -10,8 +10,6 @@ import { mintJoinUrl } from '@repo/validation';
  * `APP_URL` set still links somewhere real rather than to `undefined` or a
  * made-up staging host.
  */
-const PRODUCTION_APP_ORIGIN = 'https://app.frapp.live';
-
 export function resolveAppOrigin(config: ConfigService): string {
   const configured = config.get<string>('APP_URL');
   const trimmed = configured?.trim();

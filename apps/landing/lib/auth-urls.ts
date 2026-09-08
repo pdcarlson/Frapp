@@ -1,4 +1,8 @@
-import { assertHttpsJoinOrigin } from "@repo/validation";
+import {
+  assertHttpsJoinOrigin,
+  assertProductionAppOrigin,
+  PRODUCTION_APP_ORIGIN,
+} from "@repo/validation";
 
 /**
  * Builds the landing site's auth call-to-action URLs.
@@ -10,7 +14,7 @@ import { assertHttpsJoinOrigin } from "@repo/validation";
  * tested so the CTA paths cannot silently drift again.
  */
 
-const DEFAULT_APP_BASE_URL = "https://app.frapp.live";
+const DEFAULT_APP_BASE_URL = PRODUCTION_APP_ORIGIN;
 
 const SIGN_UP_PATH = "/sign-up";
 const SIGN_IN_PATH = "/sign-in";
@@ -28,6 +32,35 @@ type JoinSearch =
   | null
   | undefined;
 
+export interface LandingRuntimeEnv {
+  /** `VERCEL_ENV`. Staging deploys this repo as `preview` (`DEPLOY_TARGET: preview`). */
+  vercelEnv?: string | null;
+}
+
+function vercelEnvOf(runtime: LandingRuntimeEnv): string | undefined {
+  return runtime.vercelEnv !== undefined
+    ? (runtime.vercelEnv ?? undefined)
+    : process.env.VERCEL_ENV;
+}
+
+function assertProductionLandingAppOrigin(
+  rawAppBaseUrl: string | null | undefined,
+  runtime: LandingRuntimeEnv,
+): void {
+  if (vercelEnvOf(runtime) !== "production") return;
+  const candidate = rawAppBaseUrl ?? PRODUCTION_APP_ORIGIN;
+  try {
+    assertProductionAppOrigin(candidate, "NEXT_PUBLIC_APP_URL");
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      detail.startsWith("NEXT_PUBLIC_APP_URL")
+        ? detail
+        : `NEXT_PUBLIC_APP_URL: ${detail}`,
+    );
+  }
+}
+
 /**
  * @param rawAppBaseUrl typically `process.env.NEXT_PUBLIC_APP_URL`. Defaults to
  *   the production app origin when null or undefined — but *only* then: a value
@@ -39,7 +72,11 @@ type JoinSearch =
  *   relative, they would resolve against the base's path instead, which
  *   `auth-urls.spec.ts`'s multi-segment case is there to catch.
  */
-export function buildAuthUrls(rawAppBaseUrl?: string | null): AuthUrls {
+export function buildAuthUrls(
+  rawAppBaseUrl?: string | null,
+  runtime: LandingRuntimeEnv = {},
+): AuthUrls {
+  assertProductionLandingAppOrigin(rawAppBaseUrl, runtime);
   const appBaseUrl = rawAppBaseUrl ?? DEFAULT_APP_BASE_URL;
 
   return {
@@ -57,6 +94,7 @@ export function buildAuthUrls(rawAppBaseUrl?: string | null): AuthUrls {
 export function buildJoinUrl(
   rawAppBaseUrl?: string | null,
   search?: JoinSearch,
+  runtime: LandingRuntimeEnv = {},
 ): string {
   const url = new URL(authUrl(JOIN_PATH, rawAppBaseUrl ?? DEFAULT_APP_BASE_URL));
   // Refuse before copying the invite query: an http: Location would put the
@@ -67,6 +105,7 @@ export function buildJoinUrl(
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`NEXT_PUBLIC_APP_URL: ${detail}`);
   }
+  assertProductionLandingAppOrigin(rawAppBaseUrl, runtime);
   applyJoinSearch(url, search);
   return url.toString();
 }

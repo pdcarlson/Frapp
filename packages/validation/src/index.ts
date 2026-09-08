@@ -1014,6 +1014,10 @@ export {
   extractInviteTokenFromQuery,
   assertHttpsJoinOrigin,
   mintJoinUrl,
+  PRODUCTION_APP_ORIGIN,
+  PRODUCTION_SUPABASE_PROJECT_REF,
+  isProductionSupabaseUrl,
+  assertProductionAppOrigin,
 } from "./invite-token";
 
 // Event recurrence: the rule catalog the DTOs validate against, the child
