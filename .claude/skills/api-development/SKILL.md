@@ -318,10 +318,15 @@ Two constraints worth knowing before you fight the compiler:
   comment to this effect.
 * **Do not introduce a generic base repository.** Each repository keeps
   its own query logic. The type wiring is per-call: parameterize the
-  write method, leave the rest of the class alone. Every repository under
-  `infrastructure/supabase/repositories/` follows this; `no-as-never.spec.ts`
-  fails the suite if the file count drifts, a file injects a bare
-  `SupabaseClient`, or an `as never` write cast returns. Direct
+  write method, leave the rest of the class alone. Every `*.repository.ts`
+  under `apps/api/src` follows this — including the module-local ones in
+  `modules/scheduled-jobs` and `modules/chat-push-worker`; `no-as-never.spec.ts`
+  fails the suite if the repository count drifts, a file injects a bare
+  `SupabaseClient`, or a cast that erases the write payload type returns
+  (`as never`, `as unknown as TablesInsert`/`TablesUpdate`, or `as any`). It
+  discovers that corpus through `#test/helpers/repository-corpus`, the same
+  walk `tenant-scope-coverage.spec.ts` uses, so a new repository joins both
+  ledgers wherever it lives. Direct
   service-layer writes (chapter config, custom fields/roles, chapter-create
   channel seed, onboarding, chat-bridge, scheduled-jobs) use the same
   `TablesInsert` / `TablesUpdate` locals.

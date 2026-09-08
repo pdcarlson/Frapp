@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { collectRepositories } from '#test/helpers/repository-corpus';
 
 /**
  * Coverage ledger for the tenant-scope specs.
@@ -10,38 +10,19 @@ import { join } from 'node:path';
  * now fails here, and deferring one is a line in `TENANT_SCOPE_BACKLOG` with a
  * reason — a decision somebody made, not a gap that accumulated.
  *
- * Discovery is a recursive walk of `apps/api/src` for `*.repository.ts`, not
- * this directory and not a `supabase-` filename prefix. Module-local
- * repositories (`modules/scheduled-jobs`, `modules/chat-push-worker`) are in
- * the denominator. The sibling `*.repository.spec.ts` is the spec, wherever
- * the implementation lives.
+ * Discovery is `collectRepositories` from `#test/helpers/repository-corpus` —
+ * a recursive walk of `apps/api/src` for `*.repository.ts`, not this directory
+ * and not a `supabase-` filename prefix. Module-local repositories
+ * (`modules/scheduled-jobs`, `modules/chat-push-worker`) are in the
+ * denominator. The sibling `*.repository.spec.ts` is the spec, wherever the
+ * implementation lives. `no-as-never.spec.ts` reads the same corpus from the
+ * same helper, so the two ledgers cannot come to disagree about what a
+ * repository is.
  *
  * This is not a quality gate on the specs themselves; a spec that exists but
  * asserts nothing satisfies it. What stops that is `tenant-scope.harness.spec.ts`,
  * which proves the harness those specs use can still fail.
  */
-
-const SRC_ROOT = join(__dirname, '../../..');
-
-interface RepositoryFile {
-  fileName: string;
-  fullPath: string;
-}
-
-function collectRepositories(dir: string): RepositoryFile[] {
-  const out: RepositoryFile[] = [];
-  for (const name of readdirSync(dir)) {
-    if (name === 'node_modules' || name === 'dist') continue;
-    const fullPath = join(dir, name);
-    const st = statSync(fullPath);
-    if (st.isDirectory()) {
-      out.push(...collectRepositories(fullPath));
-    } else if (st.isFile() && name.endsWith('.repository.ts')) {
-      out.push({ fileName: name, fullPath });
-    }
-  }
-  return out.sort((a, b) => a.fileName.localeCompare(b.fileName));
-}
 
 /**
  * Repositories deliberately not covered in this pass, each with the reason.
@@ -78,7 +59,7 @@ const TENANT_SCOPE_BACKLOG: Record<string, string> = {
 const specPathFor = (fullPath: string) => fullPath.replace(/\.ts$/, '.spec.ts');
 
 describe('API repository tenant-scope coverage', () => {
-  const repositories = collectRepositories(SRC_ROOT);
+  const repositories = collectRepositories();
 
   it('repository basenames are unique so the backlog can key on the file name', () => {
     const counts = new Map<string, number>();

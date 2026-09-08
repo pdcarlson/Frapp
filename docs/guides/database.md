@@ -176,8 +176,10 @@ npx supabase db push --local
   workers, health) — a bare `SupabaseClient` annotation drops the schema.
   Do not add a generic base repository; keep each repository's query
   logic and only parameterize the write methods.
-  `no-as-never.spec.ts` guards the repository folder (file count,
-  `FrappSupabaseClient` injection, no `as never`).
+  `no-as-never.spec.ts` guards every `*.repository.ts` under
+  `apps/api/src`, module-local ones included (repository count,
+  `FrappSupabaseClient` injection, no cast that erases the write
+  payload type).
 - Any relevant behavior under `spec/behavior/`
 
 ## 5. RLS and security
