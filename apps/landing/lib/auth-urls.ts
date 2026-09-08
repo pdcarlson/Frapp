@@ -43,14 +43,45 @@ function vercelEnvOf(runtime: LandingRuntimeEnv): string | undefined {
     : process.env.VERCEL_ENV;
 }
 
+function isParseableAbsoluteHttpUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.hostname.length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `??` only treats `null`/`undefined` as missing. Infisical and Vercel both
+ * accept an empty string for a defined key, and a scheme-less host is a
+ * common paste. Those used to reach `new URL` and 500 `/` (#1777).
+ *
+ * A parseable `http(s)` origin is returned as-is — including staging and
+ * loopback — so this is a parse floor, not an origin fence. Production
+ * origin checks run on the resolved value.
+ */
+function resolveAppBaseUrl(rawAppBaseUrl?: string | null): string {
+  if (typeof rawAppBaseUrl !== "string") {
+    return DEFAULT_APP_BASE_URL;
+  }
+  const trimmed = rawAppBaseUrl.trim();
+  if (!isParseableAbsoluteHttpUrl(trimmed)) {
+    return DEFAULT_APP_BASE_URL;
+  }
+  return trimmed;
+}
+
 function assertProductionLandingAppOrigin(
-  rawAppBaseUrl: string | null | undefined,
+  appBaseUrl: string,
   runtime: LandingRuntimeEnv,
 ): void {
   if (vercelEnvOf(runtime) !== "production") return;
-  const candidate = rawAppBaseUrl ?? PRODUCTION_APP_ORIGIN;
   try {
-    assertProductionAppOrigin(candidate, "NEXT_PUBLIC_APP_URL");
+    assertProductionAppOrigin(appBaseUrl, "NEXT_PUBLIC_APP_URL");
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
@@ -63,9 +94,8 @@ function assertProductionLandingAppOrigin(
 
 /**
  * @param rawAppBaseUrl typically `process.env.NEXT_PUBLIC_APP_URL`. Defaults to
- *   the production app origin when null or undefined — but *only* then: a value
- *   that is set-but-blank, or has no scheme, still reaches `new URL` and throws
- *   (#1777).
+ *   the production app origin when the value is null, undefined, blank,
+ *   whitespace, or not a parseable absolute `http(s)` URL (#1777).
  *
  *   Both auth paths are absolute, so `new URL` keeps the base's origin and
  *   discards its path, query and fragment. Keep the paths absolute: made
@@ -76,8 +106,8 @@ export function buildAuthUrls(
   rawAppBaseUrl?: string | null,
   runtime: LandingRuntimeEnv = {},
 ): AuthUrls {
-  assertProductionLandingAppOrigin(rawAppBaseUrl, runtime);
-  const appBaseUrl = rawAppBaseUrl ?? DEFAULT_APP_BASE_URL;
+  const appBaseUrl = resolveAppBaseUrl(rawAppBaseUrl);
+  assertProductionLandingAppOrigin(appBaseUrl, runtime);
 
   return {
     signupUrl: authUrl(SIGN_UP_PATH, appBaseUrl),
@@ -96,7 +126,8 @@ export function buildJoinUrl(
   search?: JoinSearch,
   runtime: LandingRuntimeEnv = {},
 ): string {
-  const url = new URL(authUrl(JOIN_PATH, rawAppBaseUrl ?? DEFAULT_APP_BASE_URL));
+  const appBaseUrl = resolveAppBaseUrl(rawAppBaseUrl);
+  const url = new URL(authUrl(JOIN_PATH, appBaseUrl));
   // Refuse before copying the invite query: an http: Location would put the
   // token on the wire in the clear. Loopback http is local Infisical APP_URL.
   try {
@@ -105,7 +136,7 @@ export function buildJoinUrl(
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`NEXT_PUBLIC_APP_URL: ${detail}`);
   }
-  assertProductionLandingAppOrigin(rawAppBaseUrl, runtime);
+  assertProductionLandingAppOrigin(appBaseUrl, runtime);
   applyJoinSearch(url, search);
   return url.toString();
 }
@@ -123,10 +154,12 @@ export function buildJoinUrl(
  * "was not exposed".
  *
  * Stripping is chosen over the two alternatives, neither free: throwing would
- * 500 the homepage from a server component (#1777), and falling back to the
- * default would silently send staging visitors to production. The cost is that
- * a basic-auth-gated base now yields CTAs that 401 instead of authenticating,
+ * 500 the homepage from a server component, and falling back to the default
+ * would silently send staging visitors to production. The cost is that a
+ * basic-auth-gated base now yields CTAs that 401 instead of authenticating,
  * with nothing logged. No such base is configured (`DEPLOYMENT.md` § 4.2).
+ * Blank / scheme-less bases are a different case — they never parse, so they
+ * fall back in `resolveAppBaseUrl` before this helper runs (#1777).
  */
 function authUrl(path: string, base: string): string {
   const url = new URL(path, base);

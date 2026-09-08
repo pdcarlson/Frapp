@@ -32,6 +32,19 @@ describe("buildAuthUrls", () => {
     expect(fromNull).toEqual(fromUndefined);
   });
 
+  it("falls back when the base is blank or not an absolute http(s) URL", () => {
+    const expected = {
+      signupUrl: "https://app.frapp.live/sign-up",
+      loginUrl: "https://app.frapp.live/sign-in",
+    };
+    for (const base of ["", "   ", "app.frapp.live", "localhost:3000"]) {
+      expect(buildAuthUrls(base)).toEqual(expected);
+      expect(
+        buildAuthUrls(base, { vercelEnv: "production" }),
+      ).toEqual(expected);
+    }
+  });
+
   it("never emits the non-existent /login or bare /signup routes", () => {
     for (const base of [
       undefined,
@@ -99,6 +112,17 @@ describe("buildJoinUrl", () => {
   it("falls back to the production app origin when no base is provided", () => {
     expect(buildJoinUrl(undefined)).toBe("https://app.frapp.live/join");
     expect(buildJoinUrl(null)).toBe("https://app.frapp.live/join");
+  });
+
+  it("falls back when the base is blank or not an absolute http(s) URL", () => {
+    for (const base of ["", "   ", "app.frapp.live", "localhost:3000"]) {
+      expect(buildJoinUrl(base, { token: "t" })).toBe(
+        "https://app.frapp.live/join?token=t",
+      );
+      expect(
+        buildJoinUrl(base, { token: "t" }, { vercelEnv: "production" }),
+      ).toBe("https://app.frapp.live/join?token=t");
+    }
   });
 
   it("keeps the invite query on the web app origin", () => {
