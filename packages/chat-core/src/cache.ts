@@ -13,6 +13,7 @@ import {
   type ChatMessage,
   type RawChatMessage,
   type RawChatMessageAction,
+  type ReplayRequest,
   normalizeRow,
 } from "./types";
 
@@ -116,6 +117,40 @@ export function markFailed(
     byId: {
       ...cache.byId,
       [clientMessageId]: { ...existing, _status: "failed", _error: error },
+    },
+  };
+}
+
+/**
+ * Marks an optimistic message as **unconfirmed** — the request may or may not
+ * have committed — and records what an explicit retry would replay (#1733).
+ *
+ * Distinct from {@link markFailed} on purpose. `failed` asserts nothing was
+ * written, so its UI may offer discard; this one asserts nothing at all, and a
+ * discard would throw away the only trace of a write that may have landed.
+ * The row keeps its `client_message_id` as its cache key, so the replay carried
+ * here reuses the original key rather than minting a fresh one — the whole
+ * point of the exercise, since a fresh key misses the server's dedupe index and
+ * double-grants.
+ */
+export function markUnconfirmed(
+  cache: ChannelCache,
+  clientMessageId: string,
+  replay: ReplayRequest,
+  note: string,
+): ChannelCache {
+  const existing = cache.byId[clientMessageId];
+  if (!existing) return cache;
+  return {
+    ...cache,
+    byId: {
+      ...cache.byId,
+      [clientMessageId]: {
+        ...existing,
+        _status: "unconfirmed",
+        _error: note,
+        _replay: replay,
+      },
     },
   };
 }

@@ -28,12 +28,14 @@ import {
   type ChatMessageKind,
   type RawChatMessage,
   type RawChatMessageAction,
+  type ReplayRequest,
 } from "./types";
 import {
   applyActionUpdate,
   applyReactionInsert,
   emptyCache,
   markFailed,
+  markUnconfirmed,
   mergeServerRow,
   removeMessage,
   toggleReactionLocal,
@@ -386,6 +388,26 @@ export function removeLocalPlaceholder(
 ): void {
   patchCache(ctx.queryClient, channelId, (cache) =>
     removeMessage(cache, clientMessageId),
+  );
+}
+
+/**
+ * Leave a heavy-command placeholder in place, flipped to `unconfirmed` and
+ * carrying what an explicit retry would replay (#1733).
+ *
+ * The counterpart to {@link removeLocalPlaceholder}, and the right call
+ * whenever the request's outcome is *unknown* rather than known-failed:
+ * removing the placeholder there would erase the only trace of a write that may
+ * have committed, and the officer's "retry" then becomes re-typing the command,
+ * which mints a fresh key and double-grants.
+ */
+export function markLocalUnconfirmed(
+  ctx: ChatActionContext,
+  replay: ReplayRequest,
+  note: string,
+): void {
+  patchCache(ctx.queryClient, replay.channelId, (cache) =>
+    markUnconfirmed(cache, replay.clientMessageId, replay, note),
   );
 }
 

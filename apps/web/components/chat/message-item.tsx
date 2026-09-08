@@ -11,7 +11,7 @@ import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { MessageAttachments } from "./message-attachments";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import { MessageRenderer, rendersAsBubble } from "./renderers";
-import type { ChatMessage } from "@repo/chat-core/types";
+import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import {
   authorInitialsFallback,
   resolveAuthorLabel,
@@ -70,6 +70,16 @@ export interface MessageItemProps {
   replyParent?: ChatMessage | null;
   onRetry?: (clientMessageId: string) => void;
   onDiscard?: (clientMessageId: string) => void;
+  /**
+   * Replay an `unconfirmed` heavy-command row under its ORIGINAL idempotency
+   * key (#1733). Separate from `onRetry`, which resends an outbox row that is
+   * known to have failed — this one resends a request that may already have
+   * committed, and only the server's dedupe index makes that safe.
+   *
+   * There is deliberately no discard counterpart: the row may be the only trace
+   * of a committed ledger write, so throwing it away is never the safe action.
+   */
+  onRetryUnconfirmed?: (replay: ReplayRequest) => void | Promise<void>;
   /**
    * Own messages only, and only the plain-text bubble kind — a card
    * (poll, task, event…) has no free-text `content` a member typed, so
@@ -150,6 +160,7 @@ export function MessageItem({
   replyParent,
   onRetry,
   onDiscard,
+  onRetryUnconfirmed,
   onAct,
   onEdit,
   onDelete,
@@ -172,6 +183,10 @@ export function MessageItem({
   const authorLabel = resolveAuthorLabel(message, nameFor, viewerId);
   const isPending = message._status === "pending";
   const isFailed = message._status === "failed";
+  // An outcome we could not read, NOT a known failure — see `MessageStatus`.
+  // Rendered neutrally rather than in destructive red on purpose: the write may
+  // well have committed, and red is what makes an officer re-type the command.
+  const isUnconfirmed = message._status === "unconfirmed";
   // Reactions and threads operate on the *server* id (the chat actions
   // endpoint requires a real chat_messages.id, threads need a stable
   // parent id) — gate the hover affordances on a confirmed status so we
@@ -189,6 +204,7 @@ export function MessageItem({
   const [editValue, setEditValue] = useState(message.content);
   const [editDirty, setEditDirty] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
 
   // A row is not remounted by a content update — it's the same component
   // instance, keyed by id (`message-timeline.tsx`) — so an untouched-but-open
@@ -507,6 +523,55 @@ export function MessageItem({
     </div>
   );
 
+  /**
+   * Footer for an `unconfirmed` heavy-command row (#1733).
+   *
+   * Three deliberate differences from the `failed` footer above:
+   *
+   * 1. **Not `text-destructive-text`.** Nothing is known to have failed, and
+   *    red is precisely what prompts an officer to re-type the command — which
+   *    mints a fresh idempotency key, misses the server's dedupe index, and
+   *    writes a second append-only ledger row.
+   * 2. **No Discard.** The row may be the only trace of a committed write.
+   * 3. **Retry replays `_replay`**, not `client_message_id` alone, so the
+   *    request goes back under its original key and the server can recognise it.
+   */
+  const unconfirmedFooter =
+    isUnconfirmed && message._replay ? (
+      <div className="ml-1 mt-1 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+        <span>{message._error ?? "Not confirmed"}</span>
+        {onRetryUnconfirmed ? (
+          <button
+            type="button"
+            disabled={isRetrying}
+            className={cn(
+              CHIP.base,
+              CHIP.neutral,
+              CHIP_HIT_AREA,
+              "gap-1 disabled:opacity-60",
+            )}
+            onClick={() => {
+              const replay = message._replay;
+              if (!replay || isRetrying) return;
+              setIsRetrying(true);
+              void Promise.resolve(onRetryUnconfirmed(replay)).finally(() => {
+                setIsRetrying(false);
+              });
+            }}
+          >
+            {isRetrying ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                Retrying…
+              </>
+            ) : (
+              "Retry"
+            )}
+          </button>
+        ) : null}
+      </div>
+    ) : null;
+
   if (selfBubble) {
     return (
       <div
@@ -577,6 +642,7 @@ export function MessageItem({
               ) : null}
             </div>
           ) : null}
+          {unconfirmedFooter}
         </div>
       </div>
     );
@@ -656,6 +722,7 @@ export function MessageItem({
             </div>
           ) : null}
         </div>
+        {unconfirmedFooter}
       </div>
     </div>
   );
