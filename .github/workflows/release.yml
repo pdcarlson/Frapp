@@ -40,6 +40,11 @@ name: Release
 #      bump would restart at 0.0.0 and mint a duplicate `v0.1.0`, which the
 #      "already exists" guard below would then skip, producing a deploy with no
 #      release at all.
+#   4. Sending the tag through receive-pack is refused when that SHA's
+#      `.github/workflows` differs from default-branch HEAD (run 34247752847:
+#      Packet B shipped `0ca478e9`, then v1.0.0 died, production stayed
+#      untagged). Mint the annotated tag via the Contents API. Do not widen
+#      the GitHub App token to cover workflow files.
 #
 # Bump semantics (including why the PR number is parsed from the SUBJECT line
 # only) live in `scripts/ci/resolve-release-bump.mjs`. Unit tests:
@@ -183,23 +188,47 @@ jobs:
         env:
           SHA: ${{ steps.sha.outputs.sha }}
           VERSION: ${{ steps.bump.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           TAG="v$VERSION"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
             echo "created=false" >> "$GITHUB_OUTPUT"
             echo "Tag $TAG already exists on remote — skipping (likely a re-run)."
           else
-            # Explicitly on the deployed SHA rather than on HEAD. HEAD is that
-            # commit today; naming it means a future refactor of the checkout
-            # cannot quietly move the tag.
-            git tag -a "$TAG" -m "Release $TAG" "$SHA"
-            git push origin "$TAG"
+            # Do not send this tag through receive-pack. GITHUB_TOKEN is a
+            # GitHub App; it refuses a tag whose tree's `.github/workflows`
+            # differs from default-branch HEAD without `workflows` permission
+            # (run 34247752847: Packet B was live on 0ca478e9, main already
+            # carried a newer release.yml, v1.0.0 died at the remote, tag
+            # stayed v0.1.0). The Contents API creates the annotated tag
+            # object and ref with `contents: write` and does not send
+            # workflow blobs.
+            TAG_OBJ="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/tags" \
+              -f tag="$TAG" \
+              -f message="Release $TAG" \
+              -f object="$SHA" \
+              -f type="commit" \
+              --jq .sha)"
+            if [ -z "$TAG_OBJ" ] || [ "$TAG_OBJ" = "null" ]; then
+              echo "::error::Creating the annotated tag object returned no SHA."
+              exit 1
+            fi
+            if ! gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${TAG}" \
+              -f sha="$TAG_OBJ"; then
+              echo "::error::Failed to create refs/tags/${TAG} pointing at ${TAG_OBJ}."
+              exit 1
+            fi
             echo "created=true" >> "$GITHUB_OUTPUT"
-            echo "Created and pushed tag $TAG on $SHA."
+            echo "Created tag $TAG on $SHA via the Contents API ($TAG_OBJ)."
+            # Changelog uses local `git tag --list` and skips this TAG as
+            # PREVIOUS, so a failed fetch must not fail the job: the remote
+            # ref already exists, and a retry would skip minting AND skip
+            # `gh release create`.
+            git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" \
+              || echo "::warning::Could not fetch ${TAG} locally after minting."
           fi
 
       - name: Generate changelog

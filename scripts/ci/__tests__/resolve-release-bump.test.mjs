@@ -333,4 +333,22 @@ describe("the workflows that run this script grant the scope it needs", () => {
     assert.match(text, /scripts\/ci\/resolve-release-bump\.mjs/);
     assert.match(text, /scripts\/ci\/lib/);
   });
+
+  // Run 34247752847: Packet B shipped 0ca478e9, then `git push origin v1.0.0`
+  // was rejected because the GitHub App token cannot update workflow files
+  // and that SHA's release.yml differed from main. Contents API + contents:write.
+  it("release.yml mints the tag via the Contents API, not git push", () => {
+    const text = readFileSync(join(repoRoot, ".github/workflows/release.yml"), "utf8");
+    const start = text.indexOf("- name: Create tag");
+    assert.notEqual(start, -1);
+    const next = text.indexOf("\n      - name:", start + 1);
+    const step = next === -1 ? text.slice(start) : text.slice(start, next);
+    assert.match(step, /git\/tags/);
+    assert.match(step, /git\/refs/);
+    assert.match(step, /GH_TOKEN:/);
+    assert.match(step, /git fetch origin "refs\/tags\/\$\{TAG\}:refs\/tags\/\$\{TAG\}"/);
+    assert.doesNotMatch(step, /git push origin/);
+    assert.doesNotMatch(step, /git tag -a/);
+    assert.doesNotMatch(text, /workflows:\s*write/);
+  });
 });
