@@ -414,6 +414,18 @@ describe('InviteService', () => {
       );
     });
 
+    it('refuses a public http: APP_URL before inserting invite tokens', async () => {
+      mockConfig.get.mockImplementation((key: string) =>
+        key === 'APP_URL' ? 'http://app.example.com' : undefined,
+      );
+
+      await expect(
+        service.createWithEmails('ch-1', 'user-1', 'Member', ['a@example.com']),
+      ).rejects.toThrow(/must use https:/);
+      expect(mockInviteRepo.createMany).not.toHaveBeenCalled();
+      expect(mockEmailProvider.sendInviteEmail).not.toHaveBeenCalled();
+    });
+
     it('reports a per-address failure without failing the whole batch', async () => {
       mockEmailProvider.sendInviteEmail
         .mockResolvedValueOnce(true)

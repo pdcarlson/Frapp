@@ -24,6 +24,18 @@ describe("webJoinUrl", () => {
       "https://app.frapp.live/join?token=a%20b",
     );
   });
+
+  it("refuses a public http: origin before attaching the token", () => {
+    expect(() => webJoinUrl("secret-invite", "http://app.frapp.live")).toThrow(
+      /must use https:/,
+    );
+  });
+
+  it("allows loopback http:", () => {
+    expect(webJoinUrl("local-token", "http://localhost:3000")).toBe(
+      "http://localhost:3000/join?token=local-token",
+    );
+  });
 });
 
 describe("inviteTokenOf / onboardedChapterId", () => {
