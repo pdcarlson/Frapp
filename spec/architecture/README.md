@@ -270,7 +270,7 @@ All Supabase repository implementations follow these conventions:
 
 ### Invite redemption atomicity
 
-The `InviteService.redeem` flow performs deterministic validation checks (invite existence, expiry, existing membership) before consuming the invite. The invite is marked as used via an atomic conditional update (`markUsedAtomically`: `UPDATE ... WHERE used_at IS NULL`) that returns whether the row was claimed. This prevents race conditions where concurrent redeems could both succeed, while ensuring the invite is not irreversibly consumed if a subsequent validation check (e.g. existing membership) would fail.
+The `InviteService.redeem` flow performs deterministic validation checks (invite existence, expiry, existing membership, subscription hard-lock, role lookup) before consuming the invite. The invite is marked as used via an atomic conditional update (`markUsedAtomically`: `UPDATE ... WHERE used_at IS NULL`) that returns the timestamp written, or `null` if another writer already claimed the row. This prevents race conditions where concurrent redeems could both succeed. If the membership insert then fails, `releaseClaim` clears `used_at` only when it still equals that claim timestamp, so the same token is not 410'd and a concurrent revoke's `markUsed` is not undone (#1863). The release is skipped when a membership row for that user and chapter already exists: `create()` can throw after the insert committed, and releasing then would let a second redeemer join on the same token. *(Corrected 2026-09-08: the earlier wording treated existing membership as a post-claim check; that check runs before the claim. Role lookup also runs before the claim so a roles outage does not consume the token.)*
 
 ---
 

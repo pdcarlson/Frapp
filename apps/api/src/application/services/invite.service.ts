@@ -315,24 +315,59 @@ export class InviteService {
       });
     }
 
-    const claimed = await this.inviteRepo.markUsedAtomically(invite.id);
-    if (!claimed) throw new GoneException('Invite already used');
-
     const roles = await this.roleRepo.findByChapter(invite.chapter_id);
     // `invite.role` is the display name chosen when the invite was issued, so
     // it is matched by name by design. The fallback is the seeded Member role,
     // which resolves by `system_key` — a chapter that relabelled it would
-    // otherwise leave redeemers with no role at all.
+    // otherwise leave redeemers with no role at all. This read is before the
+    // claim so a roles outage does not consume the token (#1863).
     let targetRole = roles.find((r) => r.name === invite.role);
     if (!targetRole) {
       targetRole = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
     }
 
-    const member = await this.memberRepo.create({
-      user_id: userId,
-      chapter_id: invite.chapter_id,
-      role_ids: targetRole ? [targetRole.id] : [],
-    });
+    const claimedAt = await this.inviteRepo.markUsedAtomically(invite.id);
+    if (!claimedAt) throw new GoneException('Invite already used');
+
+    let member: Awaited<ReturnType<IMemberRepository['create']>>;
+    try {
+      member = await this.memberRepo.create({
+        user_id: userId,
+        chapter_id: invite.chapter_id,
+        role_ids: targetRole ? [targetRole.id] : [],
+      });
+    } catch (error) {
+      // The claim is not redemption yet: spec/behavior/onboarding.md sets
+      // used_at on a successful redeem. Release so a failed insert does not
+      // 410 the same token (#1863). Skip the release if a membership row is
+      // already there — create() can throw after the insert committed, and
+      // releasing then would let a second redeemer join on the same token.
+      // Match this claim's used_at so a concurrent revoke's markUsed is not
+      // undone. A lookup or release failure must not hide `error`.
+      let membershipLanded = false;
+      try {
+        membershipLanded = Boolean(
+          await this.memberRepo.findByUserAndChapter(userId, invite.chapter_id),
+        );
+      } catch (lookupError) {
+        this.logger.warn(
+          'Failed to check membership after invite redeem insert error; leaving claim in place',
+          lookupError,
+        );
+        membershipLanded = true;
+      }
+      if (!membershipLanded) {
+        try {
+          await this.inviteRepo.releaseClaim(invite.id, claimedAt);
+        } catch (releaseError) {
+          this.logger.warn(
+            'Failed to release invite after membership insert failed',
+            releaseError,
+          );
+        }
+      }
+      throw error;
+    }
 
     // Funnel step 3 (#267) — the chapter's first *successful* redemption, which
     // is the point where it stops being one founder and starts being a chapter.
