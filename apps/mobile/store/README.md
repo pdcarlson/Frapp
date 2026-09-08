@@ -89,7 +89,7 @@ Same facts as https://frapp.live/privacy; the answers below are the store forms'
 | Purchase history | Officers: dues ledger within the chapter | Yes | No | App functionality |
 | Advertising data, browsing history, contacts, health, financial account numbers | No | — | — | — |
 
-Google Play Data safety: data is encrypted in transit; users can request deletion (support page § 4); no data shared with third parties for advertising; the developer is not enrolled in the Families program.
+Google Play Data safety: data is encrypted in transit; users delete in the app or dashboard (support page § 4), or by emailing team@frapp.live if they cannot sign in; no data shared with third parties for advertising; the developer is not enrolled in the Families program.
 
 ## Android-specific
 
