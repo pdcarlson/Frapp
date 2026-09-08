@@ -52,7 +52,7 @@ export function SettingsPrivacyTab({
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Chapter analytics</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Frapp collects <strong>pseudonymous</strong> usage analytics
+              Signet collects <strong>pseudonymous</strong> usage analytics
               (which features get used, not their contents) to fix bugs and
               improve the product. Member identities are hashed and message
               content is never sent. Turn this off to stop all analytics for

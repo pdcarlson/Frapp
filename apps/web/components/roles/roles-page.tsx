@@ -170,7 +170,7 @@ function PresidencyClaimBanner() {
     description = `Only a member holding the ${nextRoleName} role can claim it right now.`;
   } else {
     description =
-      "No eligible officer role was found. Contact Frapp support to resolve this.";
+      "No eligible officer role was found. Contact Signet support to resolve this.";
   }
 
   return (

@@ -81,7 +81,7 @@ describe("OpsSetupNudge", () => {
     setUpEligible({ enabledModules: { dues: false, points: false } });
     render(<OpsSetupNudge />);
 
-    expect(screen.getByText(/collect dues in frapp/i)).toBeInTheDocument();
+    expect(screen.getByText(/collect dues in signet/i)).toBeInTheDocument();
     // One at a time — the Points nudge must not also be on screen.
     expect(screen.queryByText(/participation points/i)).not.toBeInTheDocument();
   });
@@ -156,7 +156,7 @@ describe("OpsSetupNudge", () => {
     render(<OpsSetupNudge />);
 
     // Falls through to the next in priority order rather than going silent.
-    expect(screen.getByText(/run your calendar in frapp/i)).toBeInTheDocument();
+    expect(screen.getByText(/run your calendar in signet/i)).toBeInTheDocument();
   });
 
   it("writes the dismissal and hides the card without waiting for the server", async () => {
@@ -173,7 +173,7 @@ describe("OpsSetupNudge", () => {
     );
     // The card is gone on the optimistic local state — `GET /v1/chapters` has
     // not refetched, so a card that waited for it would sit under the cursor.
-    expect(screen.queryByText(/collect dues in frapp/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/collect dues in signet/i)).not.toBeInTheDocument();
   });
 
   it("falls through to the next nudge after one is dismissed in-session", async () => {
@@ -206,7 +206,7 @@ describe("OpsSetupNudge", () => {
     };
     act(() => options.onError(new Error("403")));
 
-    expect(screen.queryByText(/collect dues in frapp/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/collect dues in signet/i)).not.toBeInTheDocument();
   });
 
   // Each dismiss button must be distinguishable by name alone: a screen-reader
@@ -228,7 +228,7 @@ describe("OpsSetupNudge", () => {
     render(<OpsSetupNudge />);
 
     const card = screen.getByRole("region", {
-      name: /collect dues in frapp/i,
+      name: /collect dues in signet/i,
     });
     expect(card).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -253,7 +253,7 @@ describe("OpsSetupNudgeCard", () => {
 
   it("renders from a nudge alone", () => {
     render(<OpsSetupNudgeCard module={duesNudge} onDismiss={vi.fn()} />);
-    expect(screen.getByText(/collect dues in frapp/i)).toBeInTheDocument();
+    expect(screen.getByText(/collect dues in signet/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /enable dues/i })).toBeInTheDocument();
   });
 

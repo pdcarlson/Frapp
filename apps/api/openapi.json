@@ -7810,7 +7810,7 @@
           "next_role_name": {
             "type": "string",
             "nullable": true,
-            "description": "Name of the eligible role, or null when no role below President has any member at all (the \"Frapp support intervenes\" case)."
+            "description": "Name of the eligible role, or null when no role below President has any member at all (the \"Signet support intervenes\" case)."
           }
         },
         "required": [
