@@ -810,7 +810,7 @@ of the three secrets or `API_URL` / `APP_URL` is unset in that environment — s
 
 - [ ] Store Render deploy hook URLs as GitHub secrets
 - [ ] Verify CI workflow runs on PRs
-- [ ] Set up uptime monitoring (e.g., BetterUptime, Checkly)
+- [x] In-repo uptime: `.github/workflows/production-uptime.yml` (see [`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance). A Sentry 60s monitor is still the finer-grained human path (quota; ask before creating). GitHub cron starts after this file is on `main`
 
 ---
 

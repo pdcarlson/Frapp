@@ -22,18 +22,17 @@ on:
   schedule:
     # 07:30 UTC daily — after any overnight provider maintenance window, early
     # enough that a drifted staging is known before the working day, and the last
-    # of four staggered scheduled workflows: 15 minutes past its closest neighbor
-    # production-guardrails.yml (07:15), an hour past check-migration-drift.yml
-    # (07:00), and an hour past db-backup.yml's pg_dump (06:30) — so this
-    # workflow's Management API reads never overlap another watchdog's own reads
-    # or the backup. Full schedule: docs/internal/ci-cd/AGENT_INFRA.md § Scheduled
-    # conformance.
+    # of the daily staggered Management-API watchdogs: 15 minutes past its closest
+    # neighbor production-guardrails.yml (07:15), an hour past
+    # check-migration-drift.yml (07:00), and an hour past db-backup.yml's pg_dump
+    # (06:30) — so this workflow's Management API reads never overlap another
+    # daily watchdog's own reads or the backup. `production-uptime.yml` probes live
+    # `/health/ready` on its own cadence and does not share this stagger. Full schedule:
+    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
     #
     # ⚠️ GitHub DISABLES scheduled triggers in a repository with no activity for
-    # 60 days, notifying the repo owner by email only. This is the one workflow
-    # whose entire premise is running during quiet periods, so that ceiling is
-    # exactly backwards for it: a long quiet stretch silently turns off the
-    # thing watching the quiet stretch. If the repo goes dormant, re-enable it
+    # 60 days, notifying the repo owner by email only. That ceiling is backwards
+    # for every `schedule:` watchdog. If the repo goes dormant, re-enable them
     # from the Actions tab. Tracked in AGENT_INFRA.md § "Scheduled conformance".
     - cron: "30 7 * * *"
   workflow_dispatch:
