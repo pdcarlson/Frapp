@@ -212,5 +212,7 @@ never reads or writes the live `.cache/diff-review/` marker.
 
 See **ADR-14** and its **2026-06-04 amendment** in [`spec/architecture/README.md`](../../../spec/architecture/README.md)
 for why the CI reviewer (CodeRabbit → self-hosted Claude Action → removed) was retired in favor of this
-local gate, and the trade-offs (no server-side enforcement, no inline GitHub comments; acceptable for a
-solo, agent-authored project).
+local gate. **Correction (2026-09-08):** CodeRabbit comments on ready PRs again (public-repo OSS
+tier). That is advisory only — [`.coderabbit.yaml`](../../../.coderabbit.yaml) sets
+`request_changes_workflow: false` so a write-access `CHANGES_REQUESTED` cannot block squash
+(ADR-14 2026-09-08 amendment). The merge-quality gate is still this local `/diff-review` path.
