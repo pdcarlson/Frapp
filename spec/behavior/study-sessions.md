@@ -15,7 +15,7 @@ The pause is **server-owned**: a client that only stops its local heartbeat is n
 
 - If the app moves to the **background**, the client calls `POST /v1/study-sessions/pause`. The server credits foreground minutes up to that instant, records `paused_at`, and starts the grace clock. The heartbeat timer stops.
 - Pause is a **sub-state of `ACTIVE`**, not a status of its own — the one-active-session rule keeps applying to a paused session.
-- A local notification fires: "Your study session is paused. Return to Frapp to resume." *(mobile only — see Surface Coverage below)*
+- A local notification fires: "Your study session is paused. Return to Signet to resume." *(mobile only — see Surface Coverage below)*
 - If the user returns within the **grace window** (`study_geofences.pause_grace_minutes`, chapter-configurable per zone, default 5 minutes), the client calls `POST /v1/study-sessions/resume` with coordinates and the timer resumes without losing accumulated minutes. Coordinates are re-checked on resume: the member may have left the zone while away, and the next heartbeat is up to five minutes out.
 - If the user does **not** return within the grace window, the session auto-expires with status `PAUSED_EXPIRED`. Points are calculated only for the active (foreground) time accumulated before the pause, and the session's `end_time` is the pause instant, not the late return.
 - Paused time **never accrues**, however the member returns. A heartbeat arriving on a paused session is treated as an implicit resume (grace checked first), so a client that never calls `/resume` still cannot bank background time.

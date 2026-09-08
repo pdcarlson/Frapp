@@ -120,9 +120,9 @@ export function isStripeAvailable(): boolean {
 export function stripeUnavailableReason(): string | null {
   if (loadStripe() === null) {
     if (Platform.OS === "web") {
-      return "Paying dues is available in the Frapp mobile app.";
+      return "Paying dues is available in the Signet mobile app.";
     }
-    return "Paying in the app needs the installed Frapp build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.";
+    return "Paying in the app needs the installed Signet build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.";
   }
   if (publishableKey() === null) {
     return "Card payments aren't switched on for this build yet. Ask your treasurer how to pay this invoice.";
