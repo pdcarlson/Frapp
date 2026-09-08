@@ -278,3 +278,50 @@ describe("the SHA-trim step (run 34234768094)", () => {
     assert.match(text, /sha:\s*\$\{\{\s*needs\.deploy\.outputs\.sha\s*\}\}/);
   });
 });
+
+describe("SHA validation runs before the production environment (run 34234768094)", () => {
+  function jobBody(jobId) {
+    const text = readFileSync(WORKFLOW, "utf8");
+    const start = text.indexOf(`\n  ${jobId}:\n`);
+    assert.notEqual(start, -1, `job ${jobId} missing`);
+    const from = start + 1;
+    const next = text.slice(from + 1).search(/\n  [a-z][a-z0-9_-]*:\n/);
+    return next === -1 ? text.slice(from) : text.slice(from, from + 1 + next);
+  }
+
+  function uncommented(body) {
+    return body
+      .split("\n")
+      .filter((line) => !/^\s*#/.test(line))
+      .join("\n");
+  }
+
+  it("validate has no environment, so a bad paste cannot open a reviewer gate", () => {
+    const body = uncommented(jobBody("validate"));
+    assert.match(body, /name: Confirm and validate the SHA/);
+    assert.doesNotMatch(body, /^\s+environment:/m);
+    assert.match(body, /- name: Validate the commit/);
+    assert.match(body, /- name: Trim the SHA/);
+  });
+
+  it("deploy needs validate and is the only production-environment job", () => {
+    const deploy = uncommented(jobBody("deploy"));
+    assert.match(deploy, /^\s+needs: validate$/m);
+    assert.match(deploy, /^\s+environment: production$/m);
+
+    const text = uncommented(readFileSync(WORKFLOW, "utf8"));
+    const envHits = [...text.matchAll(/^\s+environment: production\s*$/gm)];
+    assert.equal(
+      envHits.length,
+      1,
+      "a second environment: production job would cost a second Approve click",
+    );
+  });
+
+  it("the shipping job records needs.validate.outputs.sha, not inputs.sha", () => {
+    const script = extractStepScript("Record the validated SHA");
+    assert.match(script, /echo "sha=\$SHA"/);
+    assert.match(uncommented(jobBody("deploy")), /SHA:\s*\$\{\{\s*needs\.validate\.outputs\.sha\s*\}\}/);
+    assert.doesNotMatch(script, /inputs\.sha/);
+  });
+});

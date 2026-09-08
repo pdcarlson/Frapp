@@ -973,8 +973,12 @@ in the flow ever named a commit. Three consequences, all measured rather than ar
 
 **Consequences.**
 
-- The deploy workflow is a **single job** on purpose: every environment-scoped job costs
-  its own Approve click, so splitting it would silently turn one approval into four.
+- The deploy workflow's **shipping** path is a **single `environment: production` job**
+  on purpose: every environment-scoped job costs its own Approve click, so splitting
+  migrate / Render / Vercel / verify would silently turn one approval into four. SHA
+  confirmation, trim, and validation run first in an unscoped `validate` job so a bad
+  paste cannot consume that approval (run 34234768094). Do not put `environment: production`
+  on `validate`. **Amended 2026-09-08.**
 - A `v*` tag now means "this is live" — it is created after Render and Vercel report
   healthy, on the deployed SHA — where it used to mean "this merged and we hoped".
 - Release labels moved from one promotion PR onto **every** PR. An unlabelled
