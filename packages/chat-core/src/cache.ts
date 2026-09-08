@@ -13,6 +13,7 @@ import {
   type ChatMessage,
   type RawChatMessage,
   type RawChatMessageAction,
+  type ReplayRequest,
   normalizeRow,
 } from "./types";
 
@@ -103,21 +104,90 @@ export function mergeServerRows(
   return rows.reduce((acc, row) => mergeServerRow(acc, row), cache);
 }
 
+/**
+ * Apply a patch to one optimistic row, keyed by `client_message_id`.
+ *
+ * The single place row bookkeeping happens, so the status transitions below
+ * cannot drift apart as that bookkeeping changes. Returns the cache untouched
+ * when the row is gone — `mergeServerRow` deletes the client-keyed entry the
+ * moment the server echo re-keys it under the server id, which is a race every
+ * caller can lose.
+ */
+function patchRow(
+  cache: ChannelCache,
+  clientMessageId: string,
+  patch: Partial<ChatMessage>,
+): ChannelCache {
+  const existing = cache.byId[clientMessageId];
+  if (!existing) return cache;
+  return {
+    ...cache,
+    byId: { ...cache.byId, [clientMessageId]: { ...existing, ...patch } },
+  };
+}
+
+/**
+ * Where a `client_message_id` currently lives in the cache.
+ *
+ * The three answers are genuinely different and a caller that collapses them
+ * gets the wrong copy (#1733 review):
+ *
+ * - `"optimistic"` — still keyed by the client id, so it can be marked and
+ *   retried from the timeline.
+ * - `"confirmed"` — `mergeServerRow` re-keyed it under the server id, which
+ *   only happens when the server's card actually arrived. That is *positive
+ *   evidence the write committed and carded*, not an absence.
+ * - `"absent"` — no trace, which proves nothing either way.
+ */
+export type RowPlacement = "optimistic" | "confirmed" | "absent";
+
+export function locateRow(
+  cache: ChannelCache | undefined,
+  clientMessageId: string,
+): RowPlacement {
+  if (!cache) return "absent";
+  if (cache.byId[clientMessageId] !== undefined) return "optimistic";
+  // A server row keeps the `client_message_id` it was posted with, so a
+  // re-keyed row is still findable by it — the evidence a key-only lookup
+  // throws away.
+  const merged = Object.values(cache.byId).some(
+    (row) => row.client_message_id === clientMessageId,
+  );
+  return merged ? "confirmed" : "absent";
+}
+
 /** Marks an optimistic message as failed (4xx) so the UI can offer retry. */
 export function markFailed(
   cache: ChannelCache,
   clientMessageId: string,
   error: string,
 ): ChannelCache {
-  const existing = cache.byId[clientMessageId];
-  if (!existing) return cache;
-  return {
-    ...cache,
-    byId: {
-      ...cache.byId,
-      [clientMessageId]: { ...existing, _status: "failed", _error: error },
-    },
-  };
+  return patchRow(cache, clientMessageId, { _status: "failed", _error: error });
+}
+
+/**
+ * Marks an optimistic message as **unconfirmed** — the request may or may not
+ * have committed — and records what an explicit retry would replay (#1733).
+ *
+ * Distinct from {@link markFailed} on purpose. `failed` asserts nothing was
+ * written, so its UI may offer discard; this one asserts nothing at all, and a
+ * discard would throw away the only trace of a write that may have landed.
+ * The row keeps its `client_message_id` as its cache key, so the replay carried
+ * here reuses the original key rather than minting a fresh one — the whole
+ * point of the exercise, since a fresh key misses the server's dedupe index and
+ * double-grants.
+ */
+export function markUnconfirmed(
+  cache: ChannelCache,
+  clientMessageId: string,
+  replay: ReplayRequest,
+  note: string,
+): ChannelCache {
+  return patchRow(cache, clientMessageId, {
+    _status: "unconfirmed",
+    _error: note,
+    _replay: replay,
+  });
 }
 
 /** Removes a message by cache key (server id or client_message_id). */

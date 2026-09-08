@@ -746,3 +746,213 @@ describe("MessageItem bookmark toggle (#462)", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+/**
+ * #1733 — the `unconfirmed` row: a heavy command whose response was lost.
+ *
+ * The row must read as "we don't know", not as a failure, and its only action
+ * must be a replay of the original request. Both halves are load-bearing: red
+ * "failed" styling is what makes an officer re-type the command, and a Discard
+ * here would throw away the only trace of a grant that may have committed.
+ */
+const REPLAY = {
+  command: "points",
+  channelId: "chan-1",
+  clientMessageId: "client-1",
+  body: {
+    target_user_id: OTHER,
+    amount: 5,
+    category: "MANUAL",
+    reason: "great work",
+    channel_id: "chan-1",
+    client_message_id: "client-1",
+  },
+} as const;
+
+function unconfirmedMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  return message({
+    sender_id: VIEWER,
+    kind: "loading",
+    content: "Granting 5 points…",
+    _status: "unconfirmed",
+    _error: "Not confirmed — these points may or may not have been recorded.",
+    _replay: REPLAY,
+    ...overrides,
+  } as Partial<ChatMessage>);
+}
+
+describe("MessageItem unconfirmed rows (#1733)", () => {
+  it("offers Retry", () => {
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  // The row may be the only trace of a committed ledger write.
+  it("offers no Discard, even when a discard handler is wired", () => {
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+      onDiscard: vi.fn(),
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /discard/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("replays the original request, not just the cache key", async () => {
+    const onRetryUnconfirmed = vi.fn();
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    // The ORIGINAL body, carrying the ORIGINAL client_message_id — that is what
+    // lets the server recognise the replay instead of writing a second row.
+    expect(onRetryUnconfirmed).toHaveBeenCalledWith(REPLAY);
+  });
+
+  it("shows the unconfirmed note rather than a send-failure message", () => {
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    expect(screen.getByText(/may or may not have been recorded/i)).toBeInTheDocument();
+    expect(screen.queryByText(/send failed/i)).not.toBeInTheDocument();
+  });
+
+  // A row with no replay descriptor has nothing safe to resend, so it must not
+  // render a control that would do nothing.
+  it("renders no retry control when the row carries no replay", () => {
+    renderItemWithProps({
+      message: unconfirmedMessage({ _replay: undefined }),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /retry/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("disables the control while a replay is in flight, so one click is one replay", async () => {
+    let release: () => void = () => {};
+    const onRetryUnconfirmed = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed,
+    });
+
+    const button = screen.getByRole("button", { name: /retry/i });
+    await userEvent.click(button);
+
+    expect(screen.getByRole("button", { name: /retrying/i })).toBeDisabled();
+    expect(onRetryUnconfirmed).toHaveBeenCalledTimes(1);
+    release();
+  });
+});
+
+/**
+ * Regression guards from the #1733 review: an unconfirmed row must not look
+ * like one still in flight, and its note must actually be announced.
+ */
+describe("MessageItem unconfirmed presentation (#1733 review)", () => {
+  it("does not render the row as busy", () => {
+    const { container } = renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    // A shimmer under aria-busy reads as "still working", so an officer waits
+    // instead of pressing Retry — and a possibly-committed grant gets re-typed.
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  it("announces the unconfirmed note in a live region", () => {
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    const note = screen.getByText(/may or may not have been recorded/i);
+    expect(note.closest("[aria-live]")).not.toBeNull();
+  });
+
+  it("keeps a genuinely pending row busy", () => {
+    const { container } = renderItemWithProps({
+      message: unconfirmedMessage({
+        _status: "pending",
+        _error: undefined,
+        _replay: undefined,
+      } as Partial<ChatMessage>),
+    });
+
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+  });
+
+  it("swallows a rejected retry rather than leaving it unhandled", async () => {
+    const onRetryUnconfirmed = vi.fn(() => Promise.reject(new Error("boom")));
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed,
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    // The button must return to a usable state; the handler owns reporting.
+    expect(
+      await screen.findByRole("button", { name: /^retry$/i }),
+    ).toBeEnabled();
+  });
+});
+
+describe("MessageItem unconfirmed live regions (#1733 review)", () => {
+  // Two populated live regions on one row get re-announced together on every
+  // Virtuoso remount. A terminal row is not a live status.
+  it("leaves exactly one live region on the row", () => {
+    const { container } = renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    const populated = Array.from(
+      container.querySelectorAll("[aria-live]"),
+    ).filter((el) => (el.textContent ?? "").trim().length > 0);
+    expect(populated).toHaveLength(1);
+  });
+
+  it("keeps the card a live status while it is genuinely pending", () => {
+    const { container } = renderItemWithProps({
+      message: unconfirmedMessage({
+        _status: "pending",
+        _error: undefined,
+        _replay: undefined,
+      } as Partial<ChatMessage>),
+    });
+
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+  });
+
+  // The row's note must not restate the toast's guidance: it sits directly
+  // above its own Retry button, where "if the message is gone" is nonsense.
+  it("does not print the toast's guidance on the row", () => {
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    expect(screen.queryByText(/if the message is gone/i)).toBeNull();
+    expect(screen.queryByText(/use retry on the message/i)).toBeNull();
+  });
+});

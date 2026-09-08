@@ -28,12 +28,16 @@ import {
   type ChatMessageKind,
   type RawChatMessage,
   type RawChatMessageAction,
+  type ReplayRequest,
 } from "./types";
 import {
   applyActionUpdate,
   applyReactionInsert,
   emptyCache,
+  locateRow,
   markFailed,
+  markUnconfirmed,
+  type RowPlacement,
   mergeServerRow,
   removeMessage,
   toggleReactionLocal,
@@ -133,6 +137,32 @@ interface FunctionsErrorWithStatus extends Error {
   response?: { status?: number };
 }
 
+/**
+ * Statuses in the 4xx band that an INTERMEDIARY emits after the origin may
+ * already have processed the request. They look like refusals and are not: a
+ * proxy request timeout is the same "response lost after a possible write" event
+ * as a 502, merely numbered in the client-error band. `408` is the standard
+ * one; `499` (nginx) and `460` (AWS ALB) are the client-disconnect equivalents.
+ */
+const INCONCLUSIVE_CLIENT_ERRORS = new Set([408, 499, 460]);
+
+/**
+ * Whether a status is a **definitive** client refusal — the origin validated
+ * the request and rejected it, so nothing was written and repeating it
+ * unchanged is pointless.
+ *
+ * One definition, deliberately shared by `classify` (the outbox/send path) and
+ * `dispatch.ts` (heavy commands), because "4xx means do not retry" is one policy
+ * and two copies of it drift. The carve-out above is why that matters: a proxy
+ * 408 treated as definitive tells a caller their write failed when it may have
+ * landed, and the retry that follows is a fresh attempt rather than a replay.
+ */
+export function isDefinitiveClientError(status: number): boolean {
+  return (
+    status >= 400 && status < 500 && !INCONCLUSIVE_CLIENT_ERRORS.has(status)
+  );
+}
+
 function extractMessage(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
   const candidate = (value as { message?: unknown }).message;
@@ -179,7 +209,8 @@ function classify(error: unknown): {
     extractMessage(error) ??
     extractMessage((error as { error?: unknown }).error) ??
     "Couldn't reach chat server";
-  const terminal = typeof status === "number" && status >= 400 && status < 500;
+  const terminal =
+    typeof status === "number" && isDefinitiveClientError(status);
   return { terminal, status, message };
 }
 
@@ -387,6 +418,41 @@ export function removeLocalPlaceholder(
   patchCache(ctx.queryClient, channelId, (cache) =>
     removeMessage(cache, clientMessageId),
   );
+}
+
+/**
+ * Leave a heavy-command placeholder in place, flipped to `unconfirmed` and
+ * carrying what an explicit retry would replay (#1733).
+ *
+ * The counterpart to {@link removeLocalPlaceholder}, and the right call
+ * whenever the request's outcome is *unknown* rather than known-failed:
+ * removing the placeholder there would erase the only trace of a write that may
+ * have committed, and the officer's "retry" then becomes re-typing the command,
+ * which mints a fresh key and double-grants.
+ *
+ * Returns where the row actually is, because the caller's copy depends on it —
+ * and the three answers are not interchangeable. A row already re-keyed under
+ * its server id (`"confirmed"`) means the card arrived, so the write is not
+ * unknown at all; treating that as "no row" produced a never-dismissing "we
+ * couldn't confirm" notice sitting above a visibly successful card.
+ */
+export function markLocalUnconfirmed(
+  ctx: ChatActionContext,
+  replay: ReplayRequest,
+  note: string,
+): RowPlacement {
+  const existing = ctx.queryClient.getQueryData<ChannelCache>(
+    chatMessagesKey(replay.channelId),
+  );
+  const placement = locateRow(existing, replay.clientMessageId);
+
+  if (placement === "optimistic") {
+    patchCache(ctx.queryClient, replay.channelId, (cache) =>
+      markUnconfirmed(cache, replay.clientMessageId, replay, note),
+    );
+  }
+
+  return placement;
 }
 
 function coerceKind(kind: string | undefined): ChatMessageKind {

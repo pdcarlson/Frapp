@@ -31,6 +31,8 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { asArray, cn } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import { useToast } from "@/hooks/use-toast";
+import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
@@ -45,7 +47,7 @@ import {
   MessageTimeline,
   type MessageTimelineHandle,
 } from "./message-timeline";
-import { Composer } from "./composer";
+import { Composer, notifyDispatchOutcome } from "./composer";
 import { DELETED_MESSAGE_PLACEHOLDER } from "./message-placeholders";
 import { replyPreviewText } from "./reply-quote";
 import { ThreadPanel } from "./thread-panel";
@@ -392,6 +394,7 @@ export function ChatShell({
   }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
+  const { toast } = useToast();
 
   // A custom role can hold `channels:manage` without also being a chapter
   // admin — same gate `chat-admin-page.tsx` computes for its own page-level
@@ -1160,6 +1163,34 @@ export function ChatShell({
             onOpenThread={openThread}
             onRetry={channel.retry}
             onDiscard={channel.discard}
+            // Heavy-command rows bypass the outbox, so `channel.retry` above
+            // cannot reach them. This replays the original request under its
+            // original idempotency key and toasts the outcome through the same
+            // three-way channel a first dispatch uses (#1733).
+            onRetryUnconfirmed={async (replay) => {
+              // Every path here must end in a toast. The first dispatch gets
+              // that guarantee from `runDispatch` in the composer (which also
+              // tags Sentry); this control sits in the timeline and had
+              // neither, so a throw produced a blinking spinner, no message,
+              // and no telemetry — and an officer who concludes Retry is broken
+              // re-types the command, mints a fresh key and double-grants.
+              try {
+                const result = await channel.retryUnconfirmed(replay);
+                notifyDispatchOutcome(toast, replay.command, result);
+              } catch (error) {
+                Sentry.captureException(error, {
+                  tags: { slash_command: `${replay.command}_retry` },
+                });
+                // Non-destructive on purpose: the retry failing says nothing
+                // about whether the original attempt committed, and a red
+                // "failed" is what invites the re-type.
+                toast({
+                  title: "Couldn't retry that command",
+                  description:
+                    "The retry didn't go through. Check the points ledger before running the command again — running it again would record the points twice.",
+                });
+              }
+            }}
             onAct={(messageId, actionType, payload) =>
               void channel.act(messageId, actionType, payload)
             }

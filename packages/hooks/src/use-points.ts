@@ -104,9 +104,16 @@ export function useAdjustPoints() {
     // a +50 grant becomes +150 with no way back through the API — #1719's
     // double-grant, fired without anyone intending a second grant.
     //
-    // This is the cheap containment, not the fix. The fix is for this hook to
-    // mint a key and reuse it across attempts, which is #1733 along with the
-    // `/points` slash-command half.
+    // This is the cheap containment, not the fix. #1733 shipped the
+    // slash-command half (a lost `/points` response parks its row as
+    // `unconfirmed` and Retry replays the original key); this hook was left out
+    // of it because minting a key here needs `randomClientId` — and that lives
+    // in `@repo/chat-core`, which `@repo/hooks` must not depend on: it is an
+    // app-level package carrying the Dexie outbox and a Supabase client, while
+    // this one is a leaf that `apps/mobile` also consumes. Giving the primitive
+    // a shared home is #1906, and the key belongs in the mutation's
+    // `variables` when it lands (they are stable across retries; minting inside
+    // `mutationFn` re-mints per attempt and defeats the point).
     retry: false,
     mutationFn: async (body: {
       target_user_id: string;

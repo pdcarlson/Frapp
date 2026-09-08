@@ -8,6 +8,8 @@
  * the same `mergeServerRow` in `./cache`, reconciled by `client_message_id`.
  */
 
+import type { components } from "@repo/api-sdk/types";
+
 export const CHAT_MESSAGE_QUERY_ROOT = "chat" as const;
 
 /** Query key for a channel's normalized message cache. */
@@ -31,8 +33,31 @@ export function emojiFromActionType(actionType: string): string | null {
     : null;
 }
 
-/** Lifecycle of a client-side message relative to the server. */
-export type MessageStatus = "pending" | "confirmed" | "failed";
+/**
+ * Lifecycle of a client-side message relative to the server.
+ *
+ * `failed` and `unconfirmed` are NOT interchangeable, and the difference is the
+ * whole point of the second one (#1733):
+ *
+ * - `failed` asserts the write did **not** happen. `markFailed` is reached from
+ *   a definitive 4xx, so the UI may safely offer retry *or* discard, and a
+ *   re-send is a new attempt.
+ * - `unconfirmed` asserts nothing. It is reached when the response was lost —
+ *   a gateway 502/504, or a transport throw — after a request that may well
+ *   have committed. Discarding is not safe (the row may exist and this is its
+ *   only trace) and neither is a fresh attempt (it would double the write).
+ *   The only correct action is replaying the **same** `client_message_id`, so
+ *   the server's idempotency index can recognise it.
+ *
+ * Collapsing the two would put a discard control in front of a committed
+ * ledger row, which is the append-only double-grant `points.md` § Anti-Fraud
+ * exists to prevent.
+ */
+export type MessageStatus =
+  | "pending"
+  | "confirmed"
+  | "failed"
+  | "unconfirmed";
 
 export const CHAT_MESSAGE_KINDS = [
   "text",
@@ -148,7 +173,60 @@ export interface ChatMessage {
   actions: RawChatMessageAction[];
   _status: MessageStatus;
   _error?: string;
+  /**
+   * Present only on `_status: "unconfirmed"` rows: exactly what an explicit
+   * retry must replay (#1733). Carrying it on the row is what makes the retry
+   * *this attempt's* rather than a fresh one — the body and, critically, the
+   * `client_message_id` are the originals, so the server's idempotency index
+   * recognises the replay instead of writing a second ledger row.
+   */
+  _replay?: ReplayRequest;
 }
+
+/**
+ * A request that may be replayed verbatim under its original idempotency key.
+ *
+ * Deliberately a single-member union rather than a bare interface: `/points` is
+ * the only command with a server-side dedupe index today
+ * (`idx_point_transactions_dedupe`, #1719). `/task` and `/event` have none, so
+ * replaying one would create a *second* task or event rather than
+ * deduplicating.
+ *
+ * **Do not widen this union until the route you are adding has a server-side
+ * dedupe index.** No open issue owns task/event idempotency — #1717 is scoped
+ * to their response DTOs and `card_posted`, not to a dedupe key, and #1734's
+ * body still names #1733 as what would give them one, which is no longer true
+ * (#1733 shipped the `/points` half only). The discriminant makes widening a
+ * compile-time decision rather than a silent one.
+ */
+export type ReplayRequest = {
+  command: "points";
+  channelId: string;
+  clientMessageId: string;
+  body: PointsAdjustBody;
+};
+
+/**
+ * The `POST /v1/points/adjust` body, as `dispatchPoints` builds it.
+ *
+ * Derived from the generated contract rather than restated, so a change to the
+ * route's DTO reaches this type. The call site alone does not cover that: it
+ * would catch a rename or a new required field, but a *widened* member — a
+ * third `category`, say — leaves a hand-written copy silently narrower, still
+ * assignable to the POST and quietly unable to replay the new value.
+ *
+ * The two overrides are the difference between the route's contract and this
+ * one. `AdjustPointsDto` marks both optional because a dashboard adjustment
+ * sends neither; a replay is meaningless without both, since the whole point is
+ * to re-send the original key to the original channel.
+ */
+export type PointsAdjustBody = Omit<
+  components["schemas"]["AdjustPointsDto"],
+  "channel_id" | "client_message_id"
+> & {
+  channel_id: string;
+  client_message_id: string;
+};
 
 /**
  * Normalized per-channel cache. `order` holds the cache key of each message

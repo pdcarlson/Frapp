@@ -43,8 +43,10 @@ import {
   type ToastFn,
 } from "@repo/chat-core/chat-client";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import type { ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
+  retryPointsDispatch,
   type DispatchResult,
   type ResolveMember,
 } from "@repo/chat-core/dispatch";
@@ -78,6 +80,16 @@ export interface UseChatChannelResult {
   connection: ConnectionStatus;
   retry: (clientMessageId: string) => Promise<void>;
   discard: (clientMessageId: string) => Promise<void>;
+  /**
+   * Replay an `unconfirmed` heavy-command row under its ORIGINAL idempotency
+   * key (#1733) — not an outbox retry. `retry`/`discard` above operate on the
+   * Dexie outbox, which heavy commands deliberately bypass
+   * (`chat-client.ts`), so neither can reach one of these rows.
+   *
+   * Returns the dispatcher's `DispatchResult` for the same reason
+   * `dispatchSlash` does: the caller toasts the outcome.
+   */
+  retryUnconfirmed: (replay: ReplayRequest) => Promise<DispatchResult>;
   // Returns the dispatcher's own `DispatchResult` rather than a restated shape,
   // so a new outcome field (e.g. `warning`) reaches the composer instead of
   // being silently erased at this boundary.
@@ -313,6 +325,11 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [ctx],
   );
 
+  const retryUnconfirmed = useCallback(
+    async (replay: ReplayRequest) => retryPointsDispatch(ctx, replay),
+    [ctx],
+  );
+
   const act = useCallback(
     async (
       messageId: string,
@@ -370,6 +387,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     connection,
     retry,
     discard,
+    retryUnconfirmed,
     dispatchSlash,
     act,
   };

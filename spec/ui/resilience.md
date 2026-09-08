@@ -259,6 +259,43 @@ Chat messages are the most latency-sensitive and loss-sensitive data in the app.
 | SENT | Single checkmark (✓) | None needed |
 | DELIVERED | Double checkmark (✓✓) — future, requires read receipts | None needed |
 | FAILED | Red warning icon (⚠) + "Failed to send" | [Retry] [Delete] buttons |
+| UNCONFIRMED | Neutral note + "outcome unknown" — **never red** | [Retry] only — **never Delete** |
+
+`UNCONFIRMED` is the one row in this table where the action column is a safety
+rule rather than a convenience. It is reached when a heavy slash command's
+response was lost, so the write may already have committed
+([`chat/integrations.md`](../behavior/chat/integrations.md) § Slash command
+dispatch, [#1733](https://github.com/pdcarlson/Frapp/issues/1733)):
+
+- **No Delete.** The row can be the only trace of a committed ledger write. The
+  `FAILED` row above may offer it because `FAILED` asserts nothing was written.
+- **Not red.** A destructive presentation is what makes an officer re-type the
+  command, and a re-typed `/points` mints a fresh idempotency key, misses the
+  dedupe index and double-grants into an append-only ledger.
+- **Retry replays the original request**, under its original
+  `client_message_id` — not a fresh send.
+
+**Shipped on web only, and mobile cannot reach the state yet.** The status is
+set only by the heavy-command dispatcher, it is cache-only and local to the
+client that dispatched, and `apps/mobile` deliberately has no slash dispatch —
+so no mobile row can currently be `unconfirmed`. What matters is the ordering:
+mobile's `_status` chains are not exhaustive, so such a row would fall through
+to the delivered presentation — no note, no Retry — which is the worst
+available rendering for a write that may not have landed. **Mobile must gain
+this branch in the same change that gives it slash dispatch, not after**
+([#1910](https://github.com/pdcarlson/Frapp/issues/1910)).
+
+**The state machine above does not produce `UNCONFIRMED`.** It models the
+outbox path (`SENDING → SENT`, timeout → `FAILED`), which heavy slash commands
+deliberately bypass — they call an RPC directly rather than queueing. This state
+is reached only from a heavy command whose HTTP response was lost; wiring it off
+the send-timeout edge would be wrong.
+
+The table's names are the spec's own vocabulary and map loosely onto the
+`MessageStatus` union in `@repo/chat-core` (`pending`, `confirmed`, `failed`,
+`unconfirmed`): `FAILED`/`failed` and `UNCONFIRMED`/`unconfirmed` correspond,
+`SENDING` is roughly `pending`, and `SENT`/`DELIVERED` have no separate code
+state — both are `confirmed`.
 
 **Implementation:**
 
