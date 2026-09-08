@@ -46,6 +46,7 @@ import { EYEBROW } from "@/components/ui/typography";
 import { useToast } from "@/hooks/use-toast";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
+import { buildJoinUrl } from "@/lib/invite-link";
 
 const CHAT_LANDING_PATH = "/chat?channel=general";
 // Legal pages (Terms / Privacy / FERPA) live on the marketing site and are linked
@@ -259,7 +260,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       if (!token) throw new Error("Invite did not return a token.");
       const origin =
         typeof window !== "undefined" ? window.location.origin : "";
-      setInviteLink(`${origin}/join?token=${encodeURIComponent(token)}`);
+      setInviteLink(buildJoinUrl(origin, token));
     } catch (error) {
       toast({
         title: "Unable to create invite link",

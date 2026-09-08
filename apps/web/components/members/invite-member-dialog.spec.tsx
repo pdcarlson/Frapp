@@ -3,10 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockOrgConfig, mockRoles } = vi.hoisted(() => ({
+const { mockCurrentChapter, mockOrgConfig, mockRoles, mockToast } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
   mockOrgConfig: vi.fn(),
   mockRoles: vi.fn(),
+  mockToast: vi.fn(),
 }));
 
 const INVITE = {
@@ -37,7 +38,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: "chap-1" }),
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
 
 const { InviteMemberDialog } = await import("./invite-member-dialog");
 
@@ -301,5 +302,32 @@ describe("InviteMemberDialog default role", () => {
     await openDialog();
 
     expect(rolePicker().value).toBe("Member");
+  });
+});
+
+describe("InviteMemberDialog copy payload", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    primeHooks();
+    chapter.active();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+  });
+
+  it("copies a /join?token= URL with role and expiry, not a bare code", async () => {
+    await openDialog();
+    await userEvent.click(screen.getAllByRole("button", { name: /copy link/i })[0]);
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
+    const payload = vi.mocked(navigator.clipboard.writeText).mock.calls[0][0];
+    expect(payload).toContain(`/join?token=${INVITE.token}`);
+    expect(payload).toContain(`Role: ${INVITE.role}`);
+    expect(payload).toContain("Expires:");
+    expect(payload).not.toMatch(/Invite code:/);
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Invite link copied" }),
+    );
   });
 });
