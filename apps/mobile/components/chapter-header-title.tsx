@@ -43,7 +43,7 @@ export function ChapterHeaderTitle({
   const { logoUrl, chapterName } = useChapterBranding();
   const { tokens } = useFrappTheme();
 
-  const title = label ?? chapterName ?? "Frapp";
+  const title = label ?? chapterName ?? "Signet";
 
   return (
     <View style={styles.row}>

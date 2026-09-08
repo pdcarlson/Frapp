@@ -28,7 +28,7 @@ describe("study pause notification (#1065)", () => {
     await notifyStudyPaused();
     expect(push.present).toHaveBeenCalledWith({
       title: "Study session paused",
-      body: "Your study session is paused. Return to Frapp to resume.",
+      body: "Your study session is paused. Return to Signet to resume.",
     });
   });
 
@@ -77,7 +77,7 @@ describe("the same-tick clear (the #1065 orphan)", () => {
     // response synchronously, so a `/pause` that returns terminal clears in the
     // very same tick — before the post has resolved and produced an id. Without
     // the generation counter that clear is a no-op and the member is left with
-    // "Return to Frapp to resume" for a session that already ended.
+    // "Return to Signet to resume" for a session that already ended.
     let resolvePost: (id: string) => void = () => {};
     push.present.mockReturnValue(
       new Promise<string>((resolve) => {
