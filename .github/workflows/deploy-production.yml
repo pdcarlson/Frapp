@@ -81,10 +81,18 @@ run-name: "${{ inputs.scope }} ${{ inputs.sha }}"
 # then hits "already exists". The deleted workflow's dry run was equally blind
 # to it, so this is not a regression, but nothing here catches it either.
 #
-# ── One job, deliberately ───────────────────────────────────────────────────
+# ── One shipping job, deliberately ──────────────────────────────────────────
 # Every environment-scoped job costs its own Approve click. Migrate + deploy +
-# verify live in ONE job so a production release is one approval, not four. The
-# `release` and `report` jobs are unscoped and add no clicks.
+# verify live in ONE `environment: production` job so a production release is
+# one approval, not four. The `release` and `report` jobs are unscoped and add
+# no clicks.
+#
+# SHA confirmation, trim, and `validate-deploy-sha.mjs` run in a *prior*
+# unscoped job. Run 34234768094 sat on the reviewer gate for 20 minutes, then
+# died at Validate because the paste had a trailing space — production was not
+# touched, but the approval was spent. A bad SHA or confirmation must fail
+# before GitHub asks anyone to Approve. Do not put `environment: production`
+# on `validate`.
 
 on:
   workflow_dispatch:
@@ -128,27 +136,15 @@ env:
   VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
 
 jobs:
-  deploy:
-    name: Migrate, then ship Render + Vercel
+  validate:
+    name: Confirm and validate the SHA
     runs-on: ubuntu-latest
-    environment: production
-    timeout-minutes: 75
-    # This used to be SHARED with migrate-production.yml, which was the second
-    # path that could apply a production migration. That file is gone and this
-    # is now the only one, so the group serialises this workflow against
-    # ITSELF — two dispatches (a `full` release and a `migrations-only` retry,
-    # say) must not interleave two `db push` runs against one database.
-    #
-    # `cancel-in-progress: false` is the important half: cancelling a run
-    # mid-`db push` is how a database ends up half-migrated.
-    concurrency:
-      group: db-migrate-production
-      cancel-in-progress: false
+    timeout-minutes: 10
+    # No `environment:`. This job is the whole point of the split: it must
+    # run (and be allowed to fail) without opening a production deployment
+    # review. Do not add `environment: production` here.
     outputs:
       sha: ${{ steps.sha.outputs.sha }}
-      render-deploy-id: ${{ steps.render.outputs.deploy_id }}
-      replay-outcome: ${{ steps.replay.outputs.outcome }}
-      applied: ${{ steps.apply.outcome }}
     steps:
       # First step on purpose: a mistyped confirmation must cost nothing. No
       # checkout, no secrets injected, no CLI installed before this passes.
@@ -163,8 +159,8 @@ jobs:
 
       # The Actions text box keeps a trailing space/newline from paste
       # (run 34234768094 died on 40 hex + one space before any production
-      # write). Strip ends only — not internal spaces — then every later
-      # step, the release job, and the report job use this output.
+      # write). Strip ends only — not internal spaces — then the shipping
+      # job, the release job, and the report job use this output.
       - name: Trim the SHA
         id: sha
         env:
@@ -177,8 +173,8 @@ jobs:
       # Checked out at the DISPATCHED ref (main), not at `inputs.sha`. The
       # validation below decides whether that SHA is trustworthy, so it has to
       # run from code that is already trusted — validating a commit using its
-      # own copy of the validator proves nothing. The tree moves to the SHA
-      # after it passes.
+      # own copy of the validator proves nothing. The shipping job moves the
+      # tree to the SHA after this job passes.
       - name: Checkout (trusted ref)
         uses: actions/checkout@v4
         with:
@@ -199,6 +195,57 @@ jobs:
           DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/ci/validate-deploy-sha.mjs
+
+  deploy:
+    name: Migrate, then ship Render + Vercel
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 75
+    # This used to be SHARED with migrate-production.yml, which was the second
+    # path that could apply a production migration. That file is gone and this
+    # is now the only one, so the group serialises this workflow against
+    # ITSELF — two dispatches (a `full` release and a `migrations-only` retry,
+    # say) must not interleave two `db push` runs against one database.
+    #
+    # `cancel-in-progress: false` is the important half: cancelling a run
+    # mid-`db push` is how a database ends up half-migrated.
+    concurrency:
+      group: db-migrate-production
+      cancel-in-progress: false
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+      render-deploy-id: ${{ steps.render.outputs.deploy_id }}
+      replay-outcome: ${{ steps.replay.outputs.outcome }}
+      applied: ${{ steps.apply.outcome }}
+    steps:
+      - name: Record the validated SHA
+        id: sha
+        env:
+          SHA: ${{ needs.validate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SHA:-}" ]; then
+            echo "::error::Validated SHA was empty."
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      # Checked out at the DISPATCHED ref (main), not at the deploy SHA. Local
+      # composite actions below resolve from this workspace. The tree moves to
+      # the SHA after they run.
+      - name: Checkout (trusted ref)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch main
+        run: git fetch --no-tags origin main:refs/remotes/origin/main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       # Also from trusted code, and before anything is applied or built. Both
       # settings fail OPEN: if Render's auto-deploy is back on, or a Vercel
@@ -256,9 +303,9 @@ jobs:
       #     one `migration-replay` rehearsed with. That is the drift the action
       #     exists to remove, reintroduced at the one site that matters most.
       #
-      # Running them here also matches this job's existing trust argument: the
-      # validator above deliberately runs from already-trusted code, and so now
-      # do these. Both steps are tree-independent — one exports environment
+      # Running them here also matches this workflow's trust argument: the
+      # validator in `validate` deliberately runs from already-trusted code, and
+      # so now do these. Both steps are tree-independent — one exports environment
       # variables, the other puts a binary on PATH — so neither cares that the
       # workspace moves underneath it afterwards.
       #
