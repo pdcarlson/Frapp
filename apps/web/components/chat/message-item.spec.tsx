@@ -775,7 +775,7 @@ function unconfirmedMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     kind: "loading",
     content: "Granting 5 points…",
     _status: "unconfirmed",
-    _error: "We couldn't confirm whether these points were recorded.",
+    _error: "Not confirmed — these points may or may not have been recorded.",
     _replay: REPLAY,
     ...overrides,
   } as Partial<ChatMessage>);
@@ -824,7 +824,7 @@ describe("MessageItem unconfirmed rows (#1733)", () => {
       onRetryUnconfirmed: vi.fn(),
     });
 
-    expect(screen.getByText(/couldn't confirm/i)).toBeInTheDocument();
+    expect(screen.getByText(/may or may not have been recorded/i)).toBeInTheDocument();
     expect(screen.queryByText(/send failed/i)).not.toBeInTheDocument();
   });
 
@@ -885,7 +885,7 @@ describe("MessageItem unconfirmed presentation (#1733 review)", () => {
       onRetryUnconfirmed: vi.fn(),
     });
 
-    const note = screen.getByText(/couldn't confirm/i);
+    const note = screen.getByText(/may or may not have been recorded/i);
     expect(note.closest("[aria-live]")).not.toBeNull();
   });
 
@@ -914,5 +914,45 @@ describe("MessageItem unconfirmed presentation (#1733 review)", () => {
     expect(
       await screen.findByRole("button", { name: /^retry$/i }),
     ).toBeEnabled();
+  });
+});
+
+describe("MessageItem unconfirmed live regions (#1733 review)", () => {
+  // Two populated live regions on one row get re-announced together on every
+  // Virtuoso remount. A terminal row is not a live status.
+  it("leaves exactly one live region on the row", () => {
+    const { container } = renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    const populated = Array.from(
+      container.querySelectorAll("[aria-live]"),
+    ).filter((el) => (el.textContent ?? "").trim().length > 0);
+    expect(populated).toHaveLength(1);
+  });
+
+  it("keeps the card a live status while it is genuinely pending", () => {
+    const { container } = renderItemWithProps({
+      message: unconfirmedMessage({
+        _status: "pending",
+        _error: undefined,
+        _replay: undefined,
+      } as Partial<ChatMessage>),
+    });
+
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+  });
+
+  // The row's note must not restate the toast's guidance: it sits directly
+  // above its own Retry button, where "if the message is gone" is nonsense.
+  it("does not print the toast's guidance on the row", () => {
+    renderItemWithProps({
+      message: unconfirmedMessage(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    expect(screen.queryByText(/if the message is gone/i)).toBeNull();
+    expect(screen.queryByText(/use retry on the message/i)).toBeNull();
   });
 });

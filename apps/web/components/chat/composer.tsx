@@ -280,7 +280,16 @@ export function notifyDispatchOutcome(
     return;
   }
   if (result.resolved) {
-    toast({ title: `/${commandName} recorded`, description: result.resolved });
+    toast({
+      title: `/${commandName} recorded`,
+      description: result.resolved,
+      // Sticky for the same reason as the branches below: the retry removed the
+      // placeholder, and the outage that lost the original response is likely to
+      // have dropped the card's Realtime echo too — so for a moment this notice
+      // can be the only visible evidence of a real ledger write. Five seconds
+      // later the officer would see an empty channel and re-type.
+      duration: Infinity,
+    });
     return;
   }
   // An UNKNOWN outcome is neither of the two above, and titling it as either is

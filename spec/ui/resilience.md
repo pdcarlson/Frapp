@@ -275,11 +275,15 @@ dispatch, [#1733](https://github.com/pdcarlson/Frapp/issues/1733)):
 - **Retry replays the original request**, under its original
   `client_message_id` — not a fresh send.
 
-**Shipped on web only.** `apps/web` renders this state; `apps/mobile` has no
-branch for it and currently draws such a row as fully delivered — no note, no
-Retry — which is the worst available presentation for a write that may not have
-landed ([#1910](https://github.com/pdcarlson/Frapp/issues/1910)). Do not read
-this row as a cross-platform contract until that closes.
+**Shipped on web only, and mobile cannot reach the state yet.** The status is
+set only by the heavy-command dispatcher, it is cache-only and local to the
+client that dispatched, and `apps/mobile` deliberately has no slash dispatch —
+so no mobile row can currently be `unconfirmed`. What matters is the ordering:
+mobile's `_status` chains are not exhaustive, so such a row would fall through
+to the delivered presentation — no note, no Retry — which is the worst
+available rendering for a write that may not have landed. **Mobile must gain
+this branch in the same change that gives it slash dispatch, not after**
+([#1910](https://github.com/pdcarlson/Frapp/issues/1910)).
 
 **The state machine above does not produce `UNCONFIRMED`.** It models the
 outbox path (`SENDING → SENT`, timeout → `FAILED`), which heavy slash commands

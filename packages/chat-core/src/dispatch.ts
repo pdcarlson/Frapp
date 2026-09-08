@@ -312,7 +312,8 @@ const RETRY_IN_FLIGHT_NOTE =
  * | Response | First attempt | Replay |
  * | --- | --- | --- |
  * | 409 | removed, `ok:false` — key spent, run it again | same: replaying can never succeed |
- * | other 4xx | removed, `ok:false` — validated and rejected, nothing written | **kept `unconfirmed`** — says nothing about the original |
+ * | other 4xx from the origin | removed, `ok:false` — validated and rejected, nothing written | **kept `unconfirmed`** — says nothing about the original |
+ * | 408 / 499 / 460 | kept `unconfirmed` — an intermediary emitted it, possibly post-commit | kept `unconfirmed` |
  * | 5xx / transport | kept `unconfirmed` | kept `unconfirmed` |
  * | `card_posted:false` | removed, committed-card-lost warning | same |
  * | `card_posted` absent | kept for the echo — no outcome reported | removed, committed-card-unknown warning |
@@ -350,7 +351,7 @@ async function submitPointsAdjustment(
     if (result.error) status ??= 0;
   } catch {
     // Transport-level: the request may or may not have reached the server.
-    return unconfirmed(ctx, replay);
+    return unconfirmed(ctx, replay, isReplay);
   }
 
   const succeeded = typeof status === "number" && status >= 200 && status < 300;
@@ -365,8 +366,11 @@ async function submitPointsAdjustment(
       return { ok: false, error: KEY_SPENT_ERROR };
     }
 
-    // Any other 4xx on a FIRST attempt is a definitive refusal: validated,
-    // rejected, nothing written. Safe to tear down and let the officer re-type.
+    // A definitive 4xx on a FIRST attempt means the origin validated the
+    // request and rejected it: nothing written, safe to tear down and let the
+    // officer re-type. `isClientError` deliberately excludes 408/499/460, which
+    // an intermediary can emit after the origin already committed — those fall
+    // through to the lost-response branch below.
     //
     // On a REPLAY it is nothing of the kind. A 401 (session expired while the
     // row sat there), a 403 (grant revoked, or the subscription lapsed) or a
@@ -385,7 +389,7 @@ async function submitPointsAdjustment(
     // RESOLVES rather than throws on a non-2xx, so a gateway 502/504 — the
     // commonest way to lose a response to a request that already committed —
     // arrives HERE, not in the `catch` above.
-    return unconfirmed(ctx, replay);
+    return unconfirmed(ctx, replay, isReplay);
   }
 
   const cardPosted = data?.card_posted;
@@ -488,20 +492,18 @@ const UNCONFIRMED_WARNING =
   "We couldn't confirm whether these points were recorded. Use Retry on the message rather than running the command again, which would record them twice. If the message is gone, check the points ledger before re-running.";
 
 /**
- * Statuses in the 4xx band that an INTERMEDIARY emits after the origin may
- * already have committed. They look like refusals and are not: a proxy request
- * timeout is the same "response lost after a successful write" event as a 502,
- * merely numbered in the client-error band. `408` is the standard one; `499`
- * (nginx) and `460` (AWS ALB) are the client-disconnect equivalents.
+ * What the timeline row itself says. Short on purpose: it sits directly above
+ * its own Retry button, so the toast's "use Retry on the message … if the
+ * message is gone" guidance is nonsense in that position — and printing the
+ * toast's three sentences on the row duplicates them verbatim on screen and,
+ * under `aria-atomic`, in the announcement.
  */
-const INCONCLUSIVE_CLIENT_ERRORS = new Set([408, 499, 460]);
+const UNCONFIRMED_ROW_NOTE = "Not confirmed — these points may or may not have been recorded.";
 
 function isTerminalStatus(status: number | undefined): boolean {
-  return (
-    typeof status === "number" &&
-    isClientError(status) &&
-    !INCONCLUSIVE_CLIENT_ERRORS.has(status)
-  );
+  // `isClientError` already excludes the statuses an intermediary can emit
+  // after the origin may have committed (408/499/460) — see its docblock.
+  return typeof status === "number" && isClientError(status);
 }
 
 /**
@@ -521,8 +523,9 @@ function isTerminalStatus(status: number | undefined): boolean {
 function unconfirmed(
   ctx: ChatActionContext,
   replay: ReplayRequest,
+  isReplay = false,
 ): DispatchResult {
-  const placement = markLocalUnconfirmed(ctx, replay, UNCONFIRMED_WARNING);
+  const placement = markLocalUnconfirmed(ctx, replay, UNCONFIRMED_ROW_NOTE);
 
   // The echo already re-keyed the row under its server id. That is not a
   // missing row — it is proof the server posted the card, which it only does
@@ -530,7 +533,14 @@ function unconfirmed(
   // the HTTP response to a request we can see succeeded. Reporting "we couldn't
   // confirm" here would put a warning above a visibly successful points card
   // and send the officer to audit a ledger that is correct.
-  if (placement === "confirmed") return { ok: true };
+  if (placement === "confirmed") {
+    // On a FIRST dispatch, silence is right: the card is visibly in the
+    // timeline and nothing is owed. On a REPLAY it is not — the officer
+    // watched "Retrying…" spin and needs to know it landed, and this module's
+    // own rule is that silence after a retry is indistinguishable from a retry
+    // that did nothing.
+    return isReplay ? { ok: true, resolved: RETRY_RESOLVED_NOTE } : { ok: true };
+  }
 
   return {
     ok: true,

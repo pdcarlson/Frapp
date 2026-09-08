@@ -186,6 +186,9 @@ export function MessageItem({
   // An outcome we could not read, NOT a known failure — see `MessageStatus`.
   // Rendered neutrally rather than in destructive red on purpose: the write may
   // well have committed, and red is what makes an officer re-type the command.
+  // Only ever set on a heavy-command placeholder, whose `kind` is "loading" —
+  // which is in CARD_KINDS, so `rendersAsBubble` is false and such a row always
+  // takes the card path below, never the self-bubble one.
   const isUnconfirmed = message._status === "unconfirmed";
   // Reactions and threads operate on the *server* id (the chat actions
   // endpoint requires a real chat_messages.id, threads need a stable
@@ -625,9 +628,7 @@ export function MessageItem({
                   · {message._error ?? "Send failed"}
                 </span>
               ) : null}
-              {isUnconfirmed ? (
-                <span>· {message._error ?? "Not confirmed"}</span>
-              ) : null}
+
             </span>
           </div>
           {isFailed ? (

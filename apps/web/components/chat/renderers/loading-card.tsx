@@ -39,8 +39,13 @@ export function LoadingCard({ message }: LoadingCardProps) {
   return (
     <Card
       className={cn(MESSAGE_CARD)}
-      role="status"
-      aria-live="polite"
+      // Only a genuinely in-flight placeholder is a live status. An
+      // `unconfirmed` row is terminal, and leaving the region here would give
+      // the row two populated live regions (this card and the note beside the
+      // footer), which in a virtualized list re-announces both on every scroll
+      // pass — the bug the note's own placement comment cites.
+      role={isUnconfirmed ? undefined : "status"}
+      aria-live={isUnconfirmed ? undefined : "polite"}
       aria-busy={isUnconfirmed ? undefined : "true"}
     >
       <p className={cn(EYEBROW, "text-muted-foreground")}>
