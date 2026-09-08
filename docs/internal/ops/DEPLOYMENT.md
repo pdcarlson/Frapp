@@ -198,8 +198,8 @@ Authentication → URL Configuration / SMTP Settings.
 | Site URL | `https://app.frapp.live` | `https://app.staging.frapp.live` |
 | Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** |
 | Email confirmations | required (`mailer_autoconfirm: false`) | required |
-| Custom SMTP | **none** | **none** |
-| Auth email rate limit | **2 per hour** | 2 per hour |
+| Custom SMTP | **none** (hosted 2/hour; #1824) | **on** — Resend `smtp.resend.com`, From `invites@frapp.live` (read 2026-09-08) |
+| Auth email rate limit | **2 per hour** | **≥300 per hour** (asserted daily; #1824) |
 | Password minimum length | 6 | 6 |
 | Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
 
@@ -223,16 +223,12 @@ a bare entry) went to the Site URL while `…/app.staging.frapp.live/join?token=
 `scripts/ci/staging-conformance.mjs` asserts both wildcards daily (`auth-redirects`), so this cannot
 silently revert or be forgotten on a new project.
 
-**Custom SMTP is the open launch blocker in this table.** With no SMTP configured, Supabase's
-built-in mailer sends auth email — sign-up confirmation, magic link, password reset — at **two
-messages per hour per project**, and confirmations are required, so production can admit at most
-two new sign-ups an hour and the third member to try gets "email rate limit exceeded". The fix is
-dashboard/API-only and needs the Resend credentials this repo already uses for invite email
-(`RESEND_API_KEY`, § Invite Email in `ENV_REFERENCE.md`): host `smtp.resend.com`, port `465`,
-user `resend`, password = the API key, sender on a domain **verified in Resend** (the invite
-default is `invites@frapp.live`; verify `frapp.live` there first). Then raise
-`rate_limit_email_sent` to a real number (Supabase allows it once custom SMTP is set). Do it on
-staging first and send yourself a magic link.
+**Custom SMTP is proven on staging, not on production.** Staging Auth SMTP is Resend
+(`smtp.resend.com`, sender `invites@frapp.live`) and the send cap is at least 300/hour;
+`staging-conformance.mjs` asserts those three fields daily (`auth-smtp`) so a revert to the hosted
+2/hour mailer cannot sit green. Production Auth is still the hosted cap — dashboard-only, #1824;
+do not put the SMTP password in Slack or git. `RESEND_API_KEY` on Render is a separate invite-mail
+path and is still absent on both API services.
 
 ---
 

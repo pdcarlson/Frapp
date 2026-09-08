@@ -302,6 +302,107 @@ export async function checkAuthRedirects({ accessToken, projectRef, fetchImpl = 
 }
 
 /**
+ * Custom SMTP is on and the send cap is above the hosted 2/hour limit.
+ *
+ * Staging Auth SMTP is proven (Resend, From `invites@frapp.live`, 300/hour).
+ * Those are dashboard settings no migration performs. If they revert, magic
+ * link / confirm-signup / recovery fall back to the hosted mailer and the
+ * third member in an hour gets "email rate limit exceeded" — the production
+ * first-user gate, on the only host Paul can prove mail before flipping prod.
+ * Same GET `checkAuthHook` makes. Never put `smtp_pass` in the detail string.
+ *
+ * Production is deliberately not asserted here: its SMTP is still the hosted
+ * cap (#1824). A production sibling needs its own alert title (#1384).
+ */
+export const AUTH_SMTP_HOST = "smtp.resend.com";
+export const AUTH_SMTP_ADMIN_EMAIL = "invites@frapp.live";
+export const AUTH_EMAIL_SENT_PER_HOUR_MIN = 300;
+
+/**
+ * GoTrue's `rate_limit_email_sent` is emails per hour when it is a number
+ * (legacy), or `count/duration` (`300/1h`, `10/30m`) when it is a string.
+ * Returns null when the value cannot be parsed.
+ */
+export function emailsPerHourFromRateLimit(value) {
+  if (value == null || value === "") return null;
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+  const raw = String(value).trim();
+  const match = raw.match(/^(\d+(?:\.\d+)?)(?:\/(\d+)(h|m|s))?$/i);
+  if (!match) return null;
+  const count = Number(match[1]);
+  if (!Number.isFinite(count) || count < 0) return null;
+  if (!match[2]) return count;
+  const quantity = Number(match[2]);
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+  const unit = match[3].toLowerCase();
+  const hours = unit === "h" ? quantity : unit === "m" ? quantity / 60 : quantity / 3600;
+  return count / hours;
+}
+
+export async function checkAuthSmtp({ accessToken, projectRef, fetchImpl = fetch }) {
+  const label = "Custom SMTP is Resend and the send cap is at least 300/hour";
+  if (!accessToken || !projectRef) {
+    return result("auth-smtp", label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set");
+  }
+  const response = await fetchImpl(
+    `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
+    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
+  );
+  if (!response.ok) {
+    return result("auth-smtp", label, FAIL, `Management API returned HTTP ${response.status}`);
+  }
+  const data = await response.json();
+  const host = typeof data?.smtp_host === "string" ? data.smtp_host.trim().toLowerCase() : "";
+  if (!host) {
+    return result(
+      "auth-smtp",
+      label,
+      FAIL,
+      "smtp_host is empty — Auth is on the hosted mailer (2 messages/hour). See #1824.",
+    );
+  }
+  if (host !== AUTH_SMTP_HOST) {
+    return result("auth-smtp", label, FAIL, `smtp_host is "${host}", expected ${AUTH_SMTP_HOST}`);
+  }
+  const adminEmail =
+    typeof data?.smtp_admin_email === "string" ? data.smtp_admin_email.trim().toLowerCase() : "";
+  if (adminEmail !== AUTH_SMTP_ADMIN_EMAIL) {
+    return result(
+      "auth-smtp",
+      label,
+      FAIL,
+      `smtp_admin_email is "${adminEmail || "(empty)"}", expected ${AUTH_SMTP_ADMIN_EMAIL}`,
+    );
+  }
+  const perHour = emailsPerHourFromRateLimit(data?.rate_limit_email_sent);
+  if (perHour == null) {
+    return result(
+      "auth-smtp",
+      label,
+      FAIL,
+      `rate_limit_email_sent is unreadable (${JSON.stringify(data?.rate_limit_email_sent)})`,
+    );
+  }
+  if (perHour < AUTH_EMAIL_SENT_PER_HOUR_MIN) {
+    return result(
+      "auth-smtp",
+      label,
+      FAIL,
+      `rate_limit_email_sent is ${perHour}/hour; need at least ${AUTH_EMAIL_SENT_PER_HOUR_MIN}/hour ` +
+        "(the hosted cap is 2/hour even after SMTP is on until this is raised). See #1824.",
+    );
+  }
+  return result(
+    "auth-smtp",
+    label,
+    PASS,
+    `host=${host}; from=${adminEmail}; rate_limit_email_sent=${perHour}/hour`,
+  );
+}
+
+/**
  * Every Infisical secret sync reports a succeeded status.
  *
  * Catches the #834 class: a sync failing *now*. It deliberately does not claim
@@ -719,7 +820,7 @@ function defaultWriteSummary(summary) {
  * Runs every assertion, reports, and upserts/resolves the alert issue.
  *
  * Assertions are run through a try/catch each: one provider throwing (DNS blip,
- * TLS error) must not prevent the other four from reporting. A thrown assertion
+ * TLS error) must not prevent the rest of the assertions from reporting. A thrown assertion
  * is a FAIL, not a skip — we could not prove the property held.
  */
 export async function runStagingConformance({
@@ -751,6 +852,12 @@ export async function runStagingConformance({
       }) },
     { id: "auth-redirects", label: "Redirect allow list covers the web app's paths and the mobile scheme", run: () =>
       checkAuthRedirects({
+        accessToken: env.SUPABASE_ACCESS_TOKEN,
+        projectRef: env.SUPABASE_PROJECT_REF,
+        fetchImpl,
+      }) },
+    { id: "auth-smtp", label: "Custom SMTP is Resend and the send cap is at least 300/hour", run: () =>
+      checkAuthSmtp({
         accessToken: env.SUPABASE_ACCESS_TOKEN,
         projectRef: env.SUPABASE_PROJECT_REF,
         fetchImpl,
