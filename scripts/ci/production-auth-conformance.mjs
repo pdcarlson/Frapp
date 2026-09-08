@@ -77,43 +77,56 @@ export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
 const result = (id, label, status, detail) => ({ id, label, status, detail });
 
-function rewriteStagingCopy(text) {
-  return String(text ?? "")
-    .replaceAll("## Staging conformance is failing", "## Production Auth settings have drifted")
-    .replaceAll("## Staging conformance", "## Production Auth conformance")
-    .replaceAll(
-      "This issue is **opened and closed automatically** by `.github/workflows/staging-conformance.yml`",
-      "This issue is **opened and closed automatically** by `.github/workflows/production-auth-conformance.yml`",
-    )
-    .replaceAll("(`scripts/ci/staging-conformance.mjs`)", "(`scripts/ci/production-auth-conformance.mjs`)")
-    .replaceAll("While it is open, `frapp-staging` has drifted from the", "While it is open, `frapp-prod` Auth settings have drifted from the")
-    .replaceAll("**frapp-staging has drifted**", "**frapp-prod Auth settings have drifted**")
-    .replaceAll("**frapp-staging is conformant**", "**frapp-prod Auth settings are conformant**")
-    .replaceAll("proves nothing about staging", "proves nothing about production Auth")
-    .replaceAll("**Staging conformance is failing again**", "**Production Auth settings have drifted again**")
-    .replaceAll("**Staging conformance failed again.**", "**Production Auth settings failed again.**")
-    .replaceAll("**Staging conformance recovered.** Closing.", "**Production Auth settings recovered.** Closing.")
-    .replaceAll("`scripts/ci/staging-conformance.mjs`", "`scripts/ci/production-auth-conformance.mjs`")
-    .replaceAll(
-      "after #643 shipped (#805). See #838.",
-      "after #643 shipped (#805). Production's copy of those settings is this workflow. See #1384.",
-    );
+// Own the production voice. Passing this into the shared builders is the
+// contract; a post-hoc replaceAll of staging strings missed new phrases
+// the moment staging-conformance.mjs changed them.
+export const PRODUCTION_AUTH_COPY = Object.freeze({
+  summaryHeading: "## Production Auth conformance",
+  drifted: (failedCount, ownedCount) =>
+    `**frapp-prod Auth settings have drifted** — ${failedCount} of ${ownedCount} assertions failed.`,
+  healthy: (passedCount, ownedCount) =>
+    `**frapp-prod Auth settings are conformant** — ${passedCount} of ${ownedCount} assertions passed.`,
+  inconclusive: (ownedCount) =>
+    `**Inconclusive — nothing was asserted.** All ${ownedCount} assertions skipped, so this run ` +
+    "proves nothing about production Auth. Any open alert is left open deliberately.",
+  unprovenRecovery: (passedCount, resultsCount) =>
+    `**Nothing failed, but the open alert is not cleared.** ${passedCount} of ${resultsCount} ` +
+    "assertions passed; the ones this alert was raised for could not be asserted, so closing it " +
+    "would report a recovery nobody proved.",
+  issueHeading: "## Production Auth settings have drifted",
+  issueWorkflow:
+    "This issue is **opened and closed automatically** by `.github/workflows/production-auth-conformance.yml`",
+  issueDriftLine:
+    "(`scripts/ci/production-auth-conformance.mjs`). While it is open, `frapp-prod` Auth settings have drifted from the",
+  whySee:
+    "after #643 shipped (#805). Production's copy of those settings is this workflow. See #1384.",
+  commentReopened: "**Production Auth settings have drifted again** — reopening.",
+  commentFailedAgain: "**Production Auth settings failed again.**",
+  commentFooter:
+    "_Posted automatically by `scripts/ci/production-auth-conformance.mjs`. Closes itself on the next clean run._",
+  recoveryHeadline: "**Production Auth settings recovered.** Closing.",
+  recoveryFooter:
+    "_Closed automatically by `scripts/ci/production-auth-conformance.mjs` after a clean run._",
+});
+
+function withProductionCopy(args) {
+  return { ...args, copy: PRODUCTION_AUTH_COPY };
 }
 
 export function buildRunSummary(args) {
-  return rewriteStagingCopy(buildStagingRunSummary(args));
+  return buildStagingRunSummary(withProductionCopy(args));
 }
 
 export function buildAlertIssueBody(args) {
-  return rewriteStagingCopy(buildStagingAlertIssueBody(args));
+  return buildStagingAlertIssueBody(withProductionCopy(args));
 }
 
 export function buildAlertCommentBody(args) {
-  return rewriteStagingCopy(buildStagingAlertCommentBody(args));
+  return buildStagingAlertCommentBody(withProductionCopy(args));
 }
 
 export function buildRecoveryCommentBody(args) {
-  return rewriteStagingCopy(buildStagingRecoveryCommentBody(args));
+  return buildStagingRecoveryCommentBody(withProductionCopy(args));
 }
 
 function defaultWriteSummary(summary) {
