@@ -348,12 +348,18 @@ is unavailable in that state and the sign-in screen says so.
 > file is actually present**: from `GOOGLE_SERVICES_JSON` — an EAS environment variable
 > of type **File**, set in the `production` and `preview` EAS environments the build
 > profiles bind to, which EAS materialises on the runner and points the variable at — or
-> else from `apps/mobile/google-services.json` for a local build. CI and any checkout
-> without the file prebuild unchanged, which is why the field is not static in
-> `app.json`. Prefer the file variable: the JSON carries a Google API key (`AIza…`) that
+> else from `apps/mobile/google-services.json` for a local build. CI (`npx expo prebuild`),
+> `expo start`, and preview/development EAS builds still omit the field when the file is
+> absent, which is why it is not static in `app.json`. **2026-09-08:** an EAS
+> production Android build **refuses to evaluate the config** without that file
+> (`apps/mobile/app.config.js`), so a store APK cannot ship with silent-dead push.
+> CI, `expo start`, preview/development, and iOS production still omit the field
+> when the file is absent. Prefer the file variable: the JSON carries a Google API key (`AIza…`) that
 > gitleaks' default `gcp-api-key` rule flags, so committing it would need a
 > `.gitleaks.toml` allowlist entry. Neither the Firebase project nor the FCM key exists
-> yet; both are console steps that become real with the store submission (#938).
+> yet; both are console steps that become real with the store submission (#938 / #1826).
+> The fail-closed path is the reminder that #1826 has to happen before the first
+> production Android binary, not a substitute for it.
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of
