@@ -1,10 +1,11 @@
 name: Production Auth conformance
 
 # Sibling of staging-conformance.yml for the Auth settings first users actually
-# hit: custom_access_token_hook and the redirect allow list on frapp-prod.
-# Staging already watches those (plus SMTP, Infisical, and a sign-in probe).
-# Production SMTP is still the hosted 2/hour cap (#1824) and is not asserted
-# here — a row for it would stay red until that human work lands.
+# hit: custom_access_token_hook, the redirect allow list, and Auth SMTP on
+# frapp-prod. Staging already watches those (plus Infisical and a sign-in
+# probe) and FAILs on empty SMTP. Production SMTP is skip-until-on: empty
+# host (hosted 2/hour cap) is SKIPPED so this job stays green until #1824.
+# SMTP on with a From other than no-reply@mail.frapp.live fails the next tick.
 #
 # Own alert title. A shared one would let a recovered staging close a live
 # production incident. Project ref comes from .github/environments.json, not

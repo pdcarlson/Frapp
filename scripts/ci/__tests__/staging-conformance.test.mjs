@@ -302,6 +302,53 @@ test("auth SMTP check skips without credentials and fails on a non-200", async (
   assert.equal(failed.status, FAIL);
 });
 
+test("whenUnset skip leaves empty smtp_host as SKIPPED without leaking smtp_pass", async () => {
+  const result = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    whenUnset: "skip",
+    expectedAdminEmail: "no-reply@mail.frapp.live",
+    fetchImpl: async () => smtpConfig({ smtp_host: "", smtp_admin_email: "", rate_limit_email_sent: 2 }),
+  });
+  assert.equal(result.status, SKIPPED);
+  assert.match(result.detail, /2\/hour cap/);
+  assert.match(result.detail, /no-reply@mail\.frapp\.live/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
+});
+
+test("staging default still FAILs empty smtp_host when whenUnset is omitted", async () => {
+  const result = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    expectedAdminEmail: "no-reply@mail.frapp.live",
+    fetchImpl: async () => smtpConfig({ smtp_host: "" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /2 messages\/hour/);
+});
+
+test("expectedAdminEmail is the From this check compares", async () => {
+  const wrong = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    expectedAdminEmail: "no-reply@mail.frapp.live",
+    fetchImpl: async () => smtpConfig(),
+  });
+  assert.equal(wrong.status, FAIL);
+  assert.match(wrong.detail, /mail\.staging\.frapp\.live/);
+  assert.match(wrong.detail, /no-reply@mail\.frapp\.live/);
+
+  const right = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    expectedAdminEmail: "no-reply@mail.frapp.live",
+    fetchImpl: async () => smtpConfig({ smtp_admin_email: "no-reply@mail.frapp.live" }),
+  });
+  assert.equal(right.status, PASS);
+  assert.match(right.detail, /no-reply@mail\.frapp\.live/);
+  assert.doesNotMatch(right.detail, /must-never-appear-in-detail/);
+});
+
 // ── Magic Link template — token_hash on the app host, not ConfirmationURL ───
 
 const magicLinkConfig = (overrides = {}) =>

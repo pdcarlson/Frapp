@@ -231,7 +231,11 @@ silently revert or be forgotten on a new project.
 so a revert to the hosted 2/hour mailer or the burned apex From cannot sit green.
 It also asserts the Magic Link subject and `token_hash` href daily (`auth-magic-link`) so a
 dashboard reset to `{{ .ConfirmationURL }}` cannot sit green.
-Production Auth is still the hosted 2/hour cap.
+Production Auth is still the hosted 2/hour cap. The 07:45
+`production-auth-conformance.yml` watchdog skip-asserts that: empty SMTP is
+SKIPPED (the job stays green). Once SMTP is on, the same check requires
+`no-reply@mail.frapp.live` at ≥300/hour and fails a burned apex From.
+Turning SMTP on is still human work (#1824).
 
 The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`
 (`token_hash`, #1916). Gmail trained the apex From `invites@frapp.live` on the first

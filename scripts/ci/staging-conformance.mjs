@@ -335,8 +335,13 @@ export async function checkAuthRedirects({
  * first-user gate, on the only host Paul can prove mail before flipping prod.
  * Same GET `checkAuthHook` makes. Never put `smtp_pass` in the detail string.
  *
- * Production is deliberately not asserted here: its SMTP is still the hosted
- * cap (#1824). A production sibling needs its own alert title (#1384).
+ * `expectedAdminEmail` is the From this check requires (staging vs production
+ * differ). `whenUnset`:
+ * - `"fail"` (default, staging): empty `smtp_host` is a FAIL. Staging SMTP
+ *   is already on; unset is a regression.
+ * - `"skip"` (production until #1824): empty `smtp_host` is SKIPPED so the
+ *   07:45 watchdog stays green on the hosted 2/hour cap. The moment SMTP is
+ *   on, the same check FAILs a burned apex From.
  */
 export const AUTH_SMTP_HOST = "smtp.resend.com";
 export const AUTH_SMTP_ADMIN_EMAIL = "no-reply@mail.staging.frapp.live";
@@ -365,8 +370,18 @@ export function emailsPerHourFromRateLimit(value) {
   return count / hours;
 }
 
-export async function checkAuthSmtp({ accessToken, projectRef, fetchImpl = fetch }) {
+export async function checkAuthSmtp({
+  accessToken,
+  projectRef,
+  fetchImpl = fetch,
+  expectedAdminEmail = AUTH_SMTP_ADMIN_EMAIL,
+  whenUnset = "fail",
+} = {}) {
   const label = "Custom SMTP is Resend and the send cap is at least 300/hour";
+  const expectedFrom =
+    typeof expectedAdminEmail === "string" && expectedAdminEmail.trim()
+      ? expectedAdminEmail.trim().toLowerCase()
+      : AUTH_SMTP_ADMIN_EMAIL;
   if (!accessToken || !projectRef) {
     return result("auth-smtp", label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set");
   }
@@ -380,6 +395,14 @@ export async function checkAuthSmtp({ accessToken, projectRef, fetchImpl = fetch
   const data = await response.json();
   const host = typeof data?.smtp_host === "string" ? data.smtp_host.trim().toLowerCase() : "";
   if (!host) {
+    if (whenUnset === "skip") {
+      return result(
+        "auth-smtp",
+        label,
+        SKIPPED,
+        `smtp_host is empty (hosted 2/hour cap). Skip until SMTP is on. Once on, this check fails unless smtp_admin_email=${expectedFrom}. See #1824.`,
+      );
+    }
     return result(
       "auth-smtp",
       label,
@@ -392,12 +415,12 @@ export async function checkAuthSmtp({ accessToken, projectRef, fetchImpl = fetch
   }
   const adminEmail =
     typeof data?.smtp_admin_email === "string" ? data.smtp_admin_email.trim().toLowerCase() : "";
-  if (adminEmail !== AUTH_SMTP_ADMIN_EMAIL) {
+  if (adminEmail !== expectedFrom) {
     return result(
       "auth-smtp",
       label,
       FAIL,
-      `smtp_admin_email is "${adminEmail || "(empty)"}", expected ${AUTH_SMTP_ADMIN_EMAIL}`,
+      `smtp_admin_email is "${adminEmail || "(empty)"}", expected ${expectedFrom}`,
     );
   }
   const perHour = emailsPerHourFromRateLimit(data?.rate_limit_email_sent);
