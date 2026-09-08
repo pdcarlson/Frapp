@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { assignResolvedRedirect } from "./lib/auth/redirect";
 
 const AUTH_ROUTES = ["/sign-in", "/sign-up"];
-const DASHBOARD_ROUTE_PREFIX = "/chat";
 const PROTECTED_ROUTE_PREFIXES = [
   "/dashboard",
   "/members",
@@ -143,13 +143,11 @@ export async function proxy(request: NextRequest) {
   }
 
   if (session && isAuthRoute(pathname)) {
-    const redirectTo = request.nextUrl.searchParams.get("redirectTo");
     const destination = request.nextUrl.clone();
-    destination.pathname =
-      redirectTo && redirectTo.startsWith("/")
-        ? redirectTo
-        : DASHBOARD_ROUTE_PREFIX;
-    destination.search = "";
+    assignResolvedRedirect(
+      destination,
+      request.nextUrl.searchParams.get("redirectTo"),
+    );
     return NextResponse.redirect(destination, {
       headers: responseHolder.current.headers,
     });

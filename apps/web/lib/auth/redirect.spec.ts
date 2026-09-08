@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AUTH_CALLBACK_PATH,
+  assignResolvedRedirect,
   buildAuthCallbackUrl,
   describeAuthError,
   resolveRedirectPath,
@@ -32,11 +33,69 @@ describe("resolveRedirectPath", () => {
     }
   });
 
+  it("refuses `/.//host` — first parse stays on-origin, second parse is protocol-relative", () => {
+    expect(resolveRedirectPath("/.//evil.example")).toBe("/chat");
+    expect(resolveRedirectPath("/.//evil.example/phish")).toBe("/chat");
+    expect(resolveRedirectPath("/..//evil.example")).toBe("/chat");
+    const poisoned = resolveRedirectPath("/.//evil.example/phish");
+    expect(new URL(poisoned, "https://app.frapp.live").origin).toBe("https://app.frapp.live");
+  });
+
   it("hands back the parser's normalised path, query and fragment", () => {
     expect(resolveRedirectPath("/join?token=abc#x")).toBe("/join?token=abc#x");
     // Percent-encoded slashes stay in the path — they never become an authority.
     expect(resolveRedirectPath("/%2F%2Fevil.example")).toBe("/%2F%2Fevil.example");
     expect(new URL("/%2F%2Fevil.example", "https://app.frapp.live").origin).toBe("https://app.frapp.live");
+  });
+});
+
+describe("assignResolvedRedirect", () => {
+  it("puts the invite query on search, not encoded into pathname", () => {
+    const url = new URL(
+      "https://app.frapp.live/sign-in?token=leftover&redirectTo=%2Fjoin%3Ftoken%3Dabc",
+    );
+    assignResolvedRedirect(url, url.searchParams.get("redirectTo"));
+    expect(url.pathname).toBe("/join");
+    expect(url.searchParams.get("token")).toBe("abc");
+    expect(url.toString()).toBe("https://app.frapp.live/join?token=abc");
+  });
+
+  it("is the opposite of stuffing `/join?token=` into pathname", () => {
+    const buggy = new URL("https://app.frapp.live/sign-in");
+    buggy.pathname = "/join?token=abc";
+    buggy.search = "";
+    // Node encodes the `?` into the path, so the request never hits `/join`.
+    expect(buggy.pathname).not.toBe("/join");
+    expect(buggy.pathname).toContain("%3F");
+    expect(buggy.search).toBe("");
+
+    const fixed = new URL("https://app.frapp.live/sign-in");
+    assignResolvedRedirect(fixed, "/join?token=abc");
+    expect(fixed.pathname).toBe("/join");
+    expect(fixed.search).toBe("?token=abc");
+  });
+
+  it("falls back to /chat and refuses protocol-relative destinations", () => {
+    const missing = new URL("https://app.frapp.live/sign-in");
+    assignResolvedRedirect(missing, null);
+    expect(missing.pathname).toBe("/chat");
+    expect(missing.search).toBe("");
+
+    const evil = new URL("https://app.frapp.live/sign-in");
+    assignResolvedRedirect(evil, "//evil.example/x");
+    expect(evil.origin).toBe("https://app.frapp.live");
+    expect(evil.pathname).toBe("/chat");
+  });
+
+  it("does not bounce a signed-in member back onto /sign-in or /sign-up", () => {
+    const loop = new URL("https://app.frapp.live/sign-in?redirectTo=%2Fsign-in%3Ffoo%3D1");
+    assignResolvedRedirect(loop, loop.searchParams.get("redirectTo"));
+    expect(loop.pathname).toBe("/chat");
+    expect(loop.search).toBe("");
+
+    const signUp = new URL("https://app.frapp.live/sign-up");
+    assignResolvedRedirect(signUp, "/sign-up");
+    expect(signUp.pathname).toBe("/chat");
   });
 });
 
