@@ -134,6 +134,8 @@ When the gate goes red on a PR that did not touch dependencies, read the **exit 
 
 The lockfile versions alone do not hold after a later `npm install`: `@redocly/openapi-core@1.34.19` still *declares* `js-yaml@4.3.1` exactly, and Next's optional `sharp` range is `^0.35.3`. Root overrides keep the hoisted 4.3.2 / 0.35.4 copies (swagger nest `^5.4.1`). GHSA-2883 lists only the 3.x / 4.x lines; istanbul was already on 3.15.2.
 
+> **2026-09-08 (later).** Three new multer highs (`GHSA-wc9g-mqfw-jrwm`, `GHSA-qfvm-cv95-jqjf`, `GHSA-535w-7cp7-47q4`) against `@nestjs/platform-express@11.2.1`'s exact pin `multer@2.2.0`. Patched at **2.3.0**. Latest `@nestjs/platform-express` (12.0.1) still declares 2.2.0, so a root override is the lever — not a Nest bump. Targeted `npm update multer --package-lock-only`. No FileInterceptor / multer config in this repo; no allowlist.
+
 ## `@sentry/nestjs` v9 → v10 (issue #682)
 
 The one advisory chain the #831 sweep above could not clear in-range: `@sentry/nestjs@9.47.1` pulled `@opentelemetry/core@1.30.1`, carrying **GHSA-8988-4f7v-96qf** (unbounded memory allocation parsing W3C Baggage headers). Baggage propagation runs on every traced request, so the trigger surface was the whole hot path. `npm audit` reported `isSemVerMajor: true` — the fix only existed across a major boundary, which is why it was deferred to its own issue rather than folded into the sweep.

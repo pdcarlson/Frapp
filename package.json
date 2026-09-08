@@ -78,6 +78,7 @@
       "js-yaml": "4.3.2"
     },
     "sharp": "0.35.4",
+    "multer": "2.3.0",
     "@typescript/old": "npm:typescript@6.0.3"
   },
   "engines": {
