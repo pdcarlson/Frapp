@@ -349,20 +349,20 @@ describe("the orphan-president claim banner", () => {
     });
     render(<RolesAndPermissionsPage />);
     expect(screen.getByText(/couldn't check who can claim it/i)).toBeInTheDocument();
-    expect(screen.queryByText(/contact frapp support/i)).toBeNull();
+    expect(screen.queryByText(/contact signet support/i)).toBeNull();
     expect(
       screen.queryByRole("button", { name: /claim presidency/i }),
     ).toBeNull();
   });
 
-  it("directs to Frapp support when no eligible role exists", () => {
+  it("directs to Signet support when no eligible role exists", () => {
     Object.assign(currentChapter, { data: { needs_president: true } });
     Object.assign(presidencyClaimStatus, {
       data: { needs_president: true, eligible: false, next_role_name: null },
       isLoading: false,
     });
     render(<RolesAndPermissionsPage />);
-    expect(screen.getByText(/contact frapp support/i)).toBeInTheDocument();
+    expect(screen.getByText(/contact signet support/i)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /claim presidency/i }),
     ).toBeNull();
