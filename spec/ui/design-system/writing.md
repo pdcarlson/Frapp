@@ -449,7 +449,8 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 | State | Title | Description |
 |---|---|---|
 | Idle | `Join your chapter` | `Enter the invite your officer sent. Invites expire after 24 hours and work once.` |
-| Invite-link hint | — | `Got an invite link? Open it and this page fills itself in.` |
+| Invite-link hint | — | `Got an invite link? Paste it here, or open it and this page fills itself in.` |
+| Unparseable paste | — | `Paste the invite your officer sent, or open the invite link.` |
 | Checking the session | — | `Verifying your session…` (announced, not drawn) |
 | Session check failed, offline | `Can't check your session` | `Reconnect to confirm you're signed in, then redeem the invite.` |
 | Session check failed, error | `Couldn't check your session` | `We couldn't reach the API to confirm you're signed in. Retry in a moment.` |

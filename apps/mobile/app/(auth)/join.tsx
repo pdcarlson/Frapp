@@ -151,7 +151,7 @@ export default function JoinChapter() {
 
           <View style={styles.linkHint}>
             <Text style={styles.helperText}>
-              Got an invite link? It opens here and fills the invite for you.
+              Got an invite link? Paste it here, or open it and this page fills itself in.
             </Text>
           </View>
 
