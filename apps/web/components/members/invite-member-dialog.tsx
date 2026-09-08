@@ -85,7 +85,7 @@ function normalizeInvites(input: unknown): InviteRow[] {
 function buildInviteShareMessage(invite: InviteRow, origin: string): string {
   const expirationText = formatDate(invite.expires_at);
   return [
-    "Frapp member invite",
+    "Signet member invite",
     `Role: ${invite.role}`,
     buildJoinUrl(origin, invite.token),
     `Expires: ${expirationText}`,
