@@ -308,10 +308,10 @@ different", the member surface gets its own rows rather than inline strings.
 | No zones | `No study zones yet` | `Sessions are tracked inside a zone. An officer with geofences:manage can add one.` |
 | Error (sessions) | `Couldn't load study hours` | `Your sessions are still recorded — this was a problem fetching them.` |
 | Error (zones) | `Couldn't load study zones` | `A session has to start inside a zone, so this has to load first.` |
-| Paused (backgrounded) | `<zone> · paused` (status row) | `Paused while Frapp was in the background. It resumes on its own — your credited time is safe until the grace window runs out.` |
+| Paused (backgrounded) | `<zone> · paused` (status row) | `Paused while Signet was in the background. It resumes on its own — your credited time is safe until the grace window runs out.` |
 | Session closed by grace | — (notice) | `Session closed while the app was in the background. You kept the time you studied before it paused.` |
 | Session expired | — (notice) | `Session ended: you left the study zone, or the app stopped reporting for 10 minutes. No points were awarded.` |
-| Location primer | `Location check` | `Frapp confirms you're in the study zone when you start, and again every five minutes while you study. That check is what turns your time into chapter points.` Declining is `Not now`. |
+| Location primer | `Location check` | `Signet confirms you're in the study zone when you start, and again every five minutes while you study. That check is what turns your time into chapter points.` Declining is `Not now`. |
 
 A close that **awards** points (`COMPLETED`, `PAUSED_EXPIRED`) must never read as
 a loss, and one that awards nothing (`EXPIRED`, `LOCATION_INVALID`) must say so —
@@ -390,7 +390,7 @@ word "subscription"**, which is the chapter's own bill with a different payer
 | Nothing owed | `You're all paid up` (balance label) | — |
 | Payment captured, unsettled | — (notice) | `Payment received, confirmation pending. This updates as soon as your chapter's records catch up.` |
 | Payment settled | — (notice) | `Paid. Your chapter has it — thanks.` |
-| Stripe unavailable (Expo Go) | — (disabled CTA reason) | `Paying in the app needs the installed Frapp build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.` |
+| Stripe unavailable (Expo Go) | — (disabled CTA reason) | `Paying in the app needs the installed Signet build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.` |
 | No publishable key | — (disabled CTA reason) | `Card payments aren't switched on for this build yet. Ask your treasurer how to pay this invoice.` |
 | Trust footer | — | `Payments run through your chapter's Stripe account.` |
 
