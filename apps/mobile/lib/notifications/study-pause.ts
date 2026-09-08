@@ -3,7 +3,7 @@
  *
  * `spec/behavior/study-sessions.md` § Anti-Distraction specifies it verbatim:
  *
- * > A local notification fires: "Your study session is paused. Return to Frapp
+ * > A local notification fires: "Your study session is paused. Return to Signet
  * > to resume."
  *
  * C5 built the study screen and deliberately did not build this, because
@@ -44,7 +44,7 @@ let outstandingId: string | null = null;
  * path that matters most: `study.tsx` fires `void notifyStudyPaused()` and then
  * applies the response synchronously, so a `/pause` that comes back terminal
  * (`PAUSED_EXPIRED`, or a session an officer already closed) clears in the very
- * same tick. The member would be left with "Return to Frapp to resume" pointing
+ * same tick. The member would be left with "Return to Signet to resume" pointing
  * at a session that no longer exists, until their next pause.
  *
  * The counter has to be claimed *before* the first `await`, which is the whole
@@ -86,7 +86,7 @@ export async function notifyStudyPaused(): Promise<void> {
   try {
     id = await presentLocalNotification({
       title: "Study session paused",
-      body: "Your study session is paused. Return to Frapp to resume.",
+      body: "Your study session is paused. Return to Signet to resume.",
     });
   } catch {
     return;

@@ -260,7 +260,7 @@ export default function StudyScreen() {
       sessionIdRef.current = null;
       setNotice(settled.notice);
       // A session that ended while paused would otherwise leave its "return to
-      // Frapp to resume" notice in the tray, inviting the member back to a
+      // Signet to resume" notice in the tray, inviting the member back to a
       // session that no longer exists (#1065).
       void clearStudyPausedNotification();
       // The closed session belongs in the history list below, which is served

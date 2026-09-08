@@ -151,7 +151,7 @@ export default function DuesScreen() {
 
       const outcome = await presentPaymentSheet({
         clientSecret,
-        merchantDisplayName: chapterName ?? "Frapp",
+        merchantDisplayName: chapterName ?? "Signet",
       });
       // Dismissing the sheet is a decision, not a failure. Nothing is said.
       if (outcome.kind === "canceled") return;

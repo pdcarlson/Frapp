@@ -105,7 +105,7 @@ describe("stripeUnavailableReason", () => {
   it("names the build, not the configuration, in Expo Go", () => {
     constantsState.executionEnvironment = "storeClient";
     setStripeLoaderForTests(() => fakeStripe());
-    expect(stripeUnavailableReason()).toContain("installed Frapp build");
+    expect(stripeUnavailableReason()).toContain("installed Signet build");
   });
 
   it("names the configuration when only the key is missing", () => {
