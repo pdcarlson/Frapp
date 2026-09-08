@@ -1,11 +1,14 @@
 name: Production Auth conformance
 
 # Sibling of staging-conformance.yml for the Auth settings first users actually
-# hit: custom_access_token_hook, the redirect allow list, and Auth SMTP on
-# frapp-prod. Staging already watches those (plus Infisical and a sign-in
-# probe) and FAILs on empty SMTP. Production SMTP is skip-until-on: empty
-# host (hosted 2/hour cap) is SKIPPED so this job stays green until #1824.
-# SMTP on with a From other than no-reply@mail.frapp.live fails the next tick.
+# hit: custom_access_token_hook, the redirect allow list, Auth SMTP, and
+# the Magic Link template on frapp-prod. Staging already watches hook,
+# redirects, and SMTP (plus Infisical and a sign-in probe) and FAILs on
+# empty SMTP. Production SMTP is skip-until-on: empty host (hosted 2/hour
+# cap) is SKIPPED so this job stays green until #1824. SMTP on with a From
+# other than no-reply@mail.frapp.live fails the next tick. Magic Link is the
+# same gate: ConfirmationURL is SKIPPED while SMTP is unset; SMTP on
+# without token_hash fails.
 #
 # Own alert title. A shared one would let a recovered staging close a live
 # production incident. Project ref comes from .github/environments.json, not
