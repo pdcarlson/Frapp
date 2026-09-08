@@ -59,6 +59,11 @@
 //                                 refused without this. The nightly production
 //                                 job hard-codes rehearsal: false because it
 //                                 has no reviewer and the rehearsal writes.
+//   STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE
+//                                 optional; a restore against production is
+//                                 refused without this. Backup is not: the
+//                                 nightly job must read production Storage.
+//                                 Restore overwrites live objects.
 
 import { createHash } from "node:crypto";
 
@@ -335,6 +340,9 @@ export function projectRefFromSupabaseUrl(supabaseUrl) {
  *     must match the prefix when set
  *   - `rehearse` against production is refused unless
  *     `STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL=true`
+ *   - `restore` against production is refused unless
+ *     `STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE=true` (backup stays allowed:
+ *     the nightly job must read production Storage)
  */
 export function assertStorageBackupTarget({
   supabaseUrl,
@@ -342,6 +350,7 @@ export function assertStorageBackupTarget({
   mode,
   expectedEnvironment,
   allowProductionRehearsal,
+  allowProductionRestore,
   lookupEnvironment = getEnvironment,
 } = {}) {
   const envFromPrefix = environmentForStoragePrefix(prefix);
@@ -374,13 +383,23 @@ export function assertStorageBackupTarget({
     );
   }
 
-  const allow =
+  const allowRehearsal =
     allowProductionRehearsal ?? process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL === "true";
-  if (mode === "rehearse" && envName === "production" && !allow) {
+  if (mode === "rehearse" && envName === "production" && !allowRehearsal) {
     throw new Error(
       "Refusing a Storage rehearsal against production. The rehearsal writes and deletes a canary. " +
         "The production nightly job hard-codes rehearsal: false for this reason (no reviewer). " +
         "If you meant to, set STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL=true.",
+    );
+  }
+
+  const allowRestore =
+    allowProductionRestore ?? process.env.STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE === "true";
+  if (mode === "restore" && envName === "production" && !allowRestore) {
+    throw new Error(
+      "Refusing a Storage restore against production. Restoring overwrites live objects. " +
+        "`--prefix storage-production` plus a production SUPABASE_URL is a real incident-response " +
+        "action, not a rehearsal. If you meant to, set STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE=true.",
     );
   }
 
