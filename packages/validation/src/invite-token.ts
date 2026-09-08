@@ -41,6 +41,13 @@ export function assertHttpsJoinOrigin(url: URL): URL {
 export const PRODUCTION_APP_ORIGIN = "https://app.frapp.live";
 
 /**
+ * Dashboard SDK origin first users call. Shared so web
+ * `NEXT_PUBLIC_API_URL` and EAS `EXPO_PUBLIC_API_URL` cannot drift from
+ * the production host in `apps/mobile/eas.json`.
+ */
+export const PRODUCTION_API_ORIGIN = "https://api.frapp.live";
+
+/**
  * Same value as `.github/environments.json`
  * `environments.production.supabaseProjectRef`. Duplicated here because the
  * API Docker image does not copy `.github/` (`apps/api/Dockerfile`), and boot
@@ -87,6 +94,71 @@ export function assertProductionAppOrigin(raw: string, label: string): URL {
   if (url.origin !== PRODUCTION_APP_ORIGIN) {
     throw new Error(
       `${label} must be ${PRODUCTION_APP_ORIGIN} in production (got ${url.protocol}//${url.host}).`,
+    );
+  }
+  return url;
+}
+
+/**
+ * Production web/mobile API calls must land on `api.frapp.live`. `https:`
+ * alone still allows `https://api-staging.frapp.live`. Call only after the
+ * caller knows this process is production (`VERCEL_ENV` or
+ * `EAS_BUILD_PROFILE=production`). Unlike `APP_URL`, there is no safe
+ * unset fallback — `FrappProvider` would otherwise use localhost.
+ *
+ * Error interpolates `protocol` + `host`, never userinfo or a query.
+ */
+export function assertProductionApiOrigin(raw: string, label: string): URL {
+  if (typeof raw !== "string" || raw.trim() === "") {
+    throw new Error(
+      `${label} must be ${PRODUCTION_API_ORIGIN} in production (got empty).`,
+    );
+  }
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    throw new Error(
+      `${label} must be ${PRODUCTION_API_ORIGIN} in production (got unparseable).`,
+    );
+  }
+  url.username = "";
+  url.password = "";
+  if (url.origin !== PRODUCTION_API_ORIGIN) {
+    throw new Error(
+      `${label} must be ${PRODUCTION_API_ORIGIN} in production (got ${url.protocol}//${url.host}).`,
+    );
+  }
+  return url;
+}
+
+/**
+ * Production web/mobile must talk to the `frapp-prod` project. Call only
+ * after the caller knows this process is production. Empty fails closed —
+ * there is no localhost-shaped production Supabase.
+ *
+ * Error interpolates `protocol` + `host`, never userinfo or a query.
+ */
+export function assertProductionSupabaseUrl(raw: string, label: string): URL {
+  const expected = `https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`;
+  if (typeof raw !== "string" || raw.trim() === "") {
+    throw new Error(
+      `${label} must be ${expected} in production (got empty).`,
+    );
+  }
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    throw new Error(
+      `${label} must be ${expected} in production (got unparseable).`,
+    );
+  }
+  url.username = "";
+  url.password = "";
+  if (!isProductionSupabaseUrl(raw)) {
+    throw new Error(
+      `${label} must be ${expected} in production (got ${url.protocol}//${url.host}).`,
     );
   }
   return url;

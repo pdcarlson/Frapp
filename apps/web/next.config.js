@@ -1,4 +1,17 @@
 import { withSentryConfig } from "@sentry/nextjs";
+import { assertProductionWebPublicEnv } from "./lib/assert-production-public-env.js";
+
+// Vercel Production (`VERCEL_ENV=production`) inlines NEXT_PUBLIC_* into the
+// dashboard. Unset/staging/localhost would ship FrappProvider's
+// http://localhost:3001 fallback or the staging API/DB. Preview and CI
+// `web-production-build` leave VERCEL_ENV unset (CI uses localhost stand-ins
+// on purpose) so this is a no-op there. Do not import @repo/validation from
+// this file — its "import" condition is TypeScript source.
+assertProductionWebPublicEnv({
+  vercelEnv: process.env.VERCEL_ENV,
+  apiUrl: process.env.NEXT_PUBLIC_API_URL,
+  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+});
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

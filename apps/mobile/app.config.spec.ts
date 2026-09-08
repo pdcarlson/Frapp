@@ -1,5 +1,8 @@
 import { createRequire } from "node:module";
-import { PRODUCTION_APP_ORIGIN as SHARED_PRODUCTION_APP_ORIGIN } from "@repo/validation";
+import {
+  PRODUCTION_API_ORIGIN as SHARED_PRODUCTION_API_ORIGIN,
+  PRODUCTION_APP_ORIGIN as SHARED_PRODUCTION_APP_ORIGIN,
+} from "@repo/validation";
 import { afterEach, describe, expect, it } from "vitest";
 
 /**
@@ -524,6 +527,7 @@ describe("PRODUCTION_API_ORIGIN", () => {
     expect(PRODUCTION_API_ORIGIN).toBe(
       eas.build.production.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, ""),
     );
+    expect(PRODUCTION_API_ORIGIN).toBe(SHARED_PRODUCTION_API_ORIGIN);
   });
 });
 
