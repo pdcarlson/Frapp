@@ -79,7 +79,7 @@ describe('selectEmailProvider', () => {
 
     expect(provider).toBeInstanceOf(ResendEmailProvider);
     expect(log).toHaveBeenCalledWith(
-      expect.stringContaining('Frapp <invites@frapp.live>'),
+      expect.stringContaining('Signet <invites@frapp.live>'),
       'EmailProvider',
     );
   });

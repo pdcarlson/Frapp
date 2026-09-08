@@ -951,7 +951,7 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(zonedEvent);
 
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
-        BadRequestException,
+        /use the Signet mobile app to check in/,
       );
       expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });
