@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { extractInviteToken } from "@repo/validation";
 import { buildJoinUrl } from "./invite-link";
 
 describe("buildJoinUrl", () => {
@@ -11,6 +12,14 @@ describe("buildJoinUrl", () => {
   it("encodes characters that would break the query", () => {
     expect(buildJoinUrl("https://app.frapp.live", "a b/c")).toBe(
       "https://app.frapp.live/join?token=a%20b%2Fc",
+    );
+  });
+
+  it("round-trips through extractInviteToken so a pasted copy still redeems", () => {
+    const url = buildJoinUrl("https://app.frapp.live", "invite-abc");
+    expect(extractInviteToken(url)).toBe("invite-abc");
+    expect(extractInviteToken(buildJoinUrl("https://app.frapp.live", "a b/c"))).toBe(
+      "a b/c",
     );
   });
 });

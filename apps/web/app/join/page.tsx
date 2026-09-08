@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useRedeemInvite } from "@repo/hooks";
+import {
+  extractInviteToken,
+  extractInviteTokenFromQuery,
+} from "@repo/validation";
 import { AuthNote, AuthScreen } from "@/components/auth/auth-screen";
 import { joinErrorCopy, redeemChapterId } from "@/components/auth/join-errors";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
@@ -31,6 +35,8 @@ import { useNetwork } from "@/lib/providers/network-provider";
  * product *does* — so the chrome transfers and the input model does not. This
  * is the same call `apps/mobile/app/(auth)/join.tsx` already records in its own
  * docstring; both surfaces now say it in the same place so neither drifts.
+ * The field accepts a pasted raw token or the join URL officers copy
+ * (`extractInviteToken`); posting the URL as the token is a 410.
  *
  * The #920 Profile & pre-auth slice replaced a two-card grid that explained
  * database behaviour to a member ("Invite redemption writes directly to the
@@ -56,7 +62,10 @@ function JoinPageContent() {
   const { isOffline } = useNetwork();
   const redeemInviteMutation = useRedeemInvite();
   const selectChapter = useSelectChapter();
-  const initialToken = useMemo(() => searchParams.get("token") ?? "", [searchParams]);
+  const initialToken = useMemo(
+    () => extractInviteTokenFromQuery((key) => searchParams.get(key)) ?? "",
+    [searchParams],
+  );
   const [editedToken, setEditedToken] = useState<string | null>(null);
   const token = editedToken ?? initialToken;
   const [sessionState, setSessionState] = useState<"checking" | "ready" | "failed">(
@@ -106,9 +115,16 @@ function JoinPageContent() {
   async function handleRedeem(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setRedeemError(null);
+    const extracted = extractInviteToken(token);
+    if (!extracted) {
+      setRedeemError(
+        "Paste the invite your officer sent, or open the invite link.",
+      );
+      return;
+    }
     try {
       const result = await redeemInviteMutation.mutateAsync({
-        token: token.trim(),
+        token: extracted,
       });
       const chapterId = redeemChapterId(result);
 
@@ -220,7 +236,8 @@ function JoinPageContent() {
 
       <div className="mt-6">
         <AuthNote glyph={<LinkGlyph className="h-5 w-5" />}>
-          Got an invite link? Open it and this page fills itself in.
+          Got an invite link? Paste it here, or open it and this page fills
+          itself in.
         </AuthNote>
       </div>
     </AuthScreen>
