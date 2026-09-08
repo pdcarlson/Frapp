@@ -27,8 +27,9 @@ name: Release
 #      no tag would ever be created. Silently. The guard is gone.
 #   2. Checkout had no `ref:`, which under `workflow_call` resolves to the
 #      caller's branch tip — so it would tag whatever main happened to be
-#      rather than what was deployed. It now checks out `inputs.sha` for
-#      history and the tag. The bump classifier is a separate overlay from
+#      rather than what was deployed. It now checks out the trimmed dispatch
+#      SHA (`steps.sha.outputs.sha`) for history and the tag. The bump
+#      classifier is a separate overlay from
 #      `github.sha` (see the step below): tagging the live SHA with that
 #      SHA's own `resolve-release-bump.mjs` is how run 34155737950 died on
 #      issue #1340 after Render and Vercel were already serving traffic.
@@ -121,7 +122,8 @@ jobs:
       # SHA's copy. Overlay the classifier (and the modules it imports) from
       # the workflow revision that is running. `github.sha` is the branch
       # selected in the Actions UI under `workflow_dispatch`, and the caller's
-      # SHA under `workflow_call`. History and `git tag` stay on `inputs.sha`.
+      # SHA under `workflow_call`. History and `git tag` stay on the trimmed
+      # live SHA (`steps.sha.outputs.sha`).
       - name: Use the running workflow's bump classifier
         env:
           WORKFLOW_SHA: ${{ github.sha }}
