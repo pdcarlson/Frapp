@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Scheduled conformance check for frapp-prod Auth hook, redirect allow list,
-// and Auth SMTP (skip-until-on).
+// Auth SMTP (skip-until-on), and Magic Link template (skip until SMTP is on).
 //
 // Staging-conformance.yml watches these on frapp-staging. Production first
 // users hit frapp-prod (`unttyvyfezddlyafcydh` in .github/environments.json).
@@ -14,7 +14,8 @@
 // SKIPPED so the 07:45 watchdog stays green until #1824. The moment SMTP
 // is on, the same check FAILs a burned apex From (`invites@frapp.live`)
 // and requires `no-reply@mail.frapp.live` at >=300/hour. Staging already
-// FAILs on empty SMTP.
+// FAILs on empty SMTP. Magic Link is the same gate: ConfirmationURL is
+// SKIPPED while SMTP is unset; SMTP on FAILs a hosted default href.
 //
 // ── Why this job does NOT say `environment: production` ─────────────────────
 // ADR-19 put Required reviewers on the `production` GitHub environment. A
@@ -50,6 +51,7 @@ import {
   canResolveAlert,
   checkAuthHook,
   checkAuthRedirects,
+  checkAuthMagicLink,
   checkAuthSmtp,
   checkProjectStatus,
   classifyConformance,
@@ -65,6 +67,7 @@ export const DEFAULT_CHECK_IDS = Object.freeze([
   "auth-hook",
   "auth-redirects",
   "auth-smtp",
+  "auth-magic-link",
 ]);
 
 // Title is the lookup key. Must not equal staging-conformance's title.
@@ -162,11 +165,22 @@ function defaultChecks({ accessToken, projectRef, fetchImpl }) {
           whenUnset: "skip",
         }),
     },
+    {
+      id: "auth-magic-link",
+      label: "Magic Link template uses token_hash (skip while SMTP unset)",
+      run: () =>
+        checkAuthMagicLink({
+          accessToken,
+          projectRef,
+          fetchImpl,
+          whenSmtpUnset: "skip",
+        }),
+    },
   ];
 }
 
 /**
- * Runs the four production Auth assertions, reports, and upserts/resolves
+ * Runs the DEFAULT_CHECK_IDS production Auth assertions, reports, and upserts/resolves
  * the alert issue. Same skip ≠ pass / failed-lookup-must-not-close contract
  * as staging-conformance; different title and default `toRun`.
  */

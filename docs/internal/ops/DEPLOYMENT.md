@@ -233,6 +233,9 @@ Production Auth is still the hosted 2/hour cap. The 07:45
 `production-auth-conformance.yml` watchdog skip-asserts that: empty SMTP is
 SKIPPED (the job stays green). Once SMTP is on, the same check requires
 `no-reply@mail.frapp.live` at ≥300/hour and fails a burned apex From.
+The same watchdog skip-asserts the Magic Link template: ConfirmationURL is
+SKIPPED while SMTP is unset. Once SMTP is on, the href must carry
+`token_hash` + `type=magiclink` or the 07:45 job fails.
 Turning SMTP on is still human work (#1824).
 
 The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`

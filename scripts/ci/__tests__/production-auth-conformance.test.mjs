@@ -27,17 +27,25 @@ const WORKFLOWS_DIR = join(REPO_ROOT, ".github", "workflows");
 const PRODUCTION_REF = getEnvironment("production").supabaseProjectRef;
 const STAGING_REF = getEnvironment("staging").supabaseProjectRef;
 
+const SIGNET_MAGIC_LINK = {
+  mailer_subjects_magic_link: "Sign in to Signet",
+  mailer_templates_magic_link_content:
+    '<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Signet</a>',
+};
+
 const HEALTHY_AUTH = {
   hook_custom_access_token_enabled: true,
   hook_custom_access_token_uri: "pg-functions://postgres/public/custom_access_token_hook",
   site_url: PRODUCTION_SITE_URL,
   uri_allow_list: `${PRODUCTION_SITE_URL},${PRODUCTION_SITE_URL}/**,frapp://**`,
-  // Hosted-cap SMTP on purpose: the default run must SKIP auth-smtp, not
-  // FAIL, until #1824 turns production SMTP on.
+  // Hosted-cap SMTP on purpose: the default run must SKIP auth-smtp and
+  // auth-magic-link, not FAIL, until #1824 turns production SMTP on.
   smtp_host: "",
   smtp_admin_email: "",
   rate_limit_email_sent: 2,
   smtp_pass: "must-never-appear-in-detail",
+  mailer_subjects_magic_link: "Your Magic Link",
+  mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
 };
 
 function jsonOk(body) {
@@ -104,12 +112,13 @@ describe("identity", () => {
     assert.match(PRODUCTION_REF, /^[a-z0-9]{15,20}$/);
   });
 
-  it("default checks include skip-until-on SMTP, not staging-only probes", () => {
+  it("default checks include skip-until-on SMTP and Magic Link, not staging-only probes", () => {
     assert.deepEqual([...DEFAULT_CHECK_IDS], [
       "project-status",
       "auth-hook",
       "auth-redirects",
       "auth-smtp",
+      "auth-magic-link",
     ]);
     assert.ok(!DEFAULT_CHECK_IDS.includes("auth-signin"));
     assert.ok(!DEFAULT_CHECK_IDS.includes("infisical-syncs"));
@@ -140,15 +149,20 @@ describe("default assertions", () => {
     assert.equal(outcome, "healthy");
     assert.deepEqual(
       results.map((r) => r.id),
-      ["project-status", "auth-hook", "auth-redirects", "auth-smtp"],
+      ["project-status", "auth-hook", "auth-redirects", "auth-smtp", "auth-magic-link"],
     );
     const smtp = results.find((r) => r.id === "auth-smtp");
     assert.equal(smtp.status, SKIPPED);
     assert.match(smtp.detail, /2\/hour cap/);
     assert.match(smtp.detail, /no-reply@mail\.frapp\.live/);
     assert.doesNotMatch(smtp.detail, /must-never-appear-in-detail/);
+    const magic = results.find((r) => r.id === "auth-magic-link");
+    assert.equal(magic.status, SKIPPED);
+    assert.match(magic.detail, /smtp_host is empty/);
+    assert.doesNotMatch(magic.detail, /must-never-appear-in-detail/);
+    assert.doesNotMatch(magic.detail, /ConfirmationURL/);
     assert.equal(
-      results.filter((r) => r.id !== "auth-smtp").every((r) => r.status === PASS),
+      results.filter((r) => r.id !== "auth-smtp" && r.id !== "auth-magic-link").every((r) => r.status === PASS),
       true,
     );
     assert.ok(seen.some((u) => u.includes(PRODUCTION_REF)));
@@ -280,6 +294,7 @@ describe("default assertions", () => {
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "invites@frapp.live",
         rate_limit_email_sent: 300,
+        ...SIGNET_MAGIC_LINK,
       },
       githubRoutes: [
         { method: "GET", path: "/issues?state=all", body: [] },
@@ -309,6 +324,7 @@ describe("default assertions", () => {
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.staging.frapp.live",
         rate_limit_email_sent: 300,
+        ...SIGNET_MAGIC_LINK,
       },
       githubRoutes: [
         { method: "GET", path: "/issues?state=all", body: [] },
@@ -337,6 +353,7 @@ describe("default assertions", () => {
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
         rate_limit_email_sent: 300,
+        ...SIGNET_MAGIC_LINK,
       },
       githubRoutes: [{ method: "GET", path: "/issues?state=all", body: [] }],
     });
@@ -364,6 +381,7 @@ describe("default assertions", () => {
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
         rate_limit_email_sent: 2,
+        ...SIGNET_MAGIC_LINK,
       },
       githubRoutes: [
         { method: "GET", path: "/issues?state=all", body: [] },
@@ -382,6 +400,68 @@ describe("default assertions", () => {
     const smtp = results.find((r) => r.id === "auth-smtp");
     assert.equal(smtp.status, FAIL);
     assert.match(smtp.detail, /2\/hour/);
+  });
+
+  it("fails the run when production SMTP is on but Magic Link still uses ConfirmationURL", async () => {
+    const { fetchImpl } = combinedFetch({
+      auth: {
+        ...HEALTHY_AUTH,
+        smtp_host: "smtp.resend.com",
+        smtp_admin_email: "no-reply@mail.frapp.live",
+        rate_limit_email_sent: 300,
+        // Signet subject so this FAIL is the leftover ConfirmationURL href,
+        // not the hosted "Your Magic Link" subject failing first.
+        ...SIGNET_MAGIC_LINK,
+        mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
+      },
+      githubRoutes: [
+        { method: "GET", path: "/issues?state=all", body: [] },
+        { method: "POST", path: "/issues", body: { number: 907 } },
+      ],
+    });
+    const { outcome, results } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "failed");
+    const magic = results.find((r) => r.id === "auth-magic-link");
+    assert.equal(magic.status, FAIL);
+    assert.match(magic.detail, /ConfirmationURL/);
+    assert.match(magic.detail, /supabase\.co/);
+    assert.doesNotMatch(magic.detail, /must-never-appear-in-detail/);
+    const smtp = results.find((r) => r.id === "auth-smtp");
+    assert.equal(smtp.status, PASS);
+  });
+
+  it("passes auth-magic-link when production SMTP is on and the template has token_hash", async () => {
+    const { fetchImpl } = combinedFetch({
+      auth: {
+        ...HEALTHY_AUTH,
+        smtp_host: "smtp.resend.com",
+        smtp_admin_email: "no-reply@mail.frapp.live",
+        rate_limit_email_sent: 300,
+        ...SIGNET_MAGIC_LINK,
+      },
+      githubRoutes: [{ method: "GET", path: "/issues?state=all", body: [] }],
+    });
+    const { outcome, results } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "healthy");
+    const magic = results.find((r) => r.id === "auth-magic-link");
+    assert.equal(magic.status, PASS);
+    assert.match(magic.detail, /token_hash href/);
+    assert.doesNotMatch(magic.detail, /RedirectTo/);
+    assert.doesNotMatch(magic.detail, /must-never-appear-in-detail/);
   });
 });
 
