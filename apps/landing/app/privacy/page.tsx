@@ -28,7 +28,7 @@ const sections = [
     heading: "4. Data Retention",
     paragraphs: [
       "If a chapter subscription is canceled, chapter data is retained and remains available in a limited access mode according to product policy.",
-      "Users may request account deletion. Certain records may be retained in anonymized form for audit and legal compliance obligations.",
+      "Users can delete their account in the app or dashboard (see the Support page), or by emailing team@frapp.live. Certain records may be retained in anonymized form for audit and legal compliance obligations.",
     ],
   },
   {

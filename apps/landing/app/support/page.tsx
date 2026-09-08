@@ -36,7 +36,9 @@ const sections = [
   {
     heading: "4. Deleting your account",
     paragraphs: [
-      "You can request deletion of your Frapp account by emailing team@frapp.live from the address on the account. We remove your profile and personal information; records a chapter is required to keep for its own compliance obligations (for example dues ledgers and audit history) are retained in anonymized form, as described in the Privacy Policy.",
+      "Signed-in members delete their Frapp account themselves. On the web dashboard, open My Profile and choose Delete account. In the mobile app, open More, then Settings, then Delete account. Deletion is irreversible.",
+      "We remove your profile and personal information; records a chapter is required to keep for its own compliance obligations (for example dues ledgers and audit history) are retained in anonymized form, as described in the Privacy Policy.",
+      "If you cannot sign in, email team@frapp.live from the address on the account and we will complete the same deletion.",
     ],
   },
   {
