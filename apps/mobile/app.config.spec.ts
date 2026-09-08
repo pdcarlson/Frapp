@@ -34,17 +34,42 @@ function loadConfig() {
       },
     ) => Record<string, unknown>;
     PRODUCTION_ANDROID_GOOGLE_SERVICES_ERROR: string;
+    PRODUCTION_API_URL_ERROR: string;
+    PRODUCTION_SUPABASE_PUBLIC_ERROR: string;
+    PRODUCTION_API_ORIGIN: string;
+    assertProductionApiUrl: (opts?: {
+      easBuildProfile?: string;
+      apiUrl?: string;
+    }) => void;
+    assertProductionSupabasePublic: (opts?: {
+      easBuildProfile?: string;
+      supabaseUrl?: string;
+      supabaseAnonKey?: string;
+    }) => void;
   };
 }
 
 const missing = () => false;
 const present = () => true;
 const androidConfig = { android: { package: "live.frapp.mobile" } };
+const easProductionApiUrl = (
+  requireConfig("./eas.json") as {
+    build: { production: { env: { EXPO_PUBLIC_API_URL: string } } };
+  }
+).build.production.env.EXPO_PUBLIC_API_URL;
+const productionPublicEnv = {
+  EXPO_PUBLIC_API_URL: easProductionApiUrl,
+  EXPO_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+  EXPO_PUBLIC_SUPABASE_ANON_KEY: "test-anon-key",
+};
 
 afterEach(() => {
   delete process.env.EAS_BUILD_PROFILE;
   delete process.env.EAS_BUILD_PLATFORM;
   delete process.env.GOOGLE_SERVICES_JSON;
+  delete process.env.EXPO_PUBLIC_API_URL;
+  delete process.env.EXPO_PUBLIC_SUPABASE_URL;
+  delete process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 });
 
 describe("assertProductionAndroidGoogleServices", () => {
@@ -167,6 +192,7 @@ describe("applyMobileConfig", () => {
     const { applyMobileConfig } = loadConfig();
     const result = applyMobileConfig(androidConfig, {
       env: {
+        ...productionPublicEnv,
         EAS_BUILD_PROFILE: "production",
         EAS_BUILD_PLATFORM: "android",
         GOOGLE_SERVICES_JSON: "/eas/google-services.json",
@@ -183,6 +209,7 @@ describe("applyMobileConfig", () => {
     expect(() =>
       applyMobileConfig(androidConfig, {
         env: {
+          ...productionPublicEnv,
           EAS_BUILD_PROFILE: "production",
           EAS_BUILD_PLATFORM: "ios",
         },
@@ -218,6 +245,68 @@ describe("applyMobileConfig", () => {
       }),
     ).toThrow(/GOOGLE_SERVICES_JSON/);
   });
+
+  it("refuses iOS production when EXPO_PUBLIC_API_URL is not the eas.json origin", () => {
+    const { applyMobileConfig, PRODUCTION_API_URL_ERROR } = loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: {
+          ...productionPublicEnv,
+          EAS_BUILD_PROFILE: "production",
+          EAS_BUILD_PLATFORM: "ios",
+          EXPO_PUBLIC_API_URL: "https://api-staging.frapp.live",
+        },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_API_URL_ERROR);
+  });
+
+  it("refuses iOS production when a Supabase public value is missing", () => {
+    const { applyMobileConfig, PRODUCTION_SUPABASE_PUBLIC_ERROR } =
+      loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: {
+          EXPO_PUBLIC_API_URL: easProductionApiUrl,
+          EAS_BUILD_PROFILE: "production",
+          EAS_BUILD_PLATFORM: "ios",
+        },
+        existsSync: missing,
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_PUBLIC_ERROR);
+  });
+
+  it("refuses production Android with a google-services file when the API origin is wrong", () => {
+    const { applyMobileConfig, PRODUCTION_API_URL_ERROR } = loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: {
+          ...productionPublicEnv,
+          EAS_BUILD_PROFILE: "production",
+          EAS_BUILD_PLATFORM: "android",
+          GOOGLE_SERVICES_JSON: "/eas/google-services.json",
+          EXPO_PUBLIC_API_URL: "http://localhost:3001",
+        },
+        existsSync: (p) => p === "/eas/google-services.json",
+      }),
+    ).toThrow(PRODUCTION_API_URL_ERROR);
+  });
+
+  it("refuses production Android with a google-services file when Supabase public env is missing", () => {
+    const { applyMobileConfig, PRODUCTION_SUPABASE_PUBLIC_ERROR } =
+      loadConfig();
+    expect(() =>
+      applyMobileConfig(androidConfig, {
+        env: {
+          EXPO_PUBLIC_API_URL: easProductionApiUrl,
+          EAS_BUILD_PROFILE: "production",
+          EAS_BUILD_PLATFORM: "android",
+          GOOGLE_SERVICES_JSON: "/eas/google-services.json",
+        },
+        existsSync: (p) => p === "/eas/google-services.json",
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_PUBLIC_ERROR);
+  });
 });
 
 describe("Expo default export", () => {
@@ -226,5 +315,108 @@ describe("Expo default export", () => {
     process.env.EAS_BUILD_PROFILE = "preview";
     const result = applyExpoConfig({ config: androidConfig });
     expect(result.android).toMatchObject({ package: "live.frapp.mobile" });
+  });
+});
+
+describe("assertProductionApiUrl", () => {
+  it("allows CI when the profile is unset", () => {
+    const { assertProductionApiUrl } = loadConfig();
+    expect(() => assertProductionApiUrl({})).not.toThrow();
+  });
+
+  it("allows preview pointed at staging", () => {
+    const { assertProductionApiUrl } = loadConfig();
+    expect(() =>
+      assertProductionApiUrl({
+        easBuildProfile: "preview",
+        apiUrl: "https://api-staging.frapp.live",
+      }),
+    ).not.toThrow();
+  });
+
+  it("allows the eas.json production origin, ignoring a trailing slash", () => {
+    const { assertProductionApiUrl, PRODUCTION_API_ORIGIN } = loadConfig();
+    expect(() =>
+      assertProductionApiUrl({
+        easBuildProfile: "production",
+        apiUrl: `${PRODUCTION_API_ORIGIN}/`,
+      }),
+    ).not.toThrow();
+  });
+
+  it("refuses a production build pointed at staging, localhost, or empty", () => {
+    const { assertProductionApiUrl, PRODUCTION_API_URL_ERROR } = loadConfig();
+    expect(() =>
+      assertProductionApiUrl({
+        easBuildProfile: "production",
+        apiUrl: "https://api-staging.frapp.live",
+      }),
+    ).toThrow(PRODUCTION_API_URL_ERROR);
+    expect(() =>
+      assertProductionApiUrl({
+        easBuildProfile: "production",
+        apiUrl: "http://localhost:3001",
+      }),
+    ).toThrow(PRODUCTION_API_URL_ERROR);
+    expect(() =>
+      assertProductionApiUrl({
+        easBuildProfile: "production",
+        apiUrl: "",
+      }),
+    ).toThrow(PRODUCTION_API_URL_ERROR);
+  });
+});
+
+describe("assertProductionSupabasePublic", () => {
+  it("allows CI when the profile is unset", () => {
+    const { assertProductionSupabasePublic } = loadConfig();
+    expect(() => assertProductionSupabasePublic({})).not.toThrow();
+  });
+
+  it("refuses a production build when either Supabase public value is missing", () => {
+    const { assertProductionSupabasePublic, PRODUCTION_SUPABASE_PUBLIC_ERROR } =
+      loadConfig();
+    expect(() =>
+      assertProductionSupabasePublic({
+        easBuildProfile: "production",
+        supabaseUrl: "https://example.supabase.co",
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_PUBLIC_ERROR);
+    expect(() =>
+      assertProductionSupabasePublic({
+        easBuildProfile: "production",
+        supabaseAnonKey: "test-anon-key",
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_PUBLIC_ERROR);
+    expect(() =>
+      assertProductionSupabasePublic({
+        easBuildProfile: "production",
+        supabaseUrl: "   ",
+        supabaseAnonKey: "test-anon-key",
+      }),
+    ).toThrow(PRODUCTION_SUPABASE_PUBLIC_ERROR);
+  });
+
+  it("allows a production build when both Supabase public values are set", () => {
+    const { assertProductionSupabasePublic } = loadConfig();
+    expect(() =>
+      assertProductionSupabasePublic({
+        easBuildProfile: "production",
+        supabaseUrl: "https://example.supabase.co",
+        supabaseAnonKey: "test-anon-key",
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("PRODUCTION_API_ORIGIN", () => {
+  it("is the production origin committed in eas.json", () => {
+    const { PRODUCTION_API_ORIGIN } = loadConfig();
+    const eas = requireConfig("./eas.json") as {
+      build: { production: { env: { EXPO_PUBLIC_API_URL: string } } };
+    };
+    expect(PRODUCTION_API_ORIGIN).toBe(
+      eas.build.production.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, ""),
+    );
   });
 });
