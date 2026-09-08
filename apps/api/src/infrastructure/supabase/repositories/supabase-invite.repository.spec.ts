@@ -131,12 +131,51 @@ describe('SupabaseInviteRepository — tenant scope', () => {
       // validated. The `is('used_at', null)` guard is idempotency, not tenancy.
       const claimed = await repo.markUsedAtomically(INVITE_A);
 
-      expect(claimed).toBe(true);
+      expect(claimed).toEqual(expect.any(String));
       const row = harness.rows('invites').find((r) => r.id === INVITE_A);
       expect(row).toBeDefined();
       // Asserting `not.toBeNull()` on the field alone would also pass if the
       // row had been deleted, because `find` returns undefined.
       expect(row?.used_at).toEqual(expect.any(String));
+    });
+
+    it('releaseClaim clears used_at only when it still matches this claim (#1863)', async () => {
+      const claimedAt = await repo.markUsedAtomically(INVITE_A);
+      expect(claimedAt).toEqual(expect.any(String));
+      const released = await repo.releaseClaim(INVITE_A, claimedAt!);
+
+      expect(released).toBe(true);
+      expect(
+        harness.rows('invites').find((r) => r.id === INVITE_A)?.used_at,
+      ).toBeNull();
+
+      const unused = await repo.releaseClaim(
+        INVITE_B,
+        '2026-01-01T00:00:00.000Z',
+      );
+      expect(unused).toBe(false);
+      expect(
+        harness.rows('invites').find((r) => r.id === INVITE_B)?.used_at,
+      ).toBeNull();
+    });
+
+    it('releaseClaim leaves used_at when a later writer overwrote the claim (#1863)', async () => {
+      jest.useFakeTimers();
+      try {
+        jest.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+        const claimedAt = await repo.markUsedAtomically(INVITE_A);
+        jest.setSystemTime(new Date('2026-01-01T00:00:01.000Z'));
+        await repo.markUsed(INVITE_A);
+
+        const released = await repo.releaseClaim(INVITE_A, claimedAt!);
+
+        expect(released).toBe(false);
+        expect(
+          harness.rows('invites').find((r) => r.id === INVITE_A)?.used_at,
+        ).toBe('2026-01-01T00:00:01.000Z');
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('markUsed (revoke path) claims by id alone', async () => {
