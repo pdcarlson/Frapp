@@ -359,6 +359,20 @@ test("ConfirmationURL in the Magic Link body fails", async () => {
   assert.match(result.detail, /supabase\.co/);
 });
 
+test("type=magiclink without TokenHash fails", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      magicLinkConfig({
+        mailer_templates_magic_link_content:
+          '<a href="{{ .RedirectTo }}&type=magiclink">Sign in</a>',
+      }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /TokenHash/);
+});
+
 test("token_hash without type=magiclink fails", async () => {
   const result = await checkAuthMagicLink({
     accessToken: "t",
