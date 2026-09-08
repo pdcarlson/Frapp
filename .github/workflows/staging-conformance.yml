@@ -22,13 +22,12 @@ on:
   schedule:
     # 07:30 UTC daily — after any overnight provider maintenance window, early
     # enough that a drifted staging is known before the working day, and the last
-    # of the four daily staggered scheduled workflows: 15 minutes past its closest
+    # of the daily staggered Management-API watchdogs: 15 minutes past its closest
     # neighbor production-guardrails.yml (07:15), an hour past
     # check-migration-drift.yml (07:00), and an hour past db-backup.yml's pg_dump
     # (06:30) — so this workflow's Management API reads never overlap another
-    # daily watchdog's own reads or the backup. A fifth workflow
-    # (`production-uptime.yml`) probes live `/health/ready` every 15 minutes and
-    # does not share this stagger. Full schedule:
+    # daily watchdog's own reads or the backup. `production-uptime.yml` probes live
+    # `/health/ready` on its own cadence and does not share this stagger. Full schedule:
     # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
     #
     # ⚠️ GitHub DISABLES scheduled triggers in a repository with no activity for

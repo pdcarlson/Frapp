@@ -37,7 +37,7 @@ Database rollback and restore are their own procedures:
 - [ ] Validate required env vars are present
 - [ ] Verify DB connectivity from API
 - [ ] Re-run post-deploy smoke checks
-- [ ] Confirm the uptime monitor is green on `/health/ready` for 10+ minutes — green on `/health` alone does not clear a degraded dependency
+- [ ] Confirm `GET /health/ready` returns HTTP 200 with JSON `status: "ok"` (curl, or the next **Production uptime** run). Green on `/health` alone does not clear a degraded dependency. The in-repo monitor samples every 15 minutes, so do not treat that job as a 10-minute green window
 
 ### Communication
 

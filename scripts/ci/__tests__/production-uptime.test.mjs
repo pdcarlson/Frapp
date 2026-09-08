@@ -267,6 +267,63 @@ describe("runWatchdog", () => {
     assert.equal(out.resolved, false);
     assert.ok(calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/42")));
   });
+
+  it("does not re-comment an already-open alert", async () => {
+    const { fetchImpl, calls } = makeFetchMock([
+      {
+        method: "GET",
+        path: "/issues?state=all",
+        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+      },
+      { method: "POST", path: "/issues", body: { number: 99 } },
+      { method: "POST", path: "/comments", body: {} },
+    ]);
+    const out = await runWatchdog({
+      result: failResult,
+      url: DEFAULT_READY_URL,
+      token: "t",
+      repo: "pdcarlson/Frapp",
+      fetchImpl,
+    });
+    assert.equal(out.outcome, "fail");
+    assert.equal(out.alert.action, "none");
+    assert.equal(out.alert.issueNumber, 42);
+    assert.equal(
+      calls.filter((c) => c.method === "POST").length,
+      0,
+      "a 15-minute cadence must not comment on every failing tick",
+    );
+  });
+
+  it("does not treat a failed second lookup as recovery when an open P1 was already seen", async () => {
+    let issueGets = 0;
+    const fetchImpl = async (url, init = {}) => {
+      const method = init.method ?? "GET";
+      if (method === "GET" && String(url).includes("/issues?state=all")) {
+        issueGets += 1;
+        if (issueGets === 1) {
+          return {
+            ok: true,
+            status: 200,
+            text: async () =>
+              JSON.stringify([{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }]),
+          };
+        }
+        return { ok: false, status: 502, text: async () => "{}" };
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    };
+    const out = await runWatchdog({
+      result: passResult,
+      url: DEFAULT_READY_URL,
+      token: "t",
+      repo: "pdcarlson/Frapp",
+      fetchImpl,
+    });
+    assert.equal(out.outcome, "fail");
+    assert.equal(out.resolved, false);
+    assert.equal(issueGets, 2);
+  });
 });
 
 function uncommented(text) {
@@ -286,6 +343,8 @@ describe("workflow wiring", () => {
   it("does not name environment: production — a schedule job that did would suspend on #1435", () => {
     assert.doesNotMatch(liveYaml, /^\s*environment:\s*production\s*$/m);
     assert.doesNotMatch(liveYaml, /environment:\s*production/);
+    assert.doesNotMatch(liveYaml, /environment:\s*["']production["']/);
+    assert.doesNotMatch(liveYaml, /^\s*name:\s*["']?production["']?\s*$/m);
   });
 
   it("pins the production readiness URL, not /health", () => {

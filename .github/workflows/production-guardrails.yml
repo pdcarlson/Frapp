@@ -32,9 +32,9 @@ name: Production guardrails
 on:
   schedule:
     # 07:15 UTC daily, a quarter past the migration-drift watchdog so the two
-    # do not report at the same moment. One of the four daily staggered scheduled
-    # workflows; a fifth (`production-uptime.yml`) runs every 15 minutes against
-    # live `/health/ready` and does not share this Management-API stagger. Full
+    # do not report at the same moment. One of the daily staggered Management-API
+    # watchdogs. `production-uptime.yml` probes live `/health/ready` on its own
+    # cadence and does not share this stagger. Full
     # schedule: docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
     - cron: "15 7 * * *"
   workflow_dispatch:

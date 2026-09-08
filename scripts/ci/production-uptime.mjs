@@ -157,7 +157,27 @@ export async function runWatchdog({
   runUrl = "",
   fetchImpl,
 }) {
+  const lookup = await findAlertIssuesDetailed({
+    token,
+    repo,
+    fetchImpl,
+    title: ALERT_ISSUE_TITLE,
+    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+  });
+  const open = lookup.lookupOk
+    ? lookup.issues.find((issue) => issue.state === "open")
+    : null;
+
   if (!result.ok) {
+    // A 15-minute cadence must not comment on every tick. Create or reopen
+    // only; an already-open P1 *is* the incident.
+    if (open) {
+      return {
+        outcome: "fail",
+        alert: { action: "none", issueNumber: open.number },
+        lookupOk: true,
+      };
+    }
     const raised = await raiseAlert({
       token,
       repo,
@@ -170,19 +190,14 @@ export async function runWatchdog({
         `${reopened ? "Reopened — " : ""}still failing: ${result.reason}${runUrl ? `\n\nRun: ${runUrl}` : ""}`,
       refreshBodyOnRaise: true,
     });
-    return { outcome: "fail", alert: raised };
+    return { outcome: "fail", alert: raised, lookupOk: lookup.lookupOk };
   }
 
-  const { lookupOk } = await findAlertIssuesDetailed({
-    token,
-    repo,
-    fetchImpl,
-    title: ALERT_ISSUE_TITLE,
-    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
-  });
-  if (!lookupOk) {
+  if (!lookup.lookupOk) {
     return { outcome: "pass", resolved: false, lookupOk: false };
   }
+
+  const hadOpen = lookup.issues.some((issue) => issue.state === "open");
   const resolved = await resolveAlert({
     token,
     repo,
@@ -196,6 +211,11 @@ export async function runWatchdog({
   // as closed used to green the job while the P1 stayed open (the same
   // false-closure `alert-issue.mjs` already refuses to report as `closed`).
   if (resolved.action === "failed") {
+    return { outcome: "fail", resolved: false, lookupOk: true };
+  }
+  // resolveAlert looks up again. A failed second GET returns [] → "none".
+  // If this run already saw an open P1, that is not recovery.
+  if (hadOpen && resolved.action === "none") {
     return { outcome: "fail", resolved: false, lookupOk: true };
   }
   return {
@@ -237,6 +257,14 @@ async function main() {
 
   const runUrl = process.env.RUN_URL ?? "";
   const watchdog = await runWatchdog({ result, url, token, repo, runUrl });
+  if (!result.ok && watchdog.alert?.action === "failed") {
+    console.error("::error::production is not ready and the alert issue could not be written");
+  }
+  if (result.ok && watchdog.lookupOk === false) {
+    console.error(
+      "::warning::Could not read the alert issues, so no alert was closed this run",
+    );
+  }
   if (result.ok && watchdog.outcome === "fail") {
     console.error("::error::production is ready but the alert issue could not be closed");
   }
