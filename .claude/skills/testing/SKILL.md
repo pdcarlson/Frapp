@@ -24,7 +24,7 @@ description: >
 | API `nest build` (Render / Docker parity) | `npm run build -w apps/api` |
 | API image (optional, needs Docker) | `docker build -f apps/api/Dockerfile .` |
 | API unit tests | `npm run test -w apps/api` |
-| Repository tenant-scope specs only | `npm run test -w apps/api -- --testPathPatterns="repositories/"` |
+| Repository tenant-scope specs only | `npm run test -w apps/api -- --testPathPatterns="\.repository\.spec\.ts$"` — keys on the filename, not a `repositories/` path, so the module-local repositories are included |
 | API E2E tests (mocked Supabase, no live services) | `npm run test:e2e -w apps/api` |
 | Web unit tests (Vitest / jsdom) | `npm run test -w apps/web` |
 | Mobile unit tests (Vitest) | `npm run test -w apps/mobile` |
@@ -140,8 +140,9 @@ Two rules when touching this area:
 - Extending the harness means extending `tenant-scope.harness.spec.ts`, which proves each guard still
   fails against a deliberately broken repository. A harness that cannot fail is indistinguishable
   from a clean codebase.
-- Adding a repository under `infrastructure/supabase/repositories/` means adding its tenant-scope
-  spec, or a reason in `TENANT_SCOPE_BACKLOG`. CI fails if you do neither.
+- Adding a `*.repository.ts` **anywhere under `apps/api/src`** — module-local ones included — means
+  adding its tenant-scope spec, or a reason in `TENANT_SCOPE_BACKLOG`. CI fails if you do neither.
+  The corpus is `#test/helpers/repository-corpus`, not a directory or a filename prefix.
 
 For the full treatment — service coverage goals, guard/interceptor test targets, coverage
 expectations, and the E2E scaffolding (the `jest-e2e.json` CommonJS transform quirks and the

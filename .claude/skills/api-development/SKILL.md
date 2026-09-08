@@ -86,7 +86,10 @@ Conventions:
 - Always `if (error) throw error;`
 - Return `data ?? []` for lists, `data` for singles
 - Write methods take `TablesInsert<'widgets'>` / `TablesUpdate<'widgets'>`
-  and pass them to `.insert()` / `.update()` with no `as never`. Domain
+  and pass them to `.insert()` / `.update()` with **no cast of any spelling
+  and no `@ts-expect-error`** — `as never`, `as any`, `as unknown as …` and
+  the expanded `Database['public']['Tables'][…]['Insert']` all erase the same
+  checking, and `no-as-never.spec.ts` fails on all of them. Domain
   interfaces stay `Partial<Widget>`. Do not extract a generic base
   repository for this.
 
@@ -322,8 +325,7 @@ Two constraints worth knowing before you fight the compiler:
   under `apps/api/src` follows this — including the module-local ones in
   `modules/scheduled-jobs` and `modules/chat-push-worker`; `no-as-never.spec.ts`
   fails the suite if the repository count drifts, a file injects a bare
-  `SupabaseClient`, or a cast that erases the write payload type returns
-  (`as never`, `as unknown as TablesInsert`/`TablesUpdate`, or `as any`). It
+  `SupabaseClient`, or a write call carries a cast or a type suppression. It
   discovers that corpus through `#test/helpers/repository-corpus`, the same
   walk `tenant-scope-coverage.spec.ts` uses, so a new repository joins both
   ledgers wherever it lives. Direct

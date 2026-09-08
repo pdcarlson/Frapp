@@ -169,7 +169,7 @@ npx supabase db push --local
   → "Keeping `database.types.ts` in sync" for the constraints that make
   the typing actually bind (`Row`/`Insert`/`Update` are mapped types so
   GenericSchema stays bound; write methods take `TablesInsert<'table'>` /
-  `TablesUpdate<'table'>` instead of `as never`). The client is
+  `TablesUpdate<'table'>` and reach PostgREST uncast). The client is
   `createClient<Database>(...)` in `supabase.provider.ts` (and the live
   PostgREST test helper). Inject `FrappSupabaseClient` everywhere the
   `SUPABASE_CLIENT` token is taken (repositories, services, guards,
@@ -178,8 +178,8 @@ npx supabase db push --local
   logic and only parameterize the write methods.
   `no-as-never.spec.ts` guards every `*.repository.ts` under
   `apps/api/src`, module-local ones included (repository count,
-  `FrappSupabaseClient` injection, no cast that erases the write
-  payload type).
+  `FrappSupabaseClient` injection, and no cast or `@ts-expect-error`
+  on a write call).
 - Any relevant behavior under `spec/behavior/`
 
 ## 5. RLS and security

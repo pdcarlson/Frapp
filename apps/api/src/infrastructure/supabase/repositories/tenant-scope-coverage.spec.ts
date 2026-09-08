@@ -1,5 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { collectRepositories } from '#test/helpers/repository-corpus';
+import {
+  EXPECTED_REPOSITORY_COUNT,
+  collectRepositories,
+} from '#test/helpers/repository-corpus';
 
 /**
  * Coverage ledger for the tenant-scope specs.
@@ -10,14 +13,11 @@ import { collectRepositories } from '#test/helpers/repository-corpus';
  * now fails here, and deferring one is a line in `TENANT_SCOPE_BACKLOG` with a
  * reason — a decision somebody made, not a gap that accumulated.
  *
- * Discovery is `collectRepositories` from `#test/helpers/repository-corpus` —
- * a recursive walk of `apps/api/src` for `*.repository.ts`, not this directory
- * and not a `supabase-` filename prefix. Module-local repositories
- * (`modules/scheduled-jobs`, `modules/chat-push-worker`) are in the
- * denominator. The sibling `*.repository.spec.ts` is the spec, wherever the
- * implementation lives. `no-as-never.spec.ts` reads the same corpus from the
- * same helper, so the two ledgers cannot come to disagree about what a
- * repository is.
+ * Discovery and the expected total both come from
+ * `#test/helpers/repository-corpus`, shared with `no-as-never.spec.ts` so the
+ * two ledgers cannot come to disagree about what a repository is or how many
+ * there are. The sibling `*.repository.spec.ts` is the spec, wherever the
+ * implementation lives.
  *
  * This is not a quality gate on the specs themselves; a spec that exists but
  * asserts nothing satisfies it. What stops that is `tenant-scope.harness.spec.ts`,
@@ -114,13 +114,13 @@ describe('API repository tenant-scope coverage', () => {
     const covered =
       repositories.length - Object.keys(TENANT_SCOPE_BACKLOG).length;
 
-    // Pinned so shrinking coverage is a deliberate edit rather than a silent
-    // regression. Raise it as backlog entries are cleared. Denominator is
-    // every `*.repository.ts` under `apps/api/src` (38 supabase-* plus the
-    // two module-local workers).
+    // `covered` is pinned so shrinking coverage is a deliberate edit rather
+    // than a silent regression; raise it as backlog entries are cleared. The
+    // denominator is the shared corpus constant, so a new repository is one
+    // edit in one place rather than two numbers to keep in step.
     expect({ covered, total: repositories.length }).toEqual({
       covered: 31,
-      total: 40,
+      total: EXPECTED_REPOSITORY_COUNT,
     });
   });
 });

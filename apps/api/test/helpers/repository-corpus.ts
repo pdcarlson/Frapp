@@ -2,49 +2,42 @@ import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * The repository corpus the coverage ledgers measure themselves against.
+ * The repository corpus both coverage ledgers measure themselves against —
+ * `tenant-scope-coverage.spec.ts` and `no-as-never.spec.ts`.
  *
- * There is one right answer to "which files are repositories", and it used to
- * be written twice with two different answers. `tenant-scope-coverage.spec.ts`
- * walked `apps/api/src` recursively; `no-as-never.spec.ts` read its own
- * directory and filtered on a `supabase-` filename prefix, which reached 38 of
- * the 40 and silently exempted the two module-local ones
- * (`modules/scheduled-jobs`, `modules/chat-push-worker`) from the write-typing
- * rule the skill states for every repository.
- *
- * A guard whose discovery excludes part of what it guards is a proof that
- * cannot fail (`spec/engineering.md` § Changing existing code), so the walk
- * lives here and both ledgers import it. Adding a repository anywhere under
- * `apps/api/src` now joins both denominators at once, which is the property
- * neither spec could give itself.
+ * A repository is a `*.repository.ts` anywhere under `apps/api/src`, never a
+ * directory or a filename prefix: the module-local ones
+ * (`modules/scheduled-jobs`, `modules/chat-push-worker`) are repositories and
+ * belong in both denominators. Discovery lives here so the two ledgers cannot
+ * come to disagree about what they are counting — a guard whose discovery
+ * excludes part of what it guards is a proof that cannot fail
+ * (`spec/engineering.md` § Changing existing code).
  */
 
-/** `apps/api/src`, resolved from this helper rather than from each caller. */
-export const REPOSITORY_SRC_ROOT = join(__dirname, '..', '..', 'src');
-
-export interface RepositoryFile {
+interface RepositoryFile {
   fileName: string;
   fullPath: string;
 }
 
 /**
- * Every `*.repository.ts` under `dir`, sorted by basename.
- *
- * Not the directory and not a filename prefix: a repository is a repository
- * wherever it lives, and both ledgers key on the basename (each asserts that
- * basenames stay unique for exactly that reason).
+ * Pinned so a repository cannot join the tree without both ledgers noticing.
+ * One home for the number: raise it here, not in either spec.
  */
+export const EXPECTED_REPOSITORY_COUNT = 40;
+
+/** `apps/api/src` — the one root both ledgers walk, and what paths report against. */
+export const REPOSITORY_SRC_ROOT = join(__dirname, '..', '..', 'src');
+
+/** Every `*.repository.ts` under `apps/api/src`, sorted by basename. */
 export function collectRepositories(
   dir: string = REPOSITORY_SRC_ROOT,
 ): RepositoryFile[] {
   const out: RepositoryFile[] = [];
   for (const name of readdirSync(dir)) {
-    if (name === 'node_modules' || name === 'dist') continue;
     const fullPath = join(dir, name);
-    const st = statSync(fullPath);
-    if (st.isDirectory()) {
+    if (statSync(fullPath).isDirectory()) {
       out.push(...collectRepositories(fullPath));
-    } else if (st.isFile() && name.endsWith('.repository.ts')) {
+    } else if (name.endsWith('.repository.ts')) {
       out.push({ fileName: name, fullPath });
     }
   }
