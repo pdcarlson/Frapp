@@ -4,6 +4,13 @@
 // arrives as a client reference, not as callable functions.
 
 const DEFAULT_DASHBOARD_PATH = "/chat";
+const AUTH_ROUTE_PREFIXES = ["/sign-in", "/sign-up"];
+
+function isAuthRoutePath(pathname: string): boolean {
+  return AUTH_ROUTE_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
 
 /** The path Supabase sends the member back to after an email link. */
 export const AUTH_CALLBACK_PATH = "/auth/callback";
@@ -40,7 +47,52 @@ export function resolveRedirectPath(value: string | null | undefined): string {
   if (parsed.origin !== GUARD_ORIGIN) {
     return DEFAULT_DASHBOARD_PATH;
   }
-  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  const returned = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  // A first parse of `/.//evil.example` stays on GUARD_ORIGIN with pathname
+  // `//evil.example`. The next `new URL(returned, origin)` treats that as
+  // protocol-relative and leaves the origin — which is how `/auth/callback`
+  // and `router.replace` would send a member off-site. Refuse it here.
+  try {
+    const again = new URL(returned, GUARD_ORIGIN);
+    if (again.origin !== GUARD_ORIGIN) {
+      return DEFAULT_DASHBOARD_PATH;
+    }
+  } catch {
+    return DEFAULT_DASHBOARD_PATH;
+  }
+  return returned;
+}
+
+/**
+ * Write a guarded `redirectTo` onto a URL the way the WHATWG parser needs:
+ * pathname, search, and hash as separate fields.
+ *
+ * Assigning `/join?token=…` to `pathname` encodes the `?` (`/join%3Ftoken=…`)
+ * and drops the invite. The proxy used to do that on the signed-in bounce off
+ * `/sign-in` / `/sign-up`, which is how a member who already has a session
+ * (another tab, a just-exchanged magic link that then re-requests `/sign-in`)
+ * never reached `/join`. `startsWith("/")` also admitted protocol-relative
+ * values the rest of the auth surface already refuses via
+ * {@link resolveRedirectPath}.
+ */
+export function assignResolvedRedirect(
+  url: URL,
+  redirectTo: string | null | undefined,
+): void {
+  const parsed = new URL(resolveRedirectPath(redirectTo), GUARD_ORIGIN);
+  url.pathname = parsed.pathname;
+  url.search = parsed.search;
+  url.hash = parsed.hash;
+  // The caller is the signed-in bounce off `/sign-in` / `/sign-up`. Sending
+  // them back to an auth route loops (`ERR_TOO_MANY_REDIRECTS`). The old
+  // pathname-stuffing accidentally broke that loop when `redirectTo` had a
+  // query (`/sign-in%3F…` is not an auth route); keep the invite query and
+  // still refuse the loop.
+  if (isAuthRoutePath(url.pathname)) {
+    url.pathname = DEFAULT_DASHBOARD_PATH;
+    url.search = "";
+    url.hash = "";
+  }
 }
 
 /**
