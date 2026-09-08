@@ -631,6 +631,12 @@ jobs:
       contents: write
       pull-requests: read
       issues: read
+    secrets:
+      # Repository secret, not environment: production — this job is unscoped.
+      # Empty falls back to GITHUB_TOKEN inside release.yml. A user PAT is
+      # what actually creates refs/tags when the live SHA's workflow tree
+      # differs from main (run 34254679932).
+      RELEASE_GITHUB_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN }}
     with:
       sha: ${{ needs.deploy.outputs.sha }}
       bump: ${{ inputs.bump }}
