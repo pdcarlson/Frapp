@@ -14,7 +14,7 @@ A standalone marketing site (`apps/landing`). Deployed independently from the ap
 
 ## Web App — app.frapp.live
 
-The admin console (`apps/web`). Next.js App Router, Tailwind, ShadCN UI.
+The admin console (`apps/web`). Next.js App Router, Tailwind, ShadCN UI. A Vercel production deploy (`VERCEL_ENV=production`) fails `next build` unless `NEXT_PUBLIC_API_URL` is origin `https://api.frapp.live` and `NEXT_PUBLIC_SUPABASE_URL` is the `frapp-prod` project. Staging deploys this repo as `preview` and is not fenced. The build gate and operator copy live in [`docs/internal/environment/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md).
 
 **Screens:**
 

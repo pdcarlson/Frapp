@@ -8,9 +8,12 @@ import {
   assertHttpsJoinOrigin,
   mintJoinUrl,
   PRODUCTION_APP_ORIGIN,
+  PRODUCTION_API_ORIGIN,
   PRODUCTION_SUPABASE_PROJECT_REF,
   isProductionSupabaseUrl,
   assertProductionAppOrigin,
+  assertProductionApiOrigin,
+  assertProductionSupabaseUrl,
 } from "./invite-token";
 
 describe("extractInviteToken", () => {
@@ -210,6 +213,7 @@ describe("production app origin", () => {
       parsed.environments.production.supabaseProjectRef,
     );
     expect(PRODUCTION_APP_ORIGIN).toBe("https://app.frapp.live");
+    expect(PRODUCTION_API_ORIGIN).toBe("https://api.frapp.live");
   });
 
   it("recognizes only the production Supabase HTTPS origin", () => {
@@ -263,6 +267,84 @@ describe("production app origin", () => {
       assertProductionAppOrigin(
         "https://app.staging.frapp.live/join?token=secret-invite",
         "APP_URL",
+      );
+      throw new Error("expected refuse");
+    } catch (error) {
+      expect(String(error)).not.toContain("secret-invite");
+    }
+  });
+});
+
+describe("production API origin", () => {
+  it("allows the production API origin, ignoring a trailing slash", () => {
+    expect(
+      assertProductionApiOrigin(
+        `${PRODUCTION_API_ORIGIN}/`,
+        "NEXT_PUBLIC_API_URL",
+      ).origin,
+    ).toBe(PRODUCTION_API_ORIGIN);
+  });
+
+  it("refuses empty, staging, localhost, and unparseable values without echoing a token", () => {
+    expect(() =>
+      assertProductionApiOrigin("", "NEXT_PUBLIC_API_URL"),
+    ).toThrow(/NEXT_PUBLIC_API_URL[\s\S]*empty/);
+    expect(() =>
+      assertProductionApiOrigin(
+        "https://api-staging.frapp.live",
+        "NEXT_PUBLIC_API_URL",
+      ),
+    ).toThrow(/api-staging\.frapp\.live/);
+    expect(() =>
+      assertProductionApiOrigin("http://localhost:3001", "EXPO_PUBLIC_API_URL"),
+    ).toThrow(/localhost/);
+    expect(() =>
+      assertProductionApiOrigin("not a url", "NEXT_PUBLIC_API_URL"),
+    ).toThrow(/NEXT_PUBLIC_API_URL[\s\S]*unparseable/);
+    try {
+      assertProductionApiOrigin(
+        "https://api-staging.frapp.live/v1?token=secret-invite",
+        "NEXT_PUBLIC_API_URL",
+      );
+      throw new Error("expected refuse");
+    } catch (error) {
+      expect(String(error)).not.toContain("secret-invite");
+    }
+  });
+});
+
+describe("production Supabase URL", () => {
+  const productionSupabase = `https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`;
+
+  it("allows the production project origin, ignoring a trailing slash", () => {
+    expect(
+      assertProductionSupabaseUrl(
+        `${productionSupabase}/`,
+        "NEXT_PUBLIC_SUPABASE_URL",
+      ).origin,
+    ).toBe(productionSupabase);
+  });
+
+  it("refuses empty, staging, localhost, and query-host spoofs without echoing a token", () => {
+    expect(() =>
+      assertProductionSupabaseUrl("", "NEXT_PUBLIC_SUPABASE_URL"),
+    ).toThrow(/NEXT_PUBLIC_SUPABASE_URL[\s\S]*empty/);
+    expect(() =>
+      assertProductionSupabaseUrl(
+        "https://hnoyzpidbmizhbqaiity.supabase.co",
+        "NEXT_PUBLIC_SUPABASE_URL",
+      ),
+    ).toThrow(/hnoyzpidbmizhbqaiity/);
+    expect(() =>
+      assertProductionSupabaseUrl(
+        "http://127.0.0.1:54321",
+        "NEXT_PUBLIC_SUPABASE_URL",
+      ),
+    ).toThrow(/127\.0\.0\.1/);
+    try {
+      assertProductionSupabaseUrl(
+        `https://evil.example/?host=${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co&token=secret-invite`,
+        "NEXT_PUBLIC_SUPABASE_URL",
       );
       throw new Error("expected refuse");
     } catch (error) {

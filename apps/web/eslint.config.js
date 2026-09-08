@@ -12,6 +12,13 @@ export default [
     },
   },
   {
+    // Loaded by next.config.js. Node ESM, not a client module.
+    files: ["lib/assert-production-public-env.js"],
+    languageOptions: {
+      globals: { process: "readonly" },
+    },
+  },
+  {
     files: ["components/ui/**/*.tsx"],
     rules: {
       "react/prop-types": "off",
