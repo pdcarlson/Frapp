@@ -8,7 +8,7 @@ The paid tier gates the ops integrations (events with check-in, dues invoicing, 
 
 ## Audience
 
-Frapp targets **normal chapters across the full Greek spectrum** — IFC, NPC, NPHC, MGC, professional, service, honor, and pre-charter colonies. Customization is the product because every chapter runs differently: vocabulary, roles, dues structure, and modules all vary by organization.
+Signet targets **normal chapters across the full Greek spectrum** — IFC, NPC, NPHC, MGC, professional, service, honor, and pre-charter colonies. Customization is the product because every chapter runs differently: vocabulary, roles, dues structure, and modules all vary by organization.
 
 ## Pick one thing to be perfect at — chat
 

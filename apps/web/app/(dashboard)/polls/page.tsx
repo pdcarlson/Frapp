@@ -1,7 +1,7 @@
 import { PollsPage } from "@/components/polls/polls-page";
 
 export const metadata = {
-  title: "Polls — Frapp",
+  title: "Polls — Signet",
 };
 
 export default function Polls() {
