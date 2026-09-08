@@ -75,7 +75,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
     if (error) throw error;
   }
 
-  async markUsedAtomically(id: string): Promise<boolean> {
+  async markUsedAtomically(id: string): Promise<string | null> {
     const patch: TablesUpdate<'invites'> = {
       used_at: new Date().toISOString(),
     };
@@ -84,6 +84,21 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .update(patch)
       .eq('id', id)
       .is('used_at', null)
+      .select('used_at');
+    if (error) throw error;
+    const usedAt = Array.isArray(data) && data[0] ? data[0].used_at : null;
+    return typeof usedAt === 'string' ? usedAt : null;
+  }
+
+  async releaseClaim(id: string, claimedAt: string): Promise<boolean> {
+    const patch: TablesUpdate<'invites'> = {
+      used_at: null,
+    };
+    const { data, error } = await this.supabase
+      .from('invites')
+      .update(patch)
+      .eq('id', id)
+      .eq('used_at', claimedAt)
       .select('id');
     if (error) throw error;
     return Array.isArray(data) && data.length > 0;

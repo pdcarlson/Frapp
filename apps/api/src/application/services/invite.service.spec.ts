@@ -74,6 +74,7 @@ describe('InviteService', () => {
       createMany: jest.fn(),
       markUsed: jest.fn(),
       markUsedAtomically: jest.fn(),
+      releaseClaim: jest.fn().mockResolvedValue(true),
     };
 
     mockMemberRepo = {
@@ -498,7 +499,9 @@ describe('InviteService', () => {
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
     mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
     mockMemberRepo.create.mockResolvedValue(member);
 
@@ -550,7 +553,9 @@ describe('InviteService', () => {
     beforeEach(() => {
       mockInviteRepo.findByToken.mockResolvedValue(liveInvite());
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-      mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+      mockInviteRepo.markUsedAtomically.mockResolvedValue(
+        '2026-01-01T00:00:00.000Z',
+      );
       mockRoleRepo.findByChapter.mockResolvedValue([]);
       mockMemberRepo.create.mockResolvedValue({
         id: 'member-x',
@@ -713,7 +718,9 @@ describe('InviteService', () => {
     beforeEach(() => {
       mockInviteRepo.findByToken.mockResolvedValue(invite);
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-      mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+      mockInviteRepo.markUsedAtomically.mockResolvedValue(
+        '2026-01-01T00:00:00.000Z',
+      );
       mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
       mockMemberRepo.create.mockResolvedValue(member);
     });
@@ -861,7 +868,9 @@ describe('InviteService', () => {
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
     mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
     mockMemberRepo.create.mockResolvedValue(member);
 
@@ -901,7 +910,9 @@ describe('InviteService', () => {
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
     mockRoleRepo.findByChapter.mockResolvedValue([renamedMemberRole]);
     mockMemberRepo.create.mockResolvedValue({
       id: 'member-1',
@@ -1045,7 +1056,9 @@ describe('InviteService', () => {
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
     mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
     mockMemberRepo.create.mockResolvedValue(member);
 
@@ -1081,11 +1094,190 @@ describe('InviteService', () => {
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(false);
+    mockRoleRepo.findByChapter.mockResolvedValue([]);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(null);
 
     const promise = service.redeem('test-uuid', 'user-2');
     await expect(promise).rejects.toThrow(GoneException);
     await expect(promise).rejects.toThrow('Invite already used');
+  });
+
+  it('releases the claim when membership insert fails after markUsedAtomically (#1863)', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    const insertError = new Error('members_user_id_chapter_id_key');
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
+    mockRoleRepo.findByChapter.mockResolvedValue([]);
+    mockMemberRepo.create.mockRejectedValue(insertError);
+
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toBe(
+      insertError,
+    );
+    expect(mockInviteRepo.releaseClaim).toHaveBeenCalledWith(
+      'inv-1',
+      '2026-01-01T00:00:00.000Z',
+    );
+    expect(mockActivation.record).not.toHaveBeenCalled();
+  });
+
+  it('does not release the claim when insert throws but a membership row exists (#1863)', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'member-1',
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        role_ids: [],
+        custom_role_ids: [],
+        has_completed_onboarding: false,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
+    mockRoleRepo.findByChapter.mockResolvedValue([]);
+    mockMemberRepo.create.mockRejectedValue(new Error('response dropped'));
+
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
+      'response dropped',
+    );
+    expect(mockInviteRepo.releaseClaim).not.toHaveBeenCalled();
+    expect(mockActivation.record).not.toHaveBeenCalled();
+  });
+
+  it('does not release the claim when the post-failure membership lookup throws (#1863)', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    const insertError = new Error('insert failed');
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('lookup failed'));
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
+    mockRoleRepo.findByChapter.mockResolvedValue([]);
+    mockMemberRepo.create.mockRejectedValue(insertError);
+
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toBe(
+      insertError,
+    );
+    expect(mockInviteRepo.releaseClaim).not.toHaveBeenCalled();
+  });
+
+  it('still throws the insert error when releaseClaim itself fails (#1863)', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    const insertError = new Error('insert failed');
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
+    mockRoleRepo.findByChapter.mockResolvedValue([]);
+    mockMemberRepo.create.mockRejectedValue(insertError);
+    mockInviteRepo.releaseClaim.mockRejectedValue(new Error('release failed'));
+
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toBe(
+      insertError,
+    );
+  });
+
+  it('does not claim the invite when role lookup fails (#1863)', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    const lookupError = new Error('roles unavailable');
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockRoleRepo.findByChapter.mockRejectedValue(lookupError);
+
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toBe(
+      lookupError,
+    );
+    expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+    expect(mockMemberRepo.create).not.toHaveBeenCalled();
+    expect(mockInviteRepo.releaseClaim).not.toHaveBeenCalled();
+  });
+
+  it('does not release a claim when membership insert succeeds', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
+    mockRoleRepo.findByChapter.mockResolvedValue([]);
+    mockMemberRepo.create.mockResolvedValue({
+      id: 'member-1',
+      user_id: 'user-2',
+      chapter_id: 'ch-1',
+      role_ids: [],
+      custom_role_ids: [],
+      has_completed_onboarding: false,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    await service.redeem('test-uuid', 'user-2');
+
+    expect(mockInviteRepo.releaseClaim).not.toHaveBeenCalled();
   });
 
   it('should create member without roles if no matching role and no Member role found', async () => {
@@ -1101,7 +1293,9 @@ describe('InviteService', () => {
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(
+      '2026-01-01T00:00:00.000Z',
+    );
     mockRoleRepo.findByChapter.mockResolvedValue([]);
     mockMemberRepo.create.mockResolvedValue({} as any);
 
