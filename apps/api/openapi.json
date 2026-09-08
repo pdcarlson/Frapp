@@ -7,7 +7,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthPayloadDto"
+                }
+              }
+            }
           }
         },
         "summary": "Liveness check (always 2xx while the process is up)",
@@ -22,7 +29,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthPayloadDto"
+                }
+              }
+            }
           }
         },
         "summary": "Readiness check (503 when a dependency is degraded)",
@@ -6775,6 +6789,48 @@
       }
     },
     "schemas": {
+      "HealthPayloadDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ]
+          },
+          "database": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "error"
+            ]
+          },
+          "storage": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "error"
+            ]
+          },
+          "uptime": {
+            "type": "number",
+            "description": "Process uptime in seconds"
+          },
+          "commit": {
+            "type": "string",
+            "description": "Deployed git SHA when Render set RENDER_GIT_COMMIT. Omitted when unset so local and CI do not invent a SHA.",
+            "example": "0ca478e9105105ff7013834615eee81499813d0e",
+            "pattern": "^[0-9a-fA-F]{7,40}$"
+          }
+        },
+        "required": [
+          "status",
+          "database",
+          "storage",
+          "uptime"
+        ]
+      },
       "MyPermissionsDto": {
         "type": "object",
         "properties": {
