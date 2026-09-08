@@ -267,8 +267,8 @@ between a rehearsal and an outage is one mistyped host. `--force` is not
 enough for production: if `--db-url` names the production project in
 [`.github/environments.json`](../../../.github/environments.json), the script
 also refuses unless `DB_RESTORE_ALLOW_PRODUCTION=true`. Staging still uses
-`--force` alone. Storage restore has the same second hop
-(`STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL=true`).
+`--force` alone. Storage restore of prefix `storage-production` has the same
+second hop (`STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE=true`).
 
 ## Restoring Storage objects
 
@@ -347,7 +347,13 @@ node scripts/storage-backup-run.mjs restore
 ```
 
 Restores are **idempotent** (`x-upsert`), so a run that dies halfway is safe to
-repeat. They write *into* Storage, so run the dry run first.
+repeat. They write *into* Storage, so run the dry run first. Default `--prefix`
+is `storage` (staging). Restoring the production prefix
+(`--prefix storage-production` against the production `SUPABASE_URL`) is
+refused unless `STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE=true` — the same
+second hop `db-restore.sh` has as `DB_RESTORE_ALLOW_PRODUCTION`. Staging
+still uses `--prefix storage` alone. Backup of production does not need the
+flag: the nightly job must read production Storage.
 
 ### Order, when restoring both halves
 

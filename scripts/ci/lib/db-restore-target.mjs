@@ -6,8 +6,9 @@
 // of staging and of production, and the difference between those two is one
 // mistyped connection string.
 //
-// Storage restore already refuses production unless
-// `STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL=true`. This module is the database
+// Storage restore of prefix `storage-production` is refused unless
+// `STORAGE_BACKUP_ALLOW_PRODUCTION_RESTORE=true` (rehearsal has its own
+// `STORAGE_BACKUP_ALLOW_PRODUCTION_REHEARSAL`). This module is the database
 // equivalent: a URL that names the production project in
 // `.github/environments.json` is refused unless `DB_RESTORE_ALLOW_PRODUCTION=true`.
 // `--force` still required for the hosted hop; this flag is the second hop.
