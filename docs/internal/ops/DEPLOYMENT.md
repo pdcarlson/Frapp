@@ -235,6 +235,8 @@ Subject: `Sign in to Signet`
 
 Body: `<h2>Sign in to Signet</h2><p>Use this one-time link to sign in. It expires soon.</p><p><a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=magiclink">Sign in to Signet</a></p><p>If you did not ask to sign in, you can ignore this email.</p>`
 
+Paste this only on the **Magic Link** template. Confirm signup / invite / recovery keep their
+own `type` (`signup`, `invite`, `recovery`) — copying this body onto those breaks them.
 Do **not** paste that on a host whose web deploy does not yet include the `token_hash` handler.
 Leave Resend open/click tracking off (single-use links). Production SMTP is the same Resend
 key and From, then 300/hour — dashboard-only; do not put the key in Slack or git.
