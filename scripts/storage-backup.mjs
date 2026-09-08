@@ -299,6 +299,16 @@ export function projectRefFromSupabaseUrl(supabaseUrl) {
         `Storage backup refuses local and unknown hosts so a rehearsal cannot write a canary to the wrong place.`,
     );
   }
+  // Hosted projects only over TLS. The service-role key travels on this origin;
+  // an `http://<ref>.supabase.co` URL would otherwise pass the host check and
+  // send it in the clear. Local-stack URLs already failed the host check above,
+  // so this does not change that error.
+  if (url.protocol !== "https:") {
+    throw new Error(
+      `SUPABASE_URL uses ${url.protocol} rather than https:. The service-role key travels on this ` +
+        `origin; refusing an unencrypted Storage backup target.`,
+    );
+  }
 
   const ref = host.split(".")[0];
   if (!SUPABASE_PROJECT_REF_PATTERN.test(ref)) {

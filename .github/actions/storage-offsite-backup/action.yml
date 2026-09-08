@@ -73,12 +73,18 @@ runs:
           exit 1
         fi
 
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
     # Same fence as the CLI (`assertStorageBackupTarget`). The service-role key
     # reads whichever project SUPABASE_URL names, and a production job injects
     # two Infisical environments (see db-backup.yml) — this proves the URL is
     # the project this environment's prefix claims to hold, and that the prefix
     # itself belongs to that environment. Do not re-parse the hostname in bash;
-    # a second copy is what a local rehearsal used to skip.
+    # a second copy is what a local rehearsal used to skip. Setup Node runs
+    # first so this import uses Node 20, not the runner's default.
     - name: Assert the injected project URL is this environment's
       shell: bash
       env:
@@ -99,11 +105,6 @@ runs:
             `Project URL matches prefix ${process.env.STORAGE_PREFIX} and .github/environments.json for ${target.environment} (${target.projectRef}).`,
           );
         '
-
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
 
     - name: Back up Storage objects
       shell: bash
