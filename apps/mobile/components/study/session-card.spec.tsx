@@ -98,7 +98,11 @@ describe("SessionCard", () => {
 
   it("explains the pause rather than leaving a stopped clock unexplained", () => {
     const rendered = texts(render(<SessionCard {...baseProps} isPaused />));
-    expect(rendered.some((line) => line.includes("background"))).toBe(true);
+    expect(
+      rendered.some((line) =>
+        line.includes("Paused while Signet was in the background"),
+      ),
+    ).toBe(true);
   });
 
   it("warns when the server has stopped hearing heartbeats", () => {
@@ -108,6 +112,11 @@ describe("SessionCard", () => {
     const rendered = texts(
       render(<SessionCard {...baseProps} isPaused={false} isReportingStale />),
     );
+    expect(
+      rendered.some((line) =>
+        line.includes("Signet hasn't been able to confirm your location"),
+      ),
+    ).toBe(true);
     expect(rendered.some((line) => line.includes("without points"))).toBe(true);
   });
 
