@@ -1,3 +1,15 @@
+import { assertProductionLandingAppEnv } from "./lib/assert-production-app-env.js";
+
+// Vercel Production (`VERCEL_ENV=production`) inlines NEXT_PUBLIC_APP_URL
+// into CTAs and the /join redirect. A staging origin 500s every request
+// (assertProductionAppOrigin at render). Unset still falls back at request
+// time; blank/staging/localhost fail the build. Do not import
+// @repo/validation from this file — its "import" condition is TypeScript.
+assertProductionLandingAppEnv({
+  vercelEnv: process.env.VERCEL_ENV,
+  appUrl: process.env.NEXT_PUBLIC_APP_URL,
+});
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@repo/theme", "@repo/validation"],
