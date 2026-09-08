@@ -63,6 +63,20 @@ inputs:
       the preflight advisory, which is what it always was at that site.
     required: false
     default: error
+  preserve-nonempty:
+    description: >
+      Comma-separated env names. After this injection, any of those names that
+      are empty are restored to the values they had immediately before it.
+
+      Only the production backup jobs pass this, and only on the `prod`
+      inject: Infisical `prod` documents BACKUP_S3_* as leave-empty, and the
+      secrets-action exports empty keys as empty GITHUB_ENV values, which
+      would wipe the staging destination injected in the previous step.
+      Non-empty prod values still win (the separate-bucket target). The
+      helper never prints the values. Pinned by
+      `scripts/ci/__tests__/infisical-secrets-action.test.mjs`.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -126,6 +140,13 @@ runs:
     #
     # `include-imports: true` is not a default -- it was written at all eleven original (now fifteen)
     # call sites and is kept here for all of them.
+    - name: Snapshot env names this injection must not blank
+      if: ${{ inputs.preserve-nonempty != '' }}
+      shell: bash
+      env:
+        PRESERVE_NONEMPTY: ${{ inputs.preserve-nonempty }}
+      run: bash "$GITHUB_ACTION_PATH/preserve-nonempty-env.sh" snapshot
+
     - name: Inject ${{ inputs.env-slug }} secrets from Infisical
       uses: Infisical/secrets-action@v1.0.12
       with:
@@ -136,3 +157,10 @@ runs:
         env-slug: ${{ inputs.env-slug }}
         secret-path: "/"
         include-imports: true
+
+    - name: Restore snapshotted env names this injection left empty
+      if: ${{ inputs.preserve-nonempty != '' }}
+      shell: bash
+      env:
+        PRESERVE_NONEMPTY: ${{ inputs.preserve-nonempty }}
+      run: bash "$GITHUB_ACTION_PATH/preserve-nonempty-env.sh" restore

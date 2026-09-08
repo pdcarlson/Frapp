@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -289,10 +291,12 @@ describe("Infisical call sites", () => {
       ["db-backup.yml", "backup-staging-storage", "staging"],
       // The production backup jobs inject TWO environments, in this order:
       // `staging` carries the offsite bucket (`BACKUP_S3_*` live only there),
-      // `prod` carries the source and overrides every shared name. The
-      // db-offsite-backup / storage-offsite-backup actions then assert the
-      // injected ref against .github/environments.json before linking, so a
-      // reordering here can only fail the job, never mislabel a dump (#1435).
+      // `prod` carries the source and overrides every shared name. Empty
+      // `BACKUP_S3_*` in `prod` are restored (`preserve-nonempty`) so they
+      // cannot wipe the destination. The db-offsite-backup /
+      // storage-offsite-backup actions then assert the injected ref against
+      // .github/environments.json before linking, so a reordering here can
+      // only fail the job, never mislabel a dump (#1435).
       ["db-backup.yml", "backup-production", "staging"],
       ["db-backup.yml", "backup-production", "prod"],
       ["db-backup.yml", "backup-production-storage", "staging"],
@@ -578,5 +582,131 @@ describe("local actions resolve at every call site", () => {
         }
       });
     }
+  });
+});
+
+const PRESERVE_HELPER = join(ACTIONS, "infisical-secrets", "preserve-nonempty-env.sh");
+const BACKUP_S3_NAMES =
+  "BACKUP_S3_ENDPOINT,BACKUP_S3_BUCKET,BACKUP_S3_ACCESS_KEY_ID,BACKUP_S3_SECRET_ACCESS_KEY";
+
+function runPreserve(cmd, env) {
+  return spawnSync("bash", [PRESERVE_HELPER, cmd], {
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+}
+
+describe("preserve-nonempty on Infisical inject", () => {
+  it("the helper script is executable and lives next to the action", () => {
+    assert.ok(existsSync(PRESERVE_HELPER), "preserve-nonempty-env.sh must sit in the action directory");
+    assert.match(
+      infisicalAction,
+      /bash "\$GITHUB_ACTION_PATH\/preserve-nonempty-env\.sh" snapshot/,
+      "snapshot must run via GITHUB_ACTION_PATH so the action is self-contained",
+    );
+    assert.match(
+      infisicalAction,
+      /bash "\$GITHUB_ACTION_PATH\/preserve-nonempty-env\.sh" restore/,
+      "restore must run via GITHUB_ACTION_PATH so the action is self-contained",
+    );
+  });
+
+  it("snapshots before secrets-action and restores after", () => {
+    const injectAt = infisicalAction.indexOf("uses: Infisical/secrets-action@v1.0.12");
+    const snapAt = infisicalAction.indexOf("preserve-nonempty-env.sh\" snapshot");
+    const restoreAt = infisicalAction.indexOf("preserve-nonempty-env.sh\" restore");
+    assert.ok(injectAt > 0 && snapAt > 0 && restoreAt > 0, "all three steps must exist");
+    assert.ok(snapAt < injectAt, "snapshot must run before the Infisical inject");
+    assert.ok(restoreAt > injectAt, "restore must run after the Infisical inject");
+  });
+
+  it("only the two production backup prod injects pass the four BACKUP_S3_* names", () => {
+    const sites = [];
+    for (const { name, text } of workflows) {
+      const lines = linesOf(text).map((l) => (/^\s*#/.test(l) ? "" : l));
+      let job = null;
+      lines.forEach((line, i) => {
+        const m = line.match(JOB_KEY_RE);
+        if (m && i > 3) job = m[1];
+        if (!USES_INFISICAL.test(line)) return;
+        const window = lines.slice(i, i + 12).join("\n");
+        const preserve = window.match(/^\s+preserve-nonempty:\s*(.+)$/m)?.[1];
+        if (preserve) sites.push([name, job, preserve.replaceAll('"', "").trim()]);
+      });
+    }
+    assert.deepEqual(
+      sites.sort(),
+      [
+        ["db-backup.yml", "backup-production", BACKUP_S3_NAMES],
+        ["db-backup.yml", "backup-production-storage", BACKUP_S3_NAMES],
+      ].sort(),
+      "preserve-nonempty belongs only on the two production backup prod injects",
+    );
+  });
+
+  it("restores a snapshotted value when the later inject left it empty", () => {
+    const dir = mkdtempSync(join(tmpdir(), "preserve-nonempty-"));
+    const githubEnv = join(dir, "github.env");
+    const snapshot = join(dir, "snap");
+    const secret = "s3://not-a-real-bucket";
+    try {
+      const snap = runPreserve("snapshot", {
+        PRESERVE_NONEMPTY: "BACKUP_S3_ENDPOINT",
+        PRESERVE_SNAPSHOT_DIR: snapshot,
+        BACKUP_S3_ENDPOINT: secret,
+      });
+      assert.equal(snap.status, 0, snap.stderr);
+      assert.doesNotMatch(snap.stdout, /s3:\/\//, "snapshot must not print the secret");
+
+      const restore = runPreserve("restore", {
+        PRESERVE_NONEMPTY: "BACKUP_S3_ENDPOINT",
+        PRESERVE_SNAPSHOT_DIR: snapshot,
+        GITHUB_ENV: githubEnv,
+        BACKUP_S3_ENDPOINT: "",
+      });
+      assert.equal(restore.status, 0, restore.stderr);
+      assert.match(restore.stdout, /Restored BACKUP_S3_ENDPOINT/);
+      assert.doesNotMatch(restore.stdout, /s3:\/\//, "restore must not print the secret");
+      const written = readFileSync(githubEnv, "utf8");
+      assert.match(written, /^BACKUP_S3_ENDPOINT<</m);
+      assert.match(written, new RegExp(`^${secret.replace(/[/.]/g, "\\$&")}$`, "m"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not overwrite a non-empty value from this injection", () => {
+    const dir = mkdtempSync(join(tmpdir(), "preserve-nonempty-"));
+    const githubEnv = join(dir, "github.env");
+    const snapshot = join(dir, "snap");
+    try {
+      const snap = runPreserve("snapshot", {
+        PRESERVE_NONEMPTY: "BACKUP_S3_BUCKET",
+        PRESERVE_SNAPSHOT_DIR: snapshot,
+        BACKUP_S3_BUCKET: "staging-bucket",
+      });
+      assert.equal(snap.status, 0, snap.stderr);
+
+      const restore = runPreserve("restore", {
+        PRESERVE_NONEMPTY: "BACKUP_S3_BUCKET",
+        PRESERVE_SNAPSHOT_DIR: snapshot,
+        GITHUB_ENV: githubEnv,
+        BACKUP_S3_BUCKET: "prod-bucket",
+      });
+      assert.equal(restore.status, 0, restore.stderr);
+      assert.match(restore.stdout, /restored 0 of 1/);
+      assert.equal(existsSync(githubEnv), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an unsafe env identifier", () => {
+    const result = runPreserve("snapshot", {
+      PRESERVE_NONEMPTY: "../etc/passwd",
+      PRESERVE_SNAPSHOT_DIR: join(tmpdir(), "preserve-nonempty-unsafe"),
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /not a safe env identifier/);
   });
 });
