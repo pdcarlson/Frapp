@@ -28,7 +28,7 @@ Two as-built quirks the table would otherwise hide:
 
 Entrance motion is opt-out throughout: every animated block pairs `motion-safe:animate-fade-up` with `motion-reduce:animate-none`, using the `fade-up` keyframes from the shared preset ([`packages/theme/src/tailwind.config.ts`](../../../packages/theme/src/tailwind.config.ts)).
 
-**Legal routes:** `/terms` (Terms of Service), `/privacy` (Privacy Policy), `/ferpa` (FERPA Notice) and — since 2026-09-06, because both app stores require a public support URL — `/support` all render through one prose layout, [`LegalDocument`](../../../apps/landing/app/components/legal-document.tsx). That layout has its own narrower header — lockup plus Terms / Privacy / FERPA / Support links — and **no footer and no marketing nav**; it does not reuse the main page's header or footer. [`apps/landing/app/sitemap.ts`](../../../apps/landing/app/sitemap.ts) lists these four alongside `/` — the site's complete public route set.
+**Legal routes:** `/terms` (Terms of Service), `/privacy` (Privacy Policy), `/ferpa` (FERPA Notice) and — since 2026-09-06, because both app stores require a public support URL — `/support` all render through one prose layout, [`LegalDocument`](../../../apps/landing/app/components/legal-document.tsx). That layout has its own narrower header — lockup plus Terms / Privacy / FERPA / Support links — and **no footer and no marketing nav**; it does not reuse the main page's header or footer. [`apps/landing/app/sitemap.ts`](../../../apps/landing/app/sitemap.ts) lists these four alongside `/`.
 
 ## Route facts
 
@@ -36,6 +36,7 @@ Entrance motion is opt-out throughout: every animated block pairs `motion-safe:a
 - Every CTA on the page — header "Get Started", hero "Get Started", the single pricing card's "Start free trial", the final CTA, and the footer "Get Started" — routes to `/sign-up`.
 - `/sign-up` itself lands the new user on `/chat`; the first-officer chapter wizard then opens as a gate for anyone with zero chapter memberships ([`spec/behavior/onboarding.md`](../../behavior/onboarding.md)). The landing page does not link the wizard directly.
 - The header's in-page nav resolves to `#features`, `#how-it-works`, and `#pricing`; all three targets exist.
+- `/join` is not a landing page. The redirect, https requirement, and sitemap omission are owned by [`spec/product/surfaces.md`](../../product/surfaces.md) Landing.
 
 ## OG image (gotcha)
 

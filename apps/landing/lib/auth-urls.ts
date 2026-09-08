@@ -57,6 +57,9 @@ export function buildJoinUrl(
   search?: JoinSearch,
 ): string {
   const url = new URL(authUrl(JOIN_PATH, rawAppBaseUrl ?? DEFAULT_APP_BASE_URL));
+  // Refuse before copying the invite query: an http: Location would put the
+  // token on the wire in the clear. Loopback http is local Infisical APP_URL.
+  assertHttpsJoinBase(url);
   applyJoinSearch(url, search);
   return url.toString();
 }
@@ -84,6 +87,36 @@ function authUrl(path: string, base: string): string {
   url.username = "";
   url.password = "";
   return url.toString();
+}
+
+/**
+ * Invite tokens travel in this redirect's query. A public `http:` base would
+ * put them on the wire in the clear. Loopback `http:` is the local Infisical
+ * `APP_URL` (`http://localhost:3000`) and never leaves the machine.
+ *
+ * Throwing 500s `/join` from the server component rather than forwarding. That
+ * is the opposite of `authUrl`'s userinfo strip, which cannot 500 the
+ * homepage; here fail-closed beats a cleartext token.
+ */
+function assertHttpsJoinBase(url: URL): void {
+  if (url.protocol === "https:") return;
+  if (url.protocol === "http:" && isLoopbackHostname(url.hostname)) return;
+  throw new Error(
+    `NEXT_PUBLIC_APP_URL must use https: before a /join redirect (got ${url.protocol}//${url.host}). ` +
+      `An http: base would put the invite token on the wire in the clear.`,
+  );
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  // Node's URL.hostname for IPv6 includes the brackets (`[::1]`). Strip
+  // them so `http://[::1]:3000` matches the same as `::1`.
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host.endsWith(".localhost")
+  );
 }
 
 function applyJoinSearch(url: URL, search: JoinSearch): void {
