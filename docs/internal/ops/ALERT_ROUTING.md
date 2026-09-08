@@ -64,10 +64,10 @@ tree held five, because a count is a second copy of a fact the rows already stat
 | *Database schema drift — a deployed database no longer matches supabase/migrations/* | `check-migration-drift.yml` (daily 07:00 UTC) | a deployed database's `schema_migrations` does not match `supabase/migrations/` — behind, or carrying a version that exists nowhere in the repo | every environment is back in sync |
 | *PR base sync cannot auto-update PR branches* | `pr-base-sync.yml` (every push to `main`) | at least one open PR was behind `main` and none could be updated automatically — no App token minted, the token rejected, or the update-branch API failing. **P2, not P1:** PRs still merge, they just need `Update branch` by hand, so this is degraded rather than down | a later sweep updates a branch, or runs with a working token and blocks on nothing |
 | *Production deploy guardrails have drifted — auto-deploy or production branch is wrong* | `production-guardrails.yml` (daily 07:15 UTC) | a provider-side production setting no longer matches what the guardrails assert. **P1.** Listed here as of #1674 — it has raised alerts since it shipped, but the roster above it said "four" and never included it, which is the drift the removed count caused | a later guardrail run finds nothing drifted |
+| *Production /health/ready is failing* | `production-uptime.yml` (every 15 minutes) | live `GET https://api.frapp.live/health/ready` was not HTTP 200 with JSON `status: "ok"`. **P1.** Watches `/health/ready`, not `/health` — `/health` always 2xxes while the process is up. Does not name `environment: production` (#1435). Not a Sentry 60s monitor | a later probe returns 200 `status: "ok"` |
 
-Unlike the others, the base-sync alert fires on a **per-merge** cadence rather than per-incident
-or daily, so it is written only on a state *change* — an already-open one is never re-commented. An
-open one that has gone quiet is still live, not stale. Setup for the App it depends on is human-only
+Unlike the others, two alerts comment only on a state *change*, not on every run: the base-sync alert (per-merge) and the production `/health/ready` probe (every 15 minutes). An already-open one is never re-commented. An
+open one that has gone quiet is still live, not stale. Setup for the App the base-sync alert depends on is human-only
 and tracked in [#689](https://github.com/pdcarlson/Frapp/issues/689).
 
 **The two deploy watchdogs are one script, two configurations.** `scripts/ci/deploy-alert.mjs` serves

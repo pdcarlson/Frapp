@@ -1,0 +1,64 @@
+name: Production uptime
+
+# Between-deploy probe of live production readiness. Deploy smoke already hits
+# `/health/ready` after a ship; nothing watched it in the quiet hours. `/health`
+# is Render's `healthCheckPath` and always 2xxes while the process is up, so
+# this workflow GETs `/health/ready` and treats anything other than HTTP 200
+# with JSON `status: "ok"` as an outage.
+#
+# ── Why this job does NOT say `environment: production` ─────────────────────
+# ADR-19 put Required reviewers on the `production` GitHub environment. A
+# `schedule:` job that names it suspends on that gate and expires without
+# probing (#1435). The production backup jobs use `production-backup` for the
+# same reason. This workflow needs no secrets beyond `GITHUB_TOKEN`, so it
+# names no environment at all.
+#
+# Semantics live in scripts/ci/production-uptime.mjs.
+# Unit tests: scripts/ci/__tests__/production-uptime.test.mjs
+# (`npm run test:ci-scripts`).
+#
+# Not a required PR check. Not a substitute for a Sentry 60s monitor.
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub may delay scheduled workflows; that is still
+    # tighter than "only after a deploy". Full schedule:
+    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-uptime
+  cancel-in-progress: false
+
+jobs:
+  ready:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The only write scope in this workflow, job-scoped: the alert issue.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Dependency-free (global fetch + the alert-issue helper), so no npm ci —
+      # matching production-guardrails.yml's deliberately minimal action surface.
+      - name: Probe production /health/ready
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          HEALTH_URL: https://api.frapp.live/health/ready
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/production-uptime.mjs
