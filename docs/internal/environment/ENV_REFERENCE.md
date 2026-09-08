@@ -180,7 +180,9 @@ Read at job time by the nightly DB backup workflow, which dumps `frapp-staging`
 (and, since #1435, `frapp-prod` under the `production/` prefix) into a private
 Cloudflare R2 bucket (#852 / #1287). Provisioned in `staging` 2026-08-27. The
 production jobs still read these four from Infisical `staging` until the `prod`
-column is filled — see the `prod` cells. The bucket name, account endpoint, and key values are deliberately
+column is filled — see the `prod` cells. Empty `prod` values for these names are
+restored from that staging inject (`preserve-nonempty` on the `prod` call in
+`db-backup.yml`) so a documented "leave empty" cell cannot blank the destination. The bucket name, account endpoint, and key values are deliberately
 not written into this public repo — read them from Infisical or the Cloudflare
 dashboard. They do not live *only* there, though: the path-`/` staging syncs
 ([`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) §5) push every Staging

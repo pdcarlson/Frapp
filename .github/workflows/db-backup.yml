@@ -44,7 +44,12 @@ name: Nightly Backup
 # value. That ordering is load-bearing, and it is not the only guard: each backup
 # action asserts the injected project ref / URL against `.github/environments.json`
 # before it links, so a missing `prod` value can only fail the job — never dump
-# the staging database under a `production/` label.
+# the staging database under a `production/` label. ENV_REFERENCE documents the
+# four `BACKUP_S3_*` names in `prod` as leave-empty until the separate bucket
+# exists. The Infisical inject exports those empty keys as empty GITHUB_ENV
+# values, which would wipe the staging destination; the `prod` inject therefore
+# passes `preserve-nonempty` for those four names. Non-empty prod values still
+# win. Absent keys (not present in `prod` at all) are left alone by the inject.
 #
 # The shared bucket is a known, accepted, TEMPORARY weakness: the staging token
 # can read, overwrite and delete production dumps, so a staging or preview
@@ -169,6 +174,7 @@ jobs:
           env-slug: "prod"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          preserve-nonempty: "BACKUP_S3_ENDPOINT,BACKUP_S3_BUCKET,BACKUP_S3_ACCESS_KEY_ID,BACKUP_S3_SECRET_ACCESS_KEY"
 
       - name: Dump, upload, verify and prune
         uses: ./.github/actions/db-offsite-backup
@@ -197,6 +203,7 @@ jobs:
           env-slug: "prod"
           client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          preserve-nonempty: "BACKUP_S3_ENDPOINT,BACKUP_S3_BUCKET,BACKUP_S3_ACCESS_KEY_ID,BACKUP_S3_SECRET_ACCESS_KEY"
 
       # Never the rehearsal here. The rehearsal WRITES a canary object into the
       # project's Storage and deletes it again, and this job runs with no
