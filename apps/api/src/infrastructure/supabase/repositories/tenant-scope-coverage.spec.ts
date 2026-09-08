@@ -114,10 +114,12 @@ describe('API repository tenant-scope coverage', () => {
     const covered =
       repositories.length - Object.keys(TENANT_SCOPE_BACKLOG).length;
 
-    // `covered` is pinned so shrinking coverage is a deliberate edit rather
-    // than a silent regression; raise it as backlog entries are cleared. The
-    // denominator is the shared corpus constant, so a new repository is one
-    // edit in one place rather than two numbers to keep in step.
+    // Both numbers are pinned so shrinking coverage is a deliberate edit
+    // rather than a silent regression. Adding a repository moves two of them:
+    // `EXPECTED_REPOSITORY_COUNT` in `#test/helpers/repository-corpus` (the
+    // denominator, shared with `no-as-never.spec.ts`) and `covered` here —
+    // unless it lands with a `TENANT_SCOPE_BACKLOG` reason instead, which
+    // moves only the first.
     expect({ covered, total: repositories.length }).toEqual({
       covered: 31,
       total: EXPECTED_REPOSITORY_COUNT,

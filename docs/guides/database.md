@@ -178,8 +178,10 @@ npx supabase db push --local
   logic and only parameterize the write methods.
   `no-as-never.spec.ts` guards every `*.repository.ts` under
   `apps/api/src`, module-local ones included (repository count,
-  `FrappSupabaseClient` injection, and no cast or `@ts-expect-error`
-  on a write call).
+  `FrappSupabaseClient` injection, and no cast, `@ts-expect-error`, or
+  erased `.from()`/client binding on a write path). It names its own
+  gaps in its docblock — read them there before reading a green run as
+  proof.
 - Any relevant behavior under `spec/behavior/`
 
 ## 5. RLS and security

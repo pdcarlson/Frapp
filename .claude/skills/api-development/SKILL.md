@@ -86,10 +86,13 @@ Conventions:
 - Always `if (error) throw error;`
 - Return `data ?? []` for lists, `data` for singles
 - Write methods take `TablesInsert<'widgets'>` / `TablesUpdate<'widgets'>`
-  and pass them to `.insert()` / `.update()` with **no cast of any spelling
-  and no `@ts-expect-error`** — `as never`, `as any`, `as unknown as …` and
-  the expanded `Database['public']['Tables'][…]['Insert']` all erase the same
-  checking, and `no-as-never.spec.ts` fails on all of them. Domain
+  and pass them to `.insert()` / `.update()` with **no cast and no
+  `@ts-expect-error`** — `as never`, `as any`, `as unknown as …` and the
+  expanded `Database['public']['Tables'][…]['Insert']` all erase the same
+  checking, and `no-as-never.spec.ts` catches each of them at the write call
+  (`as const` excepted — it narrows rather than erases). It is a text scan
+  with gaps it names in its own docblock, so it is a backstop, not a licence
+  to cast where it happens not to look. Domain
   interfaces stay `Partial<Widget>`. Do not extract a generic base
   repository for this.
 

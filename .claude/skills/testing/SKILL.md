@@ -24,7 +24,7 @@ description: >
 | API `nest build` (Render / Docker parity) | `npm run build -w apps/api` |
 | API image (optional, needs Docker) | `docker build -f apps/api/Dockerfile .` |
 | API unit tests | `npm run test -w apps/api` |
-| Repository tenant-scope specs only | `npm run test -w apps/api -- --testPathPatterns="\.repository\.spec\.ts$"` — keys on the filename, not a `repositories/` path, so the module-local repositories are included |
+| Repository tenant-scope specs only | `npm run test -w apps/api -- --testPathPatterns="\.repository\.spec\.ts$\|repositories/"` — the first half keys on the filename so the module-local repositories are included; the second keeps the three meta-specs (`tenant-scope-coverage`, `tenant-scope.harness`, `no-as-never`) that actually enforce the ledgers |
 | API E2E tests (mocked Supabase, no live services) | `npm run test:e2e -w apps/api` |
 | Web unit tests (Vitest / jsdom) | `npm run test -w apps/web` |
 | Mobile unit tests (Vitest) | `npm run test -w apps/mobile` |

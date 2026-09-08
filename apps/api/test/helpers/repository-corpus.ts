@@ -20,8 +20,11 @@ interface RepositoryFile {
 }
 
 /**
- * Pinned so a repository cannot join the tree without both ledgers noticing.
- * One home for the number: raise it here, not in either spec.
+ * The denominator both ledgers measure against, pinned so a repository cannot
+ * join the tree without both noticing. One home for *this* number — raise it
+ * here, not in either spec. `tenant-scope-coverage.spec.ts` separately pins
+ * how many of them are covered, which is a different fact and moves with the
+ * spec you write.
  */
 export const EXPECTED_REPOSITORY_COUNT = 40;
 
