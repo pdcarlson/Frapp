@@ -209,7 +209,7 @@ test("expectedSiteUrl still requires the wildcards when the Site URL matches", a
 const smtpConfig = (overrides = {}) =>
   ok({
     smtp_host: "smtp.resend.com",
-    smtp_admin_email: "invites@frapp.live",
+    smtp_admin_email: "no-reply@mail.staging.frapp.live",
     rate_limit_email_sent: 300,
     smtp_pass: "must-never-appear-in-detail",
     ...overrides,
@@ -279,11 +279,11 @@ test("SMTP on with the hosted send cap still fails", async () => {
   assert.match(result.detail, /#1824/);
 });
 
-test("Resend host, invites@frapp.live, and 300/hour pass without leaking smtp_pass", async () => {
+test("Resend host, no-reply@mail.staging.frapp.live, and 300/hour pass without leaking smtp_pass", async () => {
   const result = await checkAuthSmtp({
     accessToken: "t",
     projectRef: "ref",
-    fetchImpl: async () => smtpConfig({ smtp_host: "SMTP.RESEND.COM", smtp_admin_email: "Invites@Frapp.live" }),
+    fetchImpl: async () => smtpConfig({ smtp_host: "SMTP.RESEND.COM", smtp_admin_email: "No-Reply@Mail.Staging.Frapp.live" }),
   });
   assert.equal(result.status, PASS);
   assert.match(result.detail, /300\/hour/);

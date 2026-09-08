@@ -11,8 +11,13 @@ import { ResendEmailProvider } from '../../infrastructure/email/resend-email.pro
 /** Log context for the provider-selection line emitted by {@link selectEmailProvider}. */
 const EMAIL_PROVIDER_LOG_CONTEXT = 'EmailProvider';
 
-/** Used when `RESEND_FROM_EMAIL` is unset — a from-address on a domain Resend has not verified will bounce at send time, so this is a placeholder that makes the misconfiguration visible in the failure, not silent. */
-const DEFAULT_FROM_ADDRESS = 'Signet <invites@frapp.live>';
+/**
+ * Used when `RESEND_FROM_EMAIL` is unset. Must be a local-part on a Resend-
+ * verified sending domain (`mail.frapp.live`). The apex `invites@frapp.live`
+ * is retired: Gmail trained it as spam on the first hosted Magic Link sends,
+ * and Resend's guidance is not to send From the root domain.
+ */
+const DEFAULT_FROM_ADDRESS = 'Signet <invites@mail.frapp.live>';
 
 /**
  * Choose the invite-email transport: Resend when an API key is configured,

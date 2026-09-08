@@ -328,7 +328,7 @@ export async function checkAuthRedirects({
 /**
  * Custom SMTP is on and the send cap is above the hosted 2/hour limit.
  *
- * Staging Auth SMTP is proven (Resend, From `invites@frapp.live`, 300/hour).
+ * Staging Auth SMTP is proven (Resend, From `no-reply@mail.staging.frapp.live`, 300/hour).
  * Those are dashboard settings no migration performs. If they revert, magic
  * link / confirm-signup / recovery fall back to the hosted mailer and the
  * third member in an hour gets "email rate limit exceeded" — the production
@@ -339,7 +339,7 @@ export async function checkAuthRedirects({
  * cap (#1824). A production sibling needs its own alert title (#1384).
  */
 export const AUTH_SMTP_HOST = "smtp.resend.com";
-export const AUTH_SMTP_ADMIN_EMAIL = "invites@frapp.live";
+export const AUTH_SMTP_ADMIN_EMAIL = "no-reply@mail.staging.frapp.live";
 export const AUTH_EMAIL_SENT_PER_HOUR_MIN = 300;
 
 /**
