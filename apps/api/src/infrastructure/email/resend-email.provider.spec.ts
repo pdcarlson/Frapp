@@ -18,7 +18,7 @@ describe('ResendEmailProvider', () => {
 
     const provider = new ResendEmailProvider({
       apiKey: 're_test',
-      fromAddress: 'Frapp <invites@frapp.live>',
+      fromAddress: 'Signet <invites@frapp.live>',
     });
 
     const result = await provider.sendInviteEmail(params);
@@ -34,8 +34,12 @@ describe('ResendEmailProvider', () => {
       }),
     );
     const body = JSON.parse((fetchMock.mock.calls[0][1] as any).body);
-    expect(body.from).toBe('Frapp <invites@frapp.live>');
+    expect(body.from).toBe('Signet <invites@frapp.live>');
     expect(body.to).toBe(params.to);
+    expect(body.subject).toBe("You're invited to join a chapter on Signet");
+    expect(body.html).toContain('join a chapter on Signet');
+    expect(body.text).toContain('join a chapter on Signet');
+    expect(body.subject).not.toContain('Frapp');
     expect(body.html).toContain(params.joinUrl);
   });
 
@@ -48,7 +52,7 @@ describe('ResendEmailProvider', () => {
 
     const provider = new ResendEmailProvider({
       apiKey: 're_test',
-      fromAddress: 'Frapp <invites@frapp.live>',
+      fromAddress: 'Signet <invites@frapp.live>',
     });
 
     const result = await provider.sendInviteEmail(params);
@@ -61,7 +65,7 @@ describe('ResendEmailProvider', () => {
 
     const provider = new ResendEmailProvider({
       apiKey: 're_test',
-      fromAddress: 'Frapp <invites@frapp.live>',
+      fromAddress: 'Signet <invites@frapp.live>',
     });
 
     await expect(provider.sendInviteEmail(params)).resolves.toBe(false);
@@ -74,7 +78,7 @@ describe('ResendEmailProvider', () => {
 
     const provider = new ResendEmailProvider({
       apiKey: 're_test',
-      fromAddress: 'Frapp <invites@frapp.live>',
+      fromAddress: 'Signet <invites@frapp.live>',
     });
 
     await provider.sendInviteEmail({

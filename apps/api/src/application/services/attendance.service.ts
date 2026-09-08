@@ -191,7 +191,7 @@ export class AttendanceService {
         // so putting the guidance here is what makes that path honest — and it
         // costs no per-card fetch of the event just to learn it has a zone.
         throw new BadRequestException(
-          'This event checks you in by location — use the Frapp mobile app to check in.',
+          'This event checks you in by location — use the Signet mobile app to check in.',
         );
       }
 
