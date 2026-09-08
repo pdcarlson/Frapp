@@ -16,11 +16,13 @@ import {
   checkAuthHook,
   checkAuthRedirects,
   checkAuthSignIn,
+  checkAuthSmtp,
   checkInfisicalSyncs,
   checkProjectStatus,
   checkSchemaDrift,
   classifyConformance,
   decodeJwtPayload,
+  emailsPerHourFromRateLimit,
   parseFailingIds,
   readWorkspaceId,
   redactSecrets,
@@ -162,6 +164,103 @@ test("auth redirects check skips without credentials and fails on a non-200", as
     accessToken: "t",
     projectRef: "ref",
     fetchImpl: async () => httpError(403),
+  });
+  assert.equal(failed.status, FAIL);
+});
+
+// ── Auth SMTP — hosted 2/hour cap vs proven Resend 300/hour ─────────────────
+
+const smtpConfig = (overrides = {}) =>
+  ok({
+    smtp_host: "smtp.resend.com",
+    smtp_admin_email: "invites@frapp.live",
+    rate_limit_email_sent: 300,
+    smtp_pass: "must-never-appear-in-detail",
+    ...overrides,
+  });
+
+test("emailsPerHourFromRateLimit reads legacy numbers and count/duration strings", () => {
+  assert.equal(emailsPerHourFromRateLimit(300), 300);
+  assert.equal(emailsPerHourFromRateLimit(2), 2);
+  assert.equal(emailsPerHourFromRateLimit("300"), 300);
+  assert.equal(emailsPerHourFromRateLimit("300/1h"), 300);
+  assert.equal(emailsPerHourFromRateLimit("600/2h"), 300);
+  assert.equal(emailsPerHourFromRateLimit("10/30m"), 20);
+  assert.equal(emailsPerHourFromRateLimit("300/24h"), 12.5);
+  assert.equal(emailsPerHourFromRateLimit(""), null);
+  assert.equal(emailsPerHourFromRateLimit("nope"), null);
+});
+
+test("a 300/24h send cap is not 300/hour and fails", async () => {
+  const result = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => smtpConfig({ rate_limit_email_sent: "300/24h" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /12\.5\/hour/);
+});
+
+test("empty smtp_host fails and names the hosted 2/hour cap", async () => {
+  const result = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => smtpConfig({ smtp_host: "" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /2 messages\/hour/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
+});
+
+test("a non-Resend smtp_host fails", async () => {
+  const result = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => smtpConfig({ smtp_host: "smtp.mailgun.org" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /smtp\.mailgun\.org/);
+});
+
+test("wrong From address fails even when the host and cap are right", async () => {
+  const result = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => smtpConfig({ smtp_admin_email: "noreply@example.com" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /noreply@example\.com/);
+});
+
+test("SMTP on with the hosted send cap still fails", async () => {
+  const result = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => smtpConfig({ rate_limit_email_sent: 2 }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /2\/hour/);
+  assert.match(result.detail, /#1824/);
+});
+
+test("Resend host, invites@frapp.live, and 300/hour pass without leaking smtp_pass", async () => {
+  const result = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => smtpConfig({ smtp_host: "SMTP.RESEND.COM", smtp_admin_email: "Invites@Frapp.live" }),
+  });
+  assert.equal(result.status, PASS);
+  assert.match(result.detail, /300\/hour/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
+});
+
+test("auth SMTP check skips without credentials and fails on a non-200", async () => {
+  const skipped = await checkAuthSmtp({ accessToken: "", projectRef: "", fetchImpl: async () => ok({}) });
+  assert.equal(skipped.status, SKIPPED);
+  const failed = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => httpError(401),
   });
   assert.equal(failed.status, FAIL);
 });

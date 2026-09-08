@@ -198,8 +198,8 @@ Authentication → URL Configuration / SMTP Settings.
 | Site URL | `https://app.frapp.live` | `https://app.staging.frapp.live` |
 | Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** |
 | Email confirmations | required (`mailer_autoconfirm: false`) | required |
-| Custom SMTP | **none** (still hosted 2/hour) | **on** — Resend `smtp.resend.com:465`, From `Signet <invites@frapp.live>` (read 2026-09-08) |
-| Auth email rate limit | **2 per hour** | **300 per hour** (read 2026-09-08) |
+| Custom SMTP | **none** (still hosted 2/hour; #1824) | **on** — Resend `smtp.resend.com:465`, From `Signet <invites@frapp.live>` (read 2026-09-08) |
+| Auth email rate limit | **2 per hour** | **300 per hour** (read 2026-09-08; asserted daily as `auth-smtp`) |
 | Password minimum length | 6 | 6 |
 | Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
 
@@ -226,7 +226,9 @@ silently revert or be forgotten on a new project.
 
 **Custom SMTP is proven on staging, not on production.** Staging Auth SMTP is Resend
 (`smtp.resend.com:465`, sender `Signet <invites@frapp.live>`), `rate_limit_email_sent` is 300/hour,
-and `_dmarc.frapp.live` is `v=DMARC1; p=none;`. Production Auth is still the hosted 2/hour cap.
+and `_dmarc.frapp.live` is `v=DMARC1; p=none;`. `staging-conformance.mjs` asserts the host, From
+address, and send cap daily (`auth-smtp`) so a revert to the hosted 2/hour mailer cannot sit green.
+Production Auth is still the hosted 2/hour cap.
 The remaining all-users inbox-placement work is the Magic Link *href*: leave
 `{{ .ConfirmationURL }}` and the click is `*.supabase.co/auth/v1/verify`, which Gmail treats as
 the default Supabase phishing shape even when SPF/DKIM pass. After `/auth/callback` accepts
