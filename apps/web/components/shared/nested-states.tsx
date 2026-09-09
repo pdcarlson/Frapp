@@ -113,6 +113,7 @@ export function NestedEmpty({
   onAction?: () => void;
   actionProps?: {
     disabled?: boolean;
+    title?: string;
     "aria-describedby"?: string;
   };
 }) {
