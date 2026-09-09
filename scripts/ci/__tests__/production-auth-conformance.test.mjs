@@ -183,6 +183,31 @@ describe("default assertions", () => {
     );
   });
 
+  it("skips leftover Frapp inbox titles while production SMTP is still off", async () => {
+    const { fetchImpl } = combinedFetch({
+      auth: {
+        ...HEALTHY_AUTH,
+        mailer_subjects_invite: "Join Frapp",
+      },
+      githubRoutes: [{ method: "GET", path: "/issues?state=all", body: [] }],
+    });
+    const { outcome, results } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "healthy");
+    const magic = results.find((r) => r.id === "auth-magic-link");
+    assert.equal(magic.status, SKIPPED);
+    assert.match(magic.detail, /smtp_host is empty/);
+    assert.doesNotMatch(magic.detail, /mailer_subjects_invite/);
+    assert.doesNotMatch(magic.detail, /Join Frapp/);
+    assert.doesNotMatch(magic.detail, /must-never-appear-in-detail/);
+  });
+
   it("skips rather than fails when the Management API token is missing — inconclusive, alert stays open", async () => {
     const { fetchImpl, calls } = combinedFetch({
       githubRoutes: [
@@ -410,6 +435,38 @@ describe("default assertions", () => {
     const smtp = results.find((r) => r.id === "auth-smtp");
     assert.equal(smtp.status, FAIL);
     assert.match(smtp.detail, /2\/hour/);
+  });
+
+  it("fails the run when production SMTP is on with a leftover Frapp inbox title", async () => {
+    const { fetchImpl } = combinedFetch({
+      auth: {
+        ...HEALTHY_AUTH,
+        smtp_host: "smtp.resend.com",
+        smtp_admin_email: "no-reply@mail.frapp.live",
+        rate_limit_email_sent: 300,
+        ...SIGNET_MAGIC_LINK,
+        mailer_subjects_invite: "Join Frapp",
+      },
+      githubRoutes: [
+        { method: "GET", path: "/issues?state=all", body: [] },
+        { method: "POST", path: "/issues", body: { number: 1948 } },
+      ],
+    });
+    const { outcome, results } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "failed");
+    const magic = results.find((r) => r.id === "auth-magic-link");
+    assert.equal(magic.status, FAIL);
+    assert.match(magic.detail, /mailer_subjects_invite/);
+    assert.match(magic.detail, /Frapp/);
+    assert.doesNotMatch(magic.detail, /Join Frapp/);
+    assert.doesNotMatch(magic.detail, /must-never-appear-in-detail/);
   });
 
   it("fails the run when production SMTP is on but Magic Link still uses ConfirmationURL", async () => {

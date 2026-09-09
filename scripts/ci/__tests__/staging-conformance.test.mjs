@@ -507,6 +507,26 @@ test("whenSmtpUnset skip leaves hosted SMTP as SKIPPED even with ConfirmationURL
   assert.doesNotMatch(result.detail, /ConfirmationURL/);
 });
 
+test("whenSmtpUnset skip still skips when a leftover Frapp inbox title is present", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    whenSmtpUnset: "skip",
+    fetchImpl: async () =>
+      magicLinkConfig({
+        smtp_host: "",
+        mailer_subjects_invite: "Join Frapp",
+        mailer_subjects_magic_link: "Your Magic Link",
+        mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
+      }),
+  });
+  assert.equal(result.status, SKIPPED);
+  assert.match(result.detail, /smtp_host is empty/);
+  assert.doesNotMatch(result.detail, /mailer_subjects_invite/);
+  assert.doesNotMatch(result.detail, /Join Frapp/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
+});
+
 test("whenSmtpUnset skip still FAILs ConfirmationURL once SMTP is on", async () => {
   const result = await checkAuthMagicLink({
     accessToken: "t",
