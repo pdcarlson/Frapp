@@ -102,9 +102,11 @@ Default local run: `npm run dev:stack` (API + web + landing). Ports, URLs, per-a
 
 ## Starting the dev environment
 
-**Primary — Claude Code web sandbox:** the local stack (Docker + Supabase + API) auto-starts in the background at session start. Wait for `.cloud-sandbox-up.done`, then `npm run start:dev -w apps/api`. Config, env vars, and failure troubleshooting: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md).
+**Cursor Cloud:** [`.cursor/environment.json`](.cursor/environment.json) `start` is `scripts/cursor-agent-start.sh` → `scripts/cursor-cloud-up.sh` (shared bringup: `scripts/cloud-sandbox-up.sh`). Wait for `.cloud-sandbox-up.done` (or stop on `.cloud-sandbox-up.failed`). `terminals` wait on those sentinels before api/web/landing (Node 20). Details: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md#cursor-cloud-start-repo-contract).
 
-**Secondary — laptop / WSL / Linux:** with Docker reachable, run `bash scripts/local-dev-setup.sh` (deps, Supabase, `db push --local`, optional checks; flags `--quick`, `--reset-supabase`, `--reset-supabase-data`). Then `npx infisical login` once and **`npm run dev:stack`**. See [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) and [`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md).
+**Claude Code web sandbox:** SessionStart still launches `scripts/cloud-sandbox-up.sh` in the background. Wait on the same sentinels, then `npm run start:dev -w apps/api`. Config, env vars, and failure troubleshooting: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md).
+
+**Laptop / WSL / Linux:** with Docker reachable, run `bash scripts/local-dev-setup.sh` (deps, Supabase, `db push --local`, optional checks; flags `--quick`, `--reset-supabase`, `--reset-supabase-data`). Then `npx infisical login` once and **`npm run dev:stack`**. See [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) and [`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md).
 
 ## Secrets and environment variables
 
@@ -203,6 +205,8 @@ A `/next` session may hold **up to two open PRs** (pipelining in [`.claude/comma
 Wake-path mechanics: [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § "PR babysitting: wake signals and CI-failure triage".
 
 ## Claude Code web sandbox
+
+Cursor Cloud `start` is `scripts/cursor-cloud-up.sh` and uses the same sentinels — see [Starting the dev environment](#starting-the-dev-environment). This section is the Claude SessionStart path.
 
 `.claude/hooks/session-start.sh` launches `scripts/cloud-sandbox-up.sh` in the **background** at session start (gated on the `/etc/frapp-cloud-sandbox` marker, or `FRAPP_CLOUD_SANDBOX=1`) — it starts Docker + local Supabase and writes `apps/api/.env.local` and `apps/web/.env.local`, so the API boots and `npm run build -w apps/web` succeeds without Infisical.
 

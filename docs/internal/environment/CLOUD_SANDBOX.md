@@ -7,6 +7,30 @@ setup is the secondary path: [`LOCAL_DEV.md`](./LOCAL_DEV.md). Agent credentials
 [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md); broader CI/agent infra is
 [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md).
 
+## Cursor Cloud start (repo contract)
+
+[`.cursor/environment.json`](../../../.cursor/environment.json) `start` is
+[`scripts/cursor-agent-start.sh`](../../../scripts/cursor-agent-start.sh)
+(boot sysctls) then
+[`scripts/cursor-cloud-up.sh`](../../../scripts/cursor-cloud-up.sh). That
+entrypoint is Cursor-owned: it runs because Cursor invoked `start`, not because
+a Claude SessionStart hook fired, `CLAUDE_PROJECT_DIR` is set, or
+`/etc/frapp-cloud-sandbox` exists. It delegates to
+[`scripts/cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh) so bringup
+behavior stays identical, and still writes `.cloud-sandbox-up.done` /
+`.cloud-sandbox-up.failed` (optional alias `.cursor-cloud-up.done`). `start`
+returns after dockerd, local Supabase, and the generated `.env.local` files;
+api/web/landing are `terminals` that wait on those sentinels via
+[`scripts/cursor-wait-sandbox.sh`](../../../scripts/cursor-wait-sandbox.sh)
+then Node 20 ([`scripts/cursor-node20.sh`](../../../scripts/cursor-node20.sh)).
+
+Do **not** put secrets in `environment.json`. User secrets are unavailable during
+Builds; `DOCKERHUB_*` must be environment/team secrets. Egress is a dashboard
+decision (#2025), not a guessed `egressAllowlist` in this file. Schema:
+<https://cursor.com/schemas/environment.schema.json> — do not add `$schema`.
+
+Claude SessionStart remains the fallback launch path and is documented below.
+
 ## How Claude Code web environments work
 
 A session runs in a fresh, ephemeral Anthropic VM (~4 vCPU / 16 GB / 30 GB disk). Key
@@ -239,7 +263,12 @@ image's dev-deps stage would download it for a tool only these two scripts call.
 
 ### Auto-bringup and how the agent waits
 
-`.claude/hooks/session-start.sh` launches `cloud-sandbox-up.sh` in the background when
+**Cursor Cloud:** `environment.json` `start` runs `cursor-cloud-up.sh` in the
+foreground and **returns** after writing the sentinels below. `terminals` wait
+on `.cloud-sandbox-up.done` (exit 1 if `.failed`) before `npm run …`. See
+[Cursor Cloud start (repo contract)](#cursor-cloud-start-repo-contract).
+
+**Claude Code fallback:** `.claude/hooks/session-start.sh` launches `cloud-sandbox-up.sh` in the background when
 the `/etc/frapp-cloud-sandbox` marker exists **or** `FRAPP_CLOUD_SANDBOX=1`. A `/tmp`
 lock prevents a relaunch while a bringup is in flight, but the hook **reclaims a stale
 lock and relaunches** when a prior run was killed (e.g. the session was paused/reclaimed)

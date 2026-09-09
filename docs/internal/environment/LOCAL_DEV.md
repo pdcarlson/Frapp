@@ -1,8 +1,7 @@
 # Local development
 
-> The **primary** dev environment is the Claude Code web sandbox — see
-> [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md). This file is the **secondary** path: running
-> Frapp on a laptop/local machine.
+> Cloud VM bringup (Cursor `start` / Claude SessionStart) lives in
+> [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md). This file is the **laptop/local** path.
 
 **Canonical run command (after bootstrap + Infisical login):** from the repo root,
 
@@ -62,10 +61,11 @@ Requires Expo Go on a device or emulator; not usable on typical headless VMs.
 
 Build `.env.local` per app using `npx supabase status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
 
-## Claude Code web sandbox
+## Cloud sandbox
 
-The primary, automated environment. Full config (setup script, env vars, network policy),
-auto-bringup, and failure troubleshooting live in [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md).
+Cursor Cloud `start` is `scripts/cursor-cloud-up.sh` (via `scripts/cursor-agent-start.sh`);
+wait on `.cloud-sandbox-up.done` / `.cloud-sandbox-up.failed`. Claude SessionStart is the
+fallback and shares that bringup. Full config: [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md).
 It generates `apps/api/.env.local` and `apps/web/.env.local`, so the API boots and `npm run build -w apps/web` succeeds without Infisical.
 
 ## SWC builder for API dev server
@@ -140,7 +140,7 @@ is stubbed, no daemon or database needed), run it with
 
 ## Related docs
 
-- [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) — Claude Code web sandbox (primary dev env)
+- [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) — Cursor Cloud `start` and Claude SessionStart fallback
 - [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) — Infisical project, syncs, login
 - [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) — variable list per app
 - [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md) — agent/provider creds + cloud-sandbox vars
