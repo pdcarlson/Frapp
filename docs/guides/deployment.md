@@ -35,7 +35,7 @@ For the full operator runbook (DNS, provider setup, and detailed checklists), us
   Render is healthy (`DEPLOY_PHASE` in `scripts/ci/deploy-vercel.mjs`) —
   replacing the `gitSource` call the retired integration used to serve; the same path deploys
   staging from `deploy-vercel-staging.yml` after CI passes. **ADR-21** in
-  [`spec/architecture/README.md`](../../spec/architecture/README.md) is the canonical record of the
+  [`spec/architecture/adr/adr-21.md`](../../spec/architecture/adr/adr-21.md) is the canonical record of the
   unlink — the per-project dates, the freeze points and every live breakage. **#1579** repaired the
   guardrail and `verify-deployments.yml`'s Vercel jobs on 2026-09-02: the assertion was
   **inverted** so a *present* Git link is the violation, rather than deleted, and the two Vercel
