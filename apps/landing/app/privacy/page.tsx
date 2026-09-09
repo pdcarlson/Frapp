@@ -7,7 +7,7 @@ const sections = [
       "Frapp collects account and profile information such as name, email, role metadata, and chapter membership details.",
       "Depending on feature usage, Frapp may process chat content, uploaded files, event participation data, and study session location signals.",
       "The mobile app asks for device permissions only for the feature that needs them, and only when you use it: the camera to scan an event check-in code; your photo library to choose a profile photo or attach an image; your precise location, only while the app is open, to confirm you are inside a chapter study zone or at an event you are checking in to — Frapp never tracks location in the background; and notifications, if you turn them on, in which case the app stores a push token for your device so the chapter can reach you.",
-      "Frapp collects crash and error diagnostics so we can fix problems. Identifiers in those reports are pseudonymized before they leave our systems, and they contain no message content. Frapp does not use advertising identifiers and does not track you across other companies' apps or websites.",
+      "Frapp collects crash and error diagnostics so we can fix problems. On signed-in product surfaces, identifiers in those reports are pseudonymized before they leave our systems. On the public marketing site (frapp.live), crash reports and page or call-to-action analytics are anonymous: they are not tied to a Frapp account and are not linked to you after you sign in. Diagnostic reports contain no chat or document content. Frapp does not use advertising identifiers and does not track you across other companies' apps or websites.",
     ],
   },
   {
@@ -20,8 +20,8 @@ const sections = [
   {
     heading: "3. Service Providers",
     paragraphs: [
-      "Frapp uses trusted infrastructure providers such as Supabase (data/auth/storage), Stripe (billing), Expo (push delivery), and Sentry (crash and error diagnostics) to deliver core functionality.",
-      "These providers process data only as needed to operate the service under contractual protections.",
+      "Frapp uses trusted infrastructure providers such as Supabase (data/auth/storage), Stripe (billing), Expo (push delivery), Sentry (crash and error diagnostics), and PostHog (product and marketing analytics) to deliver core functionality.",
+      "On the marketing site, Sentry receives anonymous crash reports and PostHog receives anonymous page views and call-to-action clicks. Session replay is not recorded in production. These providers process data only as needed to operate the service under contractual protections.",
     ],
   },
   {

@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { PageviewTracker } from "../components/pageview-tracker";
 
 const geistSans = localFont({
   src: "../../../packages/theme/fonts/GeistVF.woff2",
@@ -46,7 +47,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={geistSans.variable}>
-      <body className="font-sans antialiased">{children}</body>
+      <body className="font-sans antialiased">
+        <PageviewTracker />
+        {children}
+      </body>
     </html>
   );
 }
