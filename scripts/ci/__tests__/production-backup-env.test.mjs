@@ -85,6 +85,18 @@ describe("evaluateBackupEnv", () => {
     assert.match(verdict.reason, /required_reviewers/);
   });
 
+  it("fails a reviewers list even when the rule has no type", () => {
+    const verdict = evaluateBackupEnv({
+      status: 200,
+      body: {
+        ...CLEAR_BODY,
+        protection_rules: [{ reviewers: ["octocat"] }],
+      },
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /protection/);
+  });
+
   it("fails a wait_timer rule", () => {
     const verdict = evaluateBackupEnv({
       status: 200,
@@ -95,6 +107,18 @@ describe("evaluateBackupEnv", () => {
     });
     assert.equal(verdict.ok, false);
     assert.match(verdict.reason, /wait_timer/);
+  });
+
+  it("fails a numeric wait_timer even when the rule has no type", () => {
+    const verdict = evaluateBackupEnv({
+      status: 200,
+      body: {
+        ...CLEAR_BODY,
+        protection_rules: [{ wait_timer: 5 }],
+      },
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /protection/);
   });
 
   it("fails the string-summary shape GitHub sometimes returns in listings", () => {
@@ -428,10 +452,10 @@ describe("workflow wiring", () => {
 /**
  * Job-level `environment:` is indented four spaces. Action inputs live under
  * `with:` at ten. Collapsing those would let a "fix" that points the dump
- * jobs at GitHub `production` (the #1435 trap) hide behind the action's
+ * jobs at GitHub `production` (the leftover-1435 trap) hide behind the action's
  * `environment: production` source slug, which must stay.
  */
-function githubJobEnvironments(yaml) {
+export function githubJobEnvironments(yaml) {
   const jobs = {};
   let current = null;
   for (const line of uncommented(yaml).split("\n")) {
@@ -446,13 +470,49 @@ function githubJobEnvironments(yaml) {
   return jobs;
 }
 
+const EXPECTED_DUMP_JOB_ENVS = {
+  "backup-production": "production-backup",
+  "backup-production-storage": "production-backup",
+  "backup-staging": "staging",
+  "backup-staging-storage": "staging",
+};
+
+export function namedDumpJobEnvironments(yaml) {
+  return Object.fromEntries(
+    Object.entries(githubJobEnvironments(yaml)).filter(([, name]) => name),
+  );
+}
+
+export function watchdogWorkflowProblems(yaml) {
+  const live = uncommented(yaml);
+  const problems = [];
+  if (/^\s*environment:\s/m.test(live)) {
+    problems.push("must not name a GitHub environment");
+  }
+  if (/environment:\s*production-backup/.test(live)) {
+    problems.push("must not name environment: production-backup");
+  }
+  if (/npm ci/.test(live)) {
+    problems.push("must not npm ci");
+  }
+  if (/pull_request:/.test(yaml)) {
+    problems.push("must not be a pull_request check");
+  }
+  if (!/cron: "15 6 \* \* \*"/.test(yaml)) {
+    problems.push("cron must stay 06:15");
+  }
+  if (/cron:\s*"30 6 \* \* \*"/.test(live)) {
+    problems.push("must not collide with db-backup.yml at 06:30");
+  }
+  return problems;
+}
+
 describe("db-backup.yml GitHub environments", () => {
   const backup = readFileSync(join(WORKFLOWS_DIR, "db-backup.yml"), "utf8");
-  const jobs = githubJobEnvironments(backup);
+  const jobs = namedDumpJobEnvironments(backup);
 
   it("runs both production dump jobs under production-backup, never production", () => {
-    assert.equal(jobs["backup-production"], "production-backup");
-    assert.equal(jobs["backup-production-storage"], "production-backup");
+    assert.deepEqual(jobs, EXPECTED_DUMP_JOB_ENVS);
     assert.equal(
       Object.values(jobs).filter((name) => name === "production").length,
       0,
@@ -469,4 +529,87 @@ describe("db-backup.yml GitHub environments", () => {
       "the offsite-backup action must still receive the production source slug",
     );
   });
+
+  it("does not treat the action input environment: production as a job environment", () => {
+    const yaml = [
+      "jobs:",
+      "  backup-production:",
+      "    environment: production-backup",
+      "    steps:",
+      "      - uses: ./.github/actions/offsite-backup",
+      "        with:",
+      "          environment: production",
+      "",
+    ].join("\n");
+    assert.deepEqual(githubJobEnvironments(yaml), {
+      "backup-production": "production-backup",
+    });
+  });
+
+  it("pointing a dump job at GitHub production fails the pin", () => {
+    const mutated = readFileSync(join(WORKFLOWS_DIR, "db-backup.yml"), "utf8")
+      .replace(
+        /^    environment: production-backup$/m,
+        "    environment: production",
+      );
+    const named = namedDumpJobEnvironments(mutated);
+    assert.equal(named["backup-production"], "production");
+    assert.notDeepEqual(named, EXPECTED_DUMP_JOB_ENVS);
+  });
 });
+
+describe("watchdog workflow mutations", () => {
+  const workflow = readFileSync(WORKFLOW, "utf8");
+
+  it("the live watchdog YAML stays clean", () => {
+    assert.deepEqual(watchdogWorkflowProblems(workflow), []);
+  });
+
+  it("naming environment: production-backup on the watchdog fails", () => {
+    const problems = watchdogWorkflowProblems(
+      `${workflow}\n    environment: production-backup\n`,
+    );
+    assert.ok(
+      problems.some((problem) => problem.includes("production-backup")),
+      problems.join("; "),
+    );
+  });
+
+  it("adding npm ci fails", () => {
+    const problems = watchdogWorkflowProblems(`${workflow}\n      - run: npm ci\n`);
+    assert.ok(
+      problems.some((problem) => problem.includes("npm ci")),
+      problems.join("; "),
+    );
+  });
+
+  it("moving the cron onto the dump slot fails", () => {
+    const problems = watchdogWorkflowProblems(
+      workflow.replace('cron: "15 6 * * *"', 'cron: "30 6 * * *"'),
+    );
+    assert.ok(
+      problems.some((problem) => /06:15|06:30/.test(problem)),
+      problems.join("; "),
+    );
+  });
+});
+
+describe("leftover lock hygiene", () => {
+  it("refuses a GitHub closer next to an issue number", () => {
+    const lock = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const script = readFileSync(SCRIPT, "utf8");
+    const workflow = readFileSync(WORKFLOW, "utf8");
+    for (const [rel, source] of [
+      ["test", lock],
+      ["script", script],
+      ["workflow", workflow],
+    ]) {
+      assert.doesNotMatch(
+        source,
+        /\b(fixes|closes|close|fix|fixed|resolve|resolves|resolved)\s+#/i,
+        rel,
+      );
+    }
+  });
+});
+
