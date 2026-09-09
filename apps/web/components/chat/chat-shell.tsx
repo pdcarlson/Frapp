@@ -37,6 +37,7 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
+import { CHAT_RAIL_STICKY_CLASS } from "@/components/shared/offline-banner-focus";
 import {
   ChannelList,
   type ChannelCategory,
@@ -948,7 +949,10 @@ export function ChatShell({
       */}
       <section
         aria-label="Channels"
-        className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface-1 md:sticky md:top-20 md:max-h-[calc(100vh-6rem)] md:self-start"
+        className={cn(
+          "flex flex-col overflow-hidden rounded-xl border border-border bg-surface-1",
+          CHAT_RAIL_STICKY_CLASS,
+        )}
       >
         <header className="border-b border-border px-3 py-3">
           <h2 className="text-base font-bold text-foreground">Channels</h2>
@@ -1278,7 +1282,10 @@ export function ChatShell({
 
       <aside
         aria-label="Thread"
-        className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface-1 md:sticky md:top-20 md:max-h-[calc(100vh-6rem)] md:self-start"
+        className={cn(
+          "flex flex-col overflow-hidden rounded-xl border border-border bg-surface-1",
+          CHAT_RAIL_STICKY_CLASS,
+        )}
       >
         {threadParent ? (
           <ThreadPanel
