@@ -480,24 +480,47 @@ export function markLocalUnconfirmed(
  */
 export function markLocalRecorded(
   ctx: ChatActionContext,
-  args: { channelId: string; clientMessageId: string; note: string },
+  args: {
+    channelId: string;
+    clientMessageId: string;
+    note: string;
+    /** Used when the in-flight REST backfill already clobbered the placeholder. */
+    content?: string;
+  },
 ): void {
   const existing = ctx.queryClient.getQueryData<ChannelCache>(
     chatMessagesKey(args.channelId),
   );
   const current = existing?.byId[args.clientMessageId];
-  patchCache(ctx.queryClient, args.channelId, (cache) =>
-    markRecorded(cache, args.clientMessageId, args.note),
-  );
-  if (!ctx.userId || !current) return;
+  const content = current?.content || args.content || "";
+  const senderId = current?.sender_id || ctx.userId || "";
+  const createdAt = current?.created_at ?? new Date().toISOString();
+  patchCache(ctx.queryClient, args.channelId, (cache) => {
+    let next = cache;
+    if (!cache.byId[args.clientMessageId] && senderId) {
+      const row = optimisticMessage({
+        clientMessageId: args.clientMessageId,
+        channelId: args.channelId,
+        senderId,
+        content,
+        kind: "loading",
+        payload: null,
+        replyToId: null,
+      });
+      row.created_at = createdAt;
+      next = upsertOptimistic(next, row);
+    }
+    return markRecorded(next, args.clientMessageId, args.note);
+  });
+  if (!ctx.userId) return;
   persistRecordedNotice(
     {
       clientMessageId: args.clientMessageId,
       channelId: args.channelId,
-      senderId: current.sender_id ?? ctx.userId,
-      content: current.content,
+      senderId: senderId || ctx.userId,
+      content,
       note: args.note,
-      createdAt: current.created_at,
+      createdAt,
     },
     ctx.kv,
   );

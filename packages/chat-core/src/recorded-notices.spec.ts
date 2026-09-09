@@ -85,4 +85,24 @@ describe("recorded notices (#1789)", () => {
     });
     expect(readRecordedNotices("chan-1", kv)).toEqual([]);
   });
+
+  test("rehydrates from the notice's sender when userId is omitted", () => {
+    const kv = memoryStore();
+    persistRecordedNotice(NOTICE, kv);
+    const cache = mergePersistedRecorded(emptyCache(), {
+      channelId: "chan-1",
+      kv,
+    });
+    expect(cache.byId["cm-1"]?._status).toBe("recorded");
+    expect(cache.byId["cm-1"]?.sender_id).toBe("user-1");
+  });
+
+  test("drops a corrupt store value so a later persist can write", () => {
+    const kv = memoryStore();
+    kv.set("chat:recorded:chan-1", "{not-json");
+    expect(readRecordedNotices("chan-1", kv)).toEqual([]);
+    expect(kv.get("chat:recorded:chan-1")).toBeNull();
+    persistRecordedNotice(NOTICE, kv);
+    expect(readRecordedNotices("chan-1", kv)).toEqual([NOTICE]);
+  });
 });

@@ -991,6 +991,7 @@ describe("MessageItem recorded rows (#1789)", () => {
     expect(
       screen.queryByRole("button", { name: /discard/i }),
     ).not.toBeInTheDocument();
+    expect(screen.getByText(/granting 5 points/i)).toBeInTheDocument();
   });
 
   it("does not render the row as busy", () => {
@@ -1021,9 +1022,10 @@ describe("MessageItem recorded rows (#1789)", () => {
 
     expect(screen.getByText(/don't run this command again/i)).toBeInTheDocument();
 
-    // The exact ADD_TOAST branch in `use-toast.ts`: `toasts: [action.toast,
-    // ...state.toasts].slice(0, TOAST_LIMIT)` with `TOAST_LIMIT = 1`. Raising
-    // that limit is not this issue's fix; this assertion pins it.
+    // MessageItem does not subscribe to toast state — that independence is
+    // the architecture (#1789). This half pins the eviction path itself:
+    // `ADD_TOAST` slices to `TOAST_LIMIT = 1`. Raising that limit is not
+    // this issue's fix.
     const after = reducer(
       {
         toasts: [

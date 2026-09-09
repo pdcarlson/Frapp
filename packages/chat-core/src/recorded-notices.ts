@@ -50,9 +50,13 @@ export function readRecordedNotices(
   if (!raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) {
+      kvOf(store).remove(storageKey(channelId));
+      return [];
+    }
     return parsed.filter(isRecordedNotice);
   } catch {
+    kvOf(store).remove(storageKey(channelId));
     return [];
   }
 }
@@ -95,7 +99,7 @@ export function mergePersistedRecorded(
   cache: ChannelCache,
   args: {
     channelId: string;
-    userId: string;
+    userId?: string;
     kv?: KeyValueStore;
   },
 ): ChannelCache {
@@ -109,10 +113,12 @@ export function mergePersistedRecorded(
       continue;
     }
     if (placement === "optimistic") continue;
+    const senderId = notice.senderId || args.userId;
+    if (!senderId) continue;
     const row = optimisticMessage({
       clientMessageId: notice.clientMessageId,
       channelId: notice.channelId,
-      senderId: notice.senderId || args.userId,
+      senderId,
       content: notice.content,
       kind: "loading",
       payload: null,

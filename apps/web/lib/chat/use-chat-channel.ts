@@ -175,13 +175,15 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           cache = mutated;
         }
       }
-      if (userId) {
-        cache = mergePersistedRecorded(cache, {
-          channelId,
-          userId,
-          kv: browserKeyValueStore,
-        });
-      }
+      // Always re-merge recorded notices, even before `userId` resolves.
+      // Notices carry their own sender id; gating on the queryFn closure's
+      // `userId` let an in-flight first fetch (key does not include userId)
+      // overwrite a later hydrate with a REST-only snapshot (#1789).
+      cache = mergePersistedRecorded(cache, {
+        channelId,
+        userId: userId ?? undefined,
+        kv: browserKeyValueStore,
+      });
       return cache;
     },
   });

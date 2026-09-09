@@ -6,6 +6,7 @@ import {
   discardOutboxRow,
   editMessage,
   hydrateOutboxIntoCache,
+  markLocalRecorded,
   react,
   retryOutboxRow,
   sendMessage,
@@ -15,7 +16,7 @@ import {
   type ToastFn,
 } from "./chat-client";
 import type { KeyValueStore, OutboxRow, OutboxStore } from "./adapters";
-import { persistRecordedNotice } from "./recorded-notices";
+import { persistRecordedNotice, readRecordedNotices } from "./recorded-notices";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import { assertContentFreeProperties } from "@repo/validation";
 import { chatMessagesKey, type ChannelCache } from "./types";
@@ -914,5 +915,44 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
     expect(row?._status).toBe("recorded");
     expect(row?._replay).toBeUndefined();
     expect(row?._error).toMatch(/don't run this command again/i);
+  });
+});
+
+describe("markLocalRecorded (#1789)", () => {
+  function memoryStore(): KeyValueStore {
+    const map = new Map<string, string>();
+    return {
+      get: (key) => map.get(key) ?? null,
+      set: (key, value) => {
+        map.set(key, value);
+      },
+      remove: (key) => {
+        map.delete(key);
+      },
+    };
+  }
+
+  it("upserts and persists when the placeholder was clobbered", () => {
+    const kv = memoryStore();
+    const ctx = buildCtx({ kv });
+    markLocalRecorded(ctx, {
+      channelId: "chan-1",
+      clientMessageId: "cm-1",
+      note: "Points recorded — the chat card didn't post. Don't run this command again.",
+      content: "Granting 5 points…",
+    });
+    const cache = ctx.queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    const row = cache?.byId["cm-1"];
+    expect(row?._status).toBe("recorded");
+    expect(row?._replay).toBeUndefined();
+    expect(row?.content).toBe("Granting 5 points…");
+    expect(readRecordedNotices("chan-1", kv)).toEqual([
+      expect.objectContaining({
+        clientMessageId: "cm-1",
+        content: "Granting 5 points…",
+      }),
+    ]);
   });
 });

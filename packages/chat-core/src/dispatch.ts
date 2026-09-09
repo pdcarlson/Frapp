@@ -253,13 +253,15 @@ async function dispatchPoints(
     },
   };
 
+  const placeholderContent = `${parsed.value.action === "grant" ? "Granting" : "Deducting"} ${parsed.value.amount} points…`;
+
   insertLocalPlaceholder(ctx, {
     channelId,
     clientMessageId,
-    content: `${parsed.value.action === "grant" ? "Granting" : "Deducting"} ${parsed.value.amount} points…`,
+    content: placeholderContent,
   });
 
-  return submitPointsAdjustment(ctx, replay, false);
+  return submitPointsAdjustment(ctx, replay, false, placeholderContent);
 }
 
 /**
@@ -328,6 +330,7 @@ async function submitPointsAdjustment(
   ctx: ChatActionContext,
   replay: ReplayRequest,
   isReplay: boolean,
+  placeholderContent?: string,
 ): Promise<DispatchResult> {
   const { channelId, clientMessageId } = replay;
 
@@ -409,6 +412,7 @@ async function submitPointsAdjustment(
       channelId,
       clientMessageId,
       note: POINTS_RECORDED_ROW_NOTE,
+      content: placeholderContent,
     });
     return { ok: true, warning: CARD_LOST_WARNING };
   }
@@ -618,10 +622,12 @@ async function dispatchTask(
 
   const clientMessageId = randomClientId();
 
+  const placeholderContent = `Creating task "${parsed.value.title}"…`;
+
   insertLocalPlaceholder(ctx, {
     channelId,
     clientMessageId,
-    content: `Creating task "${parsed.value.title}"…`,
+    content: placeholderContent,
   });
 
   try {
@@ -657,6 +663,7 @@ async function dispatchTask(
         channelId,
         clientMessageId,
         note: TASK_RECORDED_ROW_NOTE,
+        content: placeholderContent,
       });
       return { ok: true, warning: TASK_CARD_LOST_WARNING };
     }
@@ -729,10 +736,12 @@ async function dispatchEvent(
 
   const clientMessageId = randomClientId();
 
+  const placeholderContent = `Creating event "${parsed.value.name}"…`;
+
   insertLocalPlaceholder(ctx, {
     channelId,
     clientMessageId,
-    content: `Creating event "${parsed.value.name}"…`,
+    content: placeholderContent,
   });
 
   try {
@@ -771,6 +780,7 @@ async function dispatchEvent(
         channelId,
         clientMessageId,
         note: EVENT_RECORDED_ROW_NOTE,
+        content: placeholderContent,
       });
       return { ok: true, warning: EVENT_CARD_LOST_WARNING };
     }
