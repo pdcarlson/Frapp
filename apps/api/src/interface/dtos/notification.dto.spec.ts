@@ -1,8 +1,13 @@
 import 'reflect-metadata';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { isSupportedTimeZone } from '@repo/validation';
-import { UpdateUserSettingsDto } from './notification.dto';
+import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
+import {
+  ListNotificationPreferencesQueryDto,
+  UpdateUserSettingsDto,
+} from './notification.dto';
 
 /** Validate a plain payload through the DTO and return the failing property names. */
 async function failingProps(
@@ -107,6 +112,43 @@ describe('UpdateUserSettingsDto — quiet_hours_tz zone validation (#687)', () =
   it('rejects an over-long value', async () => {
     expect(await failingProps({ quiet_hours_tz: 'A'.repeat(101) })).toContain(
       'quiet_hours_tz',
+    );
+  });
+});
+
+describe('ListNotificationPreferencesQueryDto', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+
+  async function transform(
+    query: Record<string, unknown>,
+  ): Promise<ListNotificationPreferencesQueryDto> {
+    return pipe.transform(query, {
+      type: 'query',
+      metatype: ListNotificationPreferencesQueryDto,
+    });
+  }
+
+  const VALID_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  it('accepts a UUID chapterId', async () => {
+    await expect(transform({ chapterId: VALID_UUID })).resolves.toEqual({
+      chapterId: VALID_UUID,
+    });
+  });
+
+  it('rejects a missing chapterId', async () => {
+    await expect(transform({})).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects an empty chapterId', async () => {
+    await expect(transform({ chapterId: '' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a non-UUID chapterId', async () => {
+    await expect(transform({ chapterId: 'not-a-uuid' })).rejects.toBeInstanceOf(
+      BadRequestException,
     );
   });
 });
