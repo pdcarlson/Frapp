@@ -18,6 +18,15 @@ const updateStatus = vi.fn();
 const confirmTask = vi.fn();
 const rejectTask = vi.fn();
 
+const { mockOffline } = vi.hoisted(() => ({
+  mockOffline: { value: false },
+}));
+
+vi.mock("@/lib/providers/network-provider", async () => {
+  const { networkMock } = await import("@/tests/network");
+  return networkMock(mockOffline);
+});
+
 vi.mock("@repo/hooks", () => ({
   useTask: (id: string) => mockUseTask(id),
   useUpdateTaskStatus: () => ({ mutate: updateStatus, isPending: false }),
@@ -83,6 +92,7 @@ const chapter = chapterSubscription(mockCurrentChapter);
 describe("TaskCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOffline.value = false;
     canManage = false;
     mockUseTask.mockReturnValue({ data: undefined });
     chapter.active();
@@ -289,6 +299,7 @@ describe("TaskCard subscription gating", () => {
   // the gate — the route does (#841).
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOffline.value = false;
     canManage = false;
     mockUseTask.mockReturnValue({ data: undefined });
   });
@@ -345,6 +356,33 @@ describe("TaskCard subscription gating", () => {
       <TaskCard message={makeMessage()} viewerId="someone-else" isConfirmed />,
     );
 
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("disables card actions while OFFLINE without a per-card notice", () => {
+    // Finding 4: the buttons are queueless POSTs so they disable, but the
+    // transcript must not sprout one SubscriptionNotice per message. The
+    // composer is the outbox carve-out and is not this card.
+    chapter.active();
+    mockOffline.value = true;
+    render(
+      <>
+        <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />
+        <TaskCard
+          message={{ ...makeMessage(), id: "msg-2" }}
+          viewerId={ASSIGNEE}
+          isConfirmed
+        />
+      </>,
+    );
+
+    const starts = screen.getAllByRole("button", { name: /start/i });
+    expect(starts).toHaveLength(2);
+    for (const start of starts) {
+      expect(start).toBeDisabled();
+      expect(start).toHaveAttribute("title", "Reconnect to make changes.");
+      expect(start).not.toHaveAttribute("aria-describedby");
+    }
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
