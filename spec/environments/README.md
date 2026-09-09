@@ -165,7 +165,7 @@ docs gates, so the roster now stays true only because whoever edits the arrays r
 runbook in the same change. Where they disagree, `required-checks.mjs` is the source and the runbook
 is the stale one. What follows is the CI *model* those checks implement.
 
-`web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
+`web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/adr/adr-15.md`](../architecture/adr/adr-15.md) and the comments in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
 
 The runbook's roster states the *intended* set — every entry in it is a line in `CI_CHECKS` /
 `DOCS_CHECKS` / `DRIFT_CHECKS` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs),
@@ -259,7 +259,7 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 > **#1578** (2026-09-04) built the replacement deploys — `vercel build` on the runner, then
 > `vercel deploy --prebuilt`, for both staging and production. Render **staging** (the
 > `deploy-api.yml` push path) and EAS were unaffected throughout. **ADR-21** in
-> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the freeze points and the repairs.
 
 Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-api.yml` runs database migrations and triggers the Render staging deploy, and `deploy-vercel-staging.yml` builds and uploads web and landing. Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
@@ -287,7 +287,7 @@ secrets.
 
 > **Current state (2026-09-04) — both projects are unlinked from Git** (Vercel reports
 > `link: null` for both) and **all deploys come from CI**. **ADR-21** in
-> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the per-project freeze points and the repairs; **#1579** (2026-09-02) fixed the guardrails half
 > and **#1578** (2026-09-04) built the deploys described below.
 

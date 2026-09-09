@@ -205,7 +205,7 @@ never reads or writes the live `.cache/diff-review/` marker.
 
 ## Rationale & history
 
-See **ADR-14** and its **2026-06-04 amendment** in [`spec/architecture/README.md`](../../../spec/architecture/README.md)
+See **ADR-14** and its **2026-06-04 amendment** in [`spec/architecture/adr/adr-14.md`](../../../spec/architecture/adr/adr-14.md)
 for why the CI reviewer (CodeRabbit → self-hosted Claude Action → removed) was retired in favor of this
 local gate. **Correction (2026-09-08):** CodeRabbit comments on ready PRs again (public-repo OSS
 tier). That is advisory only — [`.coderabbit.yaml`](../../../.coderabbit.yaml) sets

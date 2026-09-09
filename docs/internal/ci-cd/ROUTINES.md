@@ -6,8 +6,8 @@ Canonical, version-controlled spec for Frapp's scheduled backlog agents.
 (<https://cursor.com/docs/cloud-agent/automations>). Paste-ready specs are in
 [Cursor Automation specs](#cursor-automation-specs-paste-ready-not-live) below.
 They are **not live** until a human creates them in the dashboard (#2024) and a
-run is observed (#2027). This session cannot create or enable Automations (Cursor
-Cloud MCP `get-automation` is read-only).
+run is observed (#2027). This session cannot create or enable Automations (the
+Cursor Automations MCP is read-only).
 
 **Current observed runtime is still Claude Code Routines** (claude.ai/code → the
 Frapp environment → **Routines**) until that observe. Routines are configured in
@@ -16,7 +16,7 @@ copy into either UI. Keep it in sync in both directions: editing a prompt block
 here changes nothing that runs until a human re-pastes it, so a prompt change
 lands as a `[human]` issue, never as a note parked in this file (open one:
 #1685 is the pattern). History:
-ADR-16 amendments 4–8 in [`spec/architecture/README.md`](../../../spec/architecture/README.md);
+ADR-16 amendments 4–8 in [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md);
 Linear-to-GitHub migration: #680.
 
 There are **five** scheduled agents — three daily, two weekly. Three write to **GitHub Issues** on

@@ -13,7 +13,7 @@ feature/xyz ──PR──▶ main (staging) ──manual dispatch──▶ prod
 
 | Branch      | Purpose                    | Deployment                                                     |
 | ----------- | -------------------------- | -------------------------------------------------------------- |
-| `main`      | Integration + staging      | Every merge deploys to **Render staging**. The **Vercel half ended 2026-09-02** — `frapp-landing` unlinked from Git 2026-09-01, `frapp-web` 2026-09-02, so no merge deploys web or landing and both hosts serve frozen builds (ADR-21 in [`spec/architecture/README.md`](spec/architecture/README.md)) |
+| `main`      | Integration + staging      | Every merge deploys to **Render staging**. The **Vercel half ended 2026-09-02** — `frapp-landing` unlinked from Git 2026-09-01, `frapp-web` 2026-09-02, so no merge deploys web or landing and both hosts serve frozen builds (ADR-21 in [`spec/architecture/adr/adr-21.md`](spec/architecture/adr/adr-21.md)) |
 | `feature/*` | Short-lived feature work   | No automatic Vercel deploys; merged into `main`                 |
 | `hotfix/*`  | Emergency production fixes | Branch from `main`, PR to `main`, then deploy that commit       |
 
@@ -72,7 +72,7 @@ else.
 
 ### Vercel deployment policy
 
-**Not live since 2026-09-02 — no push deploys either Vercel app.** Both projects are unlinked from Git (`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so `git.deploymentEnabled` governs nothing today and staging web and landing serve frozen builds. **ADR-21** in [`spec/architecture/README.md`](spec/architecture/README.md) is the canonical record; the CI-driven replacement is designed, not built ([#1578](https://github.com/pdcarlson/Frapp/issues/1578)). The rest of this section describes the settings as they remain committed.
+**Not live since 2026-09-02 — no push deploys either Vercel app.** Both projects are unlinked from Git (`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so `git.deploymentEnabled` governs nothing today and staging web and landing serve frozen builds. **ADR-21** in [`spec/architecture/adr/adr-21.md`](spec/architecture/adr/adr-21.md) is the canonical record; the CI-driven replacement is built ([#1578](https://github.com/pdcarlson/Frapp/issues/1578)). The rest of this section describes the settings as they remain committed.
 
 Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled` in each app's `vercel.json`. The catch-all disable rule uses `"**": false` so feature branch names containing `/` are matched correctly and skipped. **Keep both `git.deploymentEnabled` and the `ignoreCommand: "exit 1"` pin — do not delete them as dead config:** they are the versioned form of settings that revert to unversioned dashboard state if Git is ever re-linked. Production deployments are not branch-driven at all: `deploy-production.yml` creates them through the Vercel API with `target: production` for a named commit.
 
