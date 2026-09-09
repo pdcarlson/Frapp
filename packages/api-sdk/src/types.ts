@@ -5229,6 +5229,7 @@ export interface operations {
     NotificationController_getPreferences_v1: {
         parameters: {
             query: {
+                /** @description Chapter to read preferences for */
                 chapterId: string;
             };
             header?: never;
@@ -5650,8 +5651,9 @@ export interface operations {
     ChatController_getMessages_v1: {
         parameters: {
             query?: {
+                /** @description Max messages to return. Integers outside 1–200 are rejected; omitted defaults to 50 after clamp. */
                 limit?: number;
-                /** @description Cursor for pagination (ISO timestamp) */
+                /** @description Cursor — return messages created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received. */
                 before?: string;
                 /** @description Message UUID — returns messages created after this message (reconnect replay) */
                 since?: string;
@@ -6453,6 +6455,7 @@ export interface operations {
     FinancialInvoiceController_list_v1: {
         parameters: {
             query?: {
+                /** @description Restrict the list to one member. Billing officers may pass any member; everyone else may only pass themselves. */
                 user_id?: string;
             };
             header?: never;
