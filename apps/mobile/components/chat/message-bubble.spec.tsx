@@ -355,3 +355,90 @@ describe("reply quote (#1727)", () => {
   });
 });
 
+describe("self-bubble delivery status (#1910)", () => {
+  const DESTRUCTIVE = "#F85149";
+
+  it("renders an unconfirmed row as a muted note, not as delivered", () => {
+    const flat = JSON.stringify(
+      renderBubble(
+        message({
+          sender_id: VIEWER,
+          _status: "unconfirmed",
+          _error:
+            "Not confirmed — these points may or may not have been recorded.",
+        }),
+      ).toJSON(),
+    );
+
+    expect(flat).toContain("Not confirmed — these points may or may not have been recorded.");
+    expect(flat).not.toContain("Send failed");
+    expect(flat).not.toContain("Discard this message");
+    expect(flat).not.toContain("Retry sending this message");
+    // Delivered rows offer the first-reaction chip; a placeholder must not.
+    expect(flat).not.toContain("👍 +");
+    // Not a known failure — red is what makes an officer re-type the command.
+    expect(flat).not.toContain(DESTRUCTIVE);
+  });
+
+  it("never offers discard on an unconfirmed row even when a handler is wired", () => {
+    // renderBubble always wires onDiscard. The control must not appear.
+    const flat = JSON.stringify(
+      renderBubble(
+        message({ sender_id: VIEWER, _status: "unconfirmed" }),
+      ).toJSON(),
+    );
+    expect(flat).toContain("Not confirmed");
+    expect(flat).not.toContain("Discard");
+  });
+
+  it("renders a recorded row as a muted don't-run-again note, with no retry", () => {
+    const flat = JSON.stringify(
+      renderBubble(
+        message({
+          sender_id: VIEWER,
+          _status: "recorded",
+          _error:
+            "Points recorded — the chat card didn't post. Don't run this command again.",
+        }),
+      ).toJSON(),
+    );
+
+    expect(flat).toContain("Don't run this command again.");
+    expect(flat).not.toContain("Discard this message");
+    expect(flat).not.toContain("Retry sending this message");
+    expect(flat).not.toContain(DESTRUCTIVE);
+  });
+
+  it("keeps failed rows red with retry and discard", () => {
+    const flat = JSON.stringify(
+      renderBubble(
+        message({ sender_id: VIEWER, _status: "failed" }),
+      ).toJSON(),
+    );
+
+    expect(flat).toContain("Send failed");
+    expect(flat).toContain("Retry sending this message");
+    expect(flat).toContain("Discard this message");
+    expect(flat).toContain(DESTRUCTIVE);
+  });
+
+  it("keeps a confirmed self bubble on the time-only meta line", () => {
+    const flat = JSON.stringify(
+      renderBubble(message({ sender_id: VIEWER, _status: "confirmed" })).toJSON(),
+    );
+
+    expect(flat).not.toContain("Not confirmed");
+    expect(flat).not.toContain("Send failed");
+    expect(flat).not.toContain("sending");
+    expect(flat).toContain("👍 +");
+  });
+
+  it("still shows sending on a pending self bubble", () => {
+    const flat = JSON.stringify(
+      renderBubble(message({ sender_id: VIEWER, _status: "pending" })).toJSON(),
+    );
+    expect(flat).toContain("sending");
+    expect(flat).not.toContain("Discard this message");
+  });
+});
+
