@@ -104,7 +104,7 @@ The tables below are the canonical strings for high-frequency state messages, so
 
 **The closing clause was removed in #1707 and MUST NOT be re-added to the global banner.** The rule it replaces read: *"The offline string MUST keep its closing clause — a member who edited or posted while offline needs to be told the work is queued, not lost."* The intent was right and the placement was wrong. Only the chat composer has an outbox, so "changes will sync" was true on exactly one surface and false on every other route this global banner renders on — dashboard writes are queueless and now reject rather than pausing. Promising a queue that does not exist is the §1 principle 1 violation ("actions must never appear to succeed when they haven't") that the clause was meant to prevent.
 
-**The promise moves to the control that can keep it**, which is where a member acting on it is looking: the composer renders `You're offline — messages send when you reconnect.` and the chat header pill `Offline — messages will send when you reconnect`. Queue-backed surfaces MUST still say so at the control. [resilience.md](../resilience.md) carries the connection-state indicator strings alongside the detection thresholds and banner behavior; where the two differ, the wording above is approved.
+**The promise moves to the control that can keep it**, which is where a member acting on it is looking: the composer renders `You're offline — messages send when you reconnect.` and the chat header pill `Offline — messages will send when you reconnect`. Queue-backed surfaces MUST still say so at the control. [resilience](../resilience/README.md) carries the connection-state indicator strings alongside the detection thresholds and banner behavior; where the two differ, the wording above is approved.
 
 ### Permission check offline (global)
 
@@ -360,7 +360,7 @@ promise worth making is that other people will see it.
 
 The composer's offline line is a **label, not a warning**: the send path queues
 before it touches the network, so the composer stays usable and says what will
-happen. Never reword it into an error — [resilience.md](../resilience.md) §2 owns
+happen. Never reword it into an error — [resilience/connection-state.md](../resilience/connection-state.md) owns
 that rule and the string is shared with mobile.
 
 Channel seeding happens at chapter onboarding and has no billing prerequisite; [onboarding.md](../../behavior/onboarding.md) owns the seeding flow.
@@ -498,4 +498,4 @@ Use these exact labels for operational state pills:
 - `Retry needed`
 - `Cached`
 
-Never replace these with alternate synonyms on one surface only. Message-level delivery indicators (sending / sent / failed) are specified in [resilience.md](../resilience.md).
+Never replace these with alternate synonyms on one surface only. Message-level delivery indicators (sending / sent / failed) are specified in [resilience](../resilience/README.md).

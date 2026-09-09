@@ -4,12 +4,12 @@ description: >
   Rules for chat realtime, connection state, topic teardown, and message delivery — the invariants
   that prevent the same disconnect/reopen bug from being "fixed" twice. Use when touching
   packages/chat-core, realtime subscriptions, offline/outbox behavior, network banners,
-  useRealtimeTable, or spec/ui/resilience.md.
+  useRealtimeTable, or spec/ui/resilience/.
 ---
 
 # Realtime resilience
 
-> Substance lives in [`spec/ui/resilience.md`](../../../spec/ui/resilience.md). This skill is the
+> Substance lives in [`spec/ui/resilience/`](../../../spec/ui/resilience/README.md). This skill is the
 > short list of rules that, if skipped, reproduce a bug already paid for. Read the spec section
 > named in each rule before changing the code.
 
@@ -64,7 +64,7 @@ React Native defines `navigator` but never sets `onLine`, so `!navigator.onLine`
 false. Mobile uses `expo-network` for the **link** half (`isConnected === false`). Do not port the
 web clause literally.
 
-## 5. Polling fallback is §3.2, not the reconnect-budget sketch
+## 5. Polling fallback is Receiving messages, not the reconnect-budget sketch
 
 Degrade when a channel is non-live for **>10s** (not an exhausted reconnect-attempt budget).
 Copy: *"Real-time updates paused. Polling for new messages."* On reconnect: fetch after the last
@@ -83,7 +83,7 @@ so; queueless writes disable and say why.
 ## 7. One `deriveConnectionState` — do not fork a third
 
 `@repo/validation` owns `deriveConnectionState` and `healthProbeIsReachable`
-(`spec/ui/resilience.md` § 2). Web's `NetworkProvider` and mobile's
+(`spec/ui/resilience/connection-state.md`). Web's `NetworkProvider` and mobile's
 `lib/connection` feed that function; they do not each keep a copy. Three
 consecutive `/health` failures are `OFFLINE` on both surfaces. A 429 is
 reachability, not a failure. Presence gates on the *link*, not on
@@ -94,7 +94,7 @@ the shared function and the spec together.
 
 ## Before you change realtime or connection code
 
-1. Read the spec section this change touches (`resilience.md` §2, §3.2, or §6).
+1. Read the spec leaf this change touches (`connection-state.md`, `message-delivery.md`, or `realtime-connection.md`).
 2. Grep for every attach/subscribe on that topic — chat-core, web realtime, mobile connection.
 3. Confirm teardown is complete before re-attach (rule 1).
 4. Confirm the outbox still reads the monitor (OFFLINE queues, DEGRADED sends)

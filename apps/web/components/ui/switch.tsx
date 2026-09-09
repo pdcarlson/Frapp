@@ -46,8 +46,8 @@ const Switch = React.forwardRef<
       "disabled:cursor-not-allowed disabled:border-border disabled:bg-card",
       /*
        * Soft-disabled: `aria-disabled` without the attribute, for a control
-       * that is refused rather than inert (`spec/ui/resilience.md` § UI
-       * Indicators). Deliberately NOT the `disabled:` rules above — those
+       * that is refused rather than inert (`spec/ui/resilience/connection-state.md`
+       * UI Indicators). Deliberately NOT the `disabled:` rules above — those
        * repaint the track and, via `group-data-[disabled]`, the thumb, which
        * erases the on/off state this control's whole appearance carries.
        *

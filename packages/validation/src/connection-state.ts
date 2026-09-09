@@ -1,5 +1,5 @@
 /**
- * The connection state machine from `spec/ui/resilience.md` § 2, as pure
+ * The connection state machine from `spec/ui/resilience/connection-state.md`, as pure
  * functions.
  *
  * Shared by web (`NetworkProvider`) and mobile (`lib/connection`) so the two
@@ -27,12 +27,12 @@
  *
  * ## What this does not model
  *
- * DEGRADED's "slow (>5s)" half in § 2 is unbuilt on both surfaces. Consecutive
+ * DEGRADED's "slow (>5s)" half in Detection Logic is unbuilt on both surfaces. Consecutive
  * probe failures are the only DEGRADED input. Do not "fix" that here by
  * inventing a duration signal the apps do not collect.
  */
 
-/** `spec/ui/resilience.md` § 2. The names are the spec's, uppercase and all. */
+/** `spec/ui/resilience/connection-state.md`. The names are the spec's, uppercase and all. */
 export type ConnectionState = "ONLINE" | "DEGRADED" | "OFFLINE";
 
 /**

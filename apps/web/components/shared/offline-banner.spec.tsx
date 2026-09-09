@@ -66,10 +66,10 @@ describe("OfflineBanner", () => {
     expect(banner).toBeInTheDocument();
     expect(banner).toHaveAttribute("id", "frapp-offline-banner");
     expect(banner).toHaveAttribute("tabindex", "-1");
-    // `spec/ui/resilience.md` § 2's OFFLINE banner cell, verbatim, and what
+    // `spec/ui/resilience/connection-state.md`'s OFFLINE banner cell, verbatim, and what
     // mobile ships. The trailing "Changes will sync when you reconnect." was
     // dropped in #1707: queueless writes now reject rather than pausing, so
-    // page chrome promising a sync on every route contradicts § 1 principle 1,
+    // page chrome promising a sync on every route contradicts principles.md,
     // "actions must never appear to succeed when they haven't". Only the chat
     // composer has an outbox, and it states that at the control itself.
     expect(banner).toHaveTextContent("You're offline. Showing cached data.");

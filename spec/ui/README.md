@@ -35,7 +35,7 @@ not by the Governs column here. No CI check asserts this table is complete or it
 | [`landing/`](landing/README.md) | Marketing site | **Frozen** (pre-Signet) |
 | [`brand-identity.md`](brand-identity.md) | Signet identity: name, tagline, mark/logo rules, house gold | Active |
 | [`assets.md`](assets.md) | Logos, icons, asset sync | Active |
-| [`resilience.md`](resilience.md) | Network resilience, loading/empty/error delivery guarantees, message delivery | Active |
+| [`resilience/`](resilience/README.md) | Network resilience, loading/empty/error delivery guarantees, message delivery | Active |
 
 ### Frozen surfaces
 

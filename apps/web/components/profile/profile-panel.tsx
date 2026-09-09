@@ -758,7 +758,7 @@ export function ProfilePanel() {
                       id={switchId}
                       checked={categories[category.key]}
                       // The offline reason belongs on the control, not only in
-                      // the paragraph after the last row — `resilience.md`'s
+                      // the paragraph after the last row — `spec/ui/resilience/connection-state.md`'s
                       // queueless rule is explicit that it wires to the control
                       // itself. Without this a screen-reader member offline
                       // hears "Points, switch, on, unavailable" and nothing
