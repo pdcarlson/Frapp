@@ -363,6 +363,28 @@ test("whenUnset skip leaves empty smtp_host as SKIPPED without leaking smtp_pass
   assert.equal(result.status, SKIPPED);
   assert.match(result.detail, /2\/hour cap/);
   assert.match(result.detail, /no-reply@mail\.frapp\.live/);
+  assert.match(result.detail, /smtp_sender_name=Signet/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
+});
+
+test("whenUnset skip still skips when the leftover Frapp sender is present", async () => {
+  const result = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    whenUnset: "skip",
+    expectedAdminEmail: "no-reply@mail.frapp.live",
+    fetchImpl: async () =>
+      smtpConfig({
+        smtp_host: "",
+        smtp_admin_email: "",
+        smtp_sender_name: "Frapp",
+        rate_limit_email_sent: 2,
+      }),
+  });
+  assert.equal(result.status, SKIPPED);
+  assert.match(result.detail, /2\/hour cap/);
+  assert.match(result.detail, /smtp_sender_name=Signet/);
+  assert.doesNotMatch(result.detail, /smtp_sender_name is "Frapp"/);
   assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
 });
 

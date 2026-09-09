@@ -170,6 +170,7 @@ describe("default assertions", () => {
     assert.equal(smtp.status, SKIPPED);
     assert.match(smtp.detail, /2\/hour cap/);
     assert.match(smtp.detail, /no-reply@mail\.frapp\.live/);
+    assert.match(smtp.detail, /smtp_sender_name=Signet/);
     assert.doesNotMatch(smtp.detail, /must-never-appear-in-detail/);
     const magic = results.find((r) => r.id === "auth-magic-link");
     assert.equal(magic.status, SKIPPED);

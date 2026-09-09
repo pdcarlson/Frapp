@@ -519,7 +519,7 @@ export async function checkAuthSmtp({
         "auth-smtp",
         label,
         SKIPPED,
-        `smtp_host is empty (hosted 2/hour cap). Skip until SMTP is on. Once on, this check fails unless smtp_admin_email=${expectedFrom}. See #1824.`,
+        `smtp_host is empty (hosted 2/hour cap). Skip until SMTP is on. Once on, this check fails unless smtp_sender_name=${AUTH_SMTP_SENDER_NAME} and smtp_admin_email=${expectedFrom}. See #1824.`,
       );
     }
     return result(
