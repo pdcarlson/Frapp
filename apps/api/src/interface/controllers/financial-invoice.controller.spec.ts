@@ -77,7 +77,9 @@ describe('FinancialInvoiceController', () => {
       rbacService.memberHasAnyPermission.mockResolvedValue(true);
       service.findByUser.mockResolvedValue(mockResult as any);
 
-      const result = await controller.list(chapterId, userId, filterUserId);
+      const result = await controller.list(chapterId, userId, {
+        user_id: filterUserId,
+      });
 
       expect(service.findByUser).toHaveBeenCalledWith(filterUserId, chapterId);
       expect(result).toBe(mockResult);
@@ -90,7 +92,7 @@ describe('FinancialInvoiceController', () => {
       rbacService.memberHasAnyPermission.mockResolvedValue(false);
       service.findByUser.mockResolvedValue(mockResult as any);
 
-      const result = await controller.list(chapterId, userId);
+      const result = await controller.list(chapterId, userId, {});
 
       expect(service.findByUser).toHaveBeenCalledWith(userId, chapterId);
       expect(result).toBe(mockResult);
@@ -103,7 +105,7 @@ describe('FinancialInvoiceController', () => {
       rbacService.memberHasAnyPermission.mockResolvedValue(true);
       service.findByChapter.mockResolvedValue(mockResult as any);
 
-      const result = await controller.list(chapterId, userId);
+      const result = await controller.list(chapterId, userId, {});
 
       expect(service.findByChapter).toHaveBeenCalledWith(chapterId);
       expect(result).toBe(mockResult);
@@ -116,7 +118,9 @@ describe('FinancialInvoiceController', () => {
       rbacService.memberHasAnyPermission.mockClear();
       service.findByUser.mockResolvedValue(mockResult as any);
 
-      const result = await controller.list(chapterId, userId, userId);
+      const result = await controller.list(chapterId, userId, {
+        user_id: userId,
+      });
 
       expect(rbacService.memberHasAnyPermission).not.toHaveBeenCalled();
       expect(service.findByUser).toHaveBeenCalledWith(userId, chapterId);

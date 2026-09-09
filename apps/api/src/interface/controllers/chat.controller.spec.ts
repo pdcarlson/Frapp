@@ -24,6 +24,7 @@ describe('ChatController', () => {
       getChannels: jest.fn(),
       getChannel: jest.fn(),
       createChannel: jest.fn(),
+      getMessages: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -155,6 +156,32 @@ describe('ChatController', () => {
         name: 'Renamed',
       });
       expect(service.deleteCategory).toHaveBeenCalledWith('cat-1', 'ch-1');
+    });
+  });
+
+  describe('getMessages', () => {
+    it('forwards limit, before, and since from the query DTO', async () => {
+      const messages = [{ id: 'm1' }];
+      service.getMessages!.mockResolvedValue(messages);
+
+      await expect(
+        controller.getMessages('chan-1', 'ch-1', 'user-1', {
+          limit: 25,
+          before: '2026-04-01T12:00:00.000Z',
+          since: '44444444-4444-4444-8444-444444444444',
+        }),
+      ).resolves.toEqual(messages);
+
+      expect(service.getMessages).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'user-1',
+        {
+          limit: 25,
+          before: '2026-04-01T12:00:00.000Z',
+          since: '44444444-4444-4444-8444-444444444444',
+        },
+      );
     });
   });
 });
