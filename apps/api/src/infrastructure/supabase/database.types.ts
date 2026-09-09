@@ -356,6 +356,18 @@ export interface Database {
         };
         Returns: SemesterArchive;
       };
+      /**
+       * `20260909050000` — `returns setof chapters`. Empty when the event is
+       * older than `last_stripe_webhook_at` (lost CAS / stale).
+       */
+      apply_subscription_webhook: {
+        Args: {
+          p_chapter_id: string;
+          p_event_at: string;
+          p_patch: Record<string, string | null | undefined>;
+        };
+        Returns: Chapter[];
+      };
       /** `20260803120000` — `returns setof financial_invoices`. */
       apply_invoice_payment: {
         Args: {

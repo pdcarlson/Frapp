@@ -473,6 +473,31 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-09: Atomic Stripe subscription webhook application (#731)
+
+One additive migration. Adds `apply_subscription_webhook(uuid, timestamptz, jsonb)`
+— a compare-and-set on `chapters.last_stripe_webhook_at` so concurrent Stripe
+deliveries cannot regress subscription status. Safe to apply ahead of the API:
+nothing calls the function until the billing webhook handlers ship. Hosted
+projects are not applied from a cloud-agent session.
+
+### 20260909050000_apply_subscription_webhook_rpc.sql
+* **Purpose**: Folds FRA-242's in-memory stale check and the chapter status
+  `UPDATE` into one statement, matching `apply_invoice_payment` /
+  `confirm_task_completion`. Absent jsonb keys are left untouched; a JSON
+  `null` clears a nullable column (`past_due_since`). Same-second events
+  (`last_stripe_webhook_at = p_event_at`) are allowed through, matching
+  FRA-242: Stripe `event.created` is whole seconds. `EXECUTE` is revoked from
+  PUBLIC / anon / authenticated and granted to `service_role` only.
+* **Checks**: After `db push`,
+  `select proname from pg_proc where proname = 'apply_subscription_webhook'`
+  returns 1 row, and
+  `select has_function_privilege('anon', 'apply_subscription_webhook(uuid, timestamptz, jsonb)', 'EXECUTE')`
+  is `false`. A black-box CAS (older then newer / newer then older against two
+  chapters) is asserted by `scripts/check-pglite-migrations.mjs`.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the Stripe subscription webhook CAS.
+
 ## 2026-09-09: Points ledger origin channel (#1734)
 
 One additive migration. Adds a nullable FK column and a check constraint to an

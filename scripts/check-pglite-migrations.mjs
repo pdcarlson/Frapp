@@ -520,6 +520,13 @@ const LANDMARKS = [
     },
   },
   {
+    name: "apply_subscription_webhook RPC present, security invoker (#731)",
+    sql: `select prosecdef from pg_proc p
+            join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'apply_subscription_webhook'`,
+    ok: (rows) => rows.length === 1 && rows[0].prosecdef === false,
+  },
+  {
     name: "anonymize_user RPC present, security invoker (FRA-40)",
     sql: `select prosecdef from pg_proc p
             join pg_namespace n on n.oid = p.pronamespace
@@ -2452,6 +2459,97 @@ try {
   missing += 1;
   console.log(
     `MISS  get_points_leaderboard bounds + scoping\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+  );
+}
+
+// ─── `apply_subscription_webhook` CAS (#731) ────────────────────────────────
+//
+// `CREATE FUNCTION` on a plpgsql body is a syntax check only. The unit suite
+// mocks the repository, so a flipped `<=` to `<` (or dropping the mark stamp)
+// stays green. This section inserts two chapters and applies older-then-newer
+// vs newer-then-older; the newer status must win both commit orders.
+console.log("\n=== apply_subscription_webhook CAS (#731) ===");
+try {
+  const CH_OLD_FIRST = "cccccccc-0000-4000-8000-000000000001";
+  const CH_NEW_FIRST = "cccccccc-0000-4000-8000-000000000002";
+  const T_OLD = "2026-06-01T12:00:00Z";
+  const T_NEW = "2026-06-02T12:00:00Z";
+
+  await db.exec(`
+    insert into public.chapters (id, name, university, subscription_status) values
+      ('${CH_OLD_FIRST}', 'CAS old-first', 'U', 'active'),
+      ('${CH_NEW_FIRST}', 'CAS new-first', 'U', 'active');
+  `);
+
+  const apply = async (chapter, eventAt, status) => {
+    const r = await db.query(
+      `select subscription_status, last_stripe_webhook_at
+         from apply_subscription_webhook($1::uuid, $2::timestamptz, $3::jsonb)`,
+      [chapter, eventAt, JSON.stringify({ subscription_status: status })],
+    );
+    return r.rows;
+  };
+
+  const row = async (chapter) => {
+    const r = await db.query(
+      `select subscription_status, last_stripe_webhook_at::text as last_stripe_webhook_at
+         from public.chapters where id = $1::uuid`,
+      [chapter],
+    );
+    return r.rows[0];
+  };
+
+  const oldFirstOlder = await apply(CH_OLD_FIRST, T_OLD, "past_due");
+  const oldFirstNewer = await apply(CH_OLD_FIRST, T_NEW, "canceled");
+  const newFirstNewer = await apply(CH_NEW_FIRST, T_NEW, "canceled");
+  const newFirstOlder = await apply(CH_NEW_FIRST, T_OLD, "past_due");
+
+  const afterOldFirst = await row(CH_OLD_FIRST);
+  const afterNewFirst = await row(CH_NEW_FIRST);
+
+  const checks = [
+    [
+      oldFirstOlder.length === 1 && oldFirstOlder[0].subscription_status === "past_due",
+      `old-first: older event applies (got ${oldFirstOlder.length} row(s))`,
+    ],
+    [
+      oldFirstNewer.length === 1 && oldFirstNewer[0].subscription_status === "canceled",
+      `old-first: newer event overwrites (got ${oldFirstNewer[0]?.subscription_status})`,
+    ],
+    [
+      afterOldFirst?.subscription_status === "canceled",
+      `old-first: stored status is canceled (got ${afterOldFirst?.subscription_status})`,
+    ],
+    [
+      newFirstNewer.length === 1 && newFirstNewer[0].subscription_status === "canceled",
+      `new-first: newer event applies (got ${newFirstNewer.length} row(s))`,
+    ],
+    [
+      newFirstOlder.length === 0,
+      `new-first: older event loses the CAS (got ${newFirstOlder.length} row(s))`,
+    ],
+    [
+      afterNewFirst?.subscription_status === "canceled",
+      `new-first: stored status stays canceled (got ${afterNewFirst?.subscription_status})`,
+    ],
+  ];
+
+  for (const [ok, name] of checks) {
+    if (ok) {
+      console.log(`OK    ${name}`);
+    } else {
+      missing += 1;
+      console.log(`MISS  ${name}`);
+    }
+  }
+
+  await db.exec(`
+    delete from public.chapters where id in ('${CH_OLD_FIRST}', '${CH_NEW_FIRST}');
+  `);
+} catch (e) {
+  missing += 1;
+  console.log(
+    `MISS  apply_subscription_webhook CAS\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
   );
 }
 
