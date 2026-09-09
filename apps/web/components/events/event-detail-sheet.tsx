@@ -205,7 +205,7 @@ export function EventDetailSheet({
         eventName
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "") || "frapp-event";
+          .replace(/^-+|-+$/g, "") || "signet-event";
       downloadBlob(icsBlob, `${slug}.ics`);
     } catch (error) {
       toast({
