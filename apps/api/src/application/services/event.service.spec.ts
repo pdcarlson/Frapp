@@ -615,7 +615,7 @@ describe('EventService', () => {
       expect(ics).toContain('DTSTART:');
       expect(ics).toContain('DTEND:');
       expect(ics).toContain('VERSION:2.0');
-      expect(ics).toContain('PRODID:-//Frapp//Events//EN');
+      expect(ics).toContain('PRODID:-//Signet//Events//EN');
     });
 
     it('should omit DESCRIPTION and LOCATION when null', async () => {
