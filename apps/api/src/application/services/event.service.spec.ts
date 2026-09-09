@@ -942,7 +942,68 @@ describe('EventService', () => {
 
       const result = await service.create(chatInput);
 
-      expect(result).toEqual(baseEvent);
+      expect(result).toEqual({ ...baseEvent, card_posted: false });
+    });
+
+    // #1717: the client renders an optimistic `loading` placeholder keyed on
+    // `client_message_id` and waits for the Realtime echo of the card to
+    // reconcile it. A failed post means no echo ever arrives, so the caller
+    // has to be told — otherwise the placeholder is permanent and an officer
+    // cannot tell a committed create from a lost one.
+    describe('card_posted (#1717)', () => {
+      it('reports card_posted: true when the card posts', async () => {
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+        mockUserRepo.findByIds.mockResolvedValue([
+          { id: 'user-1', display_name: 'Alice' },
+        ]);
+
+        const result = await service.create(chatInput);
+
+        expect(result).toEqual({ ...baseEvent, card_posted: true });
+      });
+
+      it('reports card_posted: false when the card post throws', async () => {
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+        mockUserRepo.findByIds.mockResolvedValue([
+          { id: 'user-1', display_name: 'Alice' },
+        ]);
+        mockChatService.sendMessage.mockRejectedValue(new Error('chat down'));
+
+        const result = await service.create(chatInput);
+
+        expect(result).toEqual({ ...baseEvent, card_posted: false });
+      });
+
+      it('omits card_posted entirely for a dashboard create', async () => {
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+
+        const result = await service.create({
+          chapter_id: 'ch-1',
+          name: 'Chapter Meeting',
+          start_time: baseEvent.start_time,
+          end_time: baseEvent.end_time,
+        });
+
+        expect(result).toEqual(baseEvent);
+        expect('card_posted' in result).toBe(false);
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('omits card_posted when only one half of the chat context is given', async () => {
+        mockEventRepo.create.mockResolvedValue(baseEvent);
+
+        const result = await service.create({
+          chapter_id: 'ch-1',
+          name: 'Chapter Meeting',
+          start_time: baseEvent.start_time,
+          end_time: baseEvent.end_time,
+          created_by: 'user-1',
+          channel_id: 'chan-1',
+        });
+
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+        expect('card_posted' in result).toBe(false);
+      });
     });
 
     // #1469: the card is broadcast to every reader of the channel, so it would
