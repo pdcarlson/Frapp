@@ -148,14 +148,10 @@ export class ChatNotificationPreferenceRepository {
    * fills with the offending row values (`spec/behavior/observability.md`, and
    * #1669). Logging its `message` is what keeps row data out of plaintext logs.
    *
-   * That exclusion is **not** unconditional in the helper: an object carrying
-   * none of `code`, `message` or `hint` falls through to `describeOpaque`,
-   * which serializes the whole record, `details` included. Harmless here — not
-   * because the client always fills `message` (an empty response body yields
-   * `{ message: '' }`, which reads as absent), but because no producer of that
-   * object emits `details` without `message`, so the opaque branch has no row
-   * values to leak. #1762 tracks closing it in the shared helper rather than
-   * here: it is shared with Sentry reporting and the global exception filter.
+   * The opaque fallback used to reintroduce `details` by serializing the whole
+   * record. #1762 closed that: `describeOpaque` strips the key before it
+   * stringifies, so this call site no longer depends on PostgREST always
+   * populating `message`.
    *
    * All-or-nothing per chunk, deliberately, **for a query error**. Failing one
    * chunk that way costs at most `ID_CHUNK_SIZE` members their preferences for
