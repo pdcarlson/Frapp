@@ -21,9 +21,10 @@
 -- `activate_if` (jsonb array of statuses) is evaluated against the pre-UPDATE
 -- row: `invoice.paid` reactivates only while the chapter is still `past_due`
 -- or `incomplete`, so a concurrent cancel cannot be overwritten by a patch
--- computed against a stale snapshot. A non-null `past_due_since` in the patch
--- is ignored when the row is already `past_due`, so two concurrent into-
--- past_due writers cannot reset the grace clock.
+-- computed against a stale snapshot. A non-array `activate_if` (JSON null or
+-- a scalar) is ignored rather than raising. A non-null `past_due_since` in
+-- the patch is ignored when the row is already `past_due`, so two concurrent
+-- into-past_due writers cannot reset the grace clock.
 --
 -- `security invoker` (matching apply_invoice_payment): the API always calls
 -- this via the service-role SUPABASE_CLIENT, which bypasses RLS. Lock EXECUTE
@@ -54,11 +55,9 @@ begin
          subscription_status = case
            when p_patch ? 'subscription_status'
              then p_patch->>'subscription_status'
-           when p_patch ? 'activate_if'
+           when jsonb_typeof(p_patch->'activate_if') = 'array'
             and subscription_status in (
-              select jsonb_array_elements_text(
-                coalesce(p_patch->'activate_if', '[]'::jsonb)
-              )
+              select jsonb_array_elements_text(p_patch->'activate_if')
             )
              then 'active'
            else subscription_status
@@ -70,11 +69,9 @@ begin
                when subscription_status = 'past_due' then past_due_since
                else (p_patch->>'past_due_since')::timestamptz
              end
-           when p_patch ? 'activate_if'
+           when jsonb_typeof(p_patch->'activate_if') = 'array'
             and subscription_status in (
-              select jsonb_array_elements_text(
-                coalesce(p_patch->'activate_if', '[]'::jsonb)
-              )
+              select jsonb_array_elements_text(p_patch->'activate_if')
             )
              then null
            else past_due_since

@@ -2602,6 +2602,23 @@ try {
     ],
   );
 
+  let activateIfNullOk = false;
+  try {
+    const nullPatch = await apply(CH_ACTIVATE, T_NEW, { activate_if: null });
+    activateIfNullOk =
+      nullPatch.length === 1 &&
+      (await row(CH_ACTIVATE))?.subscription_status === "canceled";
+  } catch (e) {
+    activateIfNullOk = false;
+    console.log(
+      `MISS  activate_if JSON null must not raise (got ${String(e?.message ?? e).split("\n")[0]})`,
+    );
+  }
+  checks.push([
+    activateIfNullOk,
+    `activate_if JSON null is ignored (does not raise, does not un-cancel)`,
+  ]);
+
   for (const [ok, name] of checks) {
     if (ok) {
       console.log(`OK    ${name}`);
