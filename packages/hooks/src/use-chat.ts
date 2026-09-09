@@ -106,6 +106,39 @@ export interface ChannelNotificationPreference {
 }
 
 /**
+ * Prefix for every effective-level cache entry. Channel-set mutations
+ * invalidate this prefix; `useMarkChannelRead` does not — nesting under
+ * `["channels"]` used to refetch this collection on every channel open and
+ * close. A later tuple segment fingerprints the readable channel set so a
+ * list that grew or was renamed still gets a fresh response. See #1401.
+ */
+export const CHANNEL_NOTIFICATION_PREFERENCES_KEY = [
+  "channel-notification-preferences",
+] as const;
+
+/**
+ * Stable identity of the readable channel set for the mute-prefs query key.
+ *
+ * `id` covers Discord-imported (and future created) channels appearing in the
+ * rail; `name` covers a rename to or from `announcements` / `chapter-audit`,
+ * which changes the server-resolved default. Order-independent so a refetch
+ * that shuffles the list does not look like a set change.
+ */
+export function channelSetFingerprint(channels: unknown): string {
+  if (!Array.isArray(channels) || channels.length === 0) return "";
+  const parts: string[] = [];
+  for (const row of channels) {
+    if (row === null || typeof row !== "object") continue;
+    const id = "id" in row ? row.id : undefined;
+    const name = "name" in row ? row.name : undefined;
+    if (typeof id !== "string") continue;
+    parts.push(`${id}:${typeof name === "string" ? name : ""}`);
+  }
+  parts.sort();
+  return parts.join("\n");
+}
+
+/**
  * The caller's own per-channel notification levels.
  *
  * Served as its own collection rather than a field on the channel payload, for
@@ -120,6 +153,14 @@ export interface ChannelNotificationPreference {
  */
 export function useChannelNotificationPreferences() {
   const client = useFrappClient();
+  // Same cache entry as the rail's `useChannels()` — one GET, two observers.
+  // The fingerprint is derived from that payload so a mark-read-driven list
+  // refetch that *changed the set* loads new prefs, and one that did not
+  // (the usual channel switch) leaves this query's key alone.
+  const channelsQuery = useChannels();
+  const fingerprint = channelSetFingerprint(channelsQuery.data);
+  const channelsReady =
+    channelsQuery.status === "success" || channelsQuery.status === "error";
   return useQuery({
     // Deliberately NOT nested under ["channels"]. `useMarkChannelRead`
     // invalidates that whole prefix, and TanStack Query matches prefixes
@@ -127,7 +168,7 @@ export function useChannelNotificationPreferences() {
     // AND close — two extra round trips per channel switch, each one re-running
     // the accessible-channel predicate server-side. Mute state does not change
     // when a read receipt is written, so it should not be invalidated by one.
-    queryKey: ["channel-notification-preferences"],
+    queryKey: [...CHANNEL_NOTIFICATION_PREFERENCES_KEY, fingerprint],
     queryFn: async () => {
       const { data, error } = await client.GET(
         "/v1/channels/notification-preferences",
@@ -135,6 +176,10 @@ export function useChannelNotificationPreferences() {
       if (error) throw error;
       return (data ?? []) as ChannelNotificationPreference[];
     },
+    // Wait for the channel list so the first key already carries the real
+    // fingerprint. Fetching against `""` and then again against the loaded
+    // set would double the mount cost the prefix-lift was meant to remove.
+    enabled: channelsReady,
     // Matches `useChannels`: mute state changes far less often than unread
     // counts, and a stale mute badge is not the visible defect a stale unread
     // badge is.
@@ -162,7 +207,7 @@ export function useSetChannelNotificationLevel() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["channel-notification-preferences"],
+        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
       });
     },
     // A failed write must not leave the control asserting a level the server
@@ -172,7 +217,7 @@ export function useSetChannelNotificationLevel() {
     // state, it does not tell the member anything on its own.
     onError: () => {
       queryClient.invalidateQueries({
-        queryKey: ["channel-notification-preferences"],
+        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
       });
     },
   });
@@ -203,7 +248,7 @@ export function useCreateChannel() {
       // channel-set mutations name it explicitly. Message-level and
       // read-receipt mutations deliberately do NOT.
       queryClient.invalidateQueries({
-        queryKey: ["channel-notification-preferences"],
+        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
       });
     },
   });
@@ -243,7 +288,7 @@ export function useUpdateChannel() {
       // channel-set mutations name it explicitly. Message-level and
       // read-receipt mutations deliberately do NOT.
       queryClient.invalidateQueries({
-        queryKey: ["channel-notification-preferences"],
+        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
       });
     },
   });
@@ -269,7 +314,7 @@ export function useDeleteChannel() {
       // channel-set mutations name it explicitly. Message-level and
       // read-receipt mutations deliberately do NOT.
       queryClient.invalidateQueries({
-        queryKey: ["channel-notification-preferences"],
+        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
       });
     },
   });
@@ -300,7 +345,7 @@ export function useGetOrCreateDm() {
           refetchType: "all",
         }),
         queryClient.invalidateQueries({
-          queryKey: ["channel-notification-preferences"],
+          queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
         }),
       ]);
     },

@@ -171,6 +171,15 @@ Both write through the same PUT and read the same effective-level GET; the two s
 (unknown trigger, header-scoped write failure) apply on both surfaces. The worker already
 honours those levels for every client.
 
+The effective-level query is keyed **outside** the `["channels"]` prefix so a mark-read does
+not refetch it on every channel switch (that coupling was two extra round trips per switch,
+each re-running the accessible-channel predicate). A later key segment fingerprints each
+readable channel's `id` and `name`. A Discord import or a rename to or from `announcements` /
+`chapter-audit` that lands in the channel list — including via that mark-read invalidation —
+changes the fingerprint and loads a fresh GET; the header control is not left disabled, or
+showing a name-derived level that no longer applies. Channel-set mutations still invalidate
+the prefix. See #1401.
+
 Two states the control must not fake. When the effective level is **not yet known** — the read
 has not landed, or failed — the trigger is disabled and announces "Notification level
 unavailable" rather than standing in `mentions`, because on `#announcements` or `#chapter-audit`
