@@ -23,6 +23,13 @@ export const OFFLINE_BANNER_HEIGHT_VAR = "--offline-banner-height";
 export const DASHBOARD_HEADER_STICKY_CLASS =
   "sticky top-[var(--offline-banner-height,0px)] z-30";
 
+/**
+ * Chat channel/thread rails were `md:top-20` to clear the `h-16` header.
+ * Once the header sits under the banner, they must clear both.
+ */
+export const CHAT_RAIL_STICKY_CLASS =
+  "md:sticky md:top-[calc(var(--offline-banner-height,0px)+5rem)] md:max-h-[calc(100vh-6rem-var(--offline-banner-height,0px))] md:self-start";
+
 export function focusOfflineBanner(): void {
   const banner = document.getElementById(OFFLINE_BANNER_ID);
   if (banner instanceof HTMLElement) {

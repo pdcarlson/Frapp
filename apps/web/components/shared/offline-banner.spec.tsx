@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { OfflineBanner } from "./offline-banner";
 import {
+  CHAT_RAIL_STICKY_CLASS,
   DASHBOARD_HEADER_STICKY_CLASS,
   OFFLINE_BANNER_HEIGHT_VAR,
 } from "./offline-banner-focus";
@@ -43,8 +44,10 @@ describe("OfflineBanner", () => {
     expect(banner).toHaveTextContent("Slow connection. Some features may be delayed.");
     // The Signet warning tint — degraded is a status, so it takes a semantic
     // hue rather than a palette colour (foundations.md §5).
-    expect(banner).toHaveClass("border-warning/45 bg-warning/[.13] text-warning");
-    expect(banner).toHaveClass("sticky", "top-0", "z-40");
+    expect(banner).toHaveClass("sticky", "top-0", "z-40", "bg-background");
+    expect(banner.firstElementChild).toHaveClass(
+      "border-warning/45 bg-warning/[.13] text-warning",
+    );
   });
 
   it("renders offline banner when the network state is OFFLINE", () => {
@@ -71,13 +74,12 @@ describe("OfflineBanner", () => {
     // composer has an outbox, and it states that at the control itself.
     expect(banner).toHaveTextContent("You're offline. Showing cached data.");
     expect(banner).not.toHaveTextContent(/will sync/i);
-    expect(banner).toHaveClass(
+    // Opaque `bg-background` so scrolled rows cannot show through the 13%
+    // semantic tint once the banner is sticky (#1746).
+    expect(banner).toHaveClass("sticky", "top-0", "z-40", "bg-background");
+    expect(banner.firstElementChild).toHaveClass(
       "border-destructive/45 bg-destructive/[.13] text-destructive",
     );
-    // #1746: the banner must outrank the dashboard header (z-30) and stick at
-    // the viewport top so a long page cannot scroll the only OFFLINE signal
-    // away. jsdom does not paint `position: sticky`; the class is the contract.
-    expect(banner).toHaveClass("sticky", "top-0", "z-40");
   });
 
   it("publishes its height so the dashboard header sits below it, and clears it on unmount", () => {
@@ -108,6 +110,9 @@ describe("OfflineBanner", () => {
     ).toBe("40px");
     expect(DASHBOARD_HEADER_STICKY_CLASS).toContain(
       `top-[var(${OFFLINE_BANNER_HEIGHT_VAR},0px)]`,
+    );
+    expect(CHAT_RAIL_STICKY_CLASS).toContain(
+      `var(${OFFLINE_BANNER_HEIGHT_VAR},0px)`,
     );
 
     unmount();

@@ -88,12 +88,16 @@ export function OfflineBanner() {
       ref={bannerRef}
       id={OFFLINE_BANNER_ID}
       tabIndex={-1}
-      className={`sticky top-0 z-40 flex items-center gap-2 px-4 py-2 text-sm border-b animate-slide-down ${className} ${FOCUS_RING_ALWAYS}`}
+      className={`sticky top-0 z-40 bg-background ${FOCUS_RING_ALWAYS}`}
       role="alert"
       aria-live="polite"
     >
-      <Icon className="h-4 w-4 shrink-0" />
-      <span>{message}</span>
+      <div
+        className={`flex items-center gap-2 px-4 py-2 text-sm border-b animate-slide-down ${className}`}
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        <span>{message}</span>
+      </div>
     </div>
   );
 }
