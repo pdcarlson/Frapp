@@ -295,6 +295,11 @@ landing either sentinel.
 
 ### Booting the API
 
+On **Cursor Cloud**, `environment.json` terminals already start the API (and web/landing)
+via `cursor-cloud-terminal.sh` after `.cloud-sandbox-up.done`. Do **not** start a second
+copy on `:3001`.
+
+On the **Claude Code web fallback**, or if `:3001` is not bound,
 `cloud-sandbox-up.sh` writes `apps/api/.env.local` (local Supabase keys from `supabase
 status` + the Stripe vars), which the API's `ConfigModule` loads directly — so **no
 Infisical is needed**:
