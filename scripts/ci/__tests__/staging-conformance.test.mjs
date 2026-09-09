@@ -18,6 +18,7 @@ import {
   checkAuthSignIn,
   checkAuthSmtp,
   checkAuthMagicLink,
+  leftoverFrappMailerSubjectKeys,
   checkInfisicalSyncs,
   checkProjectStatus,
   checkRenderAutoDeploy,
@@ -381,6 +382,34 @@ test("Magic Link subject + token_hash href pass without leaking smtp_pass or the
   assert.match(result.detail, /token_hash href/);
   assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
   assert.doesNotMatch(result.detail, /RedirectTo/);
+});
+
+test("leftoverFrappMailerSubjectKeys names only the Frapp inbox titles", () => {
+  assert.deepEqual(
+    leftoverFrappMailerSubjectKeys({
+      mailer_subjects_invite: "You have been invited to Frapp",
+      mailer_subjects_recovery: "Reset Your Password",
+      mailer_subjects_magic_link: "Sign in to frapp",
+      smtp_pass: "must-never-appear-in-detail",
+      mailer_templates_invite_content: "Frapp in a body must not count",
+    }),
+    ["mailer_subjects_invite", "mailer_subjects_magic_link"],
+  );
+  assert.deepEqual(leftoverFrappMailerSubjectKeys({ mailer_subjects_invite: "You have been invited" }), []);
+});
+
+test("a sibling Auth subject that says Frapp fails without leaking smtp_pass", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      magicLinkConfig({ mailer_subjects_invite: "Join Frapp" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /mailer_subjects_invite/);
+  assert.match(result.detail, /Frapp/);
+  assert.doesNotMatch(result.detail, /Join Frapp/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
 });
 
 test("hosted Magic Link subject fails", async () => {
