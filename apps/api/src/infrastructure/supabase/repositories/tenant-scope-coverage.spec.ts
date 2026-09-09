@@ -48,8 +48,6 @@ const TENANT_SCOPE_BACKLOG: Record<string, string> = {
     'notifications carries chapter_id but no read filters by it — findByUser filters by user_id, findById by id alone; needs a scoping decision before a test can pin behaviour.',
   'supabase-message-reaction.repository.ts':
     'reactions are message-scoped like poll_votes; covered indirectly by the chat-channel boundary. Backlog.',
-  'supabase-chat-message-action.repository.ts':
-    'message actions are message-scoped like poll_votes. Backlog.',
   'supabase-read-receipt.repository.ts':
     'read receipts are channel-scoped; the unread-count RPC does take p_chapter_id. Backlog.',
   'supabase-activation-milestone.repository.ts':
@@ -121,7 +119,7 @@ describe('API repository tenant-scope coverage', () => {
     // unless it lands with a `TENANT_SCOPE_BACKLOG` reason instead, which
     // moves only the first.
     expect({ covered, total: repositories.length }).toEqual({
-      covered: 31,
+      covered: 32,
       total: EXPECTED_REPOSITORY_COUNT,
     });
   });
