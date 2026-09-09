@@ -99,6 +99,21 @@ describe("evaluateDumpFreshness", () => {
     assert.match(verdict.reason, /missing/);
   });
 
+  it("does not treat a backup-production success as the Storage mirror", () => {
+    const verdict = evaluate({
+      jobs: [
+        {
+          name: "backup-production",
+          status: "completed",
+          conclusion: "success",
+          completed_at: hoursAgo(1),
+        },
+      ],
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /missing/);
+  });
+
   it("fails skipped, cancelled, and failed conclusions", () => {
     for (const conclusion of ["failure", "cancelled", "skipped"]) {
       const verdict = evaluate({
@@ -398,6 +413,61 @@ function uncommented(text) {
     .join("\n");
 }
 
+/**
+ * The first lock imported PRODUCTION_JOB_NAME into every fixture, so
+ * renaming the watch to backup-production (1963) would still pass.
+ * Pin the assignment lines. Postgres dump freshness stays on its own leftover.
+ */
+export function scriptPinProblems(source) {
+  const problems = [];
+  if (!/^export const PRODUCTION_JOB_NAME = "backup-production-storage";?$/m.test(source)) {
+    problems.push("PRODUCTION_JOB_NAME must stay backup-production-storage");
+  }
+  if (!/^export const DEFAULT_BRANCH = "main";?$/m.test(source)) {
+    problems.push("DEFAULT_BRANCH must stay main");
+  }
+  if (!/^export const WORKFLOW_FILE = "db-backup.yml";?$/m.test(source)) {
+    problems.push("WORKFLOW_FILE must stay db-backup.yml");
+  }
+  if (!/^export const STALE_AFTER_MS = 36 \* 60 \* 60 \* 1000;?$/m.test(source)) {
+    problems.push("STALE_AFTER_MS must stay 36h");
+  }
+  if (!/^export const HUNG_AFTER_MS = 3 \* 60 \* 60 \* 1000;?$/m.test(source)) {
+    problems.push("HUNG_AFTER_MS must stay 3h");
+  }
+  if (!/branch=\$\{encodeURIComponent\(DEFAULT_BRANCH\)\}/.test(source)) {
+    problems.push("runs GET must stay scoped to DEFAULT_BRANCH");
+  }
+  return problems;
+}
+
+export function watchdogWorkflowProblems(yaml) {
+  const live = uncommented(yaml);
+  const problems = [];
+  if (/^\s*environment:\s/m.test(live)) {
+    problems.push("must not name a GitHub environment");
+  }
+  if (/environment:\s*production-backup/.test(live)) {
+    problems.push("must not name environment: production-backup");
+  }
+  if (/npm ci/.test(live)) {
+    problems.push("must not npm ci");
+  }
+  if (/pull_request:/.test(yaml)) {
+    problems.push("must not be a pull_request check");
+  }
+  if (!/cron: "30 13 \* \* \*"/.test(yaml)) {
+    problems.push("cron must stay 13:30");
+  }
+  if (/cron:\s*"30 6 \* \* \*"/.test(live)) {
+    problems.push("must not collide with db-backup.yml at 06:30");
+  }
+  if (/cron:\s*"15 13 \* \* \*"/.test(live)) {
+    problems.push("must not collide with production-backup-freshness.yml at 13:15");
+  }
+  return problems;
+}
+
 describe("workflow wiring", () => {
   const workflow = readFileSync(WORKFLOW, "utf8");
   const liveYaml = uncommented(workflow);
@@ -459,6 +529,14 @@ describe("workflow wiring", () => {
     assert.doesNotMatch(script, /\b(fixes|closes|close|fix|fixed|resolve|resolves|resolved)\s+#/i);
   });
 
+  it("pins the Storage job, main branch, and 36h / 3h windows", () => {
+    assert.deepEqual(scriptPinProblems(script), []);
+  });
+
+  it("the live watchdog YAML stays clean", () => {
+    assert.deepEqual(watchdogWorkflowProblems(workflow), []);
+  });
+
   it("requires a GitHub token before the Actions GET", () => {
     const main = script.slice(script.indexOf("async function main()"));
     const tokenIdx = main.indexOf("resolveActionsReadToken");
@@ -496,5 +574,106 @@ describe("workflow wiring", () => {
     assert.doesNotMatch(workflowGrant, /actions: read/);
     assert.match(liveYaml, /issues: write/);
     assert.match(liveYaml, /actions: read/);
+  });
+});
+
+describe("watchdog mutations", () => {
+  const script = readFileSync(SCRIPT, "utf8");
+  const workflow = readFileSync(WORKFLOW, "utf8");
+
+  it("renaming the watch to the dump job fails", () => {
+    const problems = scriptPinProblems(
+      script.replace(
+        'export const PRODUCTION_JOB_NAME = "backup-production-storage"',
+        'export const PRODUCTION_JOB_NAME = "backup-production"',
+      ),
+    );
+    assert.ok(
+      problems.some((problem) => problem.includes("backup-production-storage")),
+      problems.join("; "),
+    );
+  });
+
+  it("dropping the main-branch scope fails", () => {
+    const problems = scriptPinProblems(
+      script.replace(
+        'export const DEFAULT_BRANCH = "main"',
+        'export const DEFAULT_BRANCH = "production"',
+      ),
+    );
+    assert.ok(
+      problems.some((problem) => problem.includes("main")),
+      problems.join("; "),
+    );
+  });
+
+  it("widening the stale window past 36h fails", () => {
+    const problems = scriptPinProblems(
+      script.replace(
+        "export const STALE_AFTER_MS = 36 * 60 * 60 * 1000",
+        "export const STALE_AFTER_MS = 72 * 60 * 60 * 1000",
+      ),
+    );
+    assert.ok(
+      problems.some((problem) => problem.includes("36h")),
+      problems.join("; "),
+    );
+  });
+
+  it("naming environment: production-backup on the watchdog fails", () => {
+    const problems = watchdogWorkflowProblems(
+      `${workflow}\n    environment: production-backup\n`,
+    );
+    assert.ok(
+      problems.some((problem) => problem.includes("production-backup")),
+      problems.join("; "),
+    );
+  });
+
+  it("adding npm ci fails", () => {
+    const problems = watchdogWorkflowProblems(`${workflow}\n      - run: npm ci\n`);
+    assert.ok(
+      problems.some((problem) => problem.includes("npm ci")),
+      problems.join("; "),
+    );
+  });
+
+  it("moving the cron onto the dump slot fails", () => {
+    const problems = watchdogWorkflowProblems(
+      workflow.replace('cron: "30 13 * * *"', 'cron: "30 6 * * *"'),
+    );
+    assert.ok(
+      problems.some((problem) => /13:30|06:30/.test(problem)),
+      problems.join("; "),
+    );
+  });
+
+  it("moving the cron onto the Postgres freshness slot fails", () => {
+    const problems = watchdogWorkflowProblems(
+      workflow.replace('cron: "30 13 * * *"', 'cron: "15 13 * * *"'),
+    );
+    assert.ok(
+      problems.some((problem) => /13:30|13:15/.test(problem)),
+      problems.join("; "),
+    );
+  });
+});
+
+describe("leftover lock hygiene", () => {
+  it("refuses a GitHub closer next to an issue number", () => {
+    const lock = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const script = readFileSync(SCRIPT, "utf8");
+    const workflow = readFileSync(WORKFLOW, "utf8");
+    for (const [rel, source] of [
+      ["test", lock],
+      ["script", script],
+      ["workflow", workflow],
+    ]) {
+      assert.doesNotMatch(
+        source,
+        /\b(fixes|closes|close|fix|fixed|resolve|resolves|resolved)\s+#/i,
+        rel,
+      );
+    }
   });
 });
