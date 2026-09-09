@@ -1028,13 +1028,20 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
-      # Google's Chrome apt index occasionally returns Hash Sum mismatch
-      # (transient CDN inconsistency). This step is repo-defined, so CI-wake
-      # classifies a failure here as a code failure and will not auto-requeue.
-      # OS packages are not in ~/.cache/ms-playwright — do not skip this on a
-      # browser cache hit, and do not `|| true`.
+      # GitHub-hosted Ubuntu images ship a google-chrome apt source.
+      # Chromium's OS deps are Ubuntu packages; that Google repo is unused
+      # here. When dl.google.com's InRelease and Packages.gz disagree,
+      # `apt-get update` inside install-deps fails with Hash Sum mismatch —
+      # same hashes across retries, so a 20s backoff does not absorb it.
+      # Drop the source so update only talks to Ubuntu/Microsoft mirrors.
+      # OS packages are not in ~/.cache/ms-playwright — do not skip this on
+      # a browser cache hit, and do not `|| true` the install.
       - name: Install Playwright OS deps
         run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+            /etc/apt/sources.list.d/google-chrome.list.save \
+            /etc/apt/sources.list.d/google-chrome.sources \
+            /etc/apt/sources.list.d/google.list
           for i in 1 2 3; do
             if npx playwright install-deps chromium; then
               exit 0
