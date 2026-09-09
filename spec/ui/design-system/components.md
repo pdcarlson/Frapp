@@ -64,7 +64,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 | Tinted / Ghost | fill `accent-3` (ghost gains it; tinted lifts one step to `accent-4`) | as hover | 〃 |
 | Destructive | tint deepens to ~20% alpha | as hover | 〃 |
 
-- **Loading:** the button disables, keeps its width, and shows a spinner in place of (or before) the label. Double-submit locking per [resilience.md](../resilience.md).
+- **Loading:** the button disables, keeps its width, and shows a spinner in place of (or before) the label. Double-submit locking per [resilience](../resilience/README.md).
 - Hover states are pointer-only; mobile uses pressed feedback.
 
 ### Sizes
@@ -182,7 +182,7 @@ Web implementation: [`apps/web/components/shared/confirm-dialog.tsx`](../../../a
 
 ## 10. State family — skeleton / empty / error
 
-This section specs the **anatomy** of the three visual variants — one family, clearly distinct at a glance. *Which* states a surface MUST ship is owned by [README.md](README.md) §4 and is not restated here. Connection banners and retry/backoff behavior are owned by [resilience.md](../resilience.md); state copy voice by [writing.md](writing.md).
+This section specs the **anatomy** of the three visual variants — one family, clearly distinct at a glance. *Which* states a surface MUST ship is owned by [README.md](README.md) §4 and is not restated here. Connection banners and retry/backoff behavior are owned by [resilience](../resilience/README.md); state copy voice by [writing.md](writing.md).
 
 ### Skeleton (loading)
 
@@ -190,7 +190,7 @@ This section specs the **anatomy** of the three visual variants — one family, 
 - Shimmer: linear gradient 90°, elevated `#26221C` at 25%/75% and highlight `#332E26` at 50%; background-size 260px; sweep 1.4s linear infinite, phase-shared across blocks.
 - Shapes: text lines 13px tall, radius 6, varied widths (~45–70%); avatars stay circles; control-sized blocks 44px, radius 12.
 - Skeletons are neutral only — never accent, never semantic.
-- Show on first load only; background refetches keep stale content in place ([resilience.md](../resilience.md)).
+- Show on first load only; background refetches keep stale content in place ([resilience](../resilience/README.md)).
 
 ### Empty
 
@@ -215,7 +215,7 @@ Same anatomy as empty, recolored semantic:
 | Icon tile | 44px, radius 14, fill danger @ 13%, "!" glyph `#f85149` |
 | Title | 16.5px / 700 `#EDEAE3` (what failed) |
 | Body | 14.5px `#A9A399` (actionable hint) |
-| Retry | Secondary button, 44px, radius 12 — wiring per [resilience.md](../resilience.md) |
+| Retry | Secondary button, 44px, radius 12 — wiring per [resilience](../resilience/README.md) |
 
 Error surfaces MUST NOT use the chapter accent. Field-level validation errors use the input error state (§4), not this surface.
 
@@ -253,7 +253,7 @@ Bubbles take the locked bubble radius — **18 with the tail corner at 6** ([fou
 - **The chip's 44px hit area grows vertically, not on every side.** Chips sit 6px apart, so a hit area overhanging 9px all round has each chip's overlay covering ~3px of the *visible* chip before it, and the later sibling wins the overlap — a control whose right edge cannot be clicked is a worse defect than the one it fixes. The vertical overhang lands in the row's own padding, where there is no sibling to swallow.
 - **TODO-DESIGN:** consecutive messages from the same sender are not drawn — s05 draws two adjacent incoming messages from *different* senders, each with full avatar + meta chrome. Mobile renders that full chrome per message, which is the safe reading of an undrawn case.
   - **The web dashboard groups, deliberately, and that is not a violation.** `apps/web/components/chat/message-timeline.tsx` collapses the avatar and meta line on a follow-on message from the same sender within five minutes. The reference draws no grouped run to contradict, so there is nothing here to disagree with — and on a dashboard feed, repeating an avatar and a name on every line of a burst is noise, not fidelity. A grouped row still renders its bubble, its reactions and its delivery state; only the chrome that would repeat is suppressed, and a **day divider always restarts it** so a run cannot inherit the previous day's author line. If grouping is ever drawn, this is the behaviour to draw against.
-- **TODO-DESIGN:** no pending or failed-send affordance is drawn anywhere in the reference, though sends are optimistic and a failure rolls back ([chat/README.md](../../behavior/chat/README.md)). Nearest pattern used: the self-bubble meta line (which already carries "read"), with the failed state taking danger `#f85149` and a retry path per [resilience.md](../resilience.md).
+- **TODO-DESIGN:** no pending or failed-send affordance is drawn anywhere in the reference, though sends are optimistic and a failure rolls back ([chat/README.md](../../behavior/chat/README.md)). Nearest pattern used: the self-bubble meta line (which already carries "read"), with the failed state taking danger `#f85149` and a retry path per [resilience](../resilience/README.md).
 - **TODO-DESIGN:** an in-bubble mention highlight (the "you were addressed" treatment *inside* a message body) is not drawn — the reference only draws mention red as a list badge and a notification dot. Nearest pattern used: the Mention/DM badge in §5.
 - **Per-message actions reach a coarse pointer by tap, not by drawing a second geometry.** The quick-reaction cluster and Reply are `:hover`/`:focus-within`-revealed, which a touch device can never trigger, and the reference draws no touch affordance for this (#1193). Mobile is not a precedent to follow here either: its reactions render always-visible, ungated (`apps/mobile/components/chat/message-bubble.tsx`'s `ReactionRow`), and it has no Reply *authoring* yet (`spec/ui/mobile/screens.md` s05) — a web-authored reply does render its quoted parent on mobile, which is the read-side half, not a Reply control — so there is no cross-platform pattern to mirror for the *cluster*, and the web treatment below is this surface's own answer, not a port of one. Tap-to-reveal: tapping a row toggles that row's cluster, and tapping a second row closes the first's — one reveal id per list (`apps/web/components/chat/message-timeline.tsx`, `thread-panel.tsx`), never a `useState` per row, or two rows could sit open at once. The toggle is a plain `onClick`, not a touch/press handler, so a scroll gesture cannot trigger it; it bails out on a click whose target is inside a `button`/`a`/form control (covers every interactive descendant — the reaction chips, the emoji-picker trigger, a card's own Vote/RSVP/checkbox controls — without each one needing its own `stopPropagation`), and it checks `window.getSelection()` scoped to the row's own subtree so finishing a text selection inside the bubble does not also flip the cluster open, and a stale selection left over from a *different* message does not block this row's tap (`apps/web/components/chat/message-item.tsx`).
 

@@ -150,8 +150,8 @@ interface ComposerBaseProps {
    * row to the Dexie outbox and returns *before* it touches the network
    * (`packages/chat-core/src/chat-client.ts`, which has an explicit
    * "Offline: the row is safely queued" branch), so gating the composer defeated
-   * the queue built to make composing-while-offline work. `spec/ui/resilience.md`
-   * §2 states the rule directly — "labeled, never blocked, wherever an outbox
+   * the queue built to make composing-while-offline work. `spec/ui/resilience/connection-state.md`
+   * states the rule directly — "labeled, never blocked, wherever an outbox
    * exists" — and reserves disabling for surfaces where a failed write is lost.
    * Worse than the greyed Send: `submit()` returned early on the same flag, so
    * pressing Enter offline silently discarded what you had typed.
@@ -498,7 +498,7 @@ export function Composer({
       // A slash command is NOT a queued write. `/points`, `/task` and `/event`
       // POST straight to their controllers from
       // `packages/chat-core/src/dispatch.ts` with no outbox behind them, so
-      // resilience.md §2's split applies within this one control: the text path
+      // spec/ui/resilience/connection-state.md's split applies within this one control: the text path
       // is labelled and stays live because it queues, and the queueless path
       // refuses and says why.
       if (isOffline) {
@@ -920,7 +920,7 @@ export function Composer({
         the same header already announces the connection change from the same
         `channel.connection` source, and `OfflineBanner` announces it again from
         the root layout — three polite regions would read one event three times.
-        This is the label beside the control, which is what resilience.md §2 asks
+        This is the label beside the control, which is what spec/ui/resilience/connection-state.md asks
         the queued surface to carry.
       */}
       {isOffline ? (

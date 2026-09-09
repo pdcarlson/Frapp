@@ -22,7 +22,7 @@ import type { ConnectionStatus } from "@repo/chat-core/realtime-manager";
  * floor README §6 sets — the same lift the primitives slice made for badges and
  * toasts (components.md §1).
  *
- * The three copy strings are fixed by `spec/ui/resilience.md` §3.2 — keep them
+ * The three copy strings are fixed by `spec/ui/resilience/message-delivery.md#receiving-messages-realtime` — keep them
  * verbatim.
  */
 export function ReconnectPill({ status }: { status: ConnectionStatus }) {
