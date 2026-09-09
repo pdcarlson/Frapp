@@ -396,8 +396,8 @@ A future public documentation site is possible post-launch; treat as a separate 
 While unlinked, `git.deploymentEnabled` and `ignoreCommand: "exit 1"` in `apps/web/vercel.json` and
 `apps/landing/vercel.json` govern nothing — `--prebuilt` has already built. **Do not delete either
 key.** They are the versioned form of dashboard-only settings: re-link Git and branch filtering plus
-the Ignored Build Step fall back to unversioned dashboard state. ADR-21. #1376 is the open
-disposition of whether anything still enforces the pin.
+the Ignored Build Step fall back to unversioned dashboard state. See
+[ADR-21](../../../spec/architecture/adr/adr-21.md).
 
 Confirm the unlink (not a setup step): a present `link` is the guardrail going red.
 
