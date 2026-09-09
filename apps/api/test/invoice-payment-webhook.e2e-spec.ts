@@ -20,9 +20,14 @@ const INVOICE_ID = '11111111-1111-4111-8111-111111111111';
 const CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
 const USER_ID = '33333333-3333-4333-8333-333333333333';
 
-const paymentIntentEvent = (eventId: string) => ({
+const paymentIntentEvent = (
+  eventId: string,
+  type:
+    | 'payment_intent.succeeded'
+    | 'payment_intent.payment_failed' = 'payment_intent.succeeded',
+) => ({
   id: eventId,
-  type: 'payment_intent.succeeded',
+  type,
   created: Math.floor(Date.now() / 1000),
   data: {
     object: {
@@ -33,6 +38,9 @@ const paymentIntentEvent = (eventId: string) => ({
         user_id: USER_ID,
       },
       latest_charge: 'ch_1',
+      ...(type === 'payment_intent.payment_failed'
+        ? { last_payment_error: { message: 'Your card was declined.' } }
+        : {}),
     },
   },
 });
@@ -203,6 +211,56 @@ describe('Invoice payment webhook (e2e)', () => {
       .post(`${V1}/webhooks/stripe`)
       .set('stripe-signature', 'sig_test')
       .send({ type: 'payment_intent.succeeded' })
+      .expect(200)
+      .expect({ received: true });
+
+    expect(rpc).not.toHaveBeenCalledWith(...expectedRpcArgs);
+  });
+
+  // #717: a declined dues intent is claimed and acked, but must never write
+  // PAID. The invoice lookup on this mock returns null, so the member notify
+  // is skipped too — unit tests cover the notify copy; this pipeline test
+  // is the CAS-must-not-run guarantee.
+  it('acks payment_intent.payment_failed without calling apply_invoice_payment', async () => {
+    constructWebhookEvent.mockReturnValue(
+      paymentIntentEvent('evt_pi_fail', 'payment_intent.payment_failed'),
+    );
+
+    await request(app.getHttpServer())
+      .post(`${V1}/webhooks/stripe`)
+      .set('stripe-signature', 'sig_test')
+      .send({ type: 'payment_intent.payment_failed' })
+      .expect(200)
+      .expect({ received: true });
+
+    expect(rpc).toHaveBeenCalledWith(
+      'claim_stripe_webhook_event',
+      expect.objectContaining({
+        p_event_id: 'evt_pi_fail',
+        p_event_type: 'payment_intent.payment_failed',
+      }),
+    );
+    expect(rpc).not.toHaveBeenCalledWith(...expectedRpcArgs);
+  });
+
+  it('acks a foreign payment_intent.payment_failed without calling apply_invoice_payment', async () => {
+    constructWebhookEvent.mockReturnValue({
+      id: 'evt_pi_fail_foreign',
+      type: 'payment_intent.payment_failed',
+      created: Math.floor(Date.now() / 1000),
+      data: {
+        object: {
+          id: 'pi_foreign',
+          metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+          last_payment_error: { message: 'declined' },
+        },
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post(`${V1}/webhooks/stripe`)
+      .set('stripe-signature', 'sig_test')
+      .send({ type: 'payment_intent.payment_failed' })
       .expect(200)
       .expect({ received: true });
 
