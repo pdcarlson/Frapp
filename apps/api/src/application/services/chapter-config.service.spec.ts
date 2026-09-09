@@ -1346,6 +1346,25 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
     );
   });
 
+  it('returns the persisted theme palette when the trailing chapters read fails', async () => {
+    const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+      readErrorOnCall: { chapters: 2 },
+      trailingReadError: TRAILING,
+    });
+    const service = await buildService(supabase);
+
+    const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
+      branding: { colors: { accent: '#8B0000' } },
+    });
+
+    expect(supabase.chapterUpdate).toHaveBeenCalled();
+    expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+    expect(result.branding).toMatchObject({ colors: { accent: '#8B0000' } });
+    expect(result.theme_palette).toMatchObject({
+      '--signet-accent-primary': '#C49A3A',
+    });
+  });
+
   it('still fails closed when the first dues read fails (call 1)', async () => {
     const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
       readErrorOnCall: { dues: 1 },

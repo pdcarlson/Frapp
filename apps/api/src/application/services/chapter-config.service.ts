@@ -777,13 +777,21 @@ export class ChapterConfigService {
     // Recompute the theme palette whenever the PATCH carries `branding.colors` —
     // presence, not change. Use the merged
     // branding colors so a partial color patch keeps the untouched channel.
+    // Capture the derived map so a trailing `getConfig` failure can still
+    // return the tokens we just persisted (#1670 fallback).
+    let committedThemePalette:
+      | Awaited<ReturnType<ChapterConfigService['getConfig']>>['theme_palette']
+      | undefined;
     if (dto.branding?.colors) {
       const mergedColors =
         (mergedBranding as { colors?: { accent?: string } })?.colors ??
         dto.branding.colors;
-      await this.recomputePalette(chapterId, mergedColors).catch((err) =>
-        this.logger.warn('Failed to recompute palette', err),
-      );
+      try {
+        const build = await this.recomputePalette(chapterId, mergedColors);
+        committedThemePalette = build.palette;
+      } catch (err) {
+        this.logger.warn('Failed to recompute palette', err);
+      }
     }
 
     // Trailing re-read is best-effort freshness, not part of the write.
@@ -807,6 +815,7 @@ export class ChapterConfigService {
         duesUpsert,
         serviceUpsert,
         pointsUpsert,
+        themePalette: committedThemePalette,
       });
     }
   }
@@ -824,10 +833,19 @@ export class ChapterConfigService {
       duesUpsert: TablesInsert<'chapter_dues_config'> | null;
       serviceUpsert: TablesInsert<'chapter_service_config'> | null;
       pointsUpsert: TablesInsert<'chapter_points_config'> | null;
+      themePalette?: Awaited<
+        ReturnType<ChapterConfigService['getConfig']>
+      >['theme_palette'];
     },
   ): Awaited<ReturnType<ChapterConfigService['getConfig']>> {
-    const { update, workflowUpserts, duesUpsert, serviceUpsert, pointsUpsert } =
-      committed;
+    const {
+      update,
+      workflowUpserts,
+      duesUpsert,
+      serviceUpsert,
+      pointsUpsert,
+      themePalette,
+    } = committed;
 
     let orgArchetype = existing.org_archetype;
     let archetypeMeta = existing.archetype_meta;
@@ -879,6 +897,7 @@ export class ChapterConfigService {
           : existing.vocabulary,
       branding:
         update.branding !== undefined ? update.branding : existing.branding,
+      theme_palette: themePalette ?? existing.theme_palette,
       beta_config:
         update.beta_config !== undefined
           ? update.beta_config
