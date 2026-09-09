@@ -4,6 +4,7 @@ import {
   NO_PSEUDONYMS,
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   REQUEST_ID_HEADER,
+  SENTRY_ERROR_CORRELATED_EVENT,
   SENTRY_REPLAY_ENABLED,
   createSentryScrubber,
   parseSampleRate,
@@ -19,6 +20,7 @@ describe("public API", () => {
     expect(REQUEST_ID_HEADER).toBe("x-request-id");
     expect(SENTRY_REPLAY_ENABLED).toBe(false);
     expect(POSTHOG_EXCEPTION_AUTOCAPTURE).toBe(false);
+    expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
   });
 });

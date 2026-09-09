@@ -51,6 +51,10 @@ has no Sentry/PostHog SDK.
 **Correction (2026-09-09):** `GET /v1/analytics/identity` now returns
 `chapter_group_id` (64-hex HMAC of `chapter_id`, or `null`) alongside
 `distinct_id` / `enabled` (#2042). HMAC stays API-side.
+**Correction (2026-09-09):** `apps/web` initializes PostHog JS for identify /
+chapter groups / flags / replay-gates / `sentry-error-correlated`. Replay stays
+off in every environment in that slice. Landing still has no Sentry/PostHog SDK
+(WS6).
 
 **Alternatives rejected.**
 
@@ -63,9 +67,14 @@ has no Sentry/PostHog SDK.
 - **One PostHog project for staging and production.** A shared dataset aliases staging
   traffic onto production funnels and makes the deleted-users automation (#709) unsafe to
   reason about. Staging project `569878` must not become that shared dataset.
-- **Client-held `ANALYTICS_HMAC_SALT` or PostHog project API key.** A browser or RN bundle
-  is readable; either secret would let the analytics dataset be rainbow-tabled or ingested
-  into from the client. The API remains the transport.
+- **Client-held `ANALYTICS_HMAC_SALT` or a PostHog personal API key.** A browser
+  or RN bundle is readable; either secret would let the analytics dataset be
+  rainbow-tabled or queried from the client. The write-only `phc_` project
+  token is a different class (ingest, not read), like a Sentry DSN.
+  **Correction (2026-09-09):** Workstream 5 ships PostHog JS in `apps/web` with
+  `NEXT_PUBLIC_POSTHOG_KEY` (`${POSTHOG_API_KEY}`). Named product events remain
+  `POST /v1/analytics/events` so they are not double-counted with the API
+  adapter. Landing stays out of that slice (WS6).
 - **Reusing `x-request-id` as the trace id.** Inbound clients already send one; Sentry/OTEL
   traces are a different identifier space. Collapsing them loses either inbound honor or
   vendor trace continuity.

@@ -80,6 +80,30 @@ describe("shipped options", () => {
     expect(buildWebSentryOptions(DSN).tracesSampleRate).toBe(0.25);
   });
 
+  it("does not send Sentry Replay or a lowered error sample rate", async () => {
+    const { buildWebSentryOptions, buildServerSentryOptions } =
+      await loadOptions();
+    const browser = buildWebSentryOptions(DSN);
+    expect(browser.replaysSessionSampleRate).toBe(0);
+    expect(browser.replaysOnErrorSampleRate).toBe(0);
+    expect(browser.sampleRate).toBeUndefined();
+    expect(buildServerSentryOptions(DSN).sampleRate).toBeUndefined();
+    expect(browser.tracePropagationTargets).toEqual(
+      expect.arrayContaining([
+        "http://localhost:3001",
+        "https://api-staging.frapp.live",
+        "https://api.frapp.live",
+      ]),
+    );
+  });
+
+  it("sets release from the derived git SHA when present", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SENTRY_RELEASE", "deadbeefcafebabe");
+    const { buildWebSentryOptions, webSentryRelease } = await loadOptions();
+    expect(webSentryRelease()).toBe("deadbeefcafebabe");
+    expect(buildWebSentryOptions(DSN).release).toBe("deadbeefcafebabe");
+  });
+
   it("wires BOTH scrubbing hooks on both runtimes", async () => {
     const { buildWebSentryOptions, buildServerSentryOptions } =
       await loadOptions();
@@ -164,7 +188,10 @@ describe("no salt reaches the bundle", () => {
     // Excluding specs: this file names the forbidden strings in its own
     // assertions, so including it would make the test fail on itself.
     const sources = readdirSync(dir).filter(
-      (f) => f.endsWith(".ts") && !f.endsWith(".spec.ts"),
+      (f) =>
+        (f.endsWith(".ts") || f.endsWith(".js")) &&
+        !f.endsWith(".spec.ts") &&
+        !f.endsWith(".spec.tsx"),
     );
     expect(sources.length).toBeGreaterThan(0);
 

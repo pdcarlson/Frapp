@@ -30,3 +30,11 @@ export const OBSERVABILITY_PROVIDERS = {
   productAnalytics: "posthog",
   replay: "posthog",
 } as const;
+
+/**
+ * Content-free PostHog timeline marker emitted from a client Sentry
+ * `beforeSend` so a Sentry issue can be lined up with the PostHog session.
+ * Named in `spec/behavior/observability.md`. Never carry exception type, stack,
+ * message, request body, or query string.
+ */
+export const SENTRY_ERROR_CORRELATED_EVENT = "sentry-error-correlated";
