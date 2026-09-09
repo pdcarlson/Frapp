@@ -118,7 +118,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 > **Two things live outside Infisical and no CI check can detect either.** (1) The OAuth redirect URI
 > must be registered by hand in the Developer Portal → OAuth2 → Redirects, exactly
 > `${API_URL}/v1/discord/connect/callback` per environment — see
-> [`DEPLOYMENT.md`](../ops/DEPLOYMENT.md) § Discord application setup. (2) **Message Content Intent**
+> [`integrations.md`](../ops/deployment/integrations.md) § Discord application setup. (2) **Message Content Intent**
 > must be enabled under Bot → Privileged Gateway Intents. Without it Discord answers `200` with
 > `content: ""` on every message, so an import would otherwise write a chapter's whole history as
 > empty bubbles; the importer detects this and fails loudly rather than importing blanks, but only
