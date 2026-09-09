@@ -77,11 +77,11 @@ describe("attachPostHogCorrelation", () => {
 });
 
 describe("withPostHogSentryCorrelation", () => {
-  it("keeps status_class on the marker even though the scrubber drops contexts.response", () => {
+  it("keeps status_class on the marker even though the scrubber drops contexts.response", async () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);
     const wrapped = withPostHogSentryCorrelation((event) => event);
-    wrapped(
+    await wrapped(
       {
         event_id: "e2",
         contexts: { response: { status_code: 404 } },
@@ -94,11 +94,11 @@ describe("withPostHogSentryCorrelation", () => {
     ).toBe("4xx");
   });
 
-  it("runs after the scrubber so a dropped event is not marked", () => {
+  it("runs after the scrubber so a dropped event is not marked", async () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);
     const wrapped = withPostHogSentryCorrelation(() => null);
-    expect(wrapped({} as never, {} as never)).toBeNull();
+    expect(await wrapped({} as never, {} as never)).toBeNull();
     expect(memory.calls.some((c) => c.type === "capture")).toBe(false);
   });
 });

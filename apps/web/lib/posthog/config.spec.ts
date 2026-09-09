@@ -55,6 +55,8 @@ describe("init options the app ships", () => {
     expect(options.disable_session_recording).toBe(true);
     expect(options.person_profiles).toBe("identified_only");
     expect(options.session_recording?.maskAllInputs).toBe(true);
+    expect(options.session_recording?.maskTextSelector).toBe("*");
+    expect(options.session_recording?.blockClass).toBe("ph-no-capture");
   });
 
   it("still disables recording when asked for production", async () => {

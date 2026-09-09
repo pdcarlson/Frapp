@@ -93,7 +93,8 @@ export function withPostHogSentryCorrelation(
     // status class first so the timeline marker can still carry 2xx/4xx/5xx.
     const statusClass = httpStatusClass(statusFrom(event));
     const next = beforeSend ? beforeSend(event, hint) : event;
-    if (!next) return null;
-    return attachPostHogCorrelation(next, { statusClass });
+    return Promise.resolve(next).then((resolved) =>
+      resolved ? attachPostHogCorrelation(resolved, { statusClass }) : null,
+    );
   };
 }
