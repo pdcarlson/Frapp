@@ -274,7 +274,9 @@ export class NotificationService {
 
     if (created.length === 0) return;
 
-    const createdUserIds = created.map((notification) => notification.user_id);
+    const createdUserIds = [
+      ...new Set(created.map((notification) => notification.user_id)),
+    ];
     const { rows: tokens } = await this.loadInChunks(
       createdUserIds,
       (chunk) => this.pushTokenRepo.findByUserIds(chunk),
