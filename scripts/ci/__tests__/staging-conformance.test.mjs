@@ -17,6 +17,7 @@ import {
   checkAuthRedirects,
   checkAuthSignIn,
   checkAuthSmtp,
+  AUTH_SMTP_SENDER_NAME,
   checkAuthMagicLink,
   checkInfisicalSyncs,
   checkProjectStatus,
@@ -221,6 +222,7 @@ const smtpConfig = (overrides = {}) =>
   ok({
     smtp_host: "smtp.resend.com",
     smtp_admin_email: "no-reply@mail.staging.frapp.live",
+    smtp_sender_name: "Signet",
     rate_limit_email_sent: 300,
     smtp_pass: "must-never-appear-in-detail",
     ...overrides,
@@ -290,7 +292,7 @@ test("SMTP on with the hosted send cap still fails", async () => {
   assert.match(result.detail, /#1824/);
 });
 
-test("Resend host, no-reply@mail.staging.frapp.live, and 300/hour pass without leaking smtp_pass", async () => {
+test("Resend host, no-reply@mail.staging.frapp.live, Signet sender, and 300/hour pass without leaking smtp_pass", async () => {
   const result = await checkAuthSmtp({
     accessToken: "t",
     projectRef: "ref",
@@ -298,7 +300,45 @@ test("Resend host, no-reply@mail.staging.frapp.live, and 300/hour pass without l
   });
   assert.equal(result.status, PASS);
   assert.match(result.detail, /300\/hour/);
+  assert.match(result.detail, /sender=Signet/);
   assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
+});
+
+test("wrong smtp_sender_name fails even when host, From, and cap are right", async () => {
+  assert.equal(AUTH_SMTP_SENDER_NAME, "Signet");
+  const leftover = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => smtpConfig({ smtp_sender_name: "Frapp" }),
+  });
+  assert.equal(leftover.status, FAIL);
+  assert.match(leftover.detail, /smtp_sender_name is "Frapp"/);
+  assert.match(leftover.detail, /Signet/);
+  assert.doesNotMatch(leftover.detail, /must-never-appear-in-detail/);
+
+  const empty = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => smtpConfig({ smtp_sender_name: "" }),
+  });
+  assert.equal(empty.status, FAIL);
+  assert.match(empty.detail, /smtp_sender_name is "\(empty\)"/);
+
+  const wrongCase = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => smtpConfig({ smtp_sender_name: "signet" }),
+  });
+  assert.equal(wrongCase.status, FAIL);
+  assert.match(wrongCase.detail, /smtp_sender_name is "signet"/);
+
+  const padded = await checkAuthSmtp({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () => smtpConfig({ smtp_sender_name: "  Signet  " }),
+  });
+  assert.equal(padded.status, PASS);
+  assert.match(padded.detail, /sender=Signet/);
 });
 
 test("auth SMTP check skips without credentials and fails on a non-200", async () => {

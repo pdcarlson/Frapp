@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { getEnvironment } from "../lib/environments.mjs";
 import {
   ALERT_ISSUE_TITLE as STAGING_ALERT_TITLE,
+  AUTH_SMTP_SENDER_NAME,
   FAIL,
   PASS,
   SKIPPED,
@@ -114,6 +115,10 @@ describe("identity", () => {
 
   it("pins the production Auth SMTP From first users must not burn", () => {
     assert.equal(PRODUCTION_AUTH_SMTP_ADMIN_EMAIL, "no-reply@mail.frapp.live");
+  });
+
+  it("pins the Auth SMTP sender display name both projects must keep", () => {
+    assert.equal(AUTH_SMTP_SENDER_NAME, "Signet");
   });
 
   it("reads the production ref from environments.json, never from the argument name", () => {
@@ -303,6 +308,7 @@ describe("default assertions", () => {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "invites@frapp.live",
+        smtp_sender_name: "Signet",
         rate_limit_email_sent: 300,
         ...SIGNET_MAGIC_LINK,
       },
@@ -333,6 +339,7 @@ describe("default assertions", () => {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.staging.frapp.live",
+        smtp_sender_name: "Signet",
         rate_limit_email_sent: 300,
         ...SIGNET_MAGIC_LINK,
       },
@@ -356,12 +363,44 @@ describe("default assertions", () => {
     assert.match(smtp.detail, /no-reply@mail\.frapp\.live/);
   });
 
-  it("passes auth-smtp when production SMTP is Resend, mail.frapp.live, and 300/hour", async () => {
+  it("fails the run when production SMTP is on with a leftover Frapp sender", async () => {
     const { fetchImpl } = combinedFetch({
       auth: {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
+        smtp_sender_name: "Frapp",
+        rate_limit_email_sent: 300,
+        ...SIGNET_MAGIC_LINK,
+      },
+      githubRoutes: [
+        { method: "GET", path: "/issues?state=all", body: [] },
+        { method: "POST", path: "/issues", body: { number: 1946 } },
+      ],
+    });
+    const { outcome, results } = await runProductionAuthConformance({
+      token: "t",
+      repo: "o/r",
+      fetchImpl,
+      env: { SUPABASE_ACCESS_TOKEN: "tok" },
+      writeSummary: () => {},
+      logger: quiet,
+    });
+    assert.equal(outcome, "failed");
+    const smtp = results.find((r) => r.id === "auth-smtp");
+    assert.equal(smtp.status, FAIL);
+    assert.match(smtp.detail, /smtp_sender_name is "Frapp"/);
+    assert.match(smtp.detail, /Signet/);
+    assert.doesNotMatch(smtp.detail, /must-never-appear-in-detail/);
+  });
+
+  it("passes auth-smtp when production SMTP is Resend, mail.frapp.live, Signet sender, and 300/hour", async () => {
+    const { fetchImpl } = combinedFetch({
+      auth: {
+        ...HEALTHY_AUTH,
+        smtp_host: "smtp.resend.com",
+        smtp_admin_email: "no-reply@mail.frapp.live",
+        smtp_sender_name: "Signet",
         rate_limit_email_sent: 300,
         ...SIGNET_MAGIC_LINK,
       },
@@ -390,6 +429,7 @@ describe("default assertions", () => {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
+        smtp_sender_name: "Signet",
         rate_limit_email_sent: 2,
         ...SIGNET_MAGIC_LINK,
       },
@@ -418,6 +458,7 @@ describe("default assertions", () => {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
+        smtp_sender_name: "Signet",
         rate_limit_email_sent: 300,
         // Signet subject so this FAIL is the leftover ConfirmationURL href,
         // not the hosted "Your Magic Link" subject failing first.
@@ -453,6 +494,7 @@ describe("default assertions", () => {
         ...HEALTHY_AUTH,
         smtp_host: "smtp.resend.com",
         smtp_admin_email: "no-reply@mail.frapp.live",
+        smtp_sender_name: "Signet",
         rate_limit_email_sent: 300,
         ...SIGNET_MAGIC_LINK,
       },
