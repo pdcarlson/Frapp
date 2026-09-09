@@ -1,0 +1,68 @@
+name: Production backup environment
+
+# Between-dump watch: GitHub environment `production-backup` must never gain
+# required reviewers or a wait timer.
+#
+# Nightly `db-backup.yml` production jobs run under that environment so they
+# do not name `environment: production` (ADR-19 / #1435). Required reviewers
+# on `production-backup` would reintroduce the trap: a `schedule:` job
+# suspends on the gate and expires, so dumps look covered and write nothing.
+# A check *inside* `db-backup.yml` cannot see that — once reviewers exist
+# those jobs never start.
+#
+# ── Why this job does NOT say `environment: production-backup` ──────────────
+# Naming the environment it watches would hang on the same gate. This
+# workflow names no GitHub environment at all. It also does not name
+# `environment: production`.
+#
+# Semantics live in scripts/ci/production-backup-env.mjs.
+# Unit tests: scripts/ci/__tests__/production-backup-env.test.mjs
+# (`npm run test:ci-scripts`).
+#
+# Not a required PR check.
+
+on:
+  schedule:
+    # 06:15 UTC daily, fifteen minutes before db-backup.yml (06:30) so a
+    # reviewer gate is reported before the dump tries to start. One of the
+    # daily staggered watchdogs. Full schedule:
+    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-backup-env
+  cancel-in-progress: false
+
+jobs:
+  backup-env:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # The only write scope in this workflow, job-scoped: the alert issue.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Dependency-free (global fetch + the alert-issue helper), so no npm ci —
+      # matching production-release-pin.yml's deliberately minimal action surface.
+      - name: Assert production-backup has no required reviewers
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GET /environments needs Administration; GITHUB_TOKEN often 403s.
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/production-backup-env.mjs
