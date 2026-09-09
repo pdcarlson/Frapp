@@ -1,0 +1,80 @@
+name: Production release pin
+
+# Between-deploy pin: the three production hosts serve the same tagged commit.
+#
+# Launch criterion 1 is that frapp.live, app.frapp.live and api.frapp.live
+# serve the same SHA, and a vX.Y.Z tag records what is live. Guardrails watch
+# dashboard fail-open settings. Uptime watches /health/ready. Neither notices
+# a split-brain deploy or a named-SHA ship that skipped Release.
+#
+# Matching origin/main is NOT required: live is allowed to lag main until the
+# next Deploy production. /health `commit` is corroboration only — absent is
+# ignored (the live tag predates that field).
+#
+# ── Why this job does NOT say `environment: production` ─────────────────────
+# ADR-19 put Required reviewers on the `production` GitHub environment. A
+# `schedule:` job that names it suspends on that gate and expires without
+# probing (#1435). The production backup jobs use `production-backup` for the
+# same reason. This workflow names no environment at all.
+#
+# Semantics live in scripts/ci/production-release-pin.mjs.
+# Unit tests: scripts/ci/__tests__/production-release-pin.test.mjs
+# (`npm run test:ci-scripts`).
+#
+# Not a required PR check.
+
+on:
+  schedule:
+    # 08:00 UTC daily, a quarter past production-auth-conformance so the two
+    # do not report at the same moment. One of the daily staggered watchdogs.
+    # `production-uptime.yml` probes live `/health/ready` on its own cadence
+    # and does not share this stagger. Full schedule:
+    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release-pin
+  cancel-in-progress: false
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # The only write scope in this workflow, job-scoped: the alert issue.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Dependency-free (global fetch + the alert-issue helper), so no npm ci —
+      # matching production-guardrails.yml's deliberately minimal action surface.
+      - name: Assert production hosts share a tagged commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          # Passed rather than defaulted in the script: a watchdog that carries
+          # its own copy of a service id keeps asserting against the old service
+          # after a recreate, and reports green about an object nothing deploys
+          # to. Keep these in step with production-guardrails.yml's `env:` block.
+          RENDER_SERVICE_ID: srv-d6lqu41aae7s73f62df0
+          VERCEL_WEB_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
+          VERCEL_LANDING_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
+          VERCEL_TEAM_ID: team_j9XLIANou5EpvALrr4bM9Nee
+          API_HEALTH_URL: https://api.frapp.live/health
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/production-release-pin.mjs
