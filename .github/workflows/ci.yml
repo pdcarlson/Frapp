@@ -1028,8 +1028,27 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
+      # Google's Chrome apt index occasionally returns Hash Sum mismatch
+      # (transient CDN inconsistency). This step is repo-defined, so CI-wake
+      # classifies a failure here as a code failure and will not auto-requeue.
+      # OS packages are not in ~/.cache/ms-playwright — do not skip this on a
+      # browser cache hit, and do not `|| true`.
       - name: Install Playwright OS deps
-        run: npx playwright install-deps chromium
+        run: |
+          for i in 1 2 3; do
+            if npx playwright install-deps chromium; then
+              exit 0
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::playwright install-deps failed after 3 attempts (see prior apt output)."
+              exit 1
+            fi
+            echo "Attempt $i/3 failed — retrying in 20s..."
+            sudo rm -rf /var/lib/apt/lists/* || true
+            sleep 20
+          done
+          echo "::error::playwright install-deps retry loop ended without success."
+          exit 1
 
       - name: Install Playwright browser
         if: steps.pw-cache.outputs.cache-hit != 'true'
