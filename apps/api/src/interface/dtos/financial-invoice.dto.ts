@@ -16,6 +16,19 @@ import {
   INVOICE_TITLE_MAX_LENGTH,
 } from '@repo/validation';
 
+export class ListInvoicesQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Restrict the list to one member. Billing officers may pass any member; everyone else may only pass themselves.',
+    format: 'uuid',
+  })
+  @IsOptional()
+  // Reaches `.eq('user_id', …)` on a uuid column; an unvalidated string
+  // fails in Postgres as a 500 rather than here as a 400.
+  @IsUUID()
+  user_id?: string;
+}
+
 export class CreateFinancialInvoiceDto {
   @ApiProperty({ description: 'Member user ID to invoice' })
   @IsUUID()
