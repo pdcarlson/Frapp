@@ -1789,7 +1789,9 @@
             "name": "chapterId",
             "required": true,
             "in": "query",
+            "description": "Chapter to read preferences for",
             "schema": {
+              "format": "uuid",
               "type": "string"
             }
           }
@@ -2418,7 +2420,12 @@
             "name": "limit",
             "required": false,
             "in": "query",
+            "description": "Max messages to return. Integers outside 1–200 are rejected; omitted defaults to 50 after clamp.",
             "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50,
               "type": "number"
             }
           },
@@ -2426,8 +2433,10 @@
             "name": "before",
             "required": false,
             "in": "query",
-            "description": "Cursor for pagination (ISO timestamp)",
+            "description": "Cursor — return messages created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received.",
             "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$",
+              "example": "2026-01-31T23:59:59.999Z",
               "type": "string"
             }
           },
@@ -2437,6 +2446,7 @@
             "in": "query",
             "description": "Message UUID — returns messages created after this message (reconnect replay)",
             "schema": {
+              "format": "uuid",
               "type": "string"
             }
           }
@@ -3782,7 +3792,9 @@
             "name": "user_id",
             "required": false,
             "in": "query",
+            "description": "Restrict the list to one member. Billing officers may pass any member; everyone else may only pass themselves.",
             "schema": {
+              "format": "uuid",
               "type": "string"
             }
           }
