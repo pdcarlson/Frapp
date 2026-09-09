@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -14,12 +14,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   useChannel,
+  useChannelNotificationPreferences,
   useMarkChannelRead,
   useMemberDisplayNames,
+  useSetChannelNotificationLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { MessageBubble } from "@/components/chat/message-bubble";
+import {
+  NotificationLevelControl,
+  selectChannelNotificationLevel,
+} from "@/components/chat/notification-level-control";
 import { PollCard } from "@/components/chat/poll-card";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { selectPostCapability } from "@/lib/chat/channel-list";
@@ -201,7 +207,23 @@ export default function ChatThreadScreen() {
   );
 
   const isOffline = connection === "offline";
-  const { isOffline: appOffline } = useConnection();
+  const { isOffline: appOffline, writeBlockedReason } = useConnection();
+
+  const notificationPrefsQuery = useChannelNotificationPreferences();
+  const setNotificationLevel = useSetChannelNotificationLevel();
+  const notificationLevel = useMemo(
+    () =>
+      selectChannelNotificationLevel(notificationPrefsQuery.data, channelId),
+    [notificationPrefsQuery.data, channelId],
+  );
+  const failedChannelId = setNotificationLevel.isError
+    ? setNotificationLevel.variables?.channelId
+    : undefined;
+  const resetNotificationLevel = setNotificationLevel.reset;
+  const notificationLevelErrored = setNotificationLevel.isError;
+  useEffect(() => {
+    if (notificationLevelErrored) resetNotificationLevel();
+  }, [channelId, notificationLevelErrored, resetNotificationLevel]);
 
   /**
    * What the in-thread pill says, or `null` when it has nothing to add.
@@ -255,7 +277,23 @@ export default function ChatThreadScreen() {
           <Text numberOfLines={1} style={styles.headerTitle}>
             Thread
           </Text>
+          {channelId ? (
+            <NotificationLevelControl
+              level={notificationLevel}
+              disabled={!channelId}
+              isSaving={setNotificationLevel.isPending}
+              writeBlockedReason={writeBlockedReason}
+              onChange={(level) => {
+                setNotificationLevel.mutate({ channelId, level });
+              }}
+            />
+          ) : null}
         </View>
+        {channelId && failedChannelId === channelId ? (
+          <Text accessibilityRole="alert" style={styles.saveError}>
+            Notification level not saved
+          </Text>
+        ) : null}
 
         {/*
           Reconciled with the global banner rather than duplicating it (#998).
@@ -417,6 +455,11 @@ function createStyles(tokens: SignetTokens) {
       paddingBottom: tokens.spacing.md,
       borderBottomWidth: 1,
       borderBottomColor: tokens.color.border.hairline,
+      // The mute menu is `position: "absolute"` just below the trigger. Keep
+      // the header above the thread and do not clip that overflow — otherwise
+      // the menu draws under the message list (or vanishes on Android).
+      zIndex: 1,
+      overflow: "visible",
     },
     backChevron: {
       ...typeRole(tokens.typography.role.title),
@@ -427,6 +470,12 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
+    },
+    saveError: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.sm,
     },
     pressed: {
       opacity: 0.6,
