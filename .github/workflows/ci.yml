@@ -579,9 +579,11 @@ jobs:
         run: npm run check:api-breaking -- --base "${{ github.event.pull_request.base.sha }}"
 
   # ── Architectural boundary linting (dependency-cruiser) ─────────────────
-  # HARD GATE from day one, made survivable by a committed baseline:
-  # `scripts/dependency-cruiser-known-violations.json` grandfathers the 7 violations
-  # that existed when this landed, and any NEW violation fails.
+  # HARD GATE. The committed baseline
+  # (`scripts/dependency-cruiser-known-violations.json`) exists to shrink, not to
+  # grow; when it is empty, every violation fails. Current posture lives in
+  # docs/internal/ci-cd/QUALITY_GATES.md § dependency-cruiser — do not restate a
+  # count here.
   #
   # Needs the shared packages built — the cruise resolves workspace imports
   # through the node_modules symlinks npm workspaces creates.
@@ -615,11 +617,11 @@ jobs:
   # ADVISORY on purpose — deliberately NOT in scripts/ci/lib/required-checks.mjs.
   #
   # jscpd has no clone-level baseline the way dependency-cruiser does, so the
-  # only lever is a repo-wide duplication percentage. `.jscpd.json` pins it at
-  # 4.5%, just above the 4.37% measured when this landed, which catches net-new
-  # duplication but cannot distinguish "one bad copy-paste" from "the number
-  # drifted". That is too coarse to block a merge on, and the ratchet only ever
-  # moves down as the consolidation work lands.
+  # only lever is a repo-wide duplication percentage. The threshold and ratchet
+  # live in docs/internal/ci-cd/QUALITY_GATES.md § jscpd (config: `.jscpd.json`)
+  # — do not restate a number here. That percentage is too coarse to block a
+  # merge on: it cannot distinguish one bad copy-paste from ordinary drift, and
+  # the ratchet only ever moves down as consolidation lands.
   #
   # The job is simply allowed to FAIL when the threshold is breached. That is
   # what "advisory" means here: `duplicate-detection` is deliberately absent
