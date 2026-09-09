@@ -19,6 +19,7 @@ import {
   checkAuthSmtp,
   AUTH_SMTP_SENDER_NAME,
   checkAuthMagicLink,
+  leftoverFrappMailerSubjectKeys,
   checkInfisicalSyncs,
   checkProjectStatus,
   checkRenderAutoDeploy,
@@ -445,6 +446,34 @@ test("Magic Link subject + token_hash href pass without leaking smtp_pass or the
   assert.doesNotMatch(result.detail, /RedirectTo/);
 });
 
+test("leftoverFrappMailerSubjectKeys names only the Frapp inbox titles", () => {
+  assert.deepEqual(
+    leftoverFrappMailerSubjectKeys({
+      mailer_subjects_invite: "You have been invited to Frapp",
+      mailer_subjects_recovery: "Reset Your Password",
+      mailer_subjects_magic_link: "Sign in to frapp",
+      smtp_pass: "must-never-appear-in-detail",
+      mailer_templates_invite_content: "Frapp in a body must not count",
+    }),
+    ["mailer_subjects_invite", "mailer_subjects_magic_link"],
+  );
+  assert.deepEqual(leftoverFrappMailerSubjectKeys({ mailer_subjects_invite: "You have been invited" }), []);
+});
+
+test("a sibling Auth subject that says Frapp fails without leaking smtp_pass", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    fetchImpl: async () =>
+      magicLinkConfig({ mailer_subjects_invite: "Join Frapp" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /mailer_subjects_invite/);
+  assert.match(result.detail, /Frapp/);
+  assert.doesNotMatch(result.detail, /Join Frapp/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
+});
+
 test("hosted Magic Link subject fails", async () => {
   const result = await checkAuthMagicLink({
     accessToken: "t",
@@ -538,6 +567,26 @@ test("whenSmtpUnset skip leaves hosted SMTP as SKIPPED even with ConfirmationURL
   assert.match(result.detail, /smtp_host is empty/);
   assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
   assert.doesNotMatch(result.detail, /ConfirmationURL/);
+});
+
+test("whenSmtpUnset skip still skips when a leftover Frapp inbox title is present", async () => {
+  const result = await checkAuthMagicLink({
+    accessToken: "t",
+    projectRef: "ref",
+    whenSmtpUnset: "skip",
+    fetchImpl: async () =>
+      magicLinkConfig({
+        smtp_host: "",
+        mailer_subjects_invite: "Join Frapp",
+        mailer_subjects_magic_link: "Your Magic Link",
+        mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">Log In</a>',
+      }),
+  });
+  assert.equal(result.status, SKIPPED);
+  assert.match(result.detail, /smtp_host is empty/);
+  assert.doesNotMatch(result.detail, /mailer_subjects_invite/);
+  assert.doesNotMatch(result.detail, /Join Frapp/);
+  assert.doesNotMatch(result.detail, /must-never-appear-in-detail/);
 });
 
 test("whenSmtpUnset skip still FAILs ConfirmationURL once SMTP is on", async () => {
