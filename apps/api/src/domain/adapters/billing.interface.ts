@@ -70,6 +70,12 @@ export function customerIdFrom(
   return typeof customer === 'string' ? customer : (customer?.id ?? null);
 }
 
+export interface PaymentIntentLastPaymentError {
+  message?: string | null;
+  decline_code?: string | null;
+  code?: string | null;
+}
+
 export interface PaymentIntentWebhookObject {
   id: string;
   metadata?: {
@@ -81,6 +87,7 @@ export interface PaymentIntentWebhookObject {
   // payload expansion — normalize via chargeIdFromLatestCharge.
   latest_charge?: string | { id: string } | null;
   amount?: number;
+  last_payment_error?: PaymentIntentLastPaymentError | null;
 }
 
 /** Normalize Stripe's `latest_charge` (id, expanded object, or null). */
@@ -92,12 +99,39 @@ export function chargeIdFromLatestCharge(
     : (latestCharge?.id ?? null);
 }
 
+/** Cap so a Stripe decline string cannot blow a notification body. */
+const DECLINE_REASON_MAX_LENGTH = 180;
+
+/**
+ * Member-facing decline text from a `payment_intent.payment_failed` payload.
+ * Prefers Stripe's `message` (already written for the cardholder) over codes.
+ */
+export function declineReasonFromLastPaymentError(
+  lastPaymentError: PaymentIntentLastPaymentError | null | undefined,
+): string | null {
+  const raw = [
+    lastPaymentError?.message,
+    lastPaymentError?.decline_code,
+    lastPaymentError?.code,
+  ]
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .find((value) => value.length > 0);
+  if (!raw) return null;
+  return raw.length > DECLINE_REASON_MAX_LENGTH
+    ? `${raw.slice(0, DECLINE_REASON_MAX_LENGTH)}…`
+    : raw;
+}
+
 export type WebhookEvent =
   | BaseWebhookEvent<'checkout.session.completed', CheckoutSessionWebhookObject>
   | BaseWebhookEvent<'customer.subscription.updated', SubscriptionWebhookObject>
   | BaseWebhookEvent<'customer.subscription.deleted', SubscriptionWebhookObject>
   | BaseWebhookEvent<'invoice.paid', InvoiceWebhookObject>
   | BaseWebhookEvent<'payment_intent.succeeded', PaymentIntentWebhookObject>
+  | BaseWebhookEvent<
+      'payment_intent.payment_failed',
+      PaymentIntentWebhookObject
+    >
   | BaseWebhookEvent<string, Record<string, unknown>>;
 
 export interface CreatePaymentIntentParams {
