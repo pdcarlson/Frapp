@@ -36,13 +36,14 @@ import {
   editMessage as editMessageAction,
   flushOutbox,
   hydrateOutboxIntoCache,
+  mergePersistedRecorded,
   react as reactAction,
   retryOutboxRow,
   sendMessage,
   unreact as unreactAction,
   type ToastFn,
 } from "@repo/chat-core/chat-client";
-import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import { browserKeyValueStore, type OutboxAttachment } from "@repo/chat-core/adapters";
 import type { ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
@@ -135,6 +136,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       toast,
       track: track ?? undefined,
       outbox: dexieOutboxStore,
+      kv: browserKeyValueStore,
     }),
     [queryClient, apiClient, supabase, userId, toast, track],
   );
@@ -172,6 +174,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           }
           cache = mutated;
         }
+      }
+      if (userId) {
+        cache = mergePersistedRecorded(cache, {
+          channelId,
+          userId,
+          kv: browserKeyValueStore,
+        });
       }
       return cache;
     },
