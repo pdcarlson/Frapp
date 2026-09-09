@@ -7,8 +7,8 @@
 //
 // SCOPE. Source lock only. Do not send mail. Do not change the From
 // host (`mail.frapp.live` stays). Do not rename RESEND_FROM_EMAIL.
-// Do not PATCH Auth. SMTP sender name stays on leftover 1946. Auth
-// mailer subjects stay on leftover 1948.
+// Do not PATCH Auth. HTML and text helper bodies are checked
+// separately so one Signet string cannot hide a leftover in the other.
 // Case-sensitive leftover check: comments still name `frapp.live`.
 
 import { test } from "node:test";
@@ -49,6 +49,22 @@ function walkProductTs(dir) {
   return out;
 }
 
+export function inviteHelperSource(source, name) {
+  const start = source.search(new RegExp(`function ${name}\\(`));
+  if (start === -1) return "";
+  const open = source.indexOf("{", start);
+  if (open === -1) return "";
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === "{") depth += 1;
+    else if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(open + 1, i);
+    }
+  }
+  return "";
+}
+
 export function inviteCopySites(root = REPO_ROOT) {
   return walkProductTs(join(root, "apps", "api", "src"))
     .filter((path) => {
@@ -81,8 +97,13 @@ export function inviteFromLockProblems({ moduleSource, providerSource }) {
   if (!new RegExp(literal(SUBJECT)).test(providerSource)) {
     problems.push("invite subject must say Signet");
   }
-  if (!new RegExp(literal(BODY)).test(providerSource)) {
-    problems.push("invite body must say Signet");
+  const html = inviteHelperSource(providerSource, "inviteEmailHtml");
+  const text = inviteHelperSource(providerSource, "inviteEmailText");
+  if (!html || !new RegExp(literal(BODY)).test(html)) {
+    problems.push("inviteEmailHtml body must say Signet");
+  }
+  if (!text || !new RegExp(literal(BODY)).test(text)) {
+    problems.push("inviteEmailText body must say Signet");
   }
   if (!/inviteEmailHtml/.test(providerSource) || !/inviteEmailText/.test(providerSource)) {
     problems.push("must keep inviteEmailHtml and inviteEmailText");
@@ -142,6 +163,20 @@ test("putting Frapp back in the invite subject fails", () => {
   });
   assert.ok(
     problems.some((problem) => /subject|must not name Frapp/.test(problem)),
+    problems.join("; "),
+  );
+});
+
+test("stripping Signet from inviteEmailText only fails", () => {
+  const problems = inviteFromLockProblems({
+    moduleSource: readRepo(MODULE),
+    providerSource: readRepo(PROVIDER).replace(
+      /function inviteEmailText\([^)]*\): string \{[\s\S]*?\n\}/,
+      (block) => block.replace("on Signet as", "as"),
+    ),
+  });
+  assert.ok(
+    problems.some((problem) => problem.includes("inviteEmailText")),
     problems.join("; "),
   );
 });
