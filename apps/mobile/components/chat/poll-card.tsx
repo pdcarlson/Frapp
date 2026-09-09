@@ -12,6 +12,7 @@ import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useNow } from "@repo/hooks";
 import { groupReactions, ReactionRow } from "./message-bubble";
+import { ReplyQuote } from "./reply-quote";
 
 /**
  * #528 — mobile in-chat poll voting. Mirrors
@@ -60,6 +61,12 @@ export interface PollCardProps {
   viewerId: string | null;
   /** Confirmed messages can be voted on; pending optimistic rows cannot. */
   isConfirmed: boolean;
+  /**
+   * Resolves a `users.id` to a display name. Required so a poll that is a
+   * reply can caption its parent without silently falling back to a uuid.
+   */
+  nameFor: (userId: string) => string | null;
+  replyParent?: ChatMessage | null;
   onVote: (
     messageId: string,
     actionType: string,
@@ -75,6 +82,8 @@ export function PollCard({
   message,
   viewerId,
   isConfirmed,
+  nameFor,
+  replyParent,
   onVote,
   onRetry,
   onDiscard,
@@ -141,10 +150,22 @@ export function PollCard({
       align="flex-start"
     />
   );
+  const replyQuote =
+    message.reply_to_id && !message.is_deleted ? (
+      <ReplyQuote
+        message={message}
+        replyParent={replyParent}
+        nameFor={nameFor}
+        viewerId={viewerId}
+        borderColor={tokens.color.border.hairline}
+        textColor={tokens.color.text.muted}
+      />
+    ) : null;
 
   if (!payload) {
     return (
       <View style={styles.card}>
+        {replyQuote}
         <Text style={styles.malformed}>Malformed poll · {message.content}</Text>
         {statusAndActions}
         {reactionRow}
@@ -165,6 +186,7 @@ export function PollCard({
 
   return (
     <View style={styles.card}>
+      {replyQuote}
       <Text style={styles.eyebrow}>Poll{isClosed ? " · Closed" : ""}</Text>
       <Text style={styles.question}>{payload.question}</Text>
       <View style={styles.options}>
