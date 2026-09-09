@@ -50,6 +50,23 @@ export interface CreateEventInput {
   client_message_id?: string;
 }
 
+/**
+ * The created event row, plus whether the chat card that accompanies it was
+ * posted.
+ *
+ * `card_posted` is present ONLY when this request actually attempted a card —
+ * chat context supplied (`channel_id` + `client_message_id`) and a creator
+ * to post as. A dashboard create's response shape is therefore unchanged. The
+ * card stays best-effort — a failed post never rolls the event back — but the
+ * caller now learns it failed instead of inferring success from the 2xx and
+ * leaving its optimistic placeholder up forever (#1717). Recurring children
+ * are side effects of this write and are not in this return value; the parent
+ * is what `POST /v1/events` publishes.
+ */
+export type CreateEventResult = Event & {
+  card_posted?: boolean;
+};
+
 export interface UpdateEventInput {
   name?: string;
   description?: string | null;
@@ -246,7 +263,7 @@ export class EventService {
     );
   }
 
-  async create(input: CreateEventInput): Promise<Event> {
+  async create(input: CreateEventInput): Promise<CreateEventResult> {
     const { start_time, end_time } = input;
 
     const start = new Date(start_time);
@@ -345,31 +362,53 @@ export class EventService {
     // in chat. The card is server-originated (a client cannot forge
     // `kind:"event"` — see ChatService.SERVER_ONLY_KINDS) and best-effort: the
     // event row is the source of truth, so a failed post is logged and never
-    // rolls the event back.
-    //
-    // channel_id and client_message_id are paired (the optimistic placeholder
-    // is keyed on client_message_id). If only one is supplied the card is
-    // silently skipped and the client's placeholder would hang — surface that.
+    // rolls the event back — but the outcome is now REPORTED rather than
+    // swallowed (#1717). `undefined` means no card was attempted (a dashboard
+    // create, or a half-pair of chat keys), which is reported as an ABSENT
+    // field rather than a `false` that would claim a card failed when none
+    // was ever due.
+    const cardPosted = await this.tryPostEventCard(input, parent);
+
+    return cardPosted === undefined
+      ? parent
+      : { ...parent, card_posted: cardPosted };
+  }
+
+  /**
+   * Returns whether the card posted, or `undefined` when no card was due —
+   * the three-way distinction `card_posted` publishes.
+   *
+   * channel_id and client_message_id are paired (the optimistic placeholder
+   * is keyed on client_message_id). If only one is supplied the card is
+   * skipped and the client's placeholder would hang — surface that, and omit
+   * the flag: no card was attempted.
+   */
+  private async tryPostEventCard(
+    input: CreateEventInput,
+    parent: Event,
+  ): Promise<boolean | undefined> {
     if (Boolean(input.channel_id) !== Boolean(input.client_message_id)) {
       this.logger.warn(
         'Event card not posted: channel_id and client_message_id must be supplied together',
         { chapterId: input.chapter_id, eventId: parent.id },
       );
     }
-    if (input.channel_id && input.client_message_id && input.created_by) {
-      try {
-        await this.postEventCard(input, parent);
-      } catch (error) {
-        this.logger.warn('Failed to post event card to chat', {
-          eventId: parent.id,
-          channelId: input.channel_id,
-          chapterId: input.chapter_id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+    if (!input.channel_id || !input.client_message_id || !input.created_by) {
+      return undefined;
     }
 
-    return parent;
+    try {
+      await this.postEventCard(input, parent);
+      return true;
+    } catch (error) {
+      this.logger.warn('Failed to post event card to chat', {
+        eventId: parent.id,
+        channelId: input.channel_id,
+        chapterId: input.chapter_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   /**

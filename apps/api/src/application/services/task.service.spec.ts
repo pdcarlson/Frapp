@@ -254,7 +254,82 @@ describe('TaskService', () => {
         client_message_id: 'cmid-1',
       });
 
-      expect(result).toEqual(baseTask);
+      expect(result).toEqual({ ...baseTask, card_posted: false });
+    });
+
+    // #1717: the client renders an optimistic `loading` placeholder keyed on
+    // `client_message_id` and waits for the Realtime echo of the card to
+    // reconcile it. A failed post means no echo ever arrives, so the caller
+    // has to be told — otherwise the placeholder is permanent and an officer
+    // cannot tell a committed create from a lost one.
+    describe('card_posted (#1717)', () => {
+      const chatInput = {
+        chapter_id: 'ch-1',
+        title: 'Test Task',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+        point_reward: 10,
+        channel_id: 'channel-1',
+        client_message_id: 'cmid-1',
+      };
+
+      it('reports card_posted: true when the card posts', async () => {
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        mockTaskRepo.create.mockResolvedValue(baseTask);
+        mockUserRepo.findByIds.mockResolvedValue([
+          { id: 'admin-1', display_name: 'Admin Alice' },
+          { id: 'user-1', display_name: 'Member Bob' },
+        ]);
+
+        const result = await service.create(chatInput);
+
+        expect(result).toEqual({ ...baseTask, card_posted: true });
+      });
+
+      it('reports card_posted: false when the card post throws', async () => {
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        mockTaskRepo.create.mockResolvedValue(baseTask);
+        mockChatService.sendMessage.mockRejectedValue(new Error('chat down'));
+
+        const result = await service.create(chatInput);
+
+        expect(result).toEqual({ ...baseTask, card_posted: false });
+      });
+
+      it('omits card_posted entirely for a dashboard create', async () => {
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        mockTaskRepo.create.mockResolvedValue(baseTask);
+
+        const result = await service.create({
+          chapter_id: 'ch-1',
+          title: 'Test Task',
+          assignee_id: 'user-1',
+          created_by: 'admin-1',
+          due_date: '2099-03-15',
+        });
+
+        expect(result).toEqual(baseTask);
+        expect('card_posted' in result).toBe(false);
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('omits card_posted when only one half of the chat context is given', async () => {
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+        mockTaskRepo.create.mockResolvedValue(baseTask);
+
+        const result = await service.create({
+          chapter_id: 'ch-1',
+          title: 'Test Task',
+          assignee_id: 'user-1',
+          created_by: 'admin-1',
+          due_date: '2099-03-15',
+          channel_id: 'channel-1',
+        });
+
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+        expect('card_posted' in result).toBe(false);
+      });
     });
   });
 
