@@ -602,10 +602,13 @@ export function ServiceHoursPage() {
                     !viewerUnknown && entry.user_id === viewerUserId;
                   const cannotApprove = isOwnEntry || viewerUnknown;
                   // Only describe the button when the subscription gate is not
-                  // already doing it — `controlProps` points `aria-describedby`
-                  // at its own notice, and overriding that would trade one
-                  // reason for another rather than adding this one.
-                  const showApproveReason = cannotApprove && gate.allowed;
+                  // already doing it. Key on `state.allowed` / `isPending`,
+                  // not `allowed`: `allowed` folds in OFFLINE, and an
+                  // offline-only block does not set `aria-describedby` (the
+                  // reason is on `title`). Overriding that would hide the
+                  // self-approval sentence behind "Reconnect to make changes."
+                  const showApproveReason =
+                    cannotApprove && gate.state.allowed && !gate.isPending;
                   const approveReasonId = `svc-approve-reason-${entry.id}`;
                   const approveBlockedReason = isOwnEntry
                     ? "You can't approve your own hours \u2014 another admin has to review them."
