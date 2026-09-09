@@ -42,6 +42,12 @@ import test from "node:test";
  * `.test.mjs`), because the proxy passes cleanly on `check-foo.test.js`, on
  * `nested/deep.test.mjs`, and on `test-foo.mjs` — three files the script's
  * glob silently drops.
+ *
+ * The same silent-skip hazard on vitest lives in `apps/web` and
+ * `apps/landing` (include is `*.spec` only). Those guards are
+ * `apps/web/tests/vitest-collection.spec.ts` and
+ * `apps/landing/vitest-collection.spec.ts` — they must not be renamed into
+ * this directory.
  */
 
 const repoRoot = join(import.meta.dirname, "..", "..", "..");
