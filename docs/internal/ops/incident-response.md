@@ -6,7 +6,7 @@ this file starts once someone is already looking.
 
 Database rollback and restore are their own procedures:
 [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). Deploy and promotion are in
-[`DEPLOYMENT.md`](DEPLOYMENT.md) and [`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md).
+[the deployment runbook](deployment/) and [`DB_PROMOTION_RUNBOOK.md`](DB_PROMOTION_RUNBOOK.md).
 
 ## API down
 

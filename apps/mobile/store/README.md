@@ -3,7 +3,7 @@
 The text and answers the two store consoles ask for, kept next to the app so
 they are reviewed like code. Nothing here is read by a build; it is what a human
 pastes into App Store Connect and the Play Console when creating the listing
-(procedure: [`docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md)
+(procedure: [`docs/internal/ops/deployment/mobile.md`](../../../docs/internal/ops/deployment/mobile.md)
 § Mobile). Screenshots are not committed — take them from a `preview` build on a
 device once one exists (#938).
 

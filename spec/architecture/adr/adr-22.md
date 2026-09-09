@@ -48,8 +48,11 @@ Code-side gaps on the same date (current behavior, not this decision): identity 
 (privacy copy still names Sentry); API/web `tracesSampleRate` was still `Number(env ?? '0.1')`
 and could be `NaN` (closed #904 covered mobile only).
 **Correction (2026-09-09):** `@repo/observability` `parseTracesSampleRate` now clamps API and
-web traces rates to finite `[0, 1]` with default `0.1` (#2040). The identity DTO and landing
-gaps remain.
+web traces rates to finite `[0, 1]` with default `0.1` (#2040). Landing still
+has no Sentry/PostHog SDK.
+**Correction (2026-09-09):** `GET /v1/analytics/identity` now returns
+`chapter_group_id` (64-hex HMAC of `chapter_id`, or `null`) alongside
+`distinct_id` / `enabled` (#2042). HMAC stays API-side.
 **Correction (2026-09-09):** API `Sentry.init` lives in `apps/api/src/instrument.ts` (first
 import from `main.ts`). `skipOpenTelemetrySetup` is explicitly `false` so Sentry owns
 the Node tracer; `@opentelemetry/sdk-node` is not a dependency. Request-correlation

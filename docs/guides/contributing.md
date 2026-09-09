@@ -8,7 +8,7 @@ The branch model — `main` as the only long-lived branch and what a merge to it
 `feature/*` and `hotfix/*` off it, the `production` branch retired in #1340, and the flow
 from feature PR to a named-commit production deploy — lives in
 [`CONTRIBUTING.md`](../../CONTRIBUTING.md) § Branch Model. The gates that deploy passes
-through: [`docs/internal/ops/DEPLOYMENT.md`](../internal/ops/DEPLOYMENT.md) § How Deployments Are Gated.
+through: [`docs/internal/ops/deployment/ci-cd.md`](../internal/ops/deployment/ci-cd.md#how-deployments-are-gated) § How Deployments Are Gated.
 
 Example feature branch names:
 

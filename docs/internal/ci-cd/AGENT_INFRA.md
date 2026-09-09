@@ -125,7 +125,7 @@ summary before running anything from this family.
 > `deploy-production.yml` deploys production from a dispatched SHA. Both run
 > `scripts/ci/deploy-vercel.mjs`. Live exercise of the production upload, and the
 > Actions-list trap when tagging fails afterward:
-> [`DEPLOYMENT.md`](../ops/DEPLOYMENT.md) § 10 (2026-09-07, run 34155737950).
+> [`ci-cd.md`](../ops/deployment/ci-cd.md#how-deployments-are-gated) (2026-09-07, run 34155737950).
 >
 > This does **not** retire the "dashboard-only, fail-open settings" framing the guardrail row sits
 > inside. While the projects stay unlinked there is no Production Branch left to point at `main` —
@@ -157,7 +157,7 @@ step with an admin PAT — by policy (canonical statement:
 [`../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)) — and
 the two footguns above are why that policy is not merely etiquette.
 
-Deeper deploy architecture: [`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md).
+Deeper deploy architecture: [`../ops/deployment/`](../ops/deployment/).
 
 ## Infisical sync map
 

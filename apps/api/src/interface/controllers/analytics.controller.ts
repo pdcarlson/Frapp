@@ -19,7 +19,10 @@ import { ContentFreePropertyError } from '@repo/validation';
 import { AnalyticsService } from '../../application/services/analytics.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
-import { CurrentUser } from '../decorators/current-user.decorator';
+import {
+  CurrentUser,
+  OptionalChapterId,
+} from '../decorators/current-user.decorator';
 import {
   IdentityResponseDto,
   TrackEventDto,
@@ -37,13 +40,22 @@ export class AnalyticsController {
   @Get('identity')
   @ApiOperation({
     summary:
-      "Get the caller's pseudonymous analytics id (HMAC of user id). Lets the client attribute events without ever holding the salt.",
+      "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter is in context). Lets the client attribute events without ever holding the salt.",
   })
   @ApiOkResponse({ type: IdentityResponseDto })
-  getIdentity(@CurrentUser('id') userId: string): IdentityResponseDto {
+  getIdentity(
+    @CurrentUser('id') userId: string,
+    @OptionalChapterId() chapterId?: string,
+  ): IdentityResponseDto {
     // `enabled: false` tells the client SDK to stay dark (no key configured).
+    // Chapter opt-out does not hide these digests — Sentry still needs
+    // `user.id`. Event capture remains gated in AnalyticsService.
     const distinctId = this.analytics.getDistinctId(userId);
-    return { distinct_id: distinctId, enabled: distinctId !== null };
+    return {
+      distinct_id: distinctId,
+      enabled: distinctId !== null,
+      chapter_group_id: this.analytics.getChapterGroupId(chapterId),
+    };
   }
 
   @Post('events')

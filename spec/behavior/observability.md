@@ -27,14 +27,14 @@ These identifiers are distinct. Do not copy one into another.
 
 | Identifier | Who mints it | Format | Where it travels | Must not |
 | --- | --- | --- | --- | --- |
-| `x-request-id` | Web/mobile `createFrappClient` (API `requestIdMiddleware` honours inbound, else mints `req_<uuid>`) | Opaque string | Request header, response header, internal logs, error JSON `requestId`, Sentry request headers (allowlisted). CORS `exposedHeaders` so browser JS can read the echo. | Be replaced by a Sentry/OTEL trace id; be a credential |
+| `x-request-id` | Web/mobile `createFrappClient` and health probes (`withRequestIdInit`); API `requestIdMiddleware` honours inbound, else mints `req_<uuid>` | Opaque string | Request header, response header, internal logs, error JSON `requestId`, Sentry request headers (allowlisted). CORS `exposedHeaders` so browser JS can read the echo. | Be replaced by a Sentry/OTEL trace id; be a credential |
 | Sentry trace id | Sentry SDK (Node trace provider on the API) | Sentry/OTEL trace id | Sentry transactions/spans only | Be used as `x-request-id` |
 | Sentry event id | Sentry, per error event | Sentry event id | Sentry; optional PostHog [`sentry-error-correlated`](#privacy-and-replay) marker | Be treated as a user id |
 | PostHog `distinct_id` | API `hmac_sha256(salt, user_id)` | 64 lowercase hex | PostHog events; web Sentry `user.id` via identity | Be computed in a client bundle |
 | PostHog chapter group | API `hmac_sha256(salt, chapter_id)` | 64 lowercase hex | PostHog groups; activation-funnel `distinct_id` | Be a raw `chapter_id` |
 | PostHog session id / replay id | PostHog, when a client SDK exists | Provider ids | Attached to Sentry as tags; never the other way around | Appear when the chapter has opted out, or in production replay before approval |
 
-`GET /v1/analytics/identity` is the only client-visible source of the user pseudonym. It must also return the caller's **chapter-group** pseudonym(s) when a chapter is in context, so clients never hash. Today the DTO returns only `{ distinct_id, enabled }` — that gap is current behavior, not this contract.
+`GET /v1/analytics/identity` is the only client-visible source of the user pseudonym **and** the chapter-group pseudonym. The response is `{ distinct_id, enabled, chapter_group_id }`: both ids are 64 lowercase hex (or `null` when analytics is unconfigured); `chapter_group_id` is also `null` when no chapter is in context. Clients never hash. The salt is API-only.
 
 On the API, Sentry owns the Node trace provider. Integrate with its OpenTelemetry context; do not install a second global tracer.
 

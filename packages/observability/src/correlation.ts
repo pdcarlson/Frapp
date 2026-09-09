@@ -47,12 +47,11 @@ export type PostHogChapterGroupId = string;
  * HMAC stays API-local (Node crypto + the salt). This package only names the
  * shape so web/mobile/landing cannot invent a second one.
  *
- * `chapter_group_id` is the intended field when a chapter is in context.
- * Today's API DTO is `{ distinct_id, enabled }` only — that gap is current
- * behavior (#2042), not a reason to omit the field from the type.
+ * `chapter_group_id` is the chapter-group field when a chapter is in context,
+ * else `null`. HMAC stays API-side.
  */
 export interface AnalyticsIdentity {
-  distinct_id: PostHogDistinctId;
+  distinct_id: PostHogDistinctId | null;
   enabled: boolean;
-  chapter_group_id?: PostHogChapterGroupId;
+  chapter_group_id: PostHogChapterGroupId | null;
 }

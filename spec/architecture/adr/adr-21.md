@@ -180,7 +180,7 @@ approval. `deploy-production.yml`'s `dry_run_only` still stops before the Vercel
 `f2938a01`) applied, shipped Render, and uploaded both Vercel production bundles with
 `--prebuilt --prod`. The tag job failed afterward (`GET /pulls/1340`); that does not un-exercise
 the upload path. Canonical timestamps and the Actions-list trap:
-[`docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md) § 10.
+[`docs/internal/ops/deployment/ci-cd.md`](../../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated).
 
 **Correction 2026-09-09:** #1376 closed as `not_planned` on 2026-09-02 (premise moot while
 unlinked; reopen if Git is re-linked). The original *What it retires* paragraph that says it is

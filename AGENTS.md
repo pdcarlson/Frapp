@@ -119,7 +119,7 @@ Managed in **Infisical** (project ID in `.infisical.json`). Canonical lists: [`d
 
 ## CI/CD, GitHub, PAT rules, Infisical syncs
 
-See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). Deploy architecture: [`docs/internal/ops/DEPLOYMENT.md`](docs/internal/ops/DEPLOYMENT.md).
+See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). Deploy architecture: [`docs/internal/ops/deployment/`](docs/internal/ops/deployment/).
 
 ## Lint, test, build, type-check
 
