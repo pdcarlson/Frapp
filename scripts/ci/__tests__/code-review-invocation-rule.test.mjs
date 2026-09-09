@@ -38,7 +38,7 @@ const RUNBOOK_REL = "docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md";
 // rest must agree with it character for character.
 const REGEX_SITES = [
   RUNBOOK_REL,
-  "spec/architecture/README.md",
+  "spec/architecture/adr/adr-14.md",
   ".claude/skills/diff-review/SKILL.md",
   ".claude/hooks/pre-push-review-gate.sh",
 ];
