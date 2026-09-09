@@ -1,6 +1,6 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 
-import { LIST_QUERY_LIMIT_MAX } from '../../domain/constants/list-query-limits';
+import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import { GetChannelMessagesQueryDto } from './chat.dto';
 
