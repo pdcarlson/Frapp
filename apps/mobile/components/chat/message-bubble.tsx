@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
+import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
@@ -176,7 +177,7 @@ export function MessageBubble({
     ) : null;
 
   const body = message.is_deleted ? (
-    <Text style={styles.deleted}>Message deleted</Text>
+    <Text style={styles.deleted}>{DELETED_MESSAGE_PLACEHOLDER}</Text>
   ) : (
     <>
       {message.content.length > 0 ? (
@@ -281,7 +282,7 @@ function MineMessageBubble({
 
   const body = message.is_deleted ? (
     <Text style={[styles.deleted, { color: accentOnPrimary }]}>
-      Message deleted
+      {DELETED_MESSAGE_PLACEHOLDER}
     </Text>
   ) : (
     <>

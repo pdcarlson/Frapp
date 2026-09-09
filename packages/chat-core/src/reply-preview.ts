@@ -1,8 +1,9 @@
 import type { ChatMessageKind } from "./types";
 
 /**
- * Tombstone a deleted message shows in a quote (and, on web, in the bubble
- * and the delete-confirm dialog).
+ * Tombstone a deleted message shows in a quote and in the bubble that
+ * row still occupies (web and mobile). Web's delete-confirm dialog uses
+ * it too.
  *
  * One string because a quote of a deleted parent and the parent's own row
  * sit in the same viewport — two wordings would put two tombstones on

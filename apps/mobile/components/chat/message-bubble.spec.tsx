@@ -42,7 +42,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import { UNAVAILABLE_QUOTE } from "@repo/chat-core/reply-preview";
+import { UNAVAILABLE_QUOTE, DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import {
   formatMessageTime,
   groupReactions,
@@ -310,7 +310,7 @@ describe("reply quote (#1727)", () => {
       ).toJSON(),
     );
     expect(flat).not.toContain("the original");
-    expect(flat).toContain("Message deleted");
+    expect(flat).toContain(DELETED_MESSAGE_PLACEHOLDER);
   });
 
   it("quotes a deleted parent as the tombstone, not as a blank", () => {
@@ -324,7 +324,11 @@ describe("reply quote (#1727)", () => {
     expect(flat).toContain("agreed");
   });
 
-  it("flattens markdown in the parent so the quote matches the bubble", () => {
+  it("flattens markdown in the parent using the shared preview rules", () => {
+    // Mobile bubbles still print `content` raw (no markdown renderer on this
+    // surface). The quote uses the web preview rules on purpose (#1727), so
+    // `_really_ urgent` becomes `really urgent` in the strip even though the
+    // parent row would still show the underscores.
     const flat = JSON.stringify(
       renderBubble(
         message({ reply_to_id: PARENT_ID, content: "agreed" }),
