@@ -18,6 +18,7 @@ import { CurrentUser } from '../decorators/current-user.decorator';
 import {
   RegisterPushTokenDto,
   ListNotificationPreferencesQueryDto,
+  ListNotificationsQueryDto,
   UpdateNotificationPreferenceDto,
   UpdateUserSettingsDto,
 } from '../dtos/notification.dto';
@@ -57,10 +58,11 @@ export class NotificationController {
   @ApiOperation({ summary: 'List in-app notifications for current user' })
   async listNotifications(
     @CurrentUser('id') userId: string,
-    @Query('limit') limit?: string,
+    @Query() query: ListNotificationsQueryDto,
   ) {
-    const options = limit ? { limit: parseInt(limit, 10) } : undefined;
-    return this.notificationService.listNotifications(userId, options);
+    return this.notificationService.listNotifications(userId, {
+      limit: query.limit,
+    });
   }
 
   @Patch('notifications/:id/read')

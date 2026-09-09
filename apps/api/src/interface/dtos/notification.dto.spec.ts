@@ -3,9 +3,11 @@ import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { isSupportedTimeZone } from '@repo/validation';
+import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import {
   ListNotificationPreferencesQueryDto,
+  ListNotificationsQueryDto,
   UpdateUserSettingsDto,
 } from './notification.dto';
 
@@ -150,5 +152,51 @@ describe('ListNotificationPreferencesQueryDto', () => {
     await expect(transform({ chapterId: 'not-a-uuid' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+});
+
+describe('ListNotificationsQueryDto (#1627)', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+
+  async function transform(
+    query: Record<string, unknown>,
+  ): Promise<ListNotificationsQueryDto> {
+    return pipe.transform(query, {
+      type: 'query',
+      metatype: ListNotificationsQueryDto,
+    });
+  }
+
+  it('accepts an omitted limit (default is applied in the service)', async () => {
+    const result = await transform({});
+    expect(result.limit).toBeUndefined();
+  });
+
+  it('accepts a valid limit', async () => {
+    await expect(transform({ limit: '10' })).resolves.toEqual({ limit: 10 });
+  });
+
+  it('rejects a non-numeric limit', async () => {
+    await expect(transform({ limit: 'abc' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a zero limit', async () => {
+    await expect(transform({ limit: '0' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a negative limit', async () => {
+    await expect(transform({ limit: '-1' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a limit above the list-query ceiling', async () => {
+    await expect(
+      transform({ limit: String(LIST_QUERY_LIMIT_MAX + 1) }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
