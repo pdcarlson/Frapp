@@ -23,6 +23,11 @@ import type {
   NotificationPreference,
   UserSettings,
 } from '#domain/entities/notification.entity';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '#domain/constants/list-query-limits';
 
 describe('NotificationService', () => {
   let service: NotificationService;
@@ -893,15 +898,14 @@ describe('NotificationService', () => {
   });
 
   describe('listNotifications', () => {
-    it('should list notifications for user without limit option', async () => {
+    it('should clamp an omitted limit to the default page rather than an unbounded read', async () => {
       mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
 
       const result = await service.listNotifications('u-1');
 
-      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
-        'u-1',
-        undefined,
-      );
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith('u-1', {
+        limit: LIST_QUERY_LIMIT_DEFAULT,
+      });
       expect(result).toEqual([baseNotification]);
     });
 
@@ -914,6 +918,20 @@ describe('NotificationService', () => {
         limit: 20,
       });
       expect(result).toEqual([baseNotification]);
+    });
+
+    it('should clamp a zero or oversized limit before the repository', async () => {
+      mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
+
+      await service.listNotifications('u-1', { limit: 0 });
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith('u-1', {
+        limit: LIST_QUERY_LIMIT_MIN,
+      });
+
+      await service.listNotifications('u-1', { limit: 999 });
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith('u-1', {
+        limit: LIST_QUERY_LIMIT_MAX,
+      });
     });
   });
 });

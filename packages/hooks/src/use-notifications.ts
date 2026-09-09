@@ -162,7 +162,7 @@ export function useNotifications(limit?: number) {
     queryKey: notificationKeys.list(chapterId, limit),
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/notifications", {
-        params: { query: { limit: String(limit ?? 50) } },
+        params: { query: { limit: limit ?? 50 } },
       });
       if (error) throw error;
       return data;
