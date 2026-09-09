@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { resolveAuthorLabel } from "@repo/hooks";
 import { formatClock } from "@repo/formatting";
+import { replyPreviewText } from "./reply-quote";
 
 /**
  * Popover that lists messages flagged `is_pinned`. The trigger lives in the
@@ -91,7 +92,7 @@ export function PinsPopover({
                     caption-sized, the prose is not.
                   */}
                   <span className="mt-1 line-clamp-3 block whitespace-pre-wrap text-base text-muted-foreground">
-                    {message.content}
+                    {replyPreviewText(message)}
                   </span>
                 </button>
               </li>
