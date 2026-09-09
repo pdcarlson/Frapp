@@ -171,6 +171,7 @@ export function EmptyState({
    */
   actionProps?: {
     disabled?: boolean;
+    title?: string;
     "aria-describedby"?: string;
   };
 }) {

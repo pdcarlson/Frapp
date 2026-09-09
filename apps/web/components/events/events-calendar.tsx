@@ -24,11 +24,17 @@ type EventsCalendarProps = {
   createDisabled: boolean;
   /**
    * Ties the disabled create button to its explanation, matching every other
-   * gated control on this page — pass `SubscriptionGate.noticeId` when
-   * `createDisabled` is true (i.e. `eventWriteGate.controlProps()`'s own
-   * `aria-describedby`), `undefined` otherwise.
+   * gated control on this page — pass `controlProps()["aria-describedby"]`
+   * (set for a subscription/pending block, omitted for an offline-only
+   * block so it does not name a notice that is not in the tree).
    */
   createDescribedBy?: string;
+  /**
+   * Offline reason from `controlProps().title`. Native `title`, not a
+   * tooltip primitive — #920 deleted ShadCN tooltip, and #1753 attaches
+   * "Reconnect to make changes." to the control itself.
+   */
+  createTitle?: string;
   /**
    * Lifted to the parent rather than kept as local state: the Calendar tab
    * lives inside a Radix `TabsContent`, which unmounts on tab switch by
@@ -74,6 +80,7 @@ export function EventsCalendar({
   onCreateOnDay,
   createDisabled,
   createDescribedBy,
+  createTitle,
   monthAnchor,
   onMonthAnchorChange,
 }: EventsCalendarProps) {
@@ -202,6 +209,7 @@ export function EventsCalendar({
                 <button
                   type="button"
                   disabled={createDisabled}
+                  title={createTitle}
                   aria-label={`Create event on ${dayLabel}`}
                   aria-describedby={createDescribedBy}
                   className={cn(

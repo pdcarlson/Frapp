@@ -139,7 +139,11 @@ moves the switch, it sits wrong for those three seconds, then snaps back under a
 error toast. On a control whose *position is the state*, showing a value the
 server was never told about is the failure; refusing costs nothing and answers
 immediately. So they refuse — this is § 2's "disabled with 'Reconnect to make
-changes'" applied to one surface ahead of the dashboard-wide #1753.
+changes'" on a control whose appearance carries state, which is why they do
+not go through `useSubscriptionGate` (#1753). That hook is the dashboard-wide
+path for queueless *buttons* (`disabled` + `title` on the control). These
+switches cannot take the real `disabled` attribute, for the colour / tab-order
+reasons below.
 They refuse with **`aria-disabled` plus a guard in the handler**, not the
 `disabled` attribute, because `apps/web/components/ui/switch.tsx` scopes every
 state colour to `enabled:` and its thumb takes `group-data-[disabled]`, which
