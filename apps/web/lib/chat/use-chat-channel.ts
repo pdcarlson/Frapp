@@ -276,7 +276,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         attachments: opts?.attachments ?? null,
       });
       setDraftState("");
-      await clearDraft(channelId);
+      // Same Dexie drafts table `sendMessage` already cleared best-effort.
+      // A second fault must not reject a send that already posted (#1718).
+      try {
+        await clearDraft(channelId);
+      } catch {
+        // Best-effort — in-flight saveDraft races are why this call exists.
+      }
     },
     [cancelDraftTimer, channelId, ctx],
   );
