@@ -142,7 +142,7 @@ is spelled in the triage skill; it does not widen destructive writes.
 
 Routine sessions run in the Frapp **Cursor Cloud** environment (intended) or the
 Claude Code web environment (current observed fallback). Both harnesses
-**pre-approve the GitHub MCP** — the same path `/next` uses. No API key, no REST, no secrets to
+expose a **GitHub MCP** — the same path `/next` uses. No API key, no REST, no secrets to
 manage. (Direct REST to `api.github.com` *is* reachable from these sandboxes where the
 environment's network allowlist carries it — the 403 a proxied `curl` gets is the agent proxy's
 route answering, not GitHub; sent direct (`curl --noproxy '*'`, or node's built-in `fetch`, which
@@ -153,9 +153,9 @@ environments, rulesets, repo visibility, vulnerability alerts — and never a tr
 about it licenses listing, searching, filing, labelling, closing or commenting on issues or PRs
 over REST. Rule 4 above and the stop rule below are unchanged: if the MCP is unavailable the
 routine stops and reports, and REST is not the fallback.) Each run starts by loading the GitHub
-MCP tool schemas (via `ToolSearch`, e.g.
-`select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__search_issues`)
-and verifying access (e.g. `issue_read` on a known issue resolves). **If the MCP is unavailable,
+MCP tool schemas for **this harness** (Cursor-native names like `issue_read` / `issue_write`;
+Claude sessions use `mcp__github__*` prefixes — do not freeze a prefix) and verifying access
+(e.g. `issue_read` on a known issue resolves). **If the MCP is unavailable,
 the routine stops and reports — there is no fallback tracker.** Routine 4 writes no issues, and
 routine 5 only files follow-ups and opens its PR through it, so this section does not gate their
 sweep or scan; see rule 4 of the
@@ -234,6 +234,8 @@ Cursor Automations are the **intended** home. Claude Routines UI remains the
 | Autofix on PR create | **Off** for Curator, Triage and PR Follow-ups. **On** for Docs Upkeep and Hygiene Scan. | Not an inconsistency. The first three barely open PRs — only self-maintenance. Docs Upkeep and Hygiene Scan open a PR every run that should. Cursor Automations expose PR creation as a tool (on by default for repo-backed automations). |
 | Session | fresh session per run | Each run re-reads its skill from `main`. |
 | Access | **GitHub MCP** | Plus the repo itself for Hygiene Scan's gates. No secrets in `environment.json`. |
+| Connectors | **None extra** | GitHub is the MCP / repository attachment, not a connector. Extra connectors are standing write access (Linear is retired). |
+| Completion notification | Hygiene Scan: **on** if the UI has it | Product-code PR the same day; Cursor Automations may not expose this field — use whatever notification exists. |
 | Hygiene Scan enable | **Off until a Cursor Cloud session on this environment has a healthy full stack** (`.cloud-sandbox-up.done`, API/web terminals). | An Automation with no repository, or a failed `start`, cannot run it. |
 
 ---
