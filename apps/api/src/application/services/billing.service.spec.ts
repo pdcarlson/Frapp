@@ -136,7 +136,10 @@ describe('BillingService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
   let mockFinancialInvoiceService: jest.Mocked<
-    Pick<FinancialInvoiceService, 'applyStripePaymentSuccess'>
+    Pick<
+      FinancialInvoiceService,
+      'applyStripePaymentSuccess' | 'notifyStripePaymentFailure'
+    >
   >;
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let webhookEventStore: Map<string, WebhookEventRow>;
@@ -227,6 +230,7 @@ describe('BillingService', () => {
 
     mockFinancialInvoiceService = {
       applyStripePaymentSuccess: jest.fn().mockResolvedValue(undefined),
+      notifyStripePaymentFailure: jest.fn().mockResolvedValue(undefined),
     };
 
     mockActivation = { record: jest.fn().mockResolvedValue(true) };
@@ -2558,6 +2562,127 @@ describe('BillingService', () => {
 
         expect(
           mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('payment_intent.payment_failed dispatch (#717)', () => {
+      const INVOICE_ID = '11111111-1111-4111-8111-111111111111';
+      const CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
+
+      const paymentFailedEvent = (
+        id: string,
+        object: Record<string, unknown>,
+      ): WebhookEvent => ({
+        id,
+        type: 'payment_intent.payment_failed',
+        created: Date.now(),
+        data: { object },
+      });
+
+      it('notifies the member and does not apply payment', async () => {
+        await service.handleWebhookEvent(
+          paymentFailedEvent('evt_pi_fail', {
+            id: 'pi_1',
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+            last_payment_error: { message: 'Your card was declined.' },
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).toHaveBeenCalledWith({
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
+          declineReason: 'Your card was declined.',
+        });
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('forwards a null declineReason when Stripe sent none', async () => {
+        await service.handleWebhookEvent(
+          paymentFailedEvent('evt_pi_fail_no_reason', {
+            id: 'pi_1',
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).toHaveBeenCalledWith({
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
+          declineReason: null,
+        });
+      });
+
+      it('prefers last_payment_error.message over decline_code', async () => {
+        await service.handleWebhookEvent(
+          paymentFailedEvent('evt_pi_fail_prefer_message', {
+            id: 'pi_1',
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+            last_payment_error: {
+              message: 'Your card has insufficient funds.',
+              decline_code: 'insufficient_funds',
+              code: 'card_declined',
+            },
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            declineReason: 'Your card has insufficient funds.',
+          }),
+        );
+      });
+
+      it('ignores an intent missing invoice metadata without throwing', async () => {
+        await expect(
+          service.handleWebhookEvent(
+            paymentFailedEvent('evt_pi_fail_no_meta', {
+              id: 'pi_1',
+              metadata: { chapter_id: CHAPTER_ID },
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('ignores a foreign intent whose invoice_id is not a UUID', async () => {
+        await expect(
+          service.handleWebhookEvent(
+            paymentFailedEvent('evt_pi_fail_foreign', {
+              id: 'pi_foreign',
+              metadata: { invoice_id: 'inv-1', chapter_id: CHAPTER_ID },
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('skips a duplicate delivery of the same event id (idempotency)', async () => {
+        const event = paymentFailedEvent('evt_pi_fail_dup', {
+          id: 'pi_1',
+          metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+          last_payment_error: { message: 'declined' },
+        });
+
+        await service.handleWebhookEvent(event);
+        await service.handleWebhookEvent(event);
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
         ).toHaveBeenCalledTimes(1);
       });
     });
