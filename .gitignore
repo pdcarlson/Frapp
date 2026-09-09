@@ -53,7 +53,8 @@ supabase/.branches/
 
 # Local editor state (.cursor/mcp.json can carry credentials). Ignore everything under
 # .cursor/ EXCEPT the committed Cursor Cloud contract. The `.cursor/*` form (not `.cursor/`)
-# is required so git still descends into the dir to honor the negations.
+# is required so git still descends into the dir to honor the negations. Keep the Prompt 1
+# / Prompt 2 paste-file exceptions even when those files live on another branch.
 .cursor/*
 !.cursor/environment.json
 !.cursor/hooks.json
@@ -61,6 +62,8 @@ supabase/.branches/
 !.cursor/hooks/**
 !.cursor/commands/
 !.cursor/commands/**
+!.cursor/ENV_SETUP_PROMPT.md
+!.cursor/CLEANUP_PROMPT.md
 
 # Agent-local state, never committed:
 #   settings.local.json holds one machine's permission grants (previously ignored

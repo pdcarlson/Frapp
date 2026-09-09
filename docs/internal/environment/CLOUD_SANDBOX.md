@@ -1,10 +1,15 @@
 # Cloud sandbox (Cursor Cloud primary; Claude Code fallback)
 
 **Cursor Cloud is the primary way Frapp is developed.** The public contract is
-[`.cursor/environment.json`](../../../.cursor/environment.json) (`install` /
-`start` → `scripts/cursor-agent-*.sh` → per-boot
-[`scripts/cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh)). Claude
-Code web sessions remain a documented fallback and share that bringup script.
+[`.cursor/environment.json`](../../../.cursor/environment.json):
+`install` → [`scripts/cursor-agent-install.sh`](../../../scripts/cursor-agent-install.sh);
+`start` → [`scripts/cursor-cloud-up.sh`](../../../scripts/cursor-cloud-up.sh)
+(boot sysctls, then shared [`scripts/cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh));
+app terminals wait on `.cloud-sandbox-up.done` via
+[`scripts/cursor-cloud-terminal.sh`](../../../scripts/cursor-cloud-terminal.sh)
+(#2043). Claude Code web sessions remain a documented fallback and share that
+bringup script.
+
 Laptop/local setup is the secondary path: [`LOCAL_DEV.md`](./LOCAL_DEV.md). Agent
 credentials live in [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md); broader
 CI/agent infra is [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md).
@@ -13,9 +18,10 @@ CI/agent infra is [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md).
 
 Cursor resolves environment configuration from `.cursor/environment.json` in the
 repository (schema: <https://cursor.com/schemas/environment.schema.json>; do not
-add `$schema`). `install` refreshes Docker/Node/npm and pre-pulls images;
-`start` applies runtime sysctls and runs `cloud-sandbox-up.sh`. Wait for
-`.cloud-sandbox-up.done` or stop on `.cloud-sandbox-up.failed`. Agent
+add `$schema`). `install` refreshes Docker/Node/npm and pre-pulls images.
+`start` (`scripts/cursor-cloud-up.sh`) applies runtime sysctls and runs
+`cloud-sandbox-up.sh`. App terminals (`scripts/cursor-cloud-terminal.sh`) wait
+for `.cloud-sandbox-up.done` or fail on `.cloud-sandbox-up.failed`. Agent
 instructions: [`AGENTS.md` § Cursor Cloud specific instructions](../../../AGENTS.md#cursor-cloud-specific-instructions).
 
 Do **not** put secrets in `environment.json`. User secrets are unavailable during

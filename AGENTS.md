@@ -193,7 +193,7 @@ When the user supplies durable environment hints or tool workarounds not documen
 
 Cursor Cloud is the **primary** Frapp agent environment (ADR-16 amendment 8). Claude files remain in-tree until teardown; Cursor `start` owns bringup. Full sandbox/egress/bringup: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Credentials: [`AGENT_CREDENTIALS.md`](docs/internal/environment/AGENT_CREDENTIALS.md).
 
-- **Environment contract:** [`.cursor/environment.json`](.cursor/environment.json). Wait for `.cloud-sandbox-up.done` or stop on `.cloud-sandbox-up.failed` (log `/tmp/cloud-sandbox-up.log`). Do not work around a failed bringup. Do not put secrets in that file. Do not trigger speculative environment Builds (start-contract work is a separate PR).
+- **Environment contract:** [`.cursor/environment.json`](.cursor/environment.json). Wait for `.cloud-sandbox-up.done` or stop on `.cloud-sandbox-up.failed` (log `/tmp/cloud-sandbox-up.log`). Do not work around a failed bringup. Do not put secrets in that file. Do not trigger speculative environment Builds.
 - **Review gate:** `/diff-review`. Project [`.cursor/hooks.json`](.cursor/hooks.json) fails closed on the evidence marker `.cache/diff-review/<HEAD_SHA>`. Cursor built-ins (`/review`, Bugbot) are **not** Frapp's gate. Runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 - **Tracker:** GitHub Issues via this harness's GitHub MCP. Never `gh` or raw REST for tracker writes. Labels replace the whole set. Policy: [`GITHUB_PM.md`](docs/internal/ci-cd/GITHUB_PM.md).
 - **PRs:** open against `main`. Prefer this harness's PR tool when present; GitHub MCP remains valid. Never `gh`.
