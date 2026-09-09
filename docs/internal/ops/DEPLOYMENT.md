@@ -278,7 +278,7 @@ on both API services.
 > longer observes this repository at all: no push produces a preview, there is no Production Branch
 > setting, and no dashboard toggle decides what ships. Four things broke as a result; **all four are
 > now repaired** — two by **#1579** (2026-09-02) and two by **#1578** (2026-09-04). **ADR-21** in
-> [`spec/architecture/README.md`](../../../spec/architecture/README.md) is the canonical record of
+> [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md) is the canonical record of
 > the *decision and its history* — the per-project dates and freeze points, each breakage in full,
 > and the amendments recording what each issue changed. Do not restate any of that here; this
 > section carries only what an operator needs at the console.
@@ -618,7 +618,7 @@ reachable. The JSON body is the liveness payload in
 
 Two background workers run inside the API Render service via NestJS `OnApplicationBootstrap` hooks — `ChatBridgeWorkerModule` (audit-log → `#chapter-audit` mirroring) and `ChatPushWorkerModule` (chat push fanout). Both open Supabase Realtime subscriptions with the service-role key on boot.
 
-This is the deliberate default for now per **`spec/architecture/README.md` ADR-09** (Push worker host = in-process API). The workers should be split into a standalone Render service when **either** condition is sustained:
+This is the deliberate default for now per [**ADR-09**](../../../spec/architecture/adr/adr-09.md) (Push worker host = in-process API). The workers should be split into a standalone Render service when **either** condition is sustained:
 
 - `p99 fanout latency > 1s` (measured per recipient, from `chat_messages` INSERT to `notifyUser` returning), **or**
 - `worker-loop CPU > 40%` of the API instance over a 10-minute window.
