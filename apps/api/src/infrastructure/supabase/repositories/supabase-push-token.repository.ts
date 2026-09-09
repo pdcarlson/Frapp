@@ -3,6 +3,16 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { IPushTokenRepository } from '#domain/repositories/notification.repository.interface';
 import type { PushToken } from '#domain/entities/notification.entity';
+import { chunkIds } from '#domain/utils/chunk-ids';
+import { fetchAllPages } from '../supabase.utils';
+
+/**
+ * Request size for a batched token read. A user can hold several devices, so
+ * a 100-id chunk can reach `max_rows` where a single-user `findByUser` never
+ * could. Paging is required because the hosted cap is a dashboard setting
+ * this code cannot read. See `fetchAllPages`.
+ */
+const TOKEN_PAGE_SIZE = 500;
 
 @Injectable()
 export class SupabasePushTokenRepository implements IPushTokenRepository {
@@ -35,6 +45,26 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
 
     if (error) throw error;
     return data ?? [];
+  }
+
+  async findByUserIds(userIds: string[]): Promise<PushToken[]> {
+    if (userIds.length === 0) return [];
+
+    const pages = await Promise.all(
+      chunkIds(userIds).map((chunk) =>
+        fetchAllPages<PushToken>(
+          (from, to) =>
+            this.supabase
+              .from('push_tokens')
+              .select('*')
+              .in('user_id', chunk)
+              .order('id', { ascending: true })
+              .range(from, to),
+          { pageSize: TOKEN_PAGE_SIZE },
+        ),
+      ),
+    );
+    return pages.flat();
   }
 
   async findById(id: string): Promise<PushToken | null> {
