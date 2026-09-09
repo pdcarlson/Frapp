@@ -1022,10 +1022,9 @@ describe('ChatService', () => {
 
       const result = await service.getMessages('ch-chan-1', 'ch-1', 'user-1');
 
-      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith(
-        'ch-chan-1',
-        undefined,
-      );
+      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith('ch-chan-1', {
+        limit: 50,
+      });
       expect(result).toEqual(messages);
     });
 
@@ -1033,7 +1032,7 @@ describe('ChatService', () => {
       const messages = [baseMessage];
       mockMessageRepo.findByChannel.mockResolvedValue(messages);
 
-      const options = { limit: 20, before: 'msg-5' };
+      const options = { limit: 20, before: '2026-04-01T12:00:00.000Z' };
       const result = await service.getMessages(
         'ch-chan-1',
         'ch-1',
@@ -1046,6 +1045,27 @@ describe('ChatService', () => {
         options,
       );
       expect(result).toEqual(messages);
+    });
+
+    it('rejects a calendar-invalid before cursor instead of forwarding it', async () => {
+      await expect(
+        service.getMessages('ch-chan-1', 'ch-1', 'user-1', {
+          before: '2026-02-30T00:00:00Z',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockMessageRepo.findByChannel).not.toHaveBeenCalled();
+    });
+
+    it('clamps an oversized limit before the repository', async () => {
+      mockMessageRepo.findByChannel.mockResolvedValue([]);
+
+      await service.getMessages('ch-chan-1', 'ch-1', 'user-1', {
+        limit: 500,
+      });
+
+      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith('ch-chan-1', {
+        limit: 200,
+      });
     });
 
     it('should reject reads when the channel is in another chapter', async () => {

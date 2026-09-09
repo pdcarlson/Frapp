@@ -66,6 +66,17 @@ export class RegisterPushTokenDto {
   device_name?: string;
 }
 
+export class ListNotificationPreferencesQueryDto {
+  @ApiProperty({
+    description: 'Chapter to read preferences for',
+    format: 'uuid',
+  })
+  // Reaches `.eq('chapter_id', …)` on a uuid column; an unvalidated string
+  // fails in Postgres as a 500 rather than here as a 400.
+  @IsUUID()
+  chapterId: string;
+}
+
 export class UpdateNotificationPreferenceDto {
   @ApiProperty({ description: 'Chapter ID' })
   @IsUUID()
