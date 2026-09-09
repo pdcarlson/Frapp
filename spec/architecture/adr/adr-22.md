@@ -48,6 +48,10 @@ and could be `NaN` (closed #904 covered mobile only).
 **Correction (2026-09-09):** `@repo/observability` `parseTracesSampleRate` now clamps API and
 web traces rates to finite `[0, 1]` with default `0.1` (#2040). The identity DTO and landing
 gaps remain.
+**Correction (2026-09-09):** API `Sentry.init` lives in `apps/api/src/instrument.ts` (first
+import from `main.ts`). `skipOpenTelemetrySetup` is explicitly `false` so Sentry owns
+the Node tracer; `@opentelemetry/sdk-node` is not a dependency. Request-correlation
+context is AsyncLocalStorage bound in `requestIdMiddleware`, not a second tracer.
 
 **Alternatives rejected.**
 

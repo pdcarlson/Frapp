@@ -7,6 +7,12 @@
 /** HTTP header that carries the request-correlation id. */
 export const REQUEST_ID_HEADER = "x-request-id";
 
+/** Sentry/OTEL outgoing + incoming trace header. Not `x-request-id`. */
+export const SENTRY_TRACE_HEADER = "sentry-trace";
+
+/** W3C/Sentry baggage header. Travels beside `x-request-id`; never becomes it. */
+export const BAGGAGE_HEADER = "baggage";
+
 /**
  * HMAC-SHA256 hex digest: 64 lowercase hex characters.
  *
@@ -43,7 +49,7 @@ export type PostHogChapterGroupId = string;
  *
  * `chapter_group_id` is the intended field when a chapter is in context.
  * Today's API DTO is `{ distinct_id, enabled }` only — that gap is current
- * behavior (Workstream 3), not a reason to omit the field from the type.
+ * behavior (#2042), not a reason to omit the field from the type.
  */
 export interface AnalyticsIdentity {
   distinct_id: PostHogDistinctId;

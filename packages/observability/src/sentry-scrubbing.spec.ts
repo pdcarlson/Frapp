@@ -170,6 +170,60 @@ describe("browser path — no salt available", () => {
     expect(json).toContain("http.request.method");
     expect(json).toContain("GET");
   });
+
+  it("drops db.statement, url.query, and http.url from span data by omission", () => {
+    const scrubbed = browser.scrubSentryTransaction({
+      transaction: "/v1/health",
+      spans: [
+        {
+          span_id: "s1",
+          data: {
+            "http.request.method": "GET",
+            "http.response.status_code": 200,
+            "db.system": "postgresql",
+            "db.statement": `SELECT * FROM users WHERE email = '${MEMBER_EMAIL}'`,
+            "url.query": `email=${MEMBER_EMAIL}`,
+            "http.url": `https://api.example/v1/users?email=${MEMBER_EMAIL}`,
+            "sentry.source": "route",
+          },
+        },
+      ],
+      contexts: {
+        trace: {
+          data: {
+            "http.request.method": "GET",
+            "http.url": `https://api.example/v1/users?email=${MEMBER_EMAIL}`,
+            "url.query": `email=${MEMBER_EMAIL}`,
+            "sentry.source": "route",
+          },
+        },
+      },
+    });
+
+    const json = serialize(scrubbed);
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).not.toContain("SELECT * FROM users");
+
+    const spanData = (
+      scrubbed as { spans?: { data?: Record<string, unknown> }[] }
+    ).spans?.[0]?.data;
+    expect(spanData).toEqual({
+      "http.request.method": "GET",
+      "http.response.status_code": 200,
+      "db.system": "postgresql",
+      "sentry.source": "route",
+    });
+
+    const traceData = (
+      scrubbed as {
+        contexts?: { trace?: { data?: Record<string, unknown> } };
+      }
+    ).contexts?.trace?.data;
+    expect(traceData).toEqual({
+      "http.request.method": "GET",
+      "sentry.source": "route",
+    });
+  });
 });
 
 describe("shared rules hold regardless of which app binds them", () => {

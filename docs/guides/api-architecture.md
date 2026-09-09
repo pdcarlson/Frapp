@@ -98,7 +98,7 @@ Route markers live in `src/interface/decorators/subscription.decorator.ts`: `@Fr
 
 Interceptors:
 
-- **RequestIdInterceptor** — attaches/propagates `x-request-id`.
+- **requestIdMiddleware** — Express middleware (not an interceptor) that honours or mints `x-request-id`, binds it on AsyncLocalStorage for Nest `Logger` records, and echoes it on the response. `sentry-trace` / `baggage` are a different identifier space.
 - **LoggingInterceptor** — structured JSON logging with latency and status code.
 - **AuthSyncInterceptor** — auto-creates/syncs the `users` row from Supabase Auth on first
   authenticated request. Parallel first requests can both miss the row and collide on
@@ -191,9 +191,9 @@ When adding new modules:
 
 The API surface is instrumented for observability:
 
-- Structured logging with request ID, user ID, chapter ID, method, path, status, latency.
+- Structured logging with request ID, user ID, chapter ID, method, path, status, latency. Nest `Logger` records from services include the request id via `RequestContextLogger` + ALS (`spec/behavior/observability.md` § Structured Logging / Request Tracing).
 - `/health` endpoint used by load balancers and uptime checks.
-- Sentry integration in the Nest bootstrap.
+- Sentry init in `apps/api/src/instrument.ts` (first import from `main.ts`); 5xx via `AllExceptionsFilter` + `toReportableError`. Sentry owns the Node OpenTelemetry tracer (`skipOpenTelemetrySetup: false`). Do not add `SentryGlobalFilter`.
 
 When you add new modules:
 

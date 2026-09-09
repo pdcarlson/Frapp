@@ -1,4 +1,5 @@
 import type { NextFunction, Response } from 'express';
+import * as Sentry from '@sentry/nestjs';
 import {
   BAGGAGE_HEADER,
   REQUEST_ID_HEADER,
@@ -6,6 +7,11 @@ import {
 } from '../http/correlation-headers';
 import { requestIdMiddleware } from './request-id.middleware';
 import type { RequestContext } from '../types/request-context.types';
+import { getRequestId } from '../../infrastructure/observability/request-als';
+
+jest.mock('@sentry/nestjs', () => ({
+  getIsolationScope: jest.fn(() => ({ setTag: jest.fn() })),
+}));
 
 /**
  * The placement is the point: this runs before guards, so a denial still has a
@@ -13,6 +19,13 @@ import type { RequestContext } from '../types/request-context.types';
  * id in every log entry and every error response, denials included.
  */
 describe('requestIdMiddleware', () => {
+  const isolationScope = { setTag: jest.fn() };
+
+  beforeEach(() => {
+    jest.mocked(Sentry.getIsolationScope).mockReturnValue(isolationScope);
+    isolationScope.setTag.mockClear();
+  });
+
   function run(headers: Record<string, string> = {}) {
     const request = { headers } as unknown as RequestContext;
     const setHeader = jest.fn();
@@ -30,6 +43,10 @@ describe('requestIdMiddleware', () => {
       request.requestId,
     );
     expect(next).toHaveBeenCalledTimes(1);
+    expect(isolationScope.setTag).toHaveBeenCalledWith(
+      'request_id',
+      request.requestId,
+    );
   });
 
   it('honours a caller-supplied request id', () => {
@@ -63,6 +80,18 @@ describe('requestIdMiddleware', () => {
     });
 
     expect(request.requestId).toBe('client-req-9');
+  });
+
+  it('binds the id on ALS so service loggers can read it', () => {
+    const request = { headers: {} } as unknown as RequestContext;
+    requestIdMiddleware(
+      request,
+      { setHeader: jest.fn() } as unknown as Response,
+      () => {
+        expect(getRequestId()).toBe(request.requestId);
+      },
+    );
+    expect(getRequestId()).toBeUndefined();
   });
 
   it('gives distinct ids to distinct requests', () => {

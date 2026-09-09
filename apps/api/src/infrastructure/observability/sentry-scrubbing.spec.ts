@@ -184,8 +184,12 @@ describe('scrubSentryEvent', () => {
     expect(out).not.toContain('raw_stacktrace');
     expect(scrubbed?.breadcrumbs?.[0]).not.toHaveProperty('data');
     expect(scrubbed?.breadcrumbs?.[0]).not.toHaveProperty('payload');
-    expect(scrubbed?.exception?.values?.[0]).not.toHaveProperty('raw_stacktrace');
-    expect(scrubbed?.exception?.values?.[0]?.mechanism).not.toHaveProperty('data');
+    expect(scrubbed?.exception?.values?.[0]).not.toHaveProperty(
+      'raw_stacktrace',
+    );
+    expect(scrubbed?.exception?.values?.[0]?.mechanism).not.toHaveProperty(
+      'data',
+    );
     expect(
       scrubbed?.exception?.values?.[0]?.stacktrace?.frames?.[0],
     ).not.toHaveProperty('vars');
