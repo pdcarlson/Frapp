@@ -61,6 +61,16 @@ export function storeIdentityProblems(app) {
   if (expo.android?.package !== STORE_BUNDLE_ID) {
     problems.push(`expo.android.package must be ${STORE_BUNDLE_ID}`);
   }
+  const displayName = expo.ios?.infoPlist?.CFBundleDisplayName;
+  if (displayName != null && displayName !== STORE_NAME) {
+    problems.push(
+      "expo.ios.infoPlist.CFBundleDisplayName must be absent or Frapp",
+    );
+  }
+  const androidLabel = expo.android?.label;
+  if (androidLabel != null && androidLabel !== STORE_NAME) {
+    problems.push("expo.android.label must be absent or Frapp");
+  }
   return problems;
 }
 
@@ -91,6 +101,21 @@ test("renaming the binary to Signet fails", () => {
   );
 });
 
+test("changing the slug or scheme fails", () => {
+  const slug = fixtureApp();
+  slug.expo.slug = "signet";
+  assert.ok(
+    storeIdentityProblems(slug).some((problem) => problem.includes("expo.slug")),
+  );
+  const scheme = fixtureApp();
+  scheme.expo.scheme = "signet";
+  assert.ok(
+    storeIdentityProblems(scheme).some((problem) =>
+      problem.includes("expo.scheme"),
+    ),
+  );
+});
+
 test("changing the bundle id fails", () => {
   const app = fixtureApp();
   app.expo.ios.bundleIdentifier = "live.signet.mobile";
@@ -104,6 +129,31 @@ test("changing the bundle id fails", () => {
     problems.some((problem) => problem.includes("android.package")),
     problems.join("; "),
   );
+});
+
+test("an iOS or Android display-name override to Signet fails", () => {
+  const ios = fixtureApp();
+  ios.expo.ios.infoPlist.CFBundleDisplayName = "Signet";
+  assert.ok(
+    storeIdentityProblems(ios).some((problem) =>
+      problem.includes("CFBundleDisplayName"),
+    ),
+  );
+  const android = fixtureApp();
+  android.expo.android.label = "Signet";
+  assert.ok(
+    storeIdentityProblems(android).some((problem) =>
+      problem.includes("android.label"),
+    ),
+  );
+});
+
+test("app.config.js does not override store identity", () => {
+  const source = readFileSync(join(REPO_ROOT, "apps/mobile/app.config.js"), "utf8");
+  assert.doesNotMatch(source, /CFBundleDisplayName/);
+  assert.doesNotMatch(source, /\bname:\s*["']Signet["']/);
+  assert.doesNotMatch(source, /\blabel:\s*["']Signet["']/);
+  assert.doesNotMatch(source, /bundleIdentifier:\s*["']live\.signet/);
 });
 
 test("store README identity table stays Frapp", () => {
