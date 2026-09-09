@@ -600,6 +600,11 @@ reachable. The JSON body is the liveness payload in
 > `serviceDetails.healthCheckPath` on `frapp-api-prod` is `/health`, daily at 07:15
 > and as the `deploy-production.yml` preflight. Empty (TCP-only) and `/health/ready`
 > both fail the run. The alert title was not renamed — it is the lookup key.
+>
+> **2026-09-08 (later):** `scripts/ci/staging-conformance.mjs` asserts the same
+> nested field on `frapp-api-staging`, daily at 07:30. Staging auto-deploys
+> `main` on commit, so this path is the HTTP gate on those deploys. Missing
+> `RENDER_API_KEY` is SKIPPED, not a pass.
 
 ### 5.5 In-process chat workers (Chunk 05)
 
