@@ -13,7 +13,7 @@
 // Production SMTP is skip-until-on: empty host (hosted 2/hour cap) is
 // SKIPPED so the 07:45 watchdog stays green until #1824. The moment SMTP
 // is on, the same check FAILs a burned apex From (`invites@frapp.live`)
-// and requires `no-reply@mail.frapp.live` at >=300/hour. Staging already
+// and requires `Signet <no-reply@mail.frapp.live>` at >=300/hour. Staging already
 // FAILs on empty SMTP. Magic Link is the same gate: ConfirmationURL is
 // SKIPPED while SMTP is unset; SMTP on FAILs a hosted default href.
 //
