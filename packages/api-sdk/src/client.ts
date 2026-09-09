@@ -7,6 +7,12 @@ export interface FrappClientConfig {
   getChapterId?: () => string | null;
 }
 
+export const REQUEST_ID_HEADER = "x-request-id";
+
+/** Opaque request-correlation id. Not a Sentry/OTEL trace id. */
+export const mintRequestId = (): string =>
+  `req_${globalThis.crypto.randomUUID()}`;
+
 /**
  * Normalize an API base URL to the bare origin the generated client expects.
  *
@@ -50,6 +56,10 @@ export const createFrappClient = (config: FrappClientConfig) => {
         if (chapterId) {
           request.headers.set('x-chapter-id', chapterId);
         }
+      }
+
+      if (!request.headers.has(REQUEST_ID_HEADER)) {
+        request.headers.set(REQUEST_ID_HEADER, mintRequestId());
       }
 
       return request;

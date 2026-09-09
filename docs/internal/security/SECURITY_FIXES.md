@@ -457,16 +457,23 @@ bare setting keep it in their text permanently, and only the end state is meanin
 public internet-facing service whose only HTML surface is the self-hosted Swagger UI at `/docs`.
 
 ### Details
-`helmet(HELMET_OPTIONS)` is registered as the first `app.use()` in `configureApp()`
+`helmet(HELMET_OPTIONS)` is registered in `configureApp()`
 (`apps/api/src/bootstrap.ts`) — the shared function both `main.ts` and every e2e spec call — so
 production and the test suite can never drift apart on this the way the exception filter drifted
 before #1020, and a `supertest` assertion against the in-memory app is a real assertion about
-production's headers.
+production's headers. **Correction (2026-09-09):** `enableCors(CORS_OPTIONS)` now runs at the
+top of `configureApp` as well (the list lives in
+`apps/api/src/interface/http/cors.options.ts`), so Helmet is no longer the first middleware
+in that function. Production order is unchanged — CORS already ran in `main.ts` immediately
+before `configureApp`. Putting CORS in the shared function is what lets the suite assert
+`Access-Control-Expose-Headers` the same way it asserts Helmet.
 
-**Why `configureApp()` and not `main.ts`.** That file's own docstring carves out CORS and Swagger as
-deliberately *not* shared, because neither is "meaningful against an in-memory test app." Helmet's
-headers are the opposite: they're set the same way for every response regardless of caller, exactly
-like the `trust proxy` hop count already tested there.
+**Why `configureApp()` and not `main.ts`.** That file's own docstring originally carved out CORS
+and Swagger as deliberately *not* shared, on the claim that neither is "meaningful against an
+in-memory test app." Helmet's headers are the opposite: they're set the same way for every
+response regardless of caller, exactly like the `trust proxy` hop count already tested there.
+**Correction (2026-09-09):** CORS `exposedHeaders` *is* part of the browser-visible response
+(`x-request-id`, report/search truncation flags). The carve-out that remains is Swagger only.
 
 **CSP is left at Helmet's unmodified default — no exception was needed.** The first draft of this
 change added `'unsafe-inline'` to `script-src` on the assumption that Swagger UI's self-hosted
@@ -482,8 +489,8 @@ protection on every route in the API, not just `/docs`, for a Swagger requiremen
 `Cross-Origin-Resource-Policy` to `same-origin`, which Chrome and Firefox enforce **independently of
 CORS** — a second review pass caught that this would have silently broken every dashboard `fetch()`
 to this API even with a matching `Access-Control-Allow-Origin`, because `app.frapp.live` and
-`api.frapp.live` are different origins (`main.ts`'s `enableCors()`, called just before
-`configureApp()`, explicitly allowlists `*.frapp.live` plus the local dev ports with
+`api.frapp.live` are different origins (`CORS_OPTIONS` / `enableCors()` in
+`configureApp()`, which allowlists `*.frapp.live` plus the local dev ports with
 `credentials: true` — this API is cross-origin by design, not by accident). `supertest` never enforces
 CORP, so nothing in the test suite would have caught this before a real browser did. `HELMET_OPTIONS`
 sets `crossOriginResourcePolicy: { policy: 'cross-origin' }`; the actual authorization boundary stays
