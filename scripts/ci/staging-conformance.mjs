@@ -48,6 +48,8 @@
 //   INFISICAL_PROJECT_ID        — workspaceId from .infisical.json
 //   STAGING_SMOKE_USER_EMAIL    — optional; enables the end-to-end sign-in probe
 //   STAGING_SMOKE_USER_PASSWORD
+//   RENDER_API_KEY             — optional; enables the Render healthCheckPath assertion
+//   RENDER_SERVICE_ID          — frapp-api-staging service id (same as verify-deployments.yml)
 //   RUN_URL                     — html_url of this run, for the alert body
 
 import { appendFileSync, readFileSync } from "node:fs";
@@ -57,6 +59,10 @@ import { dirname, join } from "node:path";
 import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { requireEnv } from "./lib/env.mjs";
+import {
+  EXPECTED_HEALTH_CHECK_PATH,
+  readHealthCheckPath,
+} from "./lib/render-health-check-path.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -205,6 +211,63 @@ export async function checkProjectStatus({ accessToken, projectRef, fetchImpl = 
   return status === "ACTIVE_HEALTHY"
     ? result("project-status", label, PASS, `status=${status}`)
     : result("project-status", label, FAIL, `status=${status}, expected ACTIVE_HEALTHY`);
+}
+
+/**
+ * Render `frapp-api-staging` `serviceDetails.healthCheckPath` is `/health`.
+ *
+ * Staging auto-deploys `main` on commit, so this path is the only HTTP gate on
+ * those deploys. Empty is a TCP socket check (documented 2026-09-06).
+ * `/health/ready` would cancel a deploy when a dependency is degraded.
+ * Production's copy of this assertion lives in production-guardrails.mjs —
+ * do not fold production auto-deploy into this suite (alert title is the
+ * lookup key).
+ */
+export async function checkRenderHealthCheckPath({
+  apiKey,
+  serviceId,
+  fetchImpl = fetch,
+  serviceLabel = "frapp-api-staging",
+} = {}) {
+  const id = "health-check-path";
+  const label = `${serviceLabel} healthCheckPath is /health`;
+  if (!apiKey || !serviceId) {
+    return result(id, label, SKIPPED, "RENDER_API_KEY / RENDER_SERVICE_ID not set");
+  }
+  const response = await fetchImpl(
+    `https://api.render.com/v1/services/${serviceId}`,
+    withTimeout({ headers: { Authorization: `Bearer ${apiKey}` } }),
+  );
+  if (!response.ok) {
+    return result(id, label, FAIL, `Render API returned HTTP ${response.status}`);
+  }
+  const service = await response.json();
+  const path = readHealthCheckPath(service);
+  if (path === EXPECTED_HEALTH_CHECK_PATH) {
+    return result(id, label, PASS, `healthCheckPath=${path}`);
+  }
+  if (path === "") {
+    return result(
+      id,
+      label,
+      FAIL,
+      `healthCheckPath is empty (TCP-only probe on the open port; expected ${EXPECTED_HEALTH_CHECK_PATH})`,
+    );
+  }
+  if (typeof path === "string") {
+    return result(
+      id,
+      label,
+      FAIL,
+      `healthCheckPath='${path}' (expected ${EXPECTED_HEALTH_CHECK_PATH}; /health/ready would cancel a deploy when a dependency is degraded)`,
+    );
+  }
+  return result(
+    id,
+    label,
+    FAIL,
+    `healthCheckPath is unreadable (expected ${EXPECTED_HEALTH_CHECK_PATH} on serviceDetails)`,
+  );
 }
 
 /**
@@ -1017,6 +1080,12 @@ export async function runStagingConformance({
       checkProjectStatus({
         accessToken: env.SUPABASE_ACCESS_TOKEN,
         projectRef: env.SUPABASE_PROJECT_REF,
+        fetchImpl,
+      }) },
+    { id: "health-check-path", label: "frapp-api-staging healthCheckPath is /health", run: () =>
+      checkRenderHealthCheckPath({
+        apiKey: env.RENDER_API_KEY,
+        serviceId: env.RENDER_SERVICE_ID,
         fetchImpl,
       }) },
     { id: "auth-hook", label: "custom_access_token_hook is enabled", run: () =>
