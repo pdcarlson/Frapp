@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import type { KeyValueStore } from "./adapters";
 import { emptyCache, locateRow, mergeServerRow } from "./cache";
 import {
   mergePersistedRecorded,
@@ -8,19 +7,7 @@ import {
 } from "./recorded-notices";
 import { optimisticMessage } from "./types";
 import { upsertOptimistic } from "./cache";
-
-function memoryStore(): KeyValueStore {
-  const map = new Map<string, string>();
-  return {
-    get: (key) => map.get(key) ?? null,
-    set: (key, value) => {
-      map.set(key, value);
-    },
-    remove: (key) => {
-      map.delete(key);
-    },
-  };
-}
+import { memoryStore } from "./test/memory-store";
 
 const NOTICE = {
   clientMessageId: "cm-1",
