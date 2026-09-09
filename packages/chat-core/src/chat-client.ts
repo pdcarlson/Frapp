@@ -651,7 +651,7 @@ export async function retryOutboxRow(
   ctx: ChatActionContext,
   row: OutboxRow,
 ): Promise<void> {
-  ctx.track?.(OUTBOX_ANALYTICS_EVENTS.retried, {
+  emitOutboxEvent(ctx, OUTBOX_ANALYTICS_EVENTS.retried, {
     channel_id: row.channelId,
     attempts: row.attempts,
   });
@@ -668,7 +668,7 @@ export async function discardOutboxRow(
     removeMessage(cache, row.clientId),
   );
   await ctx.outbox.dequeue(row.clientId);
-  ctx.track?.(OUTBOX_ANALYTICS_EVENTS.discarded, {
+  emitOutboxEvent(ctx, OUTBOX_ANALYTICS_EVENTS.discarded, {
     channel_id: row.channelId,
     attempts: row.attempts,
   });

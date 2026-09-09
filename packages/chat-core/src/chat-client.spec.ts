@@ -16,12 +16,14 @@ import {
   type ChatErrorFn,
   type ToastFn,
 } from "./chat-client";
-import type { KeyValueStore, OutboxRow, OutboxStore } from "./adapters";
+import type { OutboxRow, OutboxStore } from "./adapters";
 import { persistRecordedNotice, readRecordedNotices } from "./recorded-notices";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import { assertContentFreeProperties } from "@repo/validation";
 import { chatMessagesKey, type ChannelCache } from "./types";
 import { emptyCache, mergeServerRows, selectMessages } from "./cache";
+import { memoryStore } from "./test/memory-store";
+import { stubOutbox } from "./test/outbox-stub";
 
 /**
  * Covers #999: a rejected react/unreact must reach `ctx.onError`, the
@@ -581,27 +583,6 @@ describe("actOnCard", () => {
 });
 
 describe("outbox analytics", () => {
-  function buildOutbox(overrides: Partial<OutboxStore> = {}): OutboxStore {
-    return {
-      enqueue: vi.fn().mockImplementation(
-        async (row): Promise<OutboxRow> => ({
-          attempts: 0,
-          status: "queued",
-          queuedAt: Date.now(),
-          ...row,
-        }),
-      ),
-      dequeue: vi.fn().mockResolvedValue(undefined),
-      requeue: vi.fn().mockResolvedValue(undefined),
-      markFailed: vi.fn().mockResolvedValue(undefined),
-      bumpAttempt: vi.fn().mockResolvedValue(undefined),
-      listQueued: vi.fn().mockResolvedValue([]),
-      listForChannel: vi.fn().mockResolvedValue([]),
-      clearDraft: vi.fn().mockResolvedValue(undefined),
-      ...overrides,
-    };
-  }
-
   it("emits queued then confirmed on a successful send, with an elapsed_ms property", async () => {
     const track = vi.fn();
     const apiClient = {
@@ -613,7 +594,7 @@ describe("outbox analytics", () => {
     };
     const ctx = buildCtx({
       apiClient: apiClient as unknown as ChatActionContext["apiClient"],
-      outbox: buildOutbox(),
+      outbox: stubOutbox(),
       track,
     });
 
@@ -645,7 +626,7 @@ describe("outbox analytics", () => {
     };
     const ctx = buildCtx({
       apiClient: apiClient as unknown as ChatActionContext["apiClient"],
-      outbox: buildOutbox(),
+      outbox: stubOutbox(),
       track,
     });
 
@@ -668,7 +649,7 @@ describe("outbox analytics", () => {
     };
     const ctx = buildCtx({
       apiClient: apiClient as unknown as ChatActionContext["apiClient"],
-      outbox: buildOutbox(),
+      outbox: stubOutbox(),
       track,
     });
 
@@ -695,7 +676,7 @@ describe("outbox analytics", () => {
     };
     const ctx = buildCtx({
       apiClient: apiClient as unknown as ChatActionContext["apiClient"],
-      outbox: buildOutbox(),
+      outbox: stubOutbox(),
       track,
     });
     const row: OutboxRow = {
@@ -738,7 +719,7 @@ describe("outbox analytics", () => {
     };
     const ctx = buildCtx({
       apiClient: apiClient as unknown as ChatActionContext["apiClient"],
-      outbox: buildOutbox(),
+      outbox: stubOutbox(),
       track,
     });
     const row: OutboxRow = {
@@ -765,7 +746,7 @@ describe("outbox analytics", () => {
 
   it("emits discarded when a failed row is dropped", async () => {
     const track = vi.fn();
-    const ctx = buildCtx({ outbox: buildOutbox(), track });
+    const ctx = buildCtx({ outbox: stubOutbox(), track });
     const row: OutboxRow = {
       clientId: "c-1",
       channelId: "chan-1",
@@ -805,7 +786,7 @@ describe("outbox analytics", () => {
     await sendMessage(
       buildCtx({
         apiClient: successApi as unknown as ChatActionContext["apiClient"],
-        outbox: buildOutbox(),
+        outbox: stubOutbox(),
         track,
       }),
       { channelId: "chan-1", content: "hello there" },
@@ -821,7 +802,7 @@ describe("outbox analytics", () => {
     await sendMessage(
       buildCtx({
         apiClient: rejectedApi as unknown as ChatActionContext["apiClient"],
-        outbox: buildOutbox(),
+        outbox: stubOutbox(),
         track,
       }),
       { channelId: "chan-1", content: "hello there" },
@@ -837,7 +818,7 @@ describe("outbox analytics", () => {
       lastError: "Couldn't reach chat server",
     };
     await discardOutboxRow(
-      buildCtx({ outbox: buildOutbox(), track }),
+      buildCtx({ outbox: stubOutbox(), track }),
       failedRow,
     );
 
@@ -855,37 +836,11 @@ describe("outbox analytics", () => {
 });
 
 describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
-  function memoryStore(): KeyValueStore {
-    const map = new Map<string, string>();
-    return {
-      get: (key) => map.get(key) ?? null,
-      set: (key, value) => {
-        map.set(key, value);
-      },
-      remove: (key) => {
-        map.delete(key);
-      },
-    };
-  }
-
-  function emptyOutbox(): OutboxStore {
-    return {
-      enqueue: vi.fn(),
-      dequeue: vi.fn(),
-      requeue: vi.fn(),
-      markFailed: vi.fn(),
-      bumpAttempt: vi.fn(),
-      listQueued: vi.fn().mockResolvedValue([]),
-      listForChannel: vi.fn().mockResolvedValue([]),
-      clearDraft: vi.fn(),
-    };
-  }
-
   it("does not seed an empty cache when there is nothing to restore", async () => {
     const queryClient = new QueryClient();
     const setSpy = vi.spyOn(queryClient, "setQueryData");
     await hydrateOutboxIntoCache(
-      buildCtx({ queryClient, outbox: emptyOutbox(), kv: memoryStore() }),
+      buildCtx({ queryClient, outbox: stubOutbox(), kv: memoryStore() }),
       "chan-1",
     );
     expect(setSpy).not.toHaveBeenCalled();
@@ -906,7 +861,7 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
     );
     const queryClient = new QueryClient();
     await hydrateOutboxIntoCache(
-      buildCtx({ queryClient, outbox: emptyOutbox(), kv }),
+      buildCtx({ queryClient, outbox: stubOutbox(), kv }),
       "chan-1",
     );
     const cache = queryClient.getQueryData<ChannelCache>(
@@ -934,8 +889,7 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
         },
       ]),
     );
-    const outbox: OutboxStore = {
-      ...emptyOutbox(),
+    const outbox = stubOutbox({
       listForChannel: vi.fn().mockResolvedValue([
         {
           clientId: "c-1",
@@ -946,7 +900,7 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
           queuedAt: Date.now(),
         },
       ]),
-    };
+    });
     await hydrateOutboxIntoCache(buildCtx({ queryClient, outbox }), "chan-1");
     const rows = selectMessages(
       queryClient.getQueryData(chatMessagesKey("chan-1")),
@@ -958,19 +912,6 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
 });
 
 describe("markLocalRecorded (#1789)", () => {
-  function memoryStore(): KeyValueStore {
-    const map = new Map<string, string>();
-    return {
-      get: (key) => map.get(key) ?? null,
-      set: (key, value) => {
-        map.set(key, value);
-      },
-      remove: (key) => {
-        map.delete(key);
-      },
-    };
-  }
-
   it("upserts and persists when the placeholder was clobbered", () => {
     const kv = memoryStore();
     const ctx = buildCtx({ kv });
@@ -1003,27 +944,6 @@ describe("markLocalRecorded (#1789)", () => {
  * then `markFailed` / `bumpAttempt`'d a message the server already accepted.
  */
 describe("sendMessage — outbox faults (#1718)", () => {
-  function buildOutbox(overrides: Partial<OutboxStore> = {}): OutboxStore {
-    return {
-      enqueue: vi.fn().mockImplementation(
-        async (row): Promise<OutboxRow> => ({
-          attempts: 0,
-          status: "queued",
-          queuedAt: Date.now(),
-          ...row,
-        }),
-      ),
-      dequeue: vi.fn().mockResolvedValue(undefined),
-      requeue: vi.fn().mockResolvedValue(undefined),
-      markFailed: vi.fn().mockResolvedValue(undefined),
-      bumpAttempt: vi.fn().mockResolvedValue(undefined),
-      listQueued: vi.fn().mockResolvedValue([]),
-      listForChannel: vi.fn().mockResolvedValue([]),
-      clearDraft: vi.fn().mockResolvedValue(undefined),
-      ...overrides,
-    };
-  }
-
   function onlySendRow(ctx: ChatActionContext) {
     const cache = ctx.queryClient.getQueryData<ChannelCache>(
       chatMessagesKey("chan-1"),
@@ -1035,7 +955,7 @@ describe("sendMessage — outbox faults (#1718)", () => {
 
   it("removes the optimistic row and rethrows when enqueue rejects", async () => {
     const apiClient = { POST: vi.fn() };
-    const outbox = buildOutbox({
+    const outbox = stubOutbox({
       enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
     });
     const ctx = buildCtx({
@@ -1073,7 +993,7 @@ describe("sendMessage — outbox faults (#1718)", () => {
         response: { status: 201 },
       }),
     };
-    const outbox = buildOutbox({
+    const outbox = stubOutbox({
       clearDraft: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
     });
     const ctx = buildCtx({
@@ -1116,7 +1036,7 @@ describe("sendMessage — outbox faults (#1718)", () => {
         }),
       ),
     };
-    const outbox = buildOutbox({
+    const outbox = stubOutbox({
       dequeue: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
     });
     const ctx = buildCtx({
@@ -1135,7 +1055,7 @@ describe("sendMessage — outbox faults (#1718)", () => {
 
   it("does not POST again when the cache already has the confirmed row", async () => {
     const apiClient = { POST: vi.fn() };
-    const outbox = buildOutbox({
+    const outbox = stubOutbox({
       dequeue: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
     });
     const ctx = buildCtx({
@@ -1191,7 +1111,7 @@ describe("sendMessage — outbox faults (#1718)", () => {
     };
     const ctx = buildCtx({
       apiClient: apiClient as unknown as ChatActionContext["apiClient"],
-      outbox: buildOutbox(),
+      outbox: stubOutbox(),
       track: () => {
         throw new Error("analytics down");
       },
@@ -1206,5 +1126,45 @@ describe("sendMessage — outbox faults (#1718)", () => {
     ).resolves.toEqual({});
 
     expect(onlySendRow(ctx)._status).toBe("confirmed");
+  });
+
+  it("still retries when track throws", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: {
+          message: {
+            id: "msg-retry",
+            channel_id: "chan-1",
+            sender_id: "user-1",
+            content: "hi",
+            kind: "text",
+            client_message_id: "c-retry",
+            created_at: new Date().toISOString(),
+          },
+        },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox: stubOutbox(),
+      track: () => {
+        throw new Error("analytics down");
+      },
+    });
+
+    await expect(
+      retryOutboxRow(ctx, {
+        clientId: "c-retry",
+        channelId: "chan-1",
+        body: "hi",
+        attempts: 1,
+        status: "failed",
+        queuedAt: Date.now(),
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(apiClient.POST).toHaveBeenCalled();
   });
 });

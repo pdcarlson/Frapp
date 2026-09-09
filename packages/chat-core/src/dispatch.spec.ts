@@ -3,10 +3,12 @@ import { QueryClient } from "@tanstack/react-query";
 import type { SlashCommand } from "@repo/chat-integrations";
 import { dispatchSlashCommand, retryPointsDispatch } from "./dispatch";
 import type { ChatActionContext } from "./chat-client";
-import type { KeyValueStore, OutboxRow, OutboxStore } from "./adapters";
+import type { KeyValueStore, OutboxStore } from "./adapters";
 import { chatMessagesKey, type ChannelCache, type ChatMessage } from "./types";
 import { selectMessages, mergeServerRow } from "./cache";
 import { readRecordedNotices } from "./recorded-notices";
+import { memoryStore } from "./test/memory-store";
+import { stubOutbox } from "./test/outbox-stub";
 
 /**
  * #544 — a `/points` grant whose ledger row commits but whose chat card fails to
@@ -27,19 +29,6 @@ const POINTS_COMMAND: SlashCommand = {
   requiredModule: "points",
   implemented: true,
 };
-
-function memoryStore(): KeyValueStore {
-  const map = new Map<string, string>();
-  return {
-    get: (key) => map.get(key) ?? null,
-    set: (key, value) => {
-      map.set(key, value);
-    },
-    remove: (key) => {
-      map.delete(key);
-    },
-  };
-}
 
 function buildCtx(
   post: ReturnType<typeof vi.fn>,
@@ -891,27 +880,6 @@ const SIMPLE_CASES = [
   },
 ];
 
-function buildOutbox(overrides: Partial<OutboxStore> = {}): OutboxStore {
-  return {
-    enqueue: vi.fn().mockImplementation(
-      async (row): Promise<OutboxRow> => ({
-        attempts: 0,
-        status: "queued",
-        queuedAt: Date.now(),
-        ...row,
-      }),
-    ),
-    dequeue: vi.fn().mockResolvedValue(undefined),
-    requeue: vi.fn().mockResolvedValue(undefined),
-    markFailed: vi.fn().mockResolvedValue(undefined),
-    bumpAttempt: vi.fn().mockResolvedValue(undefined),
-    listQueued: vi.fn().mockResolvedValue([]),
-    listForChannel: vi.fn().mockResolvedValue([]),
-    clearDraft: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
-  };
-}
-
 function buildSimpleCtx(
   post: ReturnType<typeof vi.fn>,
   outbox: OutboxStore,
@@ -973,7 +941,7 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
     "/$name returns a failure instead of throwing when enqueue rejects",
     async (which) => {
       const post = postingApi();
-      const outbox = buildOutbox({
+      const outbox = stubOutbox({
         enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
       });
       const ctx = buildSimpleCtx(post, outbox);
@@ -997,7 +965,7 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
     "/$name still posts when clearDraft rejects (draft clear is best-effort)",
     async (which) => {
       const post = postingApi();
-      const outbox = buildOutbox({
+      const outbox = stubOutbox({
         clearDraft: vi
           .fn()
           .mockRejectedValue(new Error("DatabaseClosedError")),
@@ -1019,7 +987,7 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
     "/$name does not report failure when POST succeeded and dequeue rejects",
     async (which) => {
       const post = postingApi();
-      const outbox = buildOutbox({
+      const outbox = stubOutbox({
         dequeue: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
       });
       const ctx = buildSimpleCtx(post, outbox);
