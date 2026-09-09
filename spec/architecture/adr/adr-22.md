@@ -17,9 +17,11 @@
   `chapters.analytics_opt_out`, and **production-disabled until Paul approves** privacy
   disclosure, consent, and retention.
 - **Vendor SDK init stays runtime-local.** Shared policy (scrubber, correlation types, safe env
-  parsing, PII redaction) moves into a browser-safe `@repo/observability` in a later slice —
-  **move** `packages/validation/src/sentry-scrubbing.ts`, do not copy it. That package does
-  not exist yet and is not listed under [`spec/architecture/README.md` §4](../README.md#4-shared-packages).
+  parsing, PII redaction) lives in the browser-safe `@repo/observability` package
+  (`packages/observability`). Vendor SDK init stays in NestJS, Next.js, and React Native.
+  **Correction (2026-09-09):** the original decision named this as a later slice and still
+  pointed at `packages/validation/src/sentry-scrubbing.ts`. That module was **moved**, not
+  copied. The package is listed under [`spec/architecture/README.md` §4](../README.md#4-shared-packages).
 
 The product rules, identifier table, sampling bounds, and definition of done live in
 [`spec/behavior/observability.md`](../../behavior/observability.md) and are not restated here.
@@ -41,8 +43,11 @@ not a description of the current PostHog project:
 
 Code-side gaps on the same date (current behavior, not this decision): identity DTO is
 `{ distinct_id, enabled }` with no chapter-group pseudonym; landing has no Sentry/PostHog SDK
-(privacy copy still names Sentry); API/web `tracesSampleRate` is still `Number(env ?? '0.1')`
-and can be `NaN` (closed #904 covered mobile only).
+(privacy copy still names Sentry); API/web `tracesSampleRate` was still `Number(env ?? '0.1')`
+and could be `NaN` (closed #904 covered mobile only).
+**Correction (2026-09-09):** `@repo/observability` `parseTracesSampleRate` now clamps API and
+web traces rates to finite `[0, 1]` with default `0.1` (#2040). The identity DTO and landing
+gaps remain.
 
 **Alternatives rejected.**
 

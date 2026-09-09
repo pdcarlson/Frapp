@@ -32,7 +32,7 @@ Frapp/
     web/            # Next.js admin dashboard (app.frapp.live)
     mobile/         # Expo mobile app (iOS + Android)
     landing/        # Next.js marketing site (frapp.live)
-  packages/         # 13 shared workspaces
+  packages/         # 14 shared workspaces
     api-sdk/        # Generated API client + TypeScript types
     brand-assets/   # Canonical SVG marks (favicon + lockup)
     chapter-theme/  # Signet chapter accent engine (one seed -> `--signet-*` role tokens)
@@ -42,6 +42,7 @@ Frapp/
     eslint-config/  # Shared ESLint configuration
     formatting/     # Shared date/time/duration display helpers (web + mobile)
     hooks/          # Shared React hooks (use-members, use-frapp-client, etc.)
+    observability/  # Browser-safe observability policy (Sentry PII scrubbing, sample-rate parse)
     org-archetypes/ # Greek-org directory / archetype data
     theme/          # Tailwind preset + stylesheets: Signet (`signet.css`) and legacy bone/bronze (`globals.css`, landing only)
     typescript-config/ # Shared tsconfig
@@ -119,6 +120,7 @@ Frapp/
 | `@repo/eslint-config`     | Shared ESLint rules.                                                      |
 | `@repo/formatting`        | Shared date/time/duration display helpers. Generic locale formatters (`formatClock`, `formatLocaleDateTime`, `formatLocaleDate`) plus three **protected clusters** that must stay distinct: stopwatch padding (`formatPaddedStopwatch` / `formatTimer`), bare-date timezone parsing (`parseBareDateLocalMidnight` / `parseBareDateUtcNoon`), and minute-duration rounding (`formatMinutesExact` / `formatMinutesRounded`). Used by web + mobile. |
 | `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
+| `@repo/observability`      | Browser-safe observability policy: Sentry PII scrubbing, correlation types, sample-rate parsing in `[0,1]`, and the constants that describe the Sentry/PostHog split. Vendor SDK init stays runtime-local to NestJS, Next.js, and React Native. Used by API + web + mobile. |
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill. Consumed by the API (chapter config seed), web Settings + first-officer wizard, and `apps/mobile` (`package.json` declares the workspace dependency; the wizard reads `ARCHETYPES` directly). |
 | `@repo/theme`             | Shared Tailwind preset plus two stylesheets: `signet.css` (dark-only Signet tokens, imported by `apps/web`) and the legacy bone/bronze `globals.css` (imported by `apps/landing` only). Typed tokens for non-Tailwind consumers; `accent.ts` holds `resolveChapterAccentColor`, the per-surface accent re-validator. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |

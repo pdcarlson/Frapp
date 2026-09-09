@@ -154,6 +154,11 @@ jobs:
       - name: Shared formatting package tests
         run: npm run test -w @repo/formatting
 
+      # Browser-safe observability policy: Sentry PII scrubbing, sample-rate
+      # parse, correlation types. Vendor SDK init stays in each app.
+      - name: Shared observability package tests
+        run: npm run test -w @repo/observability
+
       # The accent engine. Its contrast guarantee is only as good as the exact
       # behaviour of the vendored generator, so a dependency bump is precisely
       # what this suite exists to catch.
