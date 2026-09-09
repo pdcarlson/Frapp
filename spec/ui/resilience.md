@@ -310,15 +310,17 @@ and a re-typed `/points` mints a fresh key — so the row offers **no** Retry an
 **no** Delete. The sticky toast is secondary and evictable (`TOAST_LIMIT = 1`);
 the row is the trace that survives the next toast and a reload.
 
-**Shipped on web only, and mobile cannot reach either state yet.** Both statuses
-are set only by the heavy-command dispatcher, they are cache-only and local to
-the client that dispatched, and `apps/mobile` deliberately has no slash dispatch
-— so no mobile row can currently be `unconfirmed` or `recorded`. What matters is
-the ordering: mobile's `_status` chains are not exhaustive, so either row would
-fall through to the delivered presentation — no note, and on `recorded` a
-missing "don't run again". **Mobile must gain both branches in the same change
-that gives it slash dispatch, not after**
-([#1910](https://github.com/pdcarlson/Frapp/issues/1910)).
+**Web ships Retry on `unconfirmed`; mobile presents both states read-only.**
+Both statuses are set only by the heavy-command dispatcher, they are cache-only
+and local to the client that dispatched, and `apps/mobile` deliberately has no
+slash dispatch — so no mobile row can currently *reach* `unconfirmed` or
+`recorded`. The type still permits them. A fall-through to the delivered
+presentation (no note; on `recorded` no "don't run again") is the worst
+available look for a lost write, so mobile presents both as a muted note,
+never as delivered, never with Discard, and never with Retry until it gains a
+slash replay path (2026-09-09, #1910). The exhaustive `_status` switch is
+what makes the next widening of `MessageStatus` a compile error rather than
+another silent fall-through.
 
 **The state machine above does not produce `UNCONFIRMED` or `RECORDED`.** It
 models the outbox path (`SENDING → SENT`, timeout → `FAILED`), which heavy slash
