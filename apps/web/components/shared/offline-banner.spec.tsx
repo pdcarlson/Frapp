@@ -14,6 +14,8 @@ describe("OfflineBanner", () => {
       isOnline: true,
       isDegraded: false,
       isOffline: false,
+      linkOnline: true,
+      probeOnce: async () => {},
     });
 
     const { container } = render(<OfflineBanner />);
@@ -26,6 +28,8 @@ describe("OfflineBanner", () => {
       isOnline: false,
       isDegraded: true,
       isOffline: false,
+      linkOnline: true,
+      probeOnce: async () => {},
     });
 
     render(<OfflineBanner />);
@@ -44,6 +48,8 @@ describe("OfflineBanner", () => {
       isOnline: false,
       isDegraded: false,
       isOffline: true,
+      linkOnline: false,
+      probeOnce: async () => {},
     });
 
     render(<OfflineBanner />);
