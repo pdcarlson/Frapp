@@ -233,8 +233,17 @@ export class PointsConfigDto {
 }
 
 export class PatchChapterConfigDto {
+  /**
+   * #1817. `@IsOptional()` skips both `undefined` *and* `null`, so an explicit
+   * `null` on any of these blocks used to pass the pipe and then 500 in
+   * `patchConfig` (`!== undefined` plus a jsonb `not null` column). `@ValidateIf`
+   * keeps omit legal and lets the type validator reject `null` as 400.
+   *
+   * `default_invite_role_id` is the opposite contract (#422) and must keep
+   * accepting `null`. Do not copy this pattern onto that field.
+   */
   @ApiPropertyOptional()
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsString()
   org_archetype?: string;
 
@@ -242,7 +251,7 @@ export class PatchChapterConfigDto {
     type: 'object',
     additionalProperties: { type: 'boolean' },
   })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsObject()
   enabled_modules?: Record<string, boolean>;
 
@@ -250,42 +259,42 @@ export class PatchChapterConfigDto {
     type: 'object',
     additionalProperties: { type: 'string' },
   })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsObject()
   vocabulary?: Record<string, string>;
 
   @ApiPropertyOptional({ type: () => BrandingDto })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @ValidateNested()
   @Type(() => BrandingDto)
   branding?: BrandingDto;
 
   @ApiPropertyOptional({ type: () => BetaConfigDto })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @ValidateNested()
   @Type(() => BetaConfigDto)
   beta_config?: BetaConfigDto;
 
   @ApiPropertyOptional({ type: () => DuesConfigDto })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @ValidateNested()
   @Type(() => DuesConfigDto)
   dues?: DuesConfigDto;
 
   @ApiPropertyOptional({ type: () => ServiceConfigDto })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @ValidateNested()
   @Type(() => ServiceConfigDto)
   service?: ServiceConfigDto;
 
   @ApiPropertyOptional({ type: () => PointsConfigDto })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @ValidateNested()
   @Type(() => PointsConfigDto)
   points?: PointsConfigDto;
 
   @ApiPropertyOptional({ type: () => WorkflowConfigDto, isArray: true })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => WorkflowConfigDto)
@@ -295,7 +304,7 @@ export class PatchChapterConfigDto {
     description:
       'When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous).',
   })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsBoolean()
   analytics_opt_out?: boolean;
 
