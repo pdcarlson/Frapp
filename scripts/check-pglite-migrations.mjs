@@ -418,6 +418,15 @@ const LANDMARKS = [
     ok: (rows) => rows.length === 1 && rows[0].missing === 0,
   },
   {
+    // The historical seed still inserts 'Frapp System'. The forward migration
+    // (#1935) must leave the well-known actor as Signet System after replay.
+    name: "seeded system actor display_name is Signet System (#1935)",
+    sql: `select display_name from public.users
+           where id = '00000000-0000-0000-0000-000000000000'`,
+    ok: (rows) =>
+      rows.length === 1 && rows[0].display_name === "Signet System",
+  },
+  {
     name: "chapter_directory has GENERATED search_vector column",
     sql: `select attgenerated from pg_attribute
            where attrelid = 'chapter_directory'::regclass and attname = 'search_vector'`,
