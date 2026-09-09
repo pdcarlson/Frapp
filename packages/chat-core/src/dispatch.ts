@@ -34,10 +34,11 @@ export interface DispatchResult {
   error?: string;
   /**
    * Set when the command's side effect committed but something non-essential
-   * around it did not — today, a heavy command whose ledger row landed while its
-   * chat card failed to post (#544). Distinct from `error`: the write happened,
-   * so the caller must NOT present this as a failure or invite a retry that
-   * would duplicate it. Callers surface it as a non-destructive notice.
+   * around it did not — today, a heavy command whose row landed while its
+   * chat card failed to post (#544, #1717). Distinct from `error`: the write
+   * happened, so the caller must NOT present this as a failure or invite a
+   * retry that would duplicate it. Callers surface it as a non-destructive
+   * notice.
    */
   warning?: string;
   /**
@@ -459,6 +460,11 @@ interface PointsAdjustResponse {
   card_posted?: boolean;
 }
 
+/** Minimal shape this module reads off create-task / create-event. */
+interface CardPostedResponse {
+  card_posted?: boolean;
+}
+
 /** HTTP 409 — `PointsService.resolveReplay`'s key-reused-for-something-else refusal. */
 const CONFLICT = 409;
 
@@ -469,6 +475,12 @@ const REFUSED_ERROR = "Couldn't adjust points — nothing was recorded.";
 
 const CARD_LOST_WARNING =
   "Points were recorded, but the chat card couldn't be posted. Check the points ledger to confirm — don't run the command again.";
+
+const TASK_CARD_LOST_WARNING =
+  "Task was created, but the chat card couldn't be posted. Check the task board to confirm — don't run the command again.";
+
+const EVENT_CARD_LOST_WARNING =
+  "Event was created, but the chat card couldn't be posted. Check the events calendar to confirm — don't run the command again.";
 
 const REPLAY_ACCEPTED_WARNING =
   "These points were already recorded — the retry didn't add a second entry. Whether the original chat card posted isn't something the server can tell us, so check the channel or the points ledger if you need to be sure.";
@@ -599,7 +611,7 @@ async function dispatchTask(
   });
 
   try {
-    const { error } = await ctx.apiClient.POST("/v1/tasks", {
+    const result = await ctx.apiClient.POST("/v1/tasks", {
       body: {
         title: parsed.value.title,
         assignee_id: member.user_id,
@@ -609,12 +621,26 @@ async function dispatchTask(
         client_message_id: clientMessageId,
       },
     });
-    if (error) {
+    // Read the status without narrowing on `error`: the generated contract
+    // declares no error responses for this route, so `error` is typed `never`
+    // and `if (result.error)` would narrow the whole branch — `response`
+    // included — to `never`. Empty-body gateway 502/504 arrive as
+    // `{ error: undefined, response }`, so `if (error)` alone would treat them
+    // as success and strand the placeholder (#1717).
+    const data = result.data as CardPostedResponse | undefined;
+    let status = result.response?.status;
+    if (result.error) status ??= 0;
+    const ok = typeof status === "number" && status >= 200 && status < 300;
+    if (!ok) {
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
       return {
         ok: false,
-        error: apiErrorMessage(error, "Couldn't create task"),
+        error: apiErrorMessage(result.error, "Couldn't create task"),
       };
+    }
+    if (data?.card_posted === false) {
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return { ok: true, warning: TASK_CARD_LOST_WARNING };
     }
   } catch {
     removeLocalPlaceholder(ctx, channelId, clientMessageId);
@@ -622,7 +648,8 @@ async function dispatchTask(
   }
 
   // Success: the server posts the `task` card (same client_message_id); the
-  // Realtime echo reconciles the placeholder via mergeServerRow.
+  // Realtime echo reconciles the placeholder via mergeServerRow. Nothing to do
+  // unless `card_posted` was an explicit `false` above.
   return { ok: true };
 }
 
@@ -691,7 +718,7 @@ async function dispatchEvent(
   });
 
   try {
-    const { error } = await ctx.apiClient.POST("/v1/events", {
+    const result = await ctx.apiClient.POST("/v1/events", {
       body: {
         name: parsed.value.name,
         start_time: startIso,
@@ -707,12 +734,23 @@ async function dispatchEvent(
         client_message_id: clientMessageId,
       },
     });
-    if (error) {
+    // Same status-without-`error` narrowing as `/task` / `/points`. Empty-body
+    // gateway 502/504 must not read as success: `/event` has no server-side
+    // dedupe, so a stranded placeholder invites a duplicating retry (#1717).
+    const data = result.data as CardPostedResponse | undefined;
+    let status = result.response?.status;
+    if (result.error) status ??= 0;
+    const ok = typeof status === "number" && status >= 200 && status < 300;
+    if (!ok) {
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
       return {
         ok: false,
-        error: apiErrorMessage(error, "Couldn't create event"),
+        error: apiErrorMessage(result.error, "Couldn't create event"),
       };
+    }
+    if (data?.card_posted === false) {
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return { ok: true, warning: EVENT_CARD_LOST_WARNING };
     }
   } catch {
     removeLocalPlaceholder(ctx, channelId, clientMessageId);
