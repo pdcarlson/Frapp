@@ -3512,7 +3512,7 @@ export interface components {
             reason: string;
             /** @description When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments. */
             channel_id?: string;
-            /** @description Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud. */
+            /** @description Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment, or naming a different `channel_id` than the stored origin, answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud. */
             client_message_id?: string;
         };
         AdjustPointsResponseDto: {
@@ -3537,7 +3537,12 @@ export interface components {
              * @description The idempotency key this row was written under, echoed back. `null` for dashboard adjustments, which send no key and are not deduplicated.
              */
             client_message_id?: string | null;
-            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the ledger row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the adjustment failed. Absent means the server reported no outcome (a dashboard adjustment, or a deduplicated replay) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
+            /**
+             * Format: uuid
+             * @description Origin chat channel this row was written under. A replay re-attempts the points card only into this channel. `null` for dashboard adjustments and for rows committed before the column existed.
+             */
+            channel_id?: string | null;
+            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the ledger row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — keep a recorded row and warn, without implying the adjustment failed. Absent means the server reported no outcome (a dashboard adjustment, or a replay of a row with no stored origin channel). A replay whose origin is stored reports this field like a first attempt. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
         };
         CreateCheckoutDto: {
