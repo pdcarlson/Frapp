@@ -27,7 +27,7 @@ These identifiers are distinct. Do not copy one into another.
 
 | Identifier | Who mints it | Format | Where it travels | Must not |
 | --- | --- | --- | --- | --- |
-| `x-request-id` | API `requestIdMiddleware` (inbound honored, else `req_<uuid>`) | Opaque string | Response header, internal logs, error JSON `requestId`, Sentry request headers (allowlisted) | Be replaced by a Sentry/OTEL trace id; be a credential |
+| `x-request-id` | Web/mobile `createFrappClient` (API `requestIdMiddleware` honours inbound, else mints `req_<uuid>`) | Opaque string | Request header, response header, internal logs, error JSON `requestId`, Sentry request headers (allowlisted). CORS `exposedHeaders` so browser JS can read the echo. | Be replaced by a Sentry/OTEL trace id; be a credential |
 | Sentry trace id | Sentry SDK (Node trace provider on the API) | Sentry/OTEL trace id | Sentry transactions/spans only | Be used as `x-request-id` |
 | Sentry event id | Sentry, per error event | Sentry event id | Sentry; optional PostHog timeline marker | Be treated as a user id |
 | PostHog `distinct_id` | API `hmac_sha256(salt, user_id)` | 64 lowercase hex | PostHog events; web Sentry `user.id` via identity | Be computed in a client bundle |
@@ -116,7 +116,7 @@ They exist to settle one question the IP rule would otherwise make unanswerable,
 
 ## Request Tracing
 
-A unique `x-request-id` header is generated for each incoming request (or preserved if the client sends one). This ID is included in all log entries and all error responses, enabling end-to-end tracing. The request ID itself is non-PII and may be surfaced in client-facing error messages.
+A unique `x-request-id` header is generated for each incoming request (or preserved if the client sends one). Web and mobile mint one on every SDK call (`createFrappClient` in `@repo/api-sdk`); the API honours that inbound value and otherwise mints `req_<uuid>`. This ID is included in all log entries and all error responses, enabling end-to-end tracing. The request ID itself is non-PII and may be surfaced in client-facing error messages. CORS names `x-request-id` (and the Sentry `sentry-trace` / `baggage` headers, which are a **different** identifier space) in `exposedHeaders` so a cross-origin dashboard can read them (`apps/api/src/interface/http/cors.options.ts`).
 
 **"All" includes denials, which makes the placement load-bearing.** The id is assigned by `requestIdMiddleware` (`apps/api/src/interface/middleware/request-id.middleware.ts`), registered as Express middleware ahead of the Nest pipeline. It cannot be an interceptor: Nest runs middleware → guards → interceptors, so a request rejected by a guard never reaches one, and every 401/403/429 would carry `"requestId": "unknown"` — precisely the requests a tracing id is most useful for.
 

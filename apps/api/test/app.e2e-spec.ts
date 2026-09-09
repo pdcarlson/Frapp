@@ -39,4 +39,25 @@ describe('Health (e2e)', () => {
       .expect(200);
     expect(response.body).not.toHaveProperty('commit');
   });
+
+  it('/health (GET) exposes x-request-id to an allowed origin', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/health')
+      .set('Origin', 'http://localhost:3000')
+      .set('x-request-id', 'e2e-health-req')
+      .expect(200);
+
+    expect(response.headers['access-control-allow-origin']).toBe(
+      'http://localhost:3000',
+    );
+    expect(response.headers['x-request-id']).toBe('e2e-health-req');
+    const exposed = String(
+      response.headers['access-control-expose-headers'] ?? '',
+    )
+      .split(',')
+      .map((item) => item.trim().toLowerCase());
+    expect(exposed).toEqual(
+      expect.arrayContaining(['x-request-id', 'sentry-trace', 'baggage']),
+    );
+  });
 });
