@@ -11,6 +11,7 @@ import type { ArgumentsHost } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
+import { runWithRequestLogStore } from '../../infrastructure/observability/request-als';
 
 jest.mock('@sentry/nestjs', () => ({
   captureException: jest.fn(),
@@ -122,6 +123,28 @@ describe('AllExceptionsFilter', () => {
       requestId: 'req-abc',
     });
     expect(captured.status).toBe(status);
+  });
+
+  it('falls back to unknown when requestId is missing and ALS is empty', () => {
+    new AllExceptionsFilter().catch(
+      new Error('Missing ID'),
+      host({ requestId: undefined }),
+    );
+
+    expect((captured.json as { requestId: string }).requestId).toBe('unknown');
+  });
+
+  it('falls back to the ALS request id when the request object is unbound', () => {
+    runWithRequestLogStore({ requestId: 'req_from_als' }, () => {
+      new AllExceptionsFilter().catch(
+        new Error('ALS fallback'),
+        host({ requestId: undefined }),
+      );
+    });
+
+    expect((captured.json as { requestId: string }).requestId).toBe(
+      'req_from_als',
+    );
   });
 
   it('never writes the client address, and strips the query string', () => {

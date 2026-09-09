@@ -133,9 +133,9 @@ Guards to test:
 - `ChapterGuard` — correctly accepts members of a chapter and rejects non-members
 - `PermissionsGuard` — honors wildcard (`*`) and specific permissions
 
-Interceptors:
+Interceptors / middleware:
 
-- `RequestIdInterceptor` — attaches `x-request-id` when missing and forwards when present
+- `requestIdMiddleware` — attaches `x-request-id` when missing and forwards when present (Express middleware, before guards)
 - Logging interceptor — ensures it logs request/response metadata (can be smoke-tested)
 
 ## 4a. Repository tenant-scope tests

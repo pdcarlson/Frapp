@@ -24,10 +24,10 @@
  *    user-typed PII.
  *
  * The design principle is **allowlist, not denylist**, everywhere a structure
- * is enumerable — headers, request fields, top-level event keys, stack frames.
- * A denylist silently starts leaking the day Sentry's SDK adds a field, and
- * the failure is invisible because nobody reads their own error reports looking
- * for PII.
+ * is enumerable — headers, request fields, top-level event keys, stack frames,
+ * exception values, and breadcrumbs. A denylist silently starts leaking the day
+ * Sentry's SDK adds a field, and the failure is invisible because nobody reads
+ * their own error reports looking for PII.
  *
  * Free text is the one place an allowlist is impossible: an exception message
  * is the payload we actually want, and dropping it would make the whole
@@ -353,10 +353,6 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       });
   }
 
-  function redactMaybe(value: unknown): string | undefined {
-    return typeof value === 'string' ? redactFreeText(value) : undefined;
-  }
-
   /**
    * One stack frame, rebuilt from an allowlist (#889).
    *
@@ -366,8 +362,8 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
    * from disk; none of those were touched, so a key-shaped literal in source
    * reached Sentry.
    */
-  function scrubFrame(frame: unknown): unknown {
-    if (!frame || typeof frame !== 'object') return frame;
+  function scrubFrame(frame: unknown): Record<string, unknown> | undefined {
+    if (!frame || typeof frame !== 'object') return undefined;
     const source = frame as Record<string, unknown>;
     const out: Record<string, unknown> = {};
 
@@ -382,14 +378,14 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       out.context_line = redactFreeText(source.context_line);
     }
     if (Array.isArray(source.pre_context)) {
-      out.pre_context = source.pre_context.map((line) =>
-        typeof line === 'string' ? redactFreeText(line) : line,
-      );
+      out.pre_context = source.pre_context
+        .filter((line): line is string => typeof line === 'string')
+        .map((line) => redactFreeText(line));
     }
     if (Array.isArray(source.post_context)) {
-      out.post_context = source.post_context.map((line) =>
-        typeof line === 'string' ? redactFreeText(line) : line,
-      );
+      out.post_context = source.post_context
+        .filter((line): line is string => typeof line === 'string')
+        .map((line) => redactFreeText(line));
     }
     return out;
   }
@@ -454,52 +450,118 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
 
   // ── Structural scrubbing ───────────────────────────────────────────────────
 
+  /**
+   * One exception `mechanism`, rebuilt from an allowlist.
+   *
+   * `data` is a free-form bag — chained exceptions, `captureException` extras,
+   * and integrations all write here — so it is dropped by omission, as is
+   * `meta`. Scalar identity/status fields survive; string ones are swept.
+   */
+  function scrubMechanism(
+    mechanism: unknown,
+  ): Record<string, unknown> | undefined {
+    if (!mechanism || typeof mechanism !== 'object') return undefined;
+    const source = mechanism as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    if (typeof source.type === 'string') out.type = redactFreeText(source.type);
+    if (typeof source.handled === 'boolean') out.handled = source.handled;
+    if (typeof source.synthetic === 'boolean') out.synthetic = source.synthetic;
+    if (typeof source.exception_id === 'number') {
+      out.exception_id = source.exception_id;
+    }
+    if (typeof source.parent_id === 'number') out.parent_id = source.parent_id;
+    if (typeof source.source === 'string') {
+      out.source = redactFreeText(source.source);
+    }
+    if (typeof source.is_exception_group === 'boolean') {
+      out.is_exception_group = source.is_exception_group;
+    }
+    if (typeof source.help_link === 'string') {
+      out.help_link = redactFreeText(source.help_link);
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+
+  /**
+   * One stacktrace, rebuilt from an allowlist.
+   *
+   * Frames go through {@link scrubFrame}. `raw_stacktrace` is a sibling on
+   * the *exception value*, not here — dropping it is the value allowlist's
+   * job. `registers` is dropped by omission: it is a dump of machine state
+   * and is not diagnostic enough to justify a second unswept bag.
+   */
+  function scrubStacktrace(
+    stacktrace: unknown,
+  ): Record<string, unknown> | undefined {
+    if (!stacktrace || typeof stacktrace !== 'object') return undefined;
+    const source = stacktrace as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    if (Array.isArray(source.frames)) {
+      out.frames = source.frames
+        .map(scrubFrame)
+        .filter((frame): frame is Record<string, unknown> => frame !== undefined);
+    }
+    if (
+      Array.isArray(source.frames_omitted) &&
+      source.frames_omitted.length === 2 &&
+      typeof source.frames_omitted[0] === 'number' &&
+      typeof source.frames_omitted[1] === 'number'
+    ) {
+      out.frames_omitted = source.frames_omitted;
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+
+  /**
+   * One exception value, rebuilt from an allowlist.
+   *
+   * The previous rebuild spread the value, overwrote `value` / `stacktrace`,
+   * and left every other field — `mechanism.data`, `raw_stacktrace`, anything
+   * a future SDK version adds — to ride out. Frames were already allowlisted
+   * (#889); values were not. Unknown fields, including a non-string `value`,
+   * are dropped by omission rather than copied and then maybe-redacted.
+   */
+  function scrubExceptionValue(
+    entry: unknown,
+  ): Record<string, unknown> | undefined {
+    if (!entry || typeof entry !== 'object') return undefined;
+    const source = entry as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    if (typeof source.type === 'string') out.type = redactFreeText(source.type);
+    if (typeof source.value === 'string') {
+      out.value = redactFreeText(source.value);
+    }
+    if (typeof source.module === 'string') {
+      out.module = redactFreeText(source.module);
+    }
+    if (typeof source.thread_id === 'number') out.thread_id = source.thread_id;
+    const mechanism = scrubMechanism(source.mechanism);
+    if (mechanism) out.mechanism = mechanism;
+    const stacktrace = scrubStacktrace(source.stacktrace);
+    if (stacktrace) out.stacktrace = stacktrace;
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+
   function scrubException(exception: unknown): unknown {
     // Not an object — so not a shape this module can read, so it does not ship.
     // Returning it (which is what the API module did before the move, via
     // `if (!exception?.values) return exception`) leaves the allowlist-copied raw
     // value on the event: a bare string `exception` carried its contents out
     // untouched. Pre-existing rather than introduced here, but the same
-    // fail-open shape as the two below, so it is closed with them.
+    // fail-open shape as a non-array `values`, so it is closed with them.
     if (!exception || typeof exception !== 'object') return undefined;
-    const source = exception as { values?: unknown };
-    // `values` present but not an array cannot be walked — so it is **dropped**,
-    // never returned as-is. `exception` is on the key allowlist, which means the
-    // copy loop in the callers has already placed the raw object on the outgoing
-    // event; returning it unchanged here would ship an uninspected payload
-    // rather than skip a rebuild. An early `return exception` on a shape this
-    // module cannot read is fail-open, which is precisely backwards.
-    if ('values' in source && !Array.isArray(source.values)) {
-      const kept = { ...(source as Record<string, unknown>) };
-      delete kept.values;
-      return kept;
-    }
-    if (!Array.isArray(source.values)) return exception;
+    const source = exception as Record<string, unknown>;
+    // `values` present but not an array cannot be walked — so the whole
+    // exception is dropped, never returned as-is and never rebuilt from a
+    // spread of the remaining keys. `exception` is on the key allowlist,
+    // which means the copy loop in the callers has already placed the raw
+    // object on the outgoing event; returning a spread-minus-values object
+    // would still ship uninspected sibling fields.
+    if (!Array.isArray(source.values)) return undefined;
     return {
-      ...source,
-      values: source.values.map((entry) => {
-        if (!entry || typeof entry !== 'object') return entry;
-        const value = entry as Record<string, unknown>;
-        const stacktrace = value.stacktrace as
-          | { frames?: unknown }
-          | undefined
-          | null;
-        return {
-          ...value,
-          value: redactMaybe(value.value) ?? value.value,
-          // Stack frames are rebuilt from an allowlist (#889). `vars` is a
-          // snapshot of local variables — arbitrary request payload — and is
-          // dropped by omission, as is any field a future SDK version adds.
-          // Source context (`pre_context` / `context_line` / `post_context`)
-          // is swept: those arrays are source lines read off disk, so a
-          // key-shaped literal in the file would otherwise ship verbatim.
-          stacktrace: stacktrace && {
-            frames: Array.isArray(stacktrace.frames)
-              ? stacktrace.frames.map(scrubFrame)
-              : undefined,
-          },
-        };
-      }),
+      values: source.values
+        .map(scrubExceptionValue)
+        .filter((entry): entry is Record<string, unknown> => entry !== undefined),
     };
   }
 
@@ -533,18 +595,43 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     };
   }
 
+  /**
+   * One breadcrumb, rebuilt from an allowlist.
+   *
+   * `data` is dropped by omission rather than `delete`: on http breadcrumbs it
+   * holds the full URL with query string, and on custom ones it is whatever the
+   * caller passed. Unknown sibling fields (`payload`, `user`, a future SDK
+   * key) used to survive a spread-then-delete. A non-string `message` is
+   * omitted rather than passed through — the same fail-open shape
+   * {@link scrubMessageInto} already closed at the event top level.
+   */
+  function scrubBreadcrumb(
+    crumb: unknown,
+  ): Record<string, unknown> | undefined {
+    if (!crumb || typeof crumb !== 'object') return undefined;
+    const source = crumb as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    if (typeof source.timestamp === 'number') out.timestamp = source.timestamp;
+    if (typeof source.type === 'string') out.type = redactFreeText(source.type);
+    if (typeof source.category === 'string') {
+      out.category = redactFreeText(source.category);
+    }
+    if (typeof source.level === 'string') out.level = redactFreeText(source.level);
+    if (typeof source.event_id === 'string') {
+      out.event_id = redactFreeText(source.event_id);
+    }
+    if (typeof source.message === 'string') {
+      out.message = redactFreeText(source.message);
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  }
+
   function scrubBreadcrumbs(breadcrumbs: unknown): unknown[] | undefined {
     if (!Array.isArray(breadcrumbs)) return undefined;
-    return breadcrumbs.map((crumb) => {
-      if (!crumb || typeof crumb !== 'object') return crumb;
-      // `data` is dropped wholesale: on http breadcrumbs it holds the full URL
-      // with query string and the response body size, and on custom ones it is
-      // whatever the caller passed.
-      const kept = { ...(crumb as Record<string, unknown>) };
-      delete kept.data;
-      kept.message = redactMaybe(kept.message) ?? kept.message;
-      return kept;
-    });
+    const kept = breadcrumbs
+      .map(scrubBreadcrumb)
+      .filter((entry): entry is Record<string, unknown> => entry !== undefined);
+    return kept.length > 0 ? kept : undefined;
   }
 
   function scrubTags(
