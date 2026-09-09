@@ -4,8 +4,10 @@
  * Translates a parsed slash command into a `sendMessage` call against the
  * chat hot-path client. Lives in `@repo/chat-core` beside `chat-client.ts`,
  * whose `ChatActionContext` — the Supabase client, query client, outbox and
- * toast — it threads through. Pure mapping otherwise; the caller surfaces
- * the `{ok:false, error}` toast.
+ * toast — it threads through. Every path returns a `DispatchResult`; the
+ * caller surfaces the toast. `/poll` and `/announce` wrap `sendMessage` so a
+ * never-sent outbox fault is `{ ok: false }` and a post-commit bookkeeping
+ * fault is `{ ok: true, warning }` (#1718) — not an escaped rejection.
  */
 
 import {
@@ -136,6 +138,23 @@ export async function dispatchSlashCommand(
   }
 }
 
+/**
+ * `/poll` and `/announce` post through `sendMessage`. A never-sent outbox
+ * fault throws; a post-commit dequeue fault resolves with `warning`. Map
+ * both onto `DispatchResult` so `dispatchSlashCommand` stays total (#1718).
+ */
+async function sendSimpleCommand(
+  ctx: ChatActionContext,
+  args: Parameters<typeof sendMessage>[1],
+): Promise<DispatchResult> {
+  try {
+    const sent = await sendMessage(ctx, args);
+    return sent.warning ? { ok: true, warning: sent.warning } : { ok: true };
+  } catch {
+    return { ok: false, error: "Couldn't run that command." };
+  }
+}
+
 async function dispatchPoll(
   ctx: ChatActionContext,
   args: string,
@@ -156,13 +175,12 @@ async function dispatchPoll(
     closes_at: closesAt,
   };
 
-  await sendMessage(ctx, {
+  return sendSimpleCommand(ctx, {
     channelId,
     content: parsed.value.question,
     kind: "poll",
     payload: payload as unknown as Record<string, unknown>,
   });
-  return { ok: true };
 }
 
 async function dispatchAnnounce(
@@ -175,13 +193,12 @@ async function dispatchAnnounce(
 
   const payload: AnnouncementPayload = { body: parsed.value.message };
 
-  await sendMessage(ctx, {
+  return sendSimpleCommand(ctx, {
     channelId,
     content: parsed.value.message,
     kind: "announcement",
     payload: payload as unknown as Record<string, unknown>,
   });
-  return { ok: true };
 }
 
 /** Pull a human message out of an openapi-fetch / NestJS error body. */
