@@ -621,6 +621,25 @@ After any rollback event:
   `points` key in its `diff`, so the last known value per chapter can be read back
   out of the audit trail.
 
+## Rollback the Stripe subscription webhook CAS
+
+* **Migration**: `20260909050000_apply_subscription_webhook_rpc.sql`
+* **Action**:
+  ```sql
+  DROP FUNCTION IF EXISTS apply_subscription_webhook(uuid, timestamptz, jsonb);
+  ```
+* **Order**: **roll the API back first, then the migration.** A build from
+  after this migration calls `apply_subscription_webhook` from
+  `BillingService`'s subscription webhook handlers, so it errors once the
+  function is gone. An older build writes `chapters` through `update()` and is
+  unaffected. Reverting the schema first breaks every subscription webhook
+  until the deploy catches up — checkout activation, dunning, and cancel
+  included.
+* **Data caveat**: rolling back does not rewrite chapter rows. The
+  `last_stripe_webhook_at` column stays; only the atomic apply path is
+  removed, which restores the FRA-242 concurrent-overwrite exposure of #731
+  for as long as it is off.
+
 ## Rollback the points ledger origin channel
 
 * **Migration**: `20260909040000_point_transactions_channel_id.sql`
