@@ -1,7 +1,7 @@
 /**
  * Correlation identifiers. These are distinct spaces — do not copy one
  * into another. The product table lives in `spec/behavior/observability.md`
- * § Correlation schema (Workstream 1 / ADR-22 once that PR merges).
+ * § Correlation schema (`spec/behavior/observability.md`, ADR-22).
  */
 
 /** HTTP header that carries the request-correlation id. */
