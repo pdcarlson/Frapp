@@ -311,6 +311,8 @@ export function EventsPage() {
     );
   }
 
+  const eventWriteControls = eventWriteGate.controlProps();
+
   return (
     <div className="space-y-6">
       <Card>
@@ -602,10 +604,9 @@ export function EventsPage() {
                 events={calendarEvents}
                 monthAnchor={calendarMonthAnchor}
                 onMonthAnchorChange={setCalendarMonthAnchor}
-                createDisabled={!eventWriteGate.allowed}
-                createDescribedBy={
-                  eventWriteGate.allowed ? undefined : eventWriteGate.noticeId
-                }
+                createDisabled={eventWriteControls.disabled}
+                createDescribedBy={eventWriteControls["aria-describedby"]}
+                createTitle={eventWriteControls.title}
                 onSelectEvent={(event) => {
                   setActiveEvent(event);
                   setDetailSheetOpen(true);
