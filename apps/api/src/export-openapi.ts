@@ -43,7 +43,7 @@ async function exportOpenApi() {
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   const config = new DocumentBuilder()
-    .setTitle('Frapp API')
+    .setTitle('Signet API')
     .setDescription('The Operating System for Greek Life')
     .setVersion('1.0')
     .addBearerAuth()
