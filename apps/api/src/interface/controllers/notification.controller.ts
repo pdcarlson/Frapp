@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -18,6 +17,7 @@ import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import {
   RegisterPushTokenDto,
+  ListNotificationPreferencesQueryDto,
   UpdateNotificationPreferenceDto,
   UpdateUserSettingsDto,
 } from '../dtos/notification.dto';
@@ -73,12 +73,9 @@ export class NotificationController {
   @ApiOperation({ summary: 'Get notification preferences' })
   async getPreferences(
     @CurrentUser('id') userId: string,
-    @Query('chapterId') chapterId: string,
+    @Query() query: ListNotificationPreferencesQueryDto,
   ) {
-    if (!chapterId) {
-      throw new BadRequestException('chapterId query parameter is required');
-    }
-    return this.notificationService.getPreferences(userId, chapterId);
+    return this.notificationService.getPreferences(userId, query.chapterId);
   }
 
   @Patch('notifications/preferences')

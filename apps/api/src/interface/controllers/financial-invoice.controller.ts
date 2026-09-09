@@ -9,12 +9,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiQuery,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FinancialInvoiceService } from '../../application/services/financial-invoice.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -29,6 +24,7 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   CreateFinancialInvoiceDto,
+  ListInvoicesQueryDto,
   UpdateFinancialInvoiceDto,
   TransitionInvoiceStatusDto,
 } from '../dtos/financial-invoice.dto';
@@ -46,12 +42,12 @@ export class FinancialInvoiceController {
 
   @Get()
   @ApiOperation({ summary: 'List invoices (billing: all, member: own)' })
-  @ApiQuery({ name: 'user_id', required: false })
   async list(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Query('user_id') filterUserId?: string,
+    @Query() query: ListInvoicesQueryDto,
   ) {
+    const filterUserId = query.user_id;
     if (filterUserId) {
       if (filterUserId === userId) {
         return this.invoiceService.findByUser(filterUserId, chapterId);
