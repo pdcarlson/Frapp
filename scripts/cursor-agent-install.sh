@@ -95,6 +95,16 @@ log "Building shared workspace packages..."
 sudo modprobe br_netfilter 2>/dev/null || true
 sudo sysctl -w net.bridge.bridge-nf-call-iptables=0 net.bridge.bridge-nf-call-ip6tables=0 >/dev/null 2>&1 || true
 
+# Clear any snapshot-carried Supabase CLI staging before the pre-pull's `supabase start`.
+# supabase/.temp/start-secrets/ is ephemeral (gitignored, regenerated each start), but a
+# base snapshot can carry a copy owned by a different uid, and the next `supabase start`
+# then dies with `EACCES ... rm .../start-secrets/...`. Removing it here keeps the pre-pull
+# (and thus the image cache it exists to warm) robust; scripts/cursor-cloud-up.sh does the
+# same per boot. Guarded so a bad ROOT can never widen the target.
+if [ -n "${ROOT:-}" ] && [ -d "$ROOT/supabase/.temp" ]; then
+  sudo rm -rf "$ROOT/supabase/.temp" 2>/dev/null || true
+fi
+
 # `sg docker` so the daemon is reachable without sudo. It runs its argument with /bin/sh,
 # so the bash-only pre-pull logic lives in its own script (see cursor-agent-prepull.sh).
 if sg docker -c "bash '$ROOT/scripts/cursor-agent-prepull.sh'"; then
