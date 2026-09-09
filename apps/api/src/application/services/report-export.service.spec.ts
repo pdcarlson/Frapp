@@ -85,7 +85,7 @@ describe('ReportExportService', () => {
     expect(result.expires_in).toBe(3600);
     expect(result.row_count).toBe(1);
     expect(result.filename).toMatch(
-      /^frapp-roster-report-\d{4}-\d{2}-\d{2}\.pdf$/,
+      /^signet-roster-report-\d{4}-\d{2}-\d{2}\.pdf$/,
     );
   });
 
