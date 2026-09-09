@@ -388,8 +388,7 @@ for the rest.
 
 **Run the second verify (§0.6) now**, before the first file write.
 
-Branch from `main` as `claude/<slug>` — in a harness-managed cloud session, the session's assigned
-branch. Either way, that branch is this file's **unit branch**. Focused commits. **Commit locally; do not push yet** — the
+Branch from `main`. On **Cursor Cloud** (primary), use the session's assigned branch. On **Claude Code** (fallback), `claude/<slug>`. In a harness-managed cloud session, the assigned branch always wins. Either way, that branch is this file's **unit branch**. Focused commits. **Commit locally; do not push yet** — the
 pre-push gate owns the first push (Phase 3). Record the branch name in a heartbeat comment on the
 first commit: local work is invisible to the reclaim rules, and the claim comment stream, not a
 remote branch, is your liveness beacon.
@@ -500,8 +499,8 @@ Move **every member** to **In Review**: swap its `in-progress` label for **`in-r
 (read-modify-write) and `add_issue_comment` the PR link on each. Do **not** post an
 `AGENT-RELEASE` — the open PR is the marker now, and the claim comments stay as the record of who
 did the work. **Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR
-lifecycle**: rely on the wake layers that don't prompt (PR-activity webhook + `CI wake` and
-`PR base sync` comments) — **do not call `send_later`**. Triage each
+lifecycle:** subscribe using this harness's PR/CI tools; repo-side wake comments (`CI wake`,
+`PR base sync`) still apply. Triage each
 red check infra-vs-code before pushing a "fix" — an ordinary red CI arrives silently through the
 webhook and is yours to classify from the run itself; a `CI wake` comment appears only when the
 outcome was cancelled/timed-out or an infra retry gave up — address and resolve review threads. On merge, GitHub closes each `Fixes`-named issue as `completed`; for any member
@@ -539,8 +538,7 @@ hypothetical:
   `strict: true` re-runs the collision check after the first merge; expect an
   `update_pull_request_branch` + fresh-CI cycle on the surviving PR, and don't try to re-review
   `main`'s own merge delta — the gate doesn't ask for it.
-- The [`AGENTS.md`](../../AGENTS.md) babysit obligations read **plural**: a
-  `subscribe_pr_activity` per PR, wake comments read per PR, stop conditions evaluated over the set.
+- The [`AGENTS.md`](../../AGENTS.md) babysit obligations read **plural**: subscribe per PR using this harness's tools. Wake comments read per PR, stop conditions evaluated over the set.
 
 ## Exits
 
@@ -577,7 +575,7 @@ Post literally, substituting bracketed values; the sentinel is always the first 
 ```text
 🤖 AGENT-CLAIM `claim:a3f19c2e`
 
-**Claimed by:** Claude Code `/next` session `a3f19c2e` (acting as Paul Carlson)
+**Claimed by:** `/next` session `a3f19c2e` (acting as Paul Carlson; Cursor Cloud primary, Claude Code fallback)
 **Branch:** `claude/fix-signup-redirect` (local until review passes)
 **Batch:** solo — or: #100 · #101 · #102 (one claim comment per member, same claim id; this lease renews on this issue's own comment stream)
 **Prior art:** none
