@@ -144,7 +144,7 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
 - **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
 - **Monitoring:** Error tracking (Sentry or equivalent), structured logging, uptime checks.
 
-> **Full setup walkthrough:** See [`docs/internal/ops/DEPLOYMENT.md`](../../docs/internal/ops/DEPLOYMENT.md) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
+> **Full setup walkthrough:** See [`docs/internal/ops/deployment/`](../../docs/internal/ops/deployment/) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
 
 ---
 
@@ -451,7 +451,7 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Filenames must match pattern: `YYYYMMDDHHMMSS_snake_case_name.sql`.
 - Breaking schema changes require a migration plan (backward-compatible where possible; coordinate with API deploys).
 - Every migration should have a documented rollback strategy in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.
-- See `docs/internal/ops/DEPLOYMENT.md` for the full migration deployment workflow.
+- See `docs/internal/ops/deployment/` for the full migration deployment workflow.
 
 ## Cursor Cloud (primary) and Claude Code fallback
 
