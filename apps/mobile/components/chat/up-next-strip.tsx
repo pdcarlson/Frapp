@@ -92,6 +92,11 @@ export function selectNextEvent(
 /**
  * Nearest task still owed. `COMPLETED` is excluded; `OVERDUE` deliberately is
  * not — an overdue task is the most urgent thing the strip can say.
+ *
+ * Sort keys go through {@link parseInstantOrBareUtcNoon}, the same parse as
+ * {@link formatDueDate} / {@link isDueUrgent}. `new Date("YYYY-MM-DD")` is UTC
+ * midnight; mixing that with the noon parse would pick a different "nearest"
+ * task if a chat card ever handed a full timestamp beside a bare due date.
  */
 export function selectNextTask(tasks: unknown): UpNextTask | null {
   const open = asArray(tasks)
@@ -102,8 +107,9 @@ export function selectNextTask(tasks: unknown): UpNextTask | null {
       const status = str(row, "status") ?? "TODO";
       if (!id || !title || !dueDate) return null;
       if (status === "COMPLETED") return null;
-      const at = new Date(dueDate).getTime();
-      if (Number.isNaN(at)) return null;
+      const parsed = parseInstantOrBareUtcNoon(dueDate);
+      if (!parsed) return null;
+      const at = parsed.getTime();
       return { at, task: { id, title, due_date: dueDate, status } };
     })
     .filter((entry): entry is { at: number; task: UpNextTask } => !!entry);
