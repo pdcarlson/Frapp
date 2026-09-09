@@ -9,7 +9,7 @@ import React, {
   useRef,
   useSyncExternalStore,
 } from "react";
-import { normalizeApiBaseUrl } from "@repo/api-sdk";
+import { normalizeApiBaseUrl, withRequestIdInit } from "@repo/api-sdk";
 import {
   deriveConnectionState,
   healthProbeIsReachable,
@@ -99,11 +99,14 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
       try {
-        const res = await fetch(healthCheckUrl, {
-          method: "GET",
-          signal: controller.signal,
-          cache: "no-store",
-        });
+        const res = await fetch(
+          healthCheckUrl,
+          withRequestIdInit({
+            method: "GET",
+            signal: controller.signal,
+            cache: "no-store",
+          }),
+        );
 
         if (generation !== probeGenerationRef.current) {
           return;

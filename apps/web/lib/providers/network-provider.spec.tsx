@@ -1,3 +1,4 @@
+import { REQUEST_ID_HEADER } from "@repo/api-sdk";
 import { render, act, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NetworkProvider, useNetwork } from "./network-provider";
@@ -49,6 +50,11 @@ describe("NetworkProvider health check URL", () => {
     return fetchMock.mock.calls[0]?.[0];
   }
 
+  function requestIdFromFirstCall(): string | null {
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    return new Headers(init?.headers).get(REQUEST_ID_HEADER);
+  }
+
   it("polls on mount, not only on the first interval tick", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_URL", "http://localhost:3001");
     await urlPolledOnce();
@@ -75,6 +81,18 @@ describe("NetworkProvider health check URL", () => {
     vi.stubEnv("NEXT_PUBLIC_API_URL", "");
     await urlPolledOnce();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("mints x-request-id on the health probe, not a sentry-trace id", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_URL", "http://localhost:3001");
+    await urlPolledOnce();
+    const id = requestIdFromFirstCall();
+    expect(id).toMatch(/^req_[0-9a-f-]{36}$/i);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = new Headers(init?.headers);
+    expect(headers.get("sentry-trace")).toBeNull();
+    expect(headers.get("baggage")).toBeNull();
+    expect(headers.has(REQUEST_ID_HEADER)).toBe(true);
   });
 });
 
