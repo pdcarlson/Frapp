@@ -109,7 +109,7 @@ export class ReportExportService {
     });
 
     const day = generatedAt.toISOString().slice(0, 10);
-    const filename = `frapp-${kind}-report-${day}.pdf`;
+    const filename = `signet-${kind}-report-${day}.pdf`;
     const storagePath = `${reportsFolderPrefix(chapterId)}/${kind}-${day}-${randomUUID()}.pdf`;
 
     await this.storage.uploadFile(

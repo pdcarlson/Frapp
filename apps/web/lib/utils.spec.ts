@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { downloadBlob, getErrorMessage } from "./utils";
+import { downloadBlob, downloadCsv, getErrorMessage } from "./utils";
 
 /**
  * Dashboard toasts use this helper so openapi-fetch's thrown body (a plain
@@ -70,6 +70,27 @@ describe("downloadBlob", () => {
     expect(document.querySelector('a[download="report.csv"]')).toBeNull();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
 
+    clickSpy.mockRestore();
+  });
+});
+
+describe("downloadCsv", () => {
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => "blob:mock-url");
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  it("names the download signet-<prefix>-<date>.csv", () => {
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        expect(this.download).toMatch(/^signet-invoices-\d{4}-\d{2}-\d{2}\.csv$/);
+        expect(this.download).not.toMatch(/^frapp-/);
+      });
+
+    downloadCsv([{ amount: "10" }], "invoices");
+
+    expect(clickSpy).toHaveBeenCalledTimes(1);
     clickSpy.mockRestore();
   });
 });
