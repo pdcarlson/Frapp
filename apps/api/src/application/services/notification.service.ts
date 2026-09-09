@@ -287,9 +287,10 @@ export class NotificationService {
 
   async listNotifications(
     userId: string,
+    chapterId: string,
     options?: { limit?: number },
   ): Promise<Notification[]> {
-    return this.notificationRepo.findByUser(userId, {
+    return this.notificationRepo.findByUser(userId, chapterId, {
       limit: clampListLimit(options?.limit),
     });
   }
@@ -297,12 +298,13 @@ export class NotificationService {
   async markNotificationRead(
     id: string,
     userId: string,
+    chapterId: string,
   ): Promise<Notification> {
-    const existing = await this.notificationRepo.findById(id);
+    const existing = await this.notificationRepo.findById(id, chapterId);
     if (!existing || existing.user_id !== userId) {
       throw new NotFoundException('Notification not found');
     }
-    return this.notificationRepo.markRead(id, userId);
+    return this.notificationRepo.markRead(id, userId, chapterId);
   }
 
   async registerPushToken(
