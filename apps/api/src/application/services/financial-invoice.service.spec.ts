@@ -1209,6 +1209,89 @@ describe('FinancialInvoiceService', () => {
     });
   });
 
+  describe('notifyStripePaymentFailure (#717)', () => {
+    const openInvoice: FinancialInvoice = {
+      ...baseInvoice,
+      status: 'OPEN',
+    };
+
+    it('notifies the invoice owner and does not change status', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+
+      await service.notifyStripePaymentFailure({
+        invoiceId: 'inv-1',
+        chapterId: 'ch-1',
+        declineReason: 'Your card was declined.',
+      });
+
+      expect(mockInvoiceRepo.applyPayment).not.toHaveBeenCalled();
+      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
+      expect(mockNotificationService.notifyChapter).not.toHaveBeenCalled();
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        {
+          title: 'Payment declined',
+          body: 'Your payment for "Fall 2026 Dues" was declined: Your card was declined. You can try again.',
+          priority: 'NORMAL',
+          category: 'billing',
+          data: { target: { screen: 'billing' } },
+        },
+      );
+    });
+
+    it('omits the reason clause when Stripe sent none', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+
+      await service.notifyStripePaymentFailure({
+        invoiceId: 'inv-1',
+        chapterId: 'ch-1',
+        declineReason: null,
+      });
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({
+          body: 'Your payment for "Fall 2026 Dues" was declined. You can try again.',
+        }),
+      );
+    });
+
+    it('acks a missing invoice without notifying', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.notifyStripePaymentFailure({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          declineReason: 'declined',
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it.each(['PAID', 'VOID', 'DRAFT'] as const)(
+      'does not notify when the invoice is %s',
+      async (status) => {
+        mockInvoiceRepo.findById.mockResolvedValue({
+          ...baseInvoice,
+          status,
+        });
+
+        await service.notifyStripePaymentFailure({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          declineReason: 'declined',
+        });
+
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+        expect(mockInvoiceRepo.applyPayment).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   describe('getInvoiceTransactions', () => {
     it('should return transactions for a specific invoice', async () => {
       mockInvoiceRepo.findById.mockResolvedValue(baseInvoice);
