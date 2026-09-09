@@ -30,7 +30,7 @@ consolidating.
 It earns the right to touch product code unattended by being **grounded, whole-pattern, verified,
 reviewed, and merged by a human** — every run, no exceptions. The license and its limits are
 [`ROUTINES.md` → Shared ownership boundary](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
-rule 3 and ADR-16 amendment 7 in [`spec/architecture/README.md`](../../../spec/architecture/README.md).
+rule 3 and ADR-16 amendment 7 in [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md).
 
 ---
 
