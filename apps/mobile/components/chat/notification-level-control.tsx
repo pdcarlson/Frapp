@@ -86,6 +86,7 @@ export function NotificationLevelControl({
   const unknown = level === null;
   const isMuted = level === "off";
   const blocked = disabled || unknown || Boolean(writeBlockedReason);
+  const showMenu = open && !blocked;
   const glyphColor = blocked
     ? tokens.color.text.muted
     : tokens.color.text.foreground;
@@ -108,7 +109,7 @@ export function NotificationLevelControl({
         <MuteGlyph color={glyphColor} active={isMuted} size={24} />
         {isMuted ? <Text style={styles.mutedLabel}>Muted</Text> : null}
       </Pressable>
-      {open ? (
+      {showMenu ? (
         <View accessibilityRole="menu" style={styles.menu}>
           <Text style={styles.menuTitle}>Notify me about</Text>
           {NOTIFICATION_LEVEL_OPTIONS.map((option) => {
@@ -118,9 +119,16 @@ export function NotificationLevelControl({
                 key={option.level}
                 accessibilityRole="button"
                 accessibilityLabel={`${option.label}. ${option.description}`}
-                accessibilityState={{ selected, disabled: isSaving }}
-                disabled={isSaving}
+                accessibilityState={{
+                  selected,
+                  disabled: isSaving || Boolean(writeBlockedReason),
+                }}
+                disabled={isSaving || Boolean(writeBlockedReason)}
                 onPress={() => {
+                  if (writeBlockedReason) {
+                    setOpen(false);
+                    return;
+                  }
                   if (!selected) onChange(option.level);
                   setOpen(false);
                 }}

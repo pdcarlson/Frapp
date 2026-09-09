@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -219,11 +219,8 @@ export default function ChatThreadScreen() {
   const failedChannelId = setNotificationLevel.isError
     ? setNotificationLevel.variables?.channelId
     : undefined;
-  const resetNotificationLevel = setNotificationLevel.reset;
-  const notificationLevelErrored = setNotificationLevel.isError;
-  useEffect(() => {
-    if (notificationLevelErrored) resetNotificationLevel();
-  }, [channelId, notificationLevelErrored, resetNotificationLevel]);
+  // Scoped to the channel the failed write was for. Do not `reset()` when
+  // `isError` flips true — that hid this alert on the channel that failed.
 
   /**
    * What the in-thread pill says, or `null` when it has nothing to add.

@@ -250,4 +250,31 @@ describe("NotificationLevelControl", () => {
     expect(menu(tree)).toHaveLength(0);
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("closes an open menu when writes become blocked", () => {
+    const onChange = vi.fn();
+    const tree = renderControl({ level: "mentions", onChange });
+    press(
+      byLabel(
+        tree,
+        "Notifications: only @mentions. Change notification level",
+      ),
+    );
+    expect(menu(tree)).toHaveLength(1);
+
+    act(() => {
+      tree.update(
+        <FrappThemeProvider>
+          <NotificationLevelControl
+            level="mentions"
+            onChange={onChange}
+            writeBlockedReason="Reconnect to make changes."
+          />
+        </FrappThemeProvider>,
+      );
+    });
+
+    expect(menu(tree)).toHaveLength(0);
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
