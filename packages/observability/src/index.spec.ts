@@ -5,6 +5,7 @@ import {
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   BAGGAGE_HEADER,
   REQUEST_ID_HEADER,
+  SENTRY_ERROR_CORRELATED_EVENT,
   SENTRY_TRACE_HEADER,
   SENTRY_REPLAY_ENABLED,
   createSentryScrubber,
@@ -23,6 +24,7 @@ describe("public API", () => {
     expect(BAGGAGE_HEADER).toBe("baggage");
     expect(SENTRY_REPLAY_ENABLED).toBe(false);
     expect(POSTHOG_EXCEPTION_AUTOCAPTURE).toBe(false);
+    expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
   });
 });

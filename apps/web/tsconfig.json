@@ -16,6 +16,7 @@
     "next-env.d.ts",
     "next.config.js",
     "lib/assert-production-public-env.js",
+    "lib/sentry/build-config.js",
     ".next/types/**/*.ts"
   ],
   "exclude": [

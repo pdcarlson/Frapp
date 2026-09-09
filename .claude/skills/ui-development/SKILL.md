@@ -312,7 +312,7 @@ Pattern:
 ```text
 QueryProvider (TanStack Query)
   └─ FrappProvider (API client with Supabase auth token + chapter ID)
-       └─ SentryIdentityProvider (Sentry user identity — renders no UI)
+       └─ ObservabilityIdentityProvider (PostHog identify/groups + Sentry user — renders no UI)
             └─ AnalyticsProvider (product analytics)
                  └─ NetworkProvider (online/offline state)
                       └─ App content

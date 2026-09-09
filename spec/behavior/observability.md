@@ -15,7 +15,9 @@ This file is the **product-behavior contract** for observability: which provider
 
 Sentry projects are one per runtime: `frapp-api`, `frapp-web`, `frapp-mobile`, and (when landing is wired) a distinct landing project. PostHog projects are one per **environment** (staging and production must not share a dataset — #1173).
 
-Clients do not hold `ANALYTICS_HMAC_SALT` or a PostHog project API key. The API is the analytics transport (`POST /v1/analytics/events`, `GET /v1/analytics/identity`). Vendor SDK **init** stays runtime-local to each app. Shared policy, correlation types, safe env parsing, and PII redaction live in the browser-safe `@repo/observability` package.
+Clients do not hold `ANALYTICS_HMAC_SALT` or a PostHog **personal** API key. A write-only `phc_` project token may ship in a client bundle (`NEXT_PUBLIC_POSTHOG_KEY`) — it authorizes ingest, not read, the same class as a Sentry DSN. Named product events still go through the API (`POST /v1/analytics/events`, `GET /v1/analytics/identity`) so they are HMAC-keyed, opt-out-gated, and not double-counted with the API PostHog adapter. The JS SDK is identify / chapter groups / feature flags / replay-gates / the `sentry-error-correlated` marker. Vendor SDK **init** stays runtime-local to each app. Shared policy, correlation types, safe env parsing, and PII redaction live in the browser-safe `@repo/observability` package.
+
+**Correction (2026-09-09):** an earlier revision of this paragraph said clients do not hold a PostHog project API key and that the API is the only analytics transport. Workstream 5 ships PostHog JS in `apps/web`. The salt and personal API keys stay out of every bundle; landing stays anonymous (WS6).
 
 Landing stays **anonymous**: no `GET /v1/analytics/identity`, no alias onto an authenticated distinct id, no chapter group.
 
@@ -42,9 +44,9 @@ On the API, Sentry owns the Node trace provider. Integrate with its OpenTelemetr
 
 Identity, opt-out, and the forget path are owned by [`data-retention.md`](data-retention.md#analytics-events-pseudonymous). This section adds the replay and dual-capture rules that would otherwise be restated there.
 
-- **PostHog exception autocapture is off** in every SDK and in the project. Errors are counted only in Sentry; a content-free PostHog timeline marker named **`sentry-error-correlated`** (kebab-case, same convention as `opened-channel` / `outbox-queued`) may attach `sentry_event_id`, Sentry trace id, `x-request-id`, route, HTTP status *class* (2xx/4xx/5xx), and `release` — never the exception, stack, body, query, or message text.
+- **PostHog exception autocapture is off** in every SDK and in the project. Errors are counted only in Sentry. A content-free PostHog **timeline marker** named **`sentry-error-correlated`** (kebab-case, same convention as `opened-channel` / `outbox-queued`) may attach `sentry_event_id`, Sentry `trace_id`, `request_id` (`x-request-id`), `route`, HTTP status *class* (2xx/4xx/5xx), and `release` — never the body, query, exception type, stack, or message text.
 - **Sentry Replay is not enabled** on any surface. Session replay and heatmaps are PostHog-only.
-- **PostHog replay** is masked and blocklisted by default (`maskAllInputs` is the floor, not the policy). It obeys `chapters.analytics_opt_out`. It is **production-disabled until Paul approves** privacy disclosure, consent, and retention. Staging may record only after the same masking/blocklist and opt-out gates exist in code.
+- **PostHog replay** is masked and blocklisted by default (`maskAllInputs` is the floor, not the policy). It obeys `chapters.analytics_opt_out` immediately (`opt_out_capturing` + `stopSessionRecording`). It is **production-disabled until Paul approves** privacy disclosure, consent, and retention. **Correction (2026-09-09):** Workstream 5 keeps replay **off in every environment**, including staging. Mask/blocklist and the opt-out stop ship so a later flip is gated; chat/document DOM is not proven masked. Production remains off until Paul approves (#2038).
 - Attach PostHog distinct/session/replay ids to Sentry events so an error can be traced into a replay without putting the exception in PostHog.
 
 **Non-goals (do not ship to Sentry, PostHog, or any other external sink):** raw user or chapter ids, email, IP, tokens, query strings, request/response bodies, chat/document/upload content, AI prompts or outputs.
@@ -86,7 +88,7 @@ A slice is done when **intended** behavior above is true in code **and** the mat
 | Claim | Authoritative evidence |
 | --- | --- |
 | Sentry owns exceptions | `Sentry.init` + both scrubber hooks; PostHog `autocapture_exceptions_opt_in` is false |
-| PostHog owns product analytics | Staging/prod `POSTHOG_API_KEY` present; a real event visible; no client SDK key |
+| PostHog owns product analytics | Staging/prod `POSTHOG_API_KEY` present; a real event visible; write-only `phc_` may ship in `apps/web`; salt and personal API keys stay out |
 | No dual replay | No Sentry Replay integration; PostHog replay off in production until approval |
 | Correlation | `x-request-id` ≠ Sentry trace id in a captured pair; identity returns hex-only pseudonyms |
 | Pseudonyms | Salt API-only (bundle grep); identity HMAC matches server events |
@@ -151,7 +153,7 @@ The scrubber is shared rather than per-app because a browser bundle holds strict
 | `apps/web` | `lib/sentry/options.ts` | none — `NO_PSEUDONYMS` | browser, Node server, edge |
 | `apps/mobile` | `lib/sentry/options.ts` | none — `NO_PSEUDONYMS` | React Native (Expo) |
 
-**No client holds the salt, and that is deliberate.** `ANALYTICS_HMAC_SALT` is API-only; putting it in a client bundle would let the analytics dataset be rainbow-tabled back to raw user ids. A React Native bundle is as readable as a browser one, so this applies to `apps/mobile` exactly as it does to `apps/web`: both pass `NO_PSEUDONYMS`, and the free-text sweep *redacts* identifiers (`[redacted:id]`) where the API *hashes* them (`[id:<hmac>]`) — the same fail-closed branch the API takes when its own salt is unset. The single exception is the user pseudonym, which a client does not compute but reads already-hashed from `GET /v1/analytics/identity`; the scrubber's `/^[0-9a-f]{64}$/` gate re-checks it independently, so nothing upstream can put a raw id on an event. `apps/web` does this through `sentry-identity-provider.tsx`; `apps/mobile` sets no Sentry user at all today, so it has no identifier in play. Chapter ids get no client pseudonym and are dropped.
+**No client holds the salt, and that is deliberate.** `ANALYTICS_HMAC_SALT` is API-only; putting it in a client bundle would let the analytics dataset be rainbow-tabled back to raw user ids. A React Native bundle is as readable as a browser one, so this applies to `apps/mobile` exactly as it does to `apps/web`: both pass `NO_PSEUDONYMS`, and the free-text sweep *redacts* identifiers (`[redacted:id]`) where the API *hashes* them (`[id:<hmac>]`) — the same fail-closed branch the API takes when its own salt is unset. The single exception is the user pseudonym, which a client does not compute but reads already-hashed from `GET /v1/analytics/identity`; the scrubber's `/^[0-9a-f]{64}$/` gate re-checks it independently, so nothing upstream can put a raw id on an event. `apps/web` does this through `observability-identity-provider.tsx`; `apps/mobile` sets no Sentry user at all today, so it has no identifier in play. Chapter ids get no client pseudonym and are dropped.
 
 Each binding reports to its **own Sentry project** — `frapp-api`, `frapp-web`, `frapp-mobile`, and a future landing project — so a server error, a browser error and a device crash do not share a stream, a noise profile, or an alert threshold. A binding with no DSN configured never calls `Sentry.init` at all, so an unconfigured surface reports nowhere rather than reporting somewhere unexpected. `apps/landing` is not initialized today; when it is, it stays anonymous ([§ Provider ownership](#provider-ownership)).
 
