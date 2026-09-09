@@ -75,8 +75,13 @@
       "@xmldom/xmldom": "^0.8.15"
     },
     "@nestjs/swagger": {
-      "js-yaml": "^5.2.2"
+      "js-yaml": "^5.4.1"
     },
+    "@redocly/openapi-core": {
+      "js-yaml": "4.3.2"
+    },
+    "sharp": "0.35.4",
+    "multer": "2.3.0",
     "@typescript/old": "npm:typescript@6.0.3"
   },
   "engines": {
