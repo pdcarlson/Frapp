@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
@@ -126,5 +127,23 @@ describe("EventsPage offline read path (#1621)", () => {
     expect(
       screen.queryByText("Events workspace unavailable offline"),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("EventsPage offline write gating (#1753)", () => {
+  it("disables calendar day-create with the reason on the control", async () => {
+    // The calendar hand-wired `!allowed` / `noticeId` instead of
+    // `controlProps()`, so the first attempt at this gate left day numbers
+    // with a dangling aria-describedby and no title.
+    networkState.isOffline = true;
+    render(<EventsPage />);
+
+    await userEvent.click(screen.getByRole("tab", { name: /calendar/i }));
+    const dayCreate = screen.getAllByRole("button", {
+      name: /create event on/i,
+    })[0];
+    expect(dayCreate).toBeDisabled();
+    expect(dayCreate).toHaveAttribute("title", "Reconnect to make changes.");
+    expect(dayCreate).not.toHaveAttribute("aria-describedby");
   });
 });
