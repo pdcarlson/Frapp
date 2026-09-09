@@ -167,8 +167,11 @@ is the wrong shape.
 
 The control lives in the channel header rather than on the channel row because the row is a
 single `<button>` (a nested button is invalid HTML) and a hover-revealed action would be
-unreachable on touch. Mobile does not yet expose the control; the levels it writes are already
-honoured by the worker for every client.
+unreachable on touch. Web's control is `apps/web/components/chat/notification-level-popover.tsx`.
+Mobile's is `apps/mobile/components/chat/notification-level-control.tsx` in the thread header.
+Both write through the same PUT and read the same effective-level GET; the two states below
+(unknown trigger, header-scoped write failure) apply on both surfaces. The worker already
+honours those levels for every client.
 
 Two states the control must not fake. When the effective level is **not yet known** — the read
 has not landed, or failed — the trigger is disabled and announces "Notification level

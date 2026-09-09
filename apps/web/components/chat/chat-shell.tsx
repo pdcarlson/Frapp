@@ -477,20 +477,14 @@ export function ChatShell({
   // it straight through pinned a "could not save" alert onto every channel for
   // the rest of the session after a single failure — a confident, wrong claim
   // about channels the member never touched. Scope it to the channel the failed
-  // write was actually for, and clear it when they move away.
+  // write was actually for. Do not `reset()` on channel change: wiring that
+  // effect to `isError` cleared the alert on the channel that failed, and an
+  // unconditional reset detached in-flight writes. `failedChannelId ===
+  // activeChannel.id` is enough — returning to the failed channel still
+  // shows the error, which is honest.
   const failedChannelId = setNotificationLevel.isError
     ? setNotificationLevel.variables?.channelId
     : undefined;
-  const resetNotificationLevel = setNotificationLevel.reset;
-  const notificationLevelErrored = setNotificationLevel.isError;
-  useEffect(() => {
-    // Only when there is actually an error to clear. An unconditional reset
-    // detached the observer from an IN-FLIGHT write, so a mute that failed
-    // after the member changed channel was reported on no channel at all —
-    // and it forced a second full render of the shell on every switch to
-    // clear state that is almost never set.
-    if (notificationLevelErrored) resetNotificationLevel();
-  }, [activeChannelId, notificationLevelErrored, resetNotificationLevel]);
 
   // Opening a channel stamps the read cursor — the only thing that moves it, and
   // the only thing that clears the badges above. Without it the rail lights up
