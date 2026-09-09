@@ -797,6 +797,12 @@ export async function checkInfisicalSyncs({
  * working hook returns a token with NO claim when the user resolves to no
  * chapter. So a claimless token is reported as a FAIL naming that cause, never
  * as a pass, and the seeded user must have exactly one membership.
+ *
+ * `SUPABASE_URL` / `SUPABASE_ANON_KEY` are expected on the scheduled job
+ * (Infisical injects them). A half-set pair, or a smoke user with neither, is
+ * FAIL (#1767) — SKIPPED would keep 07:30 green after the anon key was
+ * blanked. A fully unconfigured local run (no URL, no key, no smoke user)
+ * still SKIPPED.
  */
 export async function checkAuthSignIn({
   supabaseUrl,
@@ -807,7 +813,20 @@ export async function checkAuthSignIn({
   decode = decodeJwtPayload,
 }) {
   const label = "Staging sign-in yields a JWT carrying active_chapter_id";
-  if (!email || !password) {
+  const hasUrl = Boolean(supabaseUrl);
+  const hasKey = Boolean(anonKey);
+  const hasSmoke = Boolean(email) && Boolean(password);
+
+  if (!hasUrl || !hasKey) {
+    if (hasUrl || hasKey || hasSmoke) {
+      return result(
+        "auth-signin",
+        label,
+        FAIL,
+        "SUPABASE_URL / SUPABASE_ANON_KEY is incomplete — the sign-in probe cannot run. " +
+          "A missing anon key is a FAIL on staging (SKIPPED would keep the run green). See #1767.",
+      );
+    }
     return result(
       "auth-signin",
       label,
@@ -816,8 +835,15 @@ export async function checkAuthSignIn({
         "issue linked from #838. The user must have exactly ONE chapter membership.",
     );
   }
-  if (!supabaseUrl || !anonKey) {
-    return result("auth-signin", label, SKIPPED, "SUPABASE_URL / SUPABASE_ANON_KEY not set");
+
+  if (!hasSmoke) {
+    return result(
+      "auth-signin",
+      label,
+      SKIPPED,
+      "STAGING_SMOKE_USER_EMAIL / STAGING_SMOKE_USER_PASSWORD not provisioned — see the [human] " +
+        "issue linked from #838. The user must have exactly ONE chapter membership.",
+    );
   }
 
   const response = await fetchImpl(

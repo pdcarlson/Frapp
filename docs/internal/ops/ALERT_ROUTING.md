@@ -106,7 +106,10 @@ opening an investigation.
 
 One conformance assertion is **not runnable** as of this workflow's merge: the end-to-end sign-in
 needs a smoke credential that is not provisioned (#893), so it reports SKIPPED and a broken sign-in
-chain is **not** currently detected by it. Migration parity is not missing — it is covered by the
+chain is **not** currently detected by it. A half-set `SUPABASE_URL` / `SUPABASE_ANON_KEY` pair is
+a different outcome (FAIL, not SKIPPED) — owned by
+[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md#scheduled-conformance-scriptscistaging-conformancemjs)
+(#1767). Migration parity is not missing — it is covered by the
 migration-drift row above.
 
 No watchdog closes on a run that proved nothing: a no-op deploy run and an all-skipped
