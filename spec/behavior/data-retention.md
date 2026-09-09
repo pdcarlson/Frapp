@@ -195,5 +195,13 @@ To keep the salt out of every client bundle (a `NEXT_PUBLIC_`/`EXPO_PUBLIC_` sal
 
 - The keying function (`hmac_sha256(salt, user_id)`) is shared in `@repo/validation` so the server and any future server-side caller derive identical pseudonyms; the salt is read only by the API (`ANALYTICS_HMAC_SALT`).
 - Clients (web, mobile) emit behavioral events through the API (`POST /v1/analytics/events`); the API verifies the caller is a member of the chapter the event is attributed to (a `chapter_id` the caller does not belong to is rejected with **403**, so events cannot be misattributed across chapters), keys them, enforces the per-chapter opt-out as defense in depth, rejects content/PII payloads, and forwards to the provider. The raw `user_id` and the salt never reach the client or the provider.
-- A client that needs its own pseudonymous id (e.g. to initialise a provider SDK) fetches it from `GET /v1/analytics/identity`.
+- A client that needs its own pseudonymous id (e.g. to initialise a provider SDK) fetches it from `GET /v1/analytics/identity`. That response must also carry the caller's **chapter-group** pseudonym when a chapter is in context, so clients never hash. The identifier table and the current DTO gap (`{ distinct_id, enabled }` only) are owned by [`observability.md` § Correlation schema](observability.md#correlation-schema).
 - Provider selection is config-driven: with no `POSTHOG_API_KEY` the API uses a no-op/logging provider, so non-prod environments emit nothing off-box.
+
+### Replay, dual-capture, and production ingest
+
+Session replay, exception autocapture, and which provider **counts** errors are owned by
+[`observability.md` § Privacy and replay](observability.md#privacy-and-replay) — this file does
+not restate those rules. What belongs here: **`chapters.analytics_opt_out` applies to replay
+the same way it applies to events**, and production PostHog ingest — including replay — waits
+on the deleted-users automation (#709) plus a production project (#1173).

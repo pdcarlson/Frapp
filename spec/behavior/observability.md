@@ -1,5 +1,102 @@
 # Observability
 
+This file is the **product-behavior contract** for observability: which provider owns which signal, how identifiers correlate, what may leave the process, how releases are named, and how sampling is bounded. The **decision and rejected alternatives** live in [ADR-22](../architecture/adr/adr-22.md). Pseudonymous identity, chapter opt-out, and account-deletion forget live in [`data-retention.md`](data-retention.md#analytics-events-pseudonymous). Operational routing lives in [`ALERT_ROUTING.md`](../../docs/internal/ops/ALERT_ROUTING.md). Env-var names live in [`ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md).
+
+**Spec is intended behavior. Code and provider dashboards are current behavior.** A disagreement is a tracked bug, not a reason to rewrite this file to match a leak or a dashboard default.
+
+## Provider ownership
+
+| Signal | System of record | Must not |
+| --- | --- | --- |
+| Unhandled exceptions, crashes, 5xx, distributed performance traces | **Sentry** | A second exception autocapture (PostHog), a second session-replay product (Sentry Replay) |
+| Product analytics, feature flags, chapter groups, session replay / heatmaps, searchable **sanitized** logs | **PostHog** | Raw user/chapter ids, emails, IPs, tokens, query strings, bodies, chat/document/upload content, AI prompts/outputs |
+| Internal request/security/push logs (Render stdout) | **API structured logs** | Shipping that stream unchanged to PostHog or Sentry |
+| Authorization / permission decisions | **Not a telemetry input** | Feature flags or analytics gating authz |
+
+Sentry projects are one per runtime: `frapp-api`, `frapp-web`, `frapp-mobile`, and (when landing is wired) a distinct landing project. PostHog projects are one per **environment** (staging and production must not share a dataset — #1173).
+
+Clients do not hold `ANALYTICS_HMAC_SALT` or a PostHog project API key. The API is the analytics transport (`POST /v1/analytics/events`, `GET /v1/analytics/identity`). Vendor SDK **init** stays runtime-local to each app. Shared policy, correlation types, safe env parsing, and PII redaction live in the browser-safe `@repo/observability` package.
+
+Landing stays **anonymous**: no `GET /v1/analytics/identity`, no alias onto an authenticated distinct id, no chapter group.
+
+LLM telemetry is allowed only at a real consumed server AI adapter. The mobile Ask mock (`apps/mobile/lib/ask/corpus.ts`) must not emit LLM analytics.
+
+## Correlation schema
+
+These identifiers are distinct. Do not copy one into another.
+
+| Identifier | Who mints it | Format | Where it travels | Must not |
+| --- | --- | --- | --- | --- |
+| `x-request-id` | API `requestIdMiddleware` (inbound honored, else `req_<uuid>`) | Opaque string | Response header, internal logs, error JSON `requestId`, Sentry request headers (allowlisted) | Be replaced by a Sentry/OTEL trace id; be a credential |
+| Sentry trace id | Sentry SDK (Node trace provider on the API) | Sentry/OTEL trace id | Sentry transactions/spans only | Be used as `x-request-id` |
+| Sentry event id | Sentry, per error event | Sentry event id | Sentry; optional PostHog timeline marker | Be treated as a user id |
+| PostHog `distinct_id` | API `hmac_sha256(salt, user_id)` | 64 lowercase hex | PostHog events; web Sentry `user.id` via identity | Be computed in a client bundle |
+| PostHog chapter group | API `hmac_sha256(salt, chapter_id)` | 64 lowercase hex | PostHog groups; activation-funnel `distinct_id` | Be a raw `chapter_id` |
+| PostHog session id / replay id | PostHog, when a client SDK exists | Provider ids | Attached to Sentry as tags; never the other way around | Appear when the chapter has opted out, or in production replay before approval |
+
+`GET /v1/analytics/identity` is the only client-visible source of the user pseudonym. It must also return the caller's **chapter-group** pseudonym(s) when a chapter is in context, so clients never hash. Today the DTO returns only `{ distinct_id, enabled }` — that gap is current behavior, not this contract.
+
+On the API, Sentry owns the Node trace provider. Integrate with its OpenTelemetry context; do not install a second global tracer.
+
+## Privacy and replay
+
+Identity, opt-out, and the forget path are owned by [`data-retention.md`](data-retention.md#analytics-events-pseudonymous). This section adds the replay and dual-capture rules that would otherwise be restated there.
+
+- **PostHog exception autocapture is off** in every SDK and in the project. Errors are counted only in Sentry. A content-free PostHog **timeline marker** may attach `sentry_event_id`, Sentry trace id, `x-request-id`, route, and HTTP status *class* (2xx/4xx/5xx) — never the body, query, or message text.
+- **Sentry Replay is not enabled** on any surface. Session replay and heatmaps are PostHog-only.
+- **PostHog replay** is masked and blocklisted by default (`maskAllInputs` is the floor, not the policy). It obeys `chapters.analytics_opt_out`. It is **production-disabled until Paul approves** privacy disclosure, consent, and retention. Staging may record only after the same masking/blocklist and opt-out gates exist in code.
+- Attach PostHog distinct/session/replay ids to Sentry events so an error can be traced into a replay without putting the exception in PostHog.
+
+**Non-goals (do not ship to Sentry, PostHog, or any other external sink):** raw user or chapter ids, email, IP, tokens, query strings, request/response bodies, chat/document/upload content, AI prompts or outputs.
+
+## Release naming
+
+| Surface | `release` | `dist` / extra |
+| --- | --- | --- |
+| API, web, landing | git SHA + environment (`<sha>` tagged with Sentry `environment`) | environment from the platform (`NODE_ENV` / derived `VERCEL_ENV`), never a hand-copied twin |
+| Mobile | bundle id + app version + native build number | git SHA as metadata only — not the release string |
+
+Unset DSN still means `Sentry.init` is never called.
+
+## Logging sinks
+
+Internal Render/stdout logs and PostHog logs are **independent transforms** of the same facts, not a pipe from one into the other.
+
+- **Render stdout** (Nest console): the structured request log, `security_event`, and `push_delivery` records below. Raw `userId` / `chapterId` are allowed here because the stream is Frapp-internal. Email, IP, tokens, bodies, and query strings are not.
+- **PostHog logs** (when enabled): the same operational facts after the external-reporting scrubber — pseudonyms instead of raw ids, `originHash` instead of addresses, path-only URLs, no tokens or bodies. Do not tail Render logs into PostHog.
+
+## Sampling
+
+Every rate is a number in `[0, 1]`. A missing, empty, non-numeric, or out-of-range env value falls back to the documented default and is logged at boot. `NaN` is not a legal rate (the SDK treats it as “tracing on”).
+
+| Signal | Intended rate | Default / source |
+| --- | --- | --- |
+| Sentry error events | `1.0` | SDK default (do not set a lower `sampleRate`) |
+| Sentry traces | `0.1` | `SENTRY_TRACES_SAMPLE_RATE` / `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` via `@repo/observability` `parseTracesSampleRate`; mobile uses `DEFAULT_TRACES_SAMPLE_RATE` (same `0.1`) |
+| Sentry Replay | `0` | Not initialized |
+| PostHog exception autocapture | `0` | Project + SDK: off |
+| PostHog session replay (production) | `0` until approval | Then a documented rate in `[0, 1]`, still masked/blocklisted and opt-out-gated |
+| PostHog product events | `1.0` of events that pass opt-out and content-free checks | No additional sample |
+| PostHog logs | unset until the sink exists | When added, pick a rate in `[0, 1]` here first |
+
+## Verification and definition of done
+
+A slice is done when **intended** behavior above is true in code **and** the matching provider setting is verified live, or the gap is an open GitHub issue. Do not tick a dashboard box from repo text.
+
+| Claim | Authoritative evidence |
+| --- | --- |
+| Sentry owns exceptions | `Sentry.init` + both scrubber hooks; PostHog `autocapture_exceptions_opt_in` is false |
+| PostHog owns product analytics | Staging/prod `POSTHOG_API_KEY` present; a real event visible; no client SDK key |
+| No dual replay | No Sentry Replay integration; PostHog replay off in production until approval |
+| Correlation | `x-request-id` ≠ Sentry trace id in a captured pair; identity returns hex-only pseudonyms |
+| Pseudonyms | Salt API-only (bundle grep); identity HMAC matches server events |
+| Landing anonymous | No identity call, no `alias` onto an authenticated id |
+| Releases | Sentry event `release`/`dist` match the table above |
+| Alerts | Live Sentry/PostHog/Render rules, dated, in [`ALERT_ROUTING.md`](../../docs/internal/ops/ALERT_ROUTING.md) |
+| Forget | #709 verified in the production PostHog project before production ingest |
+
+Human-only until proven otherwise: #709 (PostHog deleted-users automation), #1173 (production PostHog project), #863 (Sentry alert-rule *create* + channel proof), #970 (web DSN actually capturing), #938/#1361 (EAS + mobile DSN capture), source-map `SENTRY_AUTH_TOKEN`, network allowlists, production replay approval.
+
 ## Structured Logging
 
 Every API request is logged as structured JSON with: request ID, user ID, chapter ID, endpoint, HTTP method, status code, response latency, the forwarded-chain shape (below), and timestamp.
@@ -32,9 +129,9 @@ Two endpoints, both unauthenticated:
 
 ## Error Tracking
 
-Integrate with Sentry (or equivalent). All unhandled exceptions and 5xx responses are reported with: request ID, endpoint, HTTP method, status code, and stack trace. External error reporting requires explicit PII handling:
+Sentry is the exception SoR ([§ Provider ownership](#provider-ownership)). All unhandled exceptions and 5xx responses are reported with: request ID, endpoint, HTTP method, status code, and stack trace. External error reporting requires explicit PII handling:
 
-- **Pseudonymized before sending:** `user_id` and `chapter_id` are sent as HMAC-SHA256 hashes using the same per-environment salt as the analytics pipeline (see [`data-retention.md`](data-retention.md) #analytics-events-pseudonymous). Reversing the hash requires access to the salt, which is held outside the error-reporting provider.
+- **Pseudonymized before sending:** `user_id` and `chapter_id` are sent as HMAC-SHA256 hashes using the same per-environment salt as the analytics pipeline (see [`data-retention.md`](data-retention.md#analytics-events-pseudonymous)). Reversing the hash requires access to the salt, which is held outside the error-reporting provider.
 - **Redacted entirely:** email addresses, IP addresses, auth tokens (including any `Authorization` header value), request bodies, response bodies, message contents, document contents, and any free-text fields that may contain user-typed PII.
 - **URLs are reduced before they leave.** `request.url` and the transaction name are cut to a **path** — query, fragment, scheme, host and `userinfo` all gone. That is a parse, not a pattern: `stripAuthority` in `packages/observability/src/sentry-scrubbing.ts` reduces an absolute-form target, which RFC 9112 permits on any request and which Node hands to `req.url` verbatim, so `GET http://user:pass@host/path` cannot ship its credential. The **same parser** backs the API's internal request log (`apps/api/src/interface/utils/path-only.ts`), so the internal and external sinks cannot drift apart again — they had, and backwards, with the third-party boundary as the leaky half ([#1388](https://github.com/pdcarlson/Frapp/issues/1388)). A URL in **free text** keeps its host and path, because those are diagnostic and an exception message is the payload worth having; its query string and its `userinfo` are still removed. One deliberate non-reduction: a `//`-leading target is preserved verbatim rather than being read as protocol-relative, since rewriting it would turn `//x/v1/chapters/join` into the real route `/v1/chapters/join` and forge the field.
 
@@ -54,7 +151,7 @@ The scrubber is shared rather than per-app because a browser bundle holds strict
 
 **No client holds the salt, and that is deliberate.** `ANALYTICS_HMAC_SALT` is API-only; putting it in a client bundle would let the analytics dataset be rainbow-tabled back to raw user ids. A React Native bundle is as readable as a browser one, so this applies to `apps/mobile` exactly as it does to `apps/web`: both pass `NO_PSEUDONYMS`, and the free-text sweep *redacts* identifiers (`[redacted:id]`) where the API *hashes* them (`[id:<hmac>]`) — the same fail-closed branch the API takes when its own salt is unset. The single exception is the user pseudonym, which a client does not compute but reads already-hashed from `GET /v1/analytics/identity`; the scrubber's `/^[0-9a-f]{64}$/` gate re-checks it independently, so nothing upstream can put a raw id on an event. `apps/web` does this through `sentry-identity-provider.tsx`; `apps/mobile` sets no Sentry user at all today, so it has no identifier in play. Chapter ids get no client pseudonym and are dropped.
 
-Each binding reports to its **own Sentry project** — `frapp-api`, `frapp-web`, `frapp-mobile` — so a server error, a browser error and a device crash do not share a stream, a noise profile, or an alert threshold. A binding with no DSN configured never calls `Sentry.init` at all, so an unconfigured surface reports nowhere rather than reporting somewhere unexpected.
+Each binding reports to its **own Sentry project** — `frapp-api`, `frapp-web`, `frapp-mobile`, and a future landing project — so a server error, a browser error and a device crash do not share a stream, a noise profile, or an alert threshold. A binding with no DSN configured never calls `Sentry.init` at all, so an unconfigured surface reports nowhere rather than reporting somewhere unexpected. `apps/landing` is not initialized today; when it is, it stays anonymous ([§ Provider ownership](#provider-ownership)).
 
 The two hooks cannot share one function. A transaction carries its trace payload in `spans`, which is absent from the error-event key allowlist — so pointing `beforeSendTransaction` at `scrubSentryEvent` would still *deliver* every transaction, just with the span tree silently emptied. The transaction scrubber therefore keeps `spans` and rebuilds each span field-by-field: identity and timing survive, `description` and `op` go through the free-text sweep, and span attributes (`data`) are held to a small allowlist of non-PII OpenTelemetry keys because that bag routinely carries `http.url`, `url.query`, and `db.statement`.
 
@@ -253,7 +350,7 @@ Like Outbox Telemetry above, `search-completed` carries no dedicated Frapp-owned
 
 ## Alerting
 
-Configurable alerts (via the monitoring provider) for:
+Error **counts** used for paging live in Sentry, not PostHog. Thresholds and live rule observations: [`ALERT_ROUTING.md`](../../docs/internal/ops/ALERT_ROUTING.md). Configurable alerts (via the monitoring provider) for:
 
 - Error rate exceeds threshold (e.g. >5% 5xx in 5 minutes).
 - API downtime (health check fails).
