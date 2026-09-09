@@ -2,9 +2,12 @@ import {
   createSentryScrubber,
   NO_PSEUDONYMS,
   parseTracesSampleRate,
+  SENTRY_ERROR_SAMPLE_RATE,
+  SENTRY_REPLAY_ENABLED,
   type ScrubbableEvent,
 } from "@repo/observability";
 import type { BrowserOptions, NodeOptions } from "@sentry/nextjs";
+import { webTracePropagationTargets } from "./trace-targets";
 
 /**
  * The single source of truth for how web Sentry is configured (issue #865).
@@ -26,10 +29,15 @@ import type { BrowserOptions, NodeOptions } from "@sentry/nextjs";
  * the one the API takes when its own salt is unset — not new behavior.
  *
  * The one identifier that *does* survive is the user pseudonym, and it survives
- * because the **server** derived it: `sentry-identity-provider.tsx` reads it
- * from `GET /v1/analytics/identity` and hands it to `Sentry.setUser`. The
- * scrubber's `/^[0-9a-f]{64}$/` gate accepts that value and rejects everything
- * else, so a raw id put there by a stray `setUser` call is still dropped.
+ * because the **server** derived it: `observability-identity-provider.tsx`
+ * reads it from `GET /v1/analytics/identity` and hands it to `Sentry.setUser`.
+ * The scrubber's `/^[0-9a-f]{64}$/` gate accepts that value and rejects
+ * everything else, so a raw id put there by a stray `setUser` call is still
+ * dropped.
+ *
+ * PostHog correlation (tags + `sentry-error-correlated`) is wrapped around
+ * `beforeSend` in `instrumentation-client.ts` so this module never imports
+ * `posthog-js` into the server/edge graph.
  */
 
 const scrubber = createSentryScrubber(NO_PSEUDONYMS);
@@ -102,21 +110,47 @@ function environment(): string {
 }
 
 /**
+ * Git SHA release, derived in `next.config.js` from `VERCEL_GIT_COMMIT_SHA`.
+ * Empty is unset so local/CI builds do not invent a release.
+ */
+export function webSentryRelease(): string | undefined {
+  return process.env.NEXT_PUBLIC_SENTRY_RELEASE || undefined;
+}
+
+function sharedRuntimeOptions() {
+  const release = webSentryRelease();
+  return {
+    environment: environment(),
+    ...(release ? { release } : {}),
+    tracesSampleRate: parseTracesSampleRate(
+      process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE,
+      { envName: "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE" },
+    ),
+    sendDefaultPii: false as const,
+    // Errors are counted; do not set a lower SDK sampleRate than the policy.
+    ...(SENTRY_ERROR_SAMPLE_RATE === 1
+      ? {}
+      : { sampleRate: SENTRY_ERROR_SAMPLE_RATE }),
+  };
+}
+
+/**
  * Options shared by every runtime the web app initializes Sentry in.
  *
  * `sendDefaultPii: false` matches the API. Under v10 that is a key-name filter,
  * not a content filter — values under innocuously-named keys are still
  * collected — so it is a floor and the scrubber does the real work.
+ *
+ * Sentry Replay stays off ({@link SENTRY_REPLAY_ENABLED}). Session replay is
+ * PostHog's, and production PostHog replay is itself off until #2038.
  */
 export function buildWebSentryOptions(dsn: string): BrowserOptions {
   return {
     dsn,
-    environment: environment(),
-    tracesSampleRate: parseTracesSampleRate(
-      process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE,
-      { envName: "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE" },
-    ),
-    sendDefaultPii: false,
+    ...sharedRuntimeOptions(),
+    replaysSessionSampleRate: SENTRY_REPLAY_ENABLED ? 0.1 : 0,
+    replaysOnErrorSampleRate: SENTRY_REPLAY_ENABLED ? 0.1 : 0,
+    tracePropagationTargets: webTracePropagationTargets(),
     beforeSend: (event: BrowserErrorEvent) => scrubError(event),
     beforeSendTransaction: (event: BrowserTransactionEvent) =>
       scrubTransaction(event),
@@ -131,12 +165,7 @@ export function buildWebSentryOptions(dsn: string): BrowserOptions {
 export function buildServerSentryOptions(dsn: string): NodeOptions {
   return {
     dsn,
-    environment: environment(),
-    tracesSampleRate: parseTracesSampleRate(
-      process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE,
-      { envName: "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE" },
-    ),
-    sendDefaultPii: false,
+    ...sharedRuntimeOptions(),
     beforeSend: (event: ServerErrorEvent) => scrubError(event),
     beforeSendTransaction: (event: ServerTransactionEvent) =>
       scrubTransaction(event),

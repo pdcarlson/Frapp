@@ -1,5 +1,6 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import { assertProductionWebPublicEnv } from "./lib/assert-production-public-env.js";
+import { getSentryBuildConfig } from "./lib/sentry/build-config.js";
 
 // Vercel Production (`VERCEL_ENV=production`) inlines NEXT_PUBLIC_* into the
 // dashboard. Unset/staging/localhost would ship FrappProvider's
@@ -92,6 +93,16 @@ const nextConfig = {
      * at build time and would win over it silently.
      */
     NEXT_PUBLIC_SENTRY_ENVIRONMENT: process.env.VERCEL_ENV ?? "development",
+    /**
+     * Sentry `release`, **derived** from Vercel's git SHA rather than configured.
+     * Empty locally/CI when `VERCEL_GIT_COMMIT_SHA` is unset. **Do not add
+     * `NEXT_PUBLIC_SENTRY_RELEASE` to Infisical** — this replacement would win
+     * over it silently, same as `NEXT_PUBLIC_SENTRY_ENVIRONMENT`.
+     */
+    NEXT_PUBLIC_SENTRY_RELEASE:
+      process.env.VERCEL_GIT_COMMIT_SHA ||
+      process.env.NEXT_PUBLIC_SENTRY_RELEASE ||
+      "",
   },
 };
 
@@ -99,18 +110,16 @@ const nextConfig = {
  * Sentry build-time wiring (issue #865).
  *
  * `withSentryConfig` injects `instrumentation-client.ts` into the client bundle
- * and, when credentials exist, uploads source maps so a minified stack trace is
- * readable. Everything here is chosen so the build behaves identically with and
- * without Sentry credentials — `npm run build -w apps/web` must pass on a
- * developer laptop and in CI, neither of which has an auth token.
+ * and injects debug IDs / source maps so a minified stack trace is readable.
+ * Upload still needs `SENTRY_AUTH_TOKEN`; without it the plugin stays silent
+ * and skips upload. Source maps themselves are **not** disabled — that used
+ * to also skip debug-ID injection, so a CI build with no token produced a
+ * bundle Sentry could not symbolicate even after a later token was added.
  *
- * - **`sourcemaps.disable` keys off `SENTRY_AUTH_TOKEN`.** Upload is the only
- *   part that needs a credential; with no token the plugin would otherwise warn
- *   on every build and do nothing useful. The release-time upload is a
- *   deploy-environment concern, not a build-correctness one.
+ * - **`sourcemaps.disable` is always false.** Debug IDs stay in the bundle.
  * - **`telemetry: false`** — the build must not phone home from CI.
- * - **`silent` off in CI** so an upload failure is visible in the log rather
- *   than swallowed, and on locally so builds stay quiet.
+ * - **`silent` when there is no auth token** so laptops and CI without a token
+ *   stay quiet. With a token, failures are visible.
  *
  * `disableLogger` is deliberately absent: the SDK deprecates it in favour of
  * `webpack.treeshake.removeDebugLogging`, and that replacement is not supported
@@ -122,10 +131,4 @@ const nextConfig = {
  * unset is enforced separately, in `instrumentation.ts` and
  * `instrumentation-client.ts`, which skip `Sentry.init` entirely.
  */
-export default withSentryConfig(nextConfig, {
-  org: "frapp-live",
-  project: "frapp-web",
-  telemetry: false,
-  silent: !process.env.CI,
-  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
-});
+export default withSentryConfig(nextConfig, getSentryBuildConfig());
