@@ -6,14 +6,26 @@ import {
   selectUnreadNonChatCount,
 } from "./notifications";
 
-const NOW = new Date("2026-08-17T20:00:00.000Z");
+/**
+ * Local-time constructors, not ISO strings with a zone: TODAY/EARLIER is a
+ * local calendar split. Pinning `2026-08-17T20:00:00.000Z` made the "same
+ * group" sort pass in UTC / America/New_York and fail under Asia/Tokyo,
+ * because `2026-08-17T09:00:00.000Z` is yesterday evening there (#1058).
+ */
+function at(year: number, month: number, day: number, hour = 12): Date {
+  return new Date(year, month - 1, day, hour, 0, 0, 0);
+}
+
+const iso = (date: Date) => date.toISOString();
+
+const NOW = at(2026, 8, 17, 20);
 
 function row(overrides: Record<string, unknown> = {}) {
   return {
     id: "n-1",
     title: "Chapter meeting",
     body: "starts in 2 hours",
-    created_at: "2026-08-17T18:00:00.000Z",
+    created_at: iso(at(2026, 8, 17, 18)),
     read_at: null,
     data: { target: { screen: "event" } },
     ...overrides,
@@ -46,8 +58,8 @@ describe("selectNotificationGroups", () => {
   it("splits TODAY from EARLIER on the local calendar day", () => {
     const groups = selectNotificationGroups(
       [
-        row({ id: "today", created_at: "2026-08-17T18:00:00.000Z" }),
-        row({ id: "earlier", created_at: "2026-08-15T18:00:00.000Z" }),
+        row({ id: "today", created_at: iso(at(2026, 8, 17, 18)) }),
+        row({ id: "earlier", created_at: iso(at(2026, 8, 15, 18)) }),
       ],
       NOW,
     );
@@ -60,7 +72,7 @@ describe("selectNotificationGroups", () => {
   // A heading over nothing is worse than no heading.
   it("drops an empty group", () => {
     const groups = selectNotificationGroups(
-      [row({ id: "earlier", created_at: "2026-08-01T18:00:00.000Z" })],
+      [row({ id: "earlier", created_at: iso(at(2026, 8, 1, 18)) })],
       NOW,
     );
     expect(groups.map((group) => group.heading)).toEqual(["EARLIER"]);
@@ -69,19 +81,37 @@ describe("selectNotificationGroups", () => {
   it("orders newest first within a group", () => {
     const groups = selectNotificationGroups(
       [
-        row({ id: "older", created_at: "2026-08-17T09:00:00.000Z" }),
-        row({ id: "newer", created_at: "2026-08-17T18:00:00.000Z" }),
+        row({ id: "older", created_at: iso(at(2026, 8, 17, 9)) }),
+        row({ id: "newer", created_at: iso(at(2026, 8, 17, 18)) }),
       ],
       NOW,
     );
     expect(groups[0]?.rows.map((r) => r.id)).toEqual(["newer", "older"]);
   });
 
+  it("keeps yesterday-evening in EARLIER even when it shares a UTC date with now", () => {
+    // Local 05:00 on the 18th is still the 17th in UTC for UTC+9. The original
+    // fixture (NOW 20:00Z / older 09:00Z on 17 Aug) described this shape in
+    // Tokyo and asserted both rows were TODAY — so `groups[0]` looked like a
+    // drop. The row must stay in the list, under EARLIER.
+    const now = at(2026, 8, 18, 5);
+    const groups = selectNotificationGroups(
+      [
+        row({ id: "older", created_at: iso(at(2026, 8, 17, 18)) }),
+        row({ id: "newer", created_at: iso(at(2026, 8, 18, 3)) }),
+      ],
+      now,
+    );
+    expect(groups.map((group) => group.heading)).toEqual(["TODAY", "EARLIER"]);
+    expect(groups[0]?.rows.map((r) => r.id)).toEqual(["newer"]);
+    expect(groups[1]?.rows.map((r) => r.id)).toEqual(["older"]);
+  });
+
   it("marks a row unread only while read_at is absent", () => {
     const groups = selectNotificationGroups(
       [
         row({ id: "unread", read_at: null }),
-        row({ id: "read", read_at: "2026-08-17T19:00:00.000Z" }),
+        row({ id: "read", read_at: iso(at(2026, 8, 17, 19)) }),
       ],
       NOW,
     );
@@ -116,16 +146,16 @@ describe("selectUnreadIds", () => {
     expect(
       selectUnreadIds([
         row({ id: "a", read_at: null }),
-        row({ id: "b", read_at: "2026-08-17T19:00:00.000Z" }),
+        row({ id: "b", read_at: iso(at(2026, 8, 17, 19)) }),
         row({ id: "c", read_at: null }),
       ]),
     ).toEqual(["a", "c"]);
   });
 
   it("returns nothing when everything is read", () => {
-    expect(
-      selectUnreadIds([row({ read_at: "2026-08-17T19:00:00.000Z" })]),
-    ).toEqual([]);
+    expect(selectUnreadIds([row({ read_at: iso(at(2026, 8, 17, 19)) })])).toEqual(
+      [],
+    );
     expect(selectUnreadIds(undefined)).toEqual([]);
   });
 });
@@ -148,8 +178,11 @@ describe("selectUnreadNonChatCount", () => {
   it("still ignores read rows regardless of target", () => {
     expect(
       selectUnreadNonChatCount([
-        row({ read_at: "2026-08-17T19:00:00.000Z" }),
-        row({ read_at: "2026-08-17T19:00:00.000Z", data: { target: { screen: "chat" } } }),
+        row({ read_at: iso(at(2026, 8, 17, 19)) }),
+        row({
+          read_at: iso(at(2026, 8, 17, 19)),
+          data: { target: { screen: "chat" } },
+        }),
       ]),
     ).toBe(0);
     expect(selectUnreadNonChatCount(undefined)).toBe(0);
