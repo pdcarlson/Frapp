@@ -1,6 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { OfflineBanner } from "./offline-banner";
+import {
+  CHAT_RAIL_STICKY_CLASS,
+  DASHBOARD_HEADER_STICKY_CLASS,
+  OFFLINE_BANNER_HEIGHT_VAR,
+} from "./offline-banner-focus";
 import * as NetworkProvider from "@/lib/providers/network-provider";
 
 vi.mock("@/lib/providers/network-provider", () => ({
@@ -39,7 +44,10 @@ describe("OfflineBanner", () => {
     expect(banner).toHaveTextContent("Slow connection. Some features may be delayed.");
     // The Signet warning tint — degraded is a status, so it takes a semantic
     // hue rather than a palette colour (foundations.md §5).
-    expect(banner).toHaveClass("border-warning/45 bg-warning/[.13] text-warning");
+    expect(banner).toHaveClass("sticky", "top-0", "z-40", "bg-background");
+    expect(banner.firstElementChild).toHaveClass(
+      "border-warning/45 bg-warning/[.13] text-warning",
+    );
   });
 
   it("renders offline banner when the network state is OFFLINE", () => {
@@ -66,8 +74,51 @@ describe("OfflineBanner", () => {
     // composer has an outbox, and it states that at the control itself.
     expect(banner).toHaveTextContent("You're offline. Showing cached data.");
     expect(banner).not.toHaveTextContent(/will sync/i);
-    expect(banner).toHaveClass(
+    // Opaque `bg-background` so scrolled rows cannot show through the 13%
+    // semantic tint once the banner is sticky (#1746).
+    expect(banner).toHaveClass("sticky", "top-0", "z-40", "bg-background");
+    expect(banner.firstElementChild).toHaveClass(
       "border-destructive/45 bg-destructive/[.13] text-destructive",
     );
+  });
+
+  it("publishes its height so the dashboard header sits below it, and clears it on unmount", () => {
+    vi.mocked(NetworkProvider.useNetwork).mockReturnValue({
+      state: "OFFLINE",
+      isOnline: false,
+      isDegraded: false,
+      isOffline: true,
+      linkOnline: false,
+      probeOnce: async () => {},
+    });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      height: 40,
+      width: 375,
+      top: 0,
+      left: 0,
+      bottom: 40,
+      right: 375,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    const { unmount } = render(<OfflineBanner />);
+
+    expect(
+      document.documentElement.style.getPropertyValue(OFFLINE_BANNER_HEIGHT_VAR),
+    ).toBe("40px");
+    expect(DASHBOARD_HEADER_STICKY_CLASS).toContain(
+      `top-[var(${OFFLINE_BANNER_HEIGHT_VAR},0px)]`,
+    );
+    expect(CHAT_RAIL_STICKY_CLASS).toContain(
+      `var(${OFFLINE_BANNER_HEIGHT_VAR},0px)`,
+    );
+
+    unmount();
+    expect(
+      document.documentElement.style.getPropertyValue(OFFLINE_BANNER_HEIGHT_VAR),
+    ).toBe("");
+    vi.restoreAllMocks();
   });
 });
