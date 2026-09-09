@@ -7,6 +7,8 @@ import {
   useAuthorAvatars,
   useChannelNotificationPreferences,
   useSetChannelNotificationLevel,
+  channelSetFingerprint,
+  CHANNEL_NOTIFICATION_PREFERENCES_KEY,
 } from "./use-chat";
 import { FrappClientProvider } from "./use-frapp-client";
 import React from "react";
@@ -255,6 +257,46 @@ describe("useAuthorAvatars", () => {
   });
 });
 
+describe("channelSetFingerprint", () => {
+  it("is empty for missing or empty lists", () => {
+    expect(channelSetFingerprint(undefined)).toBe("");
+    expect(channelSetFingerprint(null)).toBe("");
+    expect(channelSetFingerprint([])).toBe("");
+    expect(channelSetFingerprint("not-an-array")).toBe("");
+  });
+
+  it("joins id:name pairs in sorted order so a shuffle is not a set change", () => {
+    expect(
+      channelSetFingerprint([
+        { id: "b", name: "alumni" },
+        { id: "a", name: "general" },
+      ]),
+    ).toBe(
+      channelSetFingerprint([
+        { id: "a", name: "general" },
+        { id: "b", name: "alumni" },
+      ]),
+    );
+    expect(
+      channelSetFingerprint([{ id: "a", name: "general" }]),
+    ).not.toBe(
+      channelSetFingerprint([
+        { id: "a", name: "general" },
+        { id: "b", name: "alumni" },
+      ]),
+    );
+    expect(
+      channelSetFingerprint([{ id: "a", name: "general" }]),
+    ).not.toBe(channelSetFingerprint([{ id: "a", name: "announcements" }]));
+  });
+
+  it("skips rows without a string id so a prefs-shaped payload does not fingerprint", () => {
+    expect(
+      channelSetFingerprint([{ channel_id: "chan-1", level: "mentions" }]),
+    ).toBe("");
+  });
+});
+
 describe("useChannelNotificationPreferences", () => {
   let queryClient: QueryClient;
 
@@ -295,6 +337,82 @@ describe("useChannelNotificationPreferences", () => {
 
     expect(result.current.data).toEqual([]);
   });
+
+  it("refetches when the channel set grows or is renamed, and not when mark-read refetches the same set", async () => {
+    let channels: { id: string; name: string }[] = [
+      { id: "chan-1", name: "general" },
+    ];
+    const mockGet = vi.fn(async (url: string) => {
+      if (url === "/v1/channels") {
+        return { data: channels, error: null };
+      }
+      if (url === "/v1/channels/notification-preferences") {
+        return {
+          data: channels.map((c) => ({
+            channel_id: c.id,
+            level: c.name === "announcements" ? "all" : "mentions",
+          })),
+          error: null,
+        };
+      }
+      throw new Error(`unexpected GET ${url}`);
+    });
+    const mockClient = { GET: mockGet };
+    const prefsGets = () =>
+      mockGet.mock.calls.filter(
+        ([url]) => url === "/v1/channels/notification-preferences",
+      ).length;
+
+    const { result } = renderHook(() => useChannelNotificationPreferences(), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+      expect(
+        mockGet.mock.calls.filter(([url]) => url === "/v1/channels").length,
+      ).toBeGreaterThan(0);
+    });
+    expect(prefsGets()).toBe(1);
+    expect(result.current.data).toEqual([
+      { channel_id: "chan-1", level: "mentions" },
+    ]);
+
+    // Mark-read invalidates `["channels"]`. Same ids and names → same
+    // fingerprint → the prefs query must not fire again.
+    channels = [{ id: "chan-1", name: "general" }];
+    await queryClient.invalidateQueries({ queryKey: ["channels"] });
+    await waitFor(() =>
+      expect(
+        mockGet.mock.calls.filter(([url]) => url === "/v1/channels").length,
+      ).toBeGreaterThan(1),
+    );
+    expect(prefsGets()).toBe(1);
+
+    // Discord import (or any other-user create) appearing after that refetch.
+    channels = [
+      { id: "chan-1", name: "general" },
+      { id: "chan-alumni", name: "alumni" },
+    ];
+    await queryClient.invalidateQueries({ queryKey: ["channels"] });
+    await waitFor(() => expect(prefsGets()).toBe(2));
+    expect(result.current.data).toEqual([
+      { channel_id: "chan-1", level: "mentions" },
+      { channel_id: "chan-alumni", level: "mentions" },
+    ]);
+
+    // Rename onto a name-derived default.
+    channels = [
+      { id: "chan-1", name: "announcements" },
+      { id: "chan-alumni", name: "alumni" },
+    ];
+    await queryClient.invalidateQueries({ queryKey: ["channels"] });
+    await waitFor(() => expect(prefsGets()).toBe(3));
+    expect(result.current.data).toEqual([
+      { channel_id: "chan-1", level: "all" },
+      { channel_id: "chan-alumni", level: "mentions" },
+    ]);
+  });
 });
 
 describe("useSetChannelNotificationLevel", () => {
@@ -328,7 +446,7 @@ describe("useSetChannelNotificationLevel", () => {
     // under that prefix used to refetch on every mark-read. A success here
     // must refresh only the collection this mutation writes.
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["channel-notification-preferences"],
+      queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
     });
     expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: ["channels"],
@@ -353,7 +471,7 @@ describe("useSetChannelNotificationLevel", () => {
 
     expect(result.current.error).toEqual(mockError);
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["channel-notification-preferences"],
+      queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
     });
   });
 });
