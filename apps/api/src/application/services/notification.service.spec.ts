@@ -41,6 +41,7 @@ describe('NotificationService', () => {
   beforeEach(async () => {
     mockNotificationRepo = {
       create: jest.fn(),
+      createMany: jest.fn(),
       findByUser: jest.fn(),
       findById: jest.fn(),
       markRead: jest.fn(),
@@ -48,6 +49,7 @@ describe('NotificationService', () => {
     mockPushTokenRepo = {
       create: jest.fn(),
       findByUser: jest.fn(),
+      findByUserIds: jest.fn(),
       findById: jest.fn(),
       findByToken: jest.fn(),
       delete: jest.fn(),
@@ -57,9 +59,11 @@ describe('NotificationService', () => {
       findByUserAndChapter: jest.fn(),
       upsert: jest.fn(),
       findByUserChapterCategory: jest.fn(),
+      findByUsersChapterCategory: jest.fn(),
     };
     mockSettingsRepo = {
       findByUser: jest.fn(),
+      findByUserIds: jest.fn(),
       upsert: jest.fn(),
     };
     mockMemberRepo = {
@@ -189,7 +193,8 @@ describe('NotificationService', () => {
     // it, so an URGENT payload never reads the preference at all. Pinned
     // because a later refactor back to "read, then check priority" would be
     // behaviourally identical but cost every emergency broadcast one query per
-    // recipient — `notifyChapter` fans this out across the whole chapter.
+    // recipient on `notifyUser` — `notifyChapter` skips the batched preference
+    // read entirely for URGENT.
     it('should not read the category preference at all for URGENT', async () => {
       mockSettingsRepo.findByUser.mockResolvedValue(null);
       mockNotificationRepo.create.mockResolvedValue(baseNotification);
@@ -363,7 +368,8 @@ describe('NotificationService', () => {
     // #687: `quiet_hours_tz` predates server-side validation, so stored rows can
     // still hold a zone `Intl.DateTimeFormat` throws on. That throw happened
     // before `notificationRepo.create`, so the member silently lost the push AND
-    // the in-app row — and `notifyChapter`'s `Promise.allSettled` hid it.
+    // the in-app row. The chapter-wide path used to hide that throw behind
+    // `Promise.allSettled`; it now evaluates the same helper in memory.
     describe('invalid quiet_hours_tz', () => {
       const invalidSettings: UserSettings = {
         ...baseSettings,
@@ -530,16 +536,17 @@ describe('NotificationService', () => {
 
       it('does not drop the member from a chapter-wide notify', async () => {
         mockMemberRepo.findByChapter.mockResolvedValue([{ user_id: 'u-1' }]);
-        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+        mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([
           basePreference,
-        );
-        mockSettingsRepo.findByUser.mockResolvedValue(invalidSettings);
-        mockNotificationRepo.create.mockResolvedValue(baseNotification);
-        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+        ]);
+        mockSettingsRepo.findByUserIds.mockResolvedValue([invalidSettings]);
+        mockNotificationRepo.createMany.mockResolvedValue([baseNotification]);
+        mockPushTokenRepo.findByUserIds.mockResolvedValue([basePushToken]);
 
         await service.notifyChapter('ch-1', { title: 'Test', body: 'Body' });
 
-        expect(mockNotificationRepo.create).toHaveBeenCalledTimes(1);
+        expect(mockNotificationRepo.createMany).toHaveBeenCalledTimes(1);
+        expect(mockNotificationRepo.create).not.toHaveBeenCalled();
       });
     });
 
@@ -562,41 +569,43 @@ describe('NotificationService', () => {
   });
 
   describe('notifyChapter', () => {
+    const member = (
+      userId: string,
+    ): {
+      id: string;
+      user_id: string;
+      chapter_id: string;
+      role_ids: string[];
+      custom_role_ids: string[];
+      has_completed_onboarding: boolean;
+      created_at: string;
+      updated_at: string;
+    } => ({
+      id: `m-${userId}`,
+      user_id: userId,
+      chapter_id: 'ch-1',
+      role_ids: [],
+      custom_role_ids: [],
+      has_completed_onboarding: false,
+      created_at: '',
+      updated_at: '',
+    });
+
     it('should notify all chapter members', async () => {
       mockMemberRepo.findByChapter.mockResolvedValue([
-        {
-          id: 'm-1',
-          user_id: 'u-1',
-          chapter_id: 'ch-1',
-          role_ids: [],
-          custom_role_ids: [],
-          has_completed_onboarding: false,
-          created_at: '',
-          updated_at: '',
-        },
-        {
-          id: 'm-2',
-          user_id: 'u-2',
-          chapter_id: 'ch-1',
-          role_ids: [],
-          custom_role_ids: [],
-          has_completed_onboarding: false,
-          created_at: '',
-          updated_at: '',
-        },
+        member('u-1'),
+        member('u-2'),
       ]);
-      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
-        basePreference,
-      );
-      mockSettingsRepo.findByUser.mockResolvedValue(null);
-      mockNotificationRepo.create
-        .mockResolvedValueOnce({ ...baseNotification, user_id: 'u-1' })
-        .mockResolvedValueOnce({ ...baseNotification, user_id: 'u-2' });
-      mockPushTokenRepo.findByUser
-        .mockResolvedValueOnce([basePushToken])
-        .mockResolvedValueOnce([
-          { ...basePushToken, id: 'pt-2', user_id: 'u-2' },
-        ]);
+      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([]);
+      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
+      mockNotificationRepo.createMany.mockResolvedValue([
+        { ...baseNotification, user_id: 'u-1' },
+        { ...baseNotification, id: 'n-2', user_id: 'u-2' },
+      ]);
+      mockPushTokenRepo.findByUserIds.mockResolvedValue([
+        basePushToken,
+        { ...basePushToken, id: 'pt-2', user_id: 'u-2' },
+      ]);
 
       await service.notifyChapter('ch-1', {
         title: 'Chapter Announcement',
@@ -604,8 +613,188 @@ describe('NotificationService', () => {
       });
 
       expect(mockMemberRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-      expect(mockNotificationRepo.create).toHaveBeenCalledTimes(2);
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'u-1' }),
+        expect.objectContaining({ user_id: 'u-2' }),
+      ]);
+      expect(mockNotificationRepo.create).not.toHaveBeenCalled();
       expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips members who disabled the category and still delivers the rest', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('u-1'),
+        member('u-2'),
+      ]);
+      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([
+        { ...basePreference, user_id: 'u-1', is_enabled: false },
+      ]);
+      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
+      mockNotificationRepo.createMany.mockResolvedValue([
+        { ...baseNotification, user_id: 'u-2' },
+      ]);
+      mockPushTokenRepo.findByUserIds.mockResolvedValue([
+        { ...basePushToken, id: 'pt-2', user_id: 'u-2' },
+      ]);
+
+      await service.notifyChapter('ch-1', {
+        title: 'Chapter Announcement',
+        body: 'Hello everyone',
+        category: 'chat',
+      });
+
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'u-2' }),
+      ]);
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not read category preferences for an URGENT chapter broadcast', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([member('u-1')]);
+      mockNotificationRepo.createMany.mockResolvedValue([baseNotification]);
+      mockPushTokenRepo.findByUserIds.mockResolvedValue([basePushToken]);
+
+      await service.notifyChapter('ch-1', {
+        title: 'Emergency',
+        body: 'Evacuate',
+        priority: 'URGENT',
+        category: 'announcements',
+      });
+
+      expect(
+        mockPreferenceRepo.findByUsersChapterCategory,
+      ).not.toHaveBeenCalled();
+      expect(mockSettingsRepo.findByUserIds).not.toHaveBeenCalled();
+      expect(mockNotificationRepo.createMany).toHaveBeenCalled();
+    });
+
+    it('deduplicates roster rows that share a user_id', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('u-1'),
+        { ...member('u-1'), id: 'm-dup' },
+      ]);
+      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([]);
+      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
+      mockNotificationRepo.createMany.mockResolvedValue([baseNotification]);
+      mockPushTokenRepo.findByUserIds.mockResolvedValue([basePushToken]);
+
+      await service.notifyChapter('ch-1', { title: 'Test', body: 'Body' });
+
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'u-1' }),
+      ]);
+    });
+
+    it('downgrades NORMAL to SILENT during quiet hours on the batched path', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-06-15T15:00:00Z'));
+
+      mockMemberRepo.findByChapter.mockResolvedValue([member('u-1')]);
+      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([]);
+      mockSettingsRepo.findByUserIds.mockResolvedValue([
+        {
+          ...baseSettings,
+          quiet_hours_start: '00:00:00',
+          quiet_hours_end: '23:59:00',
+        },
+      ]);
+      mockNotificationRepo.createMany.mockResolvedValue([baseNotification]);
+      mockPushTokenRepo.findByUserIds.mockResolvedValue([basePushToken]);
+
+      await service.notifyChapter('ch-1', {
+        title: 'Test',
+        body: 'Body',
+        priority: 'NORMAL',
+      });
+
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+        [basePushToken.token],
+        expect.objectContaining({ priority: 'SILENT' }),
+      );
+
+      jest.useRealTimers();
+    });
+
+    it('logs aggregate insert failures and still delivers the surviving chunk', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      const users = Array.from({ length: 150 }, (_, i) => `u-${i}`);
+      mockMemberRepo.findByChapter.mockResolvedValue(users.map(member));
+      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([]);
+      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
+      mockNotificationRepo.createMany
+        .mockRejectedValueOnce(new Error('insert failed'))
+        .mockImplementation(async (rows) =>
+          rows.map((row, index) => ({
+            ...baseNotification,
+            id: `n-${index}`,
+            user_id: row.user_id ?? `missing-${index}`,
+          })),
+        );
+      mockPushTokenRepo.findByUserIds.mockResolvedValue(
+        users.slice(100).map((userId) => ({
+          ...basePushToken,
+          id: `pt-${userId}`,
+          user_id: userId,
+        })),
+      );
+
+      await service.notifyChapter('ch-1', { title: 'Test', body: 'Body' });
+
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledTimes(2);
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(50);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('insert failed for 100 of 150'),
+      );
+
+      warn.mockRestore();
+    });
+
+    it('keeps query count bounded for a 200-member chapter', async () => {
+      const users = Array.from({ length: 200 }, (_, i) => `u-${i}`);
+      mockMemberRepo.findByChapter.mockResolvedValue(users.map(member));
+      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([]);
+      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
+      mockNotificationRepo.createMany.mockImplementation(async (rows) =>
+        rows.map((row, index) => ({
+          ...baseNotification,
+          id: `n-${row.user_id}-${index}`,
+          user_id: row.user_id ?? 'missing',
+        })),
+      );
+      mockPushTokenRepo.findByUserIds.mockResolvedValue(
+        users.map((userId) => ({
+          ...basePushToken,
+          id: `pt-${userId}`,
+          user_id: userId,
+        })),
+      );
+
+      await service.notifyChapter('ch-1', {
+        title: 'Chapter Announcement',
+        body: 'Hello everyone',
+        category: 'chat',
+      });
+
+      expect(mockMemberRepo.findByChapter).toHaveBeenCalledTimes(1);
+      expect(
+        mockPreferenceRepo.findByUsersChapterCategory,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        mockPreferenceRepo.findByUsersChapterCategory,
+      ).toHaveBeenCalledWith(users, 'ch-1', 'chat');
+      expect(mockSettingsRepo.findByUserIds).toHaveBeenCalledTimes(1);
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledTimes(2);
+      expect(mockPushTokenRepo.findByUserIds).toHaveBeenCalledTimes(1);
+      expect(mockNotificationRepo.create).not.toHaveBeenCalled();
+      expect(
+        mockPreferenceRepo.findByUserChapterCategory,
+      ).not.toHaveBeenCalled();
+      expect(mockSettingsRepo.findByUser).not.toHaveBeenCalled();
+      expect(mockPushTokenRepo.findByUser).not.toHaveBeenCalled();
     });
   });
 

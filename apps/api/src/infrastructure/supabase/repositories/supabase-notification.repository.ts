@@ -33,6 +33,31 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     return created;
   }
 
+  async createMany(
+    data: TablesInsert<'notifications'>[],
+  ): Promise<Notification[]> {
+    // An empty insert is a no-op, not a query. PostgREST answers `insert([])`
+    // with a 200 and no rows, so this only saves a round trip — but it also
+    // keeps "the caller sent no recipients" from looking like a write in the
+    // repository's call log, which is what the tenant-scope harness reads.
+    if (data.length === 0) return [];
+
+    const rows: TablesInsert<'notifications'>[] = data.map((item) => ({
+      chapter_id: item.chapter_id,
+      user_id: item.user_id,
+      title: item.title,
+      body: item.body,
+      data: item.data ?? {},
+    }));
+    const { data: created, error } = await this.supabase
+      .from('notifications')
+      .insert(rows)
+      .select();
+
+    if (error) throw error;
+    return created ?? [];
+  }
+
   async findByUser(
     userId: string,
     chapterId: string,
