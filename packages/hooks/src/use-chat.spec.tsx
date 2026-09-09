@@ -5,6 +5,8 @@ import {
   useChannelUnreadCounts,
   useMarkChannelRead,
   useAuthorAvatars,
+  useChannelNotificationPreferences,
+  useSetChannelNotificationLevel,
 } from "./use-chat";
 import { FrappClientProvider } from "./use-frapp-client";
 import React from "react";
@@ -13,6 +15,9 @@ function createTestQueryClient() {
   return new QueryClient({
     defaultOptions: {
       queries: {
+        retry: false,
+      },
+      mutations: {
         retry: false,
       },
     },
@@ -247,5 +252,108 @@ describe("useAuthorAvatars", () => {
 
     expect(mockPost).toHaveBeenCalledTimes(2);
     expect(Object.keys(result.current.data ?? {})).toHaveLength(50);
+  });
+});
+
+describe("useChannelNotificationPreferences", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  it("GETs the effective-level collection, including every readable channel", async () => {
+    const rows = [
+      { channel_id: "chan-1", level: "mentions" },
+      { channel_id: "chan-announce", level: "all" },
+      { channel_id: "chan-audit", level: "off" },
+    ];
+    const mockGet = vi.fn().mockResolvedValue({ data: rows, error: null });
+    const mockClient = { GET: mockGet };
+
+    const { result } = renderHook(() => useChannelNotificationPreferences(), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockGet).toHaveBeenCalledWith(
+      "/v1/channels/notification-preferences",
+    );
+    expect(result.current.data).toEqual(rows);
+  });
+
+  it("returns an empty array rather than undefined when the API sends none", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: null, error: null });
+    const mockClient = { GET: mockGet };
+
+    const { result } = renderHook(() => useChannelNotificationPreferences(), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data).toEqual([]);
+  });
+});
+
+describe("useSetChannelNotificationLevel", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  it("PUTs the picked level and invalidates the preferences query, not the channel list", async () => {
+    const mockPut = vi.fn().mockResolvedValue({
+      data: { channel_id: "chan-1", level: "off" },
+      error: null,
+    });
+    const mockClient = { PUT: mockPut };
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => useSetChannelNotificationLevel(), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    result.current.mutate({ channelId: "chan-1", level: "off" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockPut).toHaveBeenCalledWith(
+      "/v1/channels/{id}/notification-preference",
+      { params: { path: { id: "chan-1" } }, body: { level: "off" } },
+    );
+    // Mute state does not live on ["channels"]; nesting the preferences key
+    // under that prefix used to refetch on every mark-read. A success here
+    // must refresh only the collection this mutation writes.
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["channel-notification-preferences"],
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["channels"],
+    });
+  });
+
+  it("invalidates the preferences query on error so the control does not keep a level the server never stored", async () => {
+    const mockError = new Error("preference write failed");
+    const mockPut = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: mockError });
+    const mockClient = { PUT: mockPut };
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => useSetChannelNotificationLevel(), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    result.current.mutate({ channelId: "chan-1", level: "off" });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(result.current.error).toEqual(mockError);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["channel-notification-preferences"],
+    });
   });
 });
