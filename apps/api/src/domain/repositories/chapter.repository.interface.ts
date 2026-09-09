@@ -31,6 +31,12 @@ export type AppliedSubscriptionWebhook = Chapter & {
 
 export interface IChapterRepository {
   findById(id: string): Promise<Chapter | null>;
+  /**
+   * Batch PK lookup. Empty `ids` returns `[]` without querying. Result order
+   * is not the request order — callers that need membership order map by id
+   * (`ChapterService.listForUser`).
+   */
+  findByIds(ids: string[]): Promise<Chapter[]>;
   findBySubscriptionId(subscriptionId: string): Promise<Chapter | null>;
   /**
    * Resolve a chapter by its Stripe customer. `chapters.stripe_customer_id` is
