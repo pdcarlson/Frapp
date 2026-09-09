@@ -20,7 +20,7 @@ Implementation homes (do not fork a third):
 | Topic attach/release | `packages/chat-core/src/topic-registry.ts` (`releaseTopic`) |
 | Realtime + polling fallback | `packages/chat-core/src/realtime-manager.ts` |
 | Mobile connection banner / write gating | `apps/mobile/lib/connection/` |
-| Chat outbox network port | `@repo/chat-core` `NetworkState` (more conservative than the banner) |
+| Chat outbox network port | Mobile: `createMonitorNetworkState(connectionMonitor)`. Web: chat-core `NetworkState`. `DEGRADED` must not queue. |
 | Web dashboard ping subscriptions | `apps/web/lib/realtime/supabase-realtime.ts` — imports `@repo/chat-core/topic-registry` (the #937 web shim is gone) |
 
 ## 1. Reopening a topic requires a completed teardown
@@ -49,14 +49,14 @@ is not — serialize attach and release per topic through a queue, or a cleanup'
 The topic string stays `chat:channel:<id>`. The push worker reads presence on the same topic
 (ADR-10). Re-keying it silently disables push suppression.
 
-## 3. Two connection models, on purpose — do not "unify" them casually
+## 3. One mobile monitor; do not re-split the outbox
 
 | Model | Failure mode it optimizes | Offline signal |
 | --- | --- | --- |
 | **Banner / write gating** (`apps/mobile/lib/connection/`) | Disabled control the member can disprove | Link down, or `/health` failing three times. `isInternetReachable === false` is **one probe failure**, not OFFLINE. |
-| **Chat outbox** (`NetworkState` in chat-core) | Lost message | More conservative: `isInternetReachable === false` counts as offline so a doubtful network queues rather than sends. |
+| **Chat outbox** (`NetworkState` in chat-core) | Lost message | Same monitor. `isOffline()` is OFFLINE only — `DEGRADED` still sends. Inject `createMonitorNetworkState(connectionMonitor)`; do not add a second `expo-network` subscription. |
 
-Asymmetry is correct. Unifying them without naming that tradeoff re-breaks one of the two.
+The remaining asymmetry is the banner's write gate, not a second connectivity definition. Folding `isInternetReachable === false` into OFFLINE for the banner re-breaks check-in. Leaving the outbox on a link-only `expo-network` read re-breaks the dead-API send (#1072).
 
 ## 4. `navigator.onLine` is web-only
 
@@ -97,6 +97,7 @@ the shared function and the spec together.
 1. Read the spec section this change touches (`resilience.md` §2, §3.2, or §6).
 2. Grep for every attach/subscribe on that topic — chat-core, web realtime, mobile connection.
 3. Confirm teardown is complete before re-attach (rule 1).
-4. Confirm you have not mixed banner rules into the outbox, or the reverse (rule 3).
+4. Confirm the outbox still reads the monitor (OFFLINE queues, DEGRADED sends)
+   and that `isInternetReachable === false` is not treated as banner OFFLINE (rule 3).
 5. Add a test that would have failed on the last incident: reopen-the-same-topic, overlapping
    attach, or StrictMode remount — not only the happy-path subscribe.

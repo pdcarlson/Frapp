@@ -1,9 +1,11 @@
 /**
- * `NetworkState` for React Native, backed by `expo-network`.
+ * `NetworkState` for React Native.
  *
- * **This MUST be injected.** `NetworkState` is optional on both
- * `ManagerContext` and `ChatActionContext`, and omitting it silently falls back
- * to `browserNetworkState`, whose probe is:
+ * Production chat injects `createMonitorNetworkState(connectionMonitor)` —
+ * one `expo-network` subscription (the monitor's) plus the `/health` poll.
+ * `createExpoNetworkState` remains the documented RN trap and the pin in
+ * `adapters.spec.ts`: omitting `net` silently falls back to
+ * `browserNetworkState`, whose probe is:
  *
  * ```ts
  * typeof navigator !== "undefined" && navigator.onLine === false
@@ -13,14 +15,10 @@
  * expression evaluates `undefined === false` → `false`: the browser adapter
  * reports **permanently online** on device. Every offline gate in `chat-core`
  * reads through this port, so the failure is not a missing signal but an
- * actively wrong one — sends would be attempted against a dead network instead
- * of queueing to the outbox, and `flushOutbox` would run its retry loop while
- * offline. `network-state.spec.ts` pins the injection for that reason.
+ * actively wrong one.
  *
- * The port is synchronous; `expo-network` is not. `isOffline()` therefore reads
- * a cached value kept current by the subscription, primed by `prime()` at boot.
- * Per the port's contract, unknown counts as **online** — the conservative
- * default, since a false "offline" would strand sends in the outbox.
+ * The port is synchronous; both adapters cache. Unknown counts as **online** —
+ * a false "offline" would strand sends in the outbox.
  */
 
 import {
@@ -29,6 +27,7 @@ import {
   type NetworkState as ExpoNetworkState,
 } from "expo-network";
 import type { NetworkState } from "@repo/chat-core/adapters";
+import type { ConnectionMonitor } from "@/lib/connection/monitor";
 
 export interface PrimeableNetworkState extends NetworkState {
   /** Reads the current connectivity once, to seed the cache before first use. */
@@ -79,6 +78,43 @@ export function createExpoNetworkState(
         onChange(!nextOffline);
       });
       return () => subscription.remove();
+    },
+  };
+}
+
+/**
+ * Chat `NetworkState` backed by the process connection monitor (#1072).
+ *
+ * One `expo-network` subscription for the app (the monitor's). `isOffline()`
+ * is the monitor's OFFLINE — link down, or three failed `/health` probes —
+ * so a dead API with the link up queues instead of POSTing a failed bubble,
+ * and a health recovery with no link flip still emits `online=true` for
+ * `flushOutbox`. `DEGRADED` is not offline: a slow or once-failed probe
+ * must still send.
+ *
+ * `prime()` starts the monitor (idempotent). Unknown stays online, matching
+ * the port contract and the monitor's own optimistic default.
+ */
+export function createMonitorNetworkState(
+  monitor: Pick<ConnectionMonitor, "get" | "subscribe" | "start">,
+): PrimeableNetworkState {
+  return {
+    async prime() {
+      monitor.start();
+    },
+
+    isOffline() {
+      return monitor.get() === "OFFLINE";
+    },
+
+    subscribe(onChange) {
+      let lastOffline = monitor.get() === "OFFLINE";
+      return monitor.subscribe((state) => {
+        const nextOffline = state === "OFFLINE";
+        if (nextOffline === lastOffline) return;
+        lastOffline = nextOffline;
+        onChange(!nextOffline);
+      });
     },
   };
 }

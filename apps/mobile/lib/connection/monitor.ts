@@ -13,9 +13,9 @@
  * 1. **The link signal is `expo-network`, not `navigator.onLine`.** React Native
  *    defines `navigator` but never sets `onLine`, so the browser probe reports
  *    permanently online on device. `lib/chat/network-state.ts` documents that
- *    trap at length; `isOfflineFromExpoState` is the single reading of
- *    `expo-network` the chat outbox already trusts, and reusing it means the
- *    banner and the outbox cannot disagree about what "offline" means.
+ *    trap at length. The chat outbox is a `NetworkState` adapter over this
+ *    monitor (#1072): one `expo-network` subscription, one `/health` poll.
+ *    `DEGRADED` still sends; only OFFLINE queues.
  * 2. **Three failed probes mean OFFLINE, not DEGRADED.** `spec/ui/resilience.md`
  *    § 2 is explicit: "'OFFLINE': !navigator.onLine OR health check to /health
  *    fails 3 times", with DEGRADED reserved for slow or intermittent. Both
@@ -113,19 +113,13 @@ export function createConnectionMonitor(
   /**
    * Only a **missing link** is definitive.
    *
-   * `lib/chat/network-state.ts`'s `isOfflineFromExpoState` ORs `isConnected ===
-   * false` with `isInternetReachable === false`, and that is right *for the
-   * outbox*: a false "offline" there only means "queue instead of send", which
-   * costs nothing. It is wrong here, because this value gates writes. A chapter
-   * house whose captive-portal validation probe is blocked reports
-   * `{isConnected: true, isInternetReachable: false}` while the API is perfectly
-   * reachable — folding that into OFFLINE would disable the check-in code field
-   * at the door with no way to recover, since the early return below also stops
-   * `/health` from ever proving otherwise.
-   *
-   * So a false `isInternetReachable` is treated as *suspicion*, not proof: it
-   * counts as one probe failure, and `/health` gets to settle it. That is also
-   * what `spec/ui/resilience.md` § 2 actually says — `!navigator.onLine` is the
+   * `isInternetReachable === false` is suspicion, not proof — the same rule
+   * the chat outbox now inherits, because it reads this monitor (#1072).
+   * Folding it into OFFLINE would disable the check-in code field at the door
+   * for a captive-portal-ish network whose API is perfectly reachable, and
+   * `DEGRADED` must still send. A down link also suppresses the probe. One
+   * failure's worth of suspicion, and `/health` settles it. That is also what
+   * `spec/ui/resilience.md` § 2 actually says — `!navigator.onLine` is the
    * OFFLINE clause; "intermittently failing" is DEGRADED.
    */
   function applyLink(next: ExpoNetworkState) {
