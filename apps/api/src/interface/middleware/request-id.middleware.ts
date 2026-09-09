@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { NextFunction, Response } from 'express';
+import { REQUEST_ID_HEADER } from '../http/correlation-headers';
 import { getHeaderValue, RequestContext } from '../types/request-context.types';
 
 /**
@@ -18,16 +19,18 @@ import { getHeaderValue, RequestContext } from '../types/request-context.types';
  *
  * As middleware it runs before guards, so the id exists for the whole lifecycle
  * — denials included. An inbound `x-request-id` is still honoured so a caller
- * can thread its own trace id through, and it is always echoed on the response.
+ * can thread its own request id through, and it is always echoed on the
+ * response. `sentry-trace` / `baggage` are a different identifier space and
+ * never become this value.
  */
 export function requestIdMiddleware(
   request: RequestContext,
   response: Response,
   next: NextFunction,
 ): void {
-  const inbound = getHeaderValue(request.headers, 'x-request-id');
+  const inbound = getHeaderValue(request.headers, REQUEST_ID_HEADER);
   const requestId = inbound ?? `req_${randomUUID()}`;
   request.requestId = requestId;
-  response.setHeader('x-request-id', requestId);
+  response.setHeader(REQUEST_ID_HEADER, requestId);
   next();
 }

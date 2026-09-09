@@ -179,3 +179,108 @@ describe('configureApp — security headers (#483)', () => {
     expect(res.headers['x-content-type-options']).toBe('nosniff');
   });
 });
+
+function headerList(value: string | string[] | undefined): string[] {
+  const raw = Array.isArray(value) ? value.join(',') : (value ?? '');
+  return raw
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+describe('configureApp — CORS request and trace headers', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [EchoController],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    configureApp(app);
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  const DASHBOARD_ORIGIN = 'http://localhost:3000';
+
+  it('exposes x-request-id, sentry-trace, and baggage to an allowed origin', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/v1/echo')
+      .set('Origin', DASHBOARD_ORIGIN)
+      .expect(200);
+
+    expect(res.headers['access-control-allow-origin']).toBe(DASHBOARD_ORIGIN);
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
+    expect(headerList(res.headers['access-control-expose-headers'])).toEqual(
+      expect.arrayContaining([
+        'x-request-id',
+        'sentry-trace',
+        'baggage',
+        'x-report-truncated',
+        'x-search-timeout',
+      ]),
+    );
+  });
+
+  it('echoes a caller-supplied request id and does not replace it with sentry-trace', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/v1/echo')
+      .set('Origin', DASHBOARD_ORIGIN)
+      .set('x-request-id', 'client-req-cors-1')
+      .set(
+        'sentry-trace',
+        '00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01',
+      )
+      .set('baggage', 'sentry-environment=test')
+      .expect(200);
+
+    expect(res.headers['x-request-id']).toBe('client-req-cors-1');
+    expect(res.headers['x-request-id']).not.toContain('aaaaaaaa');
+  });
+
+  it('mints a request id when the client sent none, even if trace headers are present', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/v1/echo')
+      .set('Origin', 'https://app.frapp.live')
+      .set(
+        'sentry-trace',
+        '00-cccccccccccccccccccccccccccccccc-dddddddddddddddd-01',
+      )
+      .expect(200);
+
+    expect(res.headers['access-control-allow-origin']).toBe(
+      'https://app.frapp.live',
+    );
+    expect(res.headers['x-request-id']).toMatch(/^req_[0-9a-f-]{36}$/);
+    expect(res.headers['x-request-id']).not.toContain('cccccccc');
+  });
+
+  it('reflects request-id and trace headers on preflight', async () => {
+    const res = await request(app.getHttpServer())
+      .options('/v1/echo')
+      .set('Origin', DASHBOARD_ORIGIN)
+      .set('Access-Control-Request-Method', 'GET')
+      .set(
+        'Access-Control-Request-Headers',
+        'x-request-id,sentry-trace,baggage',
+      )
+      .expect(204);
+
+    expect(headerList(res.headers['access-control-allow-headers'])).toEqual(
+      expect.arrayContaining(['x-request-id', 'sentry-trace', 'baggage']),
+    );
+  });
+
+  it('does not allow a lookalike origin', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/v1/echo')
+      .set('Origin', 'https://frapp.live.attacker.example')
+      .expect(200);
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
