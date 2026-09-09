@@ -5,6 +5,7 @@ import type {
   PushPayload,
   SendToUserResult,
 } from '#domain/adapters/notification.interface';
+import { enqueueSanitizedLog } from '../analytics/posthog-runtime';
 
 /**
  * Running tally for one `sendToUser` call. Every field is a *count* — no token
@@ -230,8 +231,30 @@ export class ExpoPushProvider implements INotificationProvider {
 
     if (failures > 0) {
       this.logger.warn(line);
-      return;
+    } else {
+      this.logger.log(line);
     }
-    this.logger.log(line);
+
+    enqueueSanitizedLog(
+      {
+        body: 'push_delivery',
+        severity: failures > 0 ? 'WARN' : 'INFO',
+        attributes: {
+          priority: payload.priority ?? 'NORMAL',
+          category: payload.category ?? 'default',
+          attempted: tally.attempted,
+          accepted: tally.accepted,
+          invalid_tokens: tally.invalidTokens,
+          ticket_errors: tally.ticketErrors,
+          provider_errors: tally.providerErrors,
+          failures,
+          failure_rate:
+            tally.attempted === 0
+              ? 0
+              : Number((failures / tally.attempted).toFixed(4)),
+        },
+      },
+      `push_delivery:${payload.category ?? 'default'}:${tally.attempted}:${failures}`,
+    );
   }
 }

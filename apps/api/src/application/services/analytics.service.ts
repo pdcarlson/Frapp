@@ -13,6 +13,10 @@ import {
   type IAnalyticsProvider,
 } from '#domain/adapters/analytics.interface';
 import {
+  FEATURE_FLAG_PROVIDER,
+  type IFeatureFlagProvider,
+} from '#domain/adapters/feature-flag.interface';
+import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
@@ -62,6 +66,8 @@ export class AnalyticsService {
     private readonly config: ConfigService,
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     @Inject(ANALYTICS_PROVIDER) private readonly provider: IAnalyticsProvider,
+    @Inject(FEATURE_FLAG_PROVIDER)
+    private readonly flags: IFeatureFlagProvider,
     @Inject(MEMBER_REPOSITORY) private readonly members: IMemberRepository,
   ) {
     // Optional: when unset, the keying salt is empty and tracking is disabled
@@ -281,6 +287,33 @@ export class AnalyticsService {
         `Failed to capture chapter analytics event "${eventName}"`,
         error as Error,
       );
+    }
+  }
+
+  /**
+   * Server-side product-flag evaluation. Distinct id and chapter group are
+   * HMAC hex; a missing salt or a flag-provider miss fails closed (`false`).
+   * Flags are not an authorization input — `can()` / guards still decide.
+   */
+  async isProductFlagEnabled(
+    flagKey: string,
+    userId: string,
+    chapterId?: string | null,
+  ): Promise<boolean> {
+    const distinctId = this.getDistinctId(userId);
+    if (!distinctId) return false;
+    try {
+      return await this.flags.isEnabled(
+        flagKey,
+        distinctId,
+        this.getChapterGroupId(chapterId),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to evaluate product flag "${flagKey}"`,
+        error as Error,
+      );
+      return false;
     }
   }
 

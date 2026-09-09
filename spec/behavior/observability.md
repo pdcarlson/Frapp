@@ -79,7 +79,7 @@ Every rate is a number in `[0, 1]`. A missing, empty, non-numeric, or out-of-ran
 | PostHog exception autocapture | `0` | Project + SDK: off |
 | PostHog session replay (production) | `0` until approval | Then a documented rate in `[0, 1]`, still masked/blocklisted and opt-out-gated |
 | PostHog product events | `1.0` of events that pass opt-out and content-free checks | No additional sample |
-| PostHog logs | unset until the sink exists | When added, pick a rate in `[0, 1]` here first |
+| PostHog logs | `1.0` of sanitized operational records (`request`, `security_event`, `push_delivery`, 5xx `error`) | `POSTHOG_LOGS_SAMPLE_RATE` via `@repo/observability` `parseSampleRate`; default `DEFAULT_POSTHOG_LOGS_SAMPLE_RATE` (`1.0`). Independent of Render stdout — not a pipe. |
 
 ## Verification and definition of done
 
