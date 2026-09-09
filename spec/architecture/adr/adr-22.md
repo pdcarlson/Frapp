@@ -41,6 +41,8 @@ not a description of the current PostHog project:
 | PostHog org Signet, project `569878` | `ingested_event: false`; HogQL `count()` on `events` last 90d = **0**. `autocapture_exceptions_opt_in: true`. `session_recording_opt_in: true`, `session_recording_sample_rate: null` (treat as 100%), `maskAllInputs: true`, replay retention `30d`, `anonymize_ips: false`. No workflows, no feature flags. One project only — production project still missing | PostHog MCP; #1173, #709 |
 | Granola / Supermemory / Infisical names / Render | Granola MCP `needsAuth`; Supermemory MCP discovery error; Infisical secrets endpoints 404 with a present service token; Render MCP unauthorized. Last live proof of staging `POSTHOG_API_KEY` remains the 2026-08-21 comment on #1173 | blocked this session |
 
+**Correction (2026-09-09 ~21:32Z):** the PostHog row above is the *then*-current project, not today's. Live settings (and that project-level `session_recording_opt_in` is not production replay) live in [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md); do not copy them back here.
+
 Code-side gaps on the same date (current behavior, not this decision): identity DTO is
 `{ distinct_id, enabled }` with no chapter-group pseudonym; landing has no Sentry/PostHog SDK
 (privacy copy still names Sentry); API/web `tracesSampleRate` was still `Number(env ?? '0.1')`
@@ -57,8 +59,10 @@ context is AsyncLocalStorage bound in `requestIdMiddleware`, not a second tracer
 
 - **PostHog as a second exception autocapture.** Two SoRs for the same crash double-count,
   split alert routing, and send stack frames to a product-analytics dataset. Observed
-  `autocapture_exceptions_opt_in: true` is a bug against this decision, not evidence it was
-  wrong.
+  `autocapture_exceptions_opt_in: true` *(earlier 2026-09-09 observation)* was a bug
+  against this decision, not evidence it was wrong. **Correction (2026-09-09 ~21:32Z):**
+  that project flag has since been flipped; live settings live in
+  [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md), not here.
 - **Sentry Replay.** Two replay products means two consent surfaces and two PII leak paths.
   Session replay stays PostHog-only, production-off until approval.
 - **One PostHog project for staging and production.** A shared dataset aliases staging

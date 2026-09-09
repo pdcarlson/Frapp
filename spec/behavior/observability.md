@@ -29,7 +29,7 @@ These identifiers are distinct. Do not copy one into another.
 | --- | --- | --- | --- | --- |
 | `x-request-id` | Web/mobile `createFrappClient` (API `requestIdMiddleware` honours inbound, else mints `req_<uuid>`) | Opaque string | Request header, response header, internal logs, error JSON `requestId`, Sentry request headers (allowlisted). CORS `exposedHeaders` so browser JS can read the echo. | Be replaced by a Sentry/OTEL trace id; be a credential |
 | Sentry trace id | Sentry SDK (Node trace provider on the API) | Sentry/OTEL trace id | Sentry transactions/spans only | Be used as `x-request-id` |
-| Sentry event id | Sentry, per error event | Sentry event id | Sentry; optional PostHog timeline marker | Be treated as a user id |
+| Sentry event id | Sentry, per error event | Sentry event id | Sentry; optional PostHog [`sentry-error-correlated`](#privacy-and-replay) marker | Be treated as a user id |
 | PostHog `distinct_id` | API `hmac_sha256(salt, user_id)` | 64 lowercase hex | PostHog events; web Sentry `user.id` via identity | Be computed in a client bundle |
 | PostHog chapter group | API `hmac_sha256(salt, chapter_id)` | 64 lowercase hex | PostHog groups; activation-funnel `distinct_id` | Be a raw `chapter_id` |
 | PostHog session id / replay id | PostHog, when a client SDK exists | Provider ids | Attached to Sentry as tags; never the other way around | Appear when the chapter has opted out, or in production replay before approval |
@@ -42,7 +42,7 @@ On the API, Sentry owns the Node trace provider. Integrate with its OpenTelemetr
 
 Identity, opt-out, and the forget path are owned by [`data-retention.md`](data-retention.md#analytics-events-pseudonymous). This section adds the replay and dual-capture rules that would otherwise be restated there.
 
-- **PostHog exception autocapture is off** in every SDK and in the project. Errors are counted only in Sentry. A content-free PostHog **timeline marker** may attach `sentry_event_id`, Sentry trace id, `x-request-id`, route, and HTTP status *class* (2xx/4xx/5xx) — never the body, query, or message text.
+- **PostHog exception autocapture is off** in every SDK and in the project. Errors are counted only in Sentry; a content-free PostHog timeline marker named **`sentry-error-correlated`** (kebab-case, same convention as `opened-channel` / `outbox-queued`) may attach `sentry_event_id`, Sentry trace id, `x-request-id`, route, HTTP status *class* (2xx/4xx/5xx), and `release` — never the exception, stack, body, query, or message text.
 - **Sentry Replay is not enabled** on any surface. Session replay and heatmaps are PostHog-only.
 - **PostHog replay** is masked and blocklisted by default (`maskAllInputs` is the floor, not the policy). It obeys `chapters.analytics_opt_out`. It is **production-disabled until Paul approves** privacy disclosure, consent, and retention. Staging may record only after the same masking/blocklist and opt-out gates exist in code.
 - Attach PostHog distinct/session/replay ids to Sentry events so an error can be traced into a replay without putting the exception in PostHog.
