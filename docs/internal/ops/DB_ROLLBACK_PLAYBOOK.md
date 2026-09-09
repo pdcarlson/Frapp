@@ -621,6 +621,26 @@ After any rollback event:
   `points` key in its `diff`, so the last known value per chapter can be read back
   out of the audit trail.
 
+## Rollback the Stripe subscription webhook previous-status return
+
+* **Migration**: `20260909180000_apply_subscription_webhook_previous_status.sql`
+* **Action**:
+  ```sql
+  DROP FUNCTION IF EXISTS apply_subscription_webhook(uuid, timestamptz, jsonb);
+  ```
+  Then re-run the `CREATE FUNCTION` from
+  `20260909050000_apply_subscription_webhook_rpc.sql` (`returns setof chapters`).
+  Args stay `(uuid, timestamptz, jsonb)`; only the return shape changes.
+* **Order**: **roll the API back first, then this migration.** A build from
+  after this migration unwraps `applied` / `previous_subscription_status` from
+  the RPC result, so it errors once the function is again `setof chapters`.
+  An older build (post-#731, pre-#1979) reads the result as a chapter row and
+  is unaffected by restoring that shape. Reverting the function first breaks
+  every subscription webhook until the deploy catches up.
+* **Data caveat**: rolling back does not rewrite chapter rows. Notify again
+  keys off the handler snapshot, which restores the duplicate-URGENT-alert
+  exposure of #1979 for as long as it is off.
+
 ## Rollback the Stripe subscription webhook CAS
 
 * **Migration**: `20260909050000_apply_subscription_webhook_rpc.sql`

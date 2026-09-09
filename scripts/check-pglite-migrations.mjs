@@ -536,6 +536,16 @@ const LANDMARKS = [
     ok: (rows) => rows.length === 1 && rows[0].prosecdef === false,
   },
   {
+    name: "apply_subscription_webhook returns previous_subscription_status (#1979)",
+    sql: `select pg_get_function_result(p.oid) as result
+            from pg_proc p
+            join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'apply_subscription_webhook'`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      String(rows[0].result).includes("previous_subscription_status"),
+  },
+  {
     name: "anonymize_user RPC present, security invoker (FRA-40)",
     sql: `select prosecdef from pg_proc p
             join pg_namespace n on n.oid = p.pronamespace
@@ -2471,13 +2481,16 @@ try {
   );
 }
 
-// ─── `apply_subscription_webhook` CAS (#731) ────────────────────────────────
+// ─── `apply_subscription_webhook` CAS (#731 / #1979) ────────────────────────
 //
 // `CREATE FUNCTION` on a plpgsql body is a syntax check only. The unit suite
 // mocks the repository, so a flipped `<=` to `<` (or dropping the mark stamp)
 // stays green. This section inserts two chapters and applies older-then-newer
-// vs newer-then-older; the newer status must win both commit orders.
-console.log("\n=== apply_subscription_webhook CAS (#731) ===");
+// vs newer-then-older; the newer status must win both commit orders. #1979
+// adds `previous_subscription_status` on the return so notify can key off
+// the committed row; two into-past_due applies must report active then
+// past_due.
+console.log("\n=== apply_subscription_webhook CAS (#731 / #1979) ===");
 try {
   const CH_OLD_FIRST = "cccccccc-0000-4000-8000-000000000001";
   const CH_NEW_FIRST = "cccccccc-0000-4000-8000-000000000002";
@@ -2492,7 +2505,10 @@ try {
 
   const apply = async (chapter, eventAt, patch) => {
     const r = await db.query(
-      `select subscription_status, last_stripe_webhook_at, past_due_since
+      `select (applied).subscription_status as subscription_status,
+              (applied).last_stripe_webhook_at as last_stripe_webhook_at,
+              (applied).past_due_since as past_due_since,
+              previous_subscription_status
          from apply_subscription_webhook($1::uuid, $2::timestamptz, $3::jsonb)`,
       [chapter, eventAt, JSON.stringify(patch)],
     );
@@ -2531,6 +2547,10 @@ try {
       `old-first: older event applies (got ${oldFirstOlder.length} row(s))`,
     ],
     [
+      oldFirstOlder[0]?.previous_subscription_status === "active",
+      `old-first: older event reports previous=active (got ${oldFirstOlder[0]?.previous_subscription_status})`,
+    ],
+    [
       oldFirstNewer.length === 1 && oldFirstNewer[0].subscription_status === "canceled",
       `old-first: newer event overwrites (got ${oldFirstNewer[0]?.subscription_status})`,
     ],
@@ -2555,11 +2575,13 @@ try {
   const CH_ACTIVATE = "cccccccc-0000-4000-8000-000000000003";
   const CH_CLOCK = "cccccccc-0000-4000-8000-000000000004";
   const CH_RECOVER = "cccccccc-0000-4000-8000-000000000005";
+  const CH_RESTART = "cccccccc-0000-4000-8000-000000000006";
   await db.exec(`
     insert into public.chapters (id, name, university, subscription_status, past_due_since) values
       ('${CH_ACTIVATE}', 'CAS activate_if', 'U', 'canceled', null),
       ('${CH_CLOCK}', 'CAS past_due clock', 'U', 'active', null),
-      ('${CH_RECOVER}', 'CAS activate recover', 'U', 'past_due', '${T_OLD}');
+      ('${CH_RECOVER}', 'CAS activate recover', 'U', 'past_due', '${T_OLD}'),
+      ('${CH_RESTART}', 'CAS clock restart', 'U', 'canceled', null);
   `);
 
   const activateCanceled = await apply(CH_ACTIVATE, T_NEW, {
@@ -2581,6 +2603,12 @@ try {
     activate_if: ["past_due", "incomplete"],
   });
   const afterRecover = await row(CH_RECOVER);
+
+  const restart = await apply(CH_RESTART, T_NEW, {
+    subscription_status: "past_due",
+    past_due_since: T_NEW,
+  });
+  const afterRestart = await row(CH_RESTART);
 
   checks.push(
     [
@@ -2605,9 +2633,23 @@ try {
       `clock: first past_due applies`,
     ],
     [
+      clockFirst[0]?.previous_subscription_status === "active",
+      `clock: first past_due reports previous=active (got ${clockFirst[0]?.previous_subscription_status})`,
+    ],
+    [
       clockSecond.length === 1 &&
         String(afterClock?.past_due_since ?? "").includes("2026-06-01"),
       `clock: second past_due keeps T_OLD (got ${afterClock?.past_due_since})`,
+    ],
+    [
+      clockSecond[0]?.previous_subscription_status === "past_due",
+      `clock: second past_due reports previous=past_due (got ${clockSecond[0]?.previous_subscription_status})`,
+    ],
+    [
+      restart.length === 1 &&
+        restart[0]?.previous_subscription_status === "canceled" &&
+        String(afterRestart?.past_due_since ?? "").includes("2026-06-02"),
+      `clock: canceled→past_due restarts the stamp (got previous=${restart[0]?.previous_subscription_status} since=${afterRestart?.past_due_since})`,
     ],
   );
 
@@ -2640,7 +2682,7 @@ try {
   await db.exec(`
     delete from public.chapters where id in (
       '${CH_OLD_FIRST}', '${CH_NEW_FIRST}', '${CH_ACTIVATE}', '${CH_CLOCK}',
-      '${CH_RECOVER}'
+      '${CH_RECOVER}', '${CH_RESTART}'
     );
   `);
 } catch (e) {
