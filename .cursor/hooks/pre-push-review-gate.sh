@@ -56,6 +56,13 @@ payload_looks_like_push() {
   text_looks_like_push "$payload"
 }
 
+session_skip() {
+  [ "${FRAPP_SKIP_REVIEW_GATE:-}" = "1" ]
+}
+
+# Parse must yield a JSON object. A JSON string/array is valid JSON but is not
+# Cursor's {command,cwd,sandbox} shape — treating it as success with an empty
+# command fails open (node's `d.command || ""` on `"git push"` is "").
 parse_cursor() {
   printf '%s' "$payload" | python3 -c '
 import json, sys
@@ -63,8 +70,18 @@ try:
     d = json.load(sys.stdin)
 except Exception:
     sys.exit(1)
-cmd = d.get("command") or ""
-cwd = d.get("cwd") or ""
+if not isinstance(d, dict):
+    sys.exit(1)
+cmd = d.get("command")
+cwd = d.get("cwd")
+if cmd is None:
+    cmd = ""
+elif not isinstance(cmd, str):
+    sys.exit(1)
+if cwd is None:
+    cwd = ""
+elif not isinstance(cwd, str):
+    sys.exit(1)
 sys.stdout.write(cmd.replace("\t", " ").replace("\r", "\n").replace("\n", ";") + "\t" + cwd)
 ' 2>/dev/null && return 0
   printf '%s' "$payload" | node -e '
@@ -72,6 +89,9 @@ let s = "";
 process.stdin.on("data", (d) => (s += d)).on("end", () => {
   let d;
   try { d = JSON.parse(s); } catch { process.exit(1); }
+  if (!d || typeof d !== "object" || Array.isArray(d)) process.exit(1);
+  if (d.command != null && typeof d.command !== "string") process.exit(1);
+  if (d.cwd != null && typeof d.cwd !== "string") process.exit(1);
   const cmd = d.command || "";
   const cwd = d.cwd || "";
   process.stdout.write(cmd.replace(/\t/g, " ").replace(/\r/g, "\n").replace(/\n/g, ";") + "\t" + cwd);
@@ -80,12 +100,22 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
   return 1
 }
 
+fail_closed_push() {
+  local user_msg="$1"
+  local agent_msg="$2"
+  if session_skip; then
+    emit "allow" "" "Review gate skipped via FRAPP_SKIP_REVIEW_GATE=1 (session environment)."
+    exit 0
+  fi
+  emit "deny" "$user_msg" "$agent_msg"
+  exit 0
+}
+
 if ! fields="$(parse_cursor)"; then
   if payload_looks_like_push; then
-    emit "deny" \
+    fail_closed_push \
       "Review gate: Cursor hook payload could not be parsed; fail-closed on a push-like command." \
       "The beforeShellExecution payload was not valid Cursor JSON ({command,cwd,sandbox}) and contained \"push\". Matching Claude's parse-failure path: deny rather than allow an unreviewed push. Export FRAPP_SKIP_REVIEW_GATE=1 only for emergencies."
-    exit 0
   fi
   emit "allow" "" "Review gate adapter: payload unparsed and no push token; allowing."
   exit 0
@@ -93,6 +123,15 @@ fi
 
 command="${fields%%$'\t'*}"
 command_cwd="${fields#*$'\t'}"
+
+# Successful parse with an empty command still fails closed when the raw payload
+# contains "push" — otherwise {"command":null,"note":"git push"} or a schema that
+# stores the shell line under another key would reach INNER as "" and allow.
+if [ -z "$command" ] && payload_looks_like_push; then
+  fail_closed_push \
+    "Review gate: Cursor payload had no command string; fail-closed on a push-like body." \
+    "The beforeShellExecution JSON parsed but command was empty/missing while the raw payload contained \"push\". Deny rather than forward an empty command to the inner matcher."
+fi
 
 build_claude_payload() {
   FRAPP_HOOK_CMD="$command" FRAPP_HOOK_CWD="$command_cwd" python3 -c '
@@ -107,16 +146,18 @@ process.stdout.write(JSON.stringify({tool_input:{command:e.FRAPP_HOOK_CMD||""},t
 }
 
 if ! claude_payload="$(build_claude_payload)"; then
-  emit "deny" \
+  fail_closed_push \
     "Review gate adapter could not encode the inner payload." \
     "Neither python3 nor node could JSON-encode the Claude PreToolUse payload. Fail-closed."
-  exit 0
 fi
 
 if [ ! -f "$INNER" ]; then
-  emit "deny" \
-    "Review gate inner hook missing." \
-    "Expected ${INNER}. The Cursor adapter does not reimplement the gate. Fail-closed."
+  if text_looks_like_push "$command" || { [ -z "$command" ] && payload_looks_like_push; }; then
+    fail_closed_push \
+      "Review gate inner hook missing." \
+      "Expected ${INNER}. The Cursor adapter does not reimplement the gate. Fail-closed."
+  fi
+  emit "allow" "" "Review gate inner hook missing; command is not push-like; allowing."
   exit 0
 fi
 
@@ -162,14 +203,16 @@ if emit_deny_from_inner; then
   exit 0
 fi
 
-# Inner crash / empty stdout on a push-like command: deny. Claude allow is also
-# empty stdout, but that path exits 0. Swallowing a non-zero inner exit used to
-# emit Cursor allow and bypass failClosed.
-if [ "$inner_rc" -ne 0 ] && text_looks_like_push "$command"; then
-  emit "deny" \
-    "Review gate inner hook failed; fail-closed on a push-like command." \
-    "The Cursor adapter invoked the inner review gate and it exited ${inner_rc} without a deny JSON. Unreviewed push is not allowed. Export FRAPP_SKIP_REVIEW_GATE=1 only for emergencies."
-  exit 0
+# Inner crash / untranslatable stdout on a push-like command: deny. Claude allow
+# is empty stdout with exit 0. Swallowing a non-zero inner exit used to emit
+# Cursor allow and bypass failClosed. Unparseable inner stdout on a push is the
+# same hole (deny JSON plus a log line would otherwise fall through to allow).
+if text_looks_like_push "$command"; then
+  if [ "$inner_rc" -ne 0 ] || [ -n "$inner_out" ]; then
+    fail_closed_push \
+      "Review gate inner hook failed; fail-closed on a push-like command." \
+      "The Cursor adapter invoked the inner review gate and it exited ${inner_rc} without a translatable deny JSON. Unreviewed push is not allowed. Export FRAPP_SKIP_REVIEW_GATE=1 only for emergencies."
+  fi
 fi
 
 # Empty / non-deny inner stdout: allow. Surface livelock UNREVIEWED on stderr
