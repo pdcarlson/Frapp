@@ -260,10 +260,13 @@ Chat messages are the most latency-sensitive and loss-sensitive data in the app.
 | DELIVERED | Double checkmark (✓✓) — future, requires read receipts | None needed |
 | FAILED | Red warning icon (⚠) + "Failed to send" | [Retry] [Delete] buttons |
 | UNCONFIRMED | Neutral note + "outcome unknown" — **never red** | [Retry] only — **never Delete** |
+| RECORDED | Neutral note — write committed, chat card missing — **never red** | None — **never Retry, never Delete** |
 
-`UNCONFIRMED` is the one row in this table where the action column is a safety
-rule rather than a convenience. It is reached when a heavy slash command's
-response was lost, so the write may already have committed
+`UNCONFIRMED` and `RECORDED` are the two rows in this table where the action
+column is a safety rule rather than a convenience.
+
+`UNCONFIRMED` is reached when a heavy slash command's response was lost, so the
+write may already have committed
 ([`chat/integrations.md`](../behavior/chat/integrations.md) § Slash command
 dispatch, [#1733](https://github.com/pdcarlson/Frapp/issues/1733)):
 
@@ -275,25 +278,35 @@ dispatch, [#1733](https://github.com/pdcarlson/Frapp/issues/1733)):
 - **Retry replays the original request**, under its original
   `client_message_id` — not a fresh send.
 
-**Shipped on web only, and mobile cannot reach the state yet.** The status is
-set only by the heavy-command dispatcher, it is cache-only and local to the
-client that dispatched, and `apps/mobile` deliberately has no slash dispatch —
-so no mobile row can currently be `unconfirmed`. What matters is the ordering:
-mobile's `_status` chains are not exhaustive, so such a row would fall through
-to the delivered presentation — no note, no Retry — which is the worst
-available rendering for a write that may not have landed. **Mobile must gain
-this branch in the same change that gives it slash dispatch, not after**
+`RECORDED` is reached on an explicit `card_posted: false`: the write **did**
+commit and the chat card did not
+([#1789](https://github.com/pdcarlson/Frapp/issues/1789)). Retry is the
+dangerous action here — there is no server-side dedupe on `/task` or `/event`,
+and a re-typed `/points` mints a fresh key — so the row offers **no** Retry and
+**no** Delete. The sticky toast is secondary and evictable (`TOAST_LIMIT = 1`);
+the row is the trace that survives the next toast and a reload.
+
+**Shipped on web only, and mobile cannot reach either state yet.** Both statuses
+are set only by the heavy-command dispatcher, they are cache-only and local to
+the client that dispatched, and `apps/mobile` deliberately has no slash dispatch
+— so no mobile row can currently be `unconfirmed` or `recorded`. What matters is
+the ordering: mobile's `_status` chains are not exhaustive, so either row would
+fall through to the delivered presentation — no note, and on `recorded` a
+missing "don't run again". **Mobile must gain both branches in the same change
+that gives it slash dispatch, not after**
 ([#1910](https://github.com/pdcarlson/Frapp/issues/1910)).
 
-**The state machine above does not produce `UNCONFIRMED`.** It models the
-outbox path (`SENDING → SENT`, timeout → `FAILED`), which heavy slash commands
-deliberately bypass — they call an RPC directly rather than queueing. This state
-is reached only from a heavy command whose HTTP response was lost; wiring it off
-the send-timeout edge would be wrong.
+**The state machine above does not produce `UNCONFIRMED` or `RECORDED`.** It
+models the outbox path (`SENDING → SENT`, timeout → `FAILED`), which heavy slash
+commands deliberately bypass — they call an RPC directly rather than queueing.
+`UNCONFIRMED` is reached only from a heavy command whose HTTP response was lost;
+`RECORDED` only from an explicit `card_posted: false`. Wiring either off the
+send-timeout edge would be wrong.
 
 The table's names are the spec's own vocabulary and map loosely onto the
 `MessageStatus` union in `@repo/chat-core` (`pending`, `confirmed`, `failed`,
-`unconfirmed`): `FAILED`/`failed` and `UNCONFIRMED`/`unconfirmed` correspond,
+`unconfirmed`, `recorded`): `FAILED`/`failed` and `UNCONFIRMED`/`unconfirmed`
+correspond, `RECORDED`/`recorded` is the committed-card-lost terminal,
 `SENDING` is roughly `pending`, and `SENT`/`DELIVERED` have no separate code
 state — both are `confirmed`.
 

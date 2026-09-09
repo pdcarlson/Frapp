@@ -190,6 +190,29 @@ export function markUnconfirmed(
   });
 }
 
+/**
+ * Marks an optimistic placeholder as **recorded** — the side effect committed,
+ * the chat card did not (#1789).
+ *
+ * Distinct from {@link markFailed} (that asserts nothing was written, so Retry
+ * is safe) and from {@link markUnconfirmed} (that asserts nothing, so Retry
+ * under the original key is the recovery). This one asserts the write landed.
+ * Clearing `_replay` is load-bearing: the row keeps `kind: "loading"` like the
+ * other terminal placeholders, and a leftover replay handle would draw a Retry
+ * on a write that must not be sent again.
+ */
+export function markRecorded(
+  cache: ChannelCache,
+  clientMessageId: string,
+  note: string,
+): ChannelCache {
+  return patchRow(cache, clientMessageId, {
+    _status: "recorded",
+    _error: note,
+    _replay: undefined,
+  });
+}
+
 /** Removes a message by cache key (server id or client_message_id). */
 export function removeMessage(cache: ChannelCache, key: string): ChannelCache {
   if (!cache.byId[key]) return cache;

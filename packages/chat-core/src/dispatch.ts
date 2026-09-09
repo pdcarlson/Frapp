@@ -22,6 +22,7 @@ import {
   sendMessage,
   insertLocalPlaceholder,
   removeLocalPlaceholder,
+  markLocalRecorded,
   markLocalUnconfirmed,
   isDefinitiveClientError,
   type ChatActionContext,
@@ -252,13 +253,15 @@ async function dispatchPoints(
     },
   };
 
+  const placeholderContent = `${parsed.value.action === "grant" ? "Granting" : "Deducting"} ${parsed.value.amount} points…`;
+
   insertLocalPlaceholder(ctx, {
     channelId,
     clientMessageId,
-    content: `${parsed.value.action === "grant" ? "Granting" : "Deducting"} ${parsed.value.amount} points…`,
+    content: placeholderContent,
   });
 
-  return submitPointsAdjustment(ctx, replay, false);
+  return submitPointsAdjustment(ctx, replay, false, placeholderContent);
 }
 
 /**
@@ -319,7 +322,7 @@ const RETRY_IN_FLIGHT_NOTE =
  * | other 4xx from the origin | removed, `ok:false` — validated and rejected, nothing written | **kept `unconfirmed`** — says nothing about the original |
  * | 408 / 499 / 460 | kept `unconfirmed` — an intermediary emitted it, possibly post-commit | kept `unconfirmed` |
  * | 5xx / transport | kept `unconfirmed` | kept `unconfirmed` |
- * | `card_posted:false` | removed, committed-card-lost warning | same |
+ * | `card_posted:false` | kept `recorded`, committed-card-lost warning | same |
  * | `card_posted` absent | kept for the echo — no outcome reported | removed, committed-card-unknown warning |
  * | `card_posted:true` | kept for the echo | row cleared, explicit success |
  */
@@ -327,6 +330,7 @@ async function submitPointsAdjustment(
   ctx: ChatActionContext,
   replay: ReplayRequest,
   isReplay: boolean,
+  placeholderContent?: string,
 ): Promise<DispatchResult> {
   const { channelId, clientMessageId } = replay;
 
@@ -399,12 +403,17 @@ async function submitPointsAdjustment(
   const cardPosted = data?.card_posted;
 
   // The ledger row is committed either way — the card is best-effort and is
-  // never rolled back. But the placeholder is reconciled by the Realtime echo of
-  // that card, so when the card did not post the echo never arrives and the
-  // placeholder would sit on "Granting … points…" forever. Drop it ourselves and
-  // say what happened, without implying the grant failed.
+  // never rolled back. The placeholder used to be dropped here, which left
+  // only an evictable toast as evidence of an append-only write (#1789).
+  // Keep it as a non-retryable `recorded` row so the timeline still says
+  // the grant happened after the toast is gone (and after a reload).
   if (cardPosted === false) {
-    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    markLocalRecorded(ctx, {
+      channelId,
+      clientMessageId,
+      note: POINTS_RECORDED_ROW_NOTE,
+      content: placeholderContent,
+    });
     return { ok: true, warning: CARD_LOST_WARNING };
   }
 
@@ -481,6 +490,15 @@ const TASK_CARD_LOST_WARNING =
 
 const EVENT_CARD_LOST_WARNING =
   "Event was created, but the chat card couldn't be posted. Check the events calendar to confirm — don't run the command again.";
+
+const POINTS_RECORDED_ROW_NOTE =
+  "Points recorded — the chat card didn't post. Don't run this command again.";
+
+const TASK_RECORDED_ROW_NOTE =
+  "Task created — the chat card didn't post. Don't run this command again.";
+
+const EVENT_RECORDED_ROW_NOTE =
+  "Event created — the chat card didn't post. Don't run this command again.";
 
 const REPLAY_ACCEPTED_WARNING =
   "These points were already recorded — the retry didn't add a second entry. Whether the original chat card posted isn't something the server can tell us, so check the channel or the points ledger if you need to be sure.";
@@ -604,10 +622,12 @@ async function dispatchTask(
 
   const clientMessageId = randomClientId();
 
+  const placeholderContent = `Creating task "${parsed.value.title}"…`;
+
   insertLocalPlaceholder(ctx, {
     channelId,
     clientMessageId,
-    content: `Creating task "${parsed.value.title}"…`,
+    content: placeholderContent,
   });
 
   try {
@@ -639,7 +659,12 @@ async function dispatchTask(
       };
     }
     if (data?.card_posted === false) {
-      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      markLocalRecorded(ctx, {
+        channelId,
+        clientMessageId,
+        note: TASK_RECORDED_ROW_NOTE,
+        content: placeholderContent,
+      });
       return { ok: true, warning: TASK_CARD_LOST_WARNING };
     }
   } catch {
@@ -711,10 +736,12 @@ async function dispatchEvent(
 
   const clientMessageId = randomClientId();
 
+  const placeholderContent = `Creating event "${parsed.value.name}"…`;
+
   insertLocalPlaceholder(ctx, {
     channelId,
     clientMessageId,
-    content: `Creating event "${parsed.value.name}"…`,
+    content: placeholderContent,
   });
 
   try {
@@ -749,7 +776,12 @@ async function dispatchEvent(
       };
     }
     if (data?.card_posted === false) {
-      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      markLocalRecorded(ctx, {
+        channelId,
+        clientMessageId,
+        note: EVENT_RECORDED_ROW_NOTE,
+        content: placeholderContent,
+      });
       return { ok: true, warning: EVENT_CARD_LOST_WARNING };
     }
   } catch {
