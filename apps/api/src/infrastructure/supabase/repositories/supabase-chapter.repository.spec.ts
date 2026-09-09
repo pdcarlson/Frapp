@@ -99,7 +99,12 @@ describe('SupabaseChapterRepository — tenant scope', () => {
         },
         rpc: {
           apply_subscription_webhook: {
-            data: [{ id: CHAPTER_B, subscription_status: 'active' }],
+            data: [
+              {
+                applied: { id: CHAPTER_B, subscription_status: 'active' },
+                previous_subscription_status: 'active',
+              },
+            ],
           },
         },
       });
@@ -112,6 +117,7 @@ describe('SupabaseChapterRepository — tenant scope', () => {
       );
 
       expect(applied?.id).toBe(CHAPTER_B);
+      expect(applied?.previous_subscription_status).toBe('active');
       expect(harness.rpcCalls[0].args).toMatchObject({
         p_chapter_id: CHAPTER_B,
         p_event_at: '2026-06-02T12:00:00.000Z',
