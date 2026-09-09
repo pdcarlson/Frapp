@@ -216,6 +216,28 @@ export function addNotificationResponseListener(
   return mod ? mod.addNotificationResponseReceivedListener(listener) : null;
 }
 
+/**
+ * Mid-session Expo / APNs / FCM token rotation.
+ *
+ * The native listener hands us a device token. We swallow it: registering
+ * that value would bypass Expo's push service, and calling
+ * `getDevicePushTokenAsync` from inside the listener can re-enter it. The
+ * hook re-reads `getExpoPushToken()` instead.
+ *
+ * Needs the EAS `projectId` (same as `getExpoPushToken`), not merely the
+ * module — a rotation we cannot register is not worth observing.
+ */
+export function addPushTokenListener(
+  listener: () => void,
+): PushSubscription | null {
+  const mod = loadNotifications();
+  const projectId = easProjectId();
+  if (!mod || !projectId) return null;
+  return mod.addPushTokenListener(() => {
+    listener();
+  });
+}
+
 /** Presents a local notification immediately. Returns its id, or `null`. */
 export async function presentLocalNotification(input: {
   title: string;
