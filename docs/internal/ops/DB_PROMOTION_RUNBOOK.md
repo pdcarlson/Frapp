@@ -491,6 +491,30 @@ date — is welcome; inventing a date to turn the gate green is not.
   row, no client dependency. Staging applies on merge to `main`. Production
   waits for Deploy production; do not dispatch that workflow from this change.
 
+## 2026-09-09: Points ledger origin channel (#1734)
+
+One additive migration. Adds a nullable FK column and a check constraint to an
+existing table; no backfill, no rewrite, no RLS change. Safe to apply ahead of
+the code — the column is simply unread until the API that writes it ships.
+
+### 20260909040000_point_transactions_channel_id.sql
+* **Purpose**: Records the origin chat channel on a chat-originated
+  `point_transactions` row so a replay can re-attempt a lost best-effort
+  `kind:"points"` card into the stored channel rather than the one the request
+  names. Without it, `idx_chat_messages_dedupe` (scoped by channel) cannot
+  prove a replay names the original card's channel, and re-posting would
+  re-broadcast a FINE. `ON DELETE SET NULL` so deleting a channel never
+  deletes ledger rows. The check constraint forbids a channel without a
+  `client_message_id`; the inverse (a key with no channel) stays legal for
+  pre-column rows.
+* **Checks**: After `db push`,
+  `select column_name from information_schema.columns where table_name = 'point_transactions' and column_name = 'channel_id';`
+  should return 1 row, and
+  `select conname from pg_constraint where conname = 'point_transactions_channel_id_requires_key';`
+  should return 1 row.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the points ledger origin channel.
+
 ## 2026-09-07: Chapter directory reference rows reach every environment (#840)
 
 * **Migration**: `20260907011500_chapter_directory_seed_rows.sql`
