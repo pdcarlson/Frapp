@@ -4,7 +4,7 @@
 
 The Notification service exposes two methods:
 
-- `notifyUser(userId, payload)` — sends to a specific user.
+- `notifyUser(userId, chapterId, payload)` — sends to a specific user in that chapter.
 - `notifyChapter(chapterId, payload)` — sends to all members of a chapter.
 
 Other modules (Chat, Events, Study, Billing) call these methods without knowing about push tokens, Expo, or delivery mechanics.
@@ -14,14 +14,14 @@ Other modules (Chat, Events, Study, Billing) call these methods without knowing 
 1. Resolve the payload's priority (absent means `NORMAL`).
 2. **Unless the priority is URGENT**, check the user's notification preferences for the payload's category. If disabled, skip — no push *and* no in-app row.
 3. Check quiet hours. If active and priority is not URGENT, queue as badge-only (no sound/vibration).
-4. Save notification to `notifications` table (in-app history).
+4. Save notification to `notifications` table (in-app history). The row always carries that `chapter_id`. **History is active-chapter-only:** `GET /v1/notifications` and `PATCH /v1/notifications/{id}/read` resolve the chapter the same way every other member surface does (`ChapterGuard`: JWT `active_chapter_id`, then `x-chapter-id`) and bind `chapter_id` on the select and the update. A member of two chapters does not see, or mark read, the other chapter's rows while one is active. Preferences remain the exception — they take `chapter_id` from the query or body and check membership in the service, because a member may edit another chapter's switches without switching into it.
 5. Fetch the user's `push_tokens`.
 6. Send push notification via Expo Push Service with the appropriate priority.
 7. If Expo reports a token as permanently undeliverable (`DeviceNotRegistered`), remove it from `push_tokens`. This is classified from the *ticket* Expo returns at send time (`ExpoPushProvider.recordTickets`), not from polling delivery *receipts* — receipt polling is a separate, unimplemented enhancement. Every other Expo error (rate limit, oversized message, bad app credentials, transport failure) is transient or describes something other than this specific token, and does not prune it — pruning on those would unregister a device that is still valid.
 
 **URGENT outranks the category preference** (#1041). A member cannot mute a chapter emergency — or the president's subscription-status alert — by switching its category off, and the exemption covers the in-app row as well as the push: suppressing the row would leave no trace of the broadcast anywhere, which is the same failure in a slower form. Step 2 is the only gate URGENT skips; it is otherwise delivered exactly like any other payload. Note the ordering is an implementation detail of *when the preference is read*, not of what is checked — `notifyUser` skips the lookup entirely for URGENT rather than reading it and discarding the result, so an emergency broadcast costs no preference query per recipient.
 
-Push delivery is mobile-only (Expo); **web push is intentionally out of scope** for this phase. The web dashboard surfaces the in-app history instead: its notification drawer reads `GET /v1/notifications` (optional `limit`) and subscribes to a **private Supabase Realtime broadcast** topic, `notif:<users.id>`, so new rows appear without a manual refresh. The ping carries `{table, op}` and **no row data** — it only tells the client to refetch, and the refetch goes through the API above, which stays the enforcing layer. It deliberately does *not* use `postgres_changes`: `notifications` is RLS-on with no policy, and the SELECT policy needed to make Postgres changes fire would equally expose the table to direct browser reads (see [`AUTHORIZATION_MODEL.md`](../../docs/internal/security/AUTHORIZATION_MODEL.md) §4 and #867). Tapping a row deep-links via the payload `target` and marks it read with `PATCH /v1/notifications/{id}/read`.
+Push delivery is mobile-only (Expo); **web push is intentionally out of scope** for this phase. The web dashboard surfaces the in-app history instead: its notification drawer reads `GET /v1/notifications` (optional `limit`) — **active chapter only**, per step 4 — and subscribes to a **private Supabase Realtime broadcast** topic, `notif:<users.id>`, so new rows appear without a manual refresh. The ping carries `{table, op}` and **no row data** — it only tells the client to refetch, and the refetch goes through the API above, which stays the enforcing layer. It deliberately does *not* use `postgres_changes`: `notifications` is RLS-on with no policy, and the SELECT policy needed to make Postgres changes fire would equally expose the table to direct browser reads (see [`AUTHORIZATION_MODEL.md`](../../docs/internal/security/AUTHORIZATION_MODEL.md) §4 and #867). Tapping a row deep-links via the payload `target` and marks it read with `PATCH /v1/notifications/{id}/read`.
 
 ## Deep Linking
 
