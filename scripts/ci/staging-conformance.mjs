@@ -462,6 +462,7 @@ export async function checkAuthRedirects({
  */
 export const AUTH_SMTP_HOST = "smtp.resend.com";
 export const AUTH_SMTP_ADMIN_EMAIL = "no-reply@mail.staging.frapp.live";
+export const AUTH_SMTP_SENDER_NAME = "Signet";
 export const AUTH_EMAIL_SENT_PER_HOUR_MIN = 300;
 
 /**
@@ -494,7 +495,8 @@ export async function checkAuthSmtp({
   expectedAdminEmail = AUTH_SMTP_ADMIN_EMAIL,
   whenUnset = "fail",
 } = {}) {
-  const label = "Custom SMTP is Resend and the send cap is at least 300/hour";
+  const label =
+    "Custom SMTP is Resend, the sender is Signet, and the send cap is at least 300/hour";
   const expectedFrom =
     typeof expectedAdminEmail === "string" && expectedAdminEmail.trim()
       ? expectedAdminEmail.trim().toLowerCase()
@@ -517,7 +519,7 @@ export async function checkAuthSmtp({
         "auth-smtp",
         label,
         SKIPPED,
-        `smtp_host is empty (hosted 2/hour cap). Skip until SMTP is on. Once on, this check fails unless smtp_admin_email=${expectedFrom}. See #1824.`,
+        `smtp_host is empty (hosted 2/hour cap). Skip until SMTP is on. Once on, this check fails unless smtp_sender_name=${AUTH_SMTP_SENDER_NAME} and smtp_admin_email=${expectedFrom}. See #1824.`,
       );
     }
     return result(
@@ -538,6 +540,16 @@ export async function checkAuthSmtp({
       label,
       FAIL,
       `smtp_admin_email is "${adminEmail || "(empty)"}", expected ${expectedFrom}`,
+    );
+  }
+  const senderName =
+    typeof data?.smtp_sender_name === "string" ? data.smtp_sender_name.trim() : "";
+  if (senderName !== AUTH_SMTP_SENDER_NAME) {
+    return result(
+      "auth-smtp",
+      label,
+      FAIL,
+      `smtp_sender_name is "${senderName || "(empty)"}", expected ${AUTH_SMTP_SENDER_NAME}`,
     );
   }
   const perHour = emailsPerHourFromRateLimit(data?.rate_limit_email_sent);
@@ -562,7 +574,7 @@ export async function checkAuthSmtp({
     "auth-smtp",
     label,
     PASS,
-    `host=${host}; from=${adminEmail}; rate_limit_email_sent=${perHour}/hour`,
+    `host=${host}; from=${adminEmail}; sender=${senderName}; rate_limit_email_sent=${perHour}/hour`,
   );
 }
 
@@ -1214,7 +1226,7 @@ export async function runStagingConformance({
         projectRef: env.SUPABASE_PROJECT_REF,
         fetchImpl,
       }) },
-    { id: "auth-smtp", label: "Custom SMTP is Resend and the send cap is at least 300/hour", run: () =>
+    { id: "auth-smtp", label: "Custom SMTP is Resend, the sender is Signet, and the send cap is at least 300/hour", run: () =>
       checkAuthSmtp({
         accessToken: env.SUPABASE_ACCESS_TOKEN,
         projectRef: env.SUPABASE_PROJECT_REF,
