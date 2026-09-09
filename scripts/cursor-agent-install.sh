@@ -3,7 +3,7 @@
 # Frapp's Docker-based local stack, installs Node 20 + npm deps, builds the shared
 # workspace `dist/` outputs, and pre-pulls the Supabase images so per-session `start`
 # is fast. When Cursor "builds" are enabled this runs once and its filesystem becomes
-# the boot snapshot; per-boot work belongs in scripts/cursor-agent-start.sh instead.
+# the boot snapshot; per-boot work belongs in scripts/cursor-cloud-up.sh instead.
 #
 # This is the Cursor counterpart to scripts/cloud-sandbox-setup.sh (the Claude Code web
 # sandbox setup). It deliberately does NOT duplicate that script's Supabase logic — it
@@ -91,9 +91,19 @@ log "Building shared workspace packages..."
 #
 # bridge-nf-call-iptables=0 lets same-bridge IPv4 container traffic flow (the nested VM's
 # nft DOCKER rules otherwise drop inter-container IPv4, which times out logflare/vector's
-# DB connections). Kernel-runtime only; scripts/cursor-agent-start.sh re-applies per boot.
+# DB connections). Kernel-runtime only; scripts/cursor-cloud-up.sh re-applies per boot.
 sudo modprobe br_netfilter 2>/dev/null || true
 sudo sysctl -w net.bridge.bridge-nf-call-iptables=0 net.bridge.bridge-nf-call-ip6tables=0 >/dev/null 2>&1 || true
+
+# Clear any snapshot-carried Supabase CLI staging before the pre-pull's `supabase start`.
+# supabase/.temp/start-secrets/ is ephemeral (gitignored, regenerated each start), but a
+# base snapshot can carry a copy owned by a different uid, and the next `supabase start`
+# then dies with `EACCES ... rm .../start-secrets/...`. Removing it here keeps the pre-pull
+# (and thus the image cache it exists to warm) robust; scripts/cursor-cloud-up.sh does the
+# same per boot. Guarded so a bad ROOT can never widen the target.
+if [ -n "${ROOT:-}" ] && [ -d "$ROOT/supabase/.temp" ]; then
+  sudo rm -rf "$ROOT/supabase/.temp" 2>/dev/null || true
+fi
 
 # `sg docker` so the daemon is reachable without sudo. It runs its argument with /bin/sh,
 # so the bash-only pre-pull logic lives in its own script (see cursor-agent-prepull.sh).
