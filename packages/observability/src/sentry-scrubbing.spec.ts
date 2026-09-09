@@ -506,4 +506,272 @@ describe("stack-frame allowlist (#889)", () => {
     expect(json).not.toContain("hunter2");
     expect(json).not.toContain("0xdeadbeef");
   });
+
+  it("sweeps a member email that ContextLines read back off disk", () => {
+    const json = serialize(
+      browser.scrubSentryEvent({
+        exception: {
+          values: [
+            {
+              type: "Error",
+              value: "boom",
+              stacktrace: {
+                frames: [
+                  {
+                    filename: "/app/src/invite.ts",
+                    context_line: `throw new Error("invite failed for ${MEMBER_EMAIL}");`,
+                    pre_context: [`const to = "${MEMBER_EMAIL}";`],
+                    post_context: [`void "${MEMBER_EMAIL}";`],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).toContain("[redacted:email]");
+  });
+
+  it("drops non-string source-context entries instead of passing them through", () => {
+    const json = serialize(
+      browser.scrubSentryEvent({
+        exception: {
+          values: [
+            {
+              type: "Error",
+              value: "boom",
+              stacktrace: {
+                frames: [
+                  {
+                    filename: "/app/src/x.ts",
+                    pre_context: [
+                      "ok",
+                      { secret: MEMBER_EMAIL },
+                    ],
+                    post_context: [{ body: CHAT_BODY }],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).not.toContain("dues are late");
+    expect(json).toContain("ok");
+  });
 });
+
+describe("exception-value allowlist", () => {
+  it("drops unknown value fields, including raw_stacktrace and mechanism.data", () => {
+    const scrubbed = browser.scrubSentryEvent({
+      exception: {
+        extra: `container ${MEMBER_EMAIL}`,
+        values: [
+          {
+            type: "Error",
+            value: `failed for ${MEMBER_EMAIL}`,
+            module: "invite",
+            thread_id: 1,
+            snapshot: { body: CHAT_BODY },
+            raw_stacktrace: {
+              frames: [
+                {
+                  filename: "/app/src/x.ts",
+                  vars: { password: "hunter2" },
+                  context_line: `const email = "${MEMBER_EMAIL}";`,
+                },
+              ],
+            },
+            mechanism: {
+              type: "generic",
+              handled: false,
+              data: { email: MEMBER_EMAIL, body: CHAT_BODY },
+              meta: { ns_error: { domain: MEMBER_EMAIL } },
+            },
+            stacktrace: {
+              frames: [{ filename: "/app/src/x.ts", function: "handler" }],
+              registers: { rax: MEMBER_EMAIL },
+            },
+          },
+        ],
+      },
+    });
+
+    const json = serialize(scrubbed);
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).not.toContain("dues are late");
+    expect(json).not.toContain("hunter2");
+    expect(json).not.toContain("snapshot");
+    expect(json).not.toContain("raw_stacktrace");
+    expect(json).not.toContain("registers");
+    expect(json).toContain("[redacted:email]");
+    expect(json).toContain("handler");
+
+    const value = (
+      scrubbed as {
+        exception?: {
+          values?: Record<string, unknown>[];
+        };
+      }
+    ).exception?.values?.[0];
+    expect(value).not.toHaveProperty("snapshot");
+    expect(value).not.toHaveProperty("raw_stacktrace");
+    expect(value?.type).toBe("Error");
+    expect(value?.module).toBe("invite");
+    expect(value?.thread_id).toBe(1);
+    expect(value?.mechanism).toEqual({ type: "generic", handled: false });
+    expect(value?.mechanism).not.toHaveProperty("data");
+    expect(value?.mechanism).not.toHaveProperty("meta");
+  });
+
+  it("omits a non-string exception value instead of passing it through", () => {
+    const json = serialize(
+      browser.scrubSentryEvent({
+        exception: {
+          values: [
+            {
+              type: "Error",
+              value: { formatted: `invite failed for ${MEMBER_EMAIL}` },
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).not.toContain("formatted");
+    expect(json).toContain("Error");
+  });
+
+  it("drops a non-object exception entry rather than shipping it raw", () => {
+    const json = serialize(
+      browser.scrubSentryEvent({
+        exception: {
+          values: [`token for ${MEMBER_EMAIL}`, { type: "Error", value: "boom" }],
+        },
+      }),
+    );
+
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).toContain("boom");
+  });
+
+  it("applies the same exception-value allowlist on the transaction path", () => {
+    const json = serialize(
+      browser.scrubSentryTransaction({
+        transaction: "/v1/chapters",
+        exception: {
+          values: [
+            {
+              type: "Error",
+              value: "boom",
+              mechanism: { type: "generic", data: { email: MEMBER_EMAIL } },
+              raw_stacktrace: {
+                frames: [{ vars: { email: MEMBER_EMAIL } }],
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).not.toContain("raw_stacktrace");
+  });
+});
+
+describe("breadcrumb allowlist", () => {
+  it("rebuilds from an allowlist and drops data by omission", () => {
+    const scrubbed = browser.scrubSentryEvent({
+      breadcrumbs: [
+        {
+          timestamp: 1,
+          type: "http",
+          category: "fetch",
+          level: "info",
+          event_id: "abc",
+          message: `GET /v1/chapters`,
+          data: { body: CHAT_BODY, url: `/v1/users?email=${MEMBER_EMAIL}` },
+          payload: { email: MEMBER_EMAIL },
+          user: { email: MEMBER_EMAIL },
+        },
+      ],
+    });
+
+    const json = serialize(scrubbed);
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).not.toContain("dues are late");
+    expect(json).toContain("GET /v1/chapters");
+
+    const crumb = (
+      scrubbed as { breadcrumbs?: Record<string, unknown>[] }
+    )?.breadcrumbs?.[0];
+    expect(crumb).toEqual({
+      timestamp: 1,
+      type: "http",
+      category: "fetch",
+      level: "info",
+      event_id: "abc",
+      message: "GET /v1/chapters",
+    });
+    expect(crumb).not.toHaveProperty("data");
+    expect(crumb).not.toHaveProperty("payload");
+    expect(crumb).not.toHaveProperty("user");
+  });
+
+  it("omits a non-string breadcrumb message instead of passing it through", () => {
+    const json = serialize(
+      browser.scrubSentryEvent({
+        breadcrumbs: [
+          {
+            category: "console",
+            message: { formatted: `looked up ${MEMBER_EMAIL}` },
+          },
+        ],
+      }),
+    );
+
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).not.toContain("formatted");
+    expect(json).toContain("console");
+  });
+
+  it("drops a breadcrumb that is only a data bag", () => {
+    const json = serialize(
+      browser.scrubSentryEvent({
+        breadcrumbs: [{ data: { email: MEMBER_EMAIL } }],
+        message: "kept",
+      }),
+    );
+
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).not.toContain("breadcrumbs");
+    expect(json).toContain("kept");
+  });
+
+  it("applies the same breadcrumb allowlist on the transaction path", () => {
+    const json = serialize(
+      browser.scrubSentryTransaction({
+        transaction: "/chat",
+        breadcrumbs: [
+          {
+            message: "nav",
+            payload: { email: MEMBER_EMAIL },
+            data: { body: CHAT_BODY },
+          },
+        ],
+      }),
+    );
+
+    expect(json).not.toContain(MEMBER_EMAIL);
+    expect(json).not.toContain("dues are late");
+    expect(json).toContain("nav");
+  });
+});
+
