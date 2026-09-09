@@ -3432,6 +3432,33 @@ export interface components {
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Rejected with a 400 when `required_role_ids` is non-empty, even without `channel_id` — see that field. */
             client_message_id?: string;
         };
+        CreateEventResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            point_value: number;
+            is_mandatory: boolean;
+            recurrence_rule: string | null;
+            /** Format: uuid */
+            parent_event_id: string | null;
+            required_role_ids: string[] | null;
+            notes: string | null;
+            /** @description Optional check-in geofence. `null` means the event has no zone. */
+            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
+            check_in_zone_name: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
+            card_posted?: boolean;
+        };
         UpdateEventDto: {
             name?: string;
             description?: string;
@@ -3638,6 +3665,32 @@ export interface components {
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
             client_message_id?: string;
+        };
+        CreateTaskResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            title: string;
+            description: string | null;
+            /** Format: uuid */
+            assignee_id: string;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date */
+            due_date: string;
+            /** @enum {string} */
+            status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
+            point_reward: number | null;
+            points_awarded: boolean;
+            /** Format: date-time */
+            completed_at: string | null;
+            /** Format: date-time */
+            confirmed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
+            card_posted?: boolean;
         };
         UpdateTaskStatusDto: {
             /** @enum {string} */
@@ -6004,7 +6057,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CreateEventResponseDto"];
+                };
             };
         };
     };
@@ -7028,7 +7083,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CreateTaskResponseDto"];
+                };
             };
         };
     };
