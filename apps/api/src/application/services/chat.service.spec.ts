@@ -3323,6 +3323,27 @@ describe('ChatService', () => {
       );
     });
 
+    it('on a unique-violation for vote, rethrows the same ChatMessageActionDuplicateError when updateForVote finds no row', async () => {
+      // Race: unique-violation on create, then the action row is gone before
+      // the UPSERT. updateForVote must return null (not throw PGRST116) so
+      // this branch can re-raise the original duplicate error instead of a 500.
+      const duplicate = new ChatMessageActionDuplicateError(
+        'msg-1',
+        'user-1',
+        'vote',
+      );
+      mockActionRepo.create.mockRejectedValue(duplicate);
+      mockActionRepo.updateForVote.mockResolvedValue(null);
+
+      await expect(
+        service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
+          action_type: 'vote',
+          payload: { option: 2 },
+        }),
+      ).rejects.toBe(duplicate);
+      expect(mockActionRepo.findOne).not.toHaveBeenCalled();
+    });
+
     it('rethrows non-23505 insert errors instead of falsely deduping', async () => {
       mockActionRepo.create.mockRejectedValue(new Error('schema mismatch'));
 
