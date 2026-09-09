@@ -1,6 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 import { StripeBillingService } from './stripe.service';
-import { chargeIdFromLatestCharge } from '#domain/adapters/billing.interface';
+import {
+  chargeIdFromLatestCharge,
+  declineReasonFromLastPaymentError,
+} from '#domain/adapters/billing.interface';
 import Stripe from 'stripe';
 
 jest.mock('stripe');
@@ -424,6 +427,41 @@ describe('StripeBillingService', () => {
     it('maps null and undefined to null', () => {
       expect(chargeIdFromLatestCharge(null)).toBeNull();
       expect(chargeIdFromLatestCharge(undefined)).toBeNull();
+    });
+  });
+
+  describe('declineReasonFromLastPaymentError', () => {
+    it('prefers message, then decline_code, then code', () => {
+      expect(
+        declineReasonFromLastPaymentError({
+          message: 'Your card was declined.',
+          decline_code: 'generic_decline',
+          code: 'card_declined',
+        }),
+      ).toBe('Your card was declined.');
+      expect(
+        declineReasonFromLastPaymentError({
+          decline_code: 'insufficient_funds',
+          code: 'card_declined',
+        }),
+      ).toBe('insufficient_funds');
+      expect(declineReasonFromLastPaymentError({ code: 'card_declined' })).toBe(
+        'card_declined',
+      );
+    });
+
+    it('returns null for missing or blank payloads', () => {
+      expect(declineReasonFromLastPaymentError(null)).toBeNull();
+      expect(declineReasonFromLastPaymentError(undefined)).toBeNull();
+      expect(declineReasonFromLastPaymentError({ message: '   ' })).toBeNull();
+    });
+
+    it('caps an oversized Stripe message', () => {
+      const reason = declineReasonFromLastPaymentError({
+        message: 'x'.repeat(200),
+      });
+      expect(reason).toHaveLength(181);
+      expect(reason?.endsWith('…')).toBe(true);
     });
   });
 
