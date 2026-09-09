@@ -72,16 +72,16 @@ type ConnectionState = 'ONLINE' | 'DEGRADED' | 'OFFLINE';
 > else in this section reads the same on both surfaces: one link signal, one
 > `/health` poll (30s, 5s timeout), three consecutive failures.
 >
-> **`isInternetReachable === false` is suspicion, not proof.** `lib/chat/network-state.ts`'s
-> `isOfflineFromExpoState` ORs it with the link, and that is right *for the outbox*,
-> where a false "offline" only means "queue instead of send" and costs nothing. It is
-> wrong for this banner, because this value gates writes: a chapter house whose
-> captive-portal validation probe is blocked reports `isInternetReachable: false`
-> while the API is perfectly reachable, and folding that into OFFLINE would disable
-> check-in at the door with no route back — a down link also suppresses the `/health`
-> probe that would have proved otherwise. So it counts as one probe failure and
-> `/health` settles it, which is also what § 2 literally says: `!navigator.onLine`
-> is the OFFLINE clause, "intermittently failing" is DEGRADED.
+> **`isInternetReachable === false` is suspicion, not proof.** The mobile
+> outbox reads this same monitor (#1072), so this value is DEGRADED for both
+> the banner and the queue — a slow or once-failed probe must still send.
+> Folding it into OFFLINE would disable check-in at the door with no route
+> back: a chapter house whose captive-portal validation probe is blocked
+> reports `isInternetReachable: false` while the API is perfectly reachable,
+> and a down link also suppresses the `/health` probe that would have proved
+> otherwise. So it counts as one probe failure and `/health` settles it,
+> which is also what § 2 literally says: `!navigator.onLine` is the OFFLINE
+> clause, "intermittently failing" is DEGRADED.
 
 **Two inputs, not one.** A device link is not reachability, which is why `DEGRADED`
 exists at all: an API that is up, routable and failing leaves the member connected
@@ -230,17 +230,16 @@ props** — it used to be handed two raw `expo-network` booleans and derive its 
 flags inline, which made it a third opinion about connectivity, and the readings
 could and did disagree on screen.
 
-**`@repo/chat-core` keeps its own, deliberately.** `chatNetworkState`
-(`lib/chat/use-chat-runtime.ts`) still holds a separate `expo-network` subscription
-behind the `NetworkState` port, and it is *more* conservative than this model: it
-counts `isInternetReachable === false` as offline so a doubtful network queues
-rather than sends. That asymmetry is correct — the outbox's failure mode is a lost
-message, the banner's is a disabled control — but it has a consequence worth naming:
-when the link is up and the **API** is dead, this model reaches OFFLINE after three
-failed probes while the outbox still believes it is online, so a send is attempted
-and lands as a failed bubble rather than being queued, and no link event fires to
-flush it on recovery. Unifying the two (the monitor already satisfies the port's
-shape) is tracked separately.
+**Mobile chat reads this same monitor.** `chatNetworkState`
+(`lib/chat/use-chat-runtime.ts`) is a `NetworkState` adapter over
+`connectionMonitor` — one `expo-network` subscription, one `/health` poll.
+`isOffline()` is this model's OFFLINE (link down, or three failed probes), so a
+dead API with the link up queues instead of POSTing a failed bubble, and a
+health recovery with no link flip still fires `online=true` to flush the
+outbox. `DEGRADED` does **not** queue: a slow or once-failed probe must still
+send. The remaining asymmetry is the banner's write gate, not a second
+connectivity definition: `isInternetReachable === false` is still one probe
+failure here, never proof of OFFLINE, because that value disables check-in.
 
 **Web and mobile share the rule.** `deriveConnectionState` and
 `healthProbeIsReachable` live in `@repo/validation`. Web's
