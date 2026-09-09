@@ -1,0 +1,68 @@
+name: Production backup freshness
+
+# Between-dump watch: the nightly production Postgres dump must stay fresh.
+#
+# Launch bar 2 needs a recoverable production dump. Nightly Backup
+# (`db-backup.yml`) `backup-production` is the only restorable copy of
+# `frapp-prod` until a hosted restore is rehearsed. Nothing inside that
+# workflow fails closed if the job stops, skips, hangs, or ages out. The
+# reviewer watch (1956) only sees GitHub environment `production-backup`.
+#
+# 13:15 UTC is after the observed dump window (~11:00–12:47 UTC; documented
+# cron stays 06:30). Do not change `db-backup.yml` to make this job green.
+#
+# ── Why this job does NOT say `environment: production` ─────────────────────
+# ADR-19 put Required reviewers on the `production` GitHub environment. A
+# `schedule:` job that names it suspends on that gate and expires without
+# probing (#1435). The dump jobs themselves use `production-backup` for the
+# same reason. This workflow names no environment at all.
+#
+# Semantics live in scripts/ci/production-backup-freshness.mjs.
+# Unit tests: scripts/ci/__tests__/production-backup-freshness.test.mjs
+# (`npm run test:ci-scripts`).
+#
+# Not a required PR check.
+
+on:
+  schedule:
+    # 13:15 UTC daily, after the observed ~11:30 dump window. One of the
+    # daily staggered watchdogs. Full schedule:
+    # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
+    - cron: "15 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-backup-freshness
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # The only write scope in this workflow, job-scoped: the alert issue.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Dependency-free (global fetch + the alert-issue helper), so no npm ci —
+      # matching production-guardrails.yml's deliberately minimal action surface.
+      - name: Assert the nightly production dump is fresh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/production-backup-freshness.mjs
