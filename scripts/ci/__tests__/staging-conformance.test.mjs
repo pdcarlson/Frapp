@@ -20,6 +20,7 @@ import {
   checkAuthMagicLink,
   checkInfisicalSyncs,
   checkProjectStatus,
+  checkRenderAutoDeploy,
   checkRenderHealthCheckPath,
   checkSchemaDrift,
   classifyConformance,
@@ -37,6 +38,14 @@ import { makeFetchMock, quiet } from "./helpers.mjs";
 
 const ok = (body) => ({ ok: true, status: 200, json: async () => body });
 const httpError = (status) => ({ ok: false, status, json: async () => ({}) });
+
+/** Live GET /v1/services/{id} shape for frapp-api-staging (2026-09-09). */
+const healthyStagingRender = () =>
+  ok({
+    autoDeploy: "yes",
+    branch: "main",
+    serviceDetails: { healthCheckPath: "/health" },
+  });
 
 // ── Project status ──────────────────────────────────────────────────────────
 
@@ -519,6 +528,20 @@ test("default staging toRun includes health-check-path — the function alone is
   assert.match(toRun, /checkRenderHealthCheckPath\(/);
 });
 
+test("default staging toRun includes render-auto-deploy — the function alone is not enough", () => {
+  const source = readFileSync(
+    new URL("../staging-conformance.mjs", import.meta.url),
+    "utf8",
+  );
+  const toRun = source.slice(source.indexOf("const toRun = checks ??"));
+  assert.match(toRun, /id: "render-auto-deploy"/);
+  assert.match(toRun, /checkRenderAutoDeploy\(/);
+  // Production's expected value. A copy-paste of assertRenderService here
+  // would freeze-assert the wrong host.
+  assert.match(source, /autoDeploy !== "yes"/);
+  assert.doesNotMatch(source, /autoDeploy !== "no"/);
+});
+
 // ── Render healthCheckPath ─────────────────────────────────────────────────
 
 test("healthCheckPath skips rather than fails when the Render credential is absent", async () => {
@@ -594,6 +617,107 @@ test("healthCheckPath queries the service id it was handed, not a baked-in prod 
   assert.ok(!urls[0].includes("srv-d6lqu41aae7s73f62df0"));
 });
 
+// ── Render auto-deploy ──────────────────────────────────────────────────────
+
+test("render-auto-deploy skips rather than fails when the Render credential is absent", async () => {
+  const result = await checkRenderAutoDeploy({});
+  assert.equal(result.status, SKIPPED);
+  assert.match(result.detail, /RENDER_API_KEY/);
+});
+
+test("render-auto-deploy fails when auto-deploy is off — that freezes staging", async () => {
+  const result = await checkRenderAutoDeploy({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () => ok({ autoDeploy: "no", branch: "main" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /autoDeploy='no'/);
+  assert.match(result.detail, /frozen/);
+  assert.doesNotMatch(result.detail, /branch=/);
+});
+
+test("render-auto-deploy fails when the service tracks a branch other than main", async () => {
+  const result = await checkRenderAutoDeploy({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () => ok({ autoDeploy: "yes", branch: "staging" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /branch='staging'/);
+});
+
+test("render-auto-deploy names both findings when auto-deploy and branch are wrong", async () => {
+  const result = await checkRenderAutoDeploy({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () => ok({ autoDeploy: "no", branch: "production" }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /autoDeploy='no'/);
+  assert.match(result.detail, /branch='production'/);
+});
+
+test("render-auto-deploy does not treat a nested decoy as the live Render field", async () => {
+  const result = await checkRenderAutoDeploy({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () =>
+      ok({
+        serviceDetails: { autoDeploy: "yes", branch: "main" },
+      }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /unreadable/);
+});
+
+test("render-auto-deploy does not unwrap a { service: … } envelope", async () => {
+  const result = await checkRenderAutoDeploy({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () =>
+      ok({ service: { autoDeploy: "yes", branch: "main" } }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /unreadable/);
+});
+
+test("render-auto-deploy passes when autoDeploy is yes and branch is main", async () => {
+  const result = await checkRenderAutoDeploy({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () => healthyStagingRender(),
+  });
+  assert.equal(result.status, PASS);
+  assert.match(result.detail, /autoDeploy=yes/);
+  assert.match(result.detail, /branch=main/);
+});
+
+test("a non-200 from the Render API is a failure for auto-deploy, not a skip", async () => {
+  const result = await checkRenderAutoDeploy({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () => httpError(401),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /HTTP 401/);
+});
+
+test("render-auto-deploy queries the service id it was handed, not a baked-in prod id", async () => {
+  const urls = [];
+  await checkRenderAutoDeploy({
+    apiKey: "rk",
+    serviceId: "srv-d6lqsq75r7bs73c2fdc0",
+    fetchImpl: async (url) => {
+      urls.push(String(url));
+      return healthyStagingRender();
+    },
+  });
+  assert.equal(urls.length, 1);
+  assert.ok(urls[0].endsWith("/services/srv-d6lqsq75r7bs73c2fdc0"));
+  assert.ok(!urls[0].includes("srv-d6lqu41aae7s73f62df0"));
+});
+
 test("staging-conformance.yml wires Render creds to the staging service, never prod", () => {
   // The function and toRun row can exist while the job still never asserts:
   // without these env lines the check is permanently SKIPPED.
@@ -617,6 +741,11 @@ test("staging-conformance.yml wires Render creds to the staging service, never p
     ),
     "AGENT_INFRA must list staging-conformance.yml as a RENDER_API_KEY consumer",
   );
+  assert.match(
+    infra,
+    /Render auto-deploy on tracking `main`/,
+    "the 07:30 roster must name the auto-deploy assertion or a revert sits green",
+  );
 });
 
 test("default toRun health-check-path reads RENDER_* from env and skips without them", async () => {
@@ -624,7 +753,7 @@ test("default toRun health-check-path reads RENDER_* from env and skips without 
   const fetchImpl = async (url) => {
     urls.push(String(url));
     if (String(url).includes("render.com")) {
-      return ok({ serviceDetails: { healthCheckPath: "/health" } });
+      return healthyStagingRender();
     }
     return { ok: true, status: 200, json: async () => [] };
   };
@@ -639,6 +768,8 @@ test("default toRun health-check-path reads RENDER_* from env and skips without 
   });
   const skippedRow = skipped.results.find((r) => r.id === "health-check-path");
   assert.equal(skippedRow.status, SKIPPED);
+  const skippedAuto = skipped.results.find((r) => r.id === "render-auto-deploy");
+  assert.equal(skippedAuto.status, SKIPPED);
   assert.ok(!urls.some((u) => u.includes("render.com")));
 
   urls.length = 0;
@@ -655,6 +786,8 @@ test("default toRun health-check-path reads RENDER_* from env and skips without 
   });
   const passedRow = passed.results.find((r) => r.id === "health-check-path");
   assert.equal(passedRow.status, PASS);
+  const autoDeployRow = passed.results.find((r) => r.id === "render-auto-deploy");
+  assert.equal(autoDeployRow.status, PASS);
   assert.ok(urls.some((u) => u.endsWith("/services/srv-d6lqsq75r7bs73c2fdc0")));
   assert.ok(!urls.some((u) => u.includes("srv-d6lqu41aae7s73f62df0")));
 });
