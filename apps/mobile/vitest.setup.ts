@@ -203,6 +203,7 @@ vi.mock("expo-notifications", () => ({
   getLastNotificationResponse: vi.fn(() => null),
   clearLastNotificationResponse: vi.fn(),
   addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
+  addPushTokenListener: vi.fn(() => ({ remove: vi.fn() })),
   scheduleNotificationAsync: vi.fn().mockResolvedValue("local-1"),
   cancelScheduledNotificationAsync: vi.fn().mockResolvedValue(undefined),
   dismissNotificationAsync: vi.fn().mockResolvedValue(undefined),
