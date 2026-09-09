@@ -23,7 +23,7 @@ description: >
 > again, as it did before the unlink; between 2026-09-01 and 2026-09-04 it did not, because those
 > hosts were frozen at landing `2bf143b` and web `0372c6d`. Allow for the deploy to finish — CI
 > then a two-project build — before reading a host as stale. Canonical record: **ADR-21** in
-> [`spec/architecture/README.md`](../../../spec/architecture/README.md).
+> [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md).
 
 Sandbox sessions can reach **deployed staging** when the cloud environment's network
 allowlist carries the live-egress lines
