@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChatMessage, ChatMessageKind } from "@repo/chat-core/types";
+import type { ChatMessageKind } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "./message-placeholders";
 import { cn } from "@/lib/utils";
 
@@ -152,8 +152,21 @@ function flattenMarkdown(text: string): string {
  * valid send (`spec/behavior/chat/README.md`, "A message may be nothing but a
  * file") and would otherwise quote as nothing at all. Then the kind, for a card
  * whose body lives in `payload`.
+ *
+ * The argument is a structural preview source, not `ChatMessage`, because the
+ * Bookmarks panel (#462) serves a nine-field projection with no `kind` or
+ * `attachment_count`. Pins and search pass a full row; a bookmark with empty
+ * `content` and no kind noun still has to say *something* ("Message") rather
+ * than render an empty grey block (#1726).
  */
-export function replyPreviewText(message: ChatMessage): string {
+export type MessagePreviewSource = {
+  content?: string | null;
+  is_deleted?: boolean | null;
+  attachment_count?: number | null;
+  kind?: ChatMessageKind | null;
+};
+
+export function replyPreviewText(message: MessagePreviewSource): string {
   if (message.is_deleted) return DELETED_MESSAGE_PLACEHOLDER;
 
   const text = flattenMarkdown(message.content ?? "")
