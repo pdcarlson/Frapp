@@ -79,6 +79,11 @@ function text(value: unknown): string | undefined {
  * Last resort for an object carrying none of the three fields above: serialize
  * it rather than let `[object Object]` back in.
  *
+ * `details` is still dropped. The described path never had it, and this branch
+ * must not reintroduce it: Postgres fills that field with the offending row
+ * values (`Key (email)=(a@b.com) already exists`). The 1000-character cap
+ * bounds volume, not sensitivity (#1762).
+ *
  * Capped, because an error object can drag a whole request payload behind it,
  * and guarded, because `JSON.stringify` throws on a circular reference or a
  * BigInt and returns `undefined` for a `toJSON` that does. Reporting an error
@@ -87,7 +92,11 @@ function text(value: unknown): string | undefined {
  */
 function describeOpaque(record: Record<string, unknown>): string {
   try {
-    return JSON.stringify(record).slice(0, 1000);
+    // Drop `details` at every depth, including values a `toJSON` produces —
+    // a top-level `delete` would miss both. The empty-string key is the root.
+    return JSON.stringify(record, (key, value: unknown) =>
+      key === 'details' ? undefined : value,
+    ).slice(0, 1000);
   } catch {
     return `[unserializable ${record.constructor?.name ?? 'object'}]`;
   }
