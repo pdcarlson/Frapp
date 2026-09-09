@@ -80,12 +80,17 @@ Optimistic send is required. Failed sends stay in the list with Retry/Delete. Cr
 may be optimistic; deleting/paying is pessimistic. Queued composers stay enabled offline and say
 so; queueless writes disable and say why.
 
-## 7. Do not "fix" the spec to match web drift
+## 7. One `deriveConnectionState` — do not fork a third
 
-`apps/web/lib/providers/network-provider.tsx` maps three consecutive health failures to `DEGRADED`
-and never reaches `OFFLINE` from probing. The spec says three failures is `OFFLINE`. Mobile
-follows the spec. Record web as drift; do not rewrite `resilience.md` to match it from a chat or
-mobile change.
+`@repo/validation` owns `deriveConnectionState` and `healthProbeIsReachable`
+(`spec/ui/resilience.md` § 2). Web's `NetworkProvider` and mobile's
+`lib/connection` feed that function; they do not each keep a copy. Three
+consecutive `/health` failures are `OFFLINE` on both surfaces. A 429 is
+reachability, not a failure. Presence gates on the *link*, not on
+`isOffline` — Realtime is a different service from `/health`.
+
+Do not "fix" the spec to match a local fork. If the rule is wrong, change
+the shared function and the spec together.
 
 ## Before you change realtime or connection code
 
