@@ -672,9 +672,14 @@ describe('NotificationService', () => {
         read_at: '2026-02-27T01:00:00.000Z',
       });
 
-      const result = await service.markNotificationRead('n-1', 'u-1');
+      const result = await service.markNotificationRead('n-1', 'u-1', 'ch-1');
 
-      expect(mockNotificationRepo.markRead).toHaveBeenCalledWith('n-1', 'u-1');
+      expect(mockNotificationRepo.findById).toHaveBeenCalledWith('n-1', 'ch-1');
+      expect(mockNotificationRepo.markRead).toHaveBeenCalledWith(
+        'n-1',
+        'u-1',
+        'ch-1',
+      );
       expect(result.read_at).toBe('2026-02-27T01:00:00.000Z');
     });
 
@@ -682,8 +687,9 @@ describe('NotificationService', () => {
       mockNotificationRepo.findById.mockResolvedValue(null);
 
       await expect(
-        service.markNotificationRead('n-999', 'u-1'),
+        service.markNotificationRead('n-999', 'u-1', 'ch-1'),
       ).rejects.toThrow(NotFoundException);
+      expect(mockNotificationRepo.markRead).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when notification belongs to another user', async () => {
@@ -692,9 +698,23 @@ describe('NotificationService', () => {
         user_id: 'u-2',
       });
 
-      await expect(service.markNotificationRead('n-1', 'u-1')).rejects.toThrow(
-        NotFoundException,
+      await expect(
+        service.markNotificationRead('n-1', 'u-1', 'ch-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockNotificationRepo.markRead).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when the row is in another chapter', async () => {
+      mockNotificationRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.markNotificationRead('n-1', 'u-1', 'ch-other'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockNotificationRepo.findById).toHaveBeenCalledWith(
+        'n-1',
+        'ch-other',
       );
+      expect(mockNotificationRepo.markRead).not.toHaveBeenCalled();
     });
   });
 
@@ -901,37 +921,55 @@ describe('NotificationService', () => {
     it('should clamp an omitted limit to the default page rather than an unbounded read', async () => {
       mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
 
-      const result = await service.listNotifications('u-1');
+      const result = await service.listNotifications('u-1', 'ch-1');
 
-      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith('u-1', {
-        limit: LIST_QUERY_LIMIT_DEFAULT,
-      });
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+        {
+          limit: LIST_QUERY_LIMIT_DEFAULT,
+        },
+      );
       expect(result).toEqual([baseNotification]);
     });
 
-    it('should list notifications for user', async () => {
+    it('should list notifications for user in the given chapter', async () => {
       mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
 
-      const result = await service.listNotifications('u-1', { limit: 20 });
-
-      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith('u-1', {
+      const result = await service.listNotifications('u-1', 'ch-1', {
         limit: 20,
       });
+
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+        {
+          limit: 20,
+        },
+      );
       expect(result).toEqual([baseNotification]);
     });
 
     it('should clamp a zero or oversized limit before the repository', async () => {
       mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
 
-      await service.listNotifications('u-1', { limit: 0 });
-      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith('u-1', {
-        limit: LIST_QUERY_LIMIT_MIN,
-      });
+      await service.listNotifications('u-1', 'ch-1', { limit: 0 });
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+        {
+          limit: LIST_QUERY_LIMIT_MIN,
+        },
+      );
 
-      await service.listNotifications('u-1', { limit: 999 });
-      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith('u-1', {
-        limit: LIST_QUERY_LIMIT_MAX,
-      });
+      await service.listNotifications('u-1', 'ch-1', { limit: 999 });
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+        {
+          limit: LIST_QUERY_LIMIT_MAX,
+        },
+      );
     });
   });
 });
