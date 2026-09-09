@@ -132,6 +132,7 @@ describe('InviteService', () => {
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
+      applySubscriptionWebhook: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };

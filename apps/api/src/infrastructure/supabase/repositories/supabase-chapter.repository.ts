@@ -6,6 +6,7 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import type { SubscriptionWebhookPatch } from '#domain/repositories/chapter.repository.interface';
 import { Chapter } from '#domain/entities/chapter.entity';
 
 @Injectable()
@@ -75,6 +76,24 @@ export class SupabaseChapterRepository implements IChapterRepository {
     const { data, error } = await query.select('*');
     if (error) throw error;
     return Array.isArray(data) && data.length > 0 ? data[0] : null;
+  }
+
+  async applySubscriptionWebhook(
+    chapterId: string,
+    eventAt: string,
+    patch: SubscriptionWebhookPatch,
+  ): Promise<Chapter | null> {
+    const { data, error } = await this.supabase.rpc(
+      'apply_subscription_webhook',
+      {
+        p_chapter_id: chapterId,
+        p_event_at: eventAt,
+        p_patch: patch,
+      },
+    );
+    if (error) throw error;
+    const rows = data ?? [];
+    return rows.length > 0 ? rows[0] : null;
   }
 
   async create(chapterData: TablesInsert<'chapters'>): Promise<Chapter> {
