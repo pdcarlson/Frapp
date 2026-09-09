@@ -53,7 +53,7 @@ describe('ReportController', () => {
     url: 'https://storage.example/signed',
     expires_at: '2026-08-05T15:00:00.000Z',
     expires_in: 3600,
-    filename: 'frapp-attendance-report-2026-08-05.pdf',
+    filename: 'signet-attendance-report-2026-08-05.pdf',
     storage_path: 'chapters/chapter-123/reports/attendance-2026-08-05-uuid.pdf',
     row_count: 1,
     truncated: false,
