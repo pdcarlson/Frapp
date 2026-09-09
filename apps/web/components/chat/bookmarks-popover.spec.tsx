@@ -113,6 +113,19 @@ describe("BookmarksPopover", () => {
     expect(screen.queryByText("Your bookmarks")).not.toBeInTheDocument();
   });
 
+  it("previews an empty-body bookmark as Message rather than a blank block", async () => {
+    // The bookmark projection has no `kind` / `attachment_count`, so a poll or
+    // file-only save cannot spell those nouns. "Message" is still a preview;
+    // raw `content` was an empty grey block (#1726).
+    renderPanel({
+      bookmarks: [entry({ message: message({ content: "" }) })],
+    });
+
+    await userEvent.click(screen.getByRole("button"));
+
+    expect(screen.getByText("Message")).toBeInTheDocument();
+  });
+
   it("keeps a bookmark whose message was deleted, showing the placeholder", async () => {
     // `spec/behavior/chat/README.md`: the bookmark "surfaces a '[message
     // deleted]' placeholder" rather than disappearing. This is the user-visible
