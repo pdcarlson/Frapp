@@ -4,12 +4,12 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Pins the install-deps retry AND dropping GitHub's unused chrome-stable
-// apt source. That source Hash-Sum-mismatches and reds required
+// Pins the install-deps retry AND dropping GitHub's unused chrome apt
+// source. That source Hash-Sum-mismatches and reds required
 // `web-responsive-floor` before the 375px suite runs. The watchdog will
 // not auto-requeue: the failed step is repo-defined. Do not skip apt
-// hash checks and do not pin Chrome apt. Retry alone is not enough when
-// the Chrome index stays wrong for hours.
+// hash checks and do not pin Chrome apt. The workflow step itself landed
+// on main with #2015; this lock is what keeps it from drifting.
 
 const WORKFLOWS = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -44,39 +44,23 @@ function jobBlock(text, jobId) {
   return lines.slice(start, end).join("\n");
 }
 
+function dropsChromeSourceAndRetries(text) {
+  return (
+    /google-chrome\.list/.test(text) &&
+    /for i in 1 2 3;/.test(text) &&
+    /\bsleep 20\b/.test(text) &&
+    text.includes(INSTALL_DEPS)
+  );
+}
+
 describe("playwright install-deps retries apt Hash Sum mismatch", () => {
   it("retries install-deps in web-responsive-floor and still runs the floor suite", () => {
     const text = readFileSync(CI_YML, "utf8");
     const block = jobBlock(text, "web-responsive-floor");
     assert.ok(block, "ci.yml must still define web-responsive-floor");
     assert.ok(
-      block.includes(INSTALL_DEPS),
-      "web-responsive-floor must still run playwright install-deps chromium",
-    );
-    assert.match(
-      block,
-      /while true;/,
-      "install-deps must sit in a retry loop, not a single shot",
-    );
-    assert.match(
-      block,
-      /\bmax=3\b/,
-      "retry bound must stay small and explicit",
-    );
-    assert.match(
-      block,
-      /\bsleep 20\b/,
-      "retries must back off so a mid-publish index can settle",
-    );
-    assert.match(
-      block,
-      /dl\.google\.com\/linux\/chrome-stable/,
-      "must drop the runner chrome-stable apt source Playwright does not use",
-    );
-    assert.match(
-      block,
-      /xargs --no-run-if-empty sudo rm -f/,
-      "chrome-stable lists must be removed, not left to fail apt-get update",
+      dropsChromeSourceAndRetries(block),
+      "web-responsive-floor must drop google-chrome.list and retry install-deps 3 times",
     );
     const depsAt = block.indexOf(INSTALL_DEPS);
     const floorAt = block.indexOf("npm run test:floor -w apps/web");
@@ -90,6 +74,11 @@ describe("playwright install-deps retries apt Hash Sum mismatch", () => {
       HASH_CHECK_DISABLE,
       "do not skip apt hash checks or pin Chrome apt",
     );
+    assert.doesNotMatch(
+      block,
+      /install-deps chromium\s*\|\|\s*true/,
+      "a failed install-deps must fail the job, not be swallowed",
+    );
   });
 
   it("retries every workflow install-deps, or has none besides the floor job", () => {
@@ -100,10 +89,7 @@ describe("playwright install-deps retries apt Hash Sum mismatch", () => {
       if (!text.includes(INSTALL_DEPS)) continue;
       hits.push(name);
       assert.ok(
-        /while true;/.test(text) &&
-          /\bmax=3\b/.test(text) &&
-          /dl\.google\.com\/linux\/chrome-stable/.test(text) &&
-          /xargs --no-run-if-empty sudo rm -f/.test(text),
+        dropsChromeSourceAndRetries(text),
         `${name} runs install-deps and must drop chrome-stable then retry`,
       );
     }

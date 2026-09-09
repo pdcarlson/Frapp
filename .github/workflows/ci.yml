@@ -1028,32 +1028,34 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
+      # GitHub-hosted Ubuntu images ship a google-chrome apt source.
+      # Chromium's OS deps are Ubuntu packages; that Google repo is unused
+      # here. When dl.google.com's InRelease and Packages.gz disagree,
+      # `apt-get update` inside install-deps fails with Hash Sum mismatch —
+      # same hashes across retries, so a 20s backoff does not absorb it.
+      # Drop the source so update only talks to Ubuntu/Microsoft mirrors.
+      # OS packages are not in ~/.cache/ms-playwright — do not skip this on
+      # a browser cache hit, and do not `|| true` the install.
       - name: Install Playwright OS deps
         run: |
-          # GitHub-hosted images add Google's chrome-stable apt source.
-          # Playwright Chromium OS libs come from Ubuntu, not that repo.
-          # When chrome-stable's InRelease and Packages.gz disagree, apt-get
-          # update fails the whole step (Hash Sum mismatch, exit 100) even
-          # though we never install Google Chrome. Drop the unused source —
-          # do not skip hash checks, do not pin Chrome apt. Bounded retry
-          # remains for real Ubuntu-mirror races. This job is the only
-          # install-deps consumer in .github/workflows.
-          grep -l 'dl.google.com/linux/chrome-stable' /etc/apt/sources.list.d/* 2>/dev/null \
-            | xargs --no-run-if-empty sudo rm -f
-          attempt=1
-          max=3
-          while true; do
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+            /etc/apt/sources.list.d/google-chrome.list.save \
+            /etc/apt/sources.list.d/google-chrome.sources \
+            /etc/apt/sources.list.d/google.list
+          for i in 1 2 3; do
             if npx playwright install-deps chromium; then
               exit 0
             fi
-            if [ "$attempt" -ge "$max" ]; then
-              echo "playwright install-deps failed after ${max} attempts" >&2
+            if [ "$i" -eq 3 ]; then
+              echo "::error::playwright install-deps failed after 3 attempts (see prior apt output)."
               exit 1
             fi
-            echo "playwright install-deps failed (attempt ${attempt}/${max}); retrying in 20s" >&2
-            attempt=$((attempt + 1))
+            echo "Attempt $i/3 failed — retrying in 20s..."
+            sudo rm -rf /var/lib/apt/lists/* || true
             sleep 20
           done
+          echo "::error::playwright install-deps retry loop ended without success."
+          exit 1
 
       - name: Install Playwright browser
         if: steps.pw-cache.outputs.cache-hit != 'true'
