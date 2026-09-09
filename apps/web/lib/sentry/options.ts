@@ -1,8 +1,9 @@
 import {
   createSentryScrubber,
   NO_PSEUDONYMS,
+  parseTracesSampleRate,
   type ScrubbableEvent,
-} from "@repo/validation";
+} from "@repo/observability";
 import type { BrowserOptions, NodeOptions } from "@sentry/nextjs";
 
 /**
@@ -111,8 +112,9 @@ export function buildWebSentryOptions(dsn: string): BrowserOptions {
   return {
     dsn,
     environment: environment(),
-    tracesSampleRate: Number(
-      process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE ?? "0.1",
+    tracesSampleRate: parseTracesSampleRate(
+      process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE,
+      { envName: "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE" },
     ),
     sendDefaultPii: false,
     beforeSend: (event: BrowserErrorEvent) => scrubError(event),
@@ -130,8 +132,9 @@ export function buildServerSentryOptions(dsn: string): NodeOptions {
   return {
     dsn,
     environment: environment(),
-    tracesSampleRate: Number(
-      process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE ?? "0.1",
+    tracesSampleRate: parseTracesSampleRate(
+      process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE,
+      { envName: "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE" },
     ),
     sendDefaultPii: false,
     beforeSend: (event: ServerErrorEvent) => scrubError(event),

@@ -1,3 +1,4 @@
+import { parseTracesSampleRate } from '@repo/observability';
 import type { NodeOptions } from '@sentry/nestjs';
 import { scrubSentryEvent, scrubSentryTransaction } from './sentry-scrubbing';
 
@@ -11,14 +12,17 @@ import { scrubSentryEvent, scrubSentryTransaction } from './sentry-scrubbing';
  * actually ships rather than a copy of it — a copy can drift silently, and a
  * test that asserts against its own literals proves nothing about production.
  *
- * The `tracesSampleRate` read below is unvalidated: a malformed value yields
- * `NaN`, which the SDK treats as "tracing enabled". Tracked in #904.
+ * `tracesSampleRate` is parsed by `@repo/observability`: a malformed, empty, or
+ * out-of-range value falls back to `0.1` and is logged at boot (#2040).
  */
 export function buildSentryOptions(dsn: string): NodeOptions {
   return {
     dsn,
     environment: process.env.NODE_ENV ?? 'development',
-    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? '0.1'),
+    tracesSampleRate: parseTracesSampleRate(
+      process.env.SENTRY_TRACES_SAMPLE_RATE,
+      { envName: 'SENTRY_TRACES_SAMPLE_RATE' },
+    ),
     /**
      * Under v10 this no longer means "collect nothing". It resolves to a
      * key-based filter: `authorization`, `cookie`, and anything else matching

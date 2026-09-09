@@ -54,6 +54,32 @@ describe("shipped options", () => {
     expect(buildServerSentryOptions(DSN).sendDefaultPii).toBe(false);
   });
 
+  it("falls back to 0.1 for malformed traces sample rates on both runtimes", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      vi.stubEnv("NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE", "0,1");
+      const { buildWebSentryOptions, buildServerSentryOptions } =
+        await loadOptions();
+
+      for (const options of [
+        buildWebSentryOptions(DSN),
+        buildServerSentryOptions(DSN),
+      ]) {
+        expect(Number.isFinite(options.tracesSampleRate)).toBe(true);
+        expect(options.tracesSampleRate).toBe(0.1);
+      }
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("reads a valid traces sample rate from env", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE", "0.25");
+    const { buildWebSentryOptions } = await loadOptions();
+    expect(buildWebSentryOptions(DSN).tracesSampleRate).toBe(0.25);
+  });
+
   it("wires BOTH scrubbing hooks on both runtimes", async () => {
     const { buildWebSentryOptions, buildServerSentryOptions } =
       await loadOptions();
