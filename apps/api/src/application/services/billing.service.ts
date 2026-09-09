@@ -24,6 +24,7 @@ import {
   CHAPTER_REPOSITORY,
   type IChapterRepository,
   type SubscriptionWebhookPatch,
+  type AppliedSubscriptionWebhook,
 } from '#domain/repositories/chapter.repository.interface';
 import type {
   Chapter,
@@ -680,21 +681,20 @@ export class BillingService {
       return;
     }
 
-    const statusChanged = newStatus !== chapter.subscription_status;
-
-    // FRA-109: maintain the past_due grace clock. Start it only on the
-    // into-past_due transition (idempotent across repeated past_due events);
-    // clear it whenever the chapter leaves past_due. Anchor the timestamp to
-    // the Stripe event creation time (Unix seconds), not processing time, so a
-    // delayed/retried webhook delivery can't extend the 3-day grace window.
-    // Absent `past_due_since` on a repeated past_due leaves the clock untouched.
+    // FRA-109: maintain the past_due grace clock. Always send a stamp on a
+    // past_due apply; the RPC ignores a non-null value when the *live* row is
+    // already past_due, so the clock starts only on a real into-past_due
+    // transition of the committed row — including when this handler's snapshot
+    // still thought it was repeating after a concurrent cancel cleared it
+    // (#1979). Clear the clock whenever the mapped status leaves past_due.
+    // Anchor the timestamp to Stripe `event.created` (Unix seconds), not
+    // processing time, so a delayed/retried delivery can't extend the 3-day
+    // grace window.
     const patch: SubscriptionWebhookPatch = {
       subscription_status: newStatus,
     };
     if (newStatus === 'past_due') {
-      if (chapter.subscription_status !== 'past_due') {
-        patch.past_due_since = this.eventCreatedAt(event);
-      }
+      patch.past_due_since = this.eventCreatedAt(event);
     } else {
       patch.past_due_since = null;
     }
@@ -707,10 +707,18 @@ export class BillingService {
     );
     if (!applied) return;
 
-    // AC #4: only notify the president when the status actually changes —
-    // and only when the CAS landed. A lost race must not alert.
-    if (statusChanged) {
-      await this.notifyChapterPresident(chapter.id, newStatus);
+    // Notify from the committed row (#1979): old ≠ new on the UPDATE, not
+    // snapshot ≠ newStatus. Two concurrent past_due events that both read
+    // active therefore produce one president alert. Lost CAS returned null
+    // above. Sequential repeated past_due has previous === applied. Missing
+    // previous (a test double, or a row the RPC did not decorate) does not
+    // notify — duplicate URGENT alerts are the failure this gate exists to
+    // prevent.
+    if (this.committedStatusChanged(applied)) {
+      await this.notifyChapterPresident(
+        chapter.id,
+        applied.subscription_status,
+      );
     }
 
     this.logger.log(
@@ -737,8 +745,6 @@ export class BillingService {
       return;
     }
 
-    const wasCanceled = chapter.subscription_status === 'canceled';
-
     const applied = await this.commitSubscriptionWebhook(
       chapter,
       event,
@@ -750,10 +756,12 @@ export class BillingService {
     );
     if (!applied) return;
 
-    // AC #4: only notify the president when the status actually changes —
-    // and only when the CAS landed. A lost race must not alert.
-    if (!wasCanceled) {
-      await this.notifyChapterPresident(chapter.id, 'canceled');
+    // Same committed-row gate as subscription.updated (#1979).
+    if (this.committedStatusChanged(applied)) {
+      await this.notifyChapterPresident(
+        chapter.id,
+        applied.subscription_status,
+      );
     }
 
     this.logger.log(`Chapter ${chapter.id} subscription canceled`);
@@ -1004,6 +1012,18 @@ export class BillingService {
     return null;
   }
 
+  /**
+   * President-notify keys off the RPC's pre-UPDATE status, not the handler
+   * snapshot (#1979). Absent `previous_subscription_status` is fail-closed:
+   * skip the alert rather than risk a duplicate URGENT.
+   */
+  private committedStatusChanged(applied: AppliedSubscriptionWebhook): boolean {
+    return (
+      applied.previous_subscription_status != null &&
+      applied.previous_subscription_status !== applied.subscription_status
+    );
+  }
+
   private async notifyChapterPresident(
     chapterId: string,
     newStatus: string,
@@ -1070,7 +1090,7 @@ export class BillingService {
     event: WebhookEvent,
     eventType: string,
     patch: SubscriptionWebhookPatch,
-  ): Promise<Chapter | null> {
+  ): Promise<AppliedSubscriptionWebhook | null> {
     const applied = await this.chapterRepo.applySubscriptionWebhook(
       chapter.id,
       this.eventCreatedAt(event),
