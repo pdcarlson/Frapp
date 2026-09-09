@@ -1,15 +1,40 @@
-# Claude Code cloud sandbox (primary dev environment)
+# Cloud sandbox (Cursor Cloud primary; Claude Code fallback)
 
-**Claude Code web sessions are the primary way Frapp is developed.** This is the single
-source of truth for how the sandbox is configured so the full local stack — Docker,
-local Supabase, and the NestJS API — comes up automatically each session. Laptop/local
-setup is the secondary path: [`LOCAL_DEV.md`](./LOCAL_DEV.md). Agent credentials live in
-[`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md); broader CI/agent infra is
-[`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md).
+**Cursor Cloud is the primary way Frapp is developed.** The public contract is
+[`.cursor/environment.json`](../../../.cursor/environment.json) (`install` /
+`start` → `scripts/cursor-agent-*.sh` → per-boot
+[`scripts/cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh)). Claude
+Code web sessions remain a documented fallback and share that bringup script.
+Laptop/local setup is the secondary path: [`LOCAL_DEV.md`](./LOCAL_DEV.md). Agent
+credentials live in [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md); broader
+CI/agent infra is [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md).
 
-## How Claude Code web environments work
+## Cursor Cloud (primary)
 
-A session runs in a fresh, ephemeral Anthropic VM (~4 vCPU / 16 GB / 30 GB disk). Key
+Cursor resolves environment configuration from `.cursor/environment.json` in the
+repository (schema: <https://cursor.com/schemas/environment.schema.json>; do not
+add `$schema`). `install` refreshes Docker/Node/npm and pre-pulls images;
+`start` applies runtime sysctls and runs `cloud-sandbox-up.sh`. Wait for
+`.cloud-sandbox-up.done` or stop on `.cloud-sandbox-up.failed`. Agent
+instructions: [`AGENTS.md` § Cursor Cloud specific instructions](../../../AGENTS.md#cursor-cloud-specific-instructions).
+
+Do **not** put secrets in `environment.json`. User secrets are unavailable during
+Builds; `DOCKERHUB_*` must be environment/team secrets. Do not trigger a
+speculative environment Build unless `install`/`start` actually changed.
+
+**Egress** is a dashboard decision, not a guessed copy of this file into JSON
+(#2025). The host list to apply is the one in [What's configured in the web
+UI](#whats-configured-in-the-web-ui) below (Claude's production-withholding
+allowlist). Do not invent hosts. Omit `vercel.com` unless the owner decides it
+belongs — that entry is unexplained Claude-dashboard drift.
+
+Cursor `sessionStart` hooks are **not** available on cloud agents; `start`
+already does bringup. Cursor Automations are **not live** until pasted and
+observed ([`ROUTINES.md`](../ci-cd/ROUTINES.md)).
+
+## How Claude Code web environments work (fallback)
+
+A Claude Code session runs in a fresh, ephemeral Anthropic VM (~4 vCPU / 16 GB / 30 GB disk). Key
 properties that shape everything below (see
 <https://code.claude.com/docs/en/claude-code-on-the-web>):
 
@@ -27,9 +52,12 @@ properties that shape everything below (see
 
 ## What's configured in the web UI
 
-Open the environment settings dialog and set:
+The list below is the **canonical production-withholding allowlist**, recorded from the
+Claude Code environment. Apply the same hosts on the Cursor Cloud environment dashboard
+(#2025) — do not invent extras. Claude UI path (fallback): open the environment settings
+dialog and set:
 
-**1. Setup script** field:
+**1. Setup script** field (Claude fallback only; Cursor uses `.cursor/environment.json` `install`):
 
 ```
 bash scripts/cloud-sandbox-setup.sh || true

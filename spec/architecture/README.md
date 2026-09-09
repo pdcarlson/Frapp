@@ -760,9 +760,11 @@ The live rules are the 2026-08-01 amendment (local [`/diff-review`](../../.claud
 
 Work tracking today is **GitHub Issues** — see amendment 5 and [`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md).
 
-**Read amendments 4–7 below with one caveat each way.** Amendments **5–7 are current**. Amendment **4 is not**: it predates the Linear retirement by five days, so it still calls the routines "Linear Issue Curator"/"Linear Triage", names `.claude/skills/linear-curator/` and `linear-triage/` (renamed since to `issue-curator/` and `issue-triage/`), and its "Unchanged and reaffirmed" bullet states *"issues are born in Linear, never GitHub"* — **which amendment 5 explicitly reverses**. What survives from amendment 4 is that the automations moved to Claude Code Routines and Cursor was retired. It also cites amendments 1–3 by number in four places; those are removed, and what they said is: (1) the original keyless MCP access model, (2) a `LINEAR_API_KEY`/GraphQL exception to it, and (3) that Linear's 250-issue cap bound on *active* (Started + Unstarted) issues rather than Backlog — a cap that no longer applies to anything, GitHub Issues having none.
+**Read amendments 4–8 below with one caveat each way.** Amendments **5–8 are current**. Amendment **4 is not as originally written**: it predates the Linear retirement by five days, so it still calls the routines "Linear Issue Curator"/"Linear Triage", names `.claude/skills/linear-curator/` and `linear-triage/` (renamed since to `issue-curator/` and `issue-triage/`), and its "Unchanged and reaffirmed" bullet states *"issues are born in Linear, never GitHub"* — **which amendment 5 explicitly reverses**. **Corrected 2026-09-09:** the other surviving claim — that automations live only on Claude Code Routines and Cursor was retired — is reversed by **amendment 8**. What remains historically true of amendment 4 is the 2026-08-03 move of scheduled agents onto Claude Code Routines (still the *observed* scheduled runtime until Automations are created and observed). It also cites amendments 1–3 by number in four places; those are removed, and what they said is: (1) the original keyless MCP access model, (2) a `LINEAR_API_KEY`/GraphQL exception to it, and (3) that Linear's 250-issue cap bound on *active* (Started + Unstarted) issues rather than Backlog — a cap that no longer applies to anything, GitHub Issues having none.
 
 #### ADR-16 amendment 4 — backlog automations move to Claude Code Routines; Cursor retired (2026-08-03)
+
+**Corrected 2026-09-09 (amendment 8):** "Cursor was retired" is no longer true. Cursor Cloud is Frapp's primary agent environment. Claude Code Routines remain the *observed* scheduled path until Cursor Automations are created and a run is observed. Linear stays retired (amendment 5) — this correction does not restore Linear or `LINEAR_API_KEY`. The rest of this amendment is the 2026-08-03 historical record of the move onto Claude Routines.
 
 The two backlog automations no longer run on Cursor. Development has consolidated on Claude Code, so
 the **Linear Issue Curator** and **Linear Triage** flows now run as scheduled **Claude Code
@@ -898,6 +900,25 @@ the tier" model convention: this daily routine runs on the top tier because edit
 unattended is where a weaker judgement is most expensive.
 
 - Runbook: [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md).
+
+#### ADR-16 amendment 8 — Cursor Cloud is the primary agent environment (2026-09-09)
+
+**Decision:** make **Cursor Cloud** Frapp's primary agent environment and retire Claude Code as *primary*. Claude files (`.claude/**`, `scripts/cloud-sandbox-up.sh`) stay in-tree as fallback until Automations are observed and a later teardown PR in the same epic (#2017, teardown #2028).
+
+This reverses amendment 4's "Cursor retired" operating model. It does **not** reverse amendment 5: GitHub Issues stays canonical; Linear stays retired; do not restore `LINEAR_API_KEY`.
+
+**What is true as of this amendment (verified against the repo and Cursor docs, 2026-09-09):**
+
+- Interactive work: Cursor Cloud. Public contract: [`.cursor/environment.json`](../../.cursor/environment.json) (`install`/`start` → `scripts/cursor-agent-*.sh` → shared `scripts/cloud-sandbox-up.sh`). Cursor Cloud loads `.claude/skills` natively — do not copy that tree into `.cursor/skills`. `/next` on Cursor is a thin wrapper at `.cursor/commands/next.md` pointing at `.claude/commands/next.md`.
+- Pre-push review gate on Cursor: [`.cursor/hooks.json`](../../.cursor/hooks.json) `beforeShellExecution` with `failClosed: true` (Cursor defaults fail-open on crash/timeout/invalid JSON). Decision logic remains `.claude/hooks/pre-push-review-gate.sh`; evidence marker `.cache/diff-review/<HEAD_SHA>`. Claude PreToolUse remains the fallback gate for Claude sessions. Runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+- Babysit on Cursor: `subscribe_github_pr` + `subscribe_github_ci`. The Claude `send_later` ban is Claude-specific (`send_later` still prompts). Cursor `subscribe_timer` is not `send_later` and is not banned.
+- Scheduled agents: **intended** runtime is Cursor Automations ([docs](https://cursor.com/docs/cloud-agent/automations)). Paste-ready specs live in [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). They are **not live** until a human pastes them (#2024) and a run is observed (#2027). Cron Automations default to no repository — every code-writing automation must attach this repo. Hygiene Scan must not be enabled without a healthy repo-backed stack. The Cursor Cloud MCP can read an automation (`get-automation`) and cannot create one.
+- Egress: production-withholding allowlist is a dashboard decision (#2025). Canonical host list stays in [`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md). Do not invent hosts; do not put secrets in `environment.json`.
+- Secrets: user secrets are unavailable during Cursor Builds; `DOCKERHUB_*` must be environment/team secrets.
+
+**Alternatives rejected:** a dual-path hold with Claude remaining primary while Cursor is "also supported" — the review-gate hole on Cursor is a fail-open push path, so Cursor must own the gate if it is the session that ships. Silent deletion of `.claude/**` in the same change — Cursor still loads `.claude/skills` and `start` still calls `cloud-sandbox-up.sh`. Restoring Linear.
+
+**Trigger to revisit:** Cursor Automations observed healthy (#2027) → teardown PR (#2028) may delete Claude-only surfaces without leaving a dual skill tree.
 
 ### ADR-17: Secret scanning — gitleaks pre-commit + CI gate (2026-06-03)
 

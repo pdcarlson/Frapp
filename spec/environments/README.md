@@ -226,8 +226,7 @@ angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus fo
 defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
 `.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
-**Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
-`.claude/hooks/pre-push-review-gate.sh` hook gates `git push` on *evidence* that a review ran for the
+**Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment; Cursor adapter ADR-16 amendment 8). Cursor Cloud: [`.cursor/hooks.json`](../../.cursor/hooks.json) `beforeShellExecution` (`failClosed: true`). Claude fallback: `.claude/hooks/pre-push-review-gate.sh`. Both gate `git push` on *evidence* that a review ran for the
 current HEAD — evidence, not an attempt, so retrying a denied push does not satisfy it. A push that
 publishes no objects (a dry run, or a `--delete` ref deletion) is exempt, having no diff to review.
 Which review to run, how the evidence is recorded, and the livelock release are the runbook's to
@@ -454,10 +453,18 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Every migration should have a documented rollback strategy in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.
 - See `docs/internal/ops/DEPLOYMENT.md` for the full migration deployment workflow.
 
-## Claude Code cloud sandbox (primary dev environment)
+## Cursor Cloud (primary) and Claude Code fallback
 
-Frapp is primarily developed in Claude Code web sessions. Each runs in a fresh, ephemeral VM; a setup script pre-caches Docker images and the SessionStart hook brings up Docker + local Supabase + the API in the background, generating `apps/api/.env.local` so the API boots without Infisical. Full configuration (setup script, env vars, network policy) and failure troubleshooting are in [`docs/internal/environment/CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md).
+Frapp is primarily developed in **Cursor Cloud**. The public contract is
+[`.cursor/environment.json`](../../.cursor/environment.json); per-boot bringup is
+`scripts/cloud-sandbox-up.sh`. Claude Code web remains a fallback and shares that
+script. Full configuration and failure troubleshooting:
+[`docs/internal/environment/CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md).
+Agent instructions: [`AGENTS.md`](../../AGENTS.md) § Cursor Cloud specific instructions.
 
-## Claude Code Routines environment
+## Scheduled backlog agents
 
-The scheduled backlog agents run as **Claude Code Routines**: each firing starts a fresh Claude Code web session in the same environment as interactive cloud sessions (repo cloned from `main`, the SessionStart hook and injected MCP servers included), so no separate sandbox config exists. The routines are configured in the Claude Code UI (config-as-code isn't supported), so the canonical prompts and every setting are version-controlled in [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). There are **five** routines — three daily, two weekly. Three write to **GitHub Issues** via the **GitHub MCP** the environment pre-approves (keyless; Linear was retired 2026-08-08, see ADR-16 amendment 5); the fourth writes docs; the fifth writes product code. None write to Linear, and only the fifth edits product code (per `ROUTINES.md`): the **Issue Curator** ([`.claude/skills/issue-curator/SKILL.md`](../../.claude/skills/issue-curator/SKILL.md)) maintains + files `suggestion` issues into the `triage` inbox, **Issue Triage** ([`.claude/skills/issue-triage/SKILL.md`](../../.claude/skills/issue-triage/SKILL.md)) prioritizes/buckets/promotes ~1h later, and the weekly **PR Follow-ups** harvester ([`.claude/skills/pr-followups/SKILL.md`](../../.claude/skills/pr-followups/SKILL.md)) sweeps human-action/deferred items from PR threads into the inbox. Weekly on Wednesday, **Docs Upkeep** ([`.claude/skills/docs-upkeep/SKILL.md`](../../.claude/skills/docs-upkeep/SKILL.md)) sweeps a rotating fifth of the docs corpus and fixes stale claims in a docs-only PR — the first routine that repairs rather than files (ADR-16 amendment 6). Daily at 06:00 ET, before the others, **Hygiene Scan** ([`.claude/skills/hygiene-scan/SKILL.md`](../../.claude/skills/hygiene-scan/SKILL.md)) grounds itself in the engineering standards and gates, reads a rotating fifth of the codebase whole, and fixes one verified hygiene theme in a product-code PR a human merges — the only routine allowed to edit product code (ADR-16 amendment 7).
+Intended runtime is **Cursor Automations**; they are **not live** until pasted and observed.
+Claude Code Routines remain the current observed scheduled path until then. Canonical
+prompts, cron, and enable notes: [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md).
+Do not restate liveness here. Linear stays retired (ADR-16 amendment 5).

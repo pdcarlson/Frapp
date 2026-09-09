@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
-# Cursor Cloud Agent INSTALL phase. Idempotent. Provisions the Cursor VM to run
-# Frapp's Docker-based local stack, installs Node 20 + npm deps, builds the shared
-# workspace `dist/` outputs, and pre-pulls the Supabase images so per-session `start`
-# is fast. When Cursor "builds" are enabled this runs once and its filesystem becomes
-# the boot snapshot; per-boot work belongs in scripts/cursor-agent-start.sh instead.
+# Cursor Cloud Agent INSTALL phase. This script is part of Cursor's public
+# contract (`.cursor/environment.json` `install`). Idempotent. Provisions the
+# Cursor VM to run Frapp's Docker-based local stack, installs Node 20 + npm deps,
+# builds the shared workspace `dist/` outputs, and pre-pulls the Supabase images
+# so per-session `start` is fast. When Cursor "builds" are enabled this runs once
+# and its filesystem becomes the boot snapshot; per-boot work belongs in
+# scripts/cursor-agent-start.sh instead.
 #
-# This is the Cursor counterpart to scripts/cloud-sandbox-setup.sh (the Claude Code web
-# sandbox setup). It deliberately does NOT duplicate that script's Supabase logic — it
-# sources the same scripts/lib/cloud-sandbox-common.sh helpers (cs_ensure_docker_daemon,
+# Shared helpers live in scripts/lib/cloud-sandbox-common.sh (cs_ensure_docker_daemon,
 # cs_docker_login_if_creds, cs_supabase, cs_retry) so the pinned CLI + retry behaviour
-# stay in one place. See docs/internal/environment/CLOUD_SANDBOX.md for the model.
+# stay in one place. scripts/cloud-sandbox-setup.sh is the Claude Code *fallback*
+# setup counterpart — do not treat it as the primary contract. See
+# docs/internal/environment/CLOUD_SANDBOX.md. Never put secrets in environment.json;
+# DOCKERHUB_* are environment/team secrets (user secrets are unavailable during Builds).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

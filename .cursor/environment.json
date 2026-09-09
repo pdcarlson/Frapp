@@ -1,3 +1,14 @@
+/*
+ * Cursor Cloud public contract for Frapp. Cursor owns this file (schema:
+ * https://cursor.com/schemas/environment.schema.json — do not add $schema;
+ * unevaluatedProperties is false).
+ *
+ * install / start are scripts/cursor-agent-*.sh. start delegates per-boot
+ * bringup to scripts/cloud-sandbox-up.sh (shared with the Claude Code fallback).
+ * Do not put secrets here. User secrets are unavailable during Builds;
+ * DOCKERHUB_* must be environment/team secrets. Egress is a dashboard decision
+ * (GitHub #2025), not copied into this file.
+ */
 {
   "name": "Frapp",
   "user": "ubuntu",
