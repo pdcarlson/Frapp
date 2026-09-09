@@ -148,4 +148,8 @@ export function configureApp(app: INestApplication): void {
   app.useGlobalInterceptors(new LoggingInterceptor());
 
   app.useGlobalFilters(new AllExceptionsFilter());
+
+  // Nest calls AnalyticsModule.onModuleDestroy so the PostHog client can
+  // flush/retry/drop on SIGTERM. Without this, Render SIGTERM skips it.
+  app.enableShutdownHooks();
 }

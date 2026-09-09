@@ -1,6 +1,11 @@
 import { CallHandler, ExecutionContext, Logger } from '@nestjs/common';
 import { of, throwError } from 'rxjs';
 import { forwardedShape, LoggingInterceptor } from './logging.interceptor';
+import { enqueueSanitizedLog } from '../../infrastructure/analytics/posthog-runtime';
+
+jest.mock('../../infrastructure/analytics/posthog-runtime', () => ({
+  enqueueSanitizedLog: jest.fn(),
+}));
 
 describe('forwardedShape', () => {
   const shape = (
@@ -86,6 +91,7 @@ describe('LoggingInterceptor', () => {
   beforeEach(() => {
     interceptor = new LoggingInterceptor();
     logged = [];
+    jest.clearAllMocks();
     jest
       .spyOn(Logger.prototype, 'log')
       .mockImplementation((message: unknown) => {
@@ -164,5 +170,35 @@ describe('LoggingInterceptor', () => {
     expect(logged[0]).not.toContain('203.0.113.7');
     expect(logged[0]).not.toContain('198.51.100.4');
     expect(logged[0]).not.toContain('x-forwarded-for');
+  });
+
+  it('keeps raw user/chapter ids on stdout and hashes them for PostHog', async () => {
+    const originalSalt = process.env.ANALYTICS_HMAC_SALT;
+    process.env.ANALYTICS_HMAC_SALT = 'interceptor-spec-salt';
+    const userId = '3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b';
+    const chapterId = '9e8d7c6b-5a49-4382-b716-05f4e3d2c1b0';
+
+    await run(
+      context({
+        ...request,
+        appUser: { id: userId },
+        chapterId,
+      }),
+      { handle: () => of({ ok: true }) },
+    );
+
+    expect(logged[0]).toContain(userId);
+    expect(logged[0]).toContain(chapterId);
+    expect(enqueueSanitizedLog).toHaveBeenCalled();
+    const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0] as [
+      { attributes: Record<string, unknown> },
+    ];
+    expect(record.attributes.user_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(record.attributes.user_hash).not.toBe(userId);
+    expect(record.attributes.chapter_hash).not.toBe(chapterId);
+    expect(JSON.stringify(record)).not.toContain(userId);
+
+    if (originalSalt === undefined) delete process.env.ANALYTICS_HMAC_SALT;
+    else process.env.ANALYTICS_HMAC_SALT = originalSalt;
   });
 });
