@@ -753,6 +753,51 @@ describe('NotificationService', () => {
       warn.mockRestore();
     });
 
+    it('skips a failed preference chunk and still delivers the rest', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      const users = Array.from({ length: 150 }, (_, i) => `u-${i}`);
+      mockMemberRepo.findByChapter.mockResolvedValue(users.map(member));
+      mockPreferenceRepo.findByUsersChapterCategory
+        .mockRejectedValueOnce(new Error('prefs failed'))
+        .mockResolvedValue([]);
+      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
+      mockNotificationRepo.createMany.mockImplementation(async (rows) =>
+        rows.map((row, index) => ({
+          ...baseNotification,
+          id: `n-${index}`,
+          user_id: row.user_id ?? `missing-${index}`,
+        })),
+      );
+      mockPushTokenRepo.findByUserIds.mockResolvedValue(
+        users.slice(100).map((userId) => ({
+          ...basePushToken,
+          id: `pt-${userId}`,
+          user_id: userId,
+        })),
+      );
+
+      await service.notifyChapter('ch-1', {
+        title: 'Test',
+        body: 'Body',
+        category: 'chat',
+      });
+
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith(
+        users
+          .slice(100)
+          .map((userId) => expect.objectContaining({ user_id: userId })),
+      );
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(50);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('preference lookup failed for 100 of 150'),
+      );
+
+      warn.mockRestore();
+    });
+
     it('keeps query count bounded for a 200-member chapter', async () => {
       const users = Array.from({ length: 200 }, (_, i) => `u-${i}`);
       mockMemberRepo.findByChapter.mockResolvedValue(users.map(member));
@@ -782,13 +827,13 @@ describe('NotificationService', () => {
       expect(mockMemberRepo.findByChapter).toHaveBeenCalledTimes(1);
       expect(
         mockPreferenceRepo.findByUsersChapterCategory,
-      ).toHaveBeenCalledTimes(1);
+      ).toHaveBeenCalledTimes(2);
       expect(
         mockPreferenceRepo.findByUsersChapterCategory,
-      ).toHaveBeenCalledWith(users, 'ch-1', 'chat');
-      expect(mockSettingsRepo.findByUserIds).toHaveBeenCalledTimes(1);
+      ).toHaveBeenCalledWith(users.slice(0, 100), 'ch-1', 'chat');
+      expect(mockSettingsRepo.findByUserIds).toHaveBeenCalledTimes(2);
       expect(mockNotificationRepo.createMany).toHaveBeenCalledTimes(2);
-      expect(mockPushTokenRepo.findByUserIds).toHaveBeenCalledTimes(1);
+      expect(mockPushTokenRepo.findByUserIds).toHaveBeenCalledTimes(2);
       expect(mockNotificationRepo.create).not.toHaveBeenCalled();
       expect(
         mockPreferenceRepo.findByUserChapterCategory,

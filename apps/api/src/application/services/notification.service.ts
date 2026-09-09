@@ -24,7 +24,7 @@ import type {
   UserSettings,
 } from '#domain/entities/notification.entity';
 import { clampListLimit } from '#domain/constants/list-query-limits';
-import { ID_CHUNK_SIZE } from '#domain/utils/chunk-ids';
+import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
 
 /** Cap on how much of an offending value reaches a log line. */
 const LOGGED_VALUE_MAX_LENGTH = 64;
@@ -183,28 +183,41 @@ export class NotificationService {
 
     let eligible = userIds;
     if (priority !== 'URGENT') {
-      const prefs = await this.preferenceRepo.findByUsersChapterCategory(
+      const { rows: prefs, failedIds } = await this.loadInChunks(
         userIds,
+        (chunk) =>
+          this.preferenceRepo.findByUsersChapterCategory(
+            chunk,
+            chapterId,
+            category,
+          ),
+        'preference lookup',
         chapterId,
-        category,
       );
+      const skipped = new Set(failedIds);
       const disabled = new Set(
         prefs.filter((pref) => !pref.is_enabled).map((pref) => pref.user_id),
       );
-      eligible = userIds.filter((id) => !disabled.has(id));
+      eligible = userIds.filter((id) => !disabled.has(id) && !skipped.has(id));
       if (eligible.length === 0) return;
     }
 
     // URGENT ignores quiet hours, so the settings read is only for NORMAL /
     // SILENT payloads. `notifyUser` still reads settings for URGENT and then
     // skips the window — this path just does not pay for that lookup.
-    const settingsRows =
-      priority === 'URGENT'
-        ? []
-        : await this.settingsRepo.findByUserIds(eligible);
-    const settingsByUser = new Map(
-      settingsRows.map((row) => [row.user_id, row]),
-    );
+    let settingsByUser = new Map<string, UserSettings>();
+    if (priority !== 'URGENT') {
+      const { rows: settingsRows, failedIds } = await this.loadInChunks(
+        eligible,
+        (chunk) => this.settingsRepo.findByUserIds(chunk),
+        'settings lookup',
+        chapterId,
+      );
+      const skipped = new Set(failedIds);
+      eligible = eligible.filter((id) => !skipped.has(id));
+      if (eligible.length === 0) return;
+      settingsByUser = new Map(settingsRows.map((row) => [row.user_id, row]));
+    }
 
     const recipients: {
       userId: string;
@@ -253,16 +266,12 @@ export class NotificationService {
     if (created.length === 0) return;
 
     const createdUserIds = created.map((notification) => notification.user_id);
-    let tokens: PushToken[] = [];
-    try {
-      tokens = await this.pushTokenRepo.findByUserIds(createdUserIds);
-    } catch (err) {
-      this.logger.warn(
-        `Chapter notify token lookup failed for ${chapterId}`,
-        err,
-      );
-      return;
-    }
+    const { rows: tokens } = await this.loadInChunks(
+      createdUserIds,
+      (chunk) => this.pushTokenRepo.findByUserIds(chunk),
+      'token lookup',
+      chapterId,
+    );
 
     const tokensByUser = new Map<string, PushToken[]>();
     for (const token of tokens) {
@@ -312,6 +321,41 @@ export class NotificationService {
         `Chapter notify push failed for ${pushFailures} of ${created.length} recipients in ${chapterId}`,
       );
     }
+  }
+
+  /**
+   * One chunked `in (...)` lookup that isolates a failed 100-id page so the
+   * rest of a chapter-wide send still runs. A rejection used to be per member
+   * (and `notifyChapter` swallowed it); failing the whole roster because one
+   * page 414'd or timed out would be a step backwards.
+   */
+  private async loadInChunks<T>(
+    ids: string[],
+    load: (chunk: string[]) => Promise<T[]>,
+    label: string,
+    chapterId: string,
+  ): Promise<{ rows: T[]; failedIds: string[] }> {
+    if (ids.length === 0) return { rows: [], failedIds: [] };
+
+    const rows: T[] = [];
+    const failedIds: string[] = [];
+    for (const chunk of chunkIds(ids)) {
+      try {
+        rows.push(...(await load(chunk)));
+      } catch (err) {
+        failedIds.push(...chunk);
+        this.logger.warn(
+          `Chapter notify ${label} failed for ${chunk.length} recipients in ${chapterId}`,
+          err,
+        );
+      }
+    }
+    if (failedIds.length > 0) {
+      this.logger.warn(
+        `Chapter notify ${label} failed for ${failedIds.length} of ${ids.length} recipients in ${chapterId}`,
+      );
+    }
+    return { rows, failedIds };
   }
 
   private isInQuietHours(
