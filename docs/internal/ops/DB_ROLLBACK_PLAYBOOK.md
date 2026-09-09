@@ -612,6 +612,27 @@ After any rollback event:
   `points` key in its `diff`, so the last known value per chapter can be read back
   out of the audit trail.
 
+## Rollback the points ledger origin channel
+
+* **Migration**: `20260909040000_point_transactions_channel_id.sql`
+* **Action**:
+  ```sql
+  ALTER TABLE point_transactions
+    DROP CONSTRAINT IF EXISTS point_transactions_channel_id_requires_key;
+  ALTER TABLE point_transactions DROP COLUMN IF EXISTS channel_id;
+  ```
+  Dropping the column also drops the FK to `chat_channels`.
+* **Order**: **roll the API back first, then the migration.** A build from
+  after this migration names `channel_id` in the `adjustPoints` insert payload,
+  so it errors once the column is gone. An older build never mentions the
+  column and is unaffected. Reverting the schema first breaks every manual
+  point adjustment until the deploy catches up — dashboard included — because
+  the insert carries the column name whether or not a channel was supplied.
+* **Data caveat**: rolling back does not corrupt the ledger — the column is
+  metadata about *where* a chat card was meant to land, never part of the
+  balance — but it restores the unhealable-lost-card exposure of #1734 for as
+  long as it is off. Origin channels recorded in the meantime are lost.
+
 ## Rollback the points ledger idempotency key
 
 * **Migration**: `20260905020000_point_transactions_client_message_id.sql`
