@@ -36,7 +36,7 @@ import {
   getNetworkStateAsync,
   type NetworkState as ExpoNetworkState,
 } from "expo-network";
-import { normalizeApiBaseUrl } from "@repo/api-sdk";
+import { normalizeApiBaseUrl, withRequestIdInit } from "@repo/api-sdk";
 import { healthProbeIsReachable } from "@repo/validation";
 import { deriveConnectionState, type ConnectionState } from "./state";
 
@@ -161,10 +161,13 @@ export function createConnectionMonitor(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
     try {
-      const response = await deps.fetch(url, {
-        method: "GET",
-        signal: controller.signal,
-      });
+      const response = await deps.fetch(
+        url,
+        withRequestIdInit({
+          method: "GET",
+          signal: controller.signal,
+        }),
+      );
       if (generation !== probeGeneration) return;
       if (healthProbeIsReachable(response)) consecutiveFailures = 0;
       else consecutiveFailures += 1;
