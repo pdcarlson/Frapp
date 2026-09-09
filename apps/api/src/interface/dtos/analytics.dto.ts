@@ -76,12 +76,20 @@ export class IdentityResponseDto {
     nullable: true,
     type: String,
     description:
-      'Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured.',
+      'Pseudonymous analytics id: 64 lowercase hex HMAC of the user id, or null when analytics is unconfigured. Clients must not compute this; the salt is API-only.',
   })
   distinct_id: string | null;
 
   @ApiProperty({ description: 'Whether analytics is enabled for this caller.' })
   enabled: boolean;
+
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`), otherwise null. Same helper as analytics events. Clients must not compute this.',
+  })
+  chapter_group_id: string | null;
 }
 
 export class TrackEventResponseDto {

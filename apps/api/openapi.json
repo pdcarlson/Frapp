@@ -191,7 +191,7 @@
             "bearer": []
           }
         ],
-        "summary": "Get the caller's pseudonymous analytics id (HMAC of user id). Lets the client attribute events without ever holding the salt.",
+        "summary": "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter is in context). Lets the client attribute events without ever holding the salt.",
         "tags": [
           "Analytics"
         ]
@@ -6928,16 +6928,22 @@
           "distinct_id": {
             "type": "string",
             "nullable": true,
-            "description": "Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured."
+            "description": "Pseudonymous analytics id: 64 lowercase hex HMAC of the user id, or null when analytics is unconfigured. Clients must not compute this; the salt is API-only."
           },
           "enabled": {
             "type": "boolean",
             "description": "Whether analytics is enabled for this caller."
+          },
+          "chapter_group_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`), otherwise null. Same helper as analytics events. Clients must not compute this."
           }
         },
         "required": [
           "distinct_id",
-          "enabled"
+          "enabled",
+          "chapter_group_id"
         ]
       },
       "TrackEventDto": {
