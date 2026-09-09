@@ -7,6 +7,7 @@ import {
   editMessage,
   hydrateOutboxIntoCache,
   markLocalRecorded,
+  POSTED_OUTBOX_WARNING,
   react,
   retryOutboxRow,
   sendMessage,
@@ -20,7 +21,7 @@ import { persistRecordedNotice, readRecordedNotices } from "./recorded-notices";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import { assertContentFreeProperties } from "@repo/validation";
 import { chatMessagesKey, type ChannelCache } from "./types";
-import { emptyCache, mergeServerRows } from "./cache";
+import { emptyCache, mergeServerRows, selectMessages } from "./cache";
 
 /**
  * Covers #999: a rejected react/unreact must reach `ctx.onError`, the
@@ -916,6 +917,44 @@ describe("hydrateOutboxIntoCache — recorded notices (#1789)", () => {
     expect(row?._replay).toBeUndefined();
     expect(row?._error).toMatch(/don't run this command again/i);
   });
+
+  it("does not upsert a pending twin next to an already-confirmed server row (#1718)", async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "msg-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "hi",
+          kind: "text",
+          client_message_id: "c-1",
+          created_at: new Date().toISOString(),
+        },
+      ]),
+    );
+    const outbox: OutboxStore = {
+      ...emptyOutbox(),
+      listForChannel: vi.fn().mockResolvedValue([
+        {
+          clientId: "c-1",
+          channelId: "chan-1",
+          body: "hi",
+          attempts: 0,
+          status: "queued",
+          queuedAt: Date.now(),
+        },
+      ]),
+    };
+    await hydrateOutboxIntoCache(buildCtx({ queryClient, outbox }), "chan-1");
+    const rows = selectMessages(
+      queryClient.getQueryData(chatMessagesKey("chan-1")),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe("msg-1");
+    expect(rows[0]?._status).toBe("confirmed");
+  });
 });
 
 describe("markLocalRecorded (#1789)", () => {
@@ -954,5 +993,218 @@ describe("markLocalRecorded (#1789)", () => {
         content: "Granting 5 points…",
       }),
     ]);
+  });
+});
+
+/**
+ * #1718 — `clearDraft` / `enqueue` used to sit outside `sendMessage`'s try,
+ * so a Dexie reject left a pending optimistic row and a thrown promise.
+ * `dequeue` after a successful POST sat inside that try, so the same fault
+ * then `markFailed` / `bumpAttempt`'d a message the server already accepted.
+ */
+describe("sendMessage — outbox faults (#1718)", () => {
+  function buildOutbox(overrides: Partial<OutboxStore> = {}): OutboxStore {
+    return {
+      enqueue: vi.fn().mockImplementation(
+        async (row): Promise<OutboxRow> => ({
+          attempts: 0,
+          status: "queued",
+          queuedAt: Date.now(),
+          ...row,
+        }),
+      ),
+      dequeue: vi.fn().mockResolvedValue(undefined),
+      requeue: vi.fn().mockResolvedValue(undefined),
+      markFailed: vi.fn().mockResolvedValue(undefined),
+      bumpAttempt: vi.fn().mockResolvedValue(undefined),
+      listQueued: vi.fn().mockResolvedValue([]),
+      listForChannel: vi.fn().mockResolvedValue([]),
+      clearDraft: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    };
+  }
+
+  function onlySendRow(ctx: ChatActionContext) {
+    const cache = ctx.queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("chan-1"),
+    );
+    const rows = selectMessages(cache);
+    expect(rows).toHaveLength(1);
+    return rows[0]!;
+  }
+
+  it("removes the optimistic row and rethrows when enqueue rejects", async () => {
+    const apiClient = { POST: vi.fn() };
+    const outbox = buildOutbox({
+      enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
+    });
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox,
+    });
+
+    await expect(
+      sendMessage(ctx, { channelId: "chan-1", content: "hi" }),
+    ).rejects.toThrow(/QuotaExceededError/);
+
+    expect(apiClient.POST).not.toHaveBeenCalled();
+    expect(
+      selectMessages(
+        ctx.queryClient.getQueryData(chatMessagesKey("chan-1")),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("still posts when clearDraft rejects", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: {
+          message: {
+            id: "msg-1",
+            channel_id: "chan-1",
+            sender_id: "user-1",
+            content: "hi",
+            kind: "text",
+            client_message_id: "c-draft",
+            created_at: new Date().toISOString(),
+          },
+        },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const outbox = buildOutbox({
+      clearDraft: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
+    });
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox,
+    });
+
+    await expect(
+      sendMessage(ctx, {
+        channelId: "chan-1",
+        content: "hi",
+        clientMessageId: "c-draft",
+      }),
+    ).resolves.toEqual({});
+
+    expect(apiClient.POST).toHaveBeenCalledTimes(1);
+    expect(onlySendRow(ctx)._status).toBe("confirmed");
+  });
+
+  it("resolves with a warning, not a failed row, when POST succeeded and dequeue rejects", async () => {
+    const apiClient = {
+      POST: vi.fn().mockImplementation(
+        async (
+          _path: string,
+          init: { body: { client_message_id: string; content: string } },
+        ) => ({
+          data: {
+            message: {
+              id: "msg-1",
+              channel_id: "chan-1",
+              sender_id: "user-1",
+              content: init.body.content,
+              kind: "text",
+              client_message_id: init.body.client_message_id,
+              created_at: new Date().toISOString(),
+            },
+          },
+          error: null,
+          response: { status: 201 },
+        }),
+      ),
+    };
+    const outbox = buildOutbox({
+      dequeue: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
+    });
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox,
+    });
+
+    await expect(
+      sendMessage(ctx, { channelId: "chan-1", content: "hi" }),
+    ).resolves.toEqual({ warning: POSTED_OUTBOX_WARNING });
+
+    expect(onlySendRow(ctx)._status).toBe("confirmed");
+    expect(outbox.markFailed).not.toHaveBeenCalled();
+    expect(outbox.bumpAttempt).not.toHaveBeenCalled();
+  });
+
+  it("does not POST again when the cache already has the confirmed row", async () => {
+    const apiClient = { POST: vi.fn() };
+    const outbox = buildOutbox({
+      dequeue: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
+    });
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox,
+    });
+    ctx.queryClient.setQueryData(
+      chatMessagesKey("chan-1"),
+      mergeServerRows(emptyCache(), [
+        {
+          id: "msg-1",
+          channel_id: "chan-1",
+          sender_id: "user-1",
+          content: "hi",
+          kind: "text",
+          client_message_id: "c-1",
+          created_at: new Date().toISOString(),
+        },
+      ]),
+    );
+
+    await expect(
+      sendMessage(ctx, {
+        channelId: "chan-1",
+        content: "hi",
+        clientMessageId: "c-1",
+      }),
+    ).resolves.toEqual({ warning: POSTED_OUTBOX_WARNING });
+
+    expect(apiClient.POST).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+    expect(onlySendRow(ctx)._status).toBe("confirmed");
+    expect(onlySendRow(ctx).id).toBe("msg-1");
+  });
+
+  it("does not let a throwing track sink turn a posted send into a rejection", async () => {
+    const apiClient = {
+      POST: vi.fn().mockResolvedValue({
+        data: {
+          message: {
+            id: "msg-1",
+            channel_id: "chan-1",
+            sender_id: "user-1",
+            content: "hi",
+            kind: "text",
+            client_message_id: "c-track",
+            created_at: new Date().toISOString(),
+          },
+        },
+        error: null,
+        response: { status: 201 },
+      }),
+    };
+    const ctx = buildCtx({
+      apiClient: apiClient as unknown as ChatActionContext["apiClient"],
+      outbox: buildOutbox(),
+      track: () => {
+        throw new Error("analytics down");
+      },
+    });
+
+    await expect(
+      sendMessage(ctx, {
+        channelId: "chan-1",
+        content: "hi",
+        clientMessageId: "c-track",
+      }),
+    ).resolves.toEqual({});
+
+    expect(onlySendRow(ctx)._status).toBe("confirmed");
   });
 });
