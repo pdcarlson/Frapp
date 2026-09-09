@@ -15,10 +15,11 @@
 # Steps 4 and 5 are in that order deliberately, and this list had them backwards until
 # #1156 — see the comment above the ACL repair for why the env write has to come first.
 #
-# Auto-launched in the background by .claude/hooks/session-start.sh (gated on the
-# /etc/frapp-cloud-sandbox marker or FRAPP_CLOUD_SANDBOX=1), or run directly. Writes a
-# .cloud-sandbox-up.done / .cloud-sandbox-up.failed sentinel at repo root so callers can
-# poll completion. See docs/internal/environment/CLOUD_SANDBOX.md.
+# Cursor `start` invokes this via scripts/cursor-cloud-up.sh. Claude fallback
+# SessionStart still auto-launches it in the background (.claude/hooks/session-start.sh,
+# gated on /etc/frapp-cloud-sandbox or FRAPP_CLOUD_SANDBOX=1). Or run directly.
+# Writes .cloud-sandbox-up.done / .cloud-sandbox-up.failed at repo root so callers
+# can poll completion. See docs/internal/environment/CLOUD_SANDBOX.md.
 set -uo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"

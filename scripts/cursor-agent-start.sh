@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# Cursor Cloud Agent START phase. Runs on every boot. Applies the kernel settings the
-# Docker networking needs (these are runtime-only and are NOT captured by the build
-# snapshot), then delegates to the repo's canonical per-session bringup
-# (scripts/cloud-sandbox-up.sh): start dockerd, `supabase start`, `db push --local`,
-# write apps/api/.env.local + apps/web/.env.local, repair Postgres ACLs, seed, verify deps.
+# Cursor Cloud Agent START phase. Public contract: `.cursor/environment.json`
+# `start`. Thin wrapper: apply kernel settings Docker networking needs
+# (runtime-only; a build snapshot does not capture them), then run the
+# Cursor-owned per-boot entrypoint scripts/cursor-cloud-up.sh.
 #
-# It must tolerate restarts and return. cloud-sandbox-up.sh is idempotent and returns after
-# writing .cloud-sandbox-up.done (success) or .cloud-sandbox-up.failed (error); this script
-# propagates that outcome as its exit status.
+# `start` must start dockerd, bring Supabase up, write env files, then return.
+# Dev servers belong in terminals, not here.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,9 +23,10 @@ sudo sysctl -w net.bridge.bridge-nf-call-iptables=0 net.bridge.bridge-nf-call-ip
 sudo sysctl -w net.ipv6.conf.all.disable_ipv6=0 net.ipv6.conf.default.disable_ipv6=0 net.ipv6.conf.lo.disable_ipv6=0 >/dev/null 2>&1 || true
 
 log "Bringing up the local stack (Docker + Supabase)..."
-# `sg docker` so the Supabase CLI can reach the daemon without sudo; cloud-sandbox-up.sh
-# starts dockerd itself (it reads /etc/docker/daemon.json written during install).
-sg docker -c "bash '$ROOT/scripts/cloud-sandbox-up.sh'"
+# `sg docker` so the Supabase CLI can reach the daemon without sudo.
+# cursor-cloud-up.sh delegates to cloud-sandbox-up.sh, which starts dockerd
+# itself (it reads /etc/docker/daemon.json written during install).
+sg docker -c "bash '$ROOT/scripts/cursor-cloud-up.sh'"
 rc=$?
 
 if [ -f "$ROOT/.cloud-sandbox-up.failed" ]; then

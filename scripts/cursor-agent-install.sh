@@ -3,7 +3,8 @@
 # Frapp's Docker-based local stack, installs Node 20 + npm deps, builds the shared
 # workspace `dist/` outputs, and pre-pulls the Supabase images so per-session `start`
 # is fast. When Cursor "builds" are enabled this runs once and its filesystem becomes
-# the boot snapshot; per-boot work belongs in scripts/cursor-agent-start.sh instead.
+# the boot snapshot; per-boot sysctls belong in scripts/cursor-agent-start.sh and
+# per-boot bringup in scripts/cursor-cloud-up.sh.
 #
 # This is the Cursor counterpart to scripts/cloud-sandbox-setup.sh (the Claude Code web
 # sandbox setup). It deliberately does NOT duplicate that script's Supabase logic — it

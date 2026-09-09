@@ -10,9 +10,13 @@ node_modules
 .env.test.local
 .env.production.local
 
-# Cloud sandbox bringup sentinels (scripts/cloud-sandbox-up.sh)
+# Cloud sandbox / Cursor start bringup sentinels (scripts/cloud-sandbox-up.sh,
+# scripts/cursor-cloud-up.sh). Keep the historical names; the Cursor-owned
+# aliases are optional copies of the same files.
 .cloud-sandbox-up.done
 .cloud-sandbox-up.failed
+.cursor-cloud-up.done
+.cursor-cloud-up.failed
 # Egress capability manifest (scripts/cloud-sandbox-egress-probe.sh) — per-session state,
 # never committed: it describes one environment's network policy at one moment.
 .cloud-sandbox-capabilities.json
