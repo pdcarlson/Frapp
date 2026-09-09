@@ -62,7 +62,7 @@ describe("calendar-export", () => {
       const expectedLines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        "PRODID:-//Frapp//Chapter Events//EN",
+        "PRODID:-//Signet//Chapter Events//EN",
         "CALSCALE:GREGORIAN",
         "BEGIN:VEVENT",
         "UID:20240215T140000Z-Team Meeting@frapp.live",
@@ -205,9 +205,31 @@ describe("calendar-export", () => {
 
       expect(result).toBe(true);
       expect(global.document.createElement).toHaveBeenCalledWith("a");
+      expect(mockAnchor.download).toBe("web-event.ics");
       expect(mockAnchor.click).toHaveBeenCalled();
       expect(mockAnchor.remove).toHaveBeenCalled();
       expect(global.URL.revokeObjectURL).toHaveBeenCalledWith("blob:fake-url");
+    });
+
+    it("falls back to signet-event.ics when the title sanitizes empty", async () => {
+      const { Platform } = await import("react-native");
+      Platform.OS = "web";
+
+      const { exportEventToCalendar } = await import("./calendar-export");
+
+      const input = {
+        title: "",
+        description: "Desc",
+        location: "Loc",
+        startAtIso: "2024-02-15T14:00:00.000Z",
+        endAtIso: "2024-02-15T15:00:00.000Z",
+        deepLinkUrl: "https://frapp.live/events/123",
+      };
+
+      const result = await exportEventToCalendar(input);
+
+      expect(result).toBe(true);
+      expect(mockAnchor.download).toBe("signet-event.ics");
     });
 
     it("saves and shares calendar on native platform", async () => {
