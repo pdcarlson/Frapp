@@ -20,6 +20,7 @@ import {
   SEARCH_MIN_QUERY_LENGTH,
 } from "@repo/hooks";
 import { formatClock } from "@repo/formatting";
+import { replyPreviewText } from "./reply-quote";
 
 /** Scope of a chat search. Defaults to the active channel per #469. */
 export type ChatSearchScope = "channel" | "chapter";
@@ -49,8 +50,9 @@ export interface ChatSearchHit {
  * Snippets with highlighted matches are **not** here. `ts_headline` is
  * unimplemented for all four search sources and #1356 owns it; doing a quarter
  * of it inside this popover would leave the other three inconsistent. Rows
- * render the message body under the same `line-clamp` treatment the pins panel
- * uses.
+ * render `replyPreviewText` under the same `line-clamp` treatment the pins
+ * panel uses, so a poll or a file-only hit is a noun rather than an empty
+ * grey block (#1726).
  */
 export function ChatSearchPopover({
   activeChannelId,
@@ -358,7 +360,7 @@ function ChatSearchResults({
                 ) : null}
                 {/* foundations §7: message prose is body text, never below 16. */}
                 <span className="mt-1 line-clamp-3 block whitespace-pre-wrap text-base text-muted-foreground">
-                  {hit.message.content}
+                  {replyPreviewText(hit.message)}
                 </span>
               </button>
             </li>
