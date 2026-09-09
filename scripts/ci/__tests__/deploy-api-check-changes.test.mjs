@@ -191,6 +191,7 @@ describe("deploy-api check-changes filter", () => {
   it("treats the other deploy-trigger paths as API changes", () => {
     for (const path of [
       "packages/validation/src/index.ts",
+      "packages/observability/src/index.ts",
       "packages/typescript-config/base.json",
     ]) {
       const { outputs } = runFilter({ paths: [path] });

@@ -32,6 +32,7 @@
     "@repo/color": "*",
     "@repo/formatting": "*",
     "@repo/hooks": "*",
+    "@repo/observability": "*",
     "@repo/org-archetypes": "*",
     "@repo/theme": "*",
     "@repo/validation": "*",

@@ -93,7 +93,7 @@ jobs:
 
           echo "Changed paths in this push: $(wc -l < "$CHANGED_FILE")"
 
-          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^(apps/api/|packages/validation/|packages/typescript-config/)' "$CHANGED_FILE"; then
+          if [ "$DIFF_OK" -eq 0 ] || grep -qE '^(apps/api/|packages/validation/|packages/observability/|packages/typescript-config/)' "$CHANGED_FILE"; then
             echo "api-changed=true" >> "$GITHUB_OUTPUT"
             echo "API-related files changed (or the diff was unreadable)."
           else
