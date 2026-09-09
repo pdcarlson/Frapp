@@ -15,10 +15,15 @@ export interface INotificationRepository {
   create(data: Partial<Notification>): Promise<Notification>;
   findByUser(
     userId: string,
+    chapterId: string,
     options?: { limit?: number },
   ): Promise<Notification[]>;
-  findById(id: string): Promise<Notification | null>;
-  markRead(id: string, userId: string): Promise<Notification>;
+  findById(id: string, chapterId: string): Promise<Notification | null>;
+  markRead(
+    id: string,
+    userId: string,
+    chapterId: string,
+  ): Promise<Notification>;
 }
 
 export interface IPushTokenRepository {
