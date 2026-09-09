@@ -3,6 +3,7 @@
 import { AlertTriangle, FolderOpen, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkeletonText, StateTile } from "@/components/shared/async-states";
+import { useNetwork } from "@/lib/providers/network-provider";
 
 /**
  * The §10 state family for a state that renders **inside** a `<CardContent>`.
@@ -217,6 +218,17 @@ export function NestedOffline({
   description: string;
   onRetry?: () => void;
 }) {
+  const { probeOnce } = useNetwork();
+  // Same as OfflineState: `isOffline` is now reachable from `/health`, so
+  // Retry has to probe as well as refetch or the banner and write gates
+  // stay OFFLINE until the next 30s poll.
+  const handleRetry = onRetry
+    ? () => {
+        void probeOnce();
+        onRetry();
+      }
+    : undefined;
+
   return (
     <div className={`${NESTED_BOX} border-destructive/[.28]`}>
       <StateTile tone="destructive">
@@ -230,8 +242,8 @@ export function NestedOffline({
       <p className="max-w-[220px] text-sm text-muted-foreground">
         {description}
       </p>
-      {onRetry ? (
-        <Button variant="secondary" size="sm" onClick={onRetry}>
+      {handleRetry ? (
+        <Button variant="secondary" size="sm" onClick={handleRetry}>
           Retry
         </Button>
       ) : null}

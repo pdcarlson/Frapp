@@ -18,27 +18,38 @@
 
 ```
         ┌──────────┐
-        │  ONLINE  │ ◄── Normal operation
+        │  ONLINE  │ ◄── link up, consecutive /health failures = 0
         └────┬─────┘
-             │ navigator.onLine → false
-             │ OR 3 consecutive request failures
+             │ 1–2 consecutive /health failures (link still up)
              ▼
         ┌──────────┐
-        │ DEGRADED │ ◄── Slow/flaky connection
+        │ DEGRADED │ ◄── link up, API intermittently unreachable
         └────┬─────┘
-             │ All requests failing
-             │ navigator.onLine → false
+             │ 3 consecutive /health failures
+             │ OR navigator.onLine → false (from any state)
              ▼
         ┌──────────┐
-        │ OFFLINE  │ ◄── No connection
+        │ OFFLINE  │
         └────┬─────┘
              │ navigator.onLine → true
-             │ AND health check succeeds
+             │ AND a /health probe succeeds
              ▼
         ┌──────────┐
         │  ONLINE  │
         └──────────┘
 ```
+
+A down link skips DEGRADED — there is no intermittent API to talk about when
+there is no link. Recovery is not the `online` event alone: that event only
+means the browser has a link again. The next successful `/health` probe is
+what clears the failure count. Blindly resetting on `online` would flash
+ONLINE while the API is still dead.
+
+**DEGRADED's "slow (>5s)" half is unbuilt on both surfaces.** § 2's Detection
+Logic names "requests are slow (>5s) or intermittently failing". Neither web
+nor mobile times a real request; consecutive `/health` failures are the only
+DEGRADED input today. Do not read the amber banner as evidence that latency
+is measured.
 
 ### Detection Logic
 
@@ -46,9 +57,11 @@
 type ConnectionState = 'ONLINE' | 'DEGRADED' | 'OFFLINE';
 
 // Maintained by a global provider
-// - 'ONLINE': navigator.onLine && recent requests succeeding
-// - 'DEGRADED': navigator.onLine but requests are slow (>5s) or intermittently failing
+// - 'ONLINE': navigator.onLine && recent /health probes succeeding
+// - 'DEGRADED': navigator.onLine but consecutive /health failures in 1..2
+//   (the "slow (>5s)" half of this sentence is unbuilt — see below)
 // - 'OFFLINE': !navigator.onLine OR health check to /health fails 3 times
+// A 429 from /health is not a failure: it proves the API is up.
 ```
 
 > **`navigator.onLine` is the web half of that rule; mobile has no such property.**
@@ -205,8 +218,11 @@ Banner behavior:
 ### Implementation
 
 **Mobile has one connection model for the UI.** `apps/mobile/lib/connection/`:
-`state.ts` holds the pure rules (`deriveConnectionState`, `connectionBannerCopy`,
-`writeBlockedReason`), `monitor.ts` is the process singleton that feeds them
+`state.ts` holds the copy and write-gating (`connectionBannerCopy`,
+`writeBlockedReason`) and re-exports `deriveConnectionState` from
+`@repo/validation` — the same function web's `NetworkProvider` calls, so the
+two surfaces cannot disagree about the three states. `monitor.ts` is the
+process singleton that feeds it
 (`expo-network` link state plus the `/health` poll), `use-connection.ts` is how a
 component reads it through `useSyncExternalStore`, and `components/app-runtime.tsx`
 starts it once above the auth gate. `components/network-banner.tsx` takes **no
@@ -226,12 +242,17 @@ and lands as a failed bubble rather than being queued, and no link event fires t
 flush it on recovery. Unifying the two (the monitor already satisfies the port's
 shape) is tracked separately.
 
-**Known divergence, web vs. mobile — do not "fix" the spec to match web.**
-`apps/web/lib/providers/network-provider.tsx` maps three consecutive health failures
-to `DEGRADED` and never reaches `OFFLINE` from probing at all; the detection rule
-above says three failures is `OFFLINE`, with `DEGRADED` reserved for slow or
-intermittent. Mobile follows the spec. The web provider is recorded here as drift to
-be reconciled in its own pass.
+**Web and mobile share the rule.** `deriveConnectionState` and
+`healthProbeIsReachable` live in `@repo/validation`. Web's
+`NetworkProvider` and mobile's `monitor.ts` feed them; neither app owns a
+second copy. A 429 from `/health` is reachability, not a failure — the
+anonymous bucket can 429 a chapter house behind one NAT while authenticated
+`/v1` traffic still succeeds.
+
+**Presence does not use this OFFLINE.** Chapter presence rides the Supabase
+Realtime socket, a different service from `/health`. Web gates
+`ChapterPresenceProvider` on the browser link (`linkOnline`), not on
+`isOffline`, so an API-only outage does not make every member read Offline.
 
 ---
 
