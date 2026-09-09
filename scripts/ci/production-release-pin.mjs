@@ -17,6 +17,9 @@
 //
 // /health `commit` is corroboration only. Absent is ignored (the live tag
 // predates that field). Present and disagreeing with Render is a failure.
+// The GET is timed out so a stall cannot hold the job until the runner kills it.
+//
+// Unreadable matching-refs or annotated-tag peel is FAIL, not a missing tag.
 //
 // It does not name GitHub environment: production. A schedule job that
 // did would suspend on ADR-19's required-reviewer gate.
@@ -29,11 +32,14 @@
 import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
+import { fetchWithRetry } from "./lib/http.mjs";
 import { fetchJson, fetchRenderDeploys } from "./lib/providers.mjs";
 
 export const SHA_PATTERN = /^[0-9a-f]{40}$/;
 export const V_TAG_REF = /^refs\/tags\/v\d+\.\d+\.\d+$/;
 export const DEFAULT_HEALTH_URL = "https://api.frapp.live/health";
+/** Corroboration only — fail fast so a hung `/health` cannot eat the job. */
+export const HEALTH_FETCH_TIMEOUT_MS = 10_000;
 
 export const ALERT_ISSUE_TITLE = "Production hosts are not on the same tagged commit";
 export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
@@ -247,8 +253,18 @@ export async function peelVTags({ token, repo, fetchImpl }) {
       fetchImpl,
       path: `/repos/${repo}/git/tags/${object.sha}`,
     });
-    const commitSha = peeled.ok ? peeled.data?.object?.sha : null;
-    if (peeled.ok && isFullSha(commitSha)) {
+    // An annotated tag we cannot read is not "this tag does not exist".
+    // Skipping it would let evaluatePin report "no vX.Y.Z" when the live
+    // tag is the one that failed (v1.0.0 is annotated).
+    if (!peeled.ok) {
+      return {
+        ok: false,
+        reason: `GitHub tag ${name} unreadable (HTTP ${peeled.status})`,
+        tags: [],
+      };
+    }
+    const commitSha = peeled.data?.object?.sha;
+    if (isFullSha(commitSha)) {
       tags.push({ name, sha: commitSha });
     }
   }
@@ -303,7 +319,11 @@ export async function collectLiveShas({
   let health = { present: false };
   if (healthUrl) {
     try {
-      const response = await fetchImpl(healthUrl, { method: "GET" });
+      const response = await fetchWithRetry(
+        healthUrl,
+        { method: "GET" },
+        { fetchImpl, attempts: 1, timeoutMs: HEALTH_FETCH_TIMEOUT_MS },
+      );
       const bodyText = await response.text();
       if (response.ok) {
         health = readHealthCommitField(bodyText);
