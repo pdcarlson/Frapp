@@ -57,14 +57,16 @@ const LIVE_SESSION = {
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from the
 // wire format to the disabled control.
+const sessionsQuery = {
+  data: [PAST_SESSION] as unknown[],
+  isPending: false,
+  isError: false,
+};
+
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useGeofences: () => ({ data: [ZONE], isPending: false, isError: false }),
-  useStudySessions: () => ({
-    data: [PAST_SESSION],
-    isPending: false,
-    isError: false,
-  }),
+  useStudySessions: () => sessionsQuery,
   useStartStudySession: () => ({ mutateAsync: mockStart, isPending: false }),
   useStudyHeartbeat: () => ({ mutateAsync: mockHeartbeat, isPending: false }),
   usePauseStudySession: () => ({ mutateAsync: mockPause, isPending: false }),
@@ -108,7 +110,8 @@ function stubGeolocation(accuracy?: number | null) {
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
-const startButton = () => screen.getByRole("button", { name: /start session/i });
+const startButton = () =>
+  screen.getByRole("button", { name: /start session/i });
 const pauseButton = () => screen.getByRole("button", { name: /pause timer/i });
 const stopButton = () => screen.getByRole("button", { name: /stop &/i });
 
@@ -128,6 +131,7 @@ async function renderWithLiveSession() {
 describe("StudyPage subscription gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionsQuery.data = [PAST_SESSION];
     mockStart.mockResolvedValue(LIVE_SESSION);
     stubGeolocation();
   });
@@ -220,6 +224,150 @@ describe("StudyPage subscription gating", () => {
   });
 });
 
+describe("StudyPage restores a live session from the list (#1747)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionsQuery.data = [PAST_SESSION];
+    sessionsQuery.isPending = false;
+    sessionsQuery.isError = false;
+    mockStop.mockResolvedValue({});
+    stubGeolocation();
+    chapter.active();
+  });
+
+  function liveRow(
+    overrides: {
+      id?: string;
+      geofence_id?: string;
+      last_heartbeat_at?: string | null;
+      paused_at?: string | null;
+      total_foreground_minutes?: number;
+    } = {},
+  ) {
+    return {
+      ...PAST_SESSION,
+      id: "sess-live",
+      status: "ACTIVE" as const,
+      end_time: null,
+      last_heartbeat_at: PAST_SESSION.start_time,
+      paused_at: null,
+      total_foreground_minutes: 12,
+      points_awarded: false,
+      ...overrides,
+    };
+  }
+
+  it("adopts an ACTIVE row so Stop and the timer are present without clicking Start", async () => {
+    sessionsQuery.data = [liveRow()];
+    render(<StudyPage />);
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: /start session/i }),
+      ).not.toBeInTheDocument();
+    });
+    expect(stopButton()).toBeEnabled();
+    expect(screen.getByText("Library 3rd floor")).toBeInTheDocument();
+    // 12 banked minutes + HEARTBEAT_STALE_SECONDS (10 min): the watermark is
+    // 2026-08-01, so the open gap is clamped rather than open-ended. The
+    // 1s elapsed interval may tick once during waitFor.
+    expect(screen.getByText(/^22:\d{2}$/)).toBeInTheDocument();
+    expect(mockPause).not.toHaveBeenCalled();
+    expect(mockResume).not.toHaveBeenCalled();
+  });
+
+  it("restores a paused ACTIVE row as paused, with banked time only", async () => {
+    sessionsQuery.data = [
+      liveRow({
+        id: "sess-paused",
+        last_heartbeat_at: "2026-08-01T10:02:00Z",
+        paused_at: "2026-08-01T10:02:00Z",
+        total_foreground_minutes: 5,
+      }),
+    ];
+    render(<StudyPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Manually paused")).toBeInTheDocument();
+    });
+    expect(stopButton()).toBeEnabled();
+    expect(screen.getByText("05:00")).toBeInTheDocument();
+    expect(mockPause).not.toHaveBeenCalled();
+    expect(mockResume).not.toHaveBeenCalled();
+  });
+
+  it("still restores when the geofence row is gone, with the generic title", async () => {
+    sessionsQuery.data = [
+      liveRow({ id: "sess-orphan", geofence_id: "gone-zone" }),
+    ];
+    render(<StudyPage />);
+
+    await waitFor(() => {
+      expect(stopButton()).toBeEnabled();
+    });
+    expect(screen.getByText("Study session")).toBeInTheDocument();
+    expect(screen.queryByText("Library 3rd floor")).not.toBeInTheDocument();
+  });
+
+  it("does not re-adopt a session this tab just stopped while the list is still stale", async () => {
+    sessionsQuery.data = [liveRow()];
+    render(<StudyPage />);
+    await waitFor(() => {
+      expect(stopButton()).toBeEnabled();
+    });
+
+    await userEvent.click(stopButton());
+
+    await waitFor(() => {
+      expect(startButton()).toBeEnabled();
+    });
+    expect(
+      screen.queryByRole("button", { name: /stop &/i }),
+    ).not.toBeInTheDocument();
+    expect(mockStop).toHaveBeenCalled();
+  });
+
+  it("does not re-adopt a session the server just ended on heartbeat", async () => {
+    const nativeSetInterval = globalThis.setInterval.bind(globalThis);
+    const capturedIntervals: Array<{ handler: TimerHandler; delay: number }> =
+      [];
+    const spy = vi.spyOn(globalThis, "setInterval").mockImplementation(((
+      handler: TimerHandler,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      capturedIntervals.push({ handler, delay: Number(delay) });
+      return nativeSetInterval(handler, delay, ...(args as []));
+    }) as typeof setInterval);
+    try {
+      const row = liveRow();
+      sessionsQuery.data = [row];
+      mockHeartbeat.mockResolvedValue({ ...row, status: "EXPIRED" });
+      render(<StudyPage />);
+      await waitFor(() => {
+        expect(stopButton()).toBeEnabled();
+      });
+
+      const tick = capturedIntervals.find(
+        (entry) => entry.delay === HEARTBEAT_INTERVAL_MS,
+      );
+      expect(tick).toBeDefined();
+      await act(async () => {
+        (tick!.handler as () => void)();
+      });
+
+      await waitFor(() => {
+        expect(startButton()).toBeEnabled();
+      });
+      expect(
+        screen.queryByRole("button", { name: /stop &/i }),
+      ).not.toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe("accuracyMetersOf / studyHeartbeatBody (#1852)", () => {
   it("returns a positive finite reading", () => {
     expect(accuracyMetersOf(12.5)).toBe(12.5);
@@ -249,9 +397,10 @@ describe("accuracyMetersOf / studyHeartbeatBody (#1852)", () => {
         accuracy: 0,
       }),
     ).toEqual({ lat: 42.73, lng: -73.68 });
-    expect(
-      studyHeartbeatBody({ latitude: 42.73, longitude: -73.68 }),
-    ).toEqual({ lat: 42.73, lng: -73.68 });
+    expect(studyHeartbeatBody({ latitude: 42.73, longitude: -73.68 })).toEqual({
+      lat: 42.73,
+      lng: -73.68,
+    });
   });
 });
 
@@ -270,12 +419,15 @@ describe("StudyPage heartbeat accuracy (#1852)", () => {
     mockResume.mockResolvedValue({});
     mockPause.mockResolvedValue({});
     chapter.active();
-    vi.spyOn(globalThis, "setInterval").mockImplementation(
-      ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
-        capturedIntervals.push({ handler, delay: Number(delay) });
-        return nativeSetInterval(handler, delay, ...(args as []));
-      }) as typeof setInterval,
-    );
+    sessionsQuery.data = [PAST_SESSION];
+    vi.spyOn(globalThis, "setInterval").mockImplementation(((
+      handler: TimerHandler,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      capturedIntervals.push({ handler, delay: Number(delay) });
+      return nativeSetInterval(handler, delay, ...(args as []));
+    }) as typeof setInterval);
   });
 
   afterEach(() => {
@@ -317,7 +469,9 @@ describe("StudyPage heartbeat accuracy (#1852)", () => {
     await userEvent.click(pauseButton());
     await waitFor(() => expect(mockPause).toHaveBeenCalled());
 
-    await userEvent.click(screen.getByRole("button", { name: /resume timer/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /resume timer/i }),
+    );
     await waitFor(() =>
       expect(mockResume).toHaveBeenCalledWith({
         lat: 42.73,
