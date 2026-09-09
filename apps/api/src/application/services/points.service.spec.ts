@@ -428,6 +428,7 @@ describe('PointsService', () => {
         // No key was supplied (a dashboard adjustment), so the row is written
         // with an explicit null and is not covered by the dedupe index.
         client_message_id: null,
+        channel_id: null,
       });
       expect(result).toEqual(created);
     });
@@ -783,6 +784,7 @@ describe('PointsService', () => {
         description: 'great work',
         metadata: { adjusted_by: 'admin-1', reason: 'great work' },
         client_message_id: 'cmid-replay',
+        channel_id: 'chan-1',
         created_at: '2026-02-26T20:00:00.000Z',
       };
 
@@ -805,7 +807,7 @@ describe('PointsService', () => {
 
         const result = await replay();
 
-        expect(result).toBe(original);
+        expect(result).toEqual({ ...original, card_posted: true });
         expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
         // Pin the argument ORDER, not just the call. Both parameters are
         // strings, so swapping them typechecks; in production every pre-check
@@ -817,37 +819,105 @@ describe('PointsService', () => {
         );
       });
 
-      it('a replay fires no side effect at all', async () => {
+      it('a replay never re-notifies the member', async () => {
         mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
 
         await replay();
 
         // Re-notifying would just move the duplicate from the ledger to the
-        // member's phone; re-posting is covered by the channel case below.
+        // member's phone. The card heal below is a different, idempotent path.
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
-        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
       });
 
-      it('a replay posts no second chat card, even into another channel', async () => {
-        // The card only LOOKS idempotent. `idx_chat_messages_dedupe` is scoped
-        // (channel_id, sender_id, client_message_id), and the ledger row
-        // records no channel — so a replay naming a different channel would
-        // NOT collide, and would post a second audit card for one ledger row.
-        // For a FINE that re-broadcasts a member's penalty to a wider audience.
+      it('a replay re-attempts the card into the stored origin channel', async () => {
         mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
 
-        await service.adjustPoints({
+        const result = await replay();
+
+        expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
+        expect(mockChatService.sendMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            channel_id: 'chan-1',
+            client_message_id: 'cmid-replay',
+            kind: 'points',
+          }),
+        );
+        expect(result).toEqual({ ...original, card_posted: true });
+      });
+
+      it('a replay that omits channel_id still heals into the stored origin', async () => {
+        // Repair-friendly: a caller that knows the key but not the channel
+        // (or a reconnect that dropped it) must not be refused, and must not
+        // be allowed to pick a new one. The stored origin is the only legal
+        // target.
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        const result = await service.adjustPoints({
           chapterId: 'ch-1',
           targetUserId: 'user-2',
           adminUserId: 'admin-1',
           amount: 5,
           category: 'MANUAL',
           reason: 'great work',
-          channelId: 'chan-DIFFERENT',
           clientMessageId: 'cmid-replay',
         });
 
+        expect(mockChatService.sendMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            channel_id: 'chan-1',
+            client_message_id: 'cmid-replay',
+            kind: 'points',
+          }),
+        );
+        expect(result).toEqual({ ...original, card_posted: true });
+      });
+
+      it('a replay that names a different channel 409s and posts no card', async () => {
+        // The card only LOOKS idempotent. `idx_chat_messages_dedupe` is scoped
+        // (channel_id, sender_id, client_message_id). Posting into another
+        // channel would not collide, and would post a second audit card for
+        // one ledger row. For a FINE that re-broadcasts a member's penalty.
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+
+        await expect(
+          service.adjustPoints({
+            chapterId: 'ch-1',
+            targetUserId: 'user-2',
+            adminUserId: 'admin-1',
+            amount: 5,
+            category: 'MANUAL',
+            reason: 'great work',
+            channelId: 'chan-DIFFERENT',
+            clientMessageId: 'cmid-replay',
+          }),
+        ).rejects.toBeInstanceOf(ConflictException);
         expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('a replay of a row with no stored origin posts no card and omits card_posted', async () => {
+        // Pre-#1734 rows, and dashboard-keyed rows, have a key but no channel.
+        // We cannot prove the origin, so we must not guess.
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue({
+          ...original,
+          channel_id: null,
+        });
+
+        const result = await replay();
+
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+        expect('card_posted' in result).toBe(false);
+      });
+
+      it('a replay reports card_posted: false when the heal still fails', async () => {
+        mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
+        mockChatService.sendMessage.mockRejectedValue(
+          new Error('channel gone'),
+        );
+
+        const result = await replay();
+
+        expect(result).toEqual({ ...original, card_posted: false });
       });
 
       describe('a key reused for a DIFFERENT adjustment is refused, never answered', () => {
@@ -878,6 +948,7 @@ describe('PointsService', () => {
           ['a different category', { category: 'FINE' as const }],
           ['a different reason', { reason: 'something else' }],
           ['a different acting admin', { adminUserId: 'admin-9' }],
+          ['a different origin channel', { channelId: 'chan-DIFFERENT' }],
         ])('409s on %s', async (_label, overrides) => {
           await expect(withOverrides(overrides)).rejects.toBeInstanceOf(
             ConflictException,
@@ -902,7 +973,7 @@ describe('PointsService', () => {
 
         const result = await replay();
 
-        expect(result).toBe(original);
+        expect(result).toEqual({ ...original, card_posted: true });
         expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
       });
 
@@ -941,7 +1012,7 @@ describe('PointsService', () => {
 
         const result = await replay();
 
-        expect(result).toBe(original);
+        expect(result).toEqual({ ...original, card_posted: true });
         expect(mockPointTxnRepo.create).toHaveBeenCalledTimes(1);
       });
 
@@ -965,7 +1036,10 @@ describe('PointsService', () => {
         await replay();
 
         expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
-          expect.objectContaining({ client_message_id: 'cmid-replay' }),
+          expect.objectContaining({
+            client_message_id: 'cmid-replay',
+            channel_id: 'chan-1',
+          }),
         );
       });
 
@@ -988,7 +1062,10 @@ describe('PointsService', () => {
         // dashboard are two legitimate rows, not a duplicate.
         expect(mockPointTxnRepo.findByClientMessageId).not.toHaveBeenCalled();
         expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
-          expect.objectContaining({ client_message_id: null }),
+          expect.objectContaining({
+            client_message_id: null,
+            channel_id: null,
+          }),
         );
       });
     });
@@ -1145,7 +1222,7 @@ describe('PointsService', () => {
 
       // Absent, not `true`. A dashboard adjustment posts no card at all, so
       // claiming one succeeded would be a lie — and the field's contract is
-      // "present only when chat context was supplied".
+      // "present only when this request attempted a card".
       it('omits card_posted entirely for a dashboard adjustment', async () => {
         mockPointTxnRepo.create.mockResolvedValue(baseTxn);
 
@@ -1182,15 +1259,16 @@ describe('PointsService', () => {
         expect('card_posted' in result).toBe(false);
       });
 
-      // A deduplicated replay (#1719) fires no side effect, so it attempts no
+      // A replay of a row with no stored origin (#1734 pre-column) attempts no
       // card and the ledger row records nothing about whether the ORIGINAL
       // attempt's card landed. `false` would assert a failure the server cannot
-      // see; absent is the honest answer, and the client reads it as "no
-      // outcome reported" and leaves its placeholder for the echo.
-      it('omits card_posted on a deduplicated replay, rather than claiming failure', async () => {
+      // see; absent is the honest answer. Rows that *do* store an origin report
+      // the heal attempt instead — covered in the idempotency suite above.
+      it('omits card_posted on a replay with no stored origin channel', async () => {
         const original: PointTransaction = {
           ...baseTxn,
           client_message_id: 'cmid-1',
+          channel_id: null,
         };
         mockPointTxnRepo.findByClientMessageId.mockResolvedValue(original);
 
