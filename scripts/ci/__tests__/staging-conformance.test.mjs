@@ -20,6 +20,7 @@ import {
   checkAuthMagicLink,
   checkInfisicalSyncs,
   checkProjectStatus,
+  checkRenderHealthCheckPath,
   checkSchemaDrift,
   classifyConformance,
   decodeJwtPayload,
@@ -506,6 +507,156 @@ test("default staging toRun includes auth-magic-link — the function alone is n
   const toRun = source.slice(source.indexOf("const toRun = checks ??"));
   assert.match(toRun, /id: "auth-magic-link"/);
   assert.match(toRun, /checkAuthMagicLink\(/);
+});
+
+test("default staging toRun includes health-check-path — the function alone is not enough", () => {
+  const source = readFileSync(
+    new URL("../staging-conformance.mjs", import.meta.url),
+    "utf8",
+  );
+  const toRun = source.slice(source.indexOf("const toRun = checks ??"));
+  assert.match(toRun, /id: "health-check-path"/);
+  assert.match(toRun, /checkRenderHealthCheckPath\(/);
+});
+
+// ── Render healthCheckPath ─────────────────────────────────────────────────
+
+test("healthCheckPath skips rather than fails when the Render credential is absent", async () => {
+  const result = await checkRenderHealthCheckPath({});
+  assert.equal(result.status, SKIPPED);
+  assert.match(result.detail, /RENDER_API_KEY/);
+});
+
+test("healthCheckPath fails on an empty path — TCP-only, not GET /health", async () => {
+  const result = await checkRenderHealthCheckPath({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () => ok({ serviceDetails: { healthCheckPath: "" } }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /empty/);
+  assert.match(result.detail, /TCP-only/);
+});
+
+test("healthCheckPath fails on /health/ready — that would cancel a deploy on a degraded dependency", async () => {
+  const result = await checkRenderHealthCheckPath({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () => ok({ serviceDetails: { healthCheckPath: "/health/ready" } }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /health\/ready/);
+});
+
+test("healthCheckPath does not treat a top-level decoy as the live Render field", async () => {
+  const result = await checkRenderHealthCheckPath({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () =>
+      ok({ healthCheckPath: "/health", serviceDetails: { autoDeployTrigger: "commit" } }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /unreadable/);
+});
+
+test("healthCheckPath passes when the nested field is /health", async () => {
+  const result = await checkRenderHealthCheckPath({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () => ok({ serviceDetails: { healthCheckPath: "/health" } }),
+  });
+  assert.equal(result.status, PASS);
+  assert.match(result.detail, /healthCheckPath=\/health/);
+});
+
+test("a non-200 from the Render API is a failure, not a skip", async () => {
+  const result = await checkRenderHealthCheckPath({
+    apiKey: "rk",
+    serviceId: "srv-test",
+    fetchImpl: async () => httpError(401),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /HTTP 401/);
+});
+
+test("healthCheckPath queries the service id it was handed, not a baked-in prod id", async () => {
+  const urls = [];
+  await checkRenderHealthCheckPath({
+    apiKey: "rk",
+    serviceId: "srv-d6lqsq75r7bs73c2fdc0",
+    fetchImpl: async (url) => {
+      urls.push(String(url));
+      return ok({ serviceDetails: { healthCheckPath: "/health" } });
+    },
+  });
+  assert.equal(urls.length, 1);
+  assert.ok(urls[0].endsWith("/services/srv-d6lqsq75r7bs73c2fdc0"));
+  assert.ok(!urls[0].includes("srv-d6lqu41aae7s73f62df0"));
+});
+
+test("staging-conformance.yml wires Render creds to the staging service, never prod", () => {
+  // The function and toRun row can exist while the job still never asserts:
+  // without these env lines the check is permanently SKIPPED.
+  const yaml = readFileSync(
+    new URL("../../../.github/workflows/staging-conformance.yml", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    yaml.includes("RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}"),
+    "the job must pass the Render secret or the check is permanently SKIPPED",
+  );
+  assert.match(yaml, /RENDER_SERVICE_ID: srv-d6lqsq75r7bs73c2fdc0/);
+  assert.doesNotMatch(yaml, /srv-d6lqu41aae7s73f62df0/);
+  const infra = readFileSync(
+    new URL("../../../docs/internal/ci-cd/AGENT_INFRA.md", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    infra.includes(
+      "`verify-deployments.yml` and `staging-conformance.yml` (`RENDER_API_KEY`)",
+    ),
+    "AGENT_INFRA must list staging-conformance.yml as a RENDER_API_KEY consumer",
+  );
+});
+
+test("default toRun health-check-path reads RENDER_* from env and skips without them", async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    if (String(url).includes("render.com")) {
+      return ok({ serviceDetails: { healthCheckPath: "/health" } });
+    }
+    return { ok: true, status: 200, json: async () => [] };
+  };
+
+  const skipped = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    env: {},
+    writeSummary: () => {},
+    logger: quiet,
+  });
+  const skippedRow = skipped.results.find((r) => r.id === "health-check-path");
+  assert.equal(skippedRow.status, SKIPPED);
+  assert.ok(!urls.some((u) => u.includes("render.com")));
+
+  urls.length = 0;
+  const passed = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    env: {
+      RENDER_API_KEY: "rk",
+      RENDER_SERVICE_ID: "srv-d6lqsq75r7bs73c2fdc0",
+    },
+    writeSummary: () => {},
+    logger: quiet,
+  });
+  const passedRow = passed.results.find((r) => r.id === "health-check-path");
+  assert.equal(passedRow.status, PASS);
+  assert.ok(urls.some((u) => u.endsWith("/services/srv-d6lqsq75r7bs73c2fdc0")));
+  assert.ok(!urls.some((u) => u.includes("srv-d6lqu41aae7s73f62df0")));
 });
 
 // ── Infisical syncs ─────────────────────────────────────────────────────────

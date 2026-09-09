@@ -264,8 +264,9 @@ Consumed only by `.github/workflows/staging-conformance.yml`. When absent, the w
 end-to-end sign-in assertion reports **SKIPPED** rather than passing — it never fakes a pass.
 
 Worth knowing before treating that as optional: this is the **only behavioural** assertion the
-workflow makes — the configuration assertions (project health, auth-hook enablement, redirect
-allow list, Auth SMTP host/From/send cap, secret-sync status) all read provider state. Migration
+workflow makes — everything else in the 07:30 roster in
+[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md#scheduled-conformance-scriptscistaging-conformancemjs)
+reads provider state. Migration
 parity is not among them: `check-migration-drift.yml` owns it, and the conformance table lists it
 only as a pointer. So an unprovisioned smoke user leaves the workflow asserting configuration and
 nothing about whether the stack actually works. Provisioning it is what makes a green run mean

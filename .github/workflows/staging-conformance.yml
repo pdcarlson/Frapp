@@ -16,7 +16,10 @@ name: Staging conformance
 # Empty production SMTP is SKIPPED there (hosted 2/hour cap) so the
 # sibling stays green until #1824; SMTP on with the burned apex From fails,
 # and SMTP on without token_hash in the Magic Link template fails. Infisical /
-# smoke stay production-unwatched. Remaining parity on #1384. Doc pointer:
+# smoke stay production-unwatched. Remaining parity on #1384.
+# Render `frapp-api-staging` `healthCheckPath` `/health` is asserted here (staging
+# auto-deploys `main` on commit; empty is TCP-only). Production's copy lives in
+# production-guardrails.yml. Doc pointer:
 # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
 
 on:
@@ -116,4 +119,8 @@ jobs:
           # chapter membership; see the script's note on the claimless-token trap.
           STAGING_SMOKE_USER_EMAIL: ${{ secrets.STAGING_SMOKE_USER_EMAIL }}
           STAGING_SMOKE_USER_PASSWORD: ${{ secrets.STAGING_SMOKE_USER_PASSWORD }}
+          # Same service id as verify-deployments.yml. environments.json does not
+          # yet hold Render ids (known Stage-3 leftover).
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: srv-d6lqsq75r7bs73c2fdc0
         run: node scripts/ci/staging-conformance.mjs
