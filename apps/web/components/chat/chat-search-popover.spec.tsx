@@ -117,6 +117,87 @@ describe("ChatSearchPopover", () => {
     });
   });
 
+  it("previews a poll hit by its kind noun, not an empty block", async () => {
+    useSearch.mockReturnValue(
+      result({
+        data: {
+          payload: {
+            messages: [
+              {
+                ...message("m-poll", "chan-1", ""),
+                kind: "poll",
+                attachment_count: 0,
+                is_deleted: false,
+              },
+            ],
+          },
+          timedOut: false,
+          timedOutSources: [],
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    renderPopover();
+    await user.click(screen.getByRole("button", { name: /search messages/i }));
+    await user.type(screen.getByRole("searchbox"), "poll");
+
+    expect(await screen.findByText("Poll")).toBeInTheDocument();
+  });
+
+  it("previews a file-only hit as an attachment count", async () => {
+    useSearch.mockReturnValue(
+      result({
+        data: {
+          payload: {
+            messages: [
+              {
+                ...message("m-file", "chan-1", ""),
+                kind: "text",
+                attachment_count: 3,
+                is_deleted: false,
+              },
+            ],
+          },
+          timedOut: false,
+          timedOutSources: [],
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    renderPopover();
+    await user.click(screen.getByRole("button", { name: /search messages/i }));
+    await user.type(screen.getByRole("searchbox"), "file");
+
+    expect(await screen.findByText("3 attachments")).toBeInTheDocument();
+  });
+
+  it("previews a deleted hit as the tombstone, not a blank block", async () => {
+    useSearch.mockReturnValue(
+      result({
+        data: {
+          payload: {
+            messages: [
+              {
+                ...message("m-gone", "chan-1", ""),
+                kind: "text",
+                attachment_count: 0,
+                is_deleted: true,
+              },
+            ],
+          },
+          timedOut: false,
+          timedOutSources: [],
+        },
+      }),
+    );
+    const user = userEvent.setup();
+    renderPopover();
+    await user.click(screen.getByRole("button", { name: /search messages/i }));
+    await user.type(screen.getByRole("searchbox"), "gone");
+
+    expect(await screen.findByText("[message deleted]")).toBeInTheDocument();
+  });
+
   it("hands the picked hit to the shell and dismisses itself", async () => {
     const onJump = vi.fn();
     useSearch.mockReturnValue(
