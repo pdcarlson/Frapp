@@ -647,6 +647,65 @@ describe("MessageItem edit and delete", () => {
     expect(screen.queryByText("👍")).not.toBeInTheDocument();
   });
 
+  it("draws imported Discord reaction totals as read-only chips", () => {
+    const onReact = vi.fn();
+    renderItemWithProps({
+      onReact,
+      message: message({
+        kind: "imported",
+        sender_id: null,
+        author_name: "archive-bot",
+        payload: {
+          source: "discord",
+          reactions: [
+            { emoji: "🔥", name: null, count: 4 },
+            { emoji: "party_blob", name: "party_blob", count: 2 },
+          ],
+        },
+      }),
+    });
+
+    expect(
+      screen.getByLabelText(/🔥 reaction, 4\. From the imported archive/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/:party_blob: reaction, 2\. From the imported archive/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /from the imported archive/i }),
+    ).not.toBeInTheDocument();
+    expect(onReact).not.toHaveBeenCalled();
+  });
+
+  it("does not draw payload.reactions on a live message", () => {
+    renderItemWithProps({
+      message: message({
+        kind: "text",
+        payload: {
+          source: "discord",
+          reactions: [{ emoji: "🔥", name: null, count: 4 }],
+        },
+      }),
+    });
+    expect(screen.queryByLabelText(/imported archive/)).not.toBeInTheDocument();
+  });
+
+  it("hides the imported summary on a deleted archive row", () => {
+    renderItemWithProps({
+      message: message({
+        kind: "imported",
+        is_deleted: true,
+        sender_id: null,
+        author_name: "archive-bot",
+        payload: {
+          source: "discord",
+          reactions: [{ emoji: "🔥", name: null, count: 4 }],
+        },
+      }),
+    });
+    expect(screen.queryByLabelText(/imported archive/)).not.toBeInTheDocument();
+  });
+
   it("closes an open editor rather than leaving a stale draft when the message is deleted out from under it", async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn();
