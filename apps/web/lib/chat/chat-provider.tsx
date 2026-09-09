@@ -17,7 +17,7 @@ import { useFrappClient } from "@repo/hooks";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
-import { browserNetworkState } from "@repo/chat-core/adapters";
+import { browserKeyValueStore, browserNetworkState } from "@repo/chat-core/adapters";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { chatRealtime } from "@repo/chat-core/realtime-manager";
 import { flushOutbox } from "@repo/chat-core/chat-client";
@@ -72,6 +72,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       toast,
       track: track ?? undefined,
       outbox: dexieOutboxStore,
+      kv: browserKeyValueStore,
     };
     void flushOutbox(ctx);
     // Trigger and gate ride the same connectivity signal: `flushOutbox`

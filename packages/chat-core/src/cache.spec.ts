@@ -9,8 +9,20 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { applyReactionInsert, emptyCache, mergeServerRow } from "./cache";
-import type { RawChatMessage, RawChatMessageAction } from "./types";
+import {
+  applyReactionInsert,
+  emptyCache,
+  markRecorded,
+  markUnconfirmed,
+  mergeServerRow,
+  upsertOptimistic,
+} from "./cache";
+import {
+  optimisticMessage,
+  type RawChatMessage,
+  type RawChatMessageAction,
+  type ReplayRequest,
+} from "./types";
 
 function row(overrides: Partial<RawChatMessage> = {}): RawChatMessage {
   return {
@@ -58,5 +70,51 @@ describe("mergeServerRow carry-forward on re-merge", () => {
   test("a fresh message merges with the row's own (empty) actions", () => {
     const cache = mergeServerRow(emptyCache(), row());
     expect(cache.byId["m1"]!.actions).toEqual([]);
+  });
+});
+
+describe("markRecorded (#1789)", () => {
+  const replay: ReplayRequest = {
+    command: "points",
+    channelId: "c1",
+    clientMessageId: "cm-rec",
+    body: {
+      target_user_id: "u2",
+      amount: 5,
+      category: "MANUAL" as const,
+      reason: "cleanup",
+      channel_id: "c1",
+      client_message_id: "cm-rec",
+    },
+  };
+
+  test("flips the placeholder to recorded and drops any replay handle", () => {
+    const optimistic = optimisticMessage({
+      clientMessageId: "cm-rec",
+      channelId: "c1",
+      senderId: "u1",
+      content: "Granting 5 points…",
+      kind: "loading",
+    });
+    let cache = upsertOptimistic(emptyCache(), optimistic);
+    cache = markUnconfirmed(
+      cache,
+      "cm-rec",
+      replay,
+      "Not confirmed — these points may or may not have been recorded.",
+    );
+    expect(cache.byId["cm-rec"]?._replay).toEqual(replay);
+
+    cache = markRecorded(
+      cache,
+      "cm-rec",
+      "Points recorded — the chat card didn't post. Don't run this command again.",
+    );
+
+    const recorded = cache.byId["cm-rec"];
+    expect(recorded?._status).toBe("recorded");
+    expect(recorded?._replay).toBeUndefined();
+    expect(recorded?._error).toMatch(/don't run this command again/i);
+    expect(recorded?.kind).toBe("loading");
   });
 });
