@@ -67,6 +67,7 @@ tree held five, because a count is a second copy of a fact the rows already stat
 | *Production deploy guardrails have drifted — auto-deploy or production branch is wrong* | `production-guardrails.yml` (daily 07:15 UTC) | a provider-side production setting no longer matches what the guardrails assert — auto-deploy on, wrong branch, empty or non-`/health` `healthCheckPath`, or a Vercel Git link. **P1.** The title is the lookup key and was not renamed when `healthCheckPath` was added. Listed here as of #1674 — it has raised alerts since it shipped, but the roster above it said "four" and never included it, which is the drift the removed count caused | a later guardrail run finds nothing drifted |
 | *Production /health/ready is failing* | `production-uptime.yml` (every 15 minutes) | live `GET https://api.frapp.live/health/ready` was not HTTP 200 with JSON `status: "ok"`. **P1.** Watches `/health/ready`, not `/health` — `/health` always 2xxes while the process is up. Does not name `environment: production` (#1435). Not a Sentry 60s monitor | a later probe returns 200 `status: "ok"` |
 | *Production hosts are not on the same tagged commit* | `production-release-pin.yml` (daily 08:00 UTC) | live Render `frapp-api-prod` commit, Vercel `frapp-web` / `frapp-landing` READY production `githubCommitSha`, and a peeled `vX.Y.Z` tag do not name the same SHA — split-brain, or a named-SHA Deploy that skipped Release. Matching `main` is not required. `/health` `commit` is corroboration only. **P1.** Does not name `environment: production` (#1435) | a later run finds the three hosts on one `vX.Y.Z` |
+| *production-backup has required reviewers — nightly dumps will expire* | `production-backup-env.yml` (daily 06:15 UTC) | GitHub environment `production-backup` gained `required_reviewers` or a `wait_timer`, or the GET was unreadable / the env is missing. **P1.** A `schedule:` job that hits that gate suspends and expires, so nightly dumps look covered and write nothing (#1435). Does not name `environment: production` or `environment: production-backup`. `deployment_branch_policy: null` is not this alert | a later run finds empty `protection_rules` |
 
 Unlike the others, two alerts comment only on a state *change*, not on every run: the base-sync alert (per-merge) and the production `/health/ready` probe (every 15 minutes). An already-open one is never re-commented. An
 open one that has gone quiet is still live, not stale. Setup for the App the base-sync alert depends on is human-only
@@ -87,7 +88,9 @@ raised it: the early exit is gated on the `--preflight` flag, not on the trigger
 `workflow_dispatch` of the workflow raises and clears exactly as the cron does. Read the alert's run
 link rather than assuming the 07:15 window.
 
-**The scheduled watchdogs own disjoint concerns, and are staggered.** `check-migration-drift.yml`
+**The scheduled watchdogs own disjoint concerns, and are staggered.** `production-backup-env.yml`
+(06:15 UTC) owns that GitHub environment `production-backup` has no required reviewers or wait
+timer, fifteen minutes before `db-backup.yml` (06:30) tries to run under it; `check-migration-drift.yml`
 (07:00 UTC) owns migration parity for *every* environment; `production-guardrails.yml` (07:15) owns
 provider-side production settings; `staging-conformance.yml` (07:30) owns everything else about
 staging and deliberately does **not** re-run the drift comparison; `production-auth-conformance.yml`
