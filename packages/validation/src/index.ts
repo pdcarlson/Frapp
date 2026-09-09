@@ -939,7 +939,7 @@ export {
 // `isModuleEnabled`, and `subscriptionWriteState`.
 export { isAnalyticsOptedOut } from "./analytics-opt-out";
 
-// Connection state machine (`spec/ui/resilience.md` § 2). Shared so web and
+// Connection state machine (`spec/ui/resilience/connection-state.md`). Shared so web and
 // mobile cannot disagree about ONLINE / DEGRADED / OFFLINE. Each app owns
 // the effects that feed it; this package owns the rule.
 export {

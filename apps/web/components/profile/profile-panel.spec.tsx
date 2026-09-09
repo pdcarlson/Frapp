@@ -917,7 +917,7 @@ describe("ProfilePanel — notification categories (#564)", () => {
     expect(mocks.toast.mock.calls.at(-1)?.[0].title).toMatch(/offline/i);
   });
 
-  // `resilience.md`'s queueless rule wires the reason to the control itself,
+  // `spec/ui/resilience/connection-state.md`'s queueless rule wires the reason to the control itself,
   // not to a sentence beside it. Without this a screen-reader member hears
   // "unavailable" with no explanation — and a dangling `aria-describedby` id
   // fails silently, so the reference is resolved here rather than asserted to

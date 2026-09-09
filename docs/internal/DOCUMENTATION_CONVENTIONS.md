@@ -17,7 +17,7 @@ them against the section whose wording matches.
 
 ## Where things go
 
-Two rules make the table decidable, because rows nest and a directory is not a filename. **Take the most specific row that matches** — chat behavior goes to `spec/behavior/chat/`, not to the broader `spec/behavior/` row above it, and design-system work goes to `spec/ui/design-system/`, not to `spec/ui/`. **Inside the directory a row names, a topic is one file, `<topic>.md`**, and earns its own `<topic>/` folder with a `README.md` routing to its files only once it has 2+ of them; `spec/behavior/chat/`, `spec/behavior/settings/`, and `spec/architecture/adr/` are the ones that crossed that line.
+Two rules make the table decidable, because rows nest and a directory is not a filename. **Take the most specific row that matches** — chat behavior goes to `spec/behavior/chat/`, not to the broader `spec/behavior/` row above it, and design-system work goes to `spec/ui/design-system/`, not to `spec/ui/`. **Inside the directory a row names, a topic is one file, `<topic>.md`**, and earns its own `<topic>/` folder with a `README.md` routing to its files only once it has 2+ of them; `spec/behavior/chat/`, `spec/behavior/settings/`, `spec/architecture/adr/`, and `spec/ui/resilience/` are the ones that crossed that line.
 
 | Kind of change | Canonical home |
 | -------------- | -------------- |
@@ -30,6 +30,7 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Engineering principles | `spec/engineering.md` |
 | Environments, CI/CD model | `spec/environments/README.md` |
 | UI requirements (brand, assets, resilience) | `spec/ui/` |
+| Resilience (connection, delivery, retry, Realtime, uploads, cache, budgets) | `spec/ui/resilience/` — folder-as-index; cite a named leaf and heading, never `§N` |
 | Web-dashboard UI requirements | `spec/ui/web-dashboard/` |
 | Mobile UI requirements | `spec/ui/mobile/` |
 | Landing-site UI requirements | `spec/ui/landing/` |

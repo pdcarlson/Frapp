@@ -79,8 +79,8 @@ host for the DEGRADED/OFFLINE-from-health path (three consecutive failed
 
 | Screen | Control | Expected outcome |
 |---|---|---|
-| Any tab | Enter airplane mode | The banner appears at the top over ~200ms (an opacity transition, not a slide — see [`spec/ui/resilience.md`](../../../spec/ui/resilience.md) § 2), below the status bar and never under it, reading "You're offline. Showing cached data." Cached content stays on screen |
-| Any tab | Dismiss the banner | It fades out and returns after 30s if the connection has not recovered; a change of state clears the dismissal on its own. Expect the bar's **space** to remain while dismissed — known drift, recorded in § 2 |
+| Any tab | Enter airplane mode | The banner appears at the top over ~200ms (an opacity transition, not a slide — see [`spec/ui/resilience/connection-state.md`](../../../spec/ui/resilience/connection-state.md)), below the status bar and never under it, reading "You're offline. Showing cached data." Cached content stays on screen |
+| Any tab | Dismiss the banner | It fades out and returns after 30s if the connection has not recovered; a change of state clears the dismissal on its own. Expect the bar's **space** to remain while dismissed — known drift, recorded in connection-state.md |
 | Any tab | Leave airplane mode | The banner leaves without a tap, and stale queries refetch on their own — `onlineManager` is wired, so no force-quit is needed |
 | Chat thread | Compose and send while offline | The composer stays **enabled** and labels itself "You're offline — messages send when you reconnect."; the message queues and sends on reconnect. A disabled composer here is a regression — the outbox is the point |
 | Chat thread | Offline with the global banner up | The in-thread pill does **not** repeat "Offline"; it stays silent unless it has something the banner cannot say ("Real-time updates paused. Polling for new messages." or "Reconnecting…") |

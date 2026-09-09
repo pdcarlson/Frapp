@@ -1,6 +1,6 @@
 /**
  * Stable id so `useGatedDialog` can send keyboard focus here when a dialog
- * closes onto a now-disabled trigger (`spec/ui/resilience.md` § 2 / #1753).
+ * closes onto a now-disabled trigger (`spec/ui/resilience/connection-state.md` / #1753).
  *
  * Lives in its own module so `subscription-gate` does not import
  * `offline-banner.tsx` (which reads `useNetwork`) — a spec that mocks

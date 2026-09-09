@@ -40,34 +40,9 @@ async function bootstrap() {
     rawBody: true,
   });
 
-  app.enableCors({
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3002',
-      /^https:\/\/(?:[a-zA-Z0-9-]+\.)*frapp\.live$/,
-    ],
-    credentials: true,
-    // Only the seven CORS-safelisted response headers reach browser JS unless
-    // they are named here. The dashboard is cross-origin by design
-    // (api.frapp.live vs app.frapp.live), so without this the report
-    // truncation flags are set by the API, stripped by the browser, and a
-    // short report looks complete to the one caller most likely to email it
-    // onward. See spec/behavior/reports.md § Row limits.
-    exposedHeaders: [
-      'X-Report-Truncated',
-      'X-Report-Row-Limit',
-      'X-Report-Truncation-Note',
-      // Same trap, second surface: spec/behavior/search.md tells clients to
-      // distinguish "no matches" from "we stopped looking" by these headers, and
-      // without them named here the dashboard reads null from both and renders a
-      // partial result as a confident empty state.
-      'X-Search-Timeout',
-      'X-Search-Timeout-Sources',
-    ],
-  });
-
-  // Shared with the e2e harness so the suite tests the response shape that
-  // actually ships — see bootstrap.ts.
+  // CORS lives in configureApp (CORS_OPTIONS) so the e2e harness sees the
+  // same Access-Control-Expose-Headers list production ships — including
+  // x-request-id. See bootstrap.ts.
   configureApp(app);
 
   const swaggerConfig = new DocumentBuilder()
