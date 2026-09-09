@@ -34,8 +34,10 @@ function escapeHtml(value: string): string {
 
 /**
  * Invite email transport over the Resend REST API using the global `fetch`
- * (Node 18+) rather than the `resend` SDK — same posture as
- * `PosthogAnalyticsProvider`: one endpoint, no client library needed.
+ * (Node 18+) rather than the `resend` SDK. PostHog product events now go
+ * through `posthog-node` (lifecycle-safe batching); this path stays a
+ * single fetch because one POST per invite is the whole contract.
+ *
  *
  * `sendInviteEmail` is best-effort per address: failures are logged and
  * swallowed into a `false` return so one bad address never fails a bulk send.
