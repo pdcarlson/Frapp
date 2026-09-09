@@ -1220,12 +1220,16 @@ Two assertions ship degraded on purpose, each saying so in the step summary:
   been worse; the table is meant to be a complete inventory of what is watched.
 - **End-to-end sign-in** — the only row that exercises behaviour rather than configuration, covering
   migration, grants, RLS, and hook resolution in one probe — needs `STAGING_SMOKE_USER_EMAIL` /
-  `STAGING_SMOKE_USER_PASSWORD`, which are not provisioned (#893). **The smoke user must have
-  exactly one chapter membership:** a correctly-working hook returns a token with *no* claim when
-  the user resolves to no chapter, so a zero-membership user is indistinguishable from a disabled
-  hook. The check resolves that ambiguity in the safe direction — a claimless token is reported as
-  **FAIL** naming both possible causes, never as a pass — so provisioning a zero-membership user
-  produces a red run and a P1 blaming the hook on a healthy environment. Give it exactly one.
+  `STAGING_SMOKE_USER_PASSWORD`, which are not provisioned (#893). A fully unconfigured local run
+  (no URL, no anon key, no smoke user) is still SKIPPED. **A half-set `SUPABASE_URL` /
+  `SUPABASE_ANON_KEY` pair, or a smoke user with neither, is FAIL** (#1767): Infisical injects both
+  on the scheduled job, and SKIPPED after the anon key was blanked would keep 07:30 green. **The
+  smoke user must have exactly one chapter membership:** a correctly-working hook returns a token
+  with *no* claim when the user resolves to no chapter, so a zero-membership user is
+  indistinguishable from a disabled hook. The check resolves that ambiguity in the safe direction
+  — a claimless token is reported as **FAIL** naming both possible causes, never as a pass — so
+  provisioning a zero-membership user produces a red run and a P1 blaming the hook on a healthy
+  environment. Give it exactly one.
 
 The Infisical injection step runs with `continue-on-error: true`, which is load-bearing rather than
 lax: a revoked machine identity is the single most likely drift class, and failing the job at that
