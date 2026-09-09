@@ -78,6 +78,8 @@ if cmd is None:
     cmd = ""
 elif not isinstance(cmd, str):
     sys.exit(1)
+else:
+    cmd = cmd.strip()
 if cwd is None:
     cwd = ""
 elif not isinstance(cwd, str):
@@ -92,8 +94,8 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
   if (!d || typeof d !== "object" || Array.isArray(d)) process.exit(1);
   if (d.command != null && typeof d.command !== "string") process.exit(1);
   if (d.cwd != null && typeof d.cwd !== "string") process.exit(1);
-  const cmd = d.command || "";
-  const cwd = d.cwd || "";
+  const cmd = (typeof d.command === "string" ? d.command : "").trim();
+  const cwd = typeof d.cwd === "string" ? d.cwd : "";
   process.stdout.write(cmd.replace(/\t/g, " ").replace(/\r/g, "\n").replace(/\n/g, ";") + "\t" + cwd);
 });
 ' 2>/dev/null && return 0
@@ -123,6 +125,21 @@ fi
 
 command="${fields%%$'\t'*}"
 command_cwd="${fields#*$'\t'}"
+
+# Strip in parse_cursor first (python str.strip / JS trim) so CR/LF/NBSP-only
+# commands become empty *before* newline flattening turns them into ";".
+# Bash trim here is the fallback if an interpreter skipped strip.
+command="${command#"${command%%[![:space:]]*}"}"
+command="${command%"${command##*[![:space:]]}"}"
+# Newline flattening maps CR/LF to ";". A command that is only separators is
+# still empty for the inner matcher.
+_collapsed="${command//;}"
+_collapsed="${_collapsed#"${_collapsed%%[![:space:]]*}"}"
+_collapsed="${_collapsed%"${_collapsed##*[![:space:]]}"}"
+if [ -z "$_collapsed" ]; then
+  command=""
+fi
+unset _collapsed
 
 # Successful parse with an empty command still fails closed when the raw payload
 # contains "push" — otherwise {"command":null,"note":"git push"} or a schema that
