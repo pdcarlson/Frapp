@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": ".cursor/hooks/pre-push-review-gate.sh",
+        "timeout": 30,
+        "failClosed": true
+      }
+    ]
+  }
+}
