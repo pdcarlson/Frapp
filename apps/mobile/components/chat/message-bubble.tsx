@@ -4,6 +4,10 @@ import { emojiFromActionType } from "@repo/chat-core/types";
 import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import {
+  deliveryChrome,
+  type DeliveryChrome,
+} from "@/lib/chat/delivery-status";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   authorInitialsFallback,
@@ -29,11 +33,13 @@ import { ReplyQuote } from "./reply-quote";
  *
  * Three TODO-DESIGN gaps are officially open in `components.md:216-218`, and
  * this follows the fallback each one names rather than inventing a treatment:
- * consecutive-message grouping renders full chrome per message; the pending and
- * failed send states ride the self-bubble meta line, failed in
- * `semantic.destructive` with a retry path; and an in-bubble mention highlight
- * falls back to the list-level badge, which is also all the client can do today
- * — `chat_messages.mentions` is resolved server-side but `normalizeRow` does not
+ * consecutive-message grouping renders full chrome per message; the pending,
+ * failed, unconfirmed, and recorded send states ride the self-bubble meta
+ * line (`deliveryChrome` is exhaustive over `MessageStatus` — #1910), failed
+ * in `semantic.destructive` with a retry path, unconfirmed/recorded as a
+ * muted note with no discard; and an in-bubble mention highlight falls back
+ * to the list-level badge, which is also all the client can do today —
+ * `chat_messages.mentions` is resolved server-side but `normalizeRow` does not
  * carry it onto `ChatMessage`, so the thread has no per-message mention signal
  * to render even if the design existed.
  */
@@ -295,6 +301,8 @@ function MineMessageBubble({
     </>
   );
 
+  const chrome = deliveryChrome(message);
+
   return (
     <View style={styles.rowMine}>
       <View style={[styles.bubbleMine, { backgroundColor: accentPrimary }]}>
@@ -312,18 +320,10 @@ function MineMessageBubble({
       </View>
 
       <View style={styles.metaMine}>
-        {message._status === "pending" ? (
-          <Text style={styles.metaText}>{`${time} · sending`}</Text>
-        ) : message._status === "failed" ? (
-          <Text style={styles.metaFailed}>
-            {message._error ?? "Send failed"}
-          </Text>
-        ) : (
-          <Text style={styles.metaText}>{time}</Text>
-        )}
+        <MineDeliveryMeta chrome={chrome} time={time} styles={styles} />
       </View>
 
-      {message._status === "failed" ? (
+      {chrome.status === "failed" ? (
         <View style={styles.failedActions}>
           <Pressable
             accessibilityRole="button"
@@ -355,6 +355,47 @@ function MineMessageBubble({
       />
     </View>
   );
+}
+
+/**
+ * Self-bubble delivery caption. Exhaustive over `DeliveryChrome` so a new
+ * `MessageStatus` cannot silently render as the confirmed time-only line.
+ *
+ * `unconfirmed` / `recorded` are muted notes, never destructive, and never
+ * paired with Retry/Discard in the caller. Mobile has no slash replay path,
+ * so `unconfirmed` is read-only — do not add a Retry here.
+ */
+function MineDeliveryMeta({
+  chrome,
+  time,
+  styles,
+}: {
+  chrome: DeliveryChrome;
+  time: string;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  switch (chrome.status) {
+    case "pending":
+      return <Text style={styles.metaText}>{`${time} · sending`}</Text>;
+    case "failed":
+      return <Text style={styles.metaFailed}>{chrome.error}</Text>;
+    case "unconfirmed":
+    case "recorded":
+      return (
+        <>
+          <Text style={styles.metaText}>{time}</Text>
+          <Text style={styles.metaText} accessibilityLiveRegion="polite">
+            {chrome.note}
+          </Text>
+        </>
+      );
+    case "confirmed":
+      return <Text style={styles.metaText}>{time}</Text>;
+    default: {
+      const _never: never = chrome;
+      return _never;
+    }
+  }
 }
 
 /**
