@@ -2,22 +2,22 @@
   "name": "Frapp",
   "user": "ubuntu",
   "install": "bash scripts/cursor-agent-install.sh",
-  "start": "bash scripts/cursor-agent-start.sh",
+  "start": "bash scripts/cursor-cloud-up.sh",
   "terminals": [
     {
       "name": "api",
-      "command": "bash scripts/cursor-node20.sh npm run start:dev -w apps/api",
-      "description": "NestJS API (http://localhost:3001, Swagger at /docs). Reads apps/api/.env.local written by start."
+      "command": "bash scripts/cursor-cloud-terminal.sh npm run start:dev -w apps/api",
+      "description": "NestJS API (http://localhost:3001, Swagger at /docs). Waits for .cloud-sandbox-up.done, then reads apps/api/.env.local written by start."
     },
     {
       "name": "web",
-      "command": "bash scripts/cursor-node20.sh npm run dev -w apps/web",
-      "description": "Next.js admin dashboard (http://localhost:3000)."
+      "command": "bash scripts/cursor-cloud-terminal.sh npm run dev -w apps/web",
+      "description": "Next.js admin dashboard (http://localhost:3000). Waits for .cloud-sandbox-up.done before starting."
     },
     {
       "name": "landing",
-      "command": "bash scripts/cursor-node20.sh npm run dev -w apps/landing",
-      "description": "Next.js marketing site (http://localhost:3002)."
+      "command": "bash scripts/cursor-cloud-terminal.sh npm run dev -w apps/landing",
+      "description": "Next.js marketing site (http://localhost:3002). Waits for .cloud-sandbox-up.done before starting."
     }
   ],
   "ports": [
