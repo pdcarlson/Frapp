@@ -473,6 +473,24 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-09: System actor display_name becomes Signet System (#1935)
+
+* **Migration**: `20260909120000_rename_system_user_display_name.sql`
+* **Purpose**: The well-known system actor
+  (`users.id = 00000000-0000-0000-0000-000000000000`) was seeded as
+  `display_name = 'Frapp System'`. Chat cards do not print that name today, but
+  the row is still live on hosted projects and any later surface that reads
+  `users.display_name` for the system sender would show the old product name.
+  This is a one-row `UPDATE` matched on id; the historical seed is left as the
+  record of what was inserted. Email (`system@frapp.local`),
+  `SYSTEM_SENDER_ID`, and `frapp://` identifiers are untouched.
+* **Checks**: After `db push`,
+  `select display_name from users where id = '00000000-0000-0000-0000-000000000000'`
+  returns `Signet System`. Re-running the migration changes nothing.
+* **Promoter notes**: Data only — no schema change, no lock beyond the single
+  row, no client dependency. Staging applies on merge to `main`. Production
+  waits for Deploy production; do not dispatch that workflow from this change.
+
 ## 2026-09-07: Chapter directory reference rows reach every environment (#840)
 
 * **Migration**: `20260907011500_chapter_directory_seed_rows.sql`

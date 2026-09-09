@@ -430,6 +430,15 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the Signet System display_name
+
+* **Migration**: `20260909120000_rename_system_user_display_name.sql`
+* **Action**: `update public.users set display_name = 'Frapp System' where id = '00000000-0000-0000-0000-000000000000';` — restores the name the historical seed inserted. Nothing else on the row changes.
+* **Note**: Data only, one row, idempotent. There is rarely a reason to roll it
+  back — the old name is the leftover this change removes. Chat cards do not
+  print `users.display_name` for the system sender today, so a rollback is
+  invisible on those surfaces. Do not edit the historical seed to undo this.
+
 ## Rollback the chapter directory seed rows
 
 * **Migration**: `20260907011500_chapter_directory_seed_rows.sql`
