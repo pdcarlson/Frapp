@@ -182,7 +182,7 @@ is never shown "0 invoices overdue" or an "Invoices unavailable" row. They must 
 **operational** signal: a failed read logs a warning naming the signal, a zero logs nothing. The
 observability side is where "quiet week" and "broken query" are told apart, and it is the only place
 they can be. This is the posture the report-retention sweep takes in
-[`../../../docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md) — a sweep that
+[`../../../docs/internal/ops/deployment/render.md`](../../../docs/internal/ops/deployment/render.md#56-in-process-scheduled-jobs) — a sweep that
 silently reaps nothing must not look like a healthy one.
 
 **If no section qualifies, no card is posted.** With rule 4 in place this falls out naturally: a

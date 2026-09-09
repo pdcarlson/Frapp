@@ -163,7 +163,7 @@ The cases where it beats the local stack:
 - **Is staging serving this commit** — **for the API (Render staging) only.** Since the
   2026-09-02 fence above, staging web and landing are frozen at a fixed build that no merge
   advances, so the Vercel alias lag described in
-  [`DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md) is no longer observable here —
+  [`vercel.md`](../../../docs/internal/ops/deployment/vercel.md) is no longer observable here —
   those hosts always serve an old commit, and finding that they do proves nothing about yours.
 
 ### Playwright against the deployed UI

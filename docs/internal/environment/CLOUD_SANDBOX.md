@@ -551,7 +551,7 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   (The unexplained bare `vercel.com` entry noted above is the dashboard apex and does not
   cover `*.vercel.app` either.) When the alias lags behind the
   latest `main` build — the known Vercel behaviour described in
-  [`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md) — you can reach what the alias currently
+  [`../ops/deployment/vercel.md`](../ops/deployment/vercel.md) — you can reach what the alias currently
   points at, not the newer deployment behind it. Check the alias state via the Vercel MCP
   tools rather than assuming the hostname is current.
 - **Writes being safe.** Nothing about egress makes a `POST` reversible. The skill's
