@@ -21,8 +21,15 @@
  * `degraded` is optional and ignored while `value` is true (OFFLINE wins).
  * Set it to model DEGRADED, which must keep queueless writes enabled
  * (`spec/ui/resilience.md` § 2).
+ *
+ * `linkOnline` defaults to the inverse of OFFLINE. Override it when modelling
+ * an API-down OFFLINE with the browser link still up (presence must stay on).
  */
-export type OfflineBox = { value: boolean; degraded?: boolean };
+export type OfflineBox = {
+  value: boolean;
+  degraded?: boolean;
+  linkOnline?: boolean;
+};
 
 export function networkMock(box: OfflineBox) {
   return {
@@ -39,6 +46,8 @@ export function networkMock(box: OfflineBox) {
         isOnline: state === "ONLINE",
         isDegraded,
         isOffline,
+        linkOnline: box.linkOnline ?? !isOffline,
+        probeOnce: async () => {},
       };
     },
   };
