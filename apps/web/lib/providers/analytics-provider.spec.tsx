@@ -2,10 +2,13 @@ import { useContext } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { mockPost, mockUseOrgConfig } = vi.hoisted(() => ({
-  mockPost: vi.fn(),
-  mockUseOrgConfig: vi.fn(),
-}));
+const { mockPost, mockUseOrgConfig, applyAnalyticsOptOut } = vi.hoisted(
+  () => ({
+    mockPost: vi.fn(),
+    mockUseOrgConfig: vi.fn(),
+    applyAnalyticsOptOut: vi.fn(),
+  }),
+);
 
 // The provider only needs a POST-capable client and an active chapter id.
 // Opt-out state is read from the merged chapter config.
@@ -13,6 +16,10 @@ vi.mock("@repo/hooks", () => ({
   useFrappClient: () => ({ POST: mockPost }),
   useActiveChapterId: () => "chap-1",
   useOrgConfig: () => mockUseOrgConfig(),
+}));
+
+vi.mock("@/lib/posthog/client", () => ({
+  applyAnalyticsOptOut: (...args: unknown[]) => applyAnalyticsOptOut(...args),
 }));
 
 const { AnalyticsProvider, AnalyticsContext } = await import(
@@ -42,6 +49,7 @@ describe("AnalyticsProvider client-side opt-out", () => {
     mockPost.mockReset();
     mockPost.mockResolvedValue({ data: {}, error: undefined });
     mockUseOrgConfig.mockReset();
+    applyAnalyticsOptOut.mockReset();
   });
 
   it("posts the event when the chapter has not opted out", () => {
@@ -63,6 +71,7 @@ describe("AnalyticsProvider client-side opt-out", () => {
     renderWithOptOut(true);
     fireEvent.click(screen.getByText("emit"));
     expect(mockPost).not.toHaveBeenCalled();
+    expect(applyAnalyticsOptOut).toHaveBeenCalledWith(true);
   });
 
   it("fails open when the flag is missing from chapter config", () => {
