@@ -95,7 +95,7 @@ export interface IChatMessageRepository {
   findById(id: string): Promise<ChatMessage | null>;
   findByChannel(
     channelId: string,
-    options?: { limit?: number; before?: string },
+    options?: { limit?: number; before?: string; since?: string },
   ): Promise<ChatMessage[]>;
   findPinnedByChannel(channelId: string): Promise<ChatMessage[]>;
   countPinnedByChannel(channelId: string): Promise<number>;
