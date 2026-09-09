@@ -139,6 +139,7 @@ test("missing production env object fails", () => {
 test("production target ignores projectId and an iOS submit block", () => {
   const eas = fixtureEas();
   eas.submit.production.ios = { ascAppId: "0" };
+  eas.extra = { eas: { projectId: "00000000-0000-0000-0000-000000000000" } };
   eas.build.production.env.UNUSED = "ignored";
   assert.deepEqual(productionTargetProblems(eas), []);
 });
