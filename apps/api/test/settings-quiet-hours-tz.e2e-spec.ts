@@ -9,6 +9,8 @@ import { NotificationController } from '../src/interface/controllers/notificatio
 import { NotificationService } from '../src/application/services/notification.service';
 import { AuthService } from '../src/application/services/auth.service';
 import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
+import { ChapterGuard } from '../src/interface/guards/chapter.guard';
+import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { configureApp } from '../src/bootstrap';
 
 const V1 = '/v1';
@@ -44,13 +46,14 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
     // Deliberately NOT AppModule: booting it would pull in every module's
     // Supabase providers and the global throttler (the one APP_GUARD) for a
     // route that needs neither, and a failure from that wiring would mask the
-    // 400 this test exists to prove. NotificationController is guarded only by
-    // SupabaseAuthGuard — there is no ChapterGuard on it, which is why its one
-    // chapter-scoped route verifies membership by hand in the service — so the
-    // stub below replaces exactly that guard and nothing else. Mounting the real
-    // controller with the real ValidationPipe keeps both links under test: the
-    // @Body() DTO binding and the pipe, which is what the DTO unit spec cannot
-    // reach.
+    // 400 this test exists to prove. PATCH /v1/settings is still only behind
+    // the class-level SupabaseAuthGuard; list and mark-read now also declare
+    // ChapterGuard + PermissionsGuard at method level. Nest instantiates those
+    // method guards when compiling the controller even though this suite never
+    // hits those routes, so they are stubbed here the same way the unit spec
+    // does. Mounting the real controller with the real ValidationPipe keeps
+    // both links under test: the @Body() DTO binding and the pipe, which is
+    // what the DTO unit spec cannot reach.
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [NotificationController],
       providers: [
@@ -65,6 +68,10 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
     })
       .overrideGuard(SupabaseAuthGuard)
       .useClass(AuthGuardStub)
+      .overrideGuard(ChapterGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: () => true })
       .compile();
 
     app = moduleFixture.createNestApplication();
