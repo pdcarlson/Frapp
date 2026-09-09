@@ -84,6 +84,24 @@ export interface ApplyStripePaymentInput {
   chargeId: string | null;
 }
 
+export interface NotifyStripePaymentFailureInput {
+  invoiceId: string;
+  chapterId: string;
+  declineReason: string | null;
+}
+
+/** Stripe's cardholder message usually already ends with a period. */
+function declineNotificationBody(
+  title: string,
+  declineReason: string | null,
+): string {
+  if (!declineReason) {
+    return `Your payment for "${title}" was declined. You can try again.`;
+  }
+  const reason = declineReason.replace(/\.+$/, '');
+  return `Your payment for "${title}" was declined: ${reason}. You can try again.`;
+}
+
 @Injectable()
 export class FinancialInvoiceService {
   private readonly logger = new Logger(FinancialInvoiceService.name);
@@ -419,6 +437,47 @@ export class FinancialInvoiceService {
         data: { target: { screen: 'billing' } },
       });
     } catch {}
+  }
+
+  /**
+   * Member dues payment declined (#717). Does not change invoice status — OPEN
+   * is already correct, and the pay endpoint reuses a confirmable intent.
+   * Missing / non-OPEN invoices are acked silently: notifying about a VOID or
+   * already-PAID row would contradict what the member sees.
+   */
+  async notifyStripePaymentFailure(
+    input: NotifyStripePaymentFailureInput,
+  ): Promise<void> {
+    const invoice = await this.invoiceRepo.findById(
+      input.invoiceId,
+      input.chapterId,
+    );
+    if (!invoice) {
+      this.logger.debug(
+        `payment_intent.payment_failed for unknown invoice ${input.invoiceId} (chapter ${input.chapterId}) — ignoring`,
+      );
+      return;
+    }
+    if (invoice.status !== 'OPEN') {
+      this.logger.debug(
+        `payment_intent.payment_failed for ${invoice.status} invoice ${input.invoiceId} — not notifying`,
+      );
+      return;
+    }
+
+    const body = declineNotificationBody(invoice.title, input.declineReason);
+
+    await this.notificationService.notifyUser(
+      invoice.user_id,
+      input.chapterId,
+      {
+        title: 'Payment declined',
+        body,
+        priority: 'NORMAL',
+        category: 'billing',
+        data: { target: { screen: 'billing' } },
+      },
+    );
   }
 
   async getInvoiceTransactions(invoiceId: string, chapterId: string) {
