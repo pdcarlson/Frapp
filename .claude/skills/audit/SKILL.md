@@ -290,7 +290,7 @@ violation — red daily, and red as the `deploy-production.yml` preflight, where
 deploys (`--migrations-only` drops only frapp-landing's assertion; frapp-web's stays). **Repaired by
 #1579 on 2026-09-02** — the assertion is now `assertVercelNoGitLink`, and the two Vercel jobs in
 `verify-deployments.yml` were removed. The canonical record of the unlink and everything it broke is **ADR-21** in
-[`spec/architecture/README.md`](../../../spec/architecture/README.md) — read it there, do not
+[`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md) — read it there, do not
 re-derive it here.
 
 **The Vercel row stays auditable, pointed the other way.** No Production Branch setting exists while

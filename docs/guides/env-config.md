@@ -10,7 +10,7 @@ We maintain three main environments:
 - **Staging** — Supabase Cloud (staging project), containerized API, Vercel-hosted frontends —
   but the frontends are **frozen since 2026-09-02**: both Vercel projects were unlinked from Git
   (`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so no merge deploys web or landing.
-  Canonical record: ADR-21 in [`spec/architecture/README.md`](../../spec/architecture/README.md)
+  Canonical record: ADR-21 in [`spec/architecture/adr/adr-21.md`](../../spec/architecture/adr/adr-21.md)
 - **Production** — Supabase Cloud (prod project), API + frontends on production infrastructure
 
 ## 2. Secrets management
