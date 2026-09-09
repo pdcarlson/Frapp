@@ -12,7 +12,8 @@
     "./dispatch": "./src/dispatch.ts",
     "./chat-client": "./src/chat-client.ts",
     "./realtime-manager": "./src/realtime-manager.ts",
-    "./polls": "./src/polls.ts"
+    "./polls": "./src/polls.ts",
+    "./reply-preview": "./src/reply-preview.ts"
   },
   "scripts": {
     "lint": "eslint . --max-warnings 0",
