@@ -55,6 +55,21 @@ export type NotifyPayload = {
   category?: string;
 };
 
+/** In-app insert shape shared by `notifyUser` and the batched chapter path. */
+function inAppRow(
+  userId: string,
+  chapterId: string,
+  payload: NotifyPayload,
+): Pick<Notification, 'chapter_id' | 'user_id' | 'title' | 'body' | 'data'> {
+  return {
+    chapter_id: chapterId,
+    user_id: userId,
+    title: payload.title,
+    body: payload.body,
+    data: payload.data ?? {},
+  };
+}
+
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
@@ -120,13 +135,9 @@ export class NotificationService {
       effectivePriority = 'SILENT';
     }
 
-    const notification = await this.notificationRepo.create({
-      chapter_id: chapterId,
-      user_id: userId,
-      title: payload.title,
-      body: payload.body,
-      data: payload.data ?? {},
-    });
+    const notification = await this.notificationRepo.create(
+      inAppRow(userId, chapterId, payload),
+    );
 
     // Push is best-effort, and the token lookup is part of it. Once the
     // notification row above is committed the user *has* been notified in
@@ -137,33 +148,12 @@ export class NotificationService {
     // delivery reports failure.
     try {
       const pushTokens = await this.pushTokenRepo.findByUser(userId);
-      if (pushTokens.length === 0) return;
-
-      const { invalidTokens } = await this.pushProvider.sendToUser(
-        pushTokens.map((t) => t.token),
-        {
-          title: payload.title,
-          body: payload.body,
-          data: { ...payload.data, notificationId: notification.id },
-          priority: effectivePriority,
-          // Forwarded for delivery telemetry only — lets `push_delivery`
-          // records be sliced by category (see the Expo provider).
-          category,
-        },
-      );
-
-      // Pruning stays in the application layer — the provider only classifies
-      // Expo's response, it never touches `push_tokens` itself. Best-effort
-      // and outside the outer catch's concern: a delete failure here must
-      // never read as "push delivery failed" in the log line below. Each
-      // deletion catches its own rejection, so nothing here can actually
-      // reject — `Promise.all` (not `allSettled`) says that plainly.
-      await Promise.all(
-        invalidTokens.map((token) =>
-          this.pushTokenRepo.deleteByToken(token).catch((err) => {
-            this.logger.warn(`Failed to prune invalid push token`, err);
-          }),
-        ),
+      await this.sendPushAndPrune(
+        pushTokens,
+        notification.id,
+        payload,
+        effectivePriority,
+        category,
       );
     } catch (err) {
       this.logger.warn(`Push delivery failed for user ${userId}`, err);
@@ -242,13 +232,7 @@ export class NotificationService {
     const insertResults = await Promise.allSettled(
       recipientChunks.map((chunk) =>
         this.notificationRepo.createMany(
-          chunk.map(({ userId }) => ({
-            chapter_id: chapterId,
-            user_id: userId,
-            title: payload.title,
-            body: payload.body,
-            data: payload.data ?? {},
-          })),
+          chunk.map(({ userId }) => inAppRow(userId, chapterId, payload)),
         ),
       ),
     );
@@ -301,25 +285,12 @@ export class NotificationService {
     const pushResults = await Promise.allSettled(
       created.map(async (notification) => {
         const userTokens = tokensByUser.get(notification.user_id) ?? [];
-        if (userTokens.length === 0) return;
-
-        const { invalidTokens } = await this.pushProvider.sendToUser(
-          userTokens.map((token) => token.token),
-          {
-            title: payload.title,
-            body: payload.body,
-            data: { ...payload.data, notificationId: notification.id },
-            priority: priorityByUser.get(notification.user_id) ?? 'NORMAL',
-            category,
-          },
-        );
-
-        await Promise.all(
-          invalidTokens.map((token) =>
-            this.pushTokenRepo.deleteByToken(token).catch((err) => {
-              this.logger.warn(`Failed to prune invalid push token`, err);
-            }),
-          ),
+        await this.sendPushAndPrune(
+          userTokens,
+          notification.id,
+          payload,
+          priorityByUser.get(notification.user_id) ?? 'NORMAL',
+          category,
         );
       }),
     );
@@ -332,6 +303,49 @@ export class NotificationService {
         `Chapter notify push failed for ${pushFailures} of ${created.length} recipients in ${chapterId}`,
       );
     }
+  }
+
+  /**
+   * Expo send plus invalid-token prune. Shared by `notifyUser` and the
+   * chapter-wide path so the payload shape (including `notificationId`) cannot
+   * drift. Callers own the "push is best-effort" boundary: `notifyUser`
+   * catches, `notifyChapter` counts rejections.
+   *
+   * Pruning stays in the application layer — the provider only classifies
+   * Expo's response, it never touches `push_tokens` itself. Best-effort:
+   * a delete failure must never read as "push delivery failed". Each
+   * deletion catches its own rejection, so nothing here can actually reject
+   * — `Promise.all` (not `allSettled`) says that plainly.
+   */
+  private async sendPushAndPrune(
+    tokens: PushToken[],
+    notificationId: string,
+    payload: NotifyPayload,
+    priority: NotifyPayload['priority'],
+    category: string,
+  ): Promise<void> {
+    if (tokens.length === 0) return;
+
+    const { invalidTokens } = await this.pushProvider.sendToUser(
+      tokens.map((token) => token.token),
+      {
+        title: payload.title,
+        body: payload.body,
+        data: { ...payload.data, notificationId },
+        priority,
+        // Forwarded for delivery telemetry only — lets `push_delivery`
+        // records be sliced by category (see the Expo provider).
+        category,
+      },
+    );
+
+    await Promise.all(
+      invalidTokens.map((token) =>
+        this.pushTokenRepo.deleteByToken(token).catch((err) => {
+          this.logger.warn(`Failed to prune invalid push token`, err);
+        }),
+      ),
+    );
   }
 
   /**

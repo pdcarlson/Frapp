@@ -8,6 +8,18 @@ import type {
 import type { INotificationRepository } from '#domain/repositories/notification.repository.interface';
 import type { Notification } from '#domain/entities/notification.entity';
 
+function toNotificationInsert(
+  data: TablesInsert<'notifications'>,
+): TablesInsert<'notifications'> {
+  return {
+    chapter_id: data.chapter_id,
+    user_id: data.user_id,
+    title: data.title,
+    body: data.body,
+    data: data.data ?? {},
+  };
+}
+
 @Injectable()
 export class SupabaseNotificationRepository implements INotificationRepository {
   constructor(
@@ -16,16 +28,9 @@ export class SupabaseNotificationRepository implements INotificationRepository {
   ) {}
 
   async create(data: TablesInsert<'notifications'>): Promise<Notification> {
-    const row: TablesInsert<'notifications'> = {
-      chapter_id: data.chapter_id,
-      user_id: data.user_id,
-      title: data.title,
-      body: data.body,
-      data: data.data ?? {},
-    };
     const { data: created, error } = await this.supabase
       .from('notifications')
-      .insert(row)
+      .insert(toNotificationInsert(data))
       .select()
       .single();
 
@@ -42,16 +47,9 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     // repository's call log, which is what the tenant-scope harness reads.
     if (data.length === 0) return [];
 
-    const rows: TablesInsert<'notifications'>[] = data.map((item) => ({
-      chapter_id: item.chapter_id,
-      user_id: item.user_id,
-      title: item.title,
-      body: item.body,
-      data: item.data ?? {},
-    }));
     const { data: created, error } = await this.supabase
       .from('notifications')
-      .insert(rows)
+      .insert(data.map(toNotificationInsert))
       .select();
 
     if (error) throw error;

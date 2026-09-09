@@ -23,6 +23,7 @@ import type {
   NotificationPreference,
   UserSettings,
 } from '#domain/entities/notification.entity';
+import type { Member } from '#domain/entities/member.entity';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
   LIST_QUERY_LIMIT_MAX,
@@ -132,6 +133,92 @@ describe('NotificationService', () => {
     quiet_hours_tz: 'America/New_York',
     theme: 'system',
     updated_at: '2026-02-27T00:00:00.000Z',
+  };
+
+  const chapterMember = (
+    userId: string,
+    overrides: Partial<Member> = {},
+  ): Member => ({
+    id: `m-${userId}`,
+    user_id: userId,
+    chapter_id: 'ch-1',
+    role_ids: [],
+    custom_role_ids: [],
+    has_completed_onboarding: false,
+    dismissed_ops_nudges: [],
+    created_at: '',
+    updated_at: '',
+    ...overrides,
+  });
+
+  const notificationsFor = (userIds: string[]): Notification[] =>
+    userIds.map((userId, index) => ({
+      ...baseNotification,
+      id: index === 0 && userId === 'u-1' ? baseNotification.id : `n-${userId}`,
+      user_id: userId,
+    }));
+
+  const tokensFor = (userIds: string[]): PushToken[] =>
+    userIds.map((userId, index) =>
+      index === 0 && userId === 'u-1'
+        ? basePushToken
+        : { ...basePushToken, id: `pt-${userId}`, user_id: userId },
+    );
+
+  const echoCreateMany = async (
+    rows: Partial<Notification>[],
+  ): Promise<Notification[]> =>
+    rows.map((row, index) => ({
+      ...baseNotification,
+      id: `n-${row.user_id ?? index}`,
+      user_id: row.user_id ?? `missing-${index}`,
+    }));
+
+  const spyWarn = () =>
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+  const expectSilentPush = () => {
+    expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+      [basePushToken.token],
+      expect.objectContaining({ priority: 'SILENT' }),
+    );
+  };
+
+  const stubChapterNotify = ({
+    userIds = ['u-1'],
+    members,
+    prefs = [],
+    settings = [],
+    created,
+    tokens,
+    createManyImpl,
+  }: {
+    userIds?: string[];
+    members?: Member[];
+    prefs?: NotificationPreference[];
+    settings?: UserSettings[];
+    created?: Notification[];
+    tokens?: PushToken[];
+    createManyImpl?: (
+      rows: Partial<Notification>[],
+    ) => Promise<Notification[]>;
+  } = {}): string[] => {
+    mockMemberRepo.findByChapter.mockResolvedValue(
+      members ?? userIds.map((id) => chapterMember(id)),
+    );
+    mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue(prefs);
+    mockSettingsRepo.findByUserIds.mockResolvedValue(settings);
+    if (createManyImpl) {
+      mockNotificationRepo.createMany.mockImplementation(createManyImpl);
+    } else {
+      mockNotificationRepo.createMany.mockResolvedValue(
+        created ?? notificationsFor(userIds),
+      );
+    }
+    mockPushTokenRepo.findByUserIds.mockResolvedValue(
+      tokens ?? tokensFor(userIds),
+    );
+    return userIds;
   };
 
   describe('notifyUser', () => {
@@ -264,12 +351,7 @@ describe('NotificationService', () => {
         priority: 'NORMAL',
       });
 
-      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
-        [basePushToken.token],
-        expect.objectContaining({
-          priority: 'SILENT',
-        }),
-      );
+      expectSilentPush();
 
       jest.useRealTimers();
     });
@@ -442,10 +524,7 @@ describe('NotificationService', () => {
           priority: 'NORMAL',
         });
 
-        expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
-          [basePushToken.token],
-          expect.objectContaining({ priority: 'SILENT' }),
-        );
+        expectSilentPush();
 
         jest.useRealTimers();
       });
@@ -535,13 +614,10 @@ describe('NotificationService', () => {
       });
 
       it('does not drop the member from a chapter-wide notify', async () => {
-        mockMemberRepo.findByChapter.mockResolvedValue([{ user_id: 'u-1' }]);
-        mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([
-          basePreference,
-        ]);
-        mockSettingsRepo.findByUserIds.mockResolvedValue([invalidSettings]);
-        mockNotificationRepo.createMany.mockResolvedValue([baseNotification]);
-        mockPushTokenRepo.findByUserIds.mockResolvedValue([basePushToken]);
+        stubChapterNotify({
+          prefs: [basePreference],
+          settings: [invalidSettings],
+        });
 
         await service.notifyChapter('ch-1', { title: 'Test', body: 'Body' });
 
@@ -569,43 +645,11 @@ describe('NotificationService', () => {
   });
 
   describe('notifyChapter', () => {
-    const member = (
-      userId: string,
-    ): {
-      id: string;
-      user_id: string;
-      chapter_id: string;
-      role_ids: string[];
-      custom_role_ids: string[];
-      has_completed_onboarding: boolean;
-      created_at: string;
-      updated_at: string;
-    } => ({
-      id: `m-${userId}`,
-      user_id: userId,
-      chapter_id: 'ch-1',
-      role_ids: [],
-      custom_role_ids: [],
-      has_completed_onboarding: false,
-      created_at: '',
-      updated_at: '',
-    });
+    const roster = (n: number) =>
+      Array.from({ length: n }, (_, i) => `u-${i}`);
 
     it('should notify all chapter members', async () => {
-      mockMemberRepo.findByChapter.mockResolvedValue([
-        member('u-1'),
-        member('u-2'),
-      ]);
-      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([]);
-      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
-      mockNotificationRepo.createMany.mockResolvedValue([
-        { ...baseNotification, user_id: 'u-1' },
-        { ...baseNotification, id: 'n-2', user_id: 'u-2' },
-      ]);
-      mockPushTokenRepo.findByUserIds.mockResolvedValue([
-        basePushToken,
-        { ...basePushToken, id: 'pt-2', user_id: 'u-2' },
-      ]);
+      stubChapterNotify({ userIds: ['u-1', 'u-2'] });
 
       await service.notifyChapter('ch-1', {
         title: 'Chapter Announcement',
@@ -623,20 +667,12 @@ describe('NotificationService', () => {
     });
 
     it('skips members who disabled the category and still delivers the rest', async () => {
-      mockMemberRepo.findByChapter.mockResolvedValue([
-        member('u-1'),
-        member('u-2'),
-      ]);
-      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([
-        { ...basePreference, user_id: 'u-1', is_enabled: false },
-      ]);
-      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
-      mockNotificationRepo.createMany.mockResolvedValue([
-        { ...baseNotification, user_id: 'u-2' },
-      ]);
-      mockPushTokenRepo.findByUserIds.mockResolvedValue([
-        { ...basePushToken, id: 'pt-2', user_id: 'u-2' },
-      ]);
+      stubChapterNotify({
+        userIds: ['u-1', 'u-2'],
+        prefs: [{ ...basePreference, user_id: 'u-1', is_enabled: false }],
+        created: notificationsFor(['u-2']),
+        tokens: tokensFor(['u-2']),
+      });
 
       await service.notifyChapter('ch-1', {
         title: 'Chapter Announcement',
@@ -651,9 +687,7 @@ describe('NotificationService', () => {
     });
 
     it('does not read category preferences for an URGENT chapter broadcast', async () => {
-      mockMemberRepo.findByChapter.mockResolvedValue([member('u-1')]);
-      mockNotificationRepo.createMany.mockResolvedValue([baseNotification]);
-      mockPushTokenRepo.findByUserIds.mockResolvedValue([basePushToken]);
+      stubChapterNotify();
 
       await service.notifyChapter('ch-1', {
         title: 'Emergency',
@@ -670,14 +704,9 @@ describe('NotificationService', () => {
     });
 
     it('deduplicates roster rows that share a user_id', async () => {
-      mockMemberRepo.findByChapter.mockResolvedValue([
-        member('u-1'),
-        { ...member('u-1'), id: 'm-dup' },
-      ]);
-      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([]);
-      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
-      mockNotificationRepo.createMany.mockResolvedValue([baseNotification]);
-      mockPushTokenRepo.findByUserIds.mockResolvedValue([basePushToken]);
+      stubChapterNotify({
+        members: [chapterMember('u-1'), chapterMember('u-1', { id: 'm-dup' })],
+      });
 
       await service.notifyChapter('ch-1', { title: 'Test', body: 'Body' });
 
@@ -690,17 +719,15 @@ describe('NotificationService', () => {
       jest.useFakeTimers();
       jest.setSystemTime(new Date('2026-06-15T15:00:00Z'));
 
-      mockMemberRepo.findByChapter.mockResolvedValue([member('u-1')]);
-      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([]);
-      mockSettingsRepo.findByUserIds.mockResolvedValue([
-        {
-          ...baseSettings,
-          quiet_hours_start: '00:00:00',
-          quiet_hours_end: '23:59:00',
-        },
-      ]);
-      mockNotificationRepo.createMany.mockResolvedValue([baseNotification]);
-      mockPushTokenRepo.findByUserIds.mockResolvedValue([basePushToken]);
+      stubChapterNotify({
+        settings: [
+          {
+            ...baseSettings,
+            quiet_hours_start: '00:00:00',
+            quiet_hours_end: '23:59:00',
+          },
+        ],
+      });
 
       await service.notifyChapter('ch-1', {
         title: 'Test',
@@ -708,38 +735,21 @@ describe('NotificationService', () => {
         priority: 'NORMAL',
       });
 
-      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
-        [basePushToken.token],
-        expect.objectContaining({ priority: 'SILENT' }),
-      );
+      expectSilentPush();
 
       jest.useRealTimers();
     });
 
     it('logs aggregate insert failures and still delivers the surviving chunk', async () => {
-      const warn = jest
-        .spyOn(Logger.prototype, 'warn')
-        .mockImplementation(() => undefined);
-
-      const users = Array.from({ length: 150 }, (_, i) => `u-${i}`);
-      mockMemberRepo.findByChapter.mockResolvedValue(users.map(member));
-      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([]);
-      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
-      mockNotificationRepo.createMany
-        .mockRejectedValueOnce(new Error('insert failed'))
-        .mockImplementation(async (rows) =>
-          rows.map((row, index) => ({
-            ...baseNotification,
-            id: `n-${index}`,
-            user_id: row.user_id ?? `missing-${index}`,
-          })),
-        );
-      mockPushTokenRepo.findByUserIds.mockResolvedValue(
-        users.slice(100).map((userId) => ({
-          ...basePushToken,
-          id: `pt-${userId}`,
-          user_id: userId,
-        })),
+      const warn = spyWarn();
+      const users = roster(150);
+      stubChapterNotify({
+        userIds: users,
+        createManyImpl: echoCreateMany,
+        tokens: tokensFor(users.slice(100)),
+      });
+      mockNotificationRepo.createMany.mockRejectedValueOnce(
+        new Error('insert failed'),
       );
 
       await service.notifyChapter('ch-1', { title: 'Test', body: 'Body' });
@@ -754,30 +764,16 @@ describe('NotificationService', () => {
     });
 
     it('skips a failed preference chunk and still delivers the rest', async () => {
-      const warn = jest
-        .spyOn(Logger.prototype, 'warn')
-        .mockImplementation(() => undefined);
-
-      const users = Array.from({ length: 150 }, (_, i) => `u-${i}`);
-      mockMemberRepo.findByChapter.mockResolvedValue(users.map(member));
+      const warn = spyWarn();
+      const users = roster(150);
+      stubChapterNotify({
+        userIds: users,
+        createManyImpl: echoCreateMany,
+        tokens: tokensFor(users.slice(100)),
+      });
       mockPreferenceRepo.findByUsersChapterCategory
         .mockRejectedValueOnce(new Error('prefs failed'))
         .mockResolvedValue([]);
-      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
-      mockNotificationRepo.createMany.mockImplementation(async (rows) =>
-        rows.map((row, index) => ({
-          ...baseNotification,
-          id: `n-${index}`,
-          user_id: row.user_id ?? `missing-${index}`,
-        })),
-      );
-      mockPushTokenRepo.findByUserIds.mockResolvedValue(
-        users.slice(100).map((userId) => ({
-          ...basePushToken,
-          id: `pt-${userId}`,
-          user_id: userId,
-        })),
-      );
 
       await service.notifyChapter('ch-1', {
         title: 'Test',
@@ -799,24 +795,12 @@ describe('NotificationService', () => {
     });
 
     it('keeps query count bounded for a 200-member chapter', async () => {
-      const users = Array.from({ length: 200 }, (_, i) => `u-${i}`);
-      mockMemberRepo.findByChapter.mockResolvedValue(users.map(member));
-      mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue([]);
-      mockSettingsRepo.findByUserIds.mockResolvedValue([]);
-      mockNotificationRepo.createMany.mockImplementation(async (rows) =>
-        rows.map((row, index) => ({
-          ...baseNotification,
-          id: `n-${row.user_id}-${index}`,
-          user_id: row.user_id ?? 'missing',
-        })),
-      );
-      mockPushTokenRepo.findByUserIds.mockResolvedValue(
-        users.map((userId) => ({
-          ...basePushToken,
-          id: `pt-${userId}`,
-          user_id: userId,
-        })),
-      );
+      const users = roster(200);
+      stubChapterNotify({
+        userIds: users,
+        createManyImpl: echoCreateMany,
+        tokens: tokensFor(users),
+      });
 
       await service.notifyChapter('ch-1', {
         title: 'Chapter Announcement',
