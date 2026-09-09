@@ -526,7 +526,7 @@ What follows is the behaviour the archive has once it is in.
 | `pulse` | Chapter-health catch-up card — see [catch-up.md](./catch-up.md) — **specified, not yet in `CHAT_MESSAGE_KINDS`** (#821) |
 | `system_audit` | System-generated audit message (posted to #chapter-audit, or to a DM on invite-accept) |
 | `imported` | A read-only archive message brought in from another system (Discord). Server-only; see *Imported archive messages* below |
-| `loading` | Client-side placeholder while NestJS RPC completes a heavy command |
+| `loading` | Client-side placeholder while NestJS RPC completes a heavy command. `_status: "recorded"` is the terminal form when the write committed but the chat card did not post — no Retry, no Discard |
 | `announcement` | Broadcast announcement |
 
 Rows marked *specified, not yet in `CHAT_MESSAGE_KINDS`* are absent from the enum; rows marked

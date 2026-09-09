@@ -304,13 +304,13 @@ export function notifyDispatchOutcome(
       // Sticky, like the committed-write warning below and for the same reason:
       // an outcome nobody can reconstruct must not disappear on a 5s timer.
       //
-      // Sticky is NOT durable, and the difference matters here. `use-toast`'s
-      // reducer is `[action.toast, ...state.toasts].slice(0, TOAST_LIMIT)` with
-      // a limit of 1, so the NEXT toast — any toast — evicts this one outright,
-      // with no dismissal and no animation. `duration: Infinity` survives time,
-      // not other toasts (#1789). So this notice cannot be the plan: the copy
-      // is written to stand alone and send the officer to the ledger, and the
-      // timeline row is the real trace where one survives (#1909).
+      // Sticky is NOT durable. `use-toast`'s reducer is
+      // `[action.toast, ...state.toasts].slice(0, TOAST_LIMIT)` with a limit
+      // of 1, so the NEXT toast — any toast — evicts this one outright, with
+      // no dismissal and no animation. `duration: Infinity` survives time,
+      // not other toasts. The durable trace here is the `unconfirmed` row
+      // (Retry under the original key), not a `recorded` row — that status
+      // is the `card_posted: false` path (#1789), where the write is known.
       duration: Infinity,
     });
     return;
@@ -319,13 +319,12 @@ export function notifyDispatchOutcome(
     toast({
       title: `/${commandName} partly succeeded`,
       description: result.warning,
-      // Sticky (Radix skips the close timer on `Infinity`) because this toast is
-      // the ONLY remaining trace of a committed write: the dispatcher has just
-      // removed the optimistic placeholder, and no card is coming. At the
-      // default 5s an officer who looked away sees an empty channel and re-runs
-      // the command — the double-grant this whole path exists to prevent. The
-      // failure branch above keeps the default: nothing committed there, so
-      // there is nothing to lose track of.
+      // Sticky (Radix skips the close timer on `Infinity`) because the
+      // committed write's durable trace is the timeline `recorded` row
+      // (#1789); this toast is the secondary notice and is still evictable
+      // by the next toast (`TOAST_LIMIT = 1`). At the default 5s an officer
+      // who looked away would only have the row — keep the toast long enough
+      // to be seen once.
       duration: Infinity,
     });
   }
