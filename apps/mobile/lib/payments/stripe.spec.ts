@@ -121,7 +121,7 @@ describe("stripeUnavailableReason", () => {
 });
 
 describe("presentPaymentSheet", () => {
-  const input = { clientSecret: "pi_1_secret", merchantDisplayName: "Frapp" };
+  const input = { clientSecret: "pi_1_secret", merchantDisplayName: "Signet" };
 
   it("initialises with the publishable key and the minted intent", async () => {
     const stripe = fakeStripe();
@@ -134,7 +134,7 @@ describe("presentPaymentSheet", () => {
       publishableKey: "pk_test_123",
     });
     expect(stripe.initPaymentSheet).toHaveBeenCalledWith({
-      merchantDisplayName: "Frapp",
+      merchantDisplayName: "Signet",
       paymentIntentClientSecret: "pi_1_secret",
     });
   });

@@ -93,7 +93,7 @@ describe("BalanceCard", () => {
   it("disables the CTA and names the blocker instead of hiding it", () => {
     // §5 rule 4: disable, don't hide, for a recoverable state — and never ship
     // a disabled control with no explanation.
-    const reason = "Paying in the app needs the installed Frapp build.";
+    const reason = "Paying in the app needs the installed Signet build.";
     const tree = render(
       <BalanceCard {...baseProps} disabledReason={reason} />,
     );
