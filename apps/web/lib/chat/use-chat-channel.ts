@@ -36,13 +36,14 @@ import {
   editMessage as editMessageAction,
   flushOutbox,
   hydrateOutboxIntoCache,
+  mergePersistedRecorded,
   react as reactAction,
   retryOutboxRow,
   sendMessage,
   unreact as unreactAction,
   type ToastFn,
 } from "@repo/chat-core/chat-client";
-import type { OutboxAttachment } from "@repo/chat-core/adapters";
+import { browserKeyValueStore, type OutboxAttachment } from "@repo/chat-core/adapters";
 import type { ReplayRequest } from "@repo/chat-core/types";
 import {
   dispatchSlashCommand,
@@ -135,6 +136,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       toast,
       track: track ?? undefined,
       outbox: dexieOutboxStore,
+      kv: browserKeyValueStore,
     }),
     [queryClient, apiClient, supabase, userId, toast, track],
   );
@@ -173,6 +175,15 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           cache = mutated;
         }
       }
+      // Always re-merge recorded notices, even before `userId` resolves.
+      // Notices carry their own sender id; gating on the queryFn closure's
+      // `userId` let an in-flight first fetch (key does not include userId)
+      // overwrite a later hydrate with a REST-only snapshot (#1789).
+      cache = mergePersistedRecorded(cache, {
+        channelId,
+        userId: userId ?? undefined,
+        kv: browserKeyValueStore,
+      });
       return cache;
     },
   });

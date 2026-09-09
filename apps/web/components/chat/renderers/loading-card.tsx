@@ -29,31 +29,32 @@ interface LoadingCardProps {
 export function LoadingCard({ message }: LoadingCardProps) {
   // A heavy command whose response was lost keeps `kind: "loading"` — only its
   // `_status` changes (#1733) — so this renderer is what an `unconfirmed` row
-  // draws. It must stop looking busy: a shimmer under `aria-busy` reads as
-  // "still working", and an officer who reads it that way waits instead of
-  // pressing the Retry beneath it, which is how a possibly-committed grant ends
-  // up re-typed. `integrations.md` names a placeholder stuck on its loading
-  // copy as the hazard this whole path exists to remove.
+  // draws. `recorded` (#1789) is the other terminal form: the write committed
+  // and the card did not. Both must stop looking busy: a shimmer under
+  // `aria-busy` reads as "still working".
   const isUnconfirmed = message._status === "unconfirmed";
+  const isRecorded = message._status === "recorded";
+  const isTerminal = isUnconfirmed || isRecorded;
 
   return (
     <Card
       className={cn(MESSAGE_CARD)}
-      // Only a genuinely in-flight placeholder is a live status. An
-      // `unconfirmed` row is terminal, and leaving the region here would give
-      // the row two populated live regions (this card and the note beside the
-      // footer), which in a virtualized list re-announces both on every scroll
-      // pass — the bug the note's own placement comment cites.
-      role={isUnconfirmed ? undefined : "status"}
-      aria-live={isUnconfirmed ? undefined : "polite"}
-      aria-busy={isUnconfirmed ? undefined : "true"}
+      // Only a genuinely in-flight placeholder is a live status. A terminal
+      // row leaving the region here would give the row two populated live
+      // regions (this card and the note beside the footer), which in a
+      // virtualized list re-announces both on every scroll pass.
+      role={isTerminal ? undefined : "status"}
+      aria-live={isTerminal ? undefined : "polite"}
+      aria-busy={isTerminal ? undefined : "true"}
     >
       <p className={cn(EYEBROW, "text-muted-foreground")}>
-        {isUnconfirmed
-          ? `${message.content || "That command"} — outcome unknown`
-          : message.content || "Working on it…"}
+        {isRecorded
+          ? `${message.content || "That command"} — recorded, chat card missing`
+          : isUnconfirmed
+            ? `${message.content || "That command"} — outcome unknown`
+            : message.content || "Working on it…"}
       </p>
-      {isUnconfirmed ? null : (
+      {isTerminal ? null : (
         <div className="mt-2 flex flex-col gap-2" aria-hidden="true">
           <Skeleton className="h-[13px] w-[62%]" />
           <Skeleton className="h-[13px] w-[45%]" />

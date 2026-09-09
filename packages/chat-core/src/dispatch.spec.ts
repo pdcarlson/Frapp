@@ -3,9 +3,10 @@ import { QueryClient } from "@tanstack/react-query";
 import type { SlashCommand } from "@repo/chat-integrations";
 import { dispatchSlashCommand, retryPointsDispatch } from "./dispatch";
 import type { ChatActionContext } from "./chat-client";
-import type { OutboxStore } from "./adapters";
+import type { KeyValueStore, OutboxStore } from "./adapters";
 import { chatMessagesKey, type ChannelCache, type ChatMessage } from "./types";
 import { selectMessages, mergeServerRow } from "./cache";
+import { readRecordedNotices } from "./recorded-notices";
 
 /**
  * #544 — a `/points` grant whose ledger row commits but whose chat card fails to
@@ -27,13 +28,30 @@ const POINTS_COMMAND: SlashCommand = {
   implemented: true,
 };
 
-function buildCtx(post: ReturnType<typeof vi.fn>): ChatActionContext {
+function memoryStore(): KeyValueStore {
+  const map = new Map<string, string>();
+  return {
+    get: (key) => map.get(key) ?? null,
+    set: (key, value) => {
+      map.set(key, value);
+    },
+    remove: (key) => {
+      map.delete(key);
+    },
+  };
+}
+
+function buildCtx(
+  post: ReturnType<typeof vi.fn>,
+  kv?: KeyValueStore,
+): ChatActionContext {
   return {
     queryClient: new QueryClient(),
     apiClient: { POST: post } as unknown as ChatActionContext["apiClient"],
     supabase: { from: vi.fn() } as unknown as ChatActionContext["supabase"],
     userId: "user-1",
     outbox: {} as OutboxStore,
+    kv,
   };
 }
 
@@ -85,7 +103,7 @@ describe("dispatchPoints — card_posted (#544)", () => {
     expect(placeholderCount(ctx)).toBe(1);
   });
 
-  it("drops the placeholder and warns when the card did not post", async () => {
+  it("keeps a recorded row and warns when the card did not post", async () => {
     const post = vi
       .fn()
       .mockResolvedValue({
@@ -93,14 +111,26 @@ describe("dispatchPoints — card_posted (#544)", () => {
         error: null,
         response: { status: 200 },
       });
-    const ctx = buildCtx(post);
+    const kv = memoryStore();
+    const ctx = buildCtx(post, kv);
 
     const result = await dispatchGrant(ctx);
 
     expect(result.ok).toBe(true);
     expect(result.error).toBeUndefined();
     expect(result.warning).toMatch(/recorded/i);
-    expect(placeholderCount(ctx)).toBe(0);
+    expect(placeholderCount(ctx)).toBe(1);
+    const row = onlyRow(ctx);
+    expect(row._status).toBe("recorded");
+    expect(row._replay).toBeUndefined();
+    expect(result.warning).toMatch(/don't run the command again/i);
+    expect(row._error).toMatch(/don't run this command again/i);
+    expect(readRecordedNotices(CHANNEL_ID, kv)).toEqual([
+      expect.objectContaining({
+        clientMessageId: row.client_message_id,
+        note: row._error,
+      }),
+    ]);
   });
 
   // The warning must never read as a failure. `ok:false` would make the composer
@@ -617,7 +647,7 @@ describe("dispatchTask — card_posted (#1717)", () => {
     expect(placeholderCount(ctx)).toBe(1);
   });
 
-  it("drops the placeholder and warns when the card did not post", async () => {
+  it("keeps a recorded row and warns when the card did not post", async () => {
     const post = vi
       .fn()
       .mockResolvedValue({
@@ -633,7 +663,9 @@ describe("dispatchTask — card_posted (#1717)", () => {
     expect(result.error).toBeUndefined();
     expect(result.warning).toMatch(/created/i);
     expect(result.warning).toMatch(/don't run the command again/i);
-    expect(placeholderCount(ctx)).toBe(0);
+    expect(placeholderCount(ctx)).toBe(1);
+    expect(onlyRow(ctx)._status).toBe("recorded");
+    expect(onlyRow(ctx)._replay).toBeUndefined();
   });
 
   it("does not report the committed create as a failure", async () => {
@@ -727,7 +759,7 @@ describe("dispatchEvent — card_posted (#1717)", () => {
     expect(placeholderCount(ctx)).toBe(1);
   });
 
-  it("drops the placeholder and warns when the card did not post", async () => {
+  it("keeps a recorded row and warns when the card did not post", async () => {
     const post = vi
       .fn()
       .mockResolvedValue({
@@ -743,7 +775,9 @@ describe("dispatchEvent — card_posted (#1717)", () => {
     expect(result.error).toBeUndefined();
     expect(result.warning).toMatch(/created/i);
     expect(result.warning).toMatch(/don't run the command again/i);
-    expect(placeholderCount(ctx)).toBe(0);
+    expect(placeholderCount(ctx)).toBe(1);
+    expect(onlyRow(ctx)._status).toBe("recorded");
+    expect(onlyRow(ctx)._replay).toBeUndefined();
   });
 
   it("does not report the committed create as a failure", async () => {
