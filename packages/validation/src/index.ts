@@ -785,23 +785,6 @@ export {
 } from "./mentions";
 export type { MentionCandidate } from "./mentions";
 
-// ── Sentry PII scrubbing (issues #481, #896, #865) ───────────────────────────
-// Shared rather than API-local because a browser bundle holds strictly more PII
-// than the server does, so `apps/web` must scrub to the *same* rules rather than
-// a second, looser copy of them. Parameterized by a pseudonymizer because the
-// HMAC salt is API-only on purpose and must never reach a client bundle.
-export {
-  createSentryScrubber,
-  NO_PSEUDONYMS,
-  // Exported so the API's request-log helper consumes this exact parser
-  // rather than keeping a second copy (#1388).
-  stripAuthority,
-} from "./sentry-scrubbing";
-export type {
-  ScrubbableEvent,
-  SentryPseudonymizer,
-} from "./sentry-scrubbing";
-
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export {
   isSupportedTimeZone,

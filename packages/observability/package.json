@@ -1,0 +1,29 @@
+{
+  "name": "@repo/observability",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Browser-safe observability policy: Sentry PII scrubbing, correlation types, and sample-rate parsing. Vendor SDK init stays runtime-local to each app.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run",
+    "test:cov": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "*",
+    "@repo/typescript-config": "*",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^4.1.10"
+  }
+}
