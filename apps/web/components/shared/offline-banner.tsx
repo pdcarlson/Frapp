@@ -1,7 +1,11 @@
 "use client";
 
 import { useNetwork } from "@/lib/providers/network-provider";
+import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
+import { OFFLINE_BANNER_ID } from "@/components/shared/offline-banner-focus";
 import { WifiOff, Zap } from "lucide-react";
+
+export { OFFLINE_BANNER_ID, focusOfflineBanner } from "@/components/shared/offline-banner-focus";
 
 export function OfflineBanner() {
   const { state, isOnline } = useNetwork();
@@ -31,12 +35,11 @@ export function OfflineBanner() {
       // and now rejects. § 1 principle 1 — "actions must never appear to
       // succeed when they haven't" — makes the honest string the shorter one.
       //
-      // Worth knowing what this does NOT yet do: web still renders its write
-      // controls enabled offline, so between #1707 and #1753 the member's only
-      // signal is this banner plus the error toast their write produces. The
-      // clause was removed because it was a false promise, not because the
-      // gating that replaces it has landed — #1753 is that work, and § 2's
-      // "disabled with 'Reconnect to make changes.'" arrives with it.
+      // Queueless writes now disable in `useSubscriptionGate` (#1753) with
+      // `title="Reconnect to make changes."` on the control. This banner is
+      // still the one page-level announcement — the per-control title must
+      // not grow a second live region, which is why `SubscriptionNotice`
+      // stays silent on an offline-only block.
       //
       // What remains is § 2's OFFLINE banner cell verbatim, which is also what
       // mobile ships (`apps/mobile/lib/connection/state.ts`).
@@ -49,7 +52,9 @@ export function OfflineBanner() {
 
   return (
     <div
-      className={`flex items-center gap-2 px-4 py-2 text-sm border-b animate-slide-down ${className}`}
+      id={OFFLINE_BANNER_ID}
+      tabIndex={-1}
+      className={`flex items-center gap-2 px-4 py-2 text-sm border-b animate-slide-down ${className} ${FOCUS_RING_ALWAYS}`}
       role="alert"
       aria-live="polite"
     >

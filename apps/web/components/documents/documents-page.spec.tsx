@@ -9,6 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
+import { OfflineBanner } from "@/components/shared/offline-banner";
 
 const {
   mockCurrentChapter,
@@ -966,5 +967,102 @@ describe("DocumentsPage derived folder fallback under search", () => {
     expect(
       screen.getByText(/folder filters are unavailable while searching/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe("DocumentsPage offline write gating", () => {
+  // Call-site coverage for #1753 — the reverted attempt only tested the
+  // synthetic harness, which is why findings 2–4 escaped.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedDocumentsQuery();
+    chapter.active();
+  });
+
+  it("disables document writes while OFFLINE and keeps reads live", () => {
+    mockOffline.value = true;
+    render(<DocumentsPage />);
+
+    expect(uploadTrigger()).toBeDisabled();
+    expect(deleteButton()).toBeDisabled();
+    expect(uploadTrigger()).toHaveAttribute(
+      "title",
+      "Reconnect to make changes.",
+    );
+    expect(deleteButton()).toHaveAttribute(
+      "title",
+      "Reconnect to make changes.",
+    );
+    expect(uploadTrigger()).not.toHaveAttribute("aria-describedby");
+    // Finding 3: the page-level SubscriptionNotice sits outside the dialog
+    // and must not appear for an offline-only block.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/subscription is not active/i),
+    ).not.toBeInTheDocument();
+    // Downloads are reads — enforceSubscription skips GET.
+    expect(downloadButton()).toBeEnabled();
+    expect(screen.getByText("Chapter bylaws")).toBeInTheDocument();
+  });
+
+  it("does not slam an open upload dialog when the connection drops", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <>
+        <OfflineBanner />
+        <DocumentsPage />
+      </>,
+    );
+
+    await user.click(uploadTrigger());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    const title = await screen.findByLabelText(/title/i);
+    await user.type(title, "Retreat agenda");
+
+    mockOffline.value = true;
+    rerender(
+      <>
+        <OfflineBanner />
+        <DocumentsPage />
+      </>,
+    );
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByLabelText(/title/i)).toHaveValue("Retreat agenda");
+    // The header trigger is `aria-hidden` while the dialog is open, so assert
+    // on the in-dialog submit — the write that would actually fire.
+    const submit = screen.getByRole("button", { name: /^upload$/i });
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveAttribute("title", "Reconnect to make changes.");
+  });
+
+  it("keeps keyboard focus off <body> when the upload dialog closes while OFFLINE", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <>
+        <OfflineBanner />
+        <DocumentsPage />
+      </>,
+    );
+
+    await user.click(uploadTrigger());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    mockOffline.value = true;
+    rerender(
+      <>
+        <OfflineBanner />
+        <DocumentsPage />
+      </>,
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("alert")).toHaveFocus();
+    expect(document.body).not.toHaveFocus();
   });
 });
