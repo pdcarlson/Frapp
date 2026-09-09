@@ -8,13 +8,22 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { OfflineBanner } from "@/components/shared/offline-banner";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
 import type { SubscriptionWriteClass } from "@repo/validation";
 
-const { mockCurrentChapter, mockMyPermissions } = vi.hoisted(() => ({
-  mockCurrentChapter: vi.fn(),
-  mockMyPermissions: vi.fn(),
-}));
+const { mockCurrentChapter, mockMyPermissions, mockOffline } = vi.hoisted(
+  () => ({
+    mockCurrentChapter: vi.fn(),
+    mockMyPermissions: vi.fn(),
+    mockOffline: { value: false, degraded: false as boolean | undefined },
+  }),
+);
+
+vi.mock("@/lib/providers/network-provider", async () => {
+  const { networkMock } = await import("@/tests/network");
+  return networkMock(mockOffline);
+});
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
@@ -46,6 +55,9 @@ function Harness({ writeClass }: { writeClass?: SubscriptionWriteClass }) {
 
   return (
     <div>
+      {/* Same chrome the dashboard layout mounts — the offline close path
+          sends focus here rather than letting it fall to `<body>`. */}
+      <OfflineBanner />
       <Dialog {...dialog.dialogProps}>
         <DialogTrigger asChild>
           <Button {...gate.controlProps()}>Upload</Button>
@@ -69,6 +81,8 @@ const deleteButton = () => screen.getByRole("button", { name: /delete/i });
 describe("useSubscriptionGate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOffline.value = false;
+    mockOffline.degraded = false;
     grantBilling();
   });
 
@@ -220,11 +234,97 @@ describe("useSubscriptionGate", () => {
 
     expect(uploadTrigger()).toBeDisabled();
   });
+
+  it("disables queueless writes while OFFLINE and puts the reason on the control", () => {
+    chapter.active();
+    mockOffline.value = true;
+    render(<Harness />);
+
+    expect(uploadTrigger()).toBeDisabled();
+    expect(deleteButton()).toBeDisabled();
+    expect(uploadTrigger()).toHaveAttribute(
+      "title",
+      "Reconnect to make changes.",
+    );
+    expect(deleteButton()).toHaveAttribute(
+      "title",
+      "Reconnect to make changes.",
+    );
+    // Finding 3: do not point aria-describedby at a notice outside the dialog
+    // (and finding 4: do not mount a notice at all for an offline-only block).
+    expect(uploadTrigger()).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/checking this chapter/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears the offline title once the connection returns", () => {
+    chapter.active();
+    mockOffline.value = true;
+    const { rerender } = render(<Harness />);
+    expect(uploadTrigger()).toHaveAttribute(
+      "title",
+      "Reconnect to make changes.",
+    );
+
+    mockOffline.value = false;
+    rerender(<Harness />);
+
+    expect(uploadTrigger()).toBeEnabled();
+    expect(uploadTrigger()).not.toHaveAttribute("title");
+  });
+
+  it("does not disable writes while DEGRADED", () => {
+    chapter.active();
+    mockOffline.degraded = true;
+    render(<Harness />);
+
+    expect(uploadTrigger()).toBeEnabled();
+    expect(uploadTrigger()).not.toHaveAttribute("title");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("still disables an unreadable chapter while OFFLINE", () => {
+    // Fail-open is a subscription rule. A dropped connection is a different
+    // axis — the write would be lost, so the control stays shut.
+    chapter.unreadable();
+    mockOffline.value = true;
+    render(<Harness />);
+
+    expect(uploadTrigger()).toBeDisabled();
+    expect(uploadTrigger()).toHaveAttribute(
+      "title",
+      "Reconnect to make changes.",
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("prefers the offline title over a subscription notice when both apply", () => {
+    chapter.incomplete();
+    mockOffline.value = true;
+    render(<Harness />);
+
+    expect(uploadTrigger()).toBeDisabled();
+    expect(uploadTrigger()).toHaveAttribute(
+      "title",
+      "Reconnect to make changes.",
+    );
+    expect(uploadTrigger()).not.toHaveAttribute("aria-describedby");
+    // Billing is unreachable offline, so the checkout sentence would be a
+    // dead end — and the pending spinner would spin forever.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/subscription is not active/i),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("useGatedDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOffline.value = false;
+    mockOffline.degraded = false;
     grantBilling();
   });
 
@@ -315,5 +415,48 @@ describe("useGatedDialog", () => {
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveFocus(),
     );
+  });
+
+  it("does not slam an open dialog when the connection drops", async () => {
+    chapter.active();
+    const { rerender } = render(<Harness />);
+    await userEvent.click(uploadTrigger());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    mockOffline.value = true;
+    rerender(<Harness />);
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    // The trigger is `aria-hidden` while the dialog is open, so don't query
+    // it here. The slam this guards is the dialog unmounting; it has not.
+  });
+
+  it("refuses to open while OFFLINE", async () => {
+    chapter.active();
+    mockOffline.value = true;
+    render(<Harness />);
+
+    await userEvent.click(uploadTrigger());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("moves focus to the offline banner when a dialog closes while OFFLINE", async () => {
+    // Finding 2: the trigger is now disabled, so Radix's restore is a no-op
+    // and focus would fall to <body> unless onCloseAutoFocus preempts it.
+    chapter.active();
+    const { rerender } = render(<Harness />);
+    await userEvent.click(uploadTrigger());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    mockOffline.value = true;
+    rerender(<Harness />);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("alert")).toHaveFocus();
+    expect(document.body).not.toHaveFocus();
   });
 });
