@@ -13,8 +13,16 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { NotificationService } from '../../application/services/notification.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
+import { ChapterGuard } from '../guards/chapter.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { RequirePermissions } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
-import { CurrentUser } from '../decorators/current-user.decorator';
+import {
+  CurrentChapterId,
+  CurrentUser,
+} from '../decorators/current-user.decorator';
+import { SystemPermissions } from '#domain/constants/permissions';
 import {
   RegisterPushTokenDto,
   ListNotificationPreferencesQueryDto,
@@ -55,20 +63,31 @@ export class NotificationController {
   }
 
   @Get('notifications')
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @FreeTier()
   @ApiOperation({ summary: 'List in-app notifications for current user' })
   async listNotifications(
     @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
     @Query() query: ListNotificationsQueryDto,
   ) {
-    return this.notificationService.listNotifications(userId, {
+    return this.notificationService.listNotifications(userId, chapterId, {
       limit: query.limit,
     });
   }
 
   @Patch('notifications/:id/read')
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @FreeTier()
   @ApiOperation({ summary: 'Mark notification as read' })
-  async markRead(@CurrentUser('id') userId: string, @Param('id') id: string) {
-    return this.notificationService.markNotificationRead(id, userId);
+  async markRead(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.notificationService.markNotificationRead(id, userId, chapterId);
   }
 
   @Get('notifications/preferences')
