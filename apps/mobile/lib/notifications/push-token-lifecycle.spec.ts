@@ -117,6 +117,20 @@ describe("registerCurrentPushToken", () => {
     expect(d.remove).not.toHaveBeenCalled();
   });
 
+  it("does not recurse when getToken re-enters through the listener", async () => {
+    const d = deps(null);
+    let nestedCalls = 0;
+    d.getToken.mockImplementation(async () => {
+      nestedCalls += 1;
+      if (nestedCalls === 1) {
+        await registerCurrentPushToken(d);
+      }
+      return "ExponentPushToken[new]";
+    });
+    await registerCurrentPushToken(d);
+    expect(d.register).toHaveBeenCalledTimes(1);
+  });
+
   it("warns and keeps the old row when POST throws", async () => {
     const d = deps({ id: "row-old", token: "ExponentPushToken[old]" });
     d.register.mockRejectedValue(new Error("network"));

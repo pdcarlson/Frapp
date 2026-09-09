@@ -23,6 +23,14 @@ import {
   type PushTokenRow,
 } from "./push-registration";
 
+/**
+ * `getExpoPushTokenAsync` may emit `onDevicePushToken` before it resolves.
+ * The listener would then re-enter this function, `getToken` again, and
+ * recurse. One in-flight register is enough: a later rotation fires the
+ * listener again after this returns.
+ */
+let registerInFlight = false;
+
 export function sessionOwnsPushRegistration(
   isAuthenticated: boolean,
   status: string,
@@ -39,42 +47,48 @@ export async function registerCurrentPushToken(deps: {
   writeStored: (row: PushTokenRow) => Promise<void>;
   warn?: (message: string, error?: unknown) => void;
 }): Promise<void> {
+  if (registerInFlight) return;
+  registerInFlight = true;
   try {
-    const token = await deps.getToken();
-    if (!token || deps.isCancelled()) return;
+    try {
+      const token = await deps.getToken();
+      if (!token || deps.isCancelled()) return;
 
-    const stored = await deps.readStored();
-    if (isAlreadyRegistered(stored, token) || deps.isCancelled()) return;
+      const stored = await deps.readStored();
+      if (isAlreadyRegistered(stored, token) || deps.isCancelled()) return;
 
-    const supersededId =
-      stored?.id && stored.token !== token ? stored.id : null;
+      const supersededId =
+        stored?.id && stored.token !== token ? stored.id : null;
 
-    const created = await deps.register({ token });
-    if (deps.isCancelled()) return;
+      const created = await deps.register({ token });
+      if (deps.isCancelled()) return;
 
-    const row = narrowPushTokenRow(created);
-    await deps.writeStored(row ?? { id: null, token });
-    if (!row?.id) {
-      deps.warn?.(
-        "Push token registered but its row id could not be read; sign-out will not be able to deregister it.",
-      );
-    }
-
-    if (supersededId && supersededId !== row?.id) {
-      try {
-        await deps.remove(supersededId);
-      } catch (error) {
+      const row = narrowPushTokenRow(created);
+      await deps.writeStored(row ?? { id: null, token });
+      if (!row?.id) {
         deps.warn?.(
-          "Superseded push token row could not be deleted; the old token may keep receiving until it expires.",
-          error,
+          "Push token registered but its row id could not be read; sign-out will not be able to deregister it.",
         );
       }
+
+      if (supersededId && supersededId !== row?.id) {
+        try {
+          await deps.remove(supersededId);
+        } catch (error) {
+          deps.warn?.(
+            "Superseded push token row could not be deleted; the old token may keep receiving until it expires.",
+            error,
+          );
+        }
+      }
+    } catch (error) {
+      deps.warn?.(
+        "Push token registration failed; will retry on the next sign-in or token rotation.",
+        error,
+      );
     }
-  } catch (error) {
-    deps.warn?.(
-      "Push token registration failed; will retry on the next sign-in or token rotation.",
-      error,
-    );
+  } finally {
+    registerInFlight = false;
   }
 }
 
