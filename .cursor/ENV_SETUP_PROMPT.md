@@ -15,7 +15,7 @@ This prompt is self-contained. Re-verify every claim against the checkout you ac
    - Non-empty `environmentJsonPath` → `references/update-repo-managed-environment.md` (push a branch, trigger a draft Build **from that revision**, **do not** pass `environmentJson` override).
    - Null/absent `environmentJsonPath` but an environment ID exists → `references/update-db-managed-environment.md` (snapshot this VM, `trigger-environment-build` with `environmentJson` = READY snapshot + install/start under test, verify, `propose-environment-json` with `buildId`).
    - No environment at all → `references/create-environment.md`.
-3. **Also keep `.cursor/environment.json` as the committed public contract.** The file already exists on `main`. A 2026-09-09 internal run reported `source: Repository` / `recordedVia: REPO_FILE_OBSERVED` but `environmentJsonPath: null` and `build: null`. Do not argue with the tool: follow the matching reference, and still write the same install/start/terminals/ports into the repo file so the next agent is repo-managed.
+3. **Also keep `.cursor/environment.json` as the committed public contract.** The file already exists on `main`. Re-checked 2026-09-09 (later the same day): `source: Repository` / `recordedVia: REPO_FILE_OBSERVED` but `environmentJsonPath: null` and this pod `build: null` (just-in-time). `list-environment-builds` on the same environment id returns **SYSTEM/RECURRING** builds of the *old* snapshot (`environmentVersionId` `1265931`) — including SUCCEEDED rows and occasional `TERMINAL_FAILURE`. Those are **not** a Prompt 1 Save. Do not skip snapshot/propose because recurring builds exist. Do not argue with the tool: follow the matching reference, and still write the same install/start/terminals/ports into the repo file so the next agent is repo-managed.
 4. Schema: <https://cursor.com/schemas/environment.schema.json>. **Do not add `$schema`** (`unevaluatedProperties` is false). Setup guide: <https://cursor.com/docs/cloud-agent/setup>.
 5. Asking to set up this environment **is** the explicit request to snapshot / draft-build / propose per the skill. Do that **after** the current VM works. Blockers (secrets, egress) must be requested with `cursor-cloud-request-environment-setup-actions` **before** snapshot/build/propose.
 6. Do **not** deploy, mutate production, restore Linear, or run live `npm run configure:branch-protection` (the `:verify` variant is fine if you need to *read* protection).
@@ -69,11 +69,12 @@ Committed on `main` today (re-read the files; do not trust this dump if they dri
 - `terminals`: `api` / `web` / `landing` via `scripts/cursor-node20.sh`
 - `ports`: 3000, 3001, 3002, 54321, 54323
 
-Dashboard environment (as of 2026-09-09; re-read `environment-info`):
+Dashboard environment (re-read `environment-info` + `list-environment-builds`; last checked 2026-09-09 later that day):
 
 - ID: `b91a291a-8c6a-486c-adb7-f5a7a1773ddc`
 - URL: https://cursor.com/dashboard/cloud-agents/environments/e/b91a291a-8c6a-486c-adb7-f5a7a1773ddc
-- No active Build on a sampled internal run (`build: null`) — just-in-time start. **A tested Build is a goal of this session.**
+- Effective JSON still matches the committed contract above (`cursor-agent-install.sh` / `cursor-agent-start.sh`, Node 20 wrapper terminals, ports 3000/3001/3002/54321/54323). **Paul has not Saved a Prompt 1 rewrite yet** until `environment-info` shows a new version whose install/start/terminals match *your* proposed JSON (sentinel-waiting terminals, Cursor-owned `start`).
+- This pod: `build: null` (just-in-time). Recurring SYSTEM builds of `environmentVersionId` `1265931` exist on that same environment id — they belong to the **old** snapshot. Newest sampled row was `FAILED` / `TERMINAL_FAILURE`; older rows `SUCCEEDED`. **Do not treat those SUCCEEDED recurring builds as Prompt 1 completion.** A tested Build of *your* proposed JSON is still a goal of this session.
 
 What already works (battle-tested, keep the behavior):
 
