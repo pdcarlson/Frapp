@@ -17,9 +17,10 @@ name: Staging conformance
 # sibling stays green until #1824; SMTP on with the burned apex From fails,
 # and SMTP on without token_hash in the Magic Link template fails. Infisical /
 # smoke stay production-unwatched. Remaining parity on #1384.
-# Render `frapp-api-staging` `healthCheckPath` `/health` is asserted here (staging
-# auto-deploys `main` on commit; empty is TCP-only). Production's copy lives in
-# production-guardrails.yml. Doc pointer:
+# Render `frapp-api-staging` `healthCheckPath` `/health` and auto-deploy on
+# tracking `main` are asserted here (empty path is TCP-only; auto-deploy off
+# freezes staging while this job stays green on a stale host). Production's
+# inverse (`autoDeploy: "no"`) lives in production-guardrails.yml. Doc pointer:
 # docs/internal/ci-cd/AGENT_INFRA.md § Scheduled conformance.
 
 on:

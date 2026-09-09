@@ -221,7 +221,7 @@ export async function checkProjectStatus({ accessToken, projectRef, fetchImpl = 
  * `/health/ready` would cancel a deploy when a dependency is degraded.
  * Production's copy of this assertion lives in production-guardrails.mjs —
  * do not fold production auto-deploy into this suite (alert title is the
- * lookup key).
+ * lookup key). Staging auto-deploy *on* is this suite: `checkRenderAutoDeploy`.
  */
 export async function checkRenderHealthCheckPath({
   apiKey,
@@ -268,6 +268,60 @@ export async function checkRenderHealthCheckPath({
     FAIL,
     `healthCheckPath is unreadable (expected ${EXPECTED_HEALTH_CHECK_PATH} on serviceDetails)`,
   );
+}
+
+/**
+ * Render `frapp-api-staging` auto-deploys `main`.
+ *
+ * Staging is the only host that can prove Magic Link, invite, and join
+ * without a production Deploy. `autoDeploy: "no"` (or a branch other than
+ * `main`) freezes that host while this job keeps reading yesterday's
+ * settings and staying green. Live GET `/v1/services/{id}` puts
+ * `autoDeploy` and `branch` on the service root (2026-09-09), not under
+ * `serviceDetails` — a nested decoy is not the live field.
+ *
+ * Production-guardrails asserts the inverse (`autoDeploy: "no"`) under a
+ * different alert title. Do not copy that expected value here.
+ */
+export async function checkRenderAutoDeploy({
+  apiKey,
+  serviceId,
+  fetchImpl = fetch,
+  serviceLabel = "frapp-api-staging",
+} = {}) {
+  const id = "render-auto-deploy";
+  const label = `${serviceLabel} auto-deploys main`;
+  if (!apiKey || !serviceId) {
+    return result(id, label, SKIPPED, "RENDER_API_KEY / RENDER_SERVICE_ID not set");
+  }
+  const response = await fetchImpl(
+    `https://api.render.com/v1/services/${serviceId}`,
+    withTimeout({ headers: { Authorization: `Bearer ${apiKey}` } }),
+  );
+  if (!response.ok) {
+    return result(id, label, FAIL, `Render API returned HTTP ${response.status}`);
+  }
+  const service = await response.json();
+  const autoDeploy = service?.autoDeploy;
+  const branch = service?.branch;
+  const findings = [];
+  if (autoDeploy !== "yes") {
+    findings.push(
+      `autoDeploy='${autoDeploy ?? "unreadable"}' (expected 'yes'). ` +
+        `With auto-deploy off, merges to main never reach staging and first-user ` +
+        `rehearsal runs against a frozen host.`,
+    );
+  }
+  if (branch !== "main") {
+    findings.push(
+      `branch='${branch ?? "unreadable"}' (expected 'main'). ` +
+        `A service pointed at another branch never receives the commits this job watches main for.`,
+    );
+  }
+  if (findings.length === 0) {
+    return result(id, label, PASS, `autoDeploy=${autoDeploy} branch=${branch}`);
+  }
+  return result(id, label, FAIL, findings.join(" "));
 }
 
 /**
@@ -1084,6 +1138,12 @@ export async function runStagingConformance({
       }) },
     { id: "health-check-path", label: "frapp-api-staging healthCheckPath is /health", run: () =>
       checkRenderHealthCheckPath({
+        apiKey: env.RENDER_API_KEY,
+        serviceId: env.RENDER_SERVICE_ID,
+        fetchImpl,
+      }) },
+    { id: "render-auto-deploy", label: "frapp-api-staging auto-deploys main", run: () =>
+      checkRenderAutoDeploy({
         apiKey: env.RENDER_API_KEY,
         serviceId: env.RENDER_SERVICE_ID,
         fetchImpl,

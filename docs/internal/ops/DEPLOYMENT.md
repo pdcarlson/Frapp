@@ -605,6 +605,14 @@ reachable. The JSON body is the liveness payload in
 > nested field on `frapp-api-staging`, daily at 07:30. Staging auto-deploys
 > `main` on commit, so this path is the HTTP gate on those deploys. Missing
 > `RENDER_API_KEY` is SKIPPED, not a pass.
+>
+> **2026-09-09:** the same daily job now also asserts `frapp-api-staging`
+> `autoDeploy: "yes"` and `branch: "main"` (top-level fields on the live
+> GET). A dashboard click that turns auto-deploy off, or points the service
+> at another branch, freezes staging while healthCheckPath and Auth
+> assertions stay green on a stale host. Production-guardrails still asserts
+> the inverse (`autoDeploy: "no"`) under its own alert title — do not fold
+> that expected value into this suite.
 
 ### 5.5 In-process chat workers (Chunk 05)
 
