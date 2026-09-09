@@ -1,6 +1,6 @@
 name: PR base sync
 
-# Keeps the open-PR fleet in sync with main (docs/internal/ci-cd/AGENT_INFRA.md
+# Keeps the open-PR fleet in sync with main (docs/internal/ci-cd/pr-babysitting.md
 # § Base-branch sync). Branch protection sets `strict: true`, so every merge to
 # main outdates every other open PR; this sweep either updates each one via the
 # update-branch API (only when the base-sync GitHub App is installed and its two

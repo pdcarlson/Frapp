@@ -78,7 +78,7 @@ const SETUP_STEPS = [
   "The token is minted in `.github/workflows/pr-base-sync.yml` by",
   "`actions/create-github-app-token`, from two repository secrets:",
   "`PR_BASE_SYNC_APP_CLIENT_ID` and `PR_BASE_SYNC_APP_PRIVATE_KEY`.",
-  "Setup and rotation: `docs/internal/ci-cd/AGENT_INFRA.md` § Base-branch sync.",
+  "Setup and rotation: `docs/internal/ci-cd/pr-babysitting.md` § Base-branch sync.",
 ].join(" ");
 
 function alertBody(detail) {
@@ -272,7 +272,7 @@ export async function clearWakeComments({ token, repo, prNumber, fetchImpl }) {
 }
 
 const WAKE_FOOTER =
-  "_Automated wake signal from `pr-base-sync.yml` (`docs/internal/ci-cd/AGENT_INFRA.md` " +
+  "_Automated wake signal from `pr-base-sync.yml` (`docs/internal/ci-cd/pr-babysitting.md` " +
   "§ Base-branch sync): posted fresh (never edited) on each base move so created-only " +
   "webhook listeners fire. One live comment per PR — a later sweep removes it once the " +
   "PR is back in sync with its base._";
