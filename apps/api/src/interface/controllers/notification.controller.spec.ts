@@ -3,6 +3,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from '../../application/services/notification.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
+import { ChapterGuard } from '../guards/chapter.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
 import {
   RegisterPushTokenDto,
   UpdateNotificationPreferenceDto,
@@ -37,6 +39,10 @@ describe('NotificationController', () => {
       .overrideInterceptor(AuthSyncInterceptor)
       .useValue({ intercept: (context: any, next: any) => next.handle() })
       .overrideGuard(SupabaseAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(ChapterGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionsGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
@@ -91,16 +97,18 @@ describe('NotificationController', () => {
   describe('listNotifications', () => {
     it('should call notificationService.listNotifications with an empty query when limit is omitted', async () => {
       const userId = 'user-1';
+      const chapterId = 'chapter-1';
       const expectedResult = [{ id: 'notif-1' }];
 
       notificationService.listNotifications!.mockResolvedValue(
         expectedResult as any,
       );
 
-      const result = await controller.listNotifications(userId, {});
+      const result = await controller.listNotifications(userId, chapterId, {});
 
       expect(notificationService.listNotifications).toHaveBeenCalledWith(
         userId,
+        chapterId,
         { limit: undefined },
       );
       expect(result).toEqual(expectedResult);
@@ -108,16 +116,20 @@ describe('NotificationController', () => {
 
     it('should call notificationService.listNotifications with limit option when limit is provided', async () => {
       const userId = 'user-1';
+      const chapterId = 'chapter-1';
       const expectedResult = [{ id: 'notif-1' }];
 
       notificationService.listNotifications!.mockResolvedValue(
         expectedResult as any,
       );
 
-      const result = await controller.listNotifications(userId, { limit: 10 });
+      const result = await controller.listNotifications(userId, chapterId, {
+        limit: 10,
+      });
 
       expect(notificationService.listNotifications).toHaveBeenCalledWith(
         userId,
+        chapterId,
         { limit: 10 },
       );
       expect(result).toEqual(expectedResult);
@@ -128,17 +140,19 @@ describe('NotificationController', () => {
     it('should call notificationService.markNotificationRead with correct parameters', async () => {
       const userId = 'user-1';
       const id = 'notif-1';
+      const chapterId = 'chapter-1';
       const expectedResult = { id, is_read: true };
 
       notificationService.markNotificationRead!.mockResolvedValue(
         expectedResult as any,
       );
 
-      const result = await controller.markRead(userId, id);
+      const result = await controller.markRead(userId, id, chapterId);
 
       expect(notificationService.markNotificationRead).toHaveBeenCalledWith(
         id,
         userId,
+        chapterId,
       );
       expect(result).toEqual(expectedResult);
     });
