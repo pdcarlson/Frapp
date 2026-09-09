@@ -16,8 +16,10 @@ const REQUIRED_ENV_VARS = [
 // boot without them. In staging/production they are provisioned via Infisical
 // (see docs/internal/environment/ENV_REFERENCE.md):
 //   - ANALYTICS_HMAC_SALT  per-environment salt for hmac_sha256(salt, user_id)
-//   - POSTHOG_API_KEY      enables the PostHog transport
+//   - POSTHOG_API_KEY      enables the PostHog Node lifecycle adapter
 //   - POSTHOG_HOST         optional provider host override (default PostHog US)
+//   - POSTHOG_LOGS_SAMPLE_RATE  sanitized PostHog logs sample in [0, 1]
+//                          (default 1.0 via parseSampleRate; not a stdout pipe)
 //
 // Also optional, same reasoning (#994): the rotating event check-in code.
 // Unset, `GET /v1/events/:eventId/attendance/check-in-token` returns 503 and a

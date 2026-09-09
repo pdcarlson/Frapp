@@ -32,9 +32,17 @@ export const OBSERVABILITY_PROVIDERS = {
 } as const;
 
 /**
- * Content-free PostHog timeline marker emitted from a client Sentry
- * `beforeSend` so a Sentry issue can be lined up with the PostHog session.
- * Named in `spec/behavior/observability.md`. Never carry exception type, stack,
- * message, request body, or query string.
+ * Content-free PostHog timeline marker named in
+ * `spec/behavior/observability.md` § Privacy and replay. Emitted from the
+ * API exception filter and from a client Sentry `beforeSend` so a Sentry
+ * issue can be lined up with the PostHog session. Never carry exception type,
+ * stack, message, request body, or query string.
  */
 export const SENTRY_ERROR_CORRELATED_EVENT = "sentry-error-correlated";
+
+/**
+ * Default sample rate for sanitized PostHog logs (request log,
+ * `security_event`, `push_delivery`). Override with `POSTHOG_LOGS_SAMPLE_RATE`.
+ * This is not a pipe from Render stdout.
+ */
+export const DEFAULT_POSTHOG_LOGS_SAMPLE_RATE = 1;

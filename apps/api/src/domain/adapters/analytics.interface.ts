@@ -9,7 +9,11 @@ export const ANALYTICS_PROVIDER = 'ANALYTICS_PROVIDER';
  * identifying property of their own.
  */
 export interface IAnalyticsProvider {
-  /** Send a single behavioral event. Best-effort; must never throw. */
+  /**
+   * Enqueue a single behavioral event. Best-effort; must never throw, and must
+   * not wait on the provider network — a stalled PostHog POP cannot hold an
+   * HTTP request. Delivery happens in the background with retry/drop/flush.
+   */
   capture(event: AnalyticsEvent): Promise<void>;
 
   /**

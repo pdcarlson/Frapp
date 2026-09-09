@@ -14,6 +14,10 @@ import {
   type IAnalyticsProvider,
 } from '#domain/adapters/analytics.interface';
 import {
+  FEATURE_FLAG_PROVIDER,
+  type IFeatureFlagProvider,
+} from '#domain/adapters/feature-flag.interface';
+import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
@@ -67,6 +71,7 @@ async function buildService(opts: {
   supabase: unknown;
   provider: IAnalyticsProvider;
   members?: IMemberRepository;
+  flags?: IFeatureFlagProvider;
 }) {
   const config = {
     get: jest.fn((key: string) =>
@@ -79,6 +84,12 @@ async function buildService(opts: {
       { provide: ConfigService, useValue: config },
       { provide: SUPABASE_CLIENT, useValue: opts.supabase },
       { provide: ANALYTICS_PROVIDER, useValue: opts.provider },
+      {
+        provide: FEATURE_FLAG_PROVIDER,
+        useValue: opts.flags ?? {
+          isEnabled: jest.fn().mockResolvedValue(false),
+        },
+      },
       {
         provide: MEMBER_REPOSITORY,
         useValue: opts.members ?? makeMemberRepo(),
@@ -781,6 +792,70 @@ describe('AnalyticsService', () => {
       await expect(service.forgetUser(USER_ID)).resolves.toBe(true);
 
       expect(provider.forget).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('isProductFlagEnabled', () => {
+    it('evaluates with HMAC distinct id and chapter group, never raw ids', async () => {
+      const flags: IFeatureFlagProvider = {
+        isEnabled: jest.fn().mockResolvedValue(true),
+      };
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+        flags,
+      });
+
+      await expect(
+        service.isProductFlagEnabled('new-composer', USER_ID, CHAPTER_ID),
+      ).resolves.toBe(true);
+
+      expect(flags.isEnabled).toHaveBeenCalledWith(
+        'new-composer',
+        hashUserIdForAnalytics(SALT, USER_ID),
+        hashChapterIdForAnalytics(SALT, CHAPTER_ID),
+      );
+      const [, distinctId, chapterGroupId] = (flags.isEnabled as jest.Mock).mock
+        .calls[0] as [string, string, string];
+      expect(distinctId).not.toBe(USER_ID);
+      expect(chapterGroupId).not.toBe(CHAPTER_ID);
+    });
+
+    it('fails closed when analytics is unconfigured', async () => {
+      const flags: IFeatureFlagProvider = {
+        isEnabled: jest.fn().mockResolvedValue(true),
+      };
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: '',
+        supabase: client,
+        provider,
+        flags,
+      });
+
+      await expect(
+        service.isProductFlagEnabled('new-composer', USER_ID, CHAPTER_ID),
+      ).resolves.toBe(false);
+      expect(flags.isEnabled).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the flag provider throws', async () => {
+      const flags: IFeatureFlagProvider = {
+        isEnabled: jest.fn().mockRejectedValue(new Error('flags down')),
+      };
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+        flags,
+      });
+
+      await expect(
+        service.isProductFlagEnabled('new-composer', USER_ID),
+      ).resolves.toBe(false);
     });
   });
 });

@@ -2,10 +2,8 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { selectAnalyticsProvider } from './analytics.module';
 import { NoopAnalyticsProvider } from '../../infrastructure/analytics/noop-analytics.provider';
-import {
-  PosthogAnalyticsProvider,
-  resolvePosthogHost,
-} from '../../infrastructure/analytics/posthog-analytics.provider';
+import { PosthogAnalyticsProvider } from '../../infrastructure/analytics/posthog-analytics.provider';
+import { resetPosthogRuntimeForTests } from '../../infrastructure/analytics/posthog-runtime';
 
 /** Minimal ConfigService stand-in: only `get` is exercised by the factory. */
 function makeConfig(env: Record<string, string | undefined>): ConfigService {
@@ -23,7 +21,10 @@ describe('selectAnalyticsProvider', () => {
     log = jest.spyOn(Logger, 'log').mockImplementation();
   });
 
-  afterEach(() => jest.restoreAllMocks());
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await resetPosthogRuntimeForTests();
+  });
 
   it('selects PostHog and names the resolved host when a key is set', () => {
     const provider = selectAnalyticsProvider(
@@ -78,20 +79,43 @@ describe('selectAnalyticsProvider', () => {
       'AnalyticsProvider',
     );
   });
-});
 
-describe('resolvePosthogHost', () => {
-  it('defaults to PostHog Cloud US', () => {
-    expect(resolvePosthogHost(undefined)).toBe('https://us.i.posthog.com');
+  it('no-ops on a blank key', () => {
+    const provider = selectAnalyticsProvider(
+      makeConfig({ POSTHOG_API_KEY: '   ' }),
+    );
+    expect(provider).toBeInstanceOf(NoopAnalyticsProvider);
   });
 
-  it('treats a blank value as unset', () => {
-    expect(resolvePosthogHost('   ')).toBe('https://us.i.posthog.com');
+  it('no-ops on a malformed key and warns', () => {
+    const provider = selectAnalyticsProvider(
+      makeConfig({ POSTHOG_API_KEY: 'not-a-project-key' }),
+    );
+    expect(provider).toBeInstanceOf(NoopAnalyticsProvider);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('malformed_key'),
+      'AnalyticsProvider',
+    );
   });
 
-  it('strips a single trailing slash', () => {
-    expect(resolvePosthogHost('https://eu.i.posthog.com/')).toBe(
-      'https://eu.i.posthog.com',
+  it('no-ops on a personal API key (phx_) rather than treating it as a project key', () => {
+    const provider = selectAnalyticsProvider(
+      makeConfig({ POSTHOG_API_KEY: 'phx_not_a_project_key' }),
+    );
+    expect(provider).toBeInstanceOf(NoopAnalyticsProvider);
+  });
+
+  it('no-ops on a malformed host', () => {
+    const provider = selectAnalyticsProvider(
+      makeConfig({
+        POSTHOG_API_KEY: 'phc_test',
+        POSTHOG_HOST: 'ftp://example.invalid',
+      }),
+    );
+    expect(provider).toBeInstanceOf(NoopAnalyticsProvider);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('malformed_host'),
+      'AnalyticsProvider',
     );
   });
 });
