@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  BAGGAGE_HEADER,
   PSEUDONYM_HEX_RE,
   REQUEST_ID_HEADER,
+  SENTRY_TRACE_HEADER,
   isPseudonymHex,
 } from "./correlation";
 import {
   OBSERVABILITY_PROVIDERS,
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   POSTHOG_PRODUCTION_REPLAY_ENABLED,
+  SENTRY_ERROR_CORRELATED_EVENT,
   SENTRY_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_ENABLED,
 } from "./policy";
@@ -27,6 +30,10 @@ describe("isPseudonymHex", () => {
 describe("correlation constants", () => {
   it("names the request-id header distinctly from trace ids", () => {
     expect(REQUEST_ID_HEADER).toBe("x-request-id");
+    expect(SENTRY_TRACE_HEADER).toBe("sentry-trace");
+    expect(BAGGAGE_HEADER).toBe("baggage");
+    expect(REQUEST_ID_HEADER).not.toBe(SENTRY_TRACE_HEADER);
+    expect(REQUEST_ID_HEADER).not.toBe(BAGGAGE_HEADER);
   });
 });
 
@@ -39,6 +46,7 @@ describe("policy constants", () => {
     expect(SENTRY_REPLAY_ENABLED).toBe(false);
     expect(POSTHOG_EXCEPTION_AUTOCAPTURE).toBe(false);
     expect(POSTHOG_PRODUCTION_REPLAY_ENABLED).toBe(false);
+    expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
     expect(SENTRY_ERROR_SAMPLE_RATE).toBe(1);
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
   });

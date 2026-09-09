@@ -41,6 +41,8 @@ not a description of the current PostHog project:
 | PostHog org Signet, project `569878` | `ingested_event: false`; HogQL `count()` on `events` last 90d = **0**. `autocapture_exceptions_opt_in: true`. `session_recording_opt_in: true`, `session_recording_sample_rate: null` (treat as 100%), `maskAllInputs: true`, replay retention `30d`, `anonymize_ips: false`. No workflows, no feature flags. One project only — production project still missing | PostHog MCP; #1173, #709 |
 | Granola / Supermemory / Infisical names / Render | Granola MCP `needsAuth`; Supermemory MCP discovery error; Infisical secrets endpoints 404 with a present service token; Render MCP unauthorized. Last live proof of staging `POSTHOG_API_KEY` remains the 2026-08-21 comment on #1173 | blocked this session |
 
+**Correction (2026-09-09 ~21:32Z):** the PostHog row above is the *then*-current project, not today's. Live settings (and that project-level `session_recording_opt_in` is not production replay) live in [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md); do not copy them back here.
+
 Code-side gaps on the same date (current behavior, not this decision): identity DTO is
 `{ distinct_id, enabled }` with no chapter-group pseudonym; landing has no Sentry/PostHog SDK
 (privacy copy still names Sentry); API/web `tracesSampleRate` was still `Number(env ?? '0.1')`
@@ -51,21 +53,36 @@ has no Sentry/PostHog SDK.
 **Correction (2026-09-09):** `GET /v1/analytics/identity` now returns
 `chapter_group_id` (64-hex HMAC of `chapter_id`, or `null`) alongside
 `distinct_id` / `enabled` (#2042). HMAC stays API-side.
+**Correction (2026-09-09):** API `Sentry.init` lives in `apps/api/src/instrument.ts` (first
+import from `main.ts`). `skipOpenTelemetrySetup` is explicitly `false` so Sentry owns
+the Node tracer; `@opentelemetry/sdk-node` is not a dependency. Request-correlation
+context is AsyncLocalStorage bound in `requestIdMiddleware`, not a second tracer.
+**Correction (2026-09-09):** `apps/web` initializes PostHog JS for identify /
+chapter groups / flags / replay-gates / `sentry-error-correlated`. Replay stays
+off in every environment in that slice. Landing still has no Sentry/PostHog SDK
+(WS6).
 
 **Alternatives rejected.**
 
 - **PostHog as a second exception autocapture.** Two SoRs for the same crash double-count,
   split alert routing, and send stack frames to a product-analytics dataset. Observed
-  `autocapture_exceptions_opt_in: true` is a bug against this decision, not evidence it was
-  wrong.
+  `autocapture_exceptions_opt_in: true` *(earlier 2026-09-09 observation)* was a bug
+  against this decision, not evidence it was wrong. **Correction (2026-09-09 ~21:32Z):**
+  that project flag has since been flipped; live settings live in
+  [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md), not here.
 - **Sentry Replay.** Two replay products means two consent surfaces and two PII leak paths.
   Session replay stays PostHog-only, production-off until approval.
 - **One PostHog project for staging and production.** A shared dataset aliases staging
   traffic onto production funnels and makes the deleted-users automation (#709) unsafe to
   reason about. Staging project `569878` must not become that shared dataset.
-- **Client-held `ANALYTICS_HMAC_SALT` or PostHog project API key.** A browser or RN bundle
-  is readable; either secret would let the analytics dataset be rainbow-tabled or ingested
-  into from the client. The API remains the transport.
+- **Client-held `ANALYTICS_HMAC_SALT` or a PostHog personal API key.** A browser
+  or RN bundle is readable; either secret would let the analytics dataset be
+  rainbow-tabled or queried from the client. The write-only `phc_` project
+  token is a different class (ingest, not read), like a Sentry DSN.
+  **Correction (2026-09-09):** Workstream 5 ships PostHog JS in `apps/web` with
+  `NEXT_PUBLIC_POSTHOG_KEY` (`${POSTHOG_API_KEY}`). Named product events remain
+  `POST /v1/analytics/events` so they are not double-counted with the API
+  adapter. Landing stays out of that slice (WS6).
 - **Reusing `x-request-id` as the trace id.** Inbound clients already send one; Sentry/OTEL
   traces are a different identifier space. Collapsing them loses either inbound honor or
   vendor trace continuity.

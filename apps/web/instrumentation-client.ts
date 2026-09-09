@@ -1,8 +1,10 @@
 import * as Sentry from "@sentry/nextjs";
 import { buildWebSentryOptions, webSentryDsn } from "@/lib/sentry/options";
+import { initWebPostHog } from "@/lib/posthog/client";
+import { withPostHogSentryCorrelation } from "@/lib/sentry/correlation";
 
 /**
- * Browser Sentry initialization for apps/web (issue #865).
+ * Browser Sentry + PostHog initialization for apps/web.
  *
  * `instrumentation-client.ts` at the app root is the Next 16 convention,
  * verified against `node_modules/next/dist/docs/01-app/03-api-reference/
@@ -12,14 +14,23 @@ import { buildWebSentryOptions, webSentryDsn } from "@/lib/sentry/options";
  * during hydration is still captured.
  *
  * Only synchronous top-level code is guaranteed to finish before hydration, so
- * `Sentry.init` is called directly rather than behind a dynamic import.
+ * both SDKs are initialized directly rather than behind a dynamic import.
  *
- * **No DSN means no initialization at all** — local dev, tests, and CI report
- * nowhere, matching the API's behavior and this app's own analytics gating.
+ * **No DSN / no PostHog key means no initialization at all** — local dev,
+ * tests, and CI report nowhere, matching the API's behavior and this app's own
+ * analytics gating.
+ *
+ * Landing is a different app (WS6) and stays out of this file.
  */
+initWebPostHog();
+
 const dsn = webSentryDsn();
 if (dsn) {
-  Sentry.init(buildWebSentryOptions(dsn));
+  const options = buildWebSentryOptions(dsn);
+  Sentry.init({
+    ...options,
+    beforeSend: withPostHogSentryCorrelation(options.beforeSend),
+  });
 }
 
 /**

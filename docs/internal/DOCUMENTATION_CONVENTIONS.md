@@ -38,7 +38,7 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Visual design reference (committed design exports) | `spec/ui/design-system/reference/` |
 | How to run locally / test / contribute | `docs/guides/` |
 | Documentation conventions and internal reference that is not a runbook | `docs/internal/` |
-| CI / agent infra / automations | `docs/internal/ci-cd/` |
+| CI / agent infra / automations | `docs/internal/ci-cd/` — wake/babysit facts: [`pr-babysitting.md`](ci-cd/pr-babysitting.md) |
 | Ops runbooks (DB, incidents, branch protection) | `docs/internal/ops/` |
 | Deploy runbook (providers, CI/CD gate, launch) | `docs/internal/ops/deployment/` — folder-as-index; cite a named leaf and heading, never `§N` |
 | Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |

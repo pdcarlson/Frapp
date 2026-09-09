@@ -147,6 +147,7 @@ describe('scrubSentryEvent', () => {
           category: 'http',
           message: 'GET /v1/me?token=abc',
           data: { url: 'https://api.frapp.live/v1/me?token=abc' },
+          payload: { email: 'treasurer@chapter.example.edu' },
         },
       ],
       exception: {
@@ -154,6 +155,13 @@ describe('scrubSentryEvent', () => {
           {
             type: 'Error',
             value: 'boom',
+            mechanism: {
+              type: 'generic',
+              data: { email: 'treasurer@chapter.example.edu' },
+            },
+            raw_stacktrace: {
+              frames: [{ vars: { password: 'hunter2' } }],
+            },
             stacktrace: {
               frames: [
                 {
@@ -172,7 +180,16 @@ describe('scrubSentryEvent', () => {
     const out = serialize(scrubbed);
     expect(out).not.toContain('hunter2');
     expect(out).not.toContain('token=abc');
+    expect(out).not.toContain('treasurer@chapter.example.edu');
+    expect(out).not.toContain('raw_stacktrace');
     expect(scrubbed?.breadcrumbs?.[0]).not.toHaveProperty('data');
+    expect(scrubbed?.breadcrumbs?.[0]).not.toHaveProperty('payload');
+    expect(scrubbed?.exception?.values?.[0]).not.toHaveProperty(
+      'raw_stacktrace',
+    );
+    expect(scrubbed?.exception?.values?.[0]?.mechanism).not.toHaveProperty(
+      'data',
+    );
     expect(
       scrubbed?.exception?.values?.[0]?.stacktrace?.frames?.[0],
     ).not.toHaveProperty('vars');

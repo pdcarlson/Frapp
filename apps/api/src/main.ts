@@ -1,41 +1,12 @@
+// First import: Sentry Node OTEL patches Nest/HTTP before other modules load.
+import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import * as Sentry from '@sentry/nestjs';
 import { AppModule } from './app.module';
 import { configureApp } from './bootstrap';
-import { buildSentryOptions } from './infrastructure/observability/sentry-options';
-import { pseudonymsAvailable } from './infrastructure/observability/pseudonyms';
-
-function initializeSentry(): void {
-  const dsn = process.env.SENTRY_DSN;
-  if (!dsn) {
-    // No DSN → no-op, in every environment. This is the switch that keeps
-    // local and test runs from reporting anywhere.
-    return;
-  }
-
-  if (!pseudonymsAvailable()) {
-    // Without the salt, `beforeSend` cannot pseudonymize — it would strip the
-    // identifiers instead, and every event would arrive unattributable.
-    // `spec/behavior/observability.md` requires the hashes, so warn loudly
-    // rather than let a misconfigured environment look healthy.
-    Logger.warn(
-      'SENTRY_DSN is set but ANALYTICS_HMAC_SALT is not — events will be ' +
-        'reported with identifiers removed rather than pseudonymized. Set ' +
-        'ANALYTICS_HMAC_SALT to make Sentry events attributable.',
-      'Bootstrap',
-    );
-  }
-
-  // Built in `sentry-options.ts` so the integration spec can assert against the
-  // real configuration instead of a copy — see that file's note.
-  Sentry.init(buildSentryOptions(dsn));
-}
 
 async function bootstrap() {
-  initializeSentry();
-
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
   });

@@ -9,6 +9,7 @@ import { CORS_OPTIONS } from './interface/http/cors.options';
 import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
 import { VALIDATION_PIPE_OPTIONS } from './interface/pipes/validation-pipe.options';
 import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
+import { RequestContextLogger } from './infrastructure/observability/request-context-logger';
 
 /**
  * Everything that shapes a request or a response, in one place.
@@ -134,6 +135,11 @@ export function configureApp(app: INestApplication): void {
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
+
+  // Same ConsoleLogger format as Nest's default, with requestId on the
+  // context. Lives here so e2e and production share it — a copy in `main.ts`
+  // would leave the suite asserting a logger production does not use.
+  app.useLogger(new RequestContextLogger());
 
   // Before the Nest pipeline, so guard rejections carry a request id too — see
   // the middleware's own note on why this cannot be an interceptor.

@@ -13,7 +13,7 @@ export default [
   },
   {
     // Loaded by next.config.js. Node ESM, not a client module.
-    files: ["lib/assert-production-public-env.js"],
+    files: ["lib/assert-production-public-env.js", "lib/sentry/build-config.js"],
     languageOptions: {
       globals: { process: "readonly" },
     },

@@ -34,7 +34,7 @@ import type { ReactNativeOptions } from "@sentry/react-native";
  *
  * Mobile currently sets no user on the Sentry scope at all, so unlike web there
  * is not even a server-derived pseudonym in play. If one is ever added it must
- * come from `GET /v1/analytics/identity` exactly as `sentry-identity-provider`
+ * come from `GET /v1/analytics/identity` exactly as `observability-identity-provider`
  * does on web; the scrubber's `/^[0-9a-f]{64}$/` gate accepts that value and
  * rejects everything else, so a raw id put there by a stray `setUser` call is
  * still dropped.

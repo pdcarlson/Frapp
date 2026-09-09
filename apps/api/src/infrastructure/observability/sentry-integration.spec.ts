@@ -138,6 +138,12 @@ describe('Sentry SDK integration', () => {
       expect(options().sendDefaultPii).toBe(false);
     });
 
+    it('leaves Sentry as the Node OpenTelemetry provider', () => {
+      // ADR-22: a second global tracer corrupts context. `true` would mean we
+      // had to install `@opentelemetry/sdk-node` ourselves.
+      expect(options().skipOpenTelemetrySetup).toBe(false);
+    });
+
     it('passes the DSN through', () => {
       expect(options().dsn).toBe(FIXTURE_DSN);
     });

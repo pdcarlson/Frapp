@@ -12,7 +12,7 @@
 // this watchdog comments ONLY on outcomes the webhook does not already carry.
 // Success and real failures are the webhook's job — duplicating them put three
 // fresh comments (CI, Docs checks, Links) on every push and buried the
-// signal that was worth reading. See AGENT_INFRA.md § Wake coverage.
+// signal that was worth reading. See pr-babysitting.md § Wake coverage.
 //
 // Three responsibilities:
 //   1. Classify the completed run: code failure vs GitHub-infra failure
@@ -63,7 +63,7 @@ export const INFRA_RUN_CONCLUSIONS = new Set([
 ]);
 
 // Conclusions that need no wake at all. Consulted explicitly below — keep in
-// sync with the wake-coverage table in AGENT_INFRA.md.
+// sync with the wake-coverage table in pr-babysitting.md.
 export const IGNORED_RUN_CONCLUSIONS = new Set([
   "skipped",
   "neutral",
@@ -267,7 +267,7 @@ export function buildWakeComment({ run, verdict, reason, rerunResult }) {
     `- Run: ${run.html_url}`,
     `- Commit: ${run.head_sha}`,
     "",
-    "_Automated wake signal for watching agent sessions (`docs/internal/ci-cd/AGENT_INFRA.md` § PR babysitting): the PR-activity webhook carries CI failures and successes, but nothing for a cancelled or timed-out run — so this comment is the wake for those. One live comment per watched workflow, removed the next time that workflow reports a real verdict (a `skipped`/`neutral` report or a superseded run leaves it in place); success and real failures stay silent._",
+    "_Automated wake signal for watching agent sessions (`docs/internal/ci-cd/pr-babysitting.md`): the PR-activity webhook carries CI failures and successes, but nothing for a cancelled or timed-out run — so this comment is the wake for those. One live comment per watched workflow, removed the next time that workflow reports a real verdict (a `skipped`/`neutral` report or a superseded run leaves it in place); success and real failures stay silent._",
   );
   return lines.join("\n");
 }
