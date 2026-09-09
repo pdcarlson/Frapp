@@ -293,6 +293,25 @@ describe('AllExceptionsFilter', () => {
     expect(reported.message).not.toContain('alice@example.com');
   });
 
+  it('keeps row values out of Sentry on the opaque fallback too (#1762)', () => {
+    // No `code`/`message`/`hint`, so the helper cannot take the described path
+    // and must serialize. That path used to JSON.stringify the whole record.
+    new AllExceptionsFilter().catch(
+      {
+        details: 'Key (email)=(alice@example.com) already exists.',
+        statusCode: 502,
+      },
+      host(),
+    );
+
+    const [reported] = jest.mocked(Sentry.captureException).mock.calls[0] as [
+      Error,
+    ];
+    expect(reported.message).toContain('502');
+    expect(reported.message).not.toContain('alice@example.com');
+    expect(captured.error[0]).not.toContain('alice@example.com');
+  });
+
   it('names a bare object throw so the missing stack is explainable', () => {
     new AllExceptionsFilter().catch({ message: 'no stack here' }, host());
 
