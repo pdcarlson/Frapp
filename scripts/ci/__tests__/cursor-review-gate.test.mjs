@@ -173,6 +173,50 @@ test("object payload with empty command and push token is denied", () => {
   );
 });
 
+test("whitespace-only command with push token in the body is denied", () => {
+  assertCursorDeny(
+    runAdapter(JSON.stringify({ command: "  \t  ", note: "git push", cwd: repo, sandbox: false }), {
+      raw: true,
+    }),
+    "whitespace command",
+  );
+});
+
+test("whitespace-only command with no push token is allowed", () => {
+  assertCursorAllow(
+    runAdapter(JSON.stringify({ command: "  \t  ", cwd: repo, sandbox: false }), { raw: true }),
+    "whitespace non-push",
+  );
+});
+
+test("newline-only command with push token in the body is denied", () => {
+  assertCursorDeny(
+    runAdapter(JSON.stringify({ command: "\n", note: "git push", cwd: repo, sandbox: false }), {
+      raw: true,
+    }),
+    "newline command",
+  );
+});
+
+test("NBSP-only command with push token in the body is denied", () => {
+  assertCursorDeny(
+    runAdapter(
+      JSON.stringify({ command: "\u00a0", note: "git push", cwd: repo, sandbox: false }),
+      { raw: true },
+    ),
+    "nbsp command",
+  );
+});
+
+test("object payload with non-string command array is denied", () => {
+  assertCursorDeny(
+    runAdapter(JSON.stringify({ command: ["git", "push"], cwd: repo, sandbox: false }), {
+      raw: true,
+    }),
+    "command array field",
+  );
+});
+
 test("missing INNER denies git push and allows ls", () => {
   clearMarker();
   const missing = path.join(mkdtempSync(path.join(tmpdir(), "crg-missing-")), "nope.sh");
