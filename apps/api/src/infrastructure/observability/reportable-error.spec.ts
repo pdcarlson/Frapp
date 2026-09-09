@@ -75,6 +75,8 @@ describe('toReportableError', () => {
     expect(reported.message).toContain('502');
     expect(reported.message).not.toContain('alice@example.com');
   });
+
+  it('does not let a toJSON that returns undefined break reporting', () => {
     const opaque = {
       toJSON: () => undefined,
     };
