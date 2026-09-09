@@ -1,8 +1,9 @@
 import {
   createSentryScrubber,
+  DEFAULT_TRACES_SAMPLE_RATE,
   NO_PSEUDONYMS,
   type ScrubbableEvent,
-} from "@repo/validation";
+} from "@repo/observability";
 import type { ReactNativeOptions } from "@sentry/react-native";
 
 /**
@@ -115,12 +116,10 @@ function environment(): string {
  * EAS, and an `EXPO_PUBLIC_*` value is inlined at build time anyway, so a
  * variable here would buy no tuning that editing this line does not.
  *
- * It also closes #904's failure mode by construction: a malformed
- * `SENTRY_TRACES_SAMPLE_RATE` yields `NaN`, which the SDK treats as tracing
- * *enabled*. A literal cannot be malformed. The value matches the other two
- * surfaces' default.
+ * The literal is {@link DEFAULT_TRACES_SAMPLE_RATE} so it cannot be `NaN`.
+ * API and web parse their env through the same package (#2040).
  */
-const TRACES_SAMPLE_RATE = 0.1;
+const TRACES_SAMPLE_RATE = DEFAULT_TRACES_SAMPLE_RATE;
 
 /**
  * The options the app actually ships.

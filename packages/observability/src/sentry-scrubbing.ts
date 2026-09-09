@@ -24,9 +24,10 @@
  *    user-typed PII.
  *
  * The design principle is **allowlist, not denylist**, everywhere a structure
- * is enumerable — headers, request fields, top-level event keys. A denylist
- * silently starts leaking the day Sentry's SDK adds a field, and the failure is
- * invisible because nobody reads their own error reports looking for PII.
+ * is enumerable — headers, request fields, top-level event keys, stack frames.
+ * A denylist silently starts leaking the day Sentry's SDK adds a field, and
+ * the failure is invisible because nobody reads their own error reports looking
+ * for PII.
  *
  * Free text is the one place an allowlist is impossible: an exception message
  * is the payload we actually want, and dropping it would make the whole
@@ -34,32 +35,35 @@
  * (`redactFreeText`), which is best-effort by construction and is the weakest
  * link here by design — hence the strictness everywhere else.
  *
- * ## Why this lives in `@repo/validation`, and why it takes its pseudonymizer
+ * ## Why this lives in `@repo/observability`, and why it takes its pseudonymizer
  *
  * It was `apps/api/src/infrastructure/observability/sentry-scrubbing.ts` until
- * #865 needed the identical rules on the browser side. A browser bundle holds
- * strictly *more* PII than the server does — member emails, chapter names, chat
- * message bodies, document titles — so wiring web Sentry against a second,
- * looser copy of these rules would reintroduce on the client exactly the leak
- * #481 closed on the server.
+ * #865 needed the identical rules on the browser side, then
+ * `packages/validation/src/sentry-scrubbing.ts` until this package existed.
+ * A browser bundle holds strictly *more* PII than the server does — member
+ * emails, chapter names, chat message bodies, document titles — so wiring web
+ * Sentry against a second, looser copy of these rules would reintroduce on the
+ * client exactly the leak #481 closed on the server.
  *
- * Two constraints follow from the move, and they are why this module looks
- * different from the one it replaced:
+ * Two constraints follow from the shared-package home, and they are why this
+ * module looks the way it does:
  *
- *  - **No `@sentry/*` import, not even `import type`.** `@repo/validation` is
- *    also a dependency of `apps/mobile`, which has no Sentry installed; a
- *    type-only import still lands in the emitted `.d.ts` and would fail to
- *    resolve there. The event shapes below are therefore structural. Each app
- *    binds them to its own SDK's types at the wiring site, which is where a
- *    breaking SDK change should surface anyway — `buildSentryOptions` in the
- *    API stops compiling if `beforeSend`'s signature moves.
- *  - **No `process.env`.** The salt is API-only on purpose (`ENV_REFERENCE.md`:
- *    exposing it to a client bundle would let the dataset be rainbow-tabled
- *    back to user ids). So the pseudonymizer is injected rather than imported,
- *    and a caller that has no salt passes one that returns `undefined` — which
- *    is the fail-closed path this module already took when the API's salt was
- *    unset, not new behavior.
+ *  - **No `@sentry/*` import, not even `import type`.** A type-only import
+ *    still lands in the emitted `.d.ts` and would fail to resolve for any
+ *    consumer that does not install Sentry. The event shapes below are
+ *    therefore structural. Each app binds them to its own SDK's types at the
+ *    wiring site, which is where a breaking SDK change should surface anyway —
+ *    `buildSentryOptions` in the API stops compiling if `beforeSend`'s
+ *    signature moves.
+ *  - **No `process.env`, no `node:*`, no DOM.** The salt is API-only on purpose
+ *    (`ENV_REFERENCE.md`: exposing it to a client bundle would let the dataset be
+ *    rainbow-tabled back to user ids). So the pseudonymizer is injected rather
+ *    than imported, and a caller that has no salt passes one that returns
+ *    `undefined` — which is the fail-closed path this module already took when
+ *    the API's salt was unset, not new behavior.
  */
+
+import { isPseudonymHex } from './correlation';
 
 // ── Injected pseudonymization ────────────────────────────────────────────────
 
@@ -354,6 +358,58 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
   }
 
   /**
+   * One stack frame, rebuilt from an allowlist (#889).
+   *
+   * The previous rebuild was a denylist of one (`delete kept.vars`) inside a
+   * module whose doctrine is allowlist everywhere a structure is enumerable.
+   * `ContextLines` attaches `pre_context` / `context_line` / `post_context`
+   * from disk; none of those were touched, so a key-shaped literal in source
+   * reached Sentry.
+   */
+  function scrubFrame(frame: unknown): unknown {
+    if (!frame || typeof frame !== 'object') return frame;
+    const source = frame as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+
+    for (const key of ['filename', 'function', 'module', 'abs_path'] as const) {
+      const value = source[key];
+      if (typeof value === 'string') out[key] = redactFreeText(value);
+    }
+    if (typeof source.lineno === 'number') out.lineno = source.lineno;
+    if (typeof source.colno === 'number') out.colno = source.colno;
+    if (typeof source.in_app === 'boolean') out.in_app = source.in_app;
+    if (typeof source.context_line === 'string') {
+      out.context_line = redactFreeText(source.context_line);
+    }
+    if (Array.isArray(source.pre_context)) {
+      out.pre_context = source.pre_context.map((line) =>
+        typeof line === 'string' ? redactFreeText(line) : line,
+      );
+    }
+    if (Array.isArray(source.post_context)) {
+      out.post_context = source.post_context.map((line) =>
+        typeof line === 'string' ? redactFreeText(line) : line,
+      );
+    }
+    return out;
+  }
+
+  /**
+   * `transaction_info`, rebuilt down to its one meaningful field.
+   *
+   * The SDK fills `source` from a fixed vocabulary (`url` / `route` / `custom` /
+   * …), so this is close to a no-op in practice — but it is a free-form object on
+   * the wire, and it is worth keeping because that `source` value is what Sentry
+   * groups URL transactions by. Swept like any other author-reachable string.
+   */
+  function scrubTransactionInfo(info: unknown): Record<string, unknown> | undefined {
+    if (!info || typeof info !== 'object') return undefined;
+    const source = (info as Record<string, unknown>).source;
+    if (typeof source !== 'string') return undefined;
+    return { source: redactFreeText(source) };
+  }
+
+  /**
    * Write the swept `message` onto the outgoing event, or remove it.
    *
    * `message` is on {@link EVENT_KEY_ALLOWLIST}, so by the time either hook gets
@@ -370,21 +426,6 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
    * `[object Object]` and, worse, `String()` on a value with a hostile `toString`
    * runs foreign code inside the one function that must not throw.
    */
-  /**
-   * `transaction_info`, rebuilt down to its one meaningful field.
-   *
-   * The SDK fills `source` from a fixed vocabulary (`url` / `route` / `custom` /
-   * …), so this is close to a no-op in practice — but it is a free-form object on
-   * the wire, and it is worth keeping because that `source` value is what Sentry
-   * groups URL transactions by. Swept like any other author-reachable string.
-   */
-  function scrubTransactionInfo(info: unknown): Record<string, unknown> | undefined {
-    if (!info || typeof info !== 'object') return undefined;
-    const source = (info as Record<string, unknown>).source;
-    if (typeof source !== 'string') return undefined;
-    return { source: redactFreeText(source) };
-  }
-
   function scrubMessageInto(
     scrubbed: Record<string, unknown>,
     message: unknown,
@@ -446,20 +487,16 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
         return {
           ...value,
           value: redactMaybe(value.value) ?? value.value,
-          // Stack frames keep file/line/function (code identity, not user data)
-          // but `vars` is a snapshot of local variables — arbitrary request
-          // payload.
+          // Stack frames are rebuilt from an allowlist (#889). `vars` is a
+          // snapshot of local variables — arbitrary request payload — and is
+          // dropped by omission, as is any field a future SDK version adds.
+          // Source context (`pre_context` / `context_line` / `post_context`)
+          // is swept: those arrays are source lines read off disk, so a
+          // key-shaped literal in the file would otherwise ship verbatim.
           stacktrace: stacktrace && {
-            ...stacktrace,
             frames: Array.isArray(stacktrace.frames)
-              ? stacktrace.frames.map((frame) => {
-                  if (!frame || typeof frame !== 'object') return frame;
-                  const kept = { ...(frame as Record<string, unknown>) };
-                  delete kept.vars;
-                  kept.filename = redactMaybe(kept.filename) ?? kept.filename;
-                  return kept;
-                })
-              : stacktrace.frames,
+              ? stacktrace.frames.map(scrubFrame)
+              : undefined,
           },
         };
       }),
@@ -945,9 +982,10 @@ const DSC_FIELD_ALLOWLIST = new Set([
 /**
  * A pseudonym that is already a pseudonym, or nothing.
  *
- * 64 lowercase hex is the shape of `hmacSha256Hex`'s output and nothing else
- * the codebase produces. Anything failing it — a raw uuid a stray `setUser`
- * call put there, an email, an ip — is dropped rather than trusted.
+ * 64 lowercase hex is the shape of HMAC-SHA256 hex and nothing else the
+ * codebase produces ({@link isPseudonymHex}). Anything failing it — a raw uuid
+ * a stray `setUser` call put there, an email, an ip — is dropped rather than
+ * trusted.
  *
  * Extracted into one function rather than inlined at both hooks (#865): the
  * predicate is the security control, and two byte-identical copies of a
@@ -958,7 +996,7 @@ function scrubUser(
   user: { id?: unknown } | undefined,
 ): { id: string } | undefined {
   const userId = user?.id;
-  if (typeof userId === 'string' && /^[0-9a-f]{64}$/.test(userId)) {
+  if (isPseudonymHex(userId)) {
     return { id: userId };
   }
   return undefined;
