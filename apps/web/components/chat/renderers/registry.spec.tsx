@@ -21,6 +21,7 @@ vi.mock("@/components/shared/subscription-gate", () => ({
     allowed: true,
     isPending: false,
     state: { allowed: true },
+    isOffline: false,
     noticeId: "notice",
     controlProps: () => ({
       disabled: false,
