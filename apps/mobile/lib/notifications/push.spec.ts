@@ -54,6 +54,9 @@ function fakeModule() {
     ),
     clearLastNotificationResponse: vi.fn(),
     addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
+    addPushTokenListener: vi.fn<(listener: (token: unknown) => void) => { remove: () => void }>(
+      () => ({ remove: vi.fn() }),
+    ),
     scheduleNotificationAsync: vi.fn().mockResolvedValue("local-1"),
     cancelScheduledNotificationAsync: vi.fn().mockResolvedValue(undefined),
     dismissNotificationAsync: vi.fn().mockResolvedValue(undefined),
@@ -253,5 +256,32 @@ describe("push isolation module", () => {
     // than merely documented. Delivery uses Expo push tokens regardless.
     expect(types).not.toMatch(/getDevicePushTokenAsync\s*[(:]/);
     expect(push).not.toMatch(/getDevicePushTokenAsync\s*\(/);
+    expect(types).toMatch(/addPushTokenListener\s*\(/);
+    expect(push).toMatch(/export function addPushTokenListener/);
+  });
+
+  it("observes token rotation only when a remote push can be registered", async () => {
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+
+    const listener = vi.fn();
+    const sub = push.addPushTokenListener(listener);
+    expect(sub).not.toBeNull();
+    expect(mod.addPushTokenListener).toHaveBeenCalledTimes(1);
+    const wrapped = mod.addPushTokenListener.mock.calls[0][0];
+    wrapped({ data: "device-token", type: "ios" });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith();
+  });
+
+  it("does not observe token rotation without an EAS project id", async () => {
+    constantsState.projectId = undefined;
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+
+    expect(push.addPushTokenListener(vi.fn())).toBeNull();
+    expect(mod.addPushTokenListener).not.toHaveBeenCalled();
   });
 });
