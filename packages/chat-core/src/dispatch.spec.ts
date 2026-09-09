@@ -7,6 +7,8 @@ import type { KeyValueStore, OutboxStore } from "./adapters";
 import { chatMessagesKey, type ChannelCache, type ChatMessage } from "./types";
 import { selectMessages, mergeServerRow } from "./cache";
 import { readRecordedNotices } from "./recorded-notices";
+import { memoryStore } from "./test/memory-store";
+import { stubOutbox } from "./test/outbox-stub";
 
 /**
  * #544 — a `/points` grant whose ledger row commits but whose chat card fails to
@@ -27,19 +29,6 @@ const POINTS_COMMAND: SlashCommand = {
   requiredModule: "points",
   implemented: true,
 };
-
-function memoryStore(): KeyValueStore {
-  const map = new Map<string, string>();
-  return {
-    get: (key) => map.get(key) ?? null,
-    set: (key, value) => {
-      map.set(key, value);
-    },
-    remove: (key) => {
-      map.delete(key);
-    },
-  };
-}
 
 function buildCtx(
   post: ReturnType<typeof vi.fn>,
@@ -848,4 +837,169 @@ describe("dispatchEvent — card_posted (#1717)", () => {
     });
     expect(placeholderCount(ctx)).toBe(0);
   });
+});
+
+/**
+ * #1718 — `/poll` and `/announce` used to `await sendMessage` with no try, so
+ * a Dexie fault escaped `dispatchSlashCommand`. The composer net maps that
+ * to a destructive `{ ok: false }` toast and cannot touch the optimistic
+ * row. Two faults, two outcomes:
+ *
+ * - never sent (`enqueue`) → `{ ok: false }`, optimistic row removed
+ * - sent, `dequeue` failed → `{ ok: true, warning }`, row confirmed
+ */
+
+const POLL_COMMAND: SlashCommand = {
+  name: "poll",
+  description: "Start a poll",
+  requiredModule: "polls",
+  implemented: true,
+};
+
+const ANNOUNCE_COMMAND: SlashCommand = {
+  name: "announce",
+  description: "Post an announcement",
+  requiredModule: null,
+  implemented: true,
+};
+
+const SIMPLE_CASES = [
+  {
+    name: "poll" as const,
+    command: POLL_COMMAND,
+    args: `"Who's in?" Yes No`,
+    announcementsChannelId: null as string | null,
+    kind: "poll",
+  },
+  {
+    name: "announce" as const,
+    command: ANNOUNCE_COMMAND,
+    args: "House meeting at 7",
+    announcementsChannelId: CHANNEL_ID,
+    kind: "announcement",
+  },
+];
+
+function buildSimpleCtx(
+  post: ReturnType<typeof vi.fn>,
+  outbox: OutboxStore,
+): ChatActionContext {
+  return {
+    queryClient: new QueryClient(),
+    apiClient: { POST: post } as unknown as ChatActionContext["apiClient"],
+    supabase: { from: vi.fn() } as unknown as ChatActionContext["supabase"],
+    userId: "user-1",
+    outbox,
+  };
+}
+
+function dispatchSimple(
+  ctx: ChatActionContext,
+  which: (typeof SIMPLE_CASES)[number],
+) {
+  return dispatchSlashCommand(ctx, {
+    command: which.command,
+    args: which.args,
+    channelId: CHANNEL_ID,
+    announcementsChannelId: which.announcementsChannelId,
+  });
+}
+
+function echoPostedMessage(body: {
+  client_message_id: string;
+  content: string;
+  kind: string;
+}) {
+  return {
+    id: "server-1",
+    channel_id: CHANNEL_ID,
+    sender_id: "user-1",
+    content: body.content,
+    kind: body.kind,
+    client_message_id: body.client_message_id,
+    created_at: new Date().toISOString(),
+  };
+}
+
+function postingApi() {
+  return vi.fn().mockImplementation(
+    async (
+      _path: string,
+      init: {
+        body: { client_message_id: string; content: string; kind: string };
+      },
+    ) => ({
+      data: { message: echoPostedMessage(init.body) },
+      error: null,
+      response: { status: 201 },
+    }),
+  );
+}
+
+describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () => {
+  it.each(SIMPLE_CASES)(
+    "/$name returns a failure instead of throwing when enqueue rejects",
+    async (which) => {
+      const post = postingApi();
+      const outbox = stubOutbox({
+        enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
+      });
+      const ctx = buildSimpleCtx(post, outbox);
+
+      const result = await dispatchSimple(ctx, which);
+
+      expect(result).toEqual({
+        ok: false,
+        error: "Couldn't run that command.",
+      });
+      expect(post).not.toHaveBeenCalled();
+      expect(
+        selectMessages(
+          ctx.queryClient.getQueryData(chatMessagesKey(CHANNEL_ID)),
+        ),
+      ).toHaveLength(0);
+    },
+  );
+
+  it.each(SIMPLE_CASES)(
+    "/$name still posts when clearDraft rejects (draft clear is best-effort)",
+    async (which) => {
+      const post = postingApi();
+      const outbox = stubOutbox({
+        clearDraft: vi
+          .fn()
+          .mockRejectedValue(new Error("DatabaseClosedError")),
+      });
+      const ctx = buildSimpleCtx(post, outbox);
+
+      const result = await dispatchSimple(ctx, which);
+
+      expect(result).toEqual({ ok: true });
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(onlyRow(ctx)._status).toBe("confirmed");
+    },
+  );
+
+  // The composer net cannot tell this from a never-sent reject, so it would
+  // toast "/poll failed" while the card is visible and invite a re-type that
+  // misses the dedupe index. `{ ok: true, warning }` is the #544 channel.
+  it.each(SIMPLE_CASES)(
+    "/$name does not report failure when POST succeeded and dequeue rejects",
+    async (which) => {
+      const post = postingApi();
+      const outbox = stubOutbox({
+        dequeue: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
+      });
+      const ctx = buildSimpleCtx(post, outbox);
+
+      const result = await dispatchSimple(ctx, which);
+
+      expect(result.ok).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.warning).toMatch(/don't send it again/i);
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(onlyRow(ctx)._status).toBe("confirmed");
+      expect(onlyRow(ctx).kind).toBe(which.kind);
+    },
+  );
 });
