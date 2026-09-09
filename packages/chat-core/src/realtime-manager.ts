@@ -17,7 +17,7 @@
  *   - Degrades to a REST polling fallback when any subscribed channel has been
  *     non-live for longer than `POLL_DEGRADE_AFTER_MS`, re-running the same
  *     backfill every `POLL_INTERVAL_MS` until Realtime recovers
- *     (`spec/ui/resilience.md` §3.2). Reconnect backoff keeps running
+ *     (`spec/ui/resilience/message-delivery.md#receiving-messages-realtime`). Reconnect backoff keeps running
  *     underneath, so polling is a stopgap, never a replacement.
  *   - For every channel attach — both the initial join and every reconnect —
  *     **resubscribe first** (so any live row between backfill and re-attach
@@ -80,12 +80,12 @@ const LAST_SEEN_PREFIX = "chat:lastSeen:";
 
 /**
  * How long a channel may sit non-live before we stop waiting on Realtime and
- * start pulling messages over REST. `spec/ui/resilience.md` §3.2: "Disconnected
+ * start pulling messages over REST. `spec/ui/resilience/message-delivery.md#receiving-messages-realtime`: "Disconnected
  * (>10s) → switch to polling mode".
  */
 export const POLL_DEGRADE_AFTER_MS = 10_000;
 
-/** Poll cadence once degraded — spec §3.2: "Poll every 5s for new messages". */
+/** Poll cadence once degraded — Receiving messages: "Poll every 5s for new messages". */
 export const POLL_INTERVAL_MS = 5_000;
 
 export interface BackfillFetcher {
@@ -620,7 +620,7 @@ class ChatRealtimeManager {
     }
   }
 
-  // ─── polling fallback (spec/ui/resilience.md §3.2) ──────────────────────
+  // ─── polling fallback (spec/ui/resilience/message-delivery.md#receiving-messages-realtime) ──────────────────────
 
   /**
    * Reconciles the polling state machine with the current channel statuses.

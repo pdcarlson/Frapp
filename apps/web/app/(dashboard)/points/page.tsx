@@ -290,7 +290,7 @@ export default function PointsPage() {
 
   // The leaderboard and the ledger are what officers read chapter financial
   // standing off, so a failed fetch must not be papered over with plausible
-  // rows (`spec/ui/resilience.md` §1: "Show, don't guess"). Failing the whole
+  // rows (`spec/ui/resilience/principles.md`: "Show, don't guess"). Failing the whole
   // page — rather than rendering a healthy-looking shell — also keeps the
   // adjust and bulk-export controls out of reach while the data is unknown,
   // matching how Members handles its supporting queries.

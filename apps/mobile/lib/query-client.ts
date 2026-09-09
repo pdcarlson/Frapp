@@ -20,7 +20,7 @@ import { QueryClient } from "@tanstack/react-query";
  *
  * `refetchOnWindowFocus` is on for the same slice: `focusManager` is now bound
  * to `AppState`, so "focus" finally means something on a device, and
- * `spec/ui/resilience.md` § 8 asks for stale queries to refetch on it. With a
+ * `spec/ui/resilience/caching.md` asks for stale queries to refetch on it. With a
  * 60s `staleTime` and tabs that stay mounted for the whole session, this is what
  * stops a member returning after an hour to hour-old channels and tasks.
  */

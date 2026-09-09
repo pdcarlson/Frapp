@@ -15,7 +15,7 @@
  *   full, above their retry buttons.
  *
  * With both managers wired, `refetchOnReconnect` (a TanStack default) starts
- * firing and `spec/ui/resilience.md` § 8's invalidation rows — "Network
+ * firing and `spec/ui/resilience/caching.md`'s invalidation rows — "Network
  * reconnect → All queries" and "Window focus → All stale queries" — are
  * delivered rather than merely specified. The explicit retry controls stay:
  * they are still the only recovery for a *server* error, which no amount of

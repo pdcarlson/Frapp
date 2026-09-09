@@ -6,7 +6,7 @@ import { useConnection } from "@/lib/connection/use-connection";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * The global connection banner — `spec/ui/resilience.md` § 2.
+ * The global connection banner — `spec/ui/resilience/connection-state.md`.
  *
  * Reads `useConnection()` rather than taking props. It used to take two raw
  * `expo-network` booleans from `app/_layout.tsx` and derive its own offline and
@@ -15,9 +15,9 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * device state that could, and did, disagree on screen. There is now one
  * source (`lib/connection/monitor.ts`) and this renders it.
  *
- * ## Two deliberate deviations from § 2, both recorded in the spec
+ * ## Two deliberate deviations from connection-state.md, both recorded in the spec
  *
- * **Placement.** § 2 says "below the header bar". That is a web-shaped rule
+ * **Placement.** UI Indicators says "below the header bar". That is a web-shaped rule
  * written for a dashboard chrome. Here the banner is mounted above the
  * navigator in `app/_layout.tsx`, because a global banner belongs above every
  * screen and moving it under each header would mean editing the frozen
@@ -25,7 +25,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * previously did not — it rendered outside every `SafeAreaView` and painted
  * under the status bar on a notched device.
  *
- * **No emoji.** § 2's copy leads with ⚡ and 📡. Those predate Signet's
+ * **No emoji.** The banner copy leads with ⚡ and 📡. Those predate Signet's
  * iconography rule, and the semantic tint already carries the severity they
  * stood in for. The copy is otherwise verbatim, and `apps/web`'s banner has been
  * left for its own reskin rather than changed from a mobile slice.
@@ -36,16 +36,16 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * transport, which answers a different question: this banner says whether the
  * *API* is reachable, the pill says whether *live updates* are flowing.
  * "Real-time updates paused. Polling for new messages." is a working degraded
- * mode with no equivalent here, and `spec/ui/resilience.md` § 3.2 declares that
+ * mode with no equivalent here, and `spec/ui/resilience/message-delivery.md#receiving-messages-realtime` declares that
  * string normative. The pill suppresses only its own offline branch while this
  * banner is already saying the same thing.
  */
 
-/** § 2: "200ms slide-down animation". */
+/** UI Indicators: "200ms slide-down animation". */
 const SLIDE_MS = 200;
 
 /**
- * § 2: "User can manually dismiss (it reappears if state hasn't changed after
+ * UI Indicators: "User can manually dismiss (it reappears if state hasn't changed after
  * 30s)". The reappearance is the point — dismissing acknowledges the message,
  * it does not fix the network, and a member who then loses a write deserves to
  * have been told again.
