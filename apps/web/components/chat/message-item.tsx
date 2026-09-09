@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { CHIP, CHIP_HIT_AREA } from "./chip";
 import { BookmarkGlyph, PinGlyph, ThreadGlyph } from "./chat-glyphs";
+import { ImportedReactionChips } from "./imported-reaction-chips";
+import { selectImportedReactions } from "./imported-reactions";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { MessageAttachments } from "./message-attachments";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
@@ -372,14 +374,24 @@ export function MessageItem({
   // still-live react/unreact targets — the Delete button added here is the
   // first UI path that can set `is_deleted` on a message a viewer is looking
   // at without a reload, so this case was unreachable before.
+  const importedSummary = message.is_deleted
+    ? []
+    : selectImportedReactions(message.kind, message.payload);
+
   const reactions = message.is_deleted ? null : (
-    <ReactionChips
-      reactions={message.reactions}
-      viewerId={viewerId}
-      align={selfBubble ? "end" : "start"}
-      onReact={(emoji) => onReact(message.id, emoji)}
-      onUnreact={(emoji) => onUnreact(message.id, emoji)}
-    />
+    <>
+      <ImportedReactionChips
+        reactions={importedSummary}
+        align={selfBubble ? "end" : "start"}
+      />
+      <ReactionChips
+        reactions={message.reactions}
+        viewerId={viewerId}
+        align={selfBubble ? "end" : "start"}
+        onReact={(emoji) => onReact(message.id, emoji)}
+        onUnreact={(emoji) => onUnreact(message.id, emoji)}
+      />
+    </>
   );
 
   /*

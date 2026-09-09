@@ -493,8 +493,10 @@ What follows is the behaviour the archive has once it is in.
   not, and cannot be.** Both `message_reactions.user_id` and
   `chat_message_actions.user_id` are NOT NULL foreign keys to `users`, and
   minting a `users` row per Discord handle was rejected for the reasons above. No
-  count is lost and no identity is invented. Rendering the preserved summary is
-  not built yet — the data is stored ahead of the surface that will show it.
+  count is lost and no identity is invented. The web bubble draws that summary
+  as read-only chips (same geometry as live reactions, not buttons). Custom
+  emoji render as `:name:` — v1 does not resolve `--media` images. Mobile is a
+  separate surface.
 - **Pins are recorded, not applied.** A message Discord had pinned imports with
   `is_pinned = false` and `payload.was_pinned_at_source = true`. A channel's 50
   live pin slots are the chapter's to spend, and an archive with 200 pins would
