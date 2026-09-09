@@ -4,7 +4,9 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Can } from "@/components/shared/can";
+import { focusOfflineBanner } from "@/components/shared/offline-banner-focus";
 import { useSubscriptionWriteState } from "@/lib/hooks/use-subscription-write-state";
+import { useNetwork } from "@/lib/providers/network-provider";
 import type {
   SubscriptionWriteClass,
   SubscriptionWriteState,
@@ -13,15 +15,24 @@ import { cn } from "@/lib/utils";
 import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
 
 /**
+ * § 2's queueless-write reason, attached to the control rather than a notice.
+ * Same string as `writeBlockedReason()` in `apps/mobile/lib/connection/state.ts`.
+ * Do not re-add the ShadCN tooltip primitive (#920 deleted it) to carry this.
+ */
+const OFFLINE_WRITE_REASON = "Reconnect to make changes.";
+
+/**
  * The reusable half of the §5 entitlement-gating standard
  * (`spec/ui/design-system/README.md`), extracted from `InvoiceAdminCard` so the
  * remaining paid-ops surfaces do not each re-solve it (#841).
  *
- * `useSubscriptionWriteState` answers *whether* a write is permitted. Turning
- * that answer into a correct control is the part that kept going wrong: it is
- * five separate concerns — the pending fold-in, the mid-flight revoke, the
- * refusal to open, the aria wiring, and the notice — and getting any one of
- * them wrong produces a control that either lies or traps focus.
+ * `useSubscriptionWriteState` answers *whether the subscription permits* a
+ * write. Turning that into a correct control is the part that kept going
+ * wrong: it is six separate concerns — the pending fold-in, the offline
+ * fold-in, the mid-flight revoke, the refusal to open, the aria/title wiring,
+ * and the notice — and getting any one of them wrong produces a control that
+ * either lies or traps focus. `allowed` is "may this surface write", not a
+ * purely subscription question (#1753).
  *
  * This is deliberately **not** a `<Can>`-style wrapper. §5 rule 4 requires
  * *disabling* the control rather than hiding it, so the caller needs the reason
@@ -42,13 +53,20 @@ import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
  */
 export type SubscriptionGate = {
   /**
-   * Writes in this class are permitted right now. Already folds in the pending
-   * case, so callers never have to remember to `&& !isPending` — forgetting
-   * that is what leaves a control live through the whole fetch.
+   * Writes in this class are permitted right now. Already folds in pending
+   * and OFFLINE, so callers never have to remember either — forgetting the
+   * pending fold leaves a control live through the fetch, and forgetting
+   * offline leaves a queueless write enabled on a dropped connection (#1753).
    */
   allowed: boolean;
   /** The chapter record has not resolved; `allowed` is provisional (fails open). */
   isPending: boolean;
+  /**
+   * The connection is OFFLINE. Folded into `allowed`, not into `state.allowed`,
+   * so a dropped Wi-Fi does not slam an open dialog (`useGatedDialog` keys
+   * the revoke on the subscription verdict).
+   */
+  isOffline: boolean;
   /** The underlying verdict, for callers that need `reason` / `code` directly. */
   state: SubscriptionWriteState;
   /** Ties every control this gate disables to the sentence explaining it. */
@@ -64,6 +82,7 @@ export type SubscriptionGate = {
    */
   controlProps: (alsoDisabled?: boolean) => {
     disabled: boolean;
+    title: string | undefined;
     "aria-describedby": string | undefined;
   };
   /** @internal — wiring for `SubscriptionNotice` and `useGatedDialog`. */
@@ -81,7 +100,8 @@ export function useSubscriptionGate(
   writeClass: SubscriptionWriteClass = "paid",
 ): SubscriptionGate {
   const { state, isPending } = useSubscriptionWriteState(writeClass);
-  const allowed = state.allowed && !isPending;
+  const { isOffline } = useNetwork();
+  const allowed = state.allowed && !isPending && !isOffline;
   const noticeRef = useRef<HTMLParagraphElement | null>(null);
   // `useId` rather than a module-level constant: several gated surfaces render
   // more than one control group, and a shared literal id would point every
@@ -91,12 +111,27 @@ export function useSubscriptionGate(
   const controlProps = useCallback(
     (alsoDisabled = false) => ({
       disabled: !allowed || alsoDisabled,
-      "aria-describedby": allowed ? undefined : noticeId,
+      // Native `title`, not a tooltip primitive — #920 deleted ShadCN tooltip.
+      // Clear it when online so a reconnect does not leave the string stuck.
+      title: isOffline ? OFFLINE_WRITE_REASON : undefined,
+      // An offline-only block has no `SubscriptionNotice` (finding 4) and
+      // several surfaces render the notice *outside* the dialog (finding 3),
+      // so `aria-describedby` would name a node Radix `aria-hidden`s or that
+      // is not in the tree. The reason lives on `title` instead.
+      "aria-describedby": !allowed && !isOffline ? noticeId : undefined,
     }),
-    [allowed, noticeId],
+    [allowed, isOffline, noticeId],
   );
 
-  return { allowed, isPending, state, noticeId, noticeRef, controlProps };
+  return {
+    allowed,
+    isPending,
+    isOffline,
+    state,
+    noticeId,
+    noticeRef,
+    controlProps,
+  };
 }
 
 export type GatedDialog = {
@@ -136,17 +171,20 @@ export type GatedDialog = {
  * That redirect runs through Radix's own `onCloseAutoFocus` rather than a
  * `requestAnimationFrame` chase. Radix restores focus *after* the next animation
  * frame, so a rAF-scheduled `.focus()` is silently overwritten — it looks
- * correct in review and does nothing at runtime. Only the revoke path preempts
- * the default; an ordinary close still returns focus to the trigger, which is
- * both enabled and where the user was.
+ * correct in review and does nothing at runtime. The revoke path preempts the
+ * default; an ordinary close still returns focus to the trigger, which is
+ * both enabled and where the user was — **except** when the trigger is
+ * disabled because the connection dropped while the dialog was open. Offline
+ * must not set `revokedRef` (must not slam the dialog), so that close needs
+ * its own preempt: focus goes to `OfflineBanner`, already on screen.
  */
 export function useGatedDialog(gate: SubscriptionGate): GatedDialog {
   const [open, setOpenState] = useState(false);
-  const { allowed, noticeRef } = gate;
+  const { allowed, isOffline, noticeRef } = gate;
   const revokedRef = useRef(false);
 
   // Closing keys on the *verdict*, not on `allowed` — the two differ by
-  // `isPending`, and conflating them destroys the user's work.
+  // `isPending` and `isOffline`, and conflating them destroys the user's work.
   //
   // `activeChapterId` starts empty on first paint and is cleared again on every
   // chapter switch, and the chapter query re-enters `pending` each time. With
@@ -154,7 +192,8 @@ export function useGatedDialog(gate: SubscriptionGate): GatedDialog {
   // fails open, so the trigger was enabled) would have the dialog slammed shut
   // and their draft discarded the moment the query started resolving — and be
   // handed a notice reading "Checking this chapter's subscription…" as the
-  // reason. Only a definite `allowed: false` is a revocation.
+  // reason. A dropped connection would do the same slam, with the submit
+  // already disabled. Only a definite `state.allowed: false` is a revocation.
   const blocked = !gate.state.allowed;
 
   useEffect(() => {
@@ -185,12 +224,23 @@ export function useGatedDialog(gate: SubscriptionGate): GatedDialog {
 
   const onCloseAutoFocus = useCallback(
     (event: Event) => {
-      if (!revokedRef.current) return;
-      revokedRef.current = false;
+      if (revokedRef.current) {
+        revokedRef.current = false;
+        event.preventDefault();
+        // Notice is unmounted on an offline-only block; fall through to the
+        // banner so focus still does not land on `<body>`.
+        if (noticeRef.current) {
+          noticeRef.current.focus();
+        } else {
+          focusOfflineBanner();
+        }
+        return;
+      }
+      if (!isOffline) return;
       event.preventDefault();
-      noticeRef.current?.focus();
+      focusOfflineBanner();
     },
-    [noticeRef],
+    [isOffline, noticeRef],
   );
 
   return {
@@ -221,8 +271,10 @@ export type SubscriptionNoticeProps = {
  * The `role="status"` explanation that every disabled control on the surface
  * points at via `aria-describedby`.
  *
- * Renders nothing when the write is permitted, so callers can mount it
- * unconditionally.
+ * Renders nothing when the write is permitted, **and** when the only block
+ * is OFFLINE — that reason lives on the control's `title` and on the global
+ * `OfflineBanner`, not in a second live region.
+ * Callers can mount it unconditionally.
  *
  * The recovery link is wrapped in `<Can permission="billing:manage">` — the
  * permission the checkout card itself requires
@@ -237,9 +289,14 @@ export function SubscriptionNotice({
   recovery,
   className,
 }: SubscriptionNoticeProps) {
-  const { allowed, isPending, state, noticeId, noticeRef } = gate;
+  const { allowed, isPending, isOffline, state, noticeId, noticeRef } = gate;
 
-  if (allowed) return null;
+  // Offline is already announced by `OfflineBanner` and by `title` on the
+  // control. Rendering a notice here would (a) spin "Checking this chapter's
+  // subscription…" forever, because the chapter fetch cannot resolve offline,
+  // (b) offer "Complete checkout on the billing screen" which is itself
+  // unreachable, and (c) inject one live region per chat card (finding 4).
+  if (allowed || isOffline) return null;
 
   return (
     <p
