@@ -190,6 +190,8 @@ export function MessageItem({
   // which is in CARD_KINDS, so `rendersAsBubble` is false and such a row always
   // takes the card path below, never the self-bubble one.
   const isUnconfirmed = message._status === "unconfirmed";
+  // Write committed, card missing — not a failure and not retryable (#1789).
+  const isRecorded = message._status === "recorded";
   // Reactions and threads operate on the *server* id (the chat actions
   // endpoint requires a real chat_messages.id, threads need a stable
   // parent id) — gate the hover affordances on a confirmed status so we
@@ -711,6 +713,12 @@ export function MessageItem({
           {isUnconfirmed ? (
             <p className="ml-1 mt-1 text-[12.5px] text-muted-foreground">
               {message._error ?? "Not confirmed"}
+            </p>
+          ) : null}
+          {isRecorded ? (
+            <p className="ml-1 mt-1 text-[12.5px] text-muted-foreground">
+              {message._error ??
+                "Recorded — the chat card didn't post. Don't run this command again."}
             </p>
           ) : null}
           {isFailed ? (
