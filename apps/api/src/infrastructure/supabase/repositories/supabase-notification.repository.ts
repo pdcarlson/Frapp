@@ -43,7 +43,11 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
-    if (options?.limit) {
+    if (
+      typeof options?.limit === 'number' &&
+      Number.isFinite(options.limit) &&
+      options.limit > 0
+    ) {
       query = query.limit(options.limit);
     }
 

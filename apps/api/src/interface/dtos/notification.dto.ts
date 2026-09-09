@@ -1,18 +1,26 @@
 import {
   IsBoolean,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
+  Max,
   MaxLength,
+  Min,
   Validate,
   ValidateIf,
   ValidatorConstraint,
   type ValidatorConstraintInterface,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '#domain/constants/list-query-limits';
 
 /**
  * Trims a string field and maps a now-empty one to `null`.
@@ -75,6 +83,23 @@ export class ListNotificationPreferencesQueryDto {
   // fails in Postgres as a 500 rather than here as a 400.
   @IsUUID()
   chapterId: string;
+}
+
+export class ListNotificationsQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Max notifications to return. Integers outside 1–200 are rejected; omitted defaults to 50 after clamp.',
+    minimum: LIST_QUERY_LIMIT_MIN,
+    maximum: LIST_QUERY_LIMIT_MAX,
+    default: LIST_QUERY_LIMIT_DEFAULT,
+    example: LIST_QUERY_LIMIT_DEFAULT,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(LIST_QUERY_LIMIT_MIN)
+  @Max(LIST_QUERY_LIMIT_MAX)
+  limit?: number;
 }
 
 export class UpdateNotificationPreferenceDto {

@@ -89,7 +89,7 @@ describe('NotificationController', () => {
   });
 
   describe('listNotifications', () => {
-    it('should call notificationService.listNotifications with no options when limit is not provided', async () => {
+    it('should call notificationService.listNotifications with an empty query when limit is omitted', async () => {
       const userId = 'user-1';
       const expectedResult = [{ id: 'notif-1' }];
 
@@ -97,11 +97,11 @@ describe('NotificationController', () => {
         expectedResult as any,
       );
 
-      const result = await controller.listNotifications(userId);
+      const result = await controller.listNotifications(userId, {});
 
       expect(notificationService.listNotifications).toHaveBeenCalledWith(
         userId,
-        undefined,
+        { limit: undefined },
       );
       expect(result).toEqual(expectedResult);
     });
@@ -114,7 +114,7 @@ describe('NotificationController', () => {
         expectedResult as any,
       );
 
-      const result = await controller.listNotifications(userId, '10');
+      const result = await controller.listNotifications(userId, { limit: 10 });
 
       expect(notificationService.listNotifications).toHaveBeenCalledWith(
         userId,
