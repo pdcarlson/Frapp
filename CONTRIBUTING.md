@@ -35,7 +35,7 @@ auto-deploy on commit, so a push to `production` deployed *without waiting for C
 workflow's green-CI gate governed only its own deploy hook, and what shipped was whatever
 happened to be at a branch tip. The dispatch takes a SHA, so the deployed artifact is an
 input rather than a race. See
-[`docs/internal/ops/DEPLOYMENT.md`](docs/internal/ops/DEPLOYMENT.md).
+[`docs/internal/ops/deployment/`](docs/internal/ops/deployment/).
 
 ---
 

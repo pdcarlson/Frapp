@@ -97,6 +97,6 @@ The current target platform for the API is **Render**.
 - Configure required env vars in Render service settings.
 - Keep staging (deployed from `main`) and production (deployed from a named commit) services isolated.
 
-For the full rollout checklist (including current status and pending items), use the repository runbook: `docs/internal/ops/DEPLOYMENT.md`.
+For the full rollout checklist (including current status and pending items), use the repository runbook: `docs/internal/ops/deployment/`.
 
 > **Note:** We deliberately avoid containerizing the Next.js apps and Supabase. Next.js deploys best on Vercel, and Supabase Cloud manages its own Postgres/Auth/Storage/Realtime stack.

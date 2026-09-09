@@ -2,7 +2,7 @@
 
 This page is the public-facing deployment overview for Frapp.
 
-For the full operator runbook (DNS, provider setup, and detailed checklists), use the repository file [`docs/internal/ops/DEPLOYMENT.md`](../internal/ops/DEPLOYMENT.md).
+For the full operator runbook (DNS, provider setup, and detailed checklists), use the repository folder [`docs/internal/ops/deployment/`](../internal/ops/deployment/).
 
 ## Branch and environment model
 
@@ -10,7 +10,7 @@ For the full operator runbook (DNS, provider setup, and detailed checklists), us
   #1340), and what each merge does deploy: [`CONTRIBUTING.md`](../../CONTRIBUTING.md) § Branch Model.
 - **How a production deploy is gated** — dispatch with a SHA, typed confirmation,
   ancestor-of-`main` with green CI, `production` environment approval:
-  [`docs/internal/ops/DEPLOYMENT.md`](../internal/ops/DEPLOYMENT.md) § How Deployments Are Gated.
+  [`docs/internal/ops/deployment/ci-cd.md`](../internal/ops/deployment/ci-cd.md#how-deployments-are-gated) § How Deployments Are Gated.
 
 ## Current rollout state
 
@@ -45,13 +45,13 @@ For the full operator runbook (DNS, provider setup, and detailed checklists), us
   block and the `ignoreCommand: "exit 1"` pin in each app's `vercel.json` govern nothing while the
   projects stay unlinked, but **must not be deleted** — they are the versioned form of settings
   that are otherwise dashboard-only.
-- **Last verified: 2026-08-27** (Render API: `frapp-api-staging` auto-deploys `main` and was live at the latest `main` commit) — **staging** API deployment (Render) is **automated**. Note the verified caveat in `docs/internal/ops/DEPLOYMENT.md` § Current rollout status: Render-side auto-deploy currently triggers on **commit**, so a push to `main` deploys staging without waiting for CI; `.github/workflows/deploy-api.yml`'s green-CI gate governs its own deploy hook and the staging migrations it applies on every **green** `main` run. The **production** service is deployed by `commitId` through the Render API by `deploy-production.yml`, which requires its auto-deploy to be **off** — a dashboard-only setting asserted by `scripts/ci/production-guardrails.mjs`. Production **migrations** run inside that same workflow, after a replay against production's live applied state — see `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
+- **Last verified: 2026-08-27** (Render API: `frapp-api-staging` auto-deploys `main` and was live at the latest `main` commit) — **staging** API deployment (Render) is **automated**. Note the verified caveat in `docs/internal/ops/deployment/` § Current rollout status: Render-side auto-deploy currently triggers on **commit**, so a push to `main` deploys staging without waiting for CI; `.github/workflows/deploy-api.yml`'s green-CI gate governs its own deploy hook and the staging migrations it applies on every **green** `main` run. The **production** service is deployed by `commitId` through the Render API by `deploy-production.yml`, which requires its auto-deploy to be **off** — a dashboard-only setting asserted by `scripts/ci/production-guardrails.mjs`. Production **migrations** run inside that same workflow, after a replay against production's live applied state — see `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
 - **Last verified: 2026-03-22** (unverified since — no EAS access from agent sessions) — Mobile App Store / Play Store deployment is still being finalized (EAS); treat store releases as manual until the release runbook is complete.
 
 ## Deployment sources of truth
 
 - Environment and CI/CD spec: `spec/environments/README.md`
-- Full deployment runbook: `docs/internal/ops/DEPLOYMENT.md`
+- Full deployment runbook: `docs/internal/ops/deployment/`
 
 ## Safe documentation rule
 

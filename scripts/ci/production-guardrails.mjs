@@ -298,7 +298,7 @@ function buildAlertIssueBody({ findings, runUrl }) {
     "",
     runUrl ? `Run: ${runUrl}` : "",
     "",
-    "These settings are dashboard-only. See `docs/internal/ops/DEPLOYMENT.md`.",
+    "These settings are dashboard-only. See `docs/internal/ops/deployment/`.",
   ]
     .filter(Boolean)
     .join("\n");
