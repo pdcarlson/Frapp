@@ -199,9 +199,7 @@ describe('NotificationService', () => {
     settings?: UserSettings[];
     created?: Notification[];
     tokens?: PushToken[];
-    createManyImpl?: (
-      rows: Partial<Notification>[],
-    ) => Promise<Notification[]>;
+    createManyImpl?: (rows: Partial<Notification>[]) => Promise<Notification[]>;
   } = {}): string[] => {
     mockMemberRepo.findByChapter.mockResolvedValue(
       members ?? userIds.map((id) => chapterMember(id)),
@@ -645,8 +643,7 @@ describe('NotificationService', () => {
   });
 
   describe('notifyChapter', () => {
-    const roster = (n: number) =>
-      Array.from({ length: n }, (_, i) => `u-${i}`);
+    const roster = (n: number) => Array.from({ length: n }, (_, i) => `u-${i}`);
 
     it('should notify all chapter members', async () => {
       stubChapterNotify({ userIds: ['u-1', 'u-2'] });
