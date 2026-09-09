@@ -113,7 +113,7 @@ summary before running anything from this family.
 > `if:` guard, so a failed verify ended the job and the alias step was *skipped* — that script never
 > failed and emitted nothing to grep for. The full
 > breakage list, the evidence and the rationale live in **ADR-21** in
-> [`spec/architecture/README.md`](../../../spec/architecture/README.md), with its 2026-09-02
+> [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md), with its 2026-09-02
 > amendment — read it there rather than
 > re-deriving it here. The replacement model (`vercel build`
 > plus `vercel deploy --prebuilt` driven from GitHub Actions) was **built** by
@@ -1370,7 +1370,7 @@ generalises to them, in either direction.
 
 ## Agent dev stack (cloud sessions)
 
-Decision is recorded in [**ADR-12** (`spec/architecture/README.md`)](../../../spec/architecture/README.md) (extending ADR-11): PGlite-backed NestJS tests are the **default substrate** (Paths C+D), a per-session Supabase branch is the **opt-in escape hatch** (Path A), and a rootless in-sandbox stack (Path B) is rejected. Track program-level state in **GitHub Issues** (the agent-infrastructure epic and its sub-issues). This section is the operating doc — what's in the stack today, how to bring it up, what's still blocked.
+Decision is recorded in [**ADR-12**](../../../spec/architecture/adr/adr-12.md) (extending [ADR-11](../../../spec/architecture/adr/adr-11.md)): PGlite-backed NestJS tests are the **default substrate** (Paths C+D), a per-session Supabase branch is the **opt-in escape hatch** (Path A), and a rootless in-sandbox stack (Path B) is rejected. Track program-level state in **GitHub Issues** (the agent-infrastructure epic and its sub-issues). This section is the operating doc — what's in the stack today, how to bring it up, what's still blocked.
 
 ### What the stack is
 

@@ -37,7 +37,7 @@
 // restores BOTH fail-open dashboard settings the unlink removed. Inverted
 // rather than deleted, deliberately: staying unlinked is itself unversioned
 // dashboard state, so it needs an assertion exactly as the Production Branch
-// did. ADR-21 in `spec/architecture/README.md` is the canonical record.
+// did. ADR-21 in `spec/architecture/adr/adr-21.md` is the canonical record.
 //
 // Note what this costs. The old assertion failed CLOSED — absent meant
 // violation — so a malformed or empty response could not be mistaken for a
