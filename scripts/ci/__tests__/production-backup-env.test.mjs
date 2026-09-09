@@ -424,3 +424,49 @@ describe("workflow wiring", () => {
     assert.match(liveYaml, /issues: write/);
   });
 });
+
+/**
+ * Job-level `environment:` is indented four spaces. Action inputs live under
+ * `with:` at ten. Collapsing those would let a "fix" that points the dump
+ * jobs at GitHub `production` (the #1435 trap) hide behind the action's
+ * `environment: production` source slug, which must stay.
+ */
+function githubJobEnvironments(yaml) {
+  const jobs = {};
+  let current = null;
+  for (const line of uncommented(yaml).split("\n")) {
+    const header = line.match(/^  ([a-z][a-z0-9-]*):\s*$/);
+    if (header) {
+      current = header[1];
+      continue;
+    }
+    const env = line.match(/^    environment:\s*(\S+)\s*$/);
+    if (env && current) jobs[current] = env[1];
+  }
+  return jobs;
+}
+
+describe("db-backup.yml GitHub environments", () => {
+  const backup = readFileSync(join(WORKFLOWS_DIR, "db-backup.yml"), "utf8");
+  const jobs = githubJobEnvironments(backup);
+
+  it("runs both production dump jobs under production-backup, never production", () => {
+    assert.equal(jobs["backup-production"], "production-backup");
+    assert.equal(jobs["backup-production-storage"], "production-backup");
+    assert.equal(
+      Object.values(jobs).filter((name) => name === "production").length,
+      0,
+      "a job-level environment: production would suspend the nightly dump on the reviewer gate",
+    );
+  });
+
+  it("keeps staging jobs on staging and still passes production as the dump source slug", () => {
+    assert.equal(jobs["backup-staging"], "staging");
+    assert.equal(jobs["backup-staging-storage"], "staging");
+    assert.match(
+      uncommented(backup),
+      /^          environment:\s*production\s*$/m,
+      "the offsite-backup action must still receive the production source slug",
+    );
+  });
+});
