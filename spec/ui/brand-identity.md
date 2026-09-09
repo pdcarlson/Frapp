@@ -40,6 +40,10 @@ Binding constraints (research-derived) for any future mark exploration:
 - No literal signet ring or wax seal.
 - No hexagon, swirl, or gradient — the generic-AI-startup look.
 
+### The mascot
+
+Signet's mascot is a **seal (the animal)**. It is not a wax seal, a signet ring, or a stamp — those are banned mark vocabulary above. It is **not commissioned** and MUST NOT ship until the USPTO search that blocks the final mark clears. Do not generate or restyle assets toward this mascot piecemeal; the mascot lands in the same Signet asset pass as the mark ([assets.md](assets.md) §1).
+
 ### Platform requirements when the real mark lands
 
 - **iOS:** Light, Dark, and Tinted app-icon variants.

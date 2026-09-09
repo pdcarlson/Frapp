@@ -8,7 +8,7 @@
 
 The committed assets described below still ship the **legacy Frapp look** — the inline landing lockup follows the bone/bronze theme vars, and the static SVGs and the OG route carry older hardcoded fills. This is expected, not drift:
 
-- The Signet logo's final form is **TBD pending trademark search**; [brand-identity.md](brand-identity.md) owns the placeholder "S" mark spec.
+- The Signet logo's final form is **TBD pending trademark search**; [brand-identity.md](brand-identity.md) owns the placeholder "S" mark spec and the intended mascot (a seal, the animal).
 - Raster + OG + icon regeneration is **blocked on the final logo** and lands as one Signet asset pass once the mark clears; any tracking for it lives in GitHub Issues, not in this spec.
 - Until then, `frapp-*` filenames, `@repo/brand-assets`, and `frapp.live` domains stay as-is in code. Prose says Signet; code cites real current names.
 - Teams MUST NOT restyle the legacy assets toward Signet piecemeal — the whole set regenerates together from the final mark.
