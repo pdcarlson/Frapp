@@ -581,6 +581,25 @@ export async function checkAuthSmtp({
 export const AUTH_MAGIC_LINK_SUBJECT = "Sign in to Signet";
 
 /**
+ * Inbox titles (`mailer_subjects_*`) must not say Frapp. Magic Link is already
+ * pinned to {@link AUTH_MAGIC_LINK_SUBJECT}; this catches sibling subjects
+ * (invite, recovery, confirmation, …) a leftover sweep can still revert.
+ * Returns field keys only — never the subject text, `smtp_pass`, or HTML.
+ */
+export function leftoverFrappMailerSubjectKeys(data) {
+  if (!data || typeof data !== "object") return [];
+  return Object.entries(data)
+    .filter(
+      ([key, value]) =>
+        key.startsWith("mailer_subjects_") &&
+        typeof value === "string" &&
+        /Frapp/i.test(value),
+    )
+    .map(([key]) => key)
+    .sort();
+}
+
+/**
  * Magic Link template stays on the app host via `token_hash`.
  *
  * The hosted default href is `{{ .ConfirmationURL }}` → `*.supabase.co/auth/v1/verify`.
@@ -627,6 +646,15 @@ export async function checkAuthMagicLink({
       label,
       SKIPPED,
       "smtp_host is empty; Magic Link template not asserted until SMTP is on. See #1824.",
+    );
+  }
+  const leftoverSubjects = leftoverFrappMailerSubjectKeys(data);
+  if (leftoverSubjects.length > 0) {
+    return result(
+      "auth-magic-link",
+      label,
+      FAIL,
+      `mailer_subjects contain Frapp: ${leftoverSubjects.join(", ")}`,
     );
   }
   const subject =
