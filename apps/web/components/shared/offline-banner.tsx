@@ -1,14 +1,47 @@
 "use client";
 
+import { useLayoutEffect, useRef } from "react";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { FOCUS_RING_ALWAYS } from "@/components/ui/focus";
-import { OFFLINE_BANNER_ID } from "@/components/shared/offline-banner-focus";
+import {
+  OFFLINE_BANNER_HEIGHT_VAR,
+  OFFLINE_BANNER_ID,
+} from "@/components/shared/offline-banner-focus";
 import { WifiOff, Zap } from "lucide-react";
 
-export { OFFLINE_BANNER_ID, focusOfflineBanner } from "@/components/shared/offline-banner-focus";
+export {
+  OFFLINE_BANNER_HEIGHT_VAR,
+  OFFLINE_BANNER_ID,
+  focusOfflineBanner,
+} from "@/components/shared/offline-banner-focus";
 
 export function OfflineBanner() {
   const { state, isOnline } = useNetwork();
+  const bannerRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    if (isOnline) {
+      root.style.removeProperty(OFFLINE_BANNER_HEIGHT_VAR);
+      return;
+    }
+    const node = bannerRef.current;
+    if (!node) return;
+
+    const publishHeight = () => {
+      root.style.setProperty(
+        OFFLINE_BANNER_HEIGHT_VAR,
+        `${node.getBoundingClientRect().height}px`,
+      );
+    };
+    publishHeight();
+    const observer = new ResizeObserver(publishHeight);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty(OFFLINE_BANNER_HEIGHT_VAR);
+    };
+  }, [isOnline]);
 
   if (isOnline) return null;
 
@@ -52,14 +85,19 @@ export function OfflineBanner() {
 
   return (
     <div
+      ref={bannerRef}
       id={OFFLINE_BANNER_ID}
       tabIndex={-1}
-      className={`flex items-center gap-2 px-4 py-2 text-sm border-b animate-slide-down ${className} ${FOCUS_RING_ALWAYS}`}
+      className={`sticky top-0 z-40 bg-background ${FOCUS_RING_ALWAYS}`}
       role="alert"
       aria-live="polite"
     >
-      <Icon className="h-4 w-4 shrink-0" />
-      <span>{message}</span>
+      <div
+        className={`flex items-center gap-2 px-4 py-2 text-sm border-b animate-slide-down ${className}`}
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        <span>{message}</span>
+      </div>
     </div>
   );
 }
