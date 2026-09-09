@@ -5190,8 +5190,9 @@ export interface operations {
     };
     NotificationController_listNotifications_v1: {
         parameters: {
-            query: {
-                limit: string;
+            query?: {
+                /** @description Max notifications to return. Integers outside 1–200 are rejected; omitted defaults to 50 after clamp. */
+                limit?: number;
             };
             header?: never;
             path?: never;
