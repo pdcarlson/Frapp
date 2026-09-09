@@ -2,6 +2,7 @@ import { SupabaseNotificationPreferenceRepository } from './supabase-notificatio
 import {
   CHAPTER_A,
   CHAPTER_B,
+  USER_A,
   USER_SHARED,
   createTenantHarness,
   inA,
@@ -22,6 +23,8 @@ import {
 
 const PREF_A = '0a000000-0000-4000-8000-000000000130';
 const PREF_B = '0b000000-0000-4000-8000-000000000130';
+const PREF_A_USER_A = '0a000000-0000-4000-8000-000000000131';
+const PREF_B_USER_A = '0b000000-0000-4000-8000-000000000131';
 
 const seed = () => ({
   notification_preferences: [
@@ -35,6 +38,20 @@ const seed = () => ({
     inB({
       id: PREF_B,
       user_id: USER_SHARED,
+      category: 'EVENTS',
+      is_enabled: true,
+      updated_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inA({
+      id: PREF_A_USER_A,
+      user_id: USER_A,
+      category: 'EVENTS',
+      is_enabled: true,
+      updated_at: '2026-01-01T00:00:00.000Z',
+    }),
+    inB({
+      id: PREF_B_USER_A,
+      user_id: USER_A,
       category: 'EVENTS',
       is_enabled: true,
       updated_at: '2026-01-01T00:00:00.000Z',
@@ -65,6 +82,29 @@ describe('SupabaseNotificationPreferenceRepository — tenant scope', () => {
     );
 
     expect(pref?.id).toBe(PREF_B);
+  });
+
+  it('findByUsersChapterCategory binds chapter_id and does not return the twin chapter', async () => {
+    const prefs = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByUsersChapterCategory(
+        [USER_SHARED, USER_A],
+        CHAPTER_B,
+        'EVENTS',
+      ),
+    );
+
+    expect(prefs.map((p) => p.id).sort()).toEqual(
+      [PREF_B, PREF_B_USER_A].sort(),
+    );
+    expect(prefs.every((p) => p.chapter_id === CHAPTER_B)).toBe(true);
+  });
+
+  it('findByUsersChapterCategory issues no query for an empty audience', async () => {
+    const before = harness.ops.length;
+    await expect(
+      repo.findByUsersChapterCategory([], CHAPTER_B, 'EVENTS'),
+    ).resolves.toEqual([]);
+    expect(harness.ops.length).toBe(before);
   });
 
   it('upsert writes into the caller chapter and leaves the twin alone', async () => {
