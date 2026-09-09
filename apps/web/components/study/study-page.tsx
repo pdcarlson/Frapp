@@ -48,6 +48,10 @@ import {
   formatPaddedStopwatch as formatDuration,
 } from "@repo/formatting";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import {
+  creditedSeconds,
+  selectActiveSession,
+} from "@/components/study/credited-time";
 
 type Geofence = {
   id: string;
@@ -118,10 +122,10 @@ export function accuracyMetersOf(
  * Spreading a heartbeat body into start/resume 400s once the browser reports
  * accuracy (`forbidNonWhitelisted`).
  */
-function latLngOf(coords: {
-  latitude: number;
-  longitude: number;
-}): { lat: number; lng: number } {
+function latLngOf(coords: { latitude: number; longitude: number }): {
+  lat: number;
+  lng: number;
+} {
   return { lat: coords.latitude, lng: coords.longitude };
 }
 
@@ -193,6 +197,12 @@ export function StudyPage() {
 
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // A session this tab just ended must not be re-adopted from a stale list
+  // row while the stop invalidation is in flight.
+  const dismissedSessionIdRef = useRef<string | null>(null);
+  // Mirror of the last foreground bit reported to the server (or seeded on
+  // restore so a remount does not immediately POST pause/resume).
+  const lastForegroundRef = useRef(true);
 
   const activeGeofence = useMemo(
     () => geofences.find((g) => g.id === activeGeofenceId) ?? null,
@@ -234,6 +244,8 @@ export function StudyPage() {
       // leave it running server-side until the stale rule kills it.
       if (session.id !== activeSessionIdRef.current) return false;
 
+      dismissedSessionIdRef.current = session.id;
+      lastForegroundRef.current = true;
       setActiveSession(null);
       setActiveGeofenceId(null);
       setElapsedSeconds(0);
@@ -298,16 +310,35 @@ export function StudyPage() {
     }
   }, []);
 
+  // Recover the caller's live session after a remount. Mobile already does
+  // this from the same list (`selectActiveSession`); web used to set the
+  // timer only from `handleStart`, so a reload lost Stop and the offline
+  // carve-out (#1747). Pause is a sub-state of ACTIVE (`paused_at`), not a
+  // status. A missing zone still restores — the card already falls back to
+  // "Study session" and Stop stays reachable.
+  useEffect(() => {
+    if (activeSession) return;
+    const live = selectActiveSession(sessions);
+    if (!live) return;
+    if (dismissedSessionIdRef.current === live.id) return;
+
+    lastForegroundRef.current = live.paused_at == null;
+    setActiveSession(live);
+    setActiveGeofenceId(live.geofence_id);
+    setIsPaused(live.paused_at != null);
+    setElapsedSeconds(creditedSeconds(live, new Date()));
+  }, [sessions, activeSession]);
+
   // Mirror foreground state to the server. A hidden tab or a manual pause is
   // the web adaptation of the mobile background signal — the server owns the
   // grace window from there, so pausing locally without telling it is exactly
   // what let background time count as study time
   // (spec/behavior/study-sessions.md § Anti-Distraction).
-  const lastForegroundRef = useRef(true);
-
   useEffect(() => {
     if (!activeSession) {
-      lastForegroundRef.current = true;
+      // Do not reset lastForegroundRef here. Restore seeds it on the same
+      // first paint, before setState has flushed; clobbering that seed made a
+      // restored pause look like a fresh background and POST /pause (#1747).
       return;
     }
 
@@ -417,6 +448,8 @@ export function StudyPage() {
         session && typeof session === "object"
           ? (session as StudySession)
           : null;
+      dismissedSessionIdRef.current = null;
+      lastForegroundRef.current = true;
       setActiveSession(normalized);
       setActiveGeofenceId(zoneId);
       setElapsedSeconds(0);
@@ -458,6 +491,8 @@ export function StudyPage() {
         variant: "destructive",
       });
     } finally {
+      dismissedSessionIdRef.current = activeSession.id;
+      lastForegroundRef.current = true;
       setActiveSession(null);
       setActiveGeofenceId(null);
       setElapsedSeconds(0);

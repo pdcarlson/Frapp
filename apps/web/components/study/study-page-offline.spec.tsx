@@ -135,19 +135,29 @@ describe("StudyPage offline read path (#1621)", () => {
     ).toBeInTheDocument();
   });
 
-  /*
-   * No case here for "a running session keeps its card with nothing cached",
-   * and the reason is worth writing down because it is not obvious from the
-   * gate: `activeSession` is set **only** by `handleStart` (`study-page.tsx`),
-   * never restored from `sessionsQuery`. A server-side ACTIVE session does not
-   * make the carve-out fire — the member has to have started it in this tab's
-   * lifetime. So the state this test would describe is unreachable without
-   * driving geolocation and the start mutation, and asserting it from
-   * `sessionsQuery` alone would pin a behaviour the component does not have.
-   *
-   * That the timer is lost across a reload at all is pre-existing and
-   * unchanged by #1621 — filed separately rather than papered over here.
-   */
+  it("keeps Stop on a restored ACTIVE session even when the zones read is uncached (#1747)", () => {
+    networkState.isOffline = true;
+    geofencesQuery.data = undefined;
+    sessionsQuery.data = [
+      {
+        ...PAST_SESSION,
+        id: "sess-live",
+        status: "ACTIVE" as const,
+        end_time: null,
+        last_heartbeat_at: PAST_SESSION.start_time,
+        total_foreground_minutes: 12,
+        points_awarded: false,
+      },
+    ];
+
+    render(<StudyPage />);
+
+    expect(
+      screen.queryByText("Study hours unavailable offline"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /stop &/i })).toBeInTheDocument();
+  });
+
   it("shows the offline card when the sessions read is uncached", () => {
     // Pins `sessionsQuery`'s membership in the gate specifically: dropping it
     // from the list leaves this case rendering a history panel built from a
