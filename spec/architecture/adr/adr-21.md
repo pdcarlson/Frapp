@@ -182,6 +182,10 @@ approval. `deploy-production.yml`'s `dry_run_only` still stops before the Vercel
 the upload path. Canonical timestamps and the Actions-list trap:
 [`docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md) § 10.
 
+**Correction 2026-09-09:** #1376 closed as `not_planned` on 2026-09-02 (premise moot while
+unlinked; reopen if Git is re-linked). The original *What it retires* paragraph that says it is
+still open is the 2026-09-02 record, not current tracker state.
+
 **Trigger to revisit:** CI-driven deploys prove unworkable and re-linking Git is considered. That
 supersedes this ADR rather than amending it — and re-linking restores both Vercel settings, the
 Production Branch and auto-deploy from push, along with the integration.
