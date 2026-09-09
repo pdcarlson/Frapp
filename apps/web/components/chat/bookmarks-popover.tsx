@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import type { MessageAuthor } from "@repo/hooks";
 import { resolveAuthorLabel } from "@repo/hooks";
 import { formatClock } from "@repo/formatting";
+import { replyPreviewText } from "./reply-quote";
 
 /**
  * The message as `GET /v1/bookmarks` serves it — a nine-field projection, not
@@ -163,7 +164,7 @@ export function BookmarksPopover({
                       (bookmark.message.is_deleted || !available) && "italic",
                     )}
                   >
-                    {bookmark.message.content}
+                    {replyPreviewText(bookmark.message)}
                   </span>
                 </>
               );
