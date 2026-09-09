@@ -323,16 +323,15 @@ describe("dispatchPoints — unconfirmed outcomes (#1733)", () => {
       first![1].body.client_message_id,
     );
     // Same key AND same content — `resolveReplay` compares target, amount,
-    // category, reason and acting admin before treating a request as a replay,
-    // and answers 409 on any mismatch.
+    // category, reason, acting admin, and origin channel before treating a
+    // request as a replay, and answers 409 on any mismatch.
     expect(second![1].body).toEqual(first![1].body);
   });
 
   // The guard the #1733 coupling comment required before key reuse could ship.
-  // On a replay, `completeReplay` returns the stored row with `card_posted`
-  // ABSENT — the ledger row exists but nothing is known about the original
-  // attempt's card. Falling through to `{ok:true}` would leave the placeholder
-  // waiting for an echo that is never coming: #544's bug via the replay branch.
+  // On a replay of a row with no stored origin, `completeReplay` returns the
+  // stored row with `card_posted` ABSENT. Falling through to `{ok:true}` would
+  // leave the placeholder waiting for an echo that is never coming.
   it("does not strand the row when a replay reports no card outcome", async () => {
     const post = vi.fn().mockResolvedValue(LOST_RESPONSE);
     const ctx = buildCtx(post);
