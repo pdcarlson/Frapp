@@ -9,7 +9,12 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { TaskService } from '../../application/services/task.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -23,6 +28,7 @@ import {
 } from '../decorators/current-user.decorator';
 import {
   CreateTaskDto,
+  CreateTaskResponseDto,
   UpdateTaskStatusDto,
   RejectTaskCompletionDto,
 } from '../dtos/task.dto';
@@ -76,6 +82,7 @@ export class TaskController {
   @Post()
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({ summary: 'Create a task' })
+  @ApiCreatedResponse({ type: CreateTaskResponseDto })
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') createdBy: string,
