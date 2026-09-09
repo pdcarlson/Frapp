@@ -17,6 +17,11 @@ function sentRequest(): Request {
 }
 
 describe("mintRequestId", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   it("mints a req_ prefixed uuid, not a sentry-trace value", () => {
     const id = mintRequestId();
     expect(id).toMatch(/^req_[0-9a-f-]{36}$/i);
@@ -25,6 +30,24 @@ describe("mintRequestId", () => {
 
   it("gives distinct ids to distinct calls", () => {
     expect(mintRequestId()).not.toBe(mintRequestId());
+  });
+
+  it("falls back to getRandomValues when randomUUID is missing", () => {
+    const getRandomValues = vi.fn(<T extends ArrayBufferView>(array: T): T => {
+      new Uint8Array(array.buffer, array.byteOffset, array.byteLength).fill(7);
+      return array;
+    });
+    vi.stubGlobal("crypto", { getRandomValues });
+
+    const id = mintRequestId();
+    expect(id).toMatch(/^req_[0-9a-f-]{36}$/i);
+    expect(getRandomValues).toHaveBeenCalledTimes(1);
+  });
+
+  it("still mints when crypto is absent (React Native today)", () => {
+    vi.stubGlobal("crypto", undefined);
+    const id = mintRequestId();
+    expect(id).toMatch(/^req_[0-9a-f-]{36}$/i);
   });
 });
 
