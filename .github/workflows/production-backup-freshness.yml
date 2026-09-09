@@ -44,6 +44,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      # List Nightly Backup runs/jobs. Without this, an explicit permissions
+      # block leaves Actions reads at none and every probe 403s.
+      actions: read
       # The only write scope in this workflow, job-scoped: the alert issue.
       issues: write
     steps:

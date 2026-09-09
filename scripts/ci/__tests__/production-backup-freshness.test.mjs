@@ -72,6 +72,25 @@ describe("evaluateDumpFreshness", () => {
     assert.ok(40 * HOUR > STALE_AFTER_MS);
   });
 
+  it("evaluates the newest run even when the list is unsorted", () => {
+    const verdict = evaluate({
+      runs: [
+        { id: 1, status: "completed", created_at: hoursAgo(16) },
+        { id: 2, status: "completed", created_at: hoursAgo(1) },
+      ],
+      jobs: [
+        {
+          name: PRODUCTION_JOB_NAME,
+          status: "completed",
+          conclusion: "failure",
+          completed_at: hoursAgo(1),
+        },
+      ],
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /concluded failure/);
+  });
+
   it("fails a missing backup-production job on a completed run", () => {
     const verdict = evaluate({
       jobs: [{ name: "backup-staging", status: "completed", conclusion: "success" }],
@@ -197,6 +216,7 @@ describe("readDumpFreshness", () => {
     assert.equal(verdict.ok, true);
     assert.equal(calls.length, 2);
     assert.match(calls[0].url, /workflows\/db-backup\.yml\/runs/);
+    assert.match(calls[0].url, /branch=main/);
     assert.match(calls[1].url, /actions\/runs\/99\/jobs/);
   });
 
@@ -473,6 +493,8 @@ describe("workflow wiring", () => {
     );
     assert.match(workflowGrant, /contents: read/);
     assert.doesNotMatch(workflowGrant, /issues: write/);
+    assert.doesNotMatch(workflowGrant, /actions: read/);
     assert.match(liveYaml, /issues: write/);
+    assert.match(liveYaml, /actions: read/);
   });
 });

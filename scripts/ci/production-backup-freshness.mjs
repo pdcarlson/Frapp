@@ -29,6 +29,7 @@ import { requireEnv } from "./lib/env.mjs";
 import { ghRequest } from "./lib/github.mjs";
 
 export const WORKFLOW_FILE = "db-backup.yml";
+export const DEFAULT_BRANCH = "main";
 export const PRODUCTION_JOB_NAME = "backup-production";
 export const STALE_AFTER_MS = 36 * 60 * 60 * 1000;
 export const HUNG_AFTER_MS = 3 * 60 * 60 * 1000;
@@ -152,7 +153,10 @@ export function evaluateDumpFreshness({
 }
 
 function runsPath(repo) {
-  return `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=10`;
+  return (
+    `/repos/${repo}/actions/workflows/${WORKFLOW_FILE}/runs` +
+    `?branch=${encodeURIComponent(DEFAULT_BRANCH)}&per_page=10`
+  );
 }
 
 function jobsPath(repo, runId) {
@@ -160,9 +164,11 @@ function jobsPath(repo, runId) {
 }
 
 /**
- * GET recent Nightly Backup runs, then the newest run's jobs.
- * Retry with the fallback token only on 401/403, and only when the
- * fallback token is different. Never PUT.
+ * GET recent Nightly Backup runs on `main`, then the newest run's jobs.
+ * A feature-branch dispatch is not the production dump. Schedule and
+ * workflow_dispatch on `main` both count: a failed dump on `main` is a
+ * failed dump. Retry with the fallback token only on 401/403, and only
+ * when the fallback token is different. Never PUT.
  */
 export async function readDumpFreshness({
   token,
