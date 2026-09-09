@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   ALERT_ISSUE_TITLE,
   DEFAULT_HEALTH_URL,
+  HEALTH_FETCH_TIMEOUT_MS,
   SHA_PATTERN,
   V_TAG_REF,
   collectLiveShas,
@@ -91,7 +92,7 @@ function dualFetch(routes) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     const method = init.method ?? "GET";
-    calls.push({ method, url, body: init.body ?? null });
+    calls.push({ method, url, body: init.body ?? null, signal: init.signal ?? null });
     const route = routes.find((r) => r.method === method && String(url).includes(r.path));
     if (!route) {
       throw new Error(`unexpected ${method} ${url}`);
@@ -395,6 +396,44 @@ describe("peelVTags", () => {
     assert.equal(result.ok, false);
     assert.match(result.reason, /HTTP 500/);
   });
+
+  it("fails closed when an annotated-tag peel is unreadable", async () => {
+    const { fetchImpl, calls } = dualFetch([
+      {
+        method: "GET",
+        path: "/git/matching-refs/tags/v",
+        body: [
+          {
+            ref: "refs/tags/v0.1.0",
+            object: { type: "commit", sha: OTHER_SHA },
+          },
+          {
+            ref: "refs/tags/v1.0.0",
+            object: { type: "tag", sha: TAG_OBJECT_SHA },
+          },
+        ],
+      },
+      {
+        method: "GET",
+        path: `/git/tags/${TAG_OBJECT_SHA}`,
+        status: 500,
+        body: {},
+      },
+    ]);
+    const result = await peelVTags({
+      token: "t",
+      repo: "pdcarlson/Frapp",
+      fetchImpl,
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /v1\.0\.0/);
+    assert.match(result.reason, /HTTP 500/);
+    assert.deepEqual(result.tags, []);
+    assert.equal(
+      calls.filter((c) => String(c.url).includes("/git/tags/")).length,
+      1,
+    );
+  });
 });
 
 describe("collectLiveShas", () => {
@@ -433,6 +472,9 @@ describe("collectLiveShas", () => {
     assert.equal(hosts.health.present, false);
     assert.ok(calls.some((c) => c.url.includes("target=production")));
     assert.ok(calls.some((c) => c.url.includes("teamId=team_test")));
+    const healthCall = calls.find((c) => String(c.url).includes("/health"));
+    assert.ok(healthCall?.signal, "a stalled /health must not hold the 10-minute job");
+    assert.equal(HEALTH_FETCH_TIMEOUT_MS, 10_000);
   });
 
   it("treats an unreadable Render API as a failed api SHA, not a throw", async () => {
