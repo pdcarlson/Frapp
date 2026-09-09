@@ -30,8 +30,9 @@ import { flushOutbox } from "@repo/chat-core/chat-client";
 import { chatRealtime } from "@repo/chat-core/realtime-manager";
 import type { RawChatMessage } from "@repo/chat-core/types";
 import { getSupabaseClient } from "@/lib/supabase";
+import { connectionMonitor } from "@/lib/connection/monitor";
 import { createAsyncStorageKeyValueStore } from "./key-value-store";
-import { createExpoNetworkState } from "./network-state";
+import { createMonitorNetworkState } from "./network-state";
 import { createAsyncStorageOutboxStore } from "./outbox-store";
 
 /**
@@ -41,7 +42,7 @@ import { createAsyncStorageOutboxStore } from "./outbox-store";
  * disagree about whether the device is online.
  */
 export const chatKeyValueStore = createAsyncStorageKeyValueStore();
-export const chatNetworkState = createExpoNetworkState();
+export const chatNetworkState = createMonitorNetworkState(connectionMonitor);
 export const chatOutboxStore = createAsyncStorageOutboxStore();
 
 let bootPromise: Promise<void> | null = null;
