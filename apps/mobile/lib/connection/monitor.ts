@@ -16,8 +16,8 @@
  *    trap at length. The chat outbox is a `NetworkState` adapter over this
  *    monitor (#1072): one `expo-network` subscription, one `/health` poll.
  *    `DEGRADED` still sends; only OFFLINE queues.
- * 2. **Three failed probes mean OFFLINE, not DEGRADED.** `spec/ui/resilience.md`
- *    § 2 is explicit: "'OFFLINE': !navigator.onLine OR health check to /health
+ * 2. **Three failed probes mean OFFLINE, not DEGRADED.** `spec/ui/resilience/connection-state.md`
+ *    is explicit: "'OFFLINE': !navigator.onLine OR health check to /health
  *    fails 3 times", with DEGRADED reserved for slow or intermittent. Both
  *    surfaces call the same `deriveConnectionState` in `@repo/validation`; a
  *    429 is reachability, not a failure (`healthProbeIsReachable`).
@@ -119,7 +119,7 @@ export function createConnectionMonitor(
    * for a captive-portal-ish network whose API is perfectly reachable, and
    * `DEGRADED` must still send. A down link also suppresses the probe. One
    * failure's worth of suspicion, and `/health` settles it. That is also what
-   * `spec/ui/resilience.md` § 2 actually says — `!navigator.onLine` is the
+   * `spec/ui/resilience/connection-state.md` actually says — `!navigator.onLine` is the
    * OFFLINE clause; "intermittently failing" is DEGRADED.
    */
   function applyLink(next: ExpoNetworkState) {
@@ -133,7 +133,7 @@ export function createConnectionMonitor(
     // offline→online transition is the same class of bug the web provider
     // dropped: a link is not a reachable API, and flashing ONLINE while
     // `/health` is still dead re-enables writes. Probe; a reachable
-    // response is what clears the count (`spec/ui/resilience.md` § 2).
+    // response is what clears the count (`spec/ui/resilience/connection-state.md`).
     const cameBack = linkOffline && !nextOffline;
     linkOffline = nextOffline;
     linkFromListener = true;

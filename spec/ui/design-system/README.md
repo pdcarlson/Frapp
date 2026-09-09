@@ -84,7 +84,7 @@ Every async view MUST include all relevant states:
 1. Loading — skeletons mirror the content they become; no spinner-in-a-box
 2. Empty — with a next action
 3. Error — with a retry path
-4. Offline/degraded (if network-dependent) — see [`../resilience.md`](../resilience.md)
+4. Offline/degraded (if network-dependent) — see [`../resilience/`](../resilience/README.md)
 5. Success confirmation (for mutating actions)
 
 Skeleton, empty, and error render as one visual family — the states panel (4f) in [`reference/signet-design-system.dc.html`](reference/signet-design-system.dc.html) is the model. Web dashboards use the shared state modules in `apps/web/components/shared/async-states.tsx` unless there is a strong reason to diverge.
@@ -119,7 +119,7 @@ For each of the three gate classes the API enforces, the client must mirror the 
 | Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason (`useSubscriptionGate`, `apps/web/components/shared/subscription-gate.tsx`) — the hook answers "may this surface write", so it also refuses queueless writes while OFFLINE with `title="Reconnect to make changes."` on the control, not via `SubscriptionNotice` |
 | Module enabled | `ChapterGuard.enforceModule` | Hide the surface |
 
-All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar / Cmd+K / slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionGate` for whether a surface may write (subscription plus connectivity). The chat composer is the outbox carve-out (`spec/ui/resilience.md` § 2) and does not go through this hook.
+All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar / Cmd+K / slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionGate` for whether a surface may write (subscription plus connectivity). The chat composer is the outbox carve-out (`spec/ui/resilience/connection-state.md`) and does not go through this hook.
 
 **Writes only.** `enforceSubscription` returns early for `GET`/`HEAD`/`OPTIONS`, so a lapsed chapter can still read everything it owns. Mirror the gate on write affordances; never gate a read surface on subscription state.
 

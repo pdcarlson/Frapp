@@ -18,7 +18,7 @@ import { join } from 'node:path';
  * worker reads Presence on that same topic — that part is load-bearing here.
  * So what this file pins is the **current architecture**, not a prohibition:
  * message delivery is the Postgres Changes subscription on `chat_messages`
- * (`spec/ui/resilience.md` §3.2), and the API emits no Broadcast at all.
+ * (`spec/ui/resilience/message-delivery.md#receiving-messages-realtime`), and the API emits no Broadcast at all.
  * Adding a real fast-path is a new design decision (#1613), needing a client
  * handler, de-duplication against the Postgres Changes echo of the same row,
  * and ADR-10's topic coupling respected. Failing this test means "you are

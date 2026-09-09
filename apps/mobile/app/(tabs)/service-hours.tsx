@@ -71,7 +71,7 @@ export default function ServiceHoursScreen() {
 
   /**
    * s20 has **no outbox**. A submit posted with no network is simply lost, so
-   * this is one of the surfaces `spec/ui/resilience.md` § 2 means when it says
+   * this is one of the surfaces `spec/ui/resilience/connection-state.md` means when it says
    * write actions are "Disabled with tooltip: 'Reconnect to make changes'"
    * (#501). The chat composer deliberately does the opposite, because it has a
    * queue — `lib/connection/state.ts` holds the split.

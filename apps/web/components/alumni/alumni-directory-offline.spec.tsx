@@ -5,7 +5,7 @@ import { networkMock } from "@/tests/network";
 
 /**
  * #1621 — the alumni surface must keep cached rows on screen when it goes
- * OFFLINE, per `spec/ui/resilience.md` § 2 (OFFLINE ⇒ Read Actions "Enabled
+ * OFFLINE, per `spec/ui/resilience/connection-state.md` (OFFLINE ⇒ Read Actions "Enabled
  * (from cache)").
  *
  * The first test file this component has had. It exists mainly for the Retry

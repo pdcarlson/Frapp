@@ -559,7 +559,7 @@ export function useRejectTask() {
 }
 
 /**
- * Delete a task. **Not optimistic**, per `spec/ui/resilience.md`: creating and
+ * Delete a task. **Not optimistic**, per `spec/ui/resilience/`: creating and
  * updating are optimistic, deleting and paying are pessimistic.
  */
 export function useDeleteTask() {

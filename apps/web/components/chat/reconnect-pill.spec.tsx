@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { ReconnectPill } from "./reconnect-pill";
 
-// The polling copy is fixed by spec/ui/resilience.md §3.2. Asserting it
+// The polling copy is fixed by spec/ui/resilience/message-delivery.md#receiving-messages-realtime. Asserting it
 // verbatim means a reworded banner fails here rather than silently drifting
 // from the spec.
 const SPEC_POLLING_COPY = "Real-time updates paused. Polling for new messages.";
