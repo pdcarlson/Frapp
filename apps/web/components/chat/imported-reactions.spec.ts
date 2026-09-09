@@ -68,4 +68,13 @@ describe("importedReactionGlyph", () => {
       }),
     ).toBe(":party_blob:");
   });
+
+  it("passes flags and keycaps through rather than wrapping them as names", () => {
+    expect(
+      importedReactionGlyph({ emoji: "🇺🇸", name: "flag_us", count: 12 }),
+    ).toBe("🇺🇸");
+    expect(
+      importedReactionGlyph({ emoji: "1️⃣", name: "one", count: 3 }),
+    ).toBe("1️⃣");
+  });
 });

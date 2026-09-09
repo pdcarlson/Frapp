@@ -58,14 +58,15 @@ export function selectImportedReactions(
 }
 
 /**
- * What the chip shows. Unicode pictographs pass through; a custom Discord
- * emoji is a name with no image in v1 (`--media` files are not referenced),
- * so wrap it as `:name:` rather than rendering it as prose.
+ * What the chip shows. Unicode pictographs (and flags/keycaps) pass through.
+ * A custom Discord emoji is an `[a-z0-9_]+` name with no image in v1
+ * (`--media` files are not referenced), so wrap it as `:name:` rather than
+ * rendering it as prose. Keying on `\p{Extended_Pictographic}` would send
+ * regional-indicator flags and keycap sequences down the custom path.
  */
 export function importedReactionGlyph(reaction: ImportedReaction): string {
-  if (/\p{Extended_Pictographic}/u.test(reaction.emoji)) {
-    return reaction.emoji;
+  if (/^[a-zA-Z0-9_]{2,}$/.test(reaction.emoji)) {
+    return `:${reaction.emoji}:`;
   }
-  const token = (reaction.name ?? reaction.emoji).replaceAll(":", "");
-  return token.length > 0 ? `:${token}:` : reaction.emoji;
+  return reaction.emoji;
 }
