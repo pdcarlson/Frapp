@@ -6,7 +6,7 @@ UI (config-as-code isn't supported), so this file is the source of truth you cop
 it in sync in both directions: editing a prompt block here changes nothing that runs until a human
 re-pastes it, so a prompt change lands as a `[human]` issue, never as a note parked in this file
 (open one: [#1685](https://github.com/pdcarlson/Frapp/issues/1685) is the pattern). History of how backlog automation got here: ADR-16 and its
-amendments in [`spec/architecture/README.md`](../../../spec/architecture/README.md); the
+amendments in [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md); the
 Linear-to-GitHub migration record is [#680](https://github.com/pdcarlson/Frapp/issues/680).
 
 There are **five** routines — three daily, two weekly. Three write to **GitHub Issues** on
