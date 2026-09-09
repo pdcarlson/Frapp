@@ -36,6 +36,7 @@ import {
   emptyCache,
   locateRow,
   markFailed,
+  markRecorded,
   markUnconfirmed,
   type RowPlacement,
   mergeServerRow,
@@ -45,11 +46,17 @@ import {
 } from "./cache";
 import {
   browserNetworkState,
+  type KeyValueStore,
   type NetworkState,
   type OutboxAttachment,
   type OutboxRow,
   type OutboxStore,
 } from "./adapters";
+import {
+  mergePersistedRecorded,
+  persistRecordedNotice,
+  readRecordedNotices,
+} from "./recorded-notices";
 import { randomClientId } from "./random-id";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import type { AnalyticsProperties } from "@repo/validation";
@@ -100,6 +107,13 @@ export interface ChatActionContext {
   outbox: OutboxStore;
   /** Connectivity probe. Omitted → the browser implementation. */
   net?: NetworkState;
+  /**
+   * Small string store for `_status: "recorded"` notices (#1789). Omitted →
+   * `browserKeyValueStore`. Web and mobile already inject a store into the
+   * realtime manager; this is the same shape so a reload can restore a
+   * committed-but-uncarded row the REST backfill will never return.
+   */
+  kv?: KeyValueStore;
   toast?: ToastFn;
   /**
    * Fires alongside `toast` (never instead of it) on a rejected `react` or
@@ -455,6 +469,65 @@ export function markLocalUnconfirmed(
   return placement;
 }
 
+/**
+ * Leave a heavy-command placeholder in place, flipped to `recorded` — the
+ * write committed, the chat card did not (#1789).
+ *
+ * The counterpart to {@link removeLocalPlaceholder} on `card_posted: false`.
+ * Removing the row there left only an evictable toast as evidence of an
+ * append-only write, which is how a second `/points` / `/task` / `/event`
+ * command gets typed. No `_replay`: Retry is the dangerous action.
+ */
+export function markLocalRecorded(
+  ctx: ChatActionContext,
+  args: {
+    channelId: string;
+    clientMessageId: string;
+    note: string;
+    /** Used when the in-flight REST backfill already clobbered the placeholder. */
+    content?: string;
+  },
+): void {
+  const existing = ctx.queryClient.getQueryData<ChannelCache>(
+    chatMessagesKey(args.channelId),
+  );
+  const current = existing?.byId[args.clientMessageId];
+  const content = current?.content || args.content || "";
+  const senderId = current?.sender_id || ctx.userId || "";
+  const createdAt = current?.created_at ?? new Date().toISOString();
+  patchCache(ctx.queryClient, args.channelId, (cache) => {
+    let next = cache;
+    if (!cache.byId[args.clientMessageId] && senderId) {
+      const row = optimisticMessage({
+        clientMessageId: args.clientMessageId,
+        channelId: args.channelId,
+        senderId,
+        content,
+        kind: "loading",
+        payload: null,
+        replyToId: null,
+      });
+      row.created_at = createdAt;
+      next = upsertOptimistic(next, row);
+    }
+    return markRecorded(next, args.clientMessageId, args.note);
+  });
+  if (!ctx.userId) return;
+  persistRecordedNotice(
+    {
+      clientMessageId: args.clientMessageId,
+      channelId: args.channelId,
+      senderId: senderId || ctx.userId,
+      content,
+      note: args.note,
+      createdAt,
+    },
+    ctx.kv,
+  );
+}
+
+export { mergePersistedRecorded };
+
 function coerceKind(kind: string | undefined): ChatMessageKind {
   return (CHAT_MESSAGE_KINDS.find((k) => k === kind) ??
     "text") as ChatMessageKind;
@@ -526,7 +599,8 @@ export async function hydrateOutboxIntoCache(
 ): Promise<void> {
   if (!ctx.userId) return;
   const rows = await ctx.outbox.listForChannel(channelId);
-  if (rows.length === 0) return;
+  const notices = readRecordedNotices(channelId, ctx.kv);
+  if (rows.length === 0 && notices.length === 0) return;
   patchCache(ctx.queryClient, channelId, (cache) => {
     let next = cache;
     for (const row of rows) {
@@ -544,7 +618,11 @@ export async function hydrateOutboxIntoCache(
         next = markFailed(next, row.clientId, row.lastError ?? "Send failed");
       }
     }
-    return next;
+    return mergePersistedRecorded(next, {
+      channelId,
+      userId: ctx.userId!,
+      kv: ctx.kv,
+    });
   });
 }
 
