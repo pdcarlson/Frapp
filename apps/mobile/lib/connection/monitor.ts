@@ -18,11 +18,9 @@
  *    banner and the outbox cannot disagree about what "offline" means.
  * 2. **Three failed probes mean OFFLINE, not DEGRADED.** `spec/ui/resilience.md`
  *    § 2 is explicit: "'OFFLINE': !navigator.onLine OR health check to /health
- *    fails 3 times", with DEGRADED reserved for slow or intermittent. The web
- *    provider maps that same threshold to DEGRADED and never reaches OFFLINE
- *    from probing at all, so the two surfaces genuinely disagree today. This
- *    follows the spec; the web divergence is filed rather than fixed from a
- *    mobile slice.
+ *    fails 3 times", with DEGRADED reserved for slow or intermittent. Both
+ *    surfaces call the same `deriveConnectionState` in `@repo/validation`; a
+ *    429 is reachability, not a failure (`healthProbeIsReachable`).
  *
  * ## `/health` is not under `/v1`
  *
@@ -39,6 +37,7 @@ import {
   type NetworkState as ExpoNetworkState,
 } from "expo-network";
 import { normalizeApiBaseUrl } from "@repo/api-sdk";
+import { healthProbeIsReachable } from "@repo/validation";
 import { deriveConnectionState, type ConnectionState } from "./state";
 
 export const HEALTH_POLL_INTERVAL_MS = 30_000;
@@ -85,6 +84,7 @@ export function createConnectionMonitor(
   // "unknown counts as online" contract: a false offline strands writes.
   let linkOffline = false;
   let consecutiveFailures = 0;
+  let probeGeneration = 0;
   let state: ConnectionState = "ONLINE";
 
   let started = false;
@@ -132,19 +132,20 @@ export function createConnectionMonitor(
     const nextOffline = next.isConnected === false;
     const unreachable = next.isInternetReachable === false;
 
-    // Reset only on a genuine offline → online **transition**. `expo-network`
-    // fires on every path update — a cell handoff, a VPN toggle, a Wi-Fi↔LTE
-    // switch — so resetting on each event meant a moving device could never
-    // accumulate three failures, and an API outage would never reach the
-    // banner at all.
+    // Do not reset the failure count on a link event. `expo-network` fires
+    // on every path update — a cell handoff, a VPN toggle, a Wi-Fi↔LTE
+    // switch — so resetting on each of those meant a moving device could
+    // never accumulate three failures. Resetting on a genuine
+    // offline→online transition is the same class of bug the web provider
+    // dropped: a link is not a reachable API, and flashing ONLINE while
+    // `/health` is still dead re-enables writes. Probe; a reachable
+    // response is what clears the count (`spec/ui/resilience.md` § 2).
     const cameBack = linkOffline && !nextOffline;
     linkOffline = nextOffline;
     linkFromListener = true;
-    if (cameBack) consecutiveFailures = 0;
     if (!nextOffline && unreachable) consecutiveFailures += 1;
 
     publish();
-    // A transition is exactly when the answer is most likely stale.
     if (cameBack) void probeOnce();
   }
 
@@ -162,6 +163,7 @@ export function createConnectionMonitor(
       return;
     }
 
+    const generation = ++probeGeneration;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
     try {
@@ -169,13 +171,16 @@ export function createConnectionMonitor(
         method: "GET",
         signal: controller.signal,
       });
-      if (response.ok) consecutiveFailures = 0;
+      if (generation !== probeGeneration) return;
+      if (healthProbeIsReachable(response)) consecutiveFailures = 0;
       else consecutiveFailures += 1;
     } catch {
+      if (generation !== probeGeneration) return;
       consecutiveFailures += 1;
     } finally {
       clearTimeout(timeout);
     }
+    if (generation !== probeGeneration) return;
     publish();
   }
 
