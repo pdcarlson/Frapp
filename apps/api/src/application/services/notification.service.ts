@@ -23,6 +23,7 @@ import type {
   NotificationPreference,
   UserSettings,
 } from '#domain/entities/notification.entity';
+import { clampListLimit } from '#domain/constants/list-query-limits';
 
 /** Cap on how much of an offending value reaches a log line. */
 const LOGGED_VALUE_MAX_LENGTH = 64;
@@ -288,7 +289,9 @@ export class NotificationService {
     userId: string,
     options?: { limit?: number },
   ): Promise<Notification[]> {
-    return this.notificationRepo.findByUser(userId, options);
+    return this.notificationRepo.findByUser(userId, {
+      limit: clampListLimit(options?.limit),
+    });
   }
 
   async markNotificationRead(
