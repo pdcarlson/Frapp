@@ -12,9 +12,15 @@ const mockUseAttendance = vi.fn();
 const mockUseMyPermissions = vi.fn();
 const checkIn = vi.fn().mockResolvedValue(undefined);
 
-const { mockCurrentChapter } = vi.hoisted(() => ({
+const { mockCurrentChapter, mockOffline } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
+  mockOffline: { value: false },
 }));
+
+vi.mock("@/lib/providers/network-provider", async () => {
+  const { networkMock } = await import("@/tests/network");
+  return networkMock(mockOffline);
+});
 
 vi.mock("@repo/hooks", () => ({
   // Paid-ops writes on this surface now read the chapter subscription (#841);
@@ -66,6 +72,7 @@ describe("EventCard", () => {
   beforeEach(() => {
     chapter.active();
     vi.clearAllMocks();
+    mockOffline.value = false;
     mockUseAttendance.mockReturnValue({ data: [] });
     // Default to an attendance-viewer (admin) so the count tests exercise the
     // count path; the non-admin case is covered explicitly below.
@@ -211,6 +218,7 @@ describe("EventCard subscription gating", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockOffline.value = false;
     mockUseAttendance.mockReturnValue({ data: undefined });
     mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
   });
@@ -261,6 +269,21 @@ describe("EventCard subscription gating", () => {
       />,
     );
 
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("disables check-in while OFFLINE without a per-card notice", () => {
+    chapter.active();
+    mockOffline.value = true;
+    render(<EventCard message={inWindow()} isConfirmed />);
+
+    const checkInButton = screen.getByRole("button", { name: /check in/i });
+    expect(checkInButton).toBeDisabled();
+    expect(checkInButton).toHaveAttribute(
+      "title",
+      "Reconnect to make changes.",
+    );
+    expect(checkInButton).not.toHaveAttribute("aria-describedby");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
