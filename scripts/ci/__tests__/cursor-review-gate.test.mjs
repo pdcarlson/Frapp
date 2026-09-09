@@ -156,6 +156,57 @@ test("inner hook crash on git push is denied (not Cursor-allow)", () => {
   );
 });
 
+test("JSON string payload containing push is denied (not an object parse success)", () => {
+  assertCursorDeny(runAdapter('"git push"', { raw: true }), "json string push");
+});
+
+test("JSON array payload containing push is denied", () => {
+  assertCursorDeny(runAdapter('["git","push"]', { raw: true }), "json array push");
+});
+
+test("object payload with empty command and push token is denied", () => {
+  assertCursorDeny(
+    runAdapter(JSON.stringify({ command: null, note: "git push", cwd: repo, sandbox: false }), {
+      raw: true,
+    }),
+    "null command",
+  );
+});
+
+test("missing INNER denies git push and allows ls", () => {
+  clearMarker();
+  const missing = path.join(mkdtempSync(path.join(tmpdir(), "crg-missing-")), "nope.sh");
+  assertCursorDeny(
+    runAdapter("git push", { env: { FRAPP_REVIEW_GATE_INNER: missing } }),
+    "missing inner push",
+  );
+  assertCursorAllow(
+    runAdapter("ls -la", { env: { FRAPP_REVIEW_GATE_INNER: missing } }),
+    "missing inner non-push",
+  );
+});
+
+test("FRAPP_SKIP_REVIEW_GATE=1 allows a malformed push payload (session env)", () => {
+  assertCursorAllow(
+    runAdapter("{not json, but git push is in here", {
+      raw: true,
+      env: { FRAPP_SKIP_REVIEW_GATE: "1" },
+    }),
+    "skip malformed",
+  );
+});
+
+test("untranslatable inner stdout on git push is denied", () => {
+  clearMarker();
+  const noisy = path.join(mkdtempSync(path.join(tmpdir(), "crg-noisy-")), "inner.sh");
+  writeFileSync(noisy, "#!/bin/bash\necho 'log line then deny'\necho '{\"hookSpecificOutput\":{\"permissionDecision\":\"deny\"}}'\nexit 0\n");
+  execFileSync("chmod", ["+x", noisy]);
+  assertCursorDeny(
+    runAdapter("git push", { env: { FRAPP_REVIEW_GATE_INNER: noisy } }),
+    "noisy inner push",
+  );
+});
+
 const STUB_BINS = [
   "bash",
   "cat",
