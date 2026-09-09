@@ -9,6 +9,10 @@ import {
 } from "@repo/chat-core/polls";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import {
+  deliveryChrome,
+  type DeliveryChrome,
+} from "@/lib/chat/delivery-status";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useNow } from "@repo/hooks";
 import { groupReactions, ReactionRow } from "./message-bubble";
@@ -26,10 +30,12 @@ import { ReplyQuote } from "./reply-quote";
  *    gets retry/discard/reactions on a card row from the shared `MessageItem`
  *    wrapper every kind renders inside; mobile has no such wrapper, so this
  *    card renders that chrome itself — status text + Retry/Discard sourced
- *    from `message._status`/`_error` (mirroring `MineMessageBubble`), and
+ *    from `message._status`/`_error` via exhaustive `deliveryChrome` (#1910)
+ *    (mirroring `MineMessageBubble`), and
  *    `ReactionRow` imported from `message-bubble.tsx` rather than
  *    reimplemented, so a poll message keeps the same affordances every other
- *    mobile message kind has.
+ *    mobile message kind has. `unconfirmed`/`recorded` are a muted note with
+ *    no Discard; mobile has no slash replay path, so they are read-only.
  * 2. **`PollOption`/`POLL_VOTE_ACTION_TYPE`/payload-reading/tallying come from
  *    `@repo/chat-core/polls`**, not `@repo/chat-integrations` (the type
  *    definitions' canonical home, `packages/chat-integrations/src/
@@ -109,36 +115,19 @@ export function PollCard({
     return tallyPollVotes(message, payload.options, viewerId);
   }, [message, payload, viewerId]);
 
-  // Sourced straight off `message._status`/`_error`, the same fields
-  // `MineMessageBubble` reads — a poll message is optimistic/failed under
-  // exactly the same `sendMessage` contract any other kind is.
-  const isPending = message._status === "pending";
-  const isFailed = message._status === "failed";
-  const statusAndActions = isPending ? (
-    <Text style={styles.metaText}>Sending…</Text>
-  ) : isFailed ? (
-    <View style={styles.failedRow}>
-      <Text style={styles.metaFailed}>{message._error ?? "Send failed"}</Text>
-      <View style={styles.failedActions}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Retry sending this message"
-          hitSlop={8}
-          onPress={() => onRetry(message.client_message_id)}
-        >
-          <Text style={styles.retryText}>Retry</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Discard this message"
-          hitSlop={8}
-          onPress={() => onDiscard(message.client_message_id)}
-        >
-          <Text style={styles.discardText}>Discard</Text>
-        </Pressable>
-      </View>
-    </View>
-  ) : null;
+  // Sourced straight off `message._status`/`_error` through `deliveryChrome`
+  // — a poll message is optimistic/failed/unconfirmed under exactly the
+  // same `sendMessage` contract any other kind is. The switch is exhaustive
+  // so a new `MessageStatus` cannot render as a fully-sent poll (#1910).
+  const statusAndActions = (
+    <PollDeliveryChrome
+      chrome={deliveryChrome(message)}
+      styles={styles}
+      clientMessageId={message.client_message_id}
+      onRetry={onRetry}
+      onDiscard={onDiscard}
+    />
+  );
   const reactionRow = (
     <ReactionRow
       reactions={reactions}
@@ -250,6 +239,70 @@ export function PollCard({
   );
 }
 
+/**
+ * Poll-row delivery chrome. Exhaustive over `DeliveryChrome` so a new
+ * `MessageStatus` cannot render as a fully-sent poll (the old `else` was
+ * `null`, which is the delivered look).
+ *
+ * Retry/Discard stay on `failed` only. `unconfirmed` is a muted note with
+ * no control — mobile has no slash replay path, and discard is never safe.
+ */
+function PollDeliveryChrome({
+  chrome,
+  styles,
+  clientMessageId,
+  onRetry,
+  onDiscard,
+}: {
+  chrome: DeliveryChrome;
+  styles: ReturnType<typeof createStyles>;
+  clientMessageId: string;
+  onRetry: (clientMessageId: string) => void;
+  onDiscard: (clientMessageId: string) => void;
+}) {
+  switch (chrome.status) {
+    case "pending":
+      return <Text style={styles.metaText}>Sending…</Text>;
+    case "failed":
+      return (
+        <View style={styles.failedRow}>
+          <Text style={styles.metaFailed}>{chrome.error}</Text>
+          <View style={styles.failedActions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry sending this message"
+              hitSlop={8}
+              onPress={() => onRetry(clientMessageId)}
+            >
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Discard this message"
+              hitSlop={8}
+              onPress={() => onDiscard(clientMessageId)}
+            >
+              <Text style={styles.discardText}>Discard</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    case "unconfirmed":
+    case "recorded":
+      return (
+        <Text style={styles.metaText} accessibilityLiveRegion="polite">
+          {chrome.note}
+        </Text>
+      );
+    case "confirmed":
+      return null;
+    default: {
+      const _never: never = chrome;
+      return _never;
+    }
+  }
+}
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     card: {
@@ -322,9 +375,8 @@ function createStyles(tokens: SignetTokens) {
       marginTop: tokens.spacing.sm + 1,
     },
     // Matches `MineMessageBubble`'s equivalent styles in message-bubble.tsx —
-    // same failed/retry/discard treatment, since a poll message can be
-    // pending or failed under the same `sendMessage` contract any other kind
-    // is.
+    // same pending/failed/unconfirmed/recorded treatment, since a poll
+    // message shares the `sendMessage` contract any other kind is.
     metaText: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
