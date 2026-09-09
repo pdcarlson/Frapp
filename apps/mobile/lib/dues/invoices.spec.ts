@@ -178,13 +178,19 @@ describe("dueChip", () => {
 describe("historyMeta", () => {
   it("dates a settled invoice", () => {
     // Local 18:00 on Feb 3 — not `T18:00:00.000Z`, which is Feb 4 03:00 in
-    // Tokyo and made this assertion UTC-only (#1058).
+    // Tokyo and made this assertion UTC-only (#1058). Match the evening-payment
+    // case: derive the expected day from the runtime locale, not a US-only
+    // `"Feb 3"` substring.
     const paidAt = new Date(2026, 1, 3, 18, 0, 0).toISOString();
     const [row] = selectInvoiceRows(
       [invoice({ status: "PAID", paid_at: paidAt })],
       VIEWER,
     );
-    expect(historyMeta(row!)).toContain("Feb 3");
+    const localDay = new Date(paidAt).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+    expect(historyMeta(row!)).toBe(`Paid ${localDay}`);
   });
 
   it("says a void invoice was cancelled rather than paid", () => {
