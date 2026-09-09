@@ -148,8 +148,19 @@ export default function ChatThreadScreen() {
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...messages].reverse(), [messages]);
 
+  // Parent lookup for reply quotes (#1727), built once per window rather
+  // than scanned per row — same map web's timeline uses.
+  const byId = useMemo(() => {
+    const index = new Map<string, ChatMessage>();
+    for (const message of messages) index.set(message.id, message);
+    return index;
+  }, [messages]);
+
   const renderItem = useCallback(
     ({ item }: { item: ChatMessage }) => {
+      const replyParent = item.reply_to_id
+        ? (byId.get(item.reply_to_id) ?? null)
+        : undefined;
       // Cards render unsided, full-width — not wrapped in `MessageBubble` —
       // matching web's `rendersAsBubble` exclusion for every card kind.
       if (item.kind === "poll") {
@@ -157,6 +168,8 @@ export default function ChatThreadScreen() {
           <PollCard
             message={item}
             viewerId={viewerId}
+            nameFor={nameFor}
+            replyParent={replyParent}
             isConfirmed={item._status === "confirmed"}
             onVote={(id, actionType, payload) =>
               void act(id, actionType, payload)
@@ -173,6 +186,7 @@ export default function ChatThreadScreen() {
           message={item}
           viewerId={viewerId}
           nameFor={nameFor}
+          replyParent={replyParent}
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
           onReact={(id, emoji) => void react(id, emoji)}
@@ -183,7 +197,7 @@ export default function ChatThreadScreen() {
     // `nameFor` belongs here: it changes identity when the roster resolves, and
     // omitting it leaves a stale closure rendering truncated ids until some
     // other dep happens to change.
-    [viewerId, nameFor, retry, discard, react, unreact, act],
+    [viewerId, nameFor, retry, discard, react, unreact, act, byId],
   );
 
   const isOffline = connection === "offline";
