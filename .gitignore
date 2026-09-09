@@ -53,12 +53,13 @@ supabase/.branches/
 
 # Local editor state (incl. the retired Cursor IDE — .cursor/mcp.json can carry credentials).
 # Ignore everything under .cursor/ EXCEPT committed Cloud Agent files (environment.json is
-# repo-managed and carries no secrets; ENV_SETUP_PROMPT.md is the paste-ready /env setup
-# objective). The `.cursor/*` form (not `.cursor/`) is required so git still descends
-# into the dir to honor the negations.
+# repo-managed and carries no secrets; ENV_SETUP_PROMPT.md / CLEANUP_PROMPT.md are the
+# paste-ready Prompt 1 / Prompt 2 objectives). The `.cursor/*` form (not `.cursor/`) is
+# required so git still descends into the dir to honor the negations.
 .cursor/*
 !.cursor/environment.json
 !.cursor/ENV_SETUP_PROMPT.md
+!.cursor/CLEANUP_PROMPT.md
 
 # Agent-local state, never committed:
 #   settings.local.json holds one machine's permission grants (previously ignored
