@@ -9,7 +9,8 @@ describe('toReportableError', () => {
   it('joins code, message and hint, and drops details', () => {
     const reported = toReportableError({
       code: '23505',
-      message: 'duplicate key value violates unique constraint "users_email_key"',
+      message:
+        'duplicate key value violates unique constraint "users_email_key"',
       hint: 'Use a different email.',
       details: 'Key (email)=(alice@example.com) already exists.',
     });
