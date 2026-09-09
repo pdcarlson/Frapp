@@ -1266,7 +1266,7 @@ export function ChatShell({
             // Never `disabled` while offline: the send path enqueues to the
             // Dexie outbox before it touches the network, so gating the
             // composer would defeat the queue built to make composing-while-
-            // offline work (`spec/ui/resilience.md` §2). It is labelled instead.
+            // offline work (`spec/ui/resilience/connection-state.md`). It is labelled instead.
             isOffline={channel.connection === "offline"}
             replyTo={replyTo}
             onCancelReply={cancelReply}

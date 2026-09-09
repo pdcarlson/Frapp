@@ -109,7 +109,7 @@ props-less `<NetworkBanner />` beside a new one-line `<AppRuntime />`. The first
 are the integrator carve-out above working as intended (a dependency and its config
 plugin cannot be added any other way). The third is a real edit to a frozen file, and
 the smallest one available: the banner's props *were* the second, independent reading
-of `expo-network` that [`../resilience.md`](../resilience.md) § 2 now forbids, so they
+of `expo-network` that [`../resilience/connection-state.md`](../resilience/connection-state.md) now forbids, so they
 had to go, and every future app-wide runtime hangs off `components/app-runtime.tsx`
 instead of adding another hook call here — which is the whole reason that component
 exists.

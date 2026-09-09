@@ -76,7 +76,7 @@ export function NotificationLevelControl({
   onChange: (level: ChatNotificationLevel) => void;
   disabled?: boolean;
   isSaving?: boolean;
-  /** § 2 queueless-write reason; `null` when the control may write. */
+  /** Queueless-write reason from connection-state.md; `null` when the control may write. */
   writeBlockedReason?: string | null;
 }) {
   const { tokens } = useFrappTheme();
