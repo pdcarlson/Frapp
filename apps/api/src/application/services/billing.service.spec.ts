@@ -925,7 +925,7 @@ describe('BillingService', () => {
       expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
 
-    it('should fall back to chapter properties if session properties are null', async () => {
+    it('omits checkout identity keys when the session has no subscription or customer (#731)', async () => {
       const event = {
         id: 'evt_null_properties',
         type: 'checkout.session.completed',
@@ -954,8 +954,6 @@ describe('BillingService', () => {
         new Date(event.created * 1000).toISOString(),
         {
           subscription_status: 'active',
-          subscription_id: 'sub_existing',
-          stripe_customer_id: 'cus_existing',
         },
       );
     });
@@ -1596,9 +1594,46 @@ describe('BillingService', () => {
         'ch-1',
         new Date(event.created * 1000).toISOString(),
         {
-          subscription_status: 'active',
-          past_due_since: null,
+          activate_if: ['past_due', 'incomplete'],
         },
+      );
+    });
+
+    it('does not send an unconditional active patch on invoice.paid for a canceled chapter (#731)', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_invoice_paid_canceled',
+        type: 'invoice.paid',
+        created: Date.now(),
+        data: {
+          object: {
+            subscription: 'sub_123',
+          },
+        },
+      };
+
+      const canceledChapter = {
+        ...baseChapter,
+        subscription_status: 'canceled' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(canceledChapter);
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(
+        canceledChapter,
+      );
+
+      await service.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+        'ch-1',
+        new Date(event.created * 1000).toISOString(),
+        {
+          activate_if: ['past_due', 'incomplete'],
+        },
+      );
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalledWith(
+        'ch-1',
+        expect.any(String),
+        expect.objectContaining({ subscription_status: 'active' }),
       );
     });
 
@@ -1625,10 +1660,13 @@ describe('BillingService', () => {
       await service.handleWebhookEvent(event);
 
       // FRA-242: a renewal payment advances the ordering mark but leaves status.
+      // `activate_if` is a no-op on `active`; the RPC still stamps the mark.
       expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
         'ch-1',
         new Date(event.created * 1000).toISOString(),
-        {},
+        {
+          activate_if: ['past_due', 'incomplete'],
+        },
       );
     });
 
@@ -1974,7 +2012,9 @@ describe('BillingService', () => {
         expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
           'ch-1',
           NEW_ISO,
-          {},
+          {
+            activate_if: ['past_due', 'incomplete'],
+          },
         );
 
         // 2) a past_due event CREATED before the payment but delivered after it
@@ -2210,8 +2250,7 @@ describe('BillingService', () => {
           'ch-1',
           LATER_ISO,
           {
-            subscription_status: 'active',
-            past_due_since: null,
+            activate_if: ['past_due', 'incomplete'],
           },
         );
       });
@@ -2237,7 +2276,9 @@ describe('BillingService', () => {
         expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
           'ch-1',
           LATER_ISO,
-          {},
+          {
+            activate_if: ['past_due', 'incomplete'],
+          },
         );
       });
 
@@ -2547,6 +2588,48 @@ describe('BillingService', () => {
         // Nothing to rewrite — the race already wrote status and reference …
         expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
         // … but the funnel still learns the chapter converted.
+        expect(mockActivation.record).toHaveBeenCalledWith(
+          CHECKOUT_CHAPTER_ID,
+          'activation-checkout-completed',
+        );
+      });
+
+      it('records the conversion milestone when checkout loses the CAS after a rival claimed its subscription (#731)', async () => {
+        // Both handlers read the pre-claim row. The rival stamps the mark and
+        // `subscription_id`; checkout's in-memory snapshot still has null, so
+        // the lost-CAS tail must reload before the milestone comparison.
+        const starting = {
+          ...checkoutChapter,
+          stripe_customer_id: 'cus_race',
+          subscription_id: null,
+          subscription_status: 'incomplete' as const,
+          last_stripe_webhook_at: null,
+        };
+        const claimed = {
+          ...starting,
+          subscription_id: 'sub_race',
+          subscription_status: 'active' as const,
+          last_stripe_webhook_at: LATER_ISO,
+        };
+        mockChapterRepo.findById
+          .mockResolvedValueOnce(starting)
+          .mockResolvedValueOnce(claimed);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(null);
+
+        await service.handleWebhookEvent({
+          id: 'evt_checkout_lost_cas',
+          type: 'checkout.session.completed',
+          created: T_CHECKOUT,
+          data: {
+            object: {
+              metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
+              subscription: 'sub_race',
+              customer: 'cus_race',
+            },
+          },
+        });
+
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalled();
         expect(mockActivation.record).toHaveBeenCalledWith(
           CHECKOUT_CHAPTER_ID,
           'activation-checkout-completed',

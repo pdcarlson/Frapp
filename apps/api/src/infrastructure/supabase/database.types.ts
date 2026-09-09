@@ -364,7 +364,7 @@ export interface Database {
         Args: {
           p_chapter_id: string;
           p_event_at: string;
-          p_patch: Record<string, string | null | undefined>;
+          p_patch: Record<string, string | string[] | null | undefined>;
         };
         Returns: Chapter[];
       };

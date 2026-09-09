@@ -485,7 +485,11 @@ projects are not applied from a cloud-agent session.
 * **Purpose**: Folds FRA-242's in-memory stale check and the chapter status
   `UPDATE` into one statement, matching `apply_invoice_payment` /
   `confirm_task_completion`. Absent jsonb keys are left untouched; a JSON
-  `null` clears a nullable column (`past_due_since`). Same-second events
+  `null` clears a nullable column (`past_due_since`). `activate_if` lifts
+  `past_due`/`incomplete` to `active` against the pre-UPDATE row (so
+  `invoice.paid` cannot un-cancel). A non-null `past_due_since` is ignored
+  when the row is already `past_due` (so concurrent into-past_due writers
+  cannot reset the grace clock). Same-second events
   (`last_stripe_webhook_at = p_event_at`) are allowed through, matching
   FRA-242: Stripe `event.created` is whole seconds. `EXECUTE` is revoked from
   PUBLIC / anon / authenticated and granted to `service_role` only.

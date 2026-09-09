@@ -6,12 +6,18 @@ export const CHAPTER_REPOSITORY = 'CHAPTER_REPOSITORY';
  * Sparse patch for `apply_subscription_webhook`. Absent keys are left
  * untouched; `null` clears a nullable column. `last_stripe_webhook_at` is
  * not in the patch — the RPC stamps it from the event timestamp on a win.
+ *
+ * `activate_if` is the `invoice.paid` contract: set `subscription_status` to
+ * `active` (and clear `past_due_since`) only when the row is still one of
+ * those statuses at UPDATE time. A patch that decided `{active}` against a
+ * stale `past_due` snapshot therefore cannot un-cancel a row that moved on.
  */
 export type SubscriptionWebhookPatch = {
   subscription_status?: SubscriptionStatus;
   past_due_since?: string | null;
   subscription_id?: string | null;
   stripe_customer_id?: string | null;
+  activate_if?: Array<'past_due' | 'incomplete'>;
 };
 
 export interface IChapterRepository {

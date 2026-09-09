@@ -437,15 +437,25 @@ export class BillingService {
       );
     }
 
+    // Sparse identity: omit a key rather than send JSON null. The RPC treats
+    // a present null as CLEAR, and `claimSubscriptionId` does not stamp
+    // `last_stripe_webhook_at` — a checkout that won the time CAS with
+    // `subscription_id: null` would wipe a rival's claim (#731).
+    const patch: SubscriptionWebhookPatch = {
+      subscription_status: 'active',
+    };
+    if (subscriptionId) {
+      patch.subscription_id = subscriptionId;
+    }
+    if (sessionCustomerId) {
+      patch.stripe_customer_id = sessionCustomerId;
+    }
+
     const applied = await this.commitSubscriptionWebhook(
       chapter,
       event,
       'checkout.session.completed',
-      {
-        subscription_status: 'active',
-        subscription_id: subscriptionId ?? chapter.subscription_id,
-        stripe_customer_id: sessionCustomerId ?? chapter.stripe_customer_id,
-      },
+      patch,
     );
     if (!applied) {
       // Concurrent delivery stamped a newer mark after the in-memory check.
@@ -768,40 +778,25 @@ export class BillingService {
 
     // Advance the ordering mark on every non-stale payment — even a renewal that
     // doesn't change status — so a later out-of-order dunning event that
-    // predates this payment can't downgrade the chapter (FRA-242). An empty
-    // patch still stamps `last_stripe_webhook_at` inside the RPC.
-    const patch: SubscriptionWebhookPatch = {};
-    // A paid invoice for the chapter's subscription means that subscription is
-    // live, so it lifts both non-live states this handler can meet:
-    //
-    //  - `past_due`: the dunning recovery this handler has always done.
-    //  - `incomplete`: the first invoice of a checkout whose `invoice.paid`
-    //    overtook its own `checkout.session.completed` (#1738). The resolver
-    //    above has just claimed `subscription_id` and this write advances the
-    //    high-water mark past the checkout's `created`, so the checkout will be
-    //    dropped as stale — if activation were left to it, the chapter would
-    //    stay `incomplete` under a paid subscription for good. The same rule
-    //    also covers a checkout that Stripe itself left `incomplete` (initial
-    //    payment failed) and the member then paid: `invoice.paid` and
-    //    `customer.subscription.updated` (`active`) both arrive, and it is
-    //    correct for either to activate.
-    if (
-      chapter.subscription_status === 'past_due' ||
-      chapter.subscription_status === 'incomplete'
-    ) {
-      patch.subscription_status = 'active';
-      patch.past_due_since = null;
-    }
-
+    // predates this payment can't downgrade the chapter (FRA-242). `activate_if`
+    // is evaluated against the row at UPDATE time, not this snapshot: a paid
+    // invoice lifts `past_due` (dunning recovery) and `incomplete` (the first
+    // invoice of a checkout whose `invoice.paid` overtook its own
+    // `checkout.session.completed`, #1738) and leaves every other status,
+    // including a concurrent `canceled`, untouched.
     const applied = await this.commitSubscriptionWebhook(
       chapter,
       event,
       'invoice.paid',
-      patch,
+      { activate_if: ['past_due', 'incomplete'] },
     );
     if (!applied) return;
 
-    if (patch.subscription_status === 'active') {
+    if (
+      applied.subscription_status === 'active' &&
+      (chapter.subscription_status === 'past_due' ||
+        chapter.subscription_status === 'incomplete')
+    ) {
       // Activation via payment is expected and intentionally silent — president
       // status-change alerts are limited to the subscription updated/deleted paths.
       this.logger.log(`Chapter ${chapter.id} activated via invoice payment`);
@@ -1048,14 +1043,18 @@ export class BillingService {
    * #731). A subscription event for THIS checkout may have claimed
    * `subscription_id` and advanced the mark; status is already right, and the
    * only remaining debt is the uniquely-keyed `activation-checkout-completed`
-   * row.
+   * row. Reloads before comparing: a lost CAS means this handler's in-memory
+   * chapter is the *pre-rival* snapshot (`subscription_id` still null), and
+   * comparing that would skip funnel step 7 while still `markProcessed`.
    */
   private async recordOvertakenCheckoutMilestone(
     chapter: Chapter,
     subscriptionId: string | null | undefined,
   ): Promise<void> {
-    if (subscriptionId && chapter.subscription_id === subscriptionId) {
-      await this.activation.record(chapter.id, 'activation-checkout-completed');
+    if (!subscriptionId) return;
+    const latest = (await this.chapterRepo.findById(chapter.id)) ?? chapter;
+    if (latest.subscription_id === subscriptionId) {
+      await this.activation.record(latest.id, 'activation-checkout-completed');
     }
   }
 
