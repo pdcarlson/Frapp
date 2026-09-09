@@ -809,6 +809,16 @@ jobs:
       - name: Mobile unit tests
         run: npm run test -w apps/mobile
 
+      # CI runners are UTC. Date-bucketing that mixes UTC parse with local
+      # calendar days is green here and red east of Greenwich (#1058). A single
+      # pinned TZ would only move which hemisphere is untested, so the suite
+      # also runs under Asia/Tokyo. Specs that assert calendar days must use
+      # local-time constructors, not ISO strings with a Z.
+      - name: Mobile unit tests (Asia/Tokyo)
+        env:
+          TZ: Asia/Tokyo
+        run: npm run test -w apps/mobile
+
       # EAS Build regenerates the native projects from app.json with exactly
       # this command before it compiles anything, using this lockfile. Nothing
       # else in CI exercises the config plugins, so a plugin that fails at

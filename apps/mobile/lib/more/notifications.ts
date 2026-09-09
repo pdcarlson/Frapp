@@ -14,6 +14,7 @@
  * Rows whose target names no known screen fall back to no label rather than to
  * a guessed one.
  */
+import { parseInstantOrBareUtcNoon } from "@repo/formatting";
 import { isRecord, records, str } from "./narrow";
 import {
   notificationHref,
@@ -92,9 +93,31 @@ export function categoryLabelFor(data: unknown): string | null {
   return screen ? (SCREEN_LABELS[screen] ?? null) : null;
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Whole calendar days between two instants, ignoring time of day.
+ *
+ * `Date.UTC` of each *local* Y/M/D — identical to `lib/tasks/format.ts` and
+ * `lib/events/format.ts`. TODAY/EARLIER is a local-calendar split, not a UTC
+ * date split: a `created_at` of `2026-08-17T09:00:00.000Z` is yesterday
+ * evening in Tokyo when `now` is `2026-08-17T20:00:00.000Z`.
+ */
+function dayDelta(from: Date, to: Date): number {
+  const a = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
+  const b = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.round((b - a) / MS_PER_DAY);
+}
+
+function parseCreatedAt(value: string): Date | null {
+  // Full ISO timestamps pass through; a bare `YYYY-MM-DD` (not what the API
+  // writes today) still keeps its calendar day east and west of Greenwich.
+  return parseInstantOrBareUtcNoon(value);
+}
+
 function formatTime(value: string): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+  const date = parseCreatedAt(value);
+  if (!date) return null;
   return date.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -103,20 +126,12 @@ function formatTime(value: string): string | null {
 
 /** `Mon`, `Aug 12` — what an older row shows in place of a clock time. */
 function formatDay(value: string, now: Date): string | null {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const withinAWeek = now.getTime() - date.getTime() < 7 * 24 * 60 * 60 * 1000;
+  const date = parseCreatedAt(value);
+  if (!date) return null;
+  const withinAWeek = dayDelta(date, now) < 7;
   return withinAWeek
     ? date.toLocaleDateString(undefined, { weekday: "short" })
     : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function isSameLocalDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
 }
 
 function toRow(
@@ -128,9 +143,9 @@ function toRow(
   const createdAt = str(row, "created_at");
   if (!id || !title || !createdAt) return null;
 
-  const created = new Date(createdAt);
-  if (Number.isNaN(created.getTime())) return null;
-  const isToday = isSameLocalDay(created, now);
+  const created = parseCreatedAt(createdAt);
+  if (!created) return null;
+  const isToday = dayDelta(now, created) === 0;
 
   return {
     id,
