@@ -66,6 +66,21 @@ export interface CreateTaskInput {
   client_message_id?: string;
 }
 
+/**
+ * The created task row, plus whether the chat card that accompanies it was
+ * posted.
+ *
+ * `card_posted` is present ONLY when this request actually attempted a card —
+ * chat context supplied (`channel_id` + `client_message_id`). A dashboard
+ * create's response shape is therefore unchanged. The card stays best-effort
+ * — a failed post never rolls the task back — but the caller now learns it
+ * failed instead of inferring success from the 2xx and leaving its optimistic
+ * placeholder up forever (#1717).
+ */
+export type CreateTaskResult = Task & {
+  card_posted?: boolean;
+};
+
 @Injectable()
 export class TaskService {
   private readonly logger = new Logger(TaskService.name);
@@ -97,7 +112,7 @@ export class TaskService {
     return toDisplayStatusList(tasks);
   }
 
-  async create(input: CreateTaskInput): Promise<Task> {
+  async create(input: CreateTaskInput): Promise<CreateTaskResult> {
     const dueDate = new Date(input.due_date);
     if (Number.isNaN(dueDate.getTime())) {
       throw new BadRequestException('due_date must be a valid date');
@@ -143,21 +158,45 @@ export class TaskService {
     // card in chat. The card is server-originated (a client cannot forge
     // `kind:"task"` — see ChatService.SERVER_ONLY_KINDS) and best-effort: the
     // task row is the source of truth, so a failed post is logged and never
-    // rolls the task back.
-    if (input.channel_id && input.client_message_id) {
-      try {
-        await this.postTaskCard(input, task);
-      } catch (error) {
-        this.logger.warn('Failed to post task card to chat', {
-          taskId: task.id,
-          channelId: input.channel_id,
-          chapterId: input.chapter_id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    // rolls the task back — but the outcome is now REPORTED rather than
+    // swallowed. The client renders an optimistic `loading` placeholder keyed
+    // on `client_message_id` and waits for the Realtime echo of this card to
+    // reconcile it; when the post fails that echo never arrives, so without
+    // an explicit signal the placeholder is permanent and the officer cannot
+    // tell a committed create from a lost one (#1717).
+    //
+    // `undefined` means no card was attempted (a dashboard create), which is
+    // reported as an ABSENT field rather than a `false` that would claim a card
+    // failed when none was ever due.
+    const cardPosted = await this.tryPostTaskCard(input, task);
 
-    return task;
+    return cardPosted === undefined
+      ? task
+      : { ...task, card_posted: cardPosted };
+  }
+
+  /**
+   * Returns whether the card posted, or `undefined` when no card was due
+   * (no chat context) — the three-way distinction `card_posted` publishes.
+   */
+  private async tryPostTaskCard(
+    input: CreateTaskInput,
+    task: Task,
+  ): Promise<boolean | undefined> {
+    if (!input.channel_id || !input.client_message_id) return undefined;
+
+    try {
+      await this.postTaskCard(input, task);
+      return true;
+    } catch (error) {
+      this.logger.warn('Failed to post task card to chat', {
+        taskId: task.id,
+        channelId: input.channel_id,
+        chapterId: input.chapter_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   /**

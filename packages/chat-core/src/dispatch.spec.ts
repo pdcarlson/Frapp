@@ -4,11 +4,7 @@ import type { SlashCommand } from "@repo/chat-integrations";
 import { dispatchSlashCommand, retryPointsDispatch } from "./dispatch";
 import type { ChatActionContext } from "./chat-client";
 import type { OutboxStore } from "./adapters";
-import {
-  chatMessagesKey,
-  type ChannelCache,
-  type ChatMessage,
-} from "./types";
+import { chatMessagesKey, type ChannelCache, type ChatMessage } from "./types";
 import { selectMessages, mergeServerRow } from "./cache";
 
 /**
@@ -74,7 +70,11 @@ describe("dispatchPoints — card_posted (#544)", () => {
   it("leaves the placeholder for the Realtime echo when the card posted", async () => {
     const post = vi
       .fn()
-      .mockResolvedValue({ data: { card_posted: true }, error: null, response: { status: 200 } });
+      .mockResolvedValue({
+        data: { card_posted: true },
+        error: null,
+        response: { status: 200 },
+      });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -88,7 +88,11 @@ describe("dispatchPoints — card_posted (#544)", () => {
   it("drops the placeholder and warns when the card did not post", async () => {
     const post = vi
       .fn()
-      .mockResolvedValue({ data: { card_posted: false }, error: null, response: { status: 200 } });
+      .mockResolvedValue({
+        data: { card_posted: false },
+        error: null,
+        response: { status: 200 },
+      });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -105,7 +109,11 @@ describe("dispatchPoints — card_posted (#544)", () => {
   it("does not report the committed grant as a failure", async () => {
     const post = vi
       .fn()
-      .mockResolvedValue({ data: { card_posted: false }, error: null, response: { status: 200 } });
+      .mockResolvedValue({
+        data: { card_posted: false },
+        error: null,
+        response: { status: 200 },
+      });
 
     const result = await dispatchGrant(buildCtx(post));
 
@@ -116,7 +124,9 @@ describe("dispatchPoints — card_posted (#544)", () => {
   // Pre-#544 servers (and any response that omits the field) must keep the old
   // behaviour rather than having their placeholder torn down under them.
   it("treats an absent card_posted as success", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: null, response: { status: 200 } });
+    const post = vi
+      .fn()
+      .mockResolvedValue({ data: {}, error: null, response: { status: 200 } });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -164,7 +174,6 @@ function onlyRow(ctx: ChatActionContext): ChatMessage {
   expect(rows).toHaveLength(1);
   return rows[0]!;
 }
-
 
 /** Simulate the server card's Realtime echo for a client id. */
 function patchWithServerEcho(ctx: ChatActionContext, clientId: string): void {
@@ -272,7 +281,11 @@ describe("dispatchPoints — unconfirmed outcomes (#1733)", () => {
     await dispatchGrant(ctx);
     const replay = onlyRow(ctx)._replay!;
 
-    post.mockResolvedValue({ data: { card_posted: true }, error: null, response: { status: 200 } });
+    post.mockResolvedValue({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 200 },
+    });
     await retryPointsDispatch(ctx, replay);
 
     const [first, second] = post.mock.calls;
@@ -296,7 +309,11 @@ describe("dispatchPoints — unconfirmed outcomes (#1733)", () => {
     await dispatchGrant(ctx);
     const replay = onlyRow(ctx)._replay!;
 
-    post.mockResolvedValue({ data: {}, error: null, response: { status: 200 } });
+    post.mockResolvedValue({
+      data: {},
+      error: null,
+      response: { status: 200 },
+    });
     const result = await retryPointsDispatch(ctx, replay);
 
     expect(result.ok).toBe(true);
@@ -311,7 +328,9 @@ describe("dispatchPoints — unconfirmed outcomes (#1733)", () => {
   // Same absent field, first attempt: nothing was skipped, the echo may still
   // arrive. The two must not be collapsed — this is why `isReplay` exists.
   it("still waits for the echo when a FIRST attempt reports no card outcome", async () => {
-    const post = vi.fn().mockResolvedValue({ data: {}, error: null, response: { status: 200 } });
+    const post = vi
+      .fn()
+      .mockResolvedValue({ data: {}, error: null, response: { status: 200 } });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -475,7 +494,11 @@ describe("dispatchPoints — replay refusals and resolution (#1733 review)", () 
   it("does not call a bodyless 2xx unconfirmed", async () => {
     const post = vi
       .fn()
-      .mockResolvedValue({ data: undefined, error: null, response: { status: 204 } });
+      .mockResolvedValue({
+        data: undefined,
+        error: null,
+        response: { status: 204 },
+      });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -522,7 +545,11 @@ describe("dispatchPoints — second-pass review fixes (#1733)", () => {
     expect(second.warning).toMatch(/still running/i);
     // Exactly one request in flight for this key, not two racing responses.
     expect(post).toHaveBeenCalledTimes(2); // the original dispatch + one replay
-    release({ data: { card_posted: true }, error: null, response: { status: 200 } });
+    release({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 200 },
+    });
     await first;
   });
 
@@ -537,5 +564,255 @@ describe("dispatchPoints — second-pass review fixes (#1733)", () => {
     const again = await retryPointsDispatch(ctx, replay);
 
     expect(again.warning).not.toMatch(/still running/i);
+  });
+});
+
+const TASK_COMMAND: SlashCommand = {
+  name: "task",
+  description: "Create a task card and assign it",
+  requiredModule: "tasks",
+  implemented: true,
+};
+
+const EVENT_COMMAND: SlashCommand = {
+  name: "event",
+  description: "Create an event with an interactive card",
+  requiredModule: "events",
+  implemented: true,
+};
+
+function dispatchTaskCmd(ctx: ChatActionContext) {
+  return dispatchSlashCommand(ctx, {
+    command: TASK_COMMAND,
+    args: `"Clean the house" @bobby 2099-03-15 10`,
+    channelId: CHANNEL_ID,
+    announcementsChannelId: null,
+    resolveMember: () => ({ user_id: "user-2", display_name: "Bobby Member" }),
+  });
+}
+
+function dispatchEventCmd(ctx: ChatActionContext) {
+  return dispatchSlashCommand(ctx, {
+    command: EVENT_COMMAND,
+    args: `"Chapter Meeting" 2099-03-15 18:00-19:00`,
+    channelId: CHANNEL_ID,
+    announcementsChannelId: null,
+  });
+}
+
+describe("dispatchTask — card_posted (#1717)", () => {
+  it("leaves the placeholder for the Realtime echo when the card posted", async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValue({
+        data: { card_posted: true },
+        error: null,
+        response: { status: 201 },
+      });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchTaskCmd(ctx);
+
+    expect(result).toEqual({ ok: true });
+    expect(placeholderCount(ctx)).toBe(1);
+  });
+
+  it("drops the placeholder and warns when the card did not post", async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValue({
+        data: { card_posted: false },
+        error: null,
+        response: { status: 201 },
+      });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchTaskCmd(ctx);
+
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.warning).toMatch(/created/i);
+    expect(result.warning).toMatch(/don't run the command again/i);
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  it("does not report the committed create as a failure", async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValue({
+        data: { card_posted: false },
+        error: null,
+        response: { status: 201 },
+      });
+
+    const result = await dispatchTaskCmd(buildCtx(post));
+
+    expect(result.ok).toBe(true);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats an absent card_posted as success", async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValue({ data: {}, error: null, response: { status: 201 } });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchTaskCmd(ctx);
+
+    expect(result).toEqual({ ok: true });
+    expect(placeholderCount(ctx)).toBe(1);
+  });
+
+  it("still removes the placeholder and fails on a definitive 4xx", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "nope" },
+      response: { status: 400 },
+    });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchTaskCmd(ctx);
+
+    expect(result).toEqual({ ok: false, error: "nope" });
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  // Empty-body gateway 502: openapi-fetch returns `{ error: undefined, response }`.
+  // `/task` has no server-side dedupe, so a stranded placeholder invites a
+  // duplicating retry. Drop it and fail — never park it as `unconfirmed`.
+  it("drops the placeholder on an empty-body gateway 502", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { status: 502 },
+    });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchTaskCmd(ctx);
+
+    expect(result.ok).toBe(false);
+    expect(result.unconfirmed).toBeUndefined();
+    expect(result.error).toMatch(/Couldn't create task/i);
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  it("drops the placeholder on a transport failure", async () => {
+    const post = vi.fn().mockRejectedValue(new Error("network down"));
+    const ctx = buildCtx(post);
+
+    const result = await dispatchTaskCmd(ctx);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Couldn't reach the tasks service",
+    });
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+});
+
+describe("dispatchEvent — card_posted (#1717)", () => {
+  it("leaves the placeholder for the Realtime echo when the card posted", async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValue({
+        data: { card_posted: true },
+        error: null,
+        response: { status: 201 },
+      });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchEventCmd(ctx);
+
+    expect(result).toEqual({ ok: true });
+    expect(placeholderCount(ctx)).toBe(1);
+  });
+
+  it("drops the placeholder and warns when the card did not post", async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValue({
+        data: { card_posted: false },
+        error: null,
+        response: { status: 201 },
+      });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchEventCmd(ctx);
+
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.warning).toMatch(/created/i);
+    expect(result.warning).toMatch(/don't run the command again/i);
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  it("does not report the committed create as a failure", async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValue({
+        data: { card_posted: false },
+        error: null,
+        response: { status: 201 },
+      });
+
+    const result = await dispatchEventCmd(buildCtx(post));
+
+    expect(result.ok).toBe(true);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats an absent card_posted as success", async () => {
+    const post = vi
+      .fn()
+      .mockResolvedValue({ data: {}, error: null, response: { status: 201 } });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchEventCmd(ctx);
+
+    expect(result).toEqual({ ok: true });
+    expect(placeholderCount(ctx)).toBe(1);
+  });
+
+  it("still removes the placeholder and fails on a definitive 4xx", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "nope" },
+      response: { status: 400 },
+    });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchEventCmd(ctx);
+
+    expect(result).toEqual({ ok: false, error: "nope" });
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  it("drops the placeholder on an empty-body gateway 502", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { status: 502 },
+    });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchEventCmd(ctx);
+
+    expect(result.ok).toBe(false);
+    expect(result.unconfirmed).toBeUndefined();
+    expect(result.error).toMatch(/Couldn't create event/i);
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+
+  it("drops the placeholder on a transport failure", async () => {
+    const post = vi.fn().mockRejectedValue(new Error("network down"));
+    const ctx = buildCtx(post);
+
+    const result = await dispatchEventCmd(ctx);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Couldn't reach the events service",
+    });
+    expect(placeholderCount(ctx)).toBe(0);
   });
 });
