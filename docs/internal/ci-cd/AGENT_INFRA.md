@@ -425,7 +425,7 @@ alias. TypeScript 7 also stopped inferring `rootDir` from the common source dire
 packages set `"rootDir": "src"` in their own `tsconfig.json` (not in
 `@repo/typescript-config/base.json`: TypeScript resolves `rootDir` relative to the file that
 declares it, so a shared `./src` would point at `packages/typescript-config/src`). The emitting
-set is `@repo/validation`, `@repo/hooks`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`,
+set is `@repo/validation`, `@repo/hooks`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`,
 `@repo/org-archetypes`, `@repo/chat-integrations` (each `"build": "tsc"`, except `@repo/hooks`,
 which builds via `tsc -p tsconfig.build.json` so its `*.spec.ts` / `*.spec.tsx` files stay out of
 the build — they import `vitest` and `@testing-library/react`, which Vercel's production install
@@ -1019,7 +1019,7 @@ first and third are what the `deploy-outcome` job fixes:
 
 1. **A skipped run is a green run.** The `check-changes` path gate skips the migrate/deploy
    jobs when a push touches neither `apps/api/`, `packages/validation/`,
-   `packages/typescript-config/` nor `supabase/migrations/`. 46 of the last 90 runs were
+   `packages/observability/`, `packages/typescript-config/` nor `supabase/migrations/`. 46 of the last 90 runs were
    green-because-empty, so the Actions list read "mostly healthy" while the deploy path was
    100% dead.
 2. **`workflow_run` failures land on no commit and no PR** the way `CI` does — nothing turns red
