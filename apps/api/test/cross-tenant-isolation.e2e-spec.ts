@@ -56,6 +56,9 @@ const EVENT_A = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const INVOICE_A = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const EVENT_B = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const INVOICE_B = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const MEMBER_B_IN_A = 'abababab-abab-4aba-8aba-abababababab';
+const NOTIF_A = 'f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1';
+const NOTIF_B = 'f2f2f2f2-f2f2-42f2-82f2-f2f2f2f2f2f2';
 
 class AllowPermissionsGuard implements CanActivate {
   canActivate(): boolean {
@@ -140,6 +143,52 @@ function seed(): SeededTables {
 }
 
 /**
+ * Dual-membership fixture for in-app notification history (#1518).
+ *
+ * Bob is an active member of both chapters and holds one notification in each.
+ * The list/mark-read routes now run `ChapterGuard`, so the JWT claim (and
+ * matching `x-chapter-id`) is the only chapter the query may return. Drop the
+ * `chapter_id` filter and both rows come back — the same failure a
+ * `user_id`-only list had in production.
+ */
+function seedDualChapterNotifications(): SeededTables {
+  const tables = seed();
+  tables.members = [
+    ...tables.members,
+    {
+      id: MEMBER_B_IN_A,
+      user_id: USER_B,
+      chapter_id: CHAPTER_A,
+      role_ids: [],
+      custom_role_ids: [],
+    },
+  ];
+  tables.notifications = [
+    {
+      id: NOTIF_A,
+      user_id: USER_B,
+      chapter_id: CHAPTER_A,
+      title: 'Chapter A notice',
+      body: 'from A',
+      data: {},
+      read_at: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    },
+    {
+      id: NOTIF_B,
+      user_id: USER_B,
+      chapter_id: CHAPTER_B,
+      title: 'Chapter B notice',
+      body: 'from B',
+      data: {},
+      read_at: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+    },
+  ];
+  return tables;
+}
+
+/**
  * Assert a denial against the response shape the API *actually ships*.
  *
  * These assertions used to read `res.body.message?.code ?? res.body.code` and
@@ -177,7 +226,10 @@ describe('Cross-tenant isolation (e2e)', () => {
   let app: INestApplication;
 
   /** Boots the app with Bob authenticated and the given JWT claims. */
-  async function boot(claims: Record<string, unknown> | null) {
+  async function boot(
+    claims: Record<string, unknown> | null,
+    tables: SeededTables = seed(),
+  ) {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
@@ -186,7 +238,7 @@ describe('Cross-tenant isolation (e2e)', () => {
         createTableAwareSupabaseMock({
           authUser: { id: AUTH_B, email: 'bob@example.com' },
           claims,
-          tables: seed(),
+          tables,
         }),
       )
       .overrideGuard(PermissionsGuard)
@@ -419,6 +471,64 @@ describe('Cross-tenant isolation (e2e)', () => {
         .send({ chapter_id: CHAPTER_A, category: 'chat', is_enabled: false });
 
       expect(res.status).toBe(403);
+    });
+  });
+
+  describe('in-app notification history is active-chapter only (#1518)', () => {
+    it('does not list another chapter’s rows while chapter B is active', async () => {
+      app = await boot(
+        { active_chapter_id: CHAPTER_B },
+        seedDualChapterNotifications(),
+      );
+
+      const res = await asBob(
+        request(app.getHttpServer()).get(`${V1}/notifications`),
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((n: { id: string }) => n.id)).toEqual([NOTIF_B]);
+      expect(JSON.stringify(res.body)).not.toContain(NOTIF_A);
+      expect(JSON.stringify(res.body)).not.toContain('Chapter A notice');
+    });
+
+    it('does not list another chapter’s rows while chapter A is active', async () => {
+      app = await boot(
+        { active_chapter_id: CHAPTER_A },
+        seedDualChapterNotifications(),
+      );
+
+      const res = await asBob(
+        request(app.getHttpServer()).get(`${V1}/notifications`),
+        CHAPTER_A,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.map((n: { id: string }) => n.id)).toEqual([NOTIF_A]);
+      expect(JSON.stringify(res.body)).not.toContain(NOTIF_B);
+      expect(JSON.stringify(res.body)).not.toContain('Chapter B notice');
+    });
+
+    it('does not mark another chapter’s notification read', async () => {
+      app = await boot(
+        { active_chapter_id: CHAPTER_B },
+        seedDualChapterNotifications(),
+      );
+
+      const foreign = await asBob(
+        request(app.getHttpServer()).patch(
+          `${V1}/notifications/${NOTIF_A}/read`,
+        ),
+      );
+      expect(foreign.status).toBe(404);
+
+      const own = await asBob(
+        request(app.getHttpServer()).patch(
+          `${V1}/notifications/${NOTIF_B}/read`,
+        ),
+      );
+      expect(own.status).toBe(200);
+      expect(own.body.id).toBe(NOTIF_B);
+      expect(own.body.read_at).toEqual(expect.any(String));
     });
   });
 });
