@@ -1,5 +1,6 @@
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { isPseudonymHex } from '@repo/observability';
 import {
   assertContentFreeProperties,
   hashChapterIdForAnalytics,
@@ -17,6 +18,17 @@ import {
 } from '#domain/repositories/member.repository.interface';
 import type { Member } from '#domain/entities/member.entity';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+
+/** Same shape ChapterGuard / billing use; identity refuses to HMAC anything else. */
+const CHAPTER_ID_SHAPE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function canonicalChapterId(
+  chapterId: string | undefined | null,
+): string | null {
+  if (!chapterId || !CHAPTER_ID_SHAPE.test(chapterId)) return null;
+  return chapterId.toLowerCase();
+}
 
 export interface TrackOptions {
   /**
@@ -69,8 +81,26 @@ export class AnalyticsService {
    * configured.
    */
   getDistinctId(userId: string): string | null {
+    if (!this.salt || !userId) return null;
+    const digest = hashUserIdForAnalytics(this.salt, userId);
+    return isPseudonymHex(digest) ? digest : null;
+  }
+
+  /**
+   * Pseudonymous PostHog chapter group. Same HMAC helper as funnel events.
+   * `null` when analytics is unconfigured, no chapter is in context, or the
+   * value is not a UUID (never HMAC a malformed header and call it a group).
+   *
+   * Opt-out does **not** suppress this: identity still returns the digest so
+   * Sentry `user.id` / a future client SDK can be set. Event capture stays
+   * gated by {@link track} / {@link trackForChapter}.
+   */
+  getChapterGroupId(chapterId: string | undefined | null): string | null {
     if (!this.salt) return null;
-    return hashUserIdForAnalytics(this.salt, userId);
+    const canonical = canonicalChapterId(chapterId);
+    if (!canonical) return null;
+    const digest = hashChapterIdForAnalytics(this.salt, canonical);
+    return isPseudonymHex(digest) ? digest : null;
   }
 
   /**

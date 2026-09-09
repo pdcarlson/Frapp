@@ -24,6 +24,27 @@ type CryptoLike = {
  */
 export const mintRequestId = (): string => `req_${newRequestUuid()}`;
 
+/**
+ * Ensure `x-request-id` is present. Honours a caller-supplied value.
+ * Same rule as {@link createFrappClient} — used by raw `fetch` health probes
+ * that cannot go through the OpenAPI client (`/health` is not under `/v1`).
+ */
+export const ensureRequestIdHeader = (headers: Headers): Headers => {
+  if (!headers.has(REQUEST_ID_HEADER)) {
+    headers.set(REQUEST_ID_HEADER, mintRequestId());
+  }
+  return headers;
+};
+
+/**
+ * Return a `RequestInit` whose headers include `x-request-id`.
+ * Does not copy `sentry-trace` / `baggage`; those stay Sentry's.
+ */
+export const withRequestIdInit = (init: RequestInit = {}): RequestInit => {
+  const headers = ensureRequestIdHeader(new Headers(init.headers));
+  return { ...init, headers };
+};
+
 function getCrypto(): CryptoLike | undefined {
   return (globalThis as { crypto?: CryptoLike }).crypto;
 }
@@ -102,9 +123,7 @@ export const createFrappClient = (config: FrappClientConfig) => {
         }
       }
 
-      if (!request.headers.has(REQUEST_ID_HEADER)) {
-        request.headers.set(REQUEST_ID_HEADER, mintRequestId());
-      }
+      ensureRequestIdHeader(request.headers);
 
       return request;
     },

@@ -3,6 +3,7 @@ import {
   REQUEST_ID_HEADER,
   createFrappClient,
   mintRequestId,
+  withRequestIdInit,
 } from "./client";
 
 function sentRequest(): Request {
@@ -48,6 +49,24 @@ describe("mintRequestId", () => {
     vi.stubGlobal("crypto", undefined);
     const id = mintRequestId();
     expect(id).toMatch(/^req_[0-9a-f-]{36}$/i);
+  });
+});
+
+describe("withRequestIdInit", () => {
+  it("mints x-request-id when none was supplied", () => {
+    const init = withRequestIdInit({ method: "GET" });
+    const headers = new Headers(init.headers);
+    expect(headers.get(REQUEST_ID_HEADER)).toMatch(/^req_[0-9a-f-]{36}$/i);
+    expect(headers.get("sentry-trace")).toBeNull();
+  });
+
+  it("preserves a caller-supplied x-request-id", () => {
+    const init = withRequestIdInit({
+      headers: { [REQUEST_ID_HEADER]: "req_already" },
+    });
+    expect(new Headers(init.headers).get(REQUEST_ID_HEADER)).toBe(
+      "req_already",
+    );
   });
 });
 

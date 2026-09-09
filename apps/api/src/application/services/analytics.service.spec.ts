@@ -6,6 +6,7 @@ import {
   hashChapterIdForAnalytics,
   hashUserIdForAnalytics,
 } from '@repo/validation';
+import { isPseudonymHex } from '@repo/observability';
 import { AnalyticsService } from './analytics.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
@@ -20,6 +21,8 @@ import type { Member } from '#domain/entities/member.entity';
 
 const SALT = 'test-env-salt';
 const USER_ID = 'user-123';
+const CHAPTER_ID = '11111111-1111-4111-8111-111111111111';
+const OTHER_CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
 
 /** Builds a Supabase mock whose chapters lookup returns the given opt-out. */
 function makeSupabaseMock(result: {
@@ -104,6 +107,7 @@ describe('AnalyticsService', () => {
       const distinctId = service.getDistinctId(USER_ID);
 
       expect(distinctId).toBe(hashUserIdForAnalytics(SALT, USER_ID));
+      expect(isPseudonymHex(distinctId)).toBe(true);
       expect(distinctId).not.toContain(USER_ID);
     });
 
@@ -116,6 +120,104 @@ describe('AnalyticsService', () => {
       });
 
       expect(service.getDistinctId(USER_ID)).toBeNull();
+    });
+  });
+
+  describe('getChapterGroupId', () => {
+    it('returns the HMAC of the chapter id, never the raw id', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      const groupId = service.getChapterGroupId(CHAPTER_ID);
+
+      expect(groupId).toBe(hashChapterIdForAnalytics(SALT, CHAPTER_ID));
+      expect(isPseudonymHex(groupId)).toBe(true);
+      expect(groupId).not.toContain(CHAPTER_ID);
+    });
+
+    it('is stable for one chapter and distinct across chapters', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      const a = service.getChapterGroupId(CHAPTER_ID);
+      const b = service.getChapterGroupId(OTHER_CHAPTER_ID);
+      expect(a).toBe(service.getChapterGroupId(CHAPTER_ID));
+      expect(a).not.toBe(b);
+    });
+
+    it('lowercases a UUID so header case cannot split the group', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      expect(service.getChapterGroupId(CHAPTER_ID.toUpperCase())).toBe(
+        hashChapterIdForAnalytics(SALT, CHAPTER_ID),
+      );
+    });
+
+    it('returns null when no chapter is in context', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      expect(service.getChapterGroupId(undefined)).toBeNull();
+      expect(service.getChapterGroupId(null)).toBeNull();
+      expect(service.getChapterGroupId('')).toBeNull();
+    });
+
+    it('returns null for a malformed chapter id instead of hashing it', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      expect(service.getChapterGroupId('not-a-uuid')).toBeNull();
+      expect(service.getChapterGroupId(USER_ID)).toBeNull();
+      expect(service.getChapterGroupId('user-123@example.com')).toBeNull();
+    });
+
+    it('returns null when no salt is configured', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: '',
+        supabase: client,
+        provider,
+      });
+
+      expect(service.getChapterGroupId(CHAPTER_ID)).toBeNull();
+    });
+
+    it('still returns the chapter group when the chapter has opted out', async () => {
+      const { client, from } = makeSupabaseMock({
+        data: { analytics_opt_out: true },
+        error: null,
+      });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      expect(service.getChapterGroupId(CHAPTER_ID)).toBe(
+        hashChapterIdForAnalytics(SALT, CHAPTER_ID),
+      );
+      expect(from).not.toHaveBeenCalled();
     });
   });
 
