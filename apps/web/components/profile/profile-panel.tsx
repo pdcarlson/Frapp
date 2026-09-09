@@ -786,10 +786,13 @@ export function ProfilePanel() {
                        * never shows a value the server was never told about.
                        *
                        * This is § 2's "disabled with 'Reconnect to make
-                       * changes'" applied to one surface. Doing it dashboard-
-                       * wide is #1753; #1754's own note says that until #1753
-                       * lands an offline member gets an error toast rather
-                       * than a control that declines to be pressed.
+                       * changes'" on a control whose appearance carries
+                       * state. Queueless dashboard *buttons* go through
+                       * `useSubscriptionGate` (#1753) and take the real
+                       * `disabled` attribute; these switches cannot, for
+                       * the colour / tab-order reasons below. #1754's note
+                       * that an ungated offline member would get an error
+                       * toast is the backstop, not the intended path.
                        *
                        * But the real `disabled` attribute cost more than it
                        * bought. `switch.tsx` scopes every state colour to
