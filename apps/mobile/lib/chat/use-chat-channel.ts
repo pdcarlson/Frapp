@@ -24,6 +24,9 @@
  * 4. **No slash dispatch.** `@repo/chat-core/dispatch` pulls in
  *    `@repo/chat-integrations`, whose `types`/`require` conditions point at an
  *    unbuilt `dist/` (#989), and slash commands are not a mobile surface.
+ *    `unconfirmed`/`recorded` rows therefore have no replay path; the thread
+ *    presents them read-only (#1910) until one exists. Do not invent a slash
+ *    dispatch from here.
  *
  * Imports stay subpath-only for the same reason the runtime's do.
  */
