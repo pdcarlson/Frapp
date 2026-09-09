@@ -197,6 +197,16 @@ describe("replyPreviewText", () => {
     );
   });
 
+  it("names a bookmark-shaped row with no kind as Message, not a blank", () => {
+    // GET /v1/bookmarks does not return `kind` or `attachment_count`. Empty
+    // content would otherwise preview as nothing — the #1726 defect. The noun
+    // is generic because the projection cannot distinguish a poll from a
+    // file-only send; pins and search still get the specific label.
+    expect(replyPreviewText({ content: "", is_deleted: false })).toBe(
+      "Message",
+    );
+  });
+
   it("falls back to a generic label for a kind the map does not name", () => {
     // A kind must still quote as *something* — a blank strip beside an author
     // name reads as broken layout, not as missing data. `imported` is a real

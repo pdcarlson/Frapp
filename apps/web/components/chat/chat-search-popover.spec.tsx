@@ -24,6 +24,19 @@ function result(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function messagesResult(
+  messages: unknown[],
+  extras: { timedOut?: boolean; timedOutSources?: string[] } = {},
+) {
+  return result({
+    data: {
+      payload: { messages },
+      timedOut: extras.timedOut ?? false,
+      timedOutSources: extras.timedOutSources ?? [],
+    },
+  });
+}
+
 function message(id: string, channelId: string, content: string) {
   return {
     id,
@@ -31,6 +44,23 @@ function message(id: string, channelId: string, content: string) {
     sender_id: "u-1",
     content,
     created_at: "2026-09-02T13:41:00Z",
+  };
+}
+
+function previewHit(
+  id: string,
+  extras: {
+    kind?: string;
+    attachment_count?: number;
+    is_deleted?: boolean;
+  } = {},
+) {
+  return {
+    ...message(id, "chan-1", ""),
+    kind: "text",
+    attachment_count: 0,
+    is_deleted: false,
+    ...extras,
   };
 }
 
@@ -44,6 +74,14 @@ function renderPopover(props: Record<string, unknown> = {}) {
       {...props}
     />,
   );
+}
+
+async function openAndQuery(query: string, props: Record<string, unknown> = {}) {
+  const user = userEvent.setup();
+  renderPopover(props);
+  await user.click(screen.getByRole("button", { name: /search messages/i }));
+  await user.type(screen.getByRole("searchbox"), query);
+  return user;
 }
 
 /**
@@ -61,11 +99,7 @@ describe("ChatSearchPopover", () => {
   });
 
   it("does not search until the query clears the minimum length", async () => {
-    const user = userEvent.setup();
-    renderPopover();
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
-
-    await user.type(screen.getByRole("searchbox"), "bu");
+    await openAndQuery("bu");
 
     // Below the minimum the hook is called with an empty query, so `enabled`
     // keeps it from ever reaching the API.
@@ -76,11 +110,7 @@ describe("ChatSearchPopover", () => {
   });
 
   it("scopes to the active channel by passing channelId to the request", async () => {
-    const user = userEvent.setup();
-    renderPopover();
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
-
-    await user.type(screen.getByRole("searchbox"), "budget");
+    await openAndQuery("budget");
 
     // The load-bearing assertion of this whole feature. SEARCH_LIMIT is applied
     // by the database across every accessible channel, so filtering the
@@ -92,10 +122,7 @@ describe("ChatSearchPopover", () => {
   });
 
   it("drops the channel filter when the member widens to all channels", async () => {
-    const user = userEvent.setup();
-    renderPopover();
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
-    await user.type(screen.getByRole("searchbox"), "budget");
+    const user = await openAndQuery("budget");
     await user.click(screen.getByRole("radio", { name: /all channels/i }));
 
     await waitFor(() => {
@@ -104,11 +131,7 @@ describe("ChatSearchPopover", () => {
   });
 
   it("falls back to chapter-wide when no channel is open", async () => {
-    const user = userEvent.setup();
-    renderPopover({ activeChannelId: null });
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
-
-    await user.type(screen.getByRole("searchbox"), "budget");
+    await openAndQuery("budget", { activeChannelId: null });
 
     // "This channel" with no channel would scope to nothing and render an
     // honest-looking empty state for a question that was never asked.
@@ -117,21 +140,37 @@ describe("ChatSearchPopover", () => {
     });
   });
 
+  it("previews a poll hit by its kind noun, not an empty block", async () => {
+    useSearch.mockReturnValue(messagesResult([previewHit("m-poll", { kind: "poll" })]));
+    await openAndQuery("poll");
+
+    expect(await screen.findByText("Poll")).toBeInTheDocument();
+  });
+
+  it("previews a file-only hit as an attachment count", async () => {
+    useSearch.mockReturnValue(
+      messagesResult([previewHit("m-file", { attachment_count: 3 })]),
+    );
+    await openAndQuery("file");
+
+    expect(await screen.findByText("3 attachments")).toBeInTheDocument();
+  });
+
+  it("previews a deleted hit as the tombstone, not a blank block", async () => {
+    useSearch.mockReturnValue(
+      messagesResult([previewHit("m-gone", { is_deleted: true })]),
+    );
+    await openAndQuery("gone");
+
+    expect(await screen.findByText("[message deleted]")).toBeInTheDocument();
+  });
+
   it("hands the picked hit to the shell and dismisses itself", async () => {
     const onJump = vi.fn();
     useSearch.mockReturnValue(
-      result({
-        data: {
-          payload: { messages: [message("m-1", "chan-1", "dues link")] },
-          timedOut: false,
-          timedOutSources: [],
-        },
-      }),
+      messagesResult([message("m-1", "chan-1", "dues link")]),
     );
-    const user = userEvent.setup();
-    renderPopover({ onJump });
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
-    await user.type(screen.getByRole("searchbox"), "dues");
+    const user = await openAndQuery("dues", { onJump });
 
     await user.click(await screen.findByText("dues link"));
 
@@ -148,13 +187,7 @@ describe("ChatSearchPopover", () => {
 
   it("labels a hit that lives in another channel", async () => {
     useSearch.mockReturnValue(
-      result({
-        data: {
-          payload: { messages: [message("m-2", "chan-2", "pizza night")] },
-          timedOut: false,
-          timedOutSources: [],
-        },
-      }),
+      messagesResult([message("m-2", "chan-2", "pizza night")]),
     );
     const user = userEvent.setup();
     renderPopover();
@@ -169,18 +202,9 @@ describe("ChatSearchPopover", () => {
 
   it("distinguishes a timed-out search from a search that found nothing", async () => {
     useSearch.mockReturnValue(
-      result({
-        data: {
-          payload: { messages: [] },
-          timedOut: true,
-          timedOutSources: ["messages"],
-        },
-      }),
+      messagesResult([], { timedOut: true, timedOutSources: ["messages"] }),
     );
-    const user = userEvent.setup();
-    renderPopover();
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
-    await user.type(screen.getByRole("searchbox"), "budget");
+    await openAndQuery("budget");
 
     // spec/behavior/search.md requires the client to render "we stopped
     // looking here" differently from "we found nothing".
@@ -193,10 +217,7 @@ describe("ChatSearchPopover", () => {
   // including one with no `open` gate at all. This one types first, so removing
   // the gate genuinely fails it.
   it("stops searching again once the popover is dismissed", async () => {
-    const user = userEvent.setup();
-    renderPopover();
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
-    await user.type(screen.getByRole("searchbox"), "budget");
+    const user = await openAndQuery("budget");
     await waitFor(() => {
       expect(useSearch).toHaveBeenLastCalledWith("budget", "chan-1");
     });
@@ -212,10 +233,7 @@ describe("ChatSearchPopover", () => {
     useSearch.mockReturnValue(
       result({ data: undefined, isError: true, refetch: vi.fn() }),
     );
-    const user = userEvent.setup();
-    renderPopover();
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
-    await user.type(screen.getByRole("searchbox"), "budget");
+    await openAndQuery("budget");
 
     await screen.findByRole("alert");
     // Announcing "0 results" here tells a screen-reader user the channel holds
@@ -227,18 +245,9 @@ describe("ChatSearchPopover", () => {
 
   it("does not announce a result count for a timed-out search", async () => {
     useSearch.mockReturnValue(
-      result({
-        data: {
-          payload: { messages: [] },
-          timedOut: true,
-          timedOutSources: ["messages"],
-        },
-      }),
+      messagesResult([], { timedOut: true, timedOutSources: ["messages"] }),
     );
-    const user = userEvent.setup();
-    renderPopover();
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
-    await user.type(screen.getByRole("searchbox"), "budget");
+    await openAndQuery("budget");
 
     await screen.findByText(/timed out/i);
     const live = document.querySelector('[aria-live="polite"]');
@@ -267,10 +276,7 @@ describe("ChatSearchPopover", () => {
     useSearch.mockReturnValue(
       result({ data: undefined, isError: true, refetch }),
     );
-    const user = userEvent.setup();
-    renderPopover();
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
-    await user.type(screen.getByRole("searchbox"), "budget");
+    const user = await openAndQuery("budget");
 
     // Waits on the alert itself, not on the dialog: the popover is already
     // open, so `findByRole("dialog")` resolves before the debounce settles and
