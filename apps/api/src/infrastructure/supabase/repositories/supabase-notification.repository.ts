@@ -35,12 +35,14 @@ export class SupabaseNotificationRepository implements INotificationRepository {
 
   async findByUser(
     userId: string,
+    chapterId: string,
     options?: { limit?: number },
   ): Promise<Notification[]> {
     let query = this.supabase
       .from('notifications')
       .select('*')
       .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
 
     if (
@@ -56,18 +58,23 @@ export class SupabaseNotificationRepository implements INotificationRepository {
     return data ?? [];
   }
 
-  async findById(id: string): Promise<Notification | null> {
+  async findById(id: string, chapterId: string): Promise<Notification | null> {
     const { data, error } = await this.supabase
       .from('notifications')
       .select('*')
       .eq('id', id)
+      .eq('chapter_id', chapterId)
       .maybeSingle();
 
     if (error) throw error;
     return data;
   }
 
-  async markRead(id: string, userId: string): Promise<Notification> {
+  async markRead(
+    id: string,
+    userId: string,
+    chapterId: string,
+  ): Promise<Notification> {
     const patch: TablesUpdate<'notifications'> = {
       read_at: new Date().toISOString(),
     };
@@ -76,6 +83,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .update(patch)
       .eq('id', id)
       .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
       .select()
       .single();
 
