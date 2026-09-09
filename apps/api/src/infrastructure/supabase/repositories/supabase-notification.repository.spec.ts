@@ -102,4 +102,37 @@ describe('SupabaseNotificationRepository — tenant scope', () => {
       harness.rows('notifications').filter((n) => n.chapter_id === CHAPTER_A),
     ).toHaveLength(1);
   });
+
+  it('createMany issues every row under the caller chapter', async () => {
+    const created = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.createMany([
+        {
+          chapter_id: CHAPTER_B,
+          user_id: USER_SHARED,
+          title: 'Batch one',
+          body: 'Hello',
+          data: {},
+        },
+        {
+          chapter_id: CHAPTER_B,
+          user_id: USER_SHARED,
+          title: 'Batch two',
+          body: 'Hello',
+          data: {},
+        },
+      ]),
+    );
+
+    expect(created.every((n) => n.chapter_id === CHAPTER_B)).toBe(true);
+    expect(
+      harness.rows('notifications').filter((n) => n.chapter_id === CHAPTER_A),
+    ).toHaveLength(1);
+  });
+
+  it('createMany issues no query for an empty list', async () => {
+    const before = harness.ops.length;
+    const rows = await repo.createMany([]);
+    expect(rows).toEqual([]);
+    expect(harness.ops.length).toBe(before);
+  });
 });
