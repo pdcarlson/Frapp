@@ -473,6 +473,33 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-09: Subscription webhook RPC returns pre-UPDATE status (#1979)
+
+One function replacement. Drops and recreates `apply_subscription_webhook`
+with a two-column return (`applied chapters`, `previous_subscription_status`)
+so president-notify keys off the committed row, not the handler snapshot.
+**Not safe to apply ahead of the API**: the currently-deployed handler reads
+the RPC as `setof chapters`. Ship with a full deploy (migrate then API in
+the same run). Hosted projects are not applied from a cloud-agent session.
+
+### 20260909180000_apply_subscription_webhook_previous_status.sql
+* **Purpose**: `CREATE OR REPLACE` cannot change a return type, so this DROPs
+  the #731 function and recreates it. SELECT FOR UPDATE captures the live
+  `subscription_status` before the same CAS UPDATE; a win returns that value
+  alongside the chapter row. UPDATE body is otherwise unchanged (`activate_if`,
+  clock-keep when already `past_due`, same-second `<=`). `EXECUTE` remains
+  revoked from PUBLIC / anon / authenticated and granted to `service_role`
+  only.
+* **Checks**: After `db push`,
+  `select pg_get_function_result(p.oid) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'apply_subscription_webhook'`
+  contains `previous_subscription_status`, and
+  `select has_function_privilege('anon', 'apply_subscription_webhook(uuid, timestamptz, jsonb)', 'EXECUTE')`
+  is `false`. Two into-`past_due` applies against one chapter reporting
+  `previous=active` then `previous=past_due` are asserted by
+  `scripts/check-pglite-migrations.mjs`.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the Stripe subscription webhook previous-status return.
+
 ## 2026-09-09: System actor display_name becomes Signet System (#1935)
 
 * **Migration**: `20260909120000_rename_system_user_display_name.sql`

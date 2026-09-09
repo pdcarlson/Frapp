@@ -222,6 +222,7 @@ describe('BillingService', () => {
             ...(patch.stripe_customer_id !== undefined
               ? { stripe_customer_id: patch.stripe_customer_id }
               : {}),
+            previous_subscription_status: baseChapter.subscription_status,
           }),
         ),
       create: jest.fn(),
@@ -979,6 +980,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -1516,6 +1518,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
 
       await service.handleWebhookEvent(event);
@@ -1551,6 +1554,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
 
       await service.handleWebhookEvent(event);
@@ -1706,7 +1710,7 @@ describe('BillingService', () => {
         );
       });
 
-      it('does not reset past_due_since on a repeated past_due event', async () => {
+      it('still sends past_due_since on a repeated past_due; the RPC keeps the clock', async () => {
         const pastDueChapter = {
           ...baseChapter,
           subscription_status: 'past_due' as const,
@@ -1714,19 +1718,21 @@ describe('BillingService', () => {
           past_due_since: '2026-05-30T12:00:00.000Z',
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(pastDueChapter);
-        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(
-          pastDueChapter,
-        );
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+          ...pastDueChapter,
+          previous_subscription_status: 'past_due',
+        });
 
         await service.handleWebhookEvent(pastDueEvent('evt_pd_repeat'));
 
-        // No past_due_since key in the payload -> the grace clock is untouched,
-        // but the ordering high-water mark still advances (FRA-242).
+        // The handler always sends a stamp; the RPC no-ops it when the live
+        // row is already past_due, so the grace clock is untouched.
         expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
           'ch-1',
           new Date(CREATED_SECONDS * 1000).toISOString(),
           {
             subscription_status: 'past_due',
+            past_due_since: new Date(CREATED_SECONDS * 1000).toISOString(),
           },
         );
       });
@@ -1820,7 +1826,11 @@ describe('BillingService', () => {
           last_stripe_webhook_at: OLD_ISO,
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
-        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(chapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+          ...chapter,
+          subscription_status: 'past_due',
+          previous_subscription_status: 'active',
+        });
         mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
         mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
@@ -1868,21 +1878,25 @@ describe('BillingService', () => {
           last_stripe_webhook_at: OLD_ISO,
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
-        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(chapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+          ...chapter,
+          previous_subscription_status: 'past_due',
+        });
         // Mock a reachable president so the no-notify assertion below actually
-        // exercises the statusChanged gate (not just a missing-role early return).
+        // exercises the committed-row gate (not just a missing-role early return).
         mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
         mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
         await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
 
-        // Still past_due: the grace clock is untouched and the president is not
-        // re-notified — only the ordering mark moves forward.
+        // Still past_due: the RPC keeps the clock (already past_due) and the
+        // president is not re-notified — only the ordering mark moves forward.
         expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
           'ch-1',
           NEW_ISO,
           {
             subscription_status: 'past_due',
+            past_due_since: NEW_ISO,
           },
         );
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
@@ -2036,13 +2050,17 @@ describe('BillingService', () => {
           last_stripe_webhook_at: null,
         };
 
-        const casApply = (stored: { at: string | null; status: string }) => {
+        const casApply = (stored: {
+          at: string | null;
+          status: Chapter['subscription_status'];
+        }) => {
           mockChapterRepo.findBySubscriptionId.mockResolvedValue({ ...start });
           mockChapterRepo.applySubscriptionWebhook.mockImplementation(
             async (_id, eventAt, patch) => {
               if (stored.at && Date.parse(stored.at) > Date.parse(eventAt)) {
                 return null;
               }
+              const previous = stored.status;
               stored.at = eventAt;
               if (patch.subscription_status !== undefined) {
                 stored.status = patch.subscription_status;
@@ -2051,13 +2069,17 @@ describe('BillingService', () => {
                 ...start,
                 subscription_status: stored.status,
                 last_stripe_webhook_at: eventAt,
+                previous_subscription_status: previous,
               };
             },
           );
         };
 
         const run = async (order: 'old-first' | 'new-first') => {
-          const stored: { at: string | null; status: string } = {
+          const stored: {
+            at: string | null;
+            status: Chapter['subscription_status'];
+          } = {
             at: null,
             status: start.subscription_status,
           };
@@ -2122,6 +2144,75 @@ describe('BillingService', () => {
 
         expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalled();
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('notifies the president once when two concurrent past_due events both read active (#1979)', async () => {
+        // Both handlers snapshot the chapter as active. The first write is the
+        // into-past_due transition; the second wins the time CAS (newer or
+        // same-second) but the committed row is already past_due, so it must
+        // not send a second URGENT alert.
+        const start = {
+          ...baseChapter,
+          subscription_status: 'active' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: null,
+        };
+
+        const run = async (secondCreated: number) => {
+          const stored: {
+            at: string | null;
+            status: Chapter['subscription_status'];
+          } = {
+            at: null,
+            status: start.subscription_status,
+          };
+          mockChapterRepo.findBySubscriptionId.mockResolvedValue({ ...start });
+          mockChapterRepo.applySubscriptionWebhook.mockImplementation(
+            async (_id, eventAt, patch) => {
+              if (stored.at && Date.parse(stored.at) > Date.parse(eventAt)) {
+                return null;
+              }
+              const previous = stored.status;
+              stored.at = eventAt;
+              if (patch.subscription_status !== undefined) {
+                stored.status = patch.subscription_status;
+              }
+              return {
+                ...start,
+                subscription_status: stored.status,
+                last_stripe_webhook_at: eventAt,
+                previous_subscription_status: previous,
+              };
+            },
+          );
+          mockNotificationService.notifyUser.mockClear();
+          mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+            presidentRole,
+          );
+          mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
+
+          await service.handleWebhookEvent({
+            ...subUpdated('past_due', T_OLD),
+            id: `evt_cas_pd_first_${secondCreated}`,
+          });
+          await service.handleWebhookEvent({
+            ...subUpdated('past_due', secondCreated),
+            id: `evt_cas_pd_second_${secondCreated}`,
+          });
+
+          expect(stored.status).toBe('past_due');
+          expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
+          expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+            'user-pres',
+            'ch-1',
+            expect.objectContaining({
+              body: 'Your chapter subscription is now past_due',
+            }),
+          );
+        };
+
+        await run(T_NEW);
+        await run(T_OLD);
       });
     });
 
@@ -3024,6 +3115,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -3085,6 +3177,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -3146,6 +3239,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockRejectedValue(
         new Error('Database error'),
@@ -3185,6 +3279,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -3295,6 +3390,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...subChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
@@ -3321,6 +3417,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...subChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
