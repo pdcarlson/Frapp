@@ -11,8 +11,9 @@
 //
 // This script GETs recent `db-backup.yml` runs and their jobs. It fails if
 // `backup-production` is missing, not success, hung more than 3h, or last
-// success older than 36h. In-flight under 3h is pass. Unreadable Actions
-// responses are FAIL, not pass.
+// success older than 36h. In-flight under 3h greens the run but does not
+// close an open alert — only a success within 36h is recovery. Unreadable
+// Actions responses are FAIL, not pass.
 //
 // It does not name any GitHub `environment:` itself. A schedule job that
 // named `production` would hang on the ADR-19 reviewer gate (#1435). It
@@ -67,6 +68,11 @@ function isAuthish(status) {
   return status === 401 || status === 403;
 }
 
+/** `ok` greens the run. `fresh` is the only verdict that may close the alert. */
+function dumpVerdict(ok, fresh, reason) {
+  return { ok, fresh: Boolean(ok && fresh), reason };
+}
+
 async function ghGetWithFallback({ token, fallbackToken, fetchImpl, path }) {
   const first = await ghRequest({ token, fetchImpl, path });
   if (
@@ -103,53 +109,56 @@ export function evaluateDumpFreshness({
   now,
 }) {
   if (runsStatus !== 200 || !Array.isArray(runs)) {
-    return {
-      ok: false,
-      reason: `db-backup.yml runs unreadable (HTTP ${runsStatus || "no response"})`,
-    };
+    return dumpVerdict(
+      false,
+      false,
+      `db-backup.yml runs unreadable (HTTP ${runsStatus || "no response"})`,
+    );
   }
   if (runs.length === 0) {
-    return { ok: false, reason: "no db-backup.yml runs found" };
+    return dumpVerdict(false, false, "no db-backup.yml runs found");
   }
 
   const run = newestRun(runs);
   if (jobsStatus !== 200 || !Array.isArray(jobs)) {
-    return {
-      ok: false,
-      reason: `backup-production jobs unreadable (HTTP ${jobsStatus || "no response"})`,
-    };
+    return dumpVerdict(
+      false,
+      false,
+      `backup-production jobs unreadable (HTTP ${jobsStatus || "no response"})`,
+    );
   }
 
   const job = jobs.find((entry) => entry && entry.name === PRODUCTION_JOB_NAME);
   if (!job) {
     if (IN_FLIGHT_STATUSES.has(run.status)) {
       if (ageMs(run.run_started_at || run.created_at, now) > HUNG_AFTER_MS) {
-        return { ok: false, reason: "backup-production hung for more than 3h" };
+        return dumpVerdict(false, false, "backup-production hung for more than 3h");
       }
-      return { ok: true, reason: "backup-production is in flight" };
+      return dumpVerdict(true, false, "backup-production is in flight");
     }
-    return { ok: false, reason: "backup-production job is missing" };
+    return dumpVerdict(false, false, "backup-production job is missing");
   }
 
   if (IN_FLIGHT_STATUSES.has(job.status)) {
     if (ageMs(job.started_at || run.created_at, now) > HUNG_AFTER_MS) {
-      return { ok: false, reason: "backup-production hung for more than 3h" };
+      return dumpVerdict(false, false, "backup-production hung for more than 3h");
     }
-    return { ok: true, reason: "backup-production is in flight" };
+    return dumpVerdict(true, false, "backup-production is in flight");
   }
 
   if (job.conclusion !== "success") {
-    return {
-      ok: false,
-      reason: `backup-production concluded ${job.conclusion || "unknown"}`,
-    };
+    return dumpVerdict(
+      false,
+      false,
+      `backup-production concluded ${job.conclusion || "unknown"}`,
+    );
   }
 
   if (ageMs(job.completed_at, now) > STALE_AFTER_MS) {
-    return { ok: false, reason: "last backup-production success is older than 36h" };
+    return dumpVerdict(false, false, "last backup-production success is older than 36h");
   }
 
-  return { ok: true, reason: "backup-production succeeded within 36h" };
+  return dumpVerdict(true, true, "backup-production succeeded within 36h");
 }
 
 function runsPath(repo) {
@@ -260,6 +269,10 @@ export async function runWatchdog({
     return { outcome: "fail", alert: raised, lookupOk: lookup.lookupOk, open };
   }
 
+  if (!verdict.fresh) {
+    return { outcome: "pass", resolved: false, lookupOk: lookup.lookupOk, pending: true };
+  }
+
   if (!lookup.lookupOk) {
     return { outcome: "pass", resolved: false, lookupOk: false };
   }
@@ -330,10 +343,10 @@ async function main() {
   if (!verdict.ok && watchdog.alert?.action === "failed") {
     console.error("::error::the nightly dump is stale or failed and the alert issue could not be written");
   }
-  if (verdict.ok && watchdog.lookupOk === false) {
+  if (verdict.fresh && watchdog.lookupOk === false) {
     console.error("::warning::Could not read the alert issues, so no alert was closed this run");
   }
-  if (verdict.ok && watchdog.outcome === "fail") {
+  if (verdict.fresh && watchdog.outcome === "fail") {
     console.error("::error::the nightly dump is fresh but the alert issue could not be closed");
   }
   process.exit(watchdog.outcome === "pass" ? 0 : 1);
