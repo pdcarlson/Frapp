@@ -308,7 +308,7 @@ commit.
 > `ignoreCommand` pin in both `vercel.json` files**, they are the versioned form of settings that
 > are otherwise dashboard-only and would fall back to unversioned dashboard state if Git is
 > re-linked. The canonical record of the unlink, its per-project dates and every live breakage is
-> **ADR-21** in [`spec/architecture/README.md`](../../../spec/architecture/README.md); the guardrail
+> **ADR-21** in [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md); the guardrail
 > repair is [#1579](https://github.com/pdcarlson/Frapp/issues/1579) and the CI-driven replacement
 > [#1578](https://github.com/pdcarlson/Frapp/issues/1578). None of this changes the
 > branch-protection policy stated here: Vercel deploys are not required checks either way.

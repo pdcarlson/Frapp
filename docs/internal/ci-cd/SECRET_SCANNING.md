@@ -3,7 +3,7 @@
 Local **pre-commit** + **CI** secret scanning with [gitleaks](https://github.com/gitleaks/gitleaks).
 This began as the ADR-13 mitigation for the GitHub-native secret scanning and **push protection** lost
 when `pdcarlson/Frapp` went private — see ADR-13 / ADR-17 in
-[`spec/architecture/README.md`](../../../spec/architecture/README.md).
+[`spec/architecture/adr/adr-13.md`](../../../spec/architecture/adr/adr-13.md) / [`adr-17.md`](../../../spec/architecture/adr/adr-17.md).
 
 **That premise no longer holds, and this gate is not waiting on it.** The repo is **public** again
 (confirmed 2026-08-21 by fetching the README over `raw.githubusercontent.com` with no credentials:
