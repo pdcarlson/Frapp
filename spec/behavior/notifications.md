@@ -265,6 +265,7 @@ Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge l
 | Billing       | Invoice created (member)                                           | NORMAL                      |
 | Billing       | Invoice due soon (3 days, 1 day before)                            | NORMAL                      |
 | Billing       | Payment received                                                   | SILENT                      |
+| Billing       | Payment declined                                                   | NORMAL                      |
 | Billing       | Subscription status change                                         | URGENT (for admin)          |
 | Tasks         | Task assigned to you                                               | NORMAL                      |
 | Tasks         | Task due soon (1 day before)                                       | NORMAL                      |
