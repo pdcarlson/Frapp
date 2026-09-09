@@ -11,6 +11,7 @@ import {
 } from "@repo/hooks";
 import { initialsFor } from "@/lib/chat/display-name";
 import { MessageAttachments } from "./message-attachments";
+import { ReplyQuote } from "./reply-quote";
 
 /**
  * One message row in the s05 thread.
@@ -51,6 +52,13 @@ export interface MessageBubbleProps {
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
+  /**
+   * The replied-to message when it is in the loaded window, or `null` when
+   * `message.reply_to_id` is set and the parent is not. `MessageBubble`
+   * decides whether to draw a quote from `reply_to_id`, not from this prop
+   * — `null` vs `undefined` is "looked up and absent" vs "not a reply".
+   */
+  replyParent?: ChatMessage | null;
 }
 
 /** The drawn quick reaction. A fuller picker is not in this slice. */
@@ -101,6 +109,7 @@ export function MessageBubble({
   onDiscard,
   onReact,
   onUnreact,
+  replyParent,
 }: MessageBubbleProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -123,6 +132,9 @@ export function MessageBubble({
     return (
       <MineMessageBubble
         message={message}
+        replyParent={replyParent}
+        viewerId={viewerId}
+        nameFor={nameFor}
         time={time}
         isConfirmed={isConfirmed}
         reactions={reactions}
@@ -186,7 +198,19 @@ export function MessageBubble({
 
       <View style={styles.theirsColumn}>
         <Text style={styles.metaText}>{`${authorLabel} · ${time}`}</Text>
-        <View style={styles.bubbleTheirs}>{body}</View>
+        <View style={styles.bubbleTheirs}>
+          {message.reply_to_id && !message.is_deleted ? (
+            <ReplyQuote
+              message={message}
+              replyParent={replyParent}
+              nameFor={nameFor}
+              viewerId={viewerId}
+              borderColor={tokens.color.border.hairline}
+              textColor={tokens.color.text.muted}
+            />
+          ) : null}
+          {body}
+        </View>
 
         <ReactionRow
           reactions={reactions}
@@ -209,6 +233,9 @@ export function MessageBubble({
  */
 function MineMessageBubble({
   message,
+  replyParent,
+  viewerId,
+  nameFor,
   time,
   isConfirmed,
   reactions,
@@ -219,6 +246,9 @@ function MineMessageBubble({
   styles,
 }: {
   message: ChatMessage;
+  replyParent: ChatMessage | null | undefined;
+  viewerId: string | null;
+  nameFor: (userId: string) => string | null;
   time: string;
   isConfirmed: boolean;
   reactions: ReactionGroup[];
@@ -267,6 +297,16 @@ function MineMessageBubble({
   return (
     <View style={styles.rowMine}>
       <View style={[styles.bubbleMine, { backgroundColor: accentPrimary }]}>
+        {message.reply_to_id && !message.is_deleted ? (
+          <ReplyQuote
+            message={message}
+            replyParent={replyParent}
+            nameFor={nameFor}
+            viewerId={viewerId}
+            borderColor={accentOnPrimary}
+            textColor={accentOnPrimary}
+          />
+        ) : null}
         {body}
       </View>
 

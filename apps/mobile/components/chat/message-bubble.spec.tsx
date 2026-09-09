@@ -42,6 +42,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
+import { UNAVAILABLE_QUOTE } from "@repo/chat-core/reply-preview";
 import {
   formatMessageTime,
   groupReactions,
@@ -165,7 +166,10 @@ describe("groupReactions", () => {
  * enough, the component must not mount at all for the overwhelming majority of
  * rows. #1229.
  */
-function renderBubble(message: ChatMessage): ReactTestRenderer {
+function renderBubble(
+  message: ChatMessage,
+  replyParent?: ChatMessage | null,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
@@ -174,6 +178,7 @@ function renderBubble(message: ChatMessage): ReactTestRenderer {
           message={message}
           viewerId={VIEWER}
           nameFor={() => "Casey"}
+          replyParent={replyParent}
           onRetry={vi.fn()}
           onDiscard={vi.fn()}
           onReact={vi.fn()}
@@ -248,3 +253,101 @@ describe("self bubble takes the chapter accent (#1007)", () => {
     expect(flat).not.toContain("#2B2009");
   });
 });
+
+const PARENT_ID = "msg-parent";
+
+function parentRow(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  return message({
+    id: PARENT_ID,
+    content: "the original",
+    sender_id: OTHER,
+    ...overrides,
+  });
+}
+
+describe("reply quote (#1727)", () => {
+  it("renders the quoted parent above an incoming reply", () => {
+    const flat = JSON.stringify(
+      renderBubble(
+        message({ reply_to_id: PARENT_ID, content: "agreed" }),
+        parentRow(),
+      ).toJSON(),
+    );
+    expect(flat).toContain("the original");
+    expect(flat).toContain("Casey");
+    expect(flat).toContain("agreed");
+  });
+
+  it("says so when the parent is outside the loaded window", () => {
+    // Nothing backfills older history (#1571). Rendering nothing would make
+    // this reply indistinguishable from a plain message.
+    const flat = JSON.stringify(
+      renderBubble(
+        message({ reply_to_id: PARENT_ID, content: "agreed" }),
+        null,
+      ).toJSON(),
+    );
+    expect(flat).toContain(UNAVAILABLE_QUOTE);
+    expect(flat).not.toContain("the original");
+  });
+
+  it("does not quote on a message that is not a reply", () => {
+    const flat = JSON.stringify(
+      renderBubble(message({ content: "hello" })).toJSON(),
+    );
+    expect(flat).not.toContain(UNAVAILABLE_QUOTE);
+  });
+
+  it("hides the quote on a deleted reply", () => {
+    const flat = JSON.stringify(
+      renderBubble(
+        message({
+          reply_to_id: PARENT_ID,
+          is_deleted: true,
+          content: "",
+        }),
+        parentRow(),
+      ).toJSON(),
+    );
+    expect(flat).not.toContain("the original");
+    expect(flat).toContain("Message deleted");
+  });
+
+  it("quotes a deleted parent as the tombstone, not as a blank", () => {
+    const flat = JSON.stringify(
+      renderBubble(
+        message({ reply_to_id: PARENT_ID, content: "agreed" }),
+        parentRow({ is_deleted: true, content: "" }),
+      ).toJSON(),
+    );
+    expect(flat).toContain("[message deleted]");
+    expect(flat).toContain("agreed");
+  });
+
+  it("flattens markdown in the parent so the quote matches the bubble", () => {
+    const flat = JSON.stringify(
+      renderBubble(
+        message({ reply_to_id: PARENT_ID, content: "agreed" }),
+        parentRow({ content: "_really_ urgent" }),
+      ).toJSON(),
+    );
+    expect(flat).toContain("really urgent");
+    expect(flat).not.toContain("_really_");
+  });
+
+  it("still quotes on a self bubble", () => {
+    const flat = JSON.stringify(
+      renderBubble(
+        message({
+          sender_id: VIEWER,
+          reply_to_id: PARENT_ID,
+          content: "agreed",
+        }),
+        parentRow(),
+      ).toJSON(),
+    );
+    expect(flat).toContain("the original");
+    expect(flat).toContain("agreed");
+  });
+});
+
