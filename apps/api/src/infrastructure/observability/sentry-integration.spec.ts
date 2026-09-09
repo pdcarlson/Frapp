@@ -176,7 +176,9 @@ describe('Sentry SDK integration', () => {
 
     it('falls back to 0.1 for malformed, empty, or out-of-range traces rates', () => {
       const previous = process.env.SENTRY_TRACES_SAMPLE_RATE;
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const warn = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
       try {
         process.env.SENTRY_TRACES_SAMPLE_RATE = '0,1';
         expect(Number.isFinite(options().tracesSampleRate)).toBe(true);
