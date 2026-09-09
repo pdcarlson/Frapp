@@ -955,6 +955,16 @@ export {
 // Client-side analytics opt-out. Fourth shared client gate alongside `can`,
 // `isModuleEnabled`, and `subscriptionWriteState`.
 export { isAnalyticsOptedOut } from "./analytics-opt-out";
+
+// Connection state machine (`spec/ui/resilience.md` § 2). Shared so web and
+// mobile cannot disagree about ONLINE / DEGRADED / OFFLINE. Each app owns
+// the effects that feed it; this package owns the rule.
+export {
+  DEGRADED_THRESHOLD,
+  deriveConnectionState,
+  healthProbeIsReachable,
+} from "./connection-state";
+export type { ConnectionInput, ConnectionState } from "./connection-state";
 export type {
   SubscriptionBlockCode,
   SubscriptionStatus,
