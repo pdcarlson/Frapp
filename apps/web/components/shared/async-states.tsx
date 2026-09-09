@@ -3,6 +3,7 @@
 import { AlertTriangle, FolderOpen, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useNetwork } from "@/lib/providers/network-provider";
 
 /**
  * The shared state family — `spec/ui/design-system/README.md` §4 names this
@@ -308,6 +309,14 @@ export function OfflineState({
   actionLabel?: string;
   onRetry?: () => void;
 }) {
+  const { probeOnce } = useNetwork();
+  const handleRetry = onRetry
+    ? () => {
+        void probeOnce();
+        onRetry();
+      }
+    : undefined;
+
   return (
     <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-xl border border-destructive/[.28] bg-card p-4 text-center">
       <StateTile tone="destructive">
@@ -315,8 +324,8 @@ export function OfflineState({
       </StateTile>
       <h2 className="text-base font-bold">{title}</h2>
       <p className="max-w-[220px] text-sm text-muted-foreground">{description}</p>
-      {onRetry ? (
-        <Button variant="secondary" size="sm" onClick={onRetry}>
+      {handleRetry ? (
+        <Button variant="secondary" size="sm" onClick={handleRetry}>
           {actionLabel}
         </Button>
       ) : null}
