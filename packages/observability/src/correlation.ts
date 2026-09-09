@@ -7,6 +7,12 @@
 /** HTTP header that carries the request-correlation id. */
 export const REQUEST_ID_HEADER = "x-request-id";
 
+/** Sentry/OTEL outgoing + incoming trace header. Not `x-request-id`. */
+export const SENTRY_TRACE_HEADER = "sentry-trace";
+
+/** W3C/Sentry baggage header. Travels beside `x-request-id`; never becomes it. */
+export const BAGGAGE_HEADER = "baggage";
+
 /**
  * HMAC-SHA256 hex digest: 64 lowercase hex characters.
  *

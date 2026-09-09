@@ -63,10 +63,20 @@
 > Re-check by reading live rules, not by assuming this paragraph.
 >
 > **Render paging rules were not verified this session** (Render MCP `list_workspaces`
-> unauthorized). **PostHog** (org Signet, project `569878`, same date): no insight alerts, no
-> error-tracking alerts, no workflows — which is also the live proof that #709 is still missing.
-> GitHub-issue watchdogs
-> in the table below are not evidence of provider-side Render or PostHog paging.
+> unauthorized). **PostHog alerts** (org Signet, project `569878`, same date): no insight
+> alerts, no error-tracking alerts, no workflows — which is also the live proof that #709
+> is still missing. GitHub-issue watchdogs in the table below are not evidence of
+> provider-side Render or PostHog paging.
+>
+> **PostHog project settings** (org Signet, project `569878`), live-verified **2026-09-09
+> ~21:32Z** via PostHog MCP `project-get` (`updated_at` 2026-09-09T21:32:34Z):
+> `autocapture_exceptions_opt_in=false`, `anonymize_ips=true`,
+> `capture_console_log_opt_in=false`. `session_recording_opt_in` may still be true at
+> **project** level; that is not production replay. Production replay stays off until
+> the approval gate in
+> [`observability.md` § Privacy and replay](../../../spec/behavior/observability.md#privacy-and-replay)
+> (and a production PostHog project exists — #1173). Do not claim production replay is
+> on from the project-level flag.
 
 ## Automated GitHub-issue alerts
 

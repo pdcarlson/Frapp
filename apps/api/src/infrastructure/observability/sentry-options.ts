@@ -1,6 +1,63 @@
 import { parseTracesSampleRate } from '@repo/observability';
+import * as Sentry from '@sentry/nestjs';
 import type { NodeOptions } from '@sentry/nestjs';
 import { scrubSentryEvent, scrubSentryTransaction } from './sentry-scrubbing';
+
+/**
+ * One member of the default integration list `Sentry.init` passes to the
+ * `integrations` callback. Named through `NodeOptions` so this file does not
+ * import `@sentry/core` just for a type `@sentry/nestjs` does not re-export.
+ */
+type SentryIntegration = Parameters<
+  Extract<NonNullable<NodeOptions['integrations']>, (i: never[]) => unknown>
+>[0][number];
+
+/**
+ * HTTP spans: never attach the request body. `sendDefaultPii: false` is a
+ * floor; this is the explicit "none" so a SDK default change cannot start
+ * shipping bodies on traces.
+ */
+export const SENTRY_HTTP_INTEGRATION_OPTIONS = {
+  maxIncomingRequestBodySize: 'none' as const,
+  ignoreIncomingRequestBody: () => true,
+};
+
+/**
+ * Fetch spans: do not copy request/response headers onto span attributes.
+ * `Authorization` and cookies are the realistic leak; an empty list is
+ * allow-nothing, matching the scrubber's header allowlist at the source.
+ */
+export const SENTRY_NODE_FETCH_INTEGRATION_OPTIONS = {
+  headersToSpanAttributes: {
+    requestHeaders: [] as string[],
+    responseHeaders: [] as string[],
+  },
+};
+
+/**
+ * Keep Sentry's default integration set (HTTP, fetch, Nest, and the
+ * auto-performance instrumentations that no-op when the library is absent)
+ * and replace only the two that would otherwise attach PII-shaped bags.
+ *
+ * Do not add `@opentelemetry/sdk-node`. Sentry's init installs the tracer
+ * when `skipOpenTelemetrySetup` is false (ADR-22).
+ */
+export function withSafeSentryIntegrations(
+  defaults: SentryIntegration[],
+): SentryIntegration[] {
+  return defaults.map((integration) => {
+    switch (integration.name) {
+      case 'Http':
+        return Sentry.httpIntegration(SENTRY_HTTP_INTEGRATION_OPTIONS);
+      case 'NodeFetch':
+        return Sentry.nativeNodeFetchIntegration(
+          SENTRY_NODE_FETCH_INTEGRATION_OPTIONS,
+        );
+      default:
+        return integration;
+    }
+  });
+}
 
 /**
  * The single source of truth for how Sentry is configured (issues #481, #682).
@@ -14,6 +71,9 @@ import { scrubSentryEvent, scrubSentryTransaction } from './sentry-scrubbing';
  *
  * `tracesSampleRate` is parsed by `@repo/observability`: a malformed, empty, or
  * out-of-range value falls back to `0.1` and is logged at boot (#2040).
+ *
+ * Init itself lives in `instrument.ts`, imported first from `main.ts`, so
+ * Nest/HTTP OpenTelemetry patches apply before other modules load.
  */
 export function buildSentryOptions(dsn: string): NodeOptions {
   return {
@@ -24,6 +84,11 @@ export function buildSentryOptions(dsn: string): NodeOptions {
       { envName: 'SENTRY_TRACES_SAMPLE_RATE' },
     ),
     /**
+     * Sentry owns the Node trace provider (ADR-22). `true` here would mean
+     * we had to install our own tracer — the alternative the ADR rejects.
+     */
+    skipOpenTelemetrySetup: false,
+    /**
      * Under v10 this no longer means "collect nothing". It resolves to a
      * key-based filter: `authorization`, `cookie`, and anything else matching
      * the SDK's sensitive-key list come back as `[Filtered]`, request bodies
@@ -33,6 +98,7 @@ export function buildSentryOptions(dsn: string): NodeOptions {
      * work rather than this flag.
      */
     sendDefaultPii: false,
+    integrations: withSafeSentryIntegrations,
     /**
      * Every **error** event leaves through here. See `sentry-scrubbing.ts` for
      * the rules and why they are allowlists.
