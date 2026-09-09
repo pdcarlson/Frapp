@@ -2,10 +2,12 @@
 
 This guide walks you through setting up the Frapp monorepo and running the full stack locally with Supabase.
 
-> **Using the Claude Code web sandbox?** That's the primary dev environment and it sets
-> itself up automatically — skip this guide and see
-> [`../internal/environment/CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md).
-> The steps below are for local/laptop development.
+> **Using Cursor Cloud?** That's the primary dev environment and it sets itself up from
+> [`.cursor/environment.json`](../../.cursor/environment.json) — skip this guide and see
+> [`../internal/environment/CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md)
+> plus [`AGENTS.md`](../../AGENTS.md) § Cursor Cloud specific instructions.
+> Claude Code web is the fallback (same bringup script). The steps below are for
+> local/laptop development.
 
 ## Prerequisites
 
