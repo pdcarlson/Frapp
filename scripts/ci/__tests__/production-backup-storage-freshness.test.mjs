@@ -59,6 +59,7 @@ describe("evaluateDumpFreshness", () => {
   it("passes a success younger than 36h", () => {
     const verdict = evaluate();
     assert.equal(verdict.ok, true);
+    assert.equal(verdict.fresh, true);
     assert.match(verdict.reason, /succeeded within 36h/);
   });
 
@@ -68,6 +69,7 @@ describe("evaluateDumpFreshness", () => {
       jobs: [successJob({ hours: 40 })],
     });
     assert.equal(verdict.ok, false);
+    assert.equal(verdict.fresh, false);
     assert.match(verdict.reason, /older than 36h/);
     assert.ok(40 * HOUR > STALE_AFTER_MS);
   });
@@ -144,6 +146,7 @@ describe("evaluateDumpFreshness", () => {
       ],
     });
     assert.equal(verdict.ok, true);
+    assert.equal(verdict.fresh, false);
     assert.match(verdict.reason, /in flight/);
   });
 
@@ -170,6 +173,7 @@ describe("evaluateDumpFreshness", () => {
       jobs: [],
     });
     assert.equal(verdict.ok, true);
+    assert.equal(verdict.fresh, false);
     assert.match(verdict.reason, /in flight/);
   });
 
@@ -303,7 +307,13 @@ describe("runWatchdog", () => {
   };
   const passVerdict = {
     ok: true,
+    fresh: true,
     reason: "backup-production-storage succeeded within 36h",
+  };
+  const inFlightVerdict = {
+    ok: true,
+    fresh: false,
+    reason: "backup-production-storage is in flight",
   };
 
   it("creates a P1 routine-state alert and refuses a GitHub closer", async () => {
@@ -404,6 +414,27 @@ describe("runWatchdog", () => {
     assert.equal(out.resolved, false);
     assert.ok(calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/42")));
   });
+
+  it("does not close an open alert while the Storage mirror is only in flight", async () => {
+    const { fetchImpl, calls } = makeFetchMock([
+      {
+        method: "GET",
+        path: "/issues?state=all",
+        body: [{ number: 42, title: ALERT_ISSUE_TITLE, state: "open" }],
+      },
+    ]);
+    const out = await runWatchdog({
+      verdict: inFlightVerdict,
+      token: "t",
+      repo: "org/repo",
+      fetchImpl,
+    });
+    assert.equal(out.outcome, "pass");
+    assert.equal(out.resolved, false);
+    assert.equal(out.pending, true);
+    assert.equal(calls.filter((c) => c.method === "PATCH").length, 0);
+    assert.equal(calls.filter((c) => c.method === "POST").length, 0);
+  });
 });
 
 function uncommented(text) {
@@ -437,6 +468,9 @@ export function scriptPinProblems(source) {
   }
   if (!/branch=\$\{encodeURIComponent\(DEFAULT_BRANCH\)\}/.test(source)) {
     problems.push("runs GET must stay scoped to DEFAULT_BRANCH");
+  }
+  if (!/if \(!verdict\.fresh\)/.test(source)) {
+    problems.push("in-flight must not close the alert");
   }
   return problems;
 }
@@ -634,6 +668,14 @@ describe("watchdog mutations", () => {
     const problems = watchdogWorkflowProblems(`${workflow}\n      - run: npm ci\n`);
     assert.ok(
       problems.some((problem) => problem.includes("npm ci")),
+      problems.join("; "),
+    );
+  });
+
+  it("dropping the in-flight fresh gate fails", () => {
+    const problems = scriptPinProblems(script.replace("if (!verdict.fresh)", "if (false)"));
+    assert.ok(
+      problems.some((problem) => problem.includes("in-flight")),
       problems.join("; "),
     );
   });
