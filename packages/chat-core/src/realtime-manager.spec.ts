@@ -227,7 +227,7 @@ describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
   });
 });
 
-describe("ChatRealtimeManager — polling fallback (spec/ui/resilience.md §3.2)", () => {
+describe("ChatRealtimeManager — polling fallback (spec/ui/resilience/message-delivery.md#receiving-messages-realtime)", () => {
   let backfill: ReturnType<typeof vi.fn> & BackfillFetcher;
   let queryClient: QueryClient;
   let channels: Map<string, FakeChannel>;

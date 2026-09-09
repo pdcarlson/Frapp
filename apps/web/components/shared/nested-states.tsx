@@ -201,7 +201,7 @@ export function NestedError({
  * *inside* a card reached for `NestedError` and told a member with a dropped
  * connection that something had failed.
  *
- * Same tone as the error deliberately: `resilience.md` treats a lost
+ * Same tone as the error deliberately: `spec/ui/resilience/connection-state.md` treats a lost
  * connection as a degraded read, and §10 requires this family to differ in
  * colour rather than in shape. The glyph is what separates them, exactly as it
  * does at the top level.

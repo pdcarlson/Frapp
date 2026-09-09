@@ -5,7 +5,7 @@ import { chapterSubscription } from "@/tests/chapter-subscription";
 
 /**
  * #1621 — the events surface must keep cached rows on screen when it goes
- * OFFLINE, per `spec/ui/resilience.md` § 2 (OFFLINE ⇒ Read Actions "Enabled
+ * OFFLINE, per `spec/ui/resilience/connection-state.md` (OFFLINE ⇒ Read Actions "Enabled
  * (from cache)").
  *
  * A separate file from `events-gating.spec.tsx` and
