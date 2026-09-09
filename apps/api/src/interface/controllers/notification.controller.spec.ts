@@ -3,7 +3,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from '../../application/services/notification.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { BadRequestException } from '@nestjs/common';
 import {
   RegisterPushTokenDto,
   UpdateNotificationPreferenceDto,
@@ -155,22 +154,13 @@ describe('NotificationController', () => {
         expectedResult as any,
       );
 
-      const result = await controller.getPreferences(userId, chapterId);
+      const result = await controller.getPreferences(userId, { chapterId });
 
       expect(notificationService.getPreferences).toHaveBeenCalledWith(
         userId,
         chapterId,
       );
       expect(result).toEqual(expectedResult);
-    });
-
-    it('should throw BadRequestException if chapterId is not provided', async () => {
-      const userId = 'user-1';
-
-      await expect(controller.getPreferences(userId, '')).rejects.toThrow(
-        BadRequestException,
-      );
-      expect(notificationService.getPreferences).not.toHaveBeenCalled();
     });
   });
 
