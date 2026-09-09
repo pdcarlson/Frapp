@@ -10,6 +10,7 @@ import * as Sentry from '@sentry/nestjs';
 import {
   BILLING_PROVIDER,
   chargeIdFromLatestCharge,
+  declineReasonFromLastPaymentError,
   customerIdFrom,
   type IBillingProvider,
   type WebhookEvent,
@@ -63,6 +64,7 @@ const HANDLED_WEBHOOK_EVENT_TYPES: ReadonlySet<string> = new Set([
   'customer.subscription.deleted',
   'invoice.paid',
   'payment_intent.succeeded',
+  'payment_intent.payment_failed',
 ]);
 
 /**
@@ -314,6 +316,9 @@ export class BillingService {
           break;
         case 'payment_intent.succeeded':
           await this.handlePaymentIntentSucceeded(event);
+          break;
+        case 'payment_intent.payment_failed':
+          await this.handlePaymentIntentFailed(event);
           break;
         default:
           // Unreachable while the switch and HANDLED_WEBHOOK_EVENT_TYPES agree.
@@ -795,33 +800,62 @@ export class BillingService {
     event: WebhookEvent,
   ): Promise<void> {
     const intent = event.data.object as PaymentIntentWebhookObject;
+    const ref = this.memberInvoiceRefFromIntent(event, intent);
+    if (!ref) return;
+
+    await this.financialInvoiceService.applyStripePaymentSuccess({
+      invoiceId: ref.invoiceId,
+      chapterId: ref.chapterId,
+      paymentIntentId: intent.id,
+      chargeId: chargeIdFromLatestCharge(intent.latest_charge),
+    });
+  }
+
+  /**
+   * Member dues payment declined (#717). Invoice status stays OPEN — the pay
+   * endpoint reuses a `requires_payment_method` intent, so the member can retry.
+   * Officers are not notified: a card decline is the payer's business.
+   */
+  private async handlePaymentIntentFailed(event: WebhookEvent): Promise<void> {
+    const intent = event.data.object as PaymentIntentWebhookObject;
+    const ref = this.memberInvoiceRefFromIntent(event, intent);
+    if (!ref) return;
+
+    await this.financialInvoiceService.notifyStripePaymentFailure({
+      invoiceId: ref.invoiceId,
+      chapterId: ref.chapterId,
+      declineReason: declineReasonFromLastPaymentError(
+        intent.last_payment_error,
+      ),
+    });
+  }
+
+  /**
+   * Shared UUID guard for member-invoice PaymentIntents. Foreign metadata on a
+   * shared Stripe account must not reach uuid-typed queries (22P02 → 500 →
+   * Stripe retries for days). Missing metadata is a subscription checkout's
+   * intent, not ours.
+   */
+  private memberInvoiceRefFromIntent(
+    event: WebhookEvent,
+    intent: PaymentIntentWebhookObject,
+  ): { invoiceId: string; chapterId: string } | null {
     const invoiceId = intent.metadata?.invoice_id;
     const chapterId = intent.metadata?.chapter_id;
 
     if (!invoiceId || !chapterId) {
-      // Not a member-invoice intent (e.g. a subscription checkout's intent).
-      this.logger.debug(
-        `payment_intent.succeeded without invoice metadata: ${event.id}`,
-      );
-      return;
+      this.logger.debug(`${event.type} without invoice metadata: ${event.id}`);
+      return null;
     }
 
-    // Other integrations on the same Stripe account can carry arbitrary
-    // metadata; forwarding a non-UUID into the uuid-typed RPC params would
-    // 22P02 → 500 → Stripe retries the event for days. Ack-and-log instead.
     if (!UUID_PATTERN.test(invoiceId) || !UUID_PATTERN.test(chapterId)) {
       this.logger.warn(
-        `payment_intent.succeeded with non-UUID invoice metadata (invoice_id: ${invoiceId}, chapter_id: ${chapterId}): ${event.id} — ignoring foreign intent`,
+        `${event.type} with non-UUID invoice metadata (invoice_id: ${invoiceId}, chapter_id: ${chapterId}): ${event.id} — ignoring foreign intent`,
       );
-      return;
+      return null;
     }
 
-    await this.financialInvoiceService.applyStripePaymentSuccess({
-      invoiceId,
-      chapterId,
-      paymentIntentId: intent.id,
-      chargeId: chargeIdFromLatestCharge(intent.latest_charge),
-    });
+    return { invoiceId, chapterId };
   }
 
   /**
