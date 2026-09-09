@@ -1,19 +1,10 @@
 /**
- * The connection state machine from `spec/ui/resilience.md` § 2, as pure
- * functions.
+ * Mobile UI copy and write-gating on top of the shared connection state
+ * machine (`@repo/validation`, `spec/ui/resilience.md` § 2).
  *
- * Everything here is synchronous and dependency-free so the rules can be
- * unit-tested without a network, a timer, or a renderer. `monitor.ts` owns the
- * effects that feed it.
- *
- * ## Two inputs, not one
- *
- * A device link is not reachability. `expo-network` answers "is there a link"
- * and, where the platform supports it, "does traffic get out" — but neither
- * catches an API that is up, routable, and failing. That is what the `/health`
- * probe is for, and why `DEGRADED` exists at all: the member is connected, the
- * app is not working properly, and saying "you're offline" would be a lie they
- * can disprove by opening a browser.
+ * `deriveConnectionState` lives in the shared package so web and mobile
+ * cannot disagree about when a member is ONLINE / DEGRADED / OFFLINE.
+ * `monitor.ts` owns the effects that feed it.
  *
  * ## The spec is written against a browser
  *
@@ -21,41 +12,19 @@
  * does not define — reading it returns `undefined`, and `undefined === false`
  * is `false`, so a naive port reports permanently online. `lib/chat/network-state.ts`
  * documents that failure at length, having already been bitten by it. The link
- * half of the input therefore comes from `isOfflineFromExpoState`, which is the
- * mobile equivalent of that clause and already the single reading of
- * `expo-network` the chat outbox trusts.
+ * half of the input therefore comes from `isConnected === false` (see
+ * `monitor.ts`), which is the mobile equivalent of that clause. Do not fold
+ * `isInternetReachable` into OFFLINE here — that is suspicion, and `/health`
+ * settles it.
  */
 
-/** `spec/ui/resilience.md` § 2. The names are the spec's, uppercase and all. */
-export type ConnectionState = "ONLINE" | "DEGRADED" | "OFFLINE";
+import type { ConnectionState } from "@repo/validation";
 
-/**
- * Consecutive failed health probes before the app calls itself offline.
- *
- * Three, matching `apps/web/lib/providers/network-provider.tsx` — a single
- * timeout on a train is not an outage, and flapping the banner on every one
- * would train members to ignore it.
- */
-export const DEGRADED_THRESHOLD = 3;
-
-export interface ConnectionInput {
-  /** `isOfflineFromExpoState` over the latest `expo-network` read. */
-  linkOffline: boolean;
-  /** Consecutive `/health` failures; reset to 0 by any success. */
-  consecutiveFailures: number;
-}
-
-export function deriveConnectionState({
-  linkOffline,
-  consecutiveFailures,
-}: ConnectionInput): ConnectionState {
-  // No link is unambiguous and needs no corroboration — probing would only
-  // delay the banner by up to a poll interval to reach the same answer.
-  if (linkOffline) return "OFFLINE";
-  if (consecutiveFailures >= DEGRADED_THRESHOLD) return "OFFLINE";
-  if (consecutiveFailures > 0) return "DEGRADED";
-  return "ONLINE";
-}
+export {
+  DEGRADED_THRESHOLD,
+  deriveConnectionState,
+} from "@repo/validation";
+export type { ConnectionInput, ConnectionState } from "@repo/validation";
 
 /**
  * Banner copy, verbatim from `spec/ui/resilience.md` § 2 — minus the leading

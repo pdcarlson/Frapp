@@ -37,15 +37,16 @@ const ChapterPresenceContext = createContext<ChapterPresence | null>(null);
 export function ChapterPresenceProvider({ children }: { children: ReactNode }) {
   const chapterId = useActiveChapterId();
   const { userId: viewerId } = useFrappUser();
-  const { isOffline } = useNetwork();
+  const { linkOnline } = useNetwork();
 
-  // Suppressed while the browser reports no link: the socket is down, so every
-  // member would read Offline — a claim about *them* sourced from a fault on
-  // *our* side.
+  // Presence rides the Supabase Realtime socket, a different service from
+  // `/health`. Gating on `isOffline` would tear down a healthy channel when
+  // three API probes fail and make every member read Offline — a claim about
+  // *them* sourced from a fault on *our* side. Link-down is the right signal.
   const presence = useChapterPresence({
     chapterId,
     viewerId,
-    enabled: !isOffline,
+    enabled: linkOnline,
   });
 
   return (
