@@ -82,7 +82,7 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
       .eq('user_id', userId)
       .eq('action_type', actionType)
       .select('*')
-      .single();
+      .maybeSingle();
     if (error) throw error;
     return data;
   }
