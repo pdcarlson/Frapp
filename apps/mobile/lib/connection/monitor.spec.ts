@@ -91,11 +91,9 @@ describe("connection monitor", () => {
   });
 
   it("treats an unreachable internet as suspicion, not proof", () => {
-    // `isOfflineFromExpoState` folds this into "offline" for the chat outbox,
-    // where a false offline only means "queue instead of send". Here the value
-    // gates writes, so folding it in would disable the check-in field at the
-    // door for a captive-portal-ish network whose API is perfectly reachable —
-    // and with no recovery, since a down link also suppresses the probe. One
+    // The chat outbox now reads this same monitor (#1072), so this value is
+    // DEGRADED for both the banner and the queue: a false offline would
+    // disable check-in at the door, and `DEGRADED` must still send. One
     // failure's worth of suspicion, and `/health` settles it.
     const { monitor, link } = harness();
     monitor.start();
