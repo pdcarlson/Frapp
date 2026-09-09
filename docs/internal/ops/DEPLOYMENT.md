@@ -9,7 +9,7 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
   `frapp-landing` on 2026-09-01 and `frapp-web` about six and a half hours later on 2026-09-02
   (ADR-21) — so no push deploys either one. Both are deployed **from CI** instead, by
   `deploy-vercel-staging.yml` (after green CI on `main`) and `deploy-production.yml` (on a
-  dispatched SHA), since #1578. See the dated note at the top of § 4 Vercel Setup.
+  dispatched SHA), since #1578. See [§ 4 Vercel Setup](#4-vercel-setup).
 - ✅ CI pipeline uses domain-specific parallel jobs with required status checks.
 - ✅ Branch protection enforced on `main`, the only long-lived branch (#1340).
 - ✅ Staging API deployment is automated on Render: `frapp-api-staging` deploys from `main`,
@@ -106,7 +106,7 @@ You also need the `frapp.live` domain registered and DNS managed (Squarespace Do
 > build — both projects are unlinked from Git (ADR-21), so no push to `main` produces anything on
 > Vercel. Merging to `main` still deploys staging web and landing, but through
 > `deploy-vercel-staging.yml` after CI passes (#1578), which creates a Preview-target deployment
-> itself. Render's `frapp-api-staging` is unchanged. See the dated note at the top of §4.
+> itself. Render's `frapp-api-staging` is unchanged. See [§ 4 Vercel Setup](#4-vercel-setup).
 
 **How it flows:**
 
@@ -271,71 +271,40 @@ on both API services.
 
 ## 4. Vercel Setup
 
-> **Current state (2026-09-04) — both Vercel projects are disconnected from Git, and CI deploys
-> them.** The owner unlinked them from the repository deliberately, and not as one event:
-> `frapp-landing` on **2026-09-01** and `frapp-web` about six and a half hours later on
-> **2026-09-02**. Vercel's `list_projects` reports `link: null` for **both** projects, so Vercel no
-> longer observes this repository at all: no push produces a preview, there is no Production Branch
-> setting, and no dashboard toggle decides what ships. Four things broke as a result; **all four are
-> now repaired** — two by **#1579** (2026-09-02) and two by **#1578** (2026-09-04). **ADR-21** in
-> [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md) is the canonical record of
-> the *decision and its history* — the per-project dates and freeze points, each breakage in full,
-> and the amendments recording what each issue changed. Do not restate any of that here; this
-> section carries only what an operator needs at the console.
->
-> **How deploys work now.** Both channels build on a GitHub Actions runner and upload the result;
-> neither asks Vercel to fetch a commit.
->
-> | Channel | Workflow | Path |
-> | --- | --- | --- |
-> | Staging (web + landing) | `deploy-vercel-staging.yml`, after CI succeeds on `main` | `vercel pull --environment=preview` → `vercel build` → `vercel deploy --prebuilt` → alias the staging hostnames |
-> | Production (web + landing) | `deploy-production.yml`, on a dispatched SHA | `vercel pull --environment=production` → `vercel build --prod` → `vercel deploy --prebuilt --prod` |
->
-> **Uploads are one archive per deploy, not one request per file (`--archive=tgz`, since
-> 2026-09-06).** The team is on Vercel's free plan, whose upload API allows **5000 requests per 24
-> hours** (`code: "api-upload-free"`). A per-file prebuilt Next.js upload is thousands of requests —
-> every traced `node_modules` file under `functions/*.func` — and six merges to `main` on 2026-09-06
-> exhausted the budget: staging run 34062542629 failed with `Too many requests - try again in 24
-> hours`, and the same failure on the production path lands in the upload step, after the apply and
-> the Render deploy. With `--archive=tgz` the CLI tars `.vercel/output` and uploads a handful of
-> parts, so the cap stops mattering. If the cap is ever hit anyway, the deploy fails closed (nothing
-> partial is aliased) and clears on its own 24 hours after the first counted upload — or sooner on a
-> paid plan, which is the owner's call, not a workflow's.
->
-> Both run [`scripts/ci/deploy-vercel.mjs`](../../../scripts/ci/deploy-vercel.mjs), which replaced
-> `deploy-vercel-production.mjs` and its `gitSource` call.
->
-> **What that means for this section.** §4.1's import flow, §4.5's Production Branch setting and
-> §4.6's branch-wiring verification **describe a model that no longer exists**. They are kept as the
-> record of how the projects were set up. What survives unqualified is the env-var mapping (§4.2),
-> the production domains (§4.3) and DNS (§4.4) — and §4.2 matters *more* now, not less: `vercel pull`
-> fetches exactly those project env vars, and they are what the runner's build inlines.
+Two projects: `frapp-web` (`apps/web`) and `frapp-landing` (`apps/landing`). Both are
+**disconnected from Git** ([ADR-21](../../../spec/architecture/adr/adr-21.md)). Do not re-import
+the repo or set a Production Branch — a present Git link is a guardrail violation
+(`assertVercelNoGitLink` in `scripts/ci/production-guardrails.mjs`). The decision, dates, freeze
+points, and what broke on unlink live on ADR-21; this section is the operator console.
 
-You import the **same GitHub repo twice** — once per Next.js app (`apps/web`, `apps/landing`). Each import becomes a separate Vercel project with its own domains and env vars.
+**How deploys work.** Both channels build on a GitHub Actions runner and upload the result;
+neither asks Vercel to fetch a commit.
 
-### 4.1 Import the Repo (repeat for each app)
+| Channel | Workflow | Path |
+| --- | --- | --- |
+| Staging (web + landing) | `deploy-vercel-staging.yml`, after CI succeeds on `main` | `vercel pull --environment=preview` → `vercel build` → `vercel deploy --prebuilt` → alias the staging hostnames |
+| Production (web + landing) | `deploy-production.yml`, on a dispatched SHA | `vercel pull --environment=production` → `vercel build --prod` → `vercel deploy --prebuilt --prod` |
 
-1. Go to https://vercel.com/new.
-2. **Import** your `pdcarlson/Frapp` repo.
-3. Configure:
+**Uploads are one archive per deploy, not one request per file (`--archive=tgz`, since
+2026-09-06).** The team is on Vercel's free plan, whose upload API allows **5000 requests per 24
+hours** (`code: "api-upload-free"`). A per-file prebuilt Next.js upload is thousands of requests —
+every traced `node_modules` file under `functions/*.func` — and six merges to `main` on 2026-09-06
+exhausted the budget: staging run 34062542629 failed with `Too many requests - try again in 24
+hours`, and the same failure on the production path lands in the upload step, after the apply and
+the Render deploy. With `--archive=tgz` the CLI tars `.vercel/output` and uploads a handful of
+parts, so the cap stops mattering. If the cap is ever hit anyway, the deploy fails closed (nothing
+partial is aliased) and clears on its own 24 hours after the first counted upload — or sooner on a
+paid plan, which is the owner's call, not a workflow's.
 
-| Setting            | Web Dashboard           | Landing         |
-| ------------------ | ----------------------- | --------------- |
-| **Project Name**   | `frapp-web`             | `frapp-landing` |
-| **Framework**      | Next.js (auto-detected) | Next.js         |
-| **Root Directory** | `apps/web`              | `apps/landing`  |
-
-**Build and Output Settings:** Leave all toggles OFF. Vercel auto-detects the correct commands for Turborepo monorepos:
-
-- **Install:** `npm install --prefix=../..` (installs from monorepo root)
-- **Build:** `turbo run build` (auto-scoped to the current workspace)
-- **Output:** Next.js default (`.next`)
-
-The `vercel.json` in each app adds `git.deploymentEnabled` (auto-deploy only `main`, disable all others with `"**": false`), `ignoreCommand: "exit 1"` (an explicit *always build* — see §4.5), and security headers. Production deployments are not covered by this setting at all — `deploy-production.yml` creates them through the API.
+Both run [`scripts/ci/deploy-vercel.mjs`](../../../scripts/ci/deploy-vercel.mjs).
 
 ### 4.2 Environment Variables per Project
 
-Vercel scopes env vars to **Production** and **Preview**. The `main` branch triggers Preview deploys, which use Preview env vars. Production deploys are created by `deploy-production.yml` with `target: production`, so they build against Production env vars — which is the whole reason the workflow rebuilds a commit rather than promoting its preview. (Since the unlink — `frapp-landing` 2026-09-01, `frapp-web` 2026-09-02 — no push creates a Preview deployment at all; see the note at the top of §4. Unlinking does not delete environment variables, and neither scope nor its Infisical sync was changed, but neither was re-read after the unlink. The Preview scope is keyed to branch `main`, which no longer produces a deployment, and since #1578 those Preview values are consumed by `vercel pull --environment=preview` in `deploy-vercel-staging.yml` rather than by a push-triggered build.)
+Vercel scopes env vars to **Production** and **Preview**. Staging deploys consume Preview vars
+(`vercel pull --environment=preview` in `deploy-vercel-staging.yml`). Production deploys consume
+Production vars (`vercel pull --environment=production` in `deploy-production.yml`) — the
+workflow rebuilds a named commit rather than promoting a preview. Unlinking did not delete those
+scopes or their Infisical syncs; `vercel pull` inlines whatever the matching scope currently holds.
 
 **These values are not typed into the Vercel dashboard.** Infisical is the canonical store and its
 syncs push the values into each project's Production and Preview scopes (the four `vercel-*` syncs); the
@@ -378,24 +347,18 @@ In each Vercel project → Settings → Domains:
 | `frapp-web`     | `app.frapp.live`                |
 | `frapp-landing` | `frapp.live` + `www.frapp.live` |
 
-#### Staging Domains (connected to Preview environment, filtered to `main` branch)
+#### Staging hostnames
 
-> **Retired since 2026-09-02.** A Preview domain filtered to `main` only resolves to a build while
-> pushes produce Preview deployments, and both projects are unlinked from Git (ADR-21), so none do.
-> The domains and their filters are still configured — both hostnames still serve the last Git
-> build — but nothing re-points them any more, which also makes the operational note below (and its
-> `ensure-vercel-staging-alias.mjs` mitigation) live again as of **#1578** (2026-09-04):
-> `deploy-vercel-staging.yml` creates the deployment and then runs that same alias script, which
-> finds it by the `githubCommitSha` metadata the deploy stamps on. See the note at the top of §4.
+CI aliases these after each staging deploy (`deploy-vercel-staging.yml` →
+`ensure-vercel-staging-alias.mjs`, lookup by `githubCommitSha`). Dashboard Preview + `main`
+branch filters are leftover from the Git integration and do not attach hostnames any more.
 
-| Project         | Domain                   | Environment | Branch filter |
-| --------------- | ------------------------ | ----------- | ------------- |
-| `frapp-web`     | `app.staging.frapp.live` | Preview     | `main`        |
-| `frapp-landing` | `staging.frapp.live`     | Preview     | `main`        |
+| Project         | Domain                   |
+| --------------- | ------------------------ |
+| `frapp-web`     | `app.staging.frapp.live` |
+| `frapp-landing` | `staging.frapp.live`     |
 
-**To set this up:** In each project, go to Settings → Domains → Add the staging domain → Connect to environment: **Preview** → set the branch filter to `main`.
-
-**Operational note:** The dashboard branch link is correct, but Vercel does not always attach the custom hostname to every Preview deployment on `main` (GitHub and the deployment list may still show the unique `*.vercel.app` URL while `app.staging.frapp.live` lags on an older build). The repo mitigates this: after each push to `main`, `.github/workflows/verify-deployments.yml` runs `scripts/ci/ensure-vercel-staging-alias.mjs`, which calls `POST /v2/deployments/{id}/aliases` so `app.staging.frapp.live` and `staging.frapp.live` alias the deployment for the pushed commit once it is `READY`. When a build is cancelled (`CANCELED`) or there is no deployment row for the SHA, the alias step exits successfully without assigning — either way there is no deployment to point the hostname at. It is not the gate for that case: `verify-vercel-deploy.mjs` runs first in the same workflow and now FAILS when no deployment exists for the SHA. (`verify-vercel-deploy.mjs` reads `CANCELED` more strictly, because for it a cancel can mean the project was never built; see "Deploy verification (observer workflow)" below.) Manual recovery: `vercel alias set <deployment-url> app.staging.frapp.live` (same idea as the API).
+Manual recovery: `vercel alias set <deployment-url> app.staging.frapp.live` (same idea as the API).
 
 ### 4.4 DNS Records (Squarespace Domains)
 
@@ -428,100 +391,23 @@ The monorepo **no longer contains** `apps/docs`. Developer documentation is mark
 
 A future public documentation site is possible post-launch; treat as a separate initiative.
 
-### 4.5 Vercel Project Settings
+### 4.5 `vercel.json` pins (do not delete)
 
-For each project, verify:
+While unlinked, `git.deploymentEnabled` and `ignoreCommand: "exit 1"` in `apps/web/vercel.json` and
+`apps/landing/vercel.json` govern nothing — `--prebuilt` has already built. **Do not delete either
+key.** They are the versioned form of dashboard-only settings: re-link Git and branch filtering plus
+the Ignored Build Step fall back to unversioned dashboard state. ADR-21. #1376 is the open
+disposition of whether anything still enforces the pin.
 
-- **Settings → Git → Production Branch**: anything **except `main`**.
-
-> **No longer settable since 2026-09-02.** With both projects unlinked from Git (ADR-21)
-> **Settings → Git** no longer offers a Production Branch to set — the field exists only for a
-> Git-linked project, and `link` is `null` for both. What follows is kept as the record of why the
-> setting mattered and what the guardrail was defending against. While the projects stay unlinked
-> there is no Production Branch left to point at `main` and no auto-deploy-from-push path at all —
-> but *staying unlinked* is itself unversioned dashboard state, so the guardrail is not moot, it is
-> **pointed the other way**: **#1579** (landed 2026-09-02) replaced `assertVercelProductionBranch`
-> with `assertVercelNoGitLink`, so a *present* Git link is the violation. The assertion was
-> inverted, not deleted. Re-linking either project therefore turns the daily guardrails run red on
-> purpose — that is the check working, not drift in the check.
-
-That reads oddly, so: since #1340 nothing is supposed to auto-promote. Leaving the setting
-pointed at the retired `production` branch is the **safe** state — no push can ever match
-a branch that does not exist, so the only way to a production deployment is
-`deploy-production.yml`. Setting it to `main` would make **every merge to `main` a
-production deploy**, bypassing the migration gate, the approval, and the commit pin. That
-is the single worst outcome available in this repo's deploy configuration.
-
-An unset value is equally dangerous: Vercel falls back to the repository's default branch,
-which is `main`. `scripts/ci/production-guardrails.mjs` therefore asserts "not `main`, and
-not absent" rather than asserting a particular value.
-
-> **Operational note (2026-03-19):** The public Vercel REST API exposes `link.productionBranch` as a readable field but does not currently provide a documented/working write field to update it via `PATCH /v9|v10/projects/{idOrName}`.  
-> In practice, changing the production branch must be done in the Vercel dashboard UI. That
-> is precisely why it is asserted rather than enforced.
->
-> **Superseded (2026-09-02):** with the Git integration removed there is no `link` object, so there
-> is no `link.productionBranch` to read or to write — the read returns nothing rather than a branch
-> name. The 2026-03-19 finding stands for a Git-linked project and is kept against the day one is
-> re-linked; it decides nothing today.
-
-- **Settings → Git → Ignored Build Step**: whatever it says, each app's `vercel.json` pins
-  `ignoreCommand: "exit 1"` and that **overrides** the dashboard value, so no build is ever
-  skipped.
-
-**Why `ignoreCommand` is set to `exit 1` rather than removed.** Vercel reads exit code 0 as
-"ignore this build" and exit code 1 as "continue", so `exit 1` is an explicit *always build*.
-Both apps previously ran `npx turbo-ignore <app>`, which decides "unaffected, skip" by diffing
-against the branch's last deployment. Because the retired `deploy-vercel-production.mjs` deliberately set
-`gitSource.ref` to `main` (Vercel wants a branch for the ref and the commit in `sha`), the
-baseline for a production release became the `main` **preview of the same commit** — identical
-by construction — so the release was skipped. That is run 33275321347: migrations and the API
-shipped, both frontends were `CANCELED`, the release job skipped, and nothing recorded what was
-live. Vercel's own build log had also been printing `"turbo-ignore" is deprecated. Use Vercel's
-built-in project skipping instead.`
-
-The key is **set**, not deleted, because `ignoreCommand` overrides the project's dashboard
-Ignored Build Step. Deleting it would hand the decision back to unversioned dashboard state —
-the same fail-open class as Production Branch and Render auto-deploy above, which this repo can
-only assert after the fact. Pinning it in `vercel.json` keeps the decision in git.
-
-> **Current state (2026-09-02):** `ignoreCommand` and the `git` block in both `vercel.json` files
-> have no Git integration left to govern — Vercel no longer reads this repository, so there is no
-> push-triggered build for an Ignored Build Step to skip. That makes the **premise** of **#1376**
-> (that nothing enforces the `ignoreCommand` pin) moot for exactly as long as the projects stay
-> unlinked; #1376 is open, and its disposition is decided on the issue rather than by this prose.
-> **Do not delete either key.** They are the versioned form of settings that are otherwise
-> dashboard-only: re-link Git and branch filtering and the Ignored Build Step fall straight back to
-> the unversioned dashboard state the paragraph above exists to keep them out of. The reasoning
-> above governs again the moment the integration is restored.
-
-### 4.6 Vercel Branch Wiring Verification
-
-> **Does not apply since 2026-09-02.** There is no branch wiring left to verify: both projects are
-> unlinked from Git (ADR-21), so no push produces a `preview` deployment and `vercel.json`'s
-> `git.deploymentEnabled` governs nothing. Check 3 as written below is unrunnable —
-> `link.productionBranch` is absent because `link` itself is `null` — which is what made the daily
-> guardrails run red until **#1579** inverted the assertion on 2026-09-02. The guardrail now checks
-> the opposite condition (no Git link at all), so a red run once again means real drift, most
-> likely a project that has been re-linked. Checks 1–3 describe the retired model. Check 4 is still true, and now trivially so: a
-> production deployment can only come from `deploy-production.yml`, whose Vercel step builds and
-> uploads from the runner since #1578. The API read below is unchanged and is the
-> quickest way to confirm the unlink — with `link: null` it reports `productionBranch: null`.
-
-Validate, for each project:
-
-1. Push to `main` → deployment target should be `preview`.
-2. Feature branches should stay disabled by `vercel.json` (`"**": false`).
-3. `link.productionBranch` is not `main` and not absent (the read check below).
-4. A production deployment appears only when `deploy-production.yml` runs.
-
-Quick API read check (requires valid `VERCEL_API_KEY`):
+Confirm the unlink (not a setup step): a present `link` is the guardrail going red.
 
 ```bash
 curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
   "https://api.vercel.com/v10/projects/<project-id>" \
-  | jq '{name, productionBranch: .link.productionBranch, targets: .targets}'
+  | jq '{name, link, productionBranch: .link.productionBranch, targets: .targets}'
 ```
+
+`link` should be `null`.
 
 ---
 
@@ -888,13 +774,11 @@ of the three secrets or `API_URL` / `APP_URL` is unset in that environment — s
 1. **PR created** → CI runs domain-specific jobs in parallel. Vercel deployments do not run for feature/PR branches.
 2. **All checks pass** → PR is mergeable (branch protection enforced).
 3. **PR merged** → Push event triggers the staging deploy pipeline (`workflow_run` waits for CI).
-4. **Staging pipeline**: DB migration (dry-run → apply) → API deploy (Render) → frontends auto-deploy to Preview (Vercel).
+4. **Staging pipeline**: DB migration (dry-run → apply) → API deploy (Render) → `deploy-vercel-staging.yml` deploys web and landing (Preview target) and aliases the staging hostnames.
 
-> ⚠️ **2026-09-02:** step 4's "frontends auto-deploy to Preview (Vercel)" no longer happens — both
-> Vercel projects are unlinked from Git (ADR-21). The provider preflight in the production
-> list below briefly failed on every run for the same reason, blocking production deploys; #1579
-> inverted that assertion the same day, so it passes against the unlinked state. See the dated note
-> at the top of §4.
+> ⚠️ **2026-09-02:** step 4 used to say "frontends auto-deploy to Preview (Vercel)". That path died
+> with the Git unlink (ADR-21). CI-driven staging deploys landed in #1578. See
+> [§ 4 Vercel Setup](#4-vercel-setup).
 
 **Production** is gated behind a person, and runs only when asked. Dispatch **Deploy
 production** with a commit SHA:
@@ -1087,4 +971,4 @@ integration row are covered in § Retired: `frapp-docs` and docs.frapp.live abov
 → Expo Go requires the API to be network-accessible. Use the deployed staging URL, not `localhost`. For local dev, use your machine's LAN IP (e.g., `http://192.168.1.x:3001/v1`).
 
 **Preview deploys on Vercel use wrong env vars**
-→ Check that you scoped the env vars to the correct environment (Production vs Preview). Values are pushed from Infisical rather than typed into the dashboard (§4.2), so fix the scope on the sync. ⚠️ **2026-09-02:** no push produces a Preview deploy at all since the Git unlink (ADR-21) — see the dated note at the top of §4.
+→ Check that you scoped the env vars to the correct environment (Production vs Preview). Values are pushed from Infisical rather than typed into the dashboard ([§4.2](#42-environment-variables-per-project)), so fix the scope on the sync. Staging builds pull Preview vars via `vercel pull`; nothing is push-triggered. See [§ 4 Vercel Setup](#4-vercel-setup).
