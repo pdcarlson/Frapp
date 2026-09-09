@@ -45,13 +45,14 @@ export type { PointsWindow };
 /**
  * The ledger row, plus whether the chat card that accompanies it was posted.
  *
- * `card_posted` is present ONLY when this request actually attempted a card —
- * chat context supplied (`channelId` + `clientMessageId`) **and** not a replay,
- * which fires no side effect at all (see {@link PointsService.completeReplay}).
- * A dashboard adjustment's response shape is therefore unchanged. The card stays
- * best-effort — a failed post never rolls the ledger back — but the caller now
- * learns it failed instead of inferring success from the 2xx and leaving its
- * optimistic placeholder up forever (#544).
+ * `card_posted` is present when this request actually attempted a card —
+ * chat context supplied (`channelId` + `clientMessageId`) on a first write, or
+ * a replay whose stored origin `channel_id` lets {@link PointsService.completeReplay}
+ * re-attempt the post. A dashboard adjustment and a replay of a pre-column
+ * row (no stored origin) omit the field. The card stays best-effort — a failed
+ * post never rolls the ledger back — but the caller now learns it failed
+ * instead of inferring success from the 2xx and leaving its optimistic
+ * placeholder up forever (#544).
  */
 export type AdjustPointsResult = PointTransaction & {
   card_posted?: boolean;
@@ -357,7 +358,7 @@ export class PointsService {
     // Racing replays that both miss this read are still caught by
     // `idx_point_transactions_dedupe` at the insert.
     const replay = await this.resolveReplay(input);
-    if (replay) return this.completeReplay(replay);
+    if (replay) return this.completeReplay(replay, input);
 
     // Both anti-fraud limits are chapter-configurable (spec/behavior/points.md
     // § Anti-Fraud). A chapter with no `chapter_points_config` row gets the
@@ -380,7 +381,7 @@ export class PointsService {
       // land — telling the officer it was rate-limited when it succeeded. One
       // extra read, only on the refusal path, buys the honest answer.
       const raced = await this.resolveReplay(input);
-      if (raced) return this.completeReplay(raced);
+      if (raced) return this.completeReplay(raced, input);
 
       throw new HttpException(
         `Rate limit exceeded: maximum ${rateLimit} point adjustments per hour`,
@@ -407,6 +408,11 @@ export class PointsService {
         description: input.reason,
         metadata,
         client_message_id: input.clientMessageId ?? null,
+        // Origin channel rides with the key so a later replay can heal a
+        // lost card without trusting the request's `channelId` (#1734).
+        // Dashboard adjustments (no key) write NULL; a key without a
+        // channel is the pre-column shape and stays legal.
+        channel_id: input.clientMessageId ? (input.channelId ?? null) : null,
       });
     } catch (error) {
       // Two requests carrying one key raced past the pre-check above and the
@@ -417,7 +423,7 @@ export class PointsService {
         // A duplicate with no readable original would mean the index fired on a
         // row this chapter cannot see. Nothing sane to return, so surface it.
         if (!raced) throw error;
-        return this.completeReplay(raced);
+        return this.completeReplay(raced, input);
       }
       throw error;
     }
@@ -503,45 +509,60 @@ export class PointsService {
       );
     }
 
+    // A stored origin plus a *different* request channel is the re-broadcast
+    // #1734 exists to stop. 409 matches the other mismatched fields above:
+    // the client must replay the original request (same channel), not the
+    // newly active one. A NULL stored origin is the pre-column shape — we
+    // cannot prove a mismatch, so we do not refuse.
+    if (
+      existing.channel_id &&
+      input.channelId &&
+      existing.channel_id !== input.channelId
+    ) {
+      throw new ConflictException(
+        'This idempotency key was already used in a different channel. Retry with the original request, or a new client_message_id for a new adjustment.',
+      );
+    }
+
     return existing;
   }
 
   /**
-   * Finish a replay: return the original row, firing no side effect at all.
+   * Finish a replay: return the original row, never re-notify, and re-attempt
+   * the chat card **only** into the stored origin channel (#1734).
    *
-   * An earlier revision of this re-attempted the chat card here, reasoning that
-   * the first attempt's post is best-effort and a card lost there could
-   * otherwise never be healed. **That was unsafe, and the reason is worth
-   * keeping:** `idx_chat_messages_dedupe` is scoped
-   * `(channel_id, sender_id, client_message_id)` — not by key alone — while the
-   * ledger row carries no channel at all. So a replay cannot prove it names the
-   * channel the original card went to, and re-posting would not deduplicate
-   * against it. A caller could send a byte-identical body with a different
-   * `channel_id` and get a *second* audit card for one ledger row, which for a
-   * FINE means re-broadcasting a member's penalty to a wider audience.
+   * Push is not idempotent, so it still does not fire. The card *looks*
+   * idempotent but `idx_chat_messages_dedupe` is scoped
+   * `(channel_id, sender_id, client_message_id)` — not by key alone. Posting
+   * into the request's channel would therefore not collide with a card that
+   * already landed in the origin, and a FINE would re-broadcast. Using the
+   * stored channel makes the second send a no-op against that index (ChatService
+   * returns the existing row) when the original post succeeded, and a heal
+   * when it failed.
    *
-   * Healing a lost card needs the origin channel recorded on the transaction;
-   * until then the ledger row is the durable record and the card is not. See
-   * #1734.
-   *
-   * `card_posted` is therefore **absent** on this path, never `false`: no card
-   * was attempted, and the row records nothing about whether the original
-   * attempt landed. Under the field's contract (#544) an absent value means the
-   * server reported no outcome, which is exactly the truth here — so the caller
-   * leaves its placeholder for the original card's echo rather than tearing
-   * down one that may still reconcile.
-   *
-   * The caller's half of that used to be correct only while the original card
-   * DID post: when it did not, no echo was coming and the placeholder stranded.
-   * #1733 closed that on the client rather than here — `dispatchPoints` now
-   * knows whether it is replaying, and on a replay it reads this absent field
-   * as committed-with-unknown-card instead of waiting for an echo. So clients
-   * DO replay now, and that is safe. This route still cannot detect the case
-   * itself, for the reason above; #1734 would let it answer properly, and is
-   * now an improvement rather than a prerequisite.
+   * A NULL stored origin cannot be healed — that is the pre-column / dashboard
+   * shape — so `card_posted` stays **absent**, same contract as before.
    */
-  private completeReplay(existing: PointTransaction): PointTransaction {
-    return existing;
+  private async completeReplay(
+    existing: PointTransaction,
+    input: AdjustPointsInput,
+  ): Promise<AdjustPointsResult> {
+    const originChannelId = existing.channel_id;
+    if (!originChannelId || !existing.client_message_id) {
+      return existing;
+    }
+
+    const cardPosted = await this.tryPostPointsCard(
+      {
+        ...input,
+        channelId: originChannelId,
+        clientMessageId: existing.client_message_id,
+      },
+      existing,
+    );
+    return cardPosted === undefined
+      ? existing
+      : { ...existing, card_posted: cardPosted };
   }
 
   /**
