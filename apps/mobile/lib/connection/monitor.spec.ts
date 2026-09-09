@@ -36,8 +36,9 @@ function harness(overrides: Partial<MonitorDeps> = {}) {
   return { monitor, deps, fetchMock, seen, link: () => listener };
 }
 
-const OK = { ok: true } as Response;
-const SERVER_ERROR = { ok: false } as Response;
+const OK = { ok: true, status: 200 } as Response;
+const SERVER_ERROR = { ok: false, status: 503 } as Response;
+const RATE_LIMITED = { ok: false, status: 429 } as Response;
 
 describe("healthUrl", () => {
   beforeEach(() => {
@@ -149,6 +150,17 @@ describe("connection monitor", () => {
     expect(monitor.get()).toBe("DEGRADED");
   });
 
+  it("does not count a 429 as a failure — the API is up and throttling", async () => {
+    const { monitor, fetchMock } = harness();
+    fetchMock.mockResolvedValue(RATE_LIMITED);
+    monitor.start();
+    await Promise.resolve();
+    expect(monitor.get()).toBe("ONLINE");
+    await monitor.probeOnce();
+    await monitor.probeOnce();
+    expect(monitor.get()).toBe("ONLINE");
+  });
+
   it("recovers to ONLINE on the first success", async () => {
     const { monitor, fetchMock } = harness();
     fetchMock.mockRejectedValue(new Error("timeout"));
@@ -161,7 +173,7 @@ describe("connection monitor", () => {
     expect(monitor.get()).toBe("ONLINE");
   });
 
-  it("clears accumulated failures only on a real offline → online transition", async () => {
+  it("does not reset the failure count on a link event; a successful probe does", async () => {
     const { monitor, fetchMock, link } = harness();
     fetchMock.mockRejectedValue(new Error("timeout"));
     monitor.start();
@@ -169,15 +181,20 @@ describe("connection monitor", () => {
     expect(monitor.get()).toBe("DEGRADED");
 
     // `expo-network` fires on every path update — a cell handoff, a VPN toggle,
-    // a Wi-Fi↔LTE switch. Resetting on each of those meant a moving device
-    // could never accumulate three failures, so an API outage never reached the
-    // banner at all.
+    // a Wi-Fi↔LTE switch. Resetting on those (or on a genuine reconnect)
+    // meant a moving device could never accumulate three failures, or would
+    // flash ONLINE while `/health` was still dead.
     link()?.({ isConnected: true, isInternetReachable: true });
     expect(monitor.get()).toBe("DEGRADED");
 
     link()?.({ isConnected: false });
     expect(monitor.get()).toBe("OFFLINE");
+
+    fetchMock.mockResolvedValue(OK);
     link()?.({ isConnected: true, isInternetReachable: true });
+    // A link is not a reachable API — stay off ONLINE until the probe lands.
+    expect(monitor.get()).not.toBe("ONLINE");
+    await Promise.resolve();
     expect(monitor.get()).toBe("ONLINE");
   });
 
