@@ -404,11 +404,9 @@ describe("notifyDispatchOutcome (#544)", () => {
     expect(arg.variant).toBeUndefined();
   });
 
-  // The dispatcher removes the placeholder before this toast fires, so the
-  // toast is the only surviving evidence that the grant committed. At the
-  // Radix default it auto-dismisses after 5s and the channel goes blank —
-  // indistinguishable from "nothing happened", which is the state that gets
-  // the command re-run.
+  // The dispatcher keeps a non-retryable `recorded` row in the timeline
+  // (#1789); this toast is the secondary notice and is evictable. Sticky
+  // still matters for the seconds before the officer looks at the row.
   it("makes the partial-success toast sticky, not a 5-second one", () => {
     const toast = vi.fn();
     notifyDispatchOutcome(toast, cmd, { ok: true, warning: "Points recorded." });
