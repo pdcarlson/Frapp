@@ -32,7 +32,7 @@ Related canon lives in:
 ## Privacy Tab
 
 - Chapter-wide data controls, gated by `chapter-config:manage`. Non-managers see the toggles read-only.
-- **Analytics opt-out.** A single toggle writes the `chapters.analytics_opt_out` scalar through the config PATCH mutation (so it is audit-logged like every other settings change). The switch is framed positively ("Chapter analytics" on/off) to avoid a double-negative — *checked = analytics enabled = `analytics_opt_out` false*. Default is opt-in (analytics on); onboarding discloses this.
+- **Analytics opt-out.** A single toggle writes the `chapters.analytics_opt_out` scalar through the config PATCH mutation (so it is audit-logged like every other settings change). The switch is framed positively ("Chapter analytics" on/off) to avoid a double-negative — *checked = analytics enabled = `analytics_opt_out` false*. Default is opt-in (analytics on); onboarding discloses this. The same flag gates PostHog session replay ([`observability.md` § Privacy and replay](../observability.md#privacy-and-replay)).
 - When opted out, **web and mobile** emit **zero** events for the chapter's members (enforced at each app's `AnalyticsProvider` via the shared `isAnalyticsOptedOut` gate in `@repo/validation`) and the API repeats the check server-side as defense-in-depth. Full pipeline + keying semantics live in [`../data-retention.md`](../data-retention.md) (#analytics-events-pseudonymous).
 
 ## Beta Tab
