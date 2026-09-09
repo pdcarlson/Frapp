@@ -7,6 +7,7 @@ import {
   isPseudonymHex,
 } from "./correlation";
 import {
+  DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
   OBSERVABILITY_PROVIDERS,
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   POSTHOG_PRODUCTION_REPLAY_ENABLED,
@@ -46,8 +47,9 @@ describe("policy constants", () => {
     expect(SENTRY_REPLAY_ENABLED).toBe(false);
     expect(POSTHOG_EXCEPTION_AUTOCAPTURE).toBe(false);
     expect(POSTHOG_PRODUCTION_REPLAY_ENABLED).toBe(false);
-    expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
     expect(SENTRY_ERROR_SAMPLE_RATE).toBe(1);
+    expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
+    expect(DEFAULT_POSTHOG_LOGS_SAMPLE_RATE).toBe(1);
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
   });
 });

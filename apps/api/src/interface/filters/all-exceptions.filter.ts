@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
+import { isPseudonymHex } from '@repo/observability';
 import type { RequestContext } from '../types/request-context.types';
 import { pathOnly } from '../utils/path-only';
 import { getRequestId } from '../../infrastructure/observability/request-als';
@@ -21,6 +22,12 @@ import {
 } from '../../infrastructure/observability/security-events';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { httpStatusClass } from '../../infrastructure/analytics/http-status-class';
+import {
+  captureSentryErrorCorrelated,
+  enqueueSanitizedLog,
+} from '../../infrastructure/analytics/posthog-runtime';
+import { readDeployedCommit } from '../controllers/deployed-commit';
 
 /**
  * The single seam for error-shaped observability (issues #846, #481).
@@ -131,6 +138,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         }),
       );
       this.reportToSentry(exception, request, status, requestId);
+      this.enqueueSanitizedErrorLog(request, status, requestId);
     } else {
       this.recordSecurityEvent(request, status, requestId);
     }
@@ -175,6 +183,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
             originHash,
           }),
         ),
+      );
+
+      this.enqueueSanitizedSecurityLog(
+        request,
+        kind,
+        status,
+        requestId,
+        originHash,
       );
 
       if (kind !== 'auth_failure') return;
@@ -252,11 +268,98 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const path = pathOnly(request.url);
         if (path) scope.setTag('route', path);
 
-        Sentry.captureException(toReportableError(exception));
+        const eventId = Sentry.captureException(toReportableError(exception));
+        this.emitSentryErrorCorrelated(
+          request,
+          status,
+          requestId,
+          typeof eventId === 'string' ? eventId : undefined,
+        );
       });
     } catch (error) {
       this.logger.warn(`Sentry capture failed: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Content-free PostHog timeline marker. Never the exception, stack, body,
+   * query, or message. Errors are counted only in Sentry.
+   */
+  private emitSentryErrorCorrelated(
+    request: RequestContext,
+    status: number,
+    requestId: string,
+    sentryEventId: string | undefined,
+  ): void {
+    if (!sentryEventId) return;
+    const userHash = pseudonymizeUserId(request.appUser?.id);
+    const chapterHash = pseudonymizeChapterId(request.chapterId);
+    const distinctId =
+      (isPseudonymHex(userHash) ? userHash : undefined) ??
+      (isPseudonymHex(chapterHash) ? chapterHash : undefined) ??
+      `req:${requestId}`;
+    captureSentryErrorCorrelated(distinctId, {
+      sentry_event_id: sentryEventId,
+      trace_id: sentryTraceId(),
+      request_id: requestId,
+      route: pathOnly(request.url),
+      status_class: httpStatusClass(status),
+      release: readDeployedCommit(),
+    });
+  }
+
+  private enqueueSanitizedErrorLog(
+    request: RequestContext,
+    status: number,
+    requestId: string,
+  ): void {
+    const userHash = pseudonymizeUserId(request.appUser?.id);
+    const chapterHash = pseudonymizeChapterId(request.chapterId);
+    enqueueSanitizedLog(
+      {
+        body: 'error',
+        severity: 'ERROR',
+        attributes: {
+          request_id: requestId,
+          method: request.method ?? 'UNKNOWN',
+          path: pathOnly(request.url) ?? '/',
+          status_code: status,
+          status_class: httpStatusClass(status),
+          ...(userHash ? { user_hash: userHash } : {}),
+          ...(chapterHash ? { chapter_hash: chapterHash } : {}),
+        },
+      },
+      requestId,
+    );
+  }
+
+  private enqueueSanitizedSecurityLog(
+    request: RequestContext,
+    kind: string,
+    status: number,
+    requestId: string,
+    originHash: string | undefined,
+  ): void {
+    const userHash = pseudonymizeUserId(request.appUser?.id);
+    const chapterHash = pseudonymizeChapterId(request.chapterId);
+    enqueueSanitizedLog(
+      {
+        body: 'security_event',
+        severity: 'WARN',
+        attributes: {
+          kind,
+          request_id: requestId,
+          method: request.method ?? 'UNKNOWN',
+          path: pathOnly(request.url) ?? '/',
+          status_code: status,
+          status_class: httpStatusClass(status),
+          ...(originHash ? { origin_hash: originHash } : {}),
+          ...(userHash ? { user_hash: userHash } : {}),
+          ...(chapterHash ? { chapter_hash: chapterHash } : {}),
+        },
+      },
+      requestId,
+    );
   }
 }
 
@@ -264,4 +367,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
 function clientIp(request: RequestContext): string | undefined {
   const forwarded = Array.isArray(request.ips) ? request.ips[0] : undefined;
   return forwarded ?? request.ip;
+}
+
+function sentryTraceId(): string | undefined {
+  const getTraceData = (
+    Sentry as typeof Sentry & {
+      getTraceData?: () => Record<string, string> | undefined;
+    }
+  ).getTraceData;
+  const header = getTraceData?.()?.['sentry-trace'];
+  if (typeof header !== 'string' || header.length === 0) return undefined;
+  const traceId = header.split('-')[0];
+  return /^[0-9a-f]{16,32}$/i.test(traceId) ? traceId.toLowerCase() : undefined;
 }
