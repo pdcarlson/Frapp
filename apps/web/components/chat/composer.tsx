@@ -67,8 +67,9 @@ import {
  * Resolved rather than a `ChatMessage`, because the shell is the only place
  * that holds the viewer id and the name resolver the label needs, and because
  * the composer must not grow a second opinion about how a message is
- * summarised — `replyPreviewText` in `./reply-quote` is the one definition and
- * the timeline's quote uses it too.
+ * summarised — `replyPreviewText` in `@repo/chat-core/reply-preview` is the
+ * one definition (web re-exports it from `./reply-quote`) and the timeline's
+ * quote uses it too.
  *
  * `author: null` means the target is staged but outside the loaded window. The
  * strip still renders, in `QuotedMessage`'s unavailable variant, because the
