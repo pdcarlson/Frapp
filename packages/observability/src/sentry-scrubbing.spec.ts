@@ -5,7 +5,18 @@ import {
   type ScrubbableEvent,
   type SentryPseudonymizer,
 } from "./sentry-scrubbing";
-import { hashUserIdForAnalytics } from "./analytics";
+
+/**
+ * Deterministic 64-hex stand-in. HMAC stays API-local (Node crypto + salt);
+ * this package must not import `@repo/validation` just to hash a fixture.
+ */
+function hex64(seed: string): string {
+  const bytes: number[] = [];
+  for (let i = 0; i < 32; i += 1) {
+    bytes.push((seed.charCodeAt(i % seed.length) + i * 17) & 0xff);
+  }
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 /**
  * The shared scrubber, exercised on the **browser** path (#865).
@@ -24,7 +35,6 @@ import { hashUserIdForAnalytics } from "./analytics";
  * whole-payload assertion catches that.
  */
 
-const SALT = "test-salt-for-shared-scrubbing";
 const USER_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
 const MEMBER_EMAIL = "treasurer@chapter.example.edu";
 const CHAT_BODY = "Reminder: dues are late, ping treasurer@chapter.example.edu";
@@ -35,9 +45,9 @@ const browser = createSentryScrubber(NO_PSEUDONYMS);
 /** A server-shaped binding, to pin the with-salt branch of the same code. */
 const saltedPseudonyms: SentryPseudonymizer = {
   pseudonymizeUserId: (id) =>
-    typeof id === "string" && id ? hashUserIdForAnalytics(SALT, id) : undefined,
+    typeof id === "string" && id ? hex64(id) : undefined,
   pseudonymizeIp: (ip) =>
-    typeof ip === "string" && ip ? hashUserIdForAnalytics(SALT, ip) : undefined,
+    typeof ip === "string" && ip ? hex64(ip) : undefined,
 };
 const salted = createSentryScrubber(saltedPseudonyms);
 
@@ -93,7 +103,7 @@ describe("browser path — no salt available", () => {
   });
 
   it("keeps a server-derived user pseudonym but drops a raw id", () => {
-    const pseudonym = hashUserIdForAnalytics(SALT, USER_UUID);
+    const pseudonym = hex64("server-derived");
 
     // This is what the web app attaches via GET /v1/analytics/identity: the
     // server hashed it, so the browser never held the salt.
@@ -170,7 +180,7 @@ describe("shared rules hold regardless of which app binds them", () => {
 
     const json = serialize(scrubbed);
     expect(json).not.toContain(USER_UUID);
-    expect(json).toContain(`[id:${hashUserIdForAnalytics(SALT, USER_UUID)}]`);
+    expect(json).toContain(`[id:${hex64(USER_UUID)}]`);
   });
 
   it("redacts key-shaped strings on both bindings", () => {
@@ -413,5 +423,87 @@ describe("sentry scrubbing — userinfo in free text", () => {
     expect(json).not.toContain(MEMBER_EMAIL);
     expect(json).not.toContain("[redacted:userinfo]");
     expect(json).toContain("api.frapp.live");
+  });
+});
+
+describe("stack-frame allowlist (#889)", () => {
+  /**
+   * Assembled at runtime rather than written as a literal. The shape that
+   * makes this a useful fixture is exactly the shape GitHub's push
+   * protection blocks, and an allow-listing for a Stripe-key pattern is not
+   * worth one test.
+   */
+  const fakeKey = ["sk", "live", "NOTAREALFIXTURE0000"].join("_");
+
+  function frameWithSourceContext() {
+    return {
+      filename: "/app/src/x.ts",
+      function: "handler",
+      module: "x",
+      lineno: 12,
+      colno: 4,
+      in_app: true,
+      abs_path: "/app/src/x.ts",
+      context_line: `const token = "${fakeKey}";`,
+      pre_context: [`const unused = "${fakeKey}";`],
+      post_context: [`void "${fakeKey}";`],
+      vars: { password: "hunter2" },
+      instruction_addr: "0xdeadbeef",
+    };
+  }
+
+  it("sweeps source context and drops unknown frame fields, including vars", () => {
+    const scrubbed = browser.scrubSentryEvent({
+      exception: {
+        values: [
+          {
+            type: "Error",
+            value: "boom",
+            stacktrace: { frames: [frameWithSourceContext()] },
+          },
+        ],
+      },
+    });
+
+    const json = serialize(scrubbed);
+    expect(json).not.toContain(fakeKey);
+    expect(json).toContain("[redacted:key]");
+    expect(json).not.toContain("hunter2");
+    expect(json).not.toContain("instruction_addr");
+    expect(json).not.toContain("0xdeadbeef");
+
+    const frame = (
+      scrubbed as {
+        exception?: {
+          values?: { stacktrace?: { frames?: Record<string, unknown>[] } }[];
+        };
+      }
+    ).exception?.values?.[0]?.stacktrace?.frames?.[0];
+    expect(frame).not.toHaveProperty("vars");
+    expect(frame).not.toHaveProperty("instruction_addr");
+    expect(frame?.function).toBe("handler");
+    expect(frame?.lineno).toBe(12);
+    expect(frame?.in_app).toBe(true);
+  });
+
+  it("applies the same allowlist on the transaction path", () => {
+    const json = serialize(
+      browser.scrubSentryTransaction({
+        transaction: "/v1/chapters",
+        exception: {
+          values: [
+            {
+              type: "Error",
+              value: "boom",
+              stacktrace: { frames: [frameWithSourceContext()] },
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(json).not.toContain(fakeKey);
+    expect(json).not.toContain("hunter2");
+    expect(json).not.toContain("0xdeadbeef");
   });
 });

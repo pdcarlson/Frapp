@@ -50,6 +50,7 @@
     "@nestjs/throttler": "^6.5.0",
     "@repo/chapter-theme": "*",
     "@repo/formatting": "*",
+    "@repo/observability": "*",
     "@repo/org-archetypes": "*",
     "@repo/validation": "*",
     "@sentry/nestjs": "^10.71.0",

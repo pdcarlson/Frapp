@@ -2,31 +2,30 @@ import {
   createSentryScrubber,
   type ScrubbableEvent,
   type SentryPseudonymizer,
-} from '@repo/validation';
+} from '@repo/observability';
 import type { ErrorEvent, NodeOptions } from '@sentry/nestjs';
 import { pseudonymizeIp, pseudonymizeUserId } from './pseudonyms';
 
 /**
  * The API's binding of the shared Sentry scrubber (#481, #896, #865).
  *
- * The rules themselves moved to `@repo/validation` when #865 needed the
- * identical scrubbing on the browser side — see that module's docblock for the
- * allowlist doctrine and for why each allowlist looks the way it does. What
- * stays here is the part that is genuinely API-specific:
+ * The rules themselves live in `@repo/observability` — see that module's
+ * docblock for the allowlist doctrine and for why each allowlist looks the way
+ * it does. What stays here is the part that is genuinely API-specific:
  *
  *  - **the pseudonymizer**, which reads `ANALYTICS_HMAC_SALT` from the process
  *    environment. That salt is API-only on purpose (`ENV_REFERENCE.md`), so the
  *    shared module takes it as an injected dependency rather than reaching for
  *    `process.env` — which does not exist in a browser and must not hold this
  *    value anyway;
- *  - **the SDK types.** `@repo/validation` is also a dependency of
- *    `apps/mobile`, which has no Sentry installed, so the shared module cannot
- *    name `@sentry/*` even in an `import type` — the emitted `.d.ts` would fail
- *    to resolve there. Binding the structural shapes to `ErrorEvent` and the
- *    real `beforeSendTransaction` parameter happens here instead, which is also
- *    where a breaking SDK change should surface: `buildSentryOptions` assigns
- *    these two functions to `NodeOptions`, so a changed hook signature stops
- *    compiling rather than silently scrubbing a shape the SDK no longer sends.
+ *  - **the SDK types.** `@repo/observability` cannot name `@sentry/*` even in
+ *    an `import type` — the emitted `.d.ts` would fail to resolve for any
+ *    consumer that does not install Sentry. Binding the structural shapes to
+ *    `ErrorEvent` and the real `beforeSendTransaction` parameter happens here
+ *    instead, which is also where a breaking SDK change should surface:
+ *    `buildSentryOptions` assigns these two functions to `NodeOptions`, so a
+ *    changed hook signature stops compiling rather than silently scrubbing a
+ *    shape the SDK no longer sends.
  *
  * The exported names and signatures are unchanged from before the move, which
  * is why `sentry-scrubbing.spec.ts` and `sentry-integration.spec.ts` still pass

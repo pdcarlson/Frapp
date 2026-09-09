@@ -50,8 +50,9 @@ export const CI_CHECKS = [
   "packages-build",
   // ESLint + TypeScript (all workspaces); `npm run build -w apps/api`
   // (`nest build`, Render parity); landing plus `@repo/validation`,
-  // `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`
-  // and `@repo/api-sdk` unit tests; plus `npm run check:brand-assets`.
+  // `@repo/color`, `@repo/formatting`, `@repo/observability`,
+  // `@repo/chapter-theme`, `@repo/theme` and `@repo/api-sdk` unit tests;
+  // plus `npm run check:brand-assets`.
   "lint-and-typecheck",
   // `docker build -f apps/api/Dockerfile .` — the API image compile path.
   "api-docker-build",
