@@ -46,13 +46,13 @@ read. Read them back with `GET https://api.supabase.com/v1/projects/<ref>/config
 `SUPABASE_ACCESS_TOKEN` is enough); write with `PATCH` on the same path, or in the dashboard under
 Authentication → URL Configuration / SMTP Settings.
 
-| Setting | `frapp-prod` (read 2026-09-07) | `frapp-staging` (read 2026-09-07) |
+| Setting | `frapp-prod` | `frapp-staging` |
 | --- | --- | --- |
-| Site URL | `https://app.frapp.live` | `https://app.staging.frapp.live` |
-| Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** |
+| Site URL | `https://app.frapp.live` (read 2026-09-07) | `https://app.staging.frapp.live` (read 2026-09-07) |
+| Redirect allow list | `https://app.frapp.live`, `https://api.frapp.live`, **`frapp://**`**, **`https://app.frapp.live/**`** (read 2026-09-07) | `https://app.staging.frapp.live`, `https://api-staging.frapp.live`, `exp://localhost:8081`, **`frapp://**`**, **`https://app.staging.frapp.live/**`** (read 2026-09-07) |
 | Email confirmations | required (`mailer_autoconfirm: false`) | required |
-| Custom SMTP | **none** (still hosted 2/hour; #1824) | **on** — Resend `smtp.resend.com:465`, From `Signet <no-reply@mail.staging.frapp.live>` (read 2026-09-08) |
-| Auth email rate limit | **2 per hour** | **300 per hour** (read 2026-09-08; asserted daily as `auth-smtp`) |
+| Custom SMTP | **on** — Resend `smtp.resend.com:465`, user `resend`, From `Signet <no-reply@mail.frapp.live>` (owner send proof 2026-09-09 ~23:07Z from `https://app.frapp.live`) | **on** — Resend `smtp.resend.com:465`, From `Signet <no-reply@mail.staging.frapp.live>` (owner send proof 2026-09-09 from `https://app.staging.frapp.live`) |
+| Auth email rate limit | **300 per hour** (owner dashboard toast 2026-09-09) | **300 per hour** (owner dashboard 2026-09-09; asserted daily as `auth-smtp`) |
 | Password minimum length | 6 | 6 |
 | Custom access-token hook | `public.custom_access_token_hook` (enabled) | same |
 
@@ -77,21 +77,44 @@ a bare entry) went to the Site URL while `…/app.staging.frapp.live/join?token=
 `scripts/ci/staging-conformance.mjs` asserts both wildcards daily (`auth-redirects`), so this cannot
 silently revert or be forgotten on a new project.
 
-**Custom SMTP is proven on staging, not on production.** Staging Auth SMTP is Resend
-(`smtp.resend.com:465`, sender `Signet <no-reply@mail.staging.frapp.live>` as of 2026-09-08),
-`rate_limit_email_sent` is 300/hour, and `_dmarc.frapp.live` is `v=DMARC1; p=none;`.
-`staging-conformance.mjs` asserts the host, that live From, `smtp_sender_name=Signet`, and the send cap daily (`auth-smtp`)
-so a revert to the hosted 2/hour mailer, a leftover Frapp sender, or the burned apex From cannot sit green.
-It also asserts the Magic Link subject and `token_hash` href daily (`auth-magic-link`) so a
-dashboard reset to `{{ .ConfirmationURL }}` cannot sit green.
-Production Auth is still the hosted 2/hour cap. The 07:45
-`production-auth-conformance.yml` watchdog skip-asserts that: empty SMTP is
-SKIPPED (the job stays green). Once SMTP is on, the same check requires
-`Signet <no-reply@mail.frapp.live>` at ≥300/hour and fails a burned apex From.
-The same watchdog skip-asserts the Magic Link template: ConfirmationURL is
-SKIPPED while SMTP is unset. Once SMTP is on, the href must carry
-`token_hash` + `type=magiclink` or the 07:45 job fails.
-Turning SMTP on is still human work (#1824).
+**Custom SMTP (observation 2026-09-09).** Staging and production Auth SMTP are both
+**proven**. Earlier 2026-09-08 claims that staging Auth SMTP was proven were
+**wrong**: after the From switched to `mail.staging.frapp.live`, GoTrue 500ed because
+the Resend SMTP password was still the old all-domains / wrong-domain key. A later
+2026-09-09 note that production was configured-but-unproven is superseded by the
+unused-inbox send below.
+
+Correction, owner dashboard + Resend key list + owner send proofs 2026-09-09 (key
+names only; never paste values into Slack or git):
+
+- Sending keys are domain-scoped: `supabase-smtp-key-staging` →
+  `mail.staging.frapp.live`, `supabase-smtp-key-prod` → `mail.frapp.live`. The
+  previous unscoped `supabase-smtp-key` is gone from the account key list.
+- Staging Auth SMTP uses the staging-scoped key. Proof: a Magic Link from
+  `https://app.staging.frapp.live` succeeded (no 500). Mail landed in the primary
+  inbox, Gmail Important. From `Signet <no-reply@mail.staging.frapp.live>`. Subject
+  `Sign in to Signet`.
+- Production Auth SMTP uses the prod-scoped key. Proof (2026-09-09 ~23:07Z): unused-inbox
+  Magic Link from `https://app.frapp.live` succeeded. From
+  `Signet <no-reply@mail.frapp.live>`. Host `smtp.resend.com`, port `465`, user
+  `resend`, rate limit **300 emails/hour**.
+- The Magic Link template body was copied staging → prod. Confirm and invite
+  templates were **intentionally not copied**.
+- Both projects are at **300/hour**. `_dmarc.frapp.live` is `v=DMARC1; p=none;`.
+
+`staging-conformance.mjs` asserts the host, that live From, `smtp_sender_name=Signet`,
+and the send cap daily (`auth-smtp`) so a revert to the hosted 2/hour mailer, a leftover
+Frapp sender, or the burned apex From cannot sit green. It also asserts the Magic Link
+subject and `token_hash` href daily (`auth-magic-link`) so a dashboard reset to
+`{{ .ConfirmationURL }}` cannot sit green.
+
+Because production SMTP is now on, the 07:45 `production-auth-conformance.yml`
+watchdog no longer skip-asserts an empty host. Empty SMTP is still SKIPPED *if* the
+host is empty; with SMTP on, the same check requires
+`Signet <no-reply@mail.frapp.live>` at ≥300/hour and fails a burned apex From. Magic
+Link is the same: ConfirmationURL is SKIPPED only while SMTP is unset; with SMTP on,
+the href must carry `token_hash` + `type=magiclink` or the 07:45 job fails. The
+Magic Link body is now on prod; confirm and invite were intentionally left uncopied.
 
 The Magic Link *href* on staging is `app.staging.frapp.live/auth/callback`
 (`token_hash`, #1916). Gmail trained the apex From `invites@frapp.live` on the first
@@ -100,13 +123,14 @@ generic hosted templates, so sending now uses mail subdomains (Resend domains
 and staging tests cannot burn production reputation. Do not send From the apex:
 
 - Staging Auth: `Signet <no-reply@mail.staging.frapp.live>`
-- Prod Auth (when enabled): `Signet <no-reply@mail.frapp.live>`
+- Prod Auth: `Signet <no-reply@mail.frapp.live>`
 - API invite default: `Signet <invites@mail.frapp.live>` (staging API sets
   `RESEND_FROM_EMAIL` to `Signet <invites@mail.staging.frapp.live>`)
 
 Leave the existing `frapp.live` Resend domain in place until nothing uses it.
 
-The Magic Link template (already on staging; same body on prod when SMTP is enabled):
+The Magic Link template (on staging and prod as of 2026-09-09; confirm and invite
+were **intentionally not copied**):
 
 Subject: `Sign in to Signet`
 
@@ -117,7 +141,8 @@ own `type` (`signup`, `invite`, `recovery`) — copying this body onto those bre
 Do **not** paste that on a host whose web deploy does not yet include the `token_hash` handler.
 Leave Resend open/click tracking off (single-use links). Production SMTP uses the prod
 mail subdomain From above, then 300/hour — dashboard-only; do not put the key in Slack
-or git. `RESEND_API_KEY` on Render is a separate invite-mail path and is still absent
-on both API services.
+or git. `RESEND_API_KEY` on Render `frapp-api-prod` and `frapp-api-staging` is a
+separate invite-mail path and is still absent on both — that is the remaining
+human work on #1824. Auth SMTP itself is proven on staging and production.
 
 ---
