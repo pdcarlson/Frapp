@@ -6,17 +6,31 @@ import React, {
   useEffect,
   useState,
   useCallback,
+  useRef,
   useSyncExternalStore,
 } from "react";
 import { normalizeApiBaseUrl } from "@repo/api-sdk";
+import {
+  deriveConnectionState,
+  healthProbeIsReachable,
+  type ConnectionState,
+} from "@repo/validation";
 
-export type ConnectionState = "ONLINE" | "DEGRADED" | "OFFLINE";
+export type { ConnectionState };
 
 interface NetworkContextValue {
   state: ConnectionState;
   isOnline: boolean;
   isDegraded: boolean;
   isOffline: boolean;
+  /**
+   * Browser link only — not API reachability. Presence rides the Supabase
+   * Realtime socket, a different service from `/health`, so it gates on this
+   * rather than `isOffline`.
+   */
+  linkOnline: boolean;
+  /** One `/health` probe. OfflineState Retry and tests call this. */
+  probeOnce: () => Promise<void>;
 }
 
 const NetworkContext = createContext<NetworkContextValue>({
@@ -24,6 +38,8 @@ const NetworkContext = createContext<NetworkContextValue>({
   isOnline: true,
   isDegraded: false,
   isOffline: false,
+  linkOnline: true,
+  probeOnce: async () => {},
 });
 
 /*
@@ -40,8 +56,6 @@ function getHealthCheckUrl() {
   }
   return `${normalizeApiBaseUrl(apiUrl)}/health`;
 }
-
-const DEGRADED_THRESHOLD = 3;
 
 function subscribeLinkOnline(onStoreChange: () => void): () => void {
   window.addEventListener("online", onStoreChange);
@@ -67,8 +81,9 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     getLinkOnlineServer,
   );
   const [failureCount, setFailureCount] = useState(0);
+  const probeGenerationRef = useRef(0);
 
-  const checkHealth = useCallback(async () => {
+  const probeOnce = useCallback(async () => {
     if (!navigator.onLine) {
       return;
     }
@@ -79,6 +94,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const generation = ++probeGenerationRef.current;
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
@@ -89,7 +105,11 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
           cache: "no-store",
         });
 
-        if (res.ok) {
+        if (generation !== probeGenerationRef.current) {
+          return;
+        }
+
+        if (healthProbeIsReachable(res)) {
           setFailureCount(0);
         } else {
           setFailureCount((prev) => prev + 1);
@@ -98,32 +118,55 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(timeout);
       }
     } catch {
+      if (generation !== probeGenerationRef.current) {
+        return;
+      }
       setFailureCount((prev) => prev + 1);
     }
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(checkHealth, 30_000);
-    return () => clearInterval(interval);
-  }, [checkHealth]);
+    // Probe on mount, not only on the first interval tick. Without this a
+    // cold start against a dead API reports ONLINE for a full poll period
+    // before the first failure even lands — and OFFLINE needs three.
+    //
+    // Schedule the first probe on a microtask, not in the effect body:
+    // `probeOnce` can `setFailureCount` synchronously when no API URL is
+    // configured, which `react-hooks/set-state-in-effect` forbids. The
+    // cancelled flag also drops the StrictMode double-invoke so a single
+    // failed fetch cannot count as two.
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) void probeOnce();
+    });
+    const interval = setInterval(() => void probeOnce(), 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [probeOnce]);
 
   useEffect(() => {
-    const handleOnline = () => setFailureCount(0);
+    // Do not blindly reset the counter on `online`: if `/health` is still
+    // dead, that would flash ONLINE and then take 90s to reach OFFLINE
+    // again. Probe; a reachable response is what clears the count.
+    const handleOnline = () => void probeOnce();
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
-  }, []);
+  }, [probeOnce]);
 
-  const state: ConnectionState = !linkOnline
-    ? "OFFLINE"
-    : failureCount >= DEGRADED_THRESHOLD
-      ? "DEGRADED"
-      : "ONLINE";
+  const state = deriveConnectionState({
+    linkOffline: !linkOnline,
+    consecutiveFailures: failureCount,
+  });
 
   const value: NetworkContextValue = {
     state,
     isOnline: state === "ONLINE",
     isDegraded: state === "DEGRADED",
     isOffline: state === "OFFLINE",
+    linkOnline,
+    probeOnce,
   };
 
   return (
