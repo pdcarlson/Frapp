@@ -22,7 +22,11 @@ vi.mock("@/components/shared/subscription-gate", () => ({
     isPending: false,
     state: { allowed: true },
     noticeId: "notice",
-    controlProps: () => ({ disabled: false, "aria-describedby": undefined }),
+    controlProps: () => ({
+      disabled: false,
+      title: undefined,
+      "aria-describedby": undefined,
+    }),
     noticeRef: { current: null },
   }),
   SubscriptionNotice: () => null,
