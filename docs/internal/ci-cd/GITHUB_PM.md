@@ -1,7 +1,7 @@
 # GitHub Issues as the canonical PM system
 
 Canonical, version-controlled design + policy for Frapp's project management on **GitHub Issues**
-(`pdcarlson/Frapp`), per **ADR-16** and its GitHub-migration amendment (`spec/architecture/README.md`).
+(`pdcarlson/Frapp`), per **ADR-16** and its GitHub-migration amendment ([`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md)).
 GitHub Issues is the source of truth for planning and work status. Linear is **retired** — the
 decision record, viability probes, and the FRA-→#N migration mapping live in
 [issue #680](https://github.com/pdcarlson/Frapp/issues/680).
@@ -116,9 +116,9 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
   deployment are intentional states, not findings. Revisit when production becomes a goal; see #814
   for the decision record. **Caveat (2026-08-30):** this bullet's premise — that production does not
   yet exist — no longer holds. `frapp-prod` is live and `deploy-production.yml` deploys to it
-  (`spec/architecture/README.md` ADR-20). Its provider-guardrail preflight briefly failed on the
+  ([`spec/architecture/adr/adr-20.md`](../../../spec/architecture/adr/adr-20.md)). Its provider-guardrail preflight briefly failed on the
   retired Vercel Git integration and blocked production deploys; #1579 inverted that assertion on
-  2026-09-02 (canonical record: ADR-21 in `spec/architecture/README.md`, with its 2026-09-02
+  2026-09-02 (canonical record: ADR-21 in [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md), with its 2026-09-02
   amendment; the CI-driven Vercel deploy that replaces the integration is still #1578). The label's scope is the
   owner's to redefine, so nothing here changes on an agent's initiative; but do not read this
   bullet as evidence that a production-shaped risk is theoretical. Tracked in #1381.
