@@ -1,4 +1,8 @@
-import { ArgumentMetadata, ValidationPipe } from '@nestjs/common';
+import {
+  ArgumentMetadata,
+  BadRequestException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import { PatchChapterConfigDto } from './chapter-config.dto';
 
@@ -70,5 +74,83 @@ describe('PatchChapterConfigDto — default_invite_role_id (#422)', () => {
 
   it('rejects an empty string, which would otherwise reach the role lookup', async () => {
     await expect(transform({ default_invite_role_id: '' })).rejects.toThrow();
+  });
+});
+
+/**
+ * #1817. Top-level patch fields are omit-or-value, never `null`. `@IsOptional()`
+ * used to skip `null`, so the pipe accepted `{ branding: null }` and
+ * `patchConfig` then 500'd against jsonb / boolean `not null` columns.
+ *
+ * `analytics_opt_out` is the same mechanism as `org_archetype` (scalar NOT NULL
+ * + `!== undefined` write) and is included even though the issue listed only
+ * the nested blocks.
+ *
+ * `default_invite_role_id` is the opposite contract (#422) and stays nullable.
+ */
+describe('PatchChapterConfigDto — explicit null on nested blocks (#1817)', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const metadata: ArgumentMetadata = {
+    type: 'body',
+    metatype: PatchChapterConfigDto,
+  };
+
+  const transform = (payload: unknown) => pipe.transform(payload, metadata);
+
+  const NULL_BLOCKS = [
+    'org_archetype',
+    'enabled_modules',
+    'vocabulary',
+    'branding',
+    'beta_config',
+    'dues',
+    'service',
+    'workflows',
+    'points',
+    'analytics_opt_out',
+  ] as const;
+
+  const expectPropertyNamed400 = async (payload: unknown, property: string) => {
+    const err = await transform(payload).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(err).toBeInstanceOf(BadRequestException);
+    const response = (err as BadRequestException).getResponse();
+    const text =
+      typeof response === 'string' ? response : JSON.stringify(response);
+    expect(text).toContain(property);
+  };
+
+  it.each(NULL_BLOCKS)(
+    'rejects an explicit null on %s and names the property',
+    async (property) => {
+      await expectPropertyNamed400({ [property]: null }, property);
+    },
+  );
+
+  it('accepts an empty patch', async () => {
+    await expect(transform({})).resolves.toBeDefined();
+  });
+
+  it('accepts a payload that omits the nested blocks', async () => {
+    await expect(transform({ analytics_opt_out: true })).resolves.toEqual(
+      expect.objectContaining({ analytics_opt_out: true }),
+    );
+  });
+
+  it('still accepts an explicit null on default_invite_role_id (#422)', async () => {
+    const result = (await transform({
+      default_invite_role_id: null,
+    })) as PatchChapterConfigDto;
+
+    expect(result).toHaveProperty('default_invite_role_id');
+    expect(result.default_invite_role_id).toBeNull();
+  });
+
+  it('still accepts a present nested block', async () => {
+    await expect(transform({ branding: {} })).resolves.toEqual(
+      expect.objectContaining({ branding: {} }),
+    );
   });
 });
