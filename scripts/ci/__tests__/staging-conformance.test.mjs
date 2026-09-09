@@ -874,6 +874,62 @@ test("sign-in skips loudly when the smoke credential is not provisioned", async 
   assert.match(result.detail, /exactly ONE chapter membership/);
 });
 
+test("sign-in FAILs when URL is present but anon key is missing — #1767", async () => {
+  const result = await checkAuthSignIn({ supabaseUrl: "https://staging.example" });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /#1767/);
+  assert.match(result.detail, /incomplete/);
+});
+
+test("sign-in FAILs when anon key is an empty string — GitHub renders unset secrets as empty", async () => {
+  const result = await checkAuthSignIn({
+    supabaseUrl: "https://staging.example",
+    anonKey: "",
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /#1767/);
+});
+
+test("sign-in FAILs when the anon key is present but the URL is not", async () => {
+  const result = await checkAuthSignIn({ anonKey: "k" });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /#1767/);
+});
+
+test("sign-in FAILs when the smoke user is set but anon key is missing", async () => {
+  const result = await checkAuthSignIn({
+    email: "smoke@example.com",
+    password: "pw",
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /#1767/);
+});
+
+test("a fully unconfigured sign-in still skips — local run, not a silent green staging", async () => {
+  const result = await checkAuthSignIn({});
+  assert.equal(result.status, SKIPPED);
+  assert.match(result.detail, /exactly ONE chapter membership/);
+});
+
+test("default toRun auth-signin FAILs when URL is injected without the anon key", async () => {
+  const { fetchImpl } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [] },
+    { method: "POST", path: "/issues", body: { number: 1767 } },
+  ]);
+  const { outcome, results } = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    env: { SUPABASE_URL: "https://staging.example" },
+    writeSummary: () => {},
+    logger: quiet,
+  });
+  assert.equal(outcome, "failed");
+  const row = results.find((r) => r.id === "auth-signin");
+  assert.equal(row.status, FAIL);
+  assert.match(row.detail, /#1767/);
+});
+
 test("a token carrying active_chapter_id passes", async () => {
   const result = await checkAuthSignIn({
     supabaseUrl: "https://staging.example",
