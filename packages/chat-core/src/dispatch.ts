@@ -323,7 +323,7 @@ const RETRY_IN_FLIGHT_NOTE =
  * | 408 / 499 / 460 | kept `unconfirmed` — an intermediary emitted it, possibly post-commit | kept `unconfirmed` |
  * | 5xx / transport | kept `unconfirmed` | kept `unconfirmed` |
  * | `card_posted:false` | kept `recorded`, committed-card-lost warning | same |
- * | `card_posted` absent | kept for the echo — no outcome reported | removed, committed-card-unknown warning |
+ * | `card_posted` absent | kept for the echo — no outcome reported | removed, committed-card-unknown warning (no stored origin) |
  * | `card_posted:true` | kept for the echo | row cleared, explicit success |
  */
 async function submitPointsAdjustment(
@@ -420,13 +420,17 @@ async function submitPointsAdjustment(
   // `undefined` means the server reported no outcome, and what that implies
   // depends entirely on whether WE are replaying:
   //
-  //   - On a replay it means `completeReplay` short-circuited: the ledger row
-  //     exists (that is what made it a replay), the request fired no side
-  //     effect, and the row records nothing about whether the ORIGINAL
-  //     attempt's card posted. Leaving the placeholder up would strand it on
-  //     "Granting…" forever if that first card failed — #544's bug arriving
-  //     through the replay branch, which is why the coupling comment on #1733
-  //     required this guard before key reuse could ship.
+  //   - On a replay it means `completeReplay` had no stored origin to heal
+  //     into (a pre-#1734 row, or a dashboard-keyed row): the ledger row
+  //     exists (that is what made it a replay), this request attempted no
+  //     card, and nothing is known about whether the ORIGINAL attempt's card
+  //     posted. Leaving the placeholder up would strand it on "Granting…"
+  //     forever if that first card failed — #544's bug arriving through the
+  //     replay branch, which is why the coupling comment on #1733 required
+  //     this guard before key reuse could ship.
+  //
+  //     A replay whose stored origin *is* set reports `card_posted` and never
+  //     reaches this branch.
   //
   //     Note the copy says the card's fate is UNKNOWN, not that it failed: the
   //     server omits the field because it knows nothing about the original
