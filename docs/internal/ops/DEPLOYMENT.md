@@ -227,14 +227,14 @@ silently revert or be forgotten on a new project.
 **Custom SMTP is proven on staging, not on production.** Staging Auth SMTP is Resend
 (`smtp.resend.com:465`, sender `Signet <no-reply@mail.staging.frapp.live>` as of 2026-09-08),
 `rate_limit_email_sent` is 300/hour, and `_dmarc.frapp.live` is `v=DMARC1; p=none;`.
-`staging-conformance.mjs` asserts the host, that live From, and the send cap daily (`auth-smtp`)
-so a revert to the hosted 2/hour mailer or the burned apex From cannot sit green.
+`staging-conformance.mjs` asserts the host, that live From, `smtp_sender_name=Signet`, and the send cap daily (`auth-smtp`)
+so a revert to the hosted 2/hour mailer, a leftover Frapp sender, or the burned apex From cannot sit green.
 It also asserts the Magic Link subject and `token_hash` href daily (`auth-magic-link`) so a
 dashboard reset to `{{ .ConfirmationURL }}` cannot sit green.
 Production Auth is still the hosted 2/hour cap. The 07:45
 `production-auth-conformance.yml` watchdog skip-asserts that: empty SMTP is
 SKIPPED (the job stays green). Once SMTP is on, the same check requires
-`no-reply@mail.frapp.live` at ≥300/hour and fails a burned apex From.
+`Signet <no-reply@mail.frapp.live>` at ≥300/hour and fails a burned apex From.
 The same watchdog skip-asserts the Magic Link template: ConfirmationURL is
 SKIPPED while SMTP is unset. Once SMTP is on, the href must carry
 `token_hash` + `type=magiclink` or the 07:45 job fails.
