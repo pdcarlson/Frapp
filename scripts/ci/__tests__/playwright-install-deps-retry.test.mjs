@@ -4,10 +4,12 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Pins the install-deps retry for a Google chrome-stable apt Hash Sum
-// mismatch that reds required `web-responsive-floor` before the 375px
-// suite runs. The watchdog will not auto-requeue: the failed step is
-// repo-defined. Do not skip apt hash checks and do not pin Chrome apt.
+// Pins the install-deps retry AND dropping GitHub's unused chrome-stable
+// apt source. That source Hash-Sum-mismatches and reds required
+// `web-responsive-floor` before the 375px suite runs. The watchdog will
+// not auto-requeue: the failed step is repo-defined. Do not skip apt
+// hash checks and do not pin Chrome apt. Retry alone is not enough when
+// the Chrome index stays wrong for hours.
 
 const WORKFLOWS = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -66,6 +68,16 @@ describe("playwright install-deps retries apt Hash Sum mismatch", () => {
       /\bsleep 20\b/,
       "retries must back off so a mid-publish index can settle",
     );
+    assert.match(
+      block,
+      /dl\.google\.com\/linux\/chrome-stable/,
+      "must drop the runner chrome-stable apt source Playwright does not use",
+    );
+    assert.match(
+      block,
+      /xargs --no-run-if-empty sudo rm -f/,
+      "chrome-stable lists must be removed, not left to fail apt-get update",
+    );
     const depsAt = block.indexOf(INSTALL_DEPS);
     const floorAt = block.indexOf("npm run test:floor -w apps/web");
     assert.notEqual(floorAt, -1, "the 375px floor assertion must still run");
@@ -88,8 +100,11 @@ describe("playwright install-deps retries apt Hash Sum mismatch", () => {
       if (!text.includes(INSTALL_DEPS)) continue;
       hits.push(name);
       assert.ok(
-        /while true;/.test(text) && /\bmax=3\b/.test(text),
-        `${name} runs install-deps and must use the same bounded retry`,
+        /while true;/.test(text) &&
+          /\bmax=3\b/.test(text) &&
+          /dl\.google\.com\/linux\/chrome-stable/.test(text) &&
+          /xargs --no-run-if-empty sudo rm -f/.test(text),
+        `${name} runs install-deps and must drop chrome-stable then retry`,
       );
     }
     assert.deepEqual(
