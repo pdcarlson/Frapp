@@ -69,10 +69,13 @@ function makeQueryClient() {
          * an optimistic `onMutate` rendering a task card "confirmed" against a
          * write that never happened and never rolls back.
          *
-         * This is only the "never settles" half of #1707. Disabling the
-         * controls up front — § 2's "disabled with 'Reconnect to make
-         * changes.'" — is #1753, so until that lands an offline member gets an
-         * error toast rather than a control that refuses to be pressed.
+         * This is only the "never settles" half of #1707. The other half —
+         * disabling queueless writes up front with `title="Reconnect to make
+         * changes."` — is `useSubscriptionGate` (#1753). An offline member
+         * on a gated surface now gets a control that refuses to be pressed;
+         * `networkMode: "always"` remains the backstop for anything that
+         * still fires (a missed call site, or a write that is not behind
+         * the gate).
          *
          * The chat composer is unaffected — `chat-client.ts` enqueues to a real
          * Dexie outbox and returns before touching the network (it is not a
