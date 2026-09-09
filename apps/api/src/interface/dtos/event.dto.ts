@@ -16,6 +16,8 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { POINTS_ADJUSTMENT_MAX, RECURRENCE_RULES } from '@repo/validation';
+import type { Event } from '#domain/entities/event.entity';
+import type { GeofenceCoordinate } from '#domain/entities/study.entity';
 import { GeofenceCoordinateDto } from './study.dto';
 
 /**
@@ -122,6 +124,82 @@ export class CreateEventDto {
   @IsOptional()
   @IsUUID()
   client_message_id?: string;
+}
+
+/**
+ * Response contract for `POST /v1/events`.
+ *
+ * This route previously declared no response schema, which openapi-typescript
+ * renders as `content?: never` — so `data` reached the SDK typed `never` and
+ * `/event` could not read `card_posted` without an unchecked cast (#1717). The
+ * event fields are flattened at the top level exactly as the route already
+ * returned them: the **parent** row. Recurring children are side effects of
+ * create and are not in this body; do not invent an `occurrences[]` field.
+ *
+ * Drift between this class and the event row is caught the same way as
+ * `AdjustPointsResponseDto`: `implements Event` for type drift, and the
+ * `Assert<Exclude<…>>` aliases below for key drift. `card_posted` is the one
+ * deliberate extra field.
+ */
+export class CreateEventResponseDto implements Event {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  chapter_id: string;
+
+  @ApiProperty()
+  name: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  description: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  location: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  start_time: string;
+
+  @ApiProperty({ format: 'date-time' })
+  end_time: string;
+
+  @ApiProperty()
+  point_value: number;
+
+  @ApiProperty()
+  is_mandatory: boolean;
+
+  @ApiProperty({ type: String, nullable: true })
+  recurrence_rule: string | null;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  parent_event_id: string | null;
+
+  @ApiProperty({ type: [String], nullable: true })
+  required_role_ids: string[] | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  notes: string | null;
+
+  @ApiProperty({
+    type: [GeofenceCoordinateDto],
+    nullable: true,
+    description:
+      'Optional check-in geofence. `null` means the event has no zone.',
+  })
+  check_in_zone: GeofenceCoordinate[] | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  check_in_zone_name: string | null;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch.',
+  })
+  card_posted?: boolean;
 }
 
 /**
@@ -248,3 +326,25 @@ export class DeleteEventQueryDto {
   @IsIn(['instance', 'series'])
   scope?: 'instance' | 'series';
 }
+
+/**
+ * Compile-time key-drift guards between {@link CreateEventResponseDto} and the
+ * event row it publishes. Each resolves to `never` while the two agree; when
+ * they diverge the alias stops satisfying `Assert`'s constraint and the build
+ * fails naming the field.
+ */
+type Assert<T extends never> = T;
+
+/** Event fields {@link CreateEventResponseDto} forgot to declare. Must be `never`. */
+export type CreateEventResponseDtoMissingFields = Assert<
+  Exclude<keyof Event, keyof CreateEventResponseDto>
+>;
+
+/**
+ * Fields {@link CreateEventResponseDto} declares that the event row does not
+ * carry. Must be `never`. `card_posted` is excluded because it is this route's
+ * own outcome flag, not a column — the one deliberate addition.
+ */
+export type CreateEventResponseDtoExtraFields = Assert<
+  Exclude<keyof CreateEventResponseDto, keyof Event | 'card_posted'>
+>;

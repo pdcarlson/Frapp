@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOperation,
   ApiProduces,
   ApiTags,
@@ -30,6 +31,7 @@ import {
 } from '../decorators/current-user.decorator';
 import {
   CreateEventDto,
+  CreateEventResponseDto,
   DeleteEventQueryDto,
   UpdateEventDto,
 } from '../dtos/event.dto';
@@ -67,6 +69,7 @@ export class EventController {
   @ThrottleFanOutWrite()
   @RequirePermissions(SystemPermissions.EVENTS_CREATE)
   @ApiOperation({ summary: 'Create an event' })
+  @ApiCreatedResponse({ type: CreateEventResponseDto })
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') createdBy: string,
