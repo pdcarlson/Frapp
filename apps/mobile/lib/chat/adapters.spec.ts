@@ -3,9 +3,14 @@ import { browserNetworkState } from "@repo/chat-core/adapters";
 import { createAsyncStorageKeyValueStore } from "./key-value-store";
 import {
   createExpoNetworkState,
+  createMonitorNetworkState,
   isOfflineFromExpoState,
 } from "./network-state";
 import { createAsyncStorageOutboxStore, OUTBOX_KEY } from "./outbox-store";
+import {
+  createConnectionMonitor,
+  type MonitorDeps,
+} from "@/lib/connection/monitor";
 
 /** In-memory stand-in with the slice of the AsyncStorage surface we use. */
 function fakeStorage(seed: Record<string, string> = {}) {
@@ -117,6 +122,115 @@ describe("createExpoNetworkState", () => {
 
     net.subscribe(() => {})();
     expect(remove).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createMonitorNetworkState", () => {
+  type LinkListener = (state: {
+    isConnected?: boolean;
+    isInternetReachable?: boolean;
+  }) => void;
+
+  function monitorHarness() {
+    let listener: LinkListener | null = null;
+    const fetchMock = vi.fn();
+    const deps = {
+      getState: vi
+        .fn()
+        .mockResolvedValue({ isConnected: true, isInternetReachable: true }),
+      addListener: vi.fn((next: LinkListener) => {
+        listener = next;
+        return { remove: vi.fn() };
+      }),
+      fetch: fetchMock,
+      setInterval: vi.fn(() => 1),
+      clearInterval: vi.fn(),
+    } as unknown as MonitorDeps;
+    const monitor = createConnectionMonitor(deps);
+    return { monitor, fetchMock, link: () => listener };
+  }
+
+  beforeEach(() => {
+    process.env.EXPO_PUBLIC_API_URL = "https://api.example.com";
+  });
+
+  it("is online until the monitor reaches OFFLINE — DEGRADED still sends", async () => {
+    const { monitor, fetchMock } = monitorHarness();
+    const net = createMonitorNetworkState(monitor);
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    await net.prime();
+    await Promise.resolve();
+
+    expect(net.isOffline()).toBe(false); // DEGRADED after the start probe
+    await monitor.probeOnce();
+    expect(net.isOffline()).toBe(false);
+    await monitor.probeOnce();
+    expect(net.isOffline()).toBe(true);
+  });
+
+  it("queues when the link is up and the API is dead", async () => {
+    const { monitor, fetchMock } = monitorHarness();
+    const net = createMonitorNetworkState(monitor);
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    await net.prime();
+    await monitor.probeOnce();
+    await monitor.probeOnce();
+    expect(net.isOffline()).toBe(true);
+  });
+
+  it("emits online=true on health recovery with no link change", async () => {
+    const { monitor, fetchMock } = monitorHarness();
+    const net = createMonitorNetworkState(monitor);
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    await net.prime();
+    await monitor.probeOnce();
+    await monitor.probeOnce();
+    expect(net.isOffline()).toBe(true);
+
+    const seen: boolean[] = [];
+    net.subscribe((online) => seen.push(online));
+
+    fetchMock.mockResolvedValue({ ok: true, status: 200 } as Response);
+    await monitor.probeOnce();
+
+    expect(net.isOffline()).toBe(false);
+    expect(seen).toEqual([true]);
+  });
+
+  it("does not emit on DEGRADED ↔ ONLINE — only OFFLINE flips the port", async () => {
+    const { monitor, fetchMock } = monitorHarness();
+    const net = createMonitorNetworkState(monitor);
+    fetchMock.mockRejectedValue(new Error("timeout"));
+    await net.prime();
+    await Promise.resolve();
+    expect(net.isOffline()).toBe(false);
+
+    const seen: boolean[] = [];
+    net.subscribe((online) => seen.push(online));
+
+    fetchMock.mockResolvedValue({ ok: true, status: 200 } as Response);
+    await monitor.probeOnce();
+    expect(net.isOffline()).toBe(false);
+    expect(seen).toEqual([]);
+  });
+
+  it("emits online=false when the link drops, and true when it returns via a healthy probe", async () => {
+    const { monitor, fetchMock, link } = monitorHarness();
+    const net = createMonitorNetworkState(monitor);
+    fetchMock.mockResolvedValue({ ok: true, status: 200 } as Response);
+    await net.prime();
+
+    const seen: boolean[] = [];
+    net.subscribe((online) => seen.push(online));
+
+    link()?.({ isConnected: false });
+    expect(net.isOffline()).toBe(true);
+    expect(seen).toEqual([false]);
+
+    link()?.({ isConnected: true, isInternetReachable: true });
+    await Promise.resolve();
+    expect(net.isOffline()).toBe(false);
+    expect(seen).toEqual([false, true]);
   });
 });
 
