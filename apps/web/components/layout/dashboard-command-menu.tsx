@@ -11,6 +11,7 @@ import {
   useSearch,
   type SearchSource,
 } from "@repo/hooks";
+import { formatLocaleDateTime } from "@repo/formatting";
 import {
   CommandDialog,
   CommandEmpty,
@@ -111,9 +112,13 @@ function buildSearchGroups(payload: unknown): SearchGroup[] {
       results: events.slice(0, 5).map((row) => ({
         id: `events-${row.id ?? row.name ?? Math.random()}`,
         label: row.name ?? "Untitled event",
+        // The validity check stays: this row falls back to the *location*
+        // when there is no usable time, which is better than the `"—"`
+        // placeholder `formatLocaleDateTime` would render. Only the
+        // formatting moves to the shared member.
         hint:
           row.start_time && !Number.isNaN(new Date(row.start_time).getTime())
-            ? new Date(row.start_time).toLocaleString()
+            ? formatLocaleDateTime(row.start_time)
             : (row.location ?? undefined),
         href: "/events",
       })),

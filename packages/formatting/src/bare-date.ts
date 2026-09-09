@@ -44,3 +44,24 @@ export function parseBareDateLocalMidnight(value: string): Date | null {
 export function parseInstantOrBareUtcNoon(value: string): Date | null {
   return parseBareDateUtcNoon(value) ?? asDate(value);
 }
+
+/**
+ * A `date` column rendered as a locale date, or `"—"` when the value is
+ * missing or unparseable.
+ *
+ * This is the cluster's own formatter — the counterpart to
+ * {@link formatLocaleDate} for **bare `YYYY-MM-DD`** columns, and the reason
+ * the two must not be folded together. `formatLocaleDate` reads that string
+ * through `new Date(value)`, which is UTC midnight and so renders the
+ * *previous* calendar day west of Greenwich; this parses at UTC noon, which
+ * stays on the stored day in every zone from UTC−12 to UTC+12.
+ *
+ * A full timestamp still formats, via {@link parseInstantOrBareUtcNoon}, so a
+ * column that changes shape degrades to the old rendering rather than to a
+ * placeholder.
+ */
+export function formatBareDate(value: unknown): string {
+  if (typeof value !== "string" || value === "") return "—";
+  const parsed = parseInstantOrBareUtcNoon(value);
+  return parsed ? parsed.toLocaleDateString() : "—";
+}

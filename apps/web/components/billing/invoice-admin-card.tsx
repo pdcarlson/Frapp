@@ -9,6 +9,7 @@ import {
   useOverdueInvoices,
   useTransitionInvoiceStatus,
 } from "@repo/hooks";
+import { formatBareDate } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -528,7 +529,7 @@ export function InvoiceAdminCard() {
                         </p>
                         <p className="text-[12.5px] text-muted-foreground">
                           {name} · Due{" "}
-                          {new Date(invoice.due_date).toLocaleDateString()}
+                          {formatBareDate(invoice.due_date)}
                         </p>
                         {invoice.description ? (
                           <p className="truncate text-[12.5px] text-muted-foreground">

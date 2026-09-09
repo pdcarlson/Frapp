@@ -23,6 +23,7 @@ import {
   useRequestDocumentUploadUrl,
   useUpdateDocumentFolder,
 } from "@repo/hooks";
+import { formatBareDate, formatLocaleDate } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -1157,11 +1158,11 @@ export function DocumentsPage() {
                         </p>
                       ) : null}
                       <p className="text-[12.5px] text-muted-foreground">
-                        Uploaded {new Date(doc.created_at).toLocaleDateString()}
+                        Uploaded {formatLocaleDate(doc.created_at)}
                         {doc.folder ? ` · ${doc.folder}` : ""}
                         {doc.document_type ? ` · ${doc.document_type}` : ""}
                         {doc.effective_date
-                          ? ` · Effective ${new Date(doc.effective_date).toLocaleDateString()}`
+                          ? ` · Effective ${formatBareDate(doc.effective_date)}`
                           : ""}
                       </p>
                     </div>

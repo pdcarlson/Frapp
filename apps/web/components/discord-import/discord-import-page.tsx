@@ -9,6 +9,7 @@ import {
   useDiscordImport,
   useDiscordImports,
 } from "@repo/hooks";
+import { formatLocaleDateTime } from "@repo/formatting";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -280,7 +281,7 @@ function DiscordImportBody({
                           {live.guild_name ?? "Discord server"}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(live.created_at).toLocaleString()}
+                          {formatLocaleDateTime(live.created_at)}
                         </p>
                       </div>
                       <Badge variant={STATUS_VARIANT[live.status] ?? "outline"}>
