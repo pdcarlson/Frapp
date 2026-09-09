@@ -1,3 +1,4 @@
+import { REQUEST_ID_HEADER } from "@repo/api-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createConnectionMonitor,
@@ -80,6 +81,18 @@ describe("connection monitor", () => {
     // Without this a cold start against a dead API reports ONLINE for a whole
     // poll period before the first failure lands — and OFFLINE needs three.
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("mints x-request-id on the health probe, not a sentry-trace id", async () => {
+    const { monitor, fetchMock } = harness();
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    await Promise.resolve();
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = new Headers(init?.headers);
+    expect(headers.get(REQUEST_ID_HEADER)).toMatch(/^req_[0-9a-f-]{36}$/i);
+    expect(headers.get("sentry-trace")).toBeNull();
+    expect(headers.get("baggage")).toBeNull();
   });
 
   it("goes OFFLINE the moment the link drops", async () => {

@@ -28,11 +28,13 @@ import { webSentryDsn } from "@/lib/sentry/options";
  * browser error and their server error correlate across the two Sentry projects.
  * The salt never leaves the API.
  *
- * What it deliberately does not do: chapter ids get no client pseudonym, because
- * no endpoint returns one. They are dropped rather than sent raw. Free-text
- * identifiers in the browser are likewise redacted to `[redacted:id]` rather than
- * hashed — the shared scrubber's existing fail-closed branch, taken here by
- * passing `NO_PSEUDONYMS` in `lib/sentry/options.ts`.
+ * What it deliberately does not do: this provider only sets Sentry `user.id`
+ * from `distinct_id`. `GET /v1/analytics/identity` also returns
+ * `chapter_group_id` (HMAC of `chapter_id`) so a future PostHog client never
+ * hashes in-bundle; that field is not a Sentry user id. Free-text identifiers
+ * in the browser are still redacted to `[redacted:id]` rather than hashed —
+ * the shared scrubber's fail-closed branch, via `NO_PSEUDONYMS` in
+ * `lib/sentry/options.ts`.
  *
  * The id is only ever *read* from the server; the scrubber independently
  * re-checks it against `/^[0-9a-f]{64}$/` before letting it onto an event, so a
