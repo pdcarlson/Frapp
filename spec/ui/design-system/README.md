@@ -116,10 +116,10 @@ For each of the three gate classes the API enforces, the client must mirror the 
 | Gate | Enforced server-side by | Client must |
 | --- | --- | --- |
 | Permission | `@RequirePermissions` → `PermissionsGuard` (`apps/api/src/interface/guards/permissions.guard.ts`) | Hide or disable the control (`<Can>`, `apps/web/components/shared/can.tsx`) — but say so, not hide, while the check itself cannot be made (§4) |
-| Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason (`useSubscriptionGate`, `apps/web/components/shared/subscription-gate.tsx`) |
+| Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason (`useSubscriptionGate`, `apps/web/components/shared/subscription-gate.tsx`) — the hook answers "may this surface write", so it also refuses queueless writes while OFFLINE with `title="Reconnect to make changes."` on the control, not via `SubscriptionNotice` |
 | Module enabled | `ChapterGuard.enforceModule` | Hide the surface |
 
-All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar / Cmd+K / slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionGate` for subscription state.
+All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar / Cmd+K / slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionGate` for whether a surface may write (subscription plus connectivity). The chat composer is the outbox carve-out (`spec/ui/resilience.md` § 2) and does not go through this hook.
 
 **Writes only.** `enforceSubscription` returns early for `GET`/`HEAD`/`OPTIONS`, so a lapsed chapter can still read everything it owns. Mirror the gate on write affordances; never gate a read surface on subscription state.
 
@@ -133,9 +133,14 @@ All three gate classes now have a client counterpart — `<Can>` for permissions
 
 Unlike `<Can>`, the subscription mirror **fails open when the chapter cannot be established** — the fetch failed, no chapter is active, or the status is one this client does not model. An unresolved permission may be one the user never holds, so hiding is right; an unresolved subscription most likely belongs to a paying chapter, and locking its paid surface over a failed fetch is worse than the late 403 the gate exists to avoid.
 
-The **in-flight** window is the one exception, and it goes the other way: while the chapter query is still resolving, `useSubscriptionGate` holds the control disabled and says so ("Checking this chapter's subscription…"). That window is the most common path to the very 403 this gate prevents — a trigger that paints enabled for one round trip still lets a fast click reach a doomed form. Do not collapse the two: `allowed` folds in `isPending`, `state.allowed` does not.
+Two exceptions go the other way, and both fold into `allowed` rather than `state.allowed`:
 
-**Use the shared primitive, not the raw hook.** `useSubscriptionGate` / `useGatedDialog` / `SubscriptionNotice` (`apps/web/components/shared/subscription-gate.tsx`) package the five things a correct gated control needs: the pending fold-in, the mid-flight revoke, the refusal to open, the `aria-describedby` wiring, and the notice. `useSubscriptionWriteState` remains the predicate underneath, for callers that need the verdict without a control. Pass your own busy flags to `controlProps(alsoDisabled)` rather than OR-ing them in afterwards — spreading the props and then writing your own `disabled` silently drops the gate.
+- **In-flight.** While the chapter query is still resolving, `useSubscriptionGate` holds the control disabled and says so ("Checking this chapter's subscription…"). That window is the most common path to the very 403 this gate prevents — a trigger that paints enabled for one round trip still lets a fast click reach a doomed form.
+- **Offline.** While `useNetwork().isOffline`, the same hook disables queueless writes with `title="Reconnect to make changes."` (the string `writeBlockedReason()` returns on mobile). `SubscriptionNotice` stays silent for an offline-only block — the page already has `OfflineBanner`, and a notice per chat card would be twelve live regions of the same sentence. DEGRADED does not disable. Do not put offline into `state.allowed`: `useGatedDialog` keys the revoke on the subscription verdict, and a dropped connection must not slam a half-filled dialog.
+
+Do not collapse these into the verdict: `allowed` folds in `isPending` and `isOffline`; `state.allowed` does not.
+
+**Use the shared primitive, not the raw hook.** `useSubscriptionGate` / `useGatedDialog` / `SubscriptionNotice` (`apps/web/components/shared/subscription-gate.tsx`) package the six things a correct gated control needs: the pending fold-in, the offline fold-in, the mid-flight revoke, the refusal to open, the `aria-describedby` / `title` wiring, and the notice. `useSubscriptionWriteState` remains the predicate underneath, for callers that need the verdict without a control. Pass your own busy flags to `controlProps(alsoDisabled)` rather than OR-ing them in afterwards — spreading the props and then writing your own `disabled` silently drops the gate.
 
 Every paid-ops write **affordance** in `apps/web` is mirrored. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
 

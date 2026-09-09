@@ -50,6 +50,8 @@ describe("OfflineBanner", () => {
 
     const banner = screen.getByRole("alert");
     expect(banner).toBeInTheDocument();
+    expect(banner).toHaveAttribute("id", "frapp-offline-banner");
+    expect(banner).toHaveAttribute("tabindex", "-1");
     // `spec/ui/resilience.md` § 2's OFFLINE banner cell, verbatim, and what
     // mobile ships. The trailing "Changes will sync when you reconnect." was
     // dropped in #1707: queueless writes now reject rather than pausing, so
