@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   EXPECTED_HEALTH_CHECK_PATH,
@@ -346,5 +347,17 @@ describe("buildSummary — a pass must not assert what it did not read", () => {
     const text = buildSummary(["Render auto-deploy is ON"], { checked: ["render", "vercel-web"] });
     assert.match(text, /1 production guardrail violation/);
     assert.match(text, /Render auto-deploy is ON/);
+  });
+});
+
+describe("health-check-path helper lives in the shared lib", () => {
+  it("production-guardrails.mjs re-exports rather than keeping a local copy", () => {
+    const src = readFileSync(
+      new URL("../production-guardrails.mjs", import.meta.url),
+      "utf8",
+    );
+    assert.match(src, /from "\.\/lib\/render-health-check-path\.mjs"/);
+    assert.match(src, /export \{ EXPECTED_HEALTH_CHECK_PATH, readHealthCheckPath \}/);
+    assert.doesNotMatch(src, /frapp-api-staging/);
   });
 });

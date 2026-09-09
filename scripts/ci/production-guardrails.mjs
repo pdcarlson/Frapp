@@ -73,6 +73,12 @@ import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-i
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { fetchJson } from "./lib/providers.mjs";
+import {
+  EXPECTED_HEALTH_CHECK_PATH,
+  readHealthCheckPath,
+} from "./lib/render-health-check-path.mjs";
+
+export { EXPECTED_HEALTH_CHECK_PATH, readHealthCheckPath };
 
 // Deliberately NOT renamed when assertion 2 was inverted (#1579), even though
 // "production branch" now under-describes it. This string is the issue LOOKUP
@@ -86,11 +92,6 @@ export const ALERT_ISSUE_TITLE =
 export const ALERT_ISSUE_LOOKUP_LABEL = "routine-state";
 export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 
-// Render's GET /v1/services/{id} puts this on webServiceDetails, not the
-// service root. An empty string is a real, documented value (TCP-only probe),
-// not "unreadable".
-export const EXPECTED_HEALTH_CHECK_PATH = "/health";
-
 // Provider identifiers are NOT defaulted here, deliberately. Every sibling
 // script requires them from the environment, and the workflows that call this
 // one pass the same values they use to deploy. A default would let this
@@ -102,18 +103,6 @@ const VERCEL_PROJECT_URL = (projectId, teamId) =>
   `https://api.vercel.com/v9/projects/${projectId}${teamId ? `?teamId=${teamId}` : ""}`;
 
 // ── Pure assertions ─────────────────────────────────────────────────────────
-
-/**
- * Render's health check path lives on `serviceDetails`, not the service root.
- * Missing `serviceDetails` is unreadable (fail closed). An empty string is a
- * real dashboard value and must not collapse into "unreadable".
- */
-export function readHealthCheckPath(service) {
-  const details = service?.serviceDetails;
-  if (typeof details !== "object" || details === null) return undefined;
-  if (!Object.hasOwn(details, "healthCheckPath")) return undefined;
-  return details.healthCheckPath;
-}
 
 /**
  * Render must not auto-deploy production, must track `main` now that
