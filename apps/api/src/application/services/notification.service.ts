@@ -235,10 +235,13 @@ export class NotificationService {
 
     const created: Notification[] = [];
     let insertFailures = 0;
+    const recipientChunks: (typeof recipients)[] = [];
     for (let i = 0; i < recipients.length; i += ID_CHUNK_SIZE) {
-      const chunk = recipients.slice(i, i + ID_CHUNK_SIZE);
-      try {
-        const rows = await this.notificationRepo.createMany(
+      recipientChunks.push(recipients.slice(i, i + ID_CHUNK_SIZE));
+    }
+    const insertResults = await Promise.allSettled(
+      recipientChunks.map((chunk) =>
+        this.notificationRepo.createMany(
           chunk.map(({ userId }) => ({
             chapter_id: chapterId,
             user_id: userId,
@@ -246,13 +249,19 @@ export class NotificationService {
             body: payload.body,
             data: payload.data ?? {},
           })),
-        );
-        created.push(...rows);
-      } catch (err) {
+        ),
+      ),
+    );
+    for (let i = 0; i < insertResults.length; i++) {
+      const result = insertResults[i];
+      const chunk = recipientChunks[i];
+      if (result.status === 'fulfilled') {
+        created.push(...result.value);
+      } else {
         insertFailures += chunk.length;
         this.logger.warn(
           `Chapter notify insert failed for ${chunk.length} recipients in ${chapterId}`,
-          err,
+          result.reason,
         );
       }
     }
@@ -339,14 +348,20 @@ export class NotificationService {
 
     const rows: T[] = [];
     const failedIds: string[] = [];
-    for (const chunk of chunkIds(ids)) {
-      try {
-        rows.push(...(await load(chunk)));
-      } catch (err) {
+    const chunks = chunkIds(ids);
+    const results = await Promise.allSettled(
+      chunks.map((chunk) => load(chunk)),
+    );
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const chunk = chunks[i];
+      if (result.status === 'fulfilled') {
+        rows.push(...result.value);
+      } else {
         failedIds.push(...chunk);
         this.logger.warn(
           `Chapter notify ${label} failed for ${chunk.length} recipients in ${chapterId}`,
-          err,
+          result.reason,
         );
       }
     }
