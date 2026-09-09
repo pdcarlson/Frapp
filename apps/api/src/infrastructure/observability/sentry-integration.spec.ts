@@ -53,10 +53,10 @@ import { scrubSentryEvent } from './sentry-scrubbing';
  * `true`), but it attaches nothing unless `includeLocalVariables` is set — the
  * API does not set it — and it needs the debugger to pause on a *thrown*
  * error, which `captureException(new Error(...))` never does. So a `vars`
- * assertion here would pass with `scrubException`'s `delete kept.vars`
- * removed, making it worse than no test. That rule is covered where it can
- * actually fail — `sentry-scrubbing.spec.ts:151` builds a frame carrying
- * `vars` by hand and asserts it does not survive. **Do not read that as the
+ * assertion here would pass with `scrubFrame`'s allowlist omitted, making it
+ * worse than no test. That rule is covered where it can actually fail — the
+ * `@repo/observability` scrubber spec and this directory's `sentry-scrubbing.spec.ts`
+ * build a frame carrying `vars` by hand and assert it does not survive. **Do not read that as the
  * rule being dead:** `LocalVariablesAsync` ships in production's default
  * integration set and `sendDefaultPii: false` still resolves
  * `stackFrameVariables: true`, so enabling `includeLocalVariables` for
@@ -172,10 +172,40 @@ describe('Sentry SDK integration', () => {
           delete process.env.SENTRY_TRACES_SAMPLE_RATE;
         else process.env.SENTRY_TRACES_SAMPLE_RATE = previous;
       }
-      // Asserting the concrete default matters beyond correctness: the rate
-      // governs how much of the transaction path is exercised, and that path
-      // has its own scrubber since #896. A malformed value yields NaN, which
-      // the SDK reads as tracing-enabled — #904.
+    });
+
+    it('falls back to 0.1 for malformed, empty, or out-of-range traces rates', () => {
+      const previous = process.env.SENTRY_TRACES_SAMPLE_RATE;
+      const warn = jest
+        .spyOn(console, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        process.env.SENTRY_TRACES_SAMPLE_RATE = '0,1';
+        expect(Number.isFinite(options().tracesSampleRate)).toBe(true);
+        expect(options().tracesSampleRate).toBe(0.1);
+        expect(warn).toHaveBeenCalled();
+
+        warn.mockClear();
+        process.env.SENTRY_TRACES_SAMPLE_RATE = '';
+        expect(options().tracesSampleRate).toBe(0.1);
+        expect(warn).toHaveBeenCalled();
+
+        warn.mockClear();
+        process.env.SENTRY_TRACES_SAMPLE_RATE = '2';
+        expect(options().tracesSampleRate).toBe(0.1);
+
+        warn.mockClear();
+        delete process.env.SENTRY_TRACES_SAMPLE_RATE;
+        expect(options().tracesSampleRate).toBe(0.1);
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+        if (previous === undefined)
+          delete process.env.SENTRY_TRACES_SAMPLE_RATE;
+        else process.env.SENTRY_TRACES_SAMPLE_RATE = previous;
+      }
+      // #2040: a malformed value used to yield NaN, which the SDK reads as
+      // tracing-enabled. Every built options object must carry a finite rate.
     });
 
     it('does not let transaction events through unscrubbed', () => {
@@ -301,8 +331,11 @@ describe('Sentry SDK integration', () => {
     await Sentry.flush(2000);
 
     expect(sent).toHaveLength(1);
-    // Asserted on the exception value, not the serialized event, for the same
-    // source-echo reason.
+    const json = JSON.stringify(sent[0]);
+    expect(json).not.toContain(email);
+    expect(json).not.toContain(USER_UUID);
+    // Exception value specifically, so `[redacted:email]` is not satisfied by
+    // an echo of this assertion in source context.
     const value = sent[0].exception?.values?.[0]?.value ?? '';
     expect(value).not.toContain(email);
     expect(value).not.toContain(USER_UUID);
