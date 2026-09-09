@@ -8,6 +8,18 @@ import type {
 import type { INotificationRepository } from '#domain/repositories/notification.repository.interface';
 import type { Notification } from '#domain/entities/notification.entity';
 
+function toNotificationInsert(
+  data: TablesInsert<'notifications'>,
+): TablesInsert<'notifications'> {
+  return {
+    chapter_id: data.chapter_id,
+    user_id: data.user_id,
+    title: data.title,
+    body: data.body,
+    data: data.data ?? {},
+  };
+}
+
 @Injectable()
 export class SupabaseNotificationRepository implements INotificationRepository {
   constructor(
@@ -16,21 +28,32 @@ export class SupabaseNotificationRepository implements INotificationRepository {
   ) {}
 
   async create(data: TablesInsert<'notifications'>): Promise<Notification> {
-    const row: TablesInsert<'notifications'> = {
-      chapter_id: data.chapter_id,
-      user_id: data.user_id,
-      title: data.title,
-      body: data.body,
-      data: data.data ?? {},
-    };
     const { data: created, error } = await this.supabase
       .from('notifications')
-      .insert(row)
+      .insert(toNotificationInsert(data))
       .select()
       .single();
 
     if (error) throw error;
     return created;
+  }
+
+  async createMany(
+    data: TablesInsert<'notifications'>[],
+  ): Promise<Notification[]> {
+    // An empty insert is a no-op, not a query. PostgREST answers `insert([])`
+    // with a 200 and no rows, so this only saves a round trip — but it also
+    // keeps "the caller sent no recipients" from looking like a write in the
+    // repository's call log, which is what the tenant-scope harness reads.
+    if (data.length === 0) return [];
+
+    const { data: created, error } = await this.supabase
+      .from('notifications')
+      .insert(data.map(toNotificationInsert))
+      .select();
+
+    if (error) throw error;
+    return created ?? [];
   }
 
   async findByUser(
