@@ -50,6 +50,7 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { ChapterLockup } from "@/components/layout/chapter-lockup";
 import { ChapterSwitcher } from "@/components/layout/chapter-switcher";
 import { BetaBadge, type BetaBadgeStyle } from "@/components/layout/beta-badge";
+import { DASHBOARD_HEADER_STICKY_CLASS } from "@/components/shared/offline-banner-focus";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -396,7 +397,12 @@ export function DashboardShell({ children }: DashboardShellProps) {
             rest is the search button going icon-only and the primary action —
             which is always also reachable inside the page — standing down.
           */}
-          <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
+          {/*
+            `top` reads the banner height so this header cannot cover the only
+            OFFLINE/DEGRADED signal (#1746). Default 0px when the banner is
+            unmounted. z-30 stays below the banner's z-40.
+          */}
+          <header className={`${DASHBOARD_HEADER_STICKY_CLASS} border-b border-border bg-background/95 backdrop-blur`}>
             <div className="flex h-16 items-center justify-between gap-2 px-4 sm:px-6">
               <nav aria-label="Breadcrumb" className="min-w-0">
                 <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
