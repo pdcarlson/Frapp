@@ -197,7 +197,7 @@ Cursor Cloud is the **primary** Frapp agent environment (ADR-16 amendment 8). Cl
 - **Review gate:** `/diff-review`. Project [`.cursor/hooks.json`](.cursor/hooks.json) fails closed on the evidence marker `.cache/diff-review/<HEAD_SHA>`. Cursor built-ins (`/review`, Bugbot) are **not** Frapp's gate. Runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 - **Tracker:** GitHub Issues via this harness's GitHub MCP. Never `gh` or raw REST for tracker writes. Labels replace the whole set. Policy: [`GITHUB_PM.md`](docs/internal/ci-cd/GITHUB_PM.md).
 - **PRs:** open against `main`. Prefer this harness's PR tool when present; GitHub MCP remains valid. Never `gh`.
-- **Babysit:** subscribe using this harness's PR/CI tools. Do not freeze a catalog here. Wake-path facts: [`AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md).
+- **Babysit:** subscribe using this harness's PR/CI tools. Do not freeze a catalog here. Wake-path facts: [`pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md).
 - **Skills:** currently [`.claude/skills/`](.claude/skills/). Moving to `.cursor/skills/` is gated — not this PR. `/next`: [`.cursor/commands/next.md`](.cursor/commands/next.md).
 - **Scheduled agents:** intended runtime is Cursor Automations; they are **not live** until a human pastes them and a run is observed ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). Do not enable Hygiene Scan without a healthy repo-backed stack.
 - **Egress:** production-withholding allowlist is a **dashboard** decision (#2025). Canonical host list: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Do not invent hosts and do not put the list in `environment.json` as a guess.
@@ -209,15 +209,15 @@ Cursor Cloud is the **primary** Frapp agent environment (ADR-16 amendment 8). Cl
 A task is not "done" when the code is pushed — it's done when the PR is ready to merge. After completing the requested work:
 
 1. **Open a PR** against `main` — the only legal base. Don't wait to be asked. Prefer this harness's PR tool when present; GitHub MCP remains valid. Never `gh`.
-2. **Subscribe** using this harness's PR/CI subscription tools. Do not freeze a catalog. Repo-side wake comments (`CI wake`, `PR base sync`) still apply. Details: [`AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § Wake coverage.
+2. **Subscribe** using this harness's PR/CI subscription tools. Do not freeze a catalog. Repo-side wake comments (`CI wake`, `PR base sync`) still apply. Details: [`pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md#wake-coverage).
 3. Anything that needs a standing schedule is a Cursor Automation / Claude Routine in the UI — Automations are prepared, not silently live. See [`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md).
 4. **Triage CI failures before "fixing" them.** A job that died before its first repo step is GitHub Actions infra, not code — re-run it, don't patch. **No `CI wake` comment does not mean no failure:** that watchdog now comments only on a cancelled or timed-out run, or an infra failure its auto-requeue could not absorb. An ordinary red CI is yours to diagnose from the run itself.
-5. **Babysit until green:** real CI failure → diagnose and push a fix; review comment → address and resolve the thread. A `Base-branch sync` comment (`<!-- frapp-base-sync -->`) means merge `origin/main` (or follow the comment). Once the base-sync App is configured a clean behind-PR is updated for you silently and no comment arrives; **until then it is not** — you get the comment and you do the merge. Never read the absence of a comment as "it was updated for me": check the PR's own mergeability. Details: [`AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § Base-branch sync.
+5. **Babysit until green:** real CI failure → diagnose and push a fix; review comment → address and resolve the thread. A `Base-branch sync` comment (`<!-- frapp-base-sync -->`) means merge `origin/main` (or follow the comment). Once the base-sync App is configured a clean behind-PR is updated for you silently and no comment arrives; **until then it is not** — you get the comment and you do the merge. Never read the absence of a comment as "it was updated for me": check the PR's own mergeability. Details: [`pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs).
 6. **Stop conditions:** green and review-clean, OR out of scope (file an issue, report, stop), OR the user says to stop.
 
 A `/next` session may hold **up to two open PRs** (pipelining in [`.claude/commands/next.md`](.claude/commands/next.md) Phase 4). Every obligation above then reads **plural**. The pipelined unit runs on a fresh from-`main` branch suffixed `-p2`.
 
-Wake-path mechanics: [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § "PR babysitting: wake signals and CI-failure triage".
+Wake-path mechanics: [`docs/internal/ci-cd/pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md).
 
 ## Claude Code files (until teardown)
 

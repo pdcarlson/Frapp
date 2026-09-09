@@ -17,7 +17,7 @@ import {
  * id.
  *
  * Read from `process.env` rather than `ConfigService` because the first caller
- * is `initializeSentry()`, which runs *before* the Nest container exists. The
+ * is `instrument.ts`, which runs *before* the Nest container exists. The
  * value is read per call rather than cached at module load so tests can set it
  * without module-registry surgery; it is a property lookup on a hot-ish path
  * only in the sense that errors are hot, which they should not be.

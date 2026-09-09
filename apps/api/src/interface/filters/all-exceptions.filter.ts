@@ -9,6 +9,7 @@ import {
 import * as Sentry from '@sentry/nestjs';
 import type { RequestContext } from '../types/request-context.types';
 import { pathOnly } from '../utils/path-only';
+import { getRequestId } from '../../infrastructure/observability/request-als';
 import {
   pseudonymizeChapterId,
   pseudonymizeIp,
@@ -37,8 +38,12 @@ import { toReportableError } from '../../infrastructure/observability/reportable
  *  - **401 / 403 / 429** → a `warn`-level `security_event` record, plus (401
  *    only) the sliding-window spike detector.
  *  - **>= 500** → the existing `error` log, and now `Sentry.captureException`,
- *    which nothing previously called. `initializeSentry`'s `beforeSend` does the
- *    PII scrubbing; the scope set here carries only pre-pseudonymized ids.
+ *    which nothing previously called. `instrument.ts`'s `beforeSend` does
+ *    the PII scrubbing; the scope set here carries only pre-pseudonymized ids.
+ *    `@SentryExceptionCaptured` / `SentryGlobalFilter` are deliberately not
+ *    used: they would `captureException` the raw value (PostgREST `{code,
+ *    message, details}` objects become `[object Object]`) and double-report
+ *    every 5xx this filter already sends through `toReportableError`.
  *  - Everything else → response only, as before.
  */
 /**
@@ -110,7 +115,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? extractMessage(exception)
         : 'Internal server error';
 
-    const requestId = request.requestId ?? 'unknown';
+    const requestId = request.requestId ?? getRequestId() ?? 'unknown';
 
     if (status >= 500) {
       this.logger.error(

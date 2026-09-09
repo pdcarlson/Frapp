@@ -33,6 +33,8 @@ export type {
 
 export {
   REQUEST_ID_HEADER,
+  SENTRY_TRACE_HEADER,
+  BAGGAGE_HEADER,
   PSEUDONYM_HEX_RE,
   isPseudonymHex,
 } from "./correlation";

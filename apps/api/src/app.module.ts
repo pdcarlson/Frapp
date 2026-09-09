@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { SentryModule } from '@sentry/nestjs/setup';
 import { CustomThrottlerGuard } from './interface/guards/custom-throttler.guard';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -40,6 +41,11 @@ import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
+    // Transaction names on HTTP spans. Does not replace AllExceptionsFilter —
+    // 5xx still go through toReportableError, and 401/403/429 stay
+    // security_event records. SentryGlobalFilter is deliberately not
+    // registered (it would capture raw PostgREST objects and double-report).
+    SentryModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
