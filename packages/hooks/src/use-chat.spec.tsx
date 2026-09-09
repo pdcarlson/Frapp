@@ -367,7 +367,12 @@ describe("useChannelNotificationPreferences", () => {
       wrapper: createWrapper(queryClient, mockClient),
     });
 
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+      expect(
+        mockGet.mock.calls.filter(([url]) => url === "/v1/channels").length,
+      ).toBeGreaterThan(0);
+    });
     expect(prefsGets()).toBe(1);
     expect(result.current.data).toEqual([
       { channel_id: "chan-1", level: "mentions" },

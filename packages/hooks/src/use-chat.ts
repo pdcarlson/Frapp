@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
@@ -106,18 +106,20 @@ export interface ChannelNotificationPreference {
 }
 
 /**
- * Prefix for every effective-level cache entry. Channel-set mutations
+ * Query key for the effective-level collection. Channel-set mutations
  * invalidate this prefix; `useMarkChannelRead` does not — nesting under
  * `["channels"]` used to refetch this collection on every channel open and
- * close. A later tuple segment fingerprints the readable channel set so a
- * list that grew or was renamed still gets a fresh response. See #1401.
+ * close. A fingerprint of the readable channel set is watched separately so a
+ * list that grew or was renamed still gets a fresh response without changing
+ * this key (a key change would drop cached rows and disable every mute
+ * control until the new GET landed). See #1401.
  */
 export const CHANNEL_NOTIFICATION_PREFERENCES_KEY = [
   "channel-notification-preferences",
 ] as const;
 
 /**
- * Stable identity of the readable channel set for the mute-prefs query key.
+ * Stable identity of the readable channel set.
  *
  * `id` covers Discord-imported (and future created) channels appearing in the
  * rail; `name` covers a rename to or from `announcements` / `chapter-audit`,
@@ -153,14 +155,32 @@ export function channelSetFingerprint(channels: unknown): string {
  */
 export function useChannelNotificationPreferences() {
   const client = useFrappClient();
+  const queryClient = useQueryClient();
   // Same cache entry as the rail's `useChannels()` — one GET, two observers.
-  // The fingerprint is derived from that payload so a mark-read-driven list
-  // refetch that *changed the set* loads new prefs, and one that did not
-  // (the usual channel switch) leaves this query's key alone.
   const channelsQuery = useChannels();
   const fingerprint = channelSetFingerprint(channelsQuery.data);
-  const channelsReady =
-    channelsQuery.status === "success" || channelsQuery.status === "error";
+  const prevFingerprint = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (
+      channelsQuery.status !== "success" &&
+      channelsQuery.status !== "error"
+    ) {
+      return;
+    }
+    // First settled list: seed the fingerprint. Invalidating here would
+    // refetch prefs that are already in flight in parallel with channels.
+    if (prevFingerprint.current === null) {
+      prevFingerprint.current = fingerprint;
+      return;
+    }
+    if (prevFingerprint.current === fingerprint) return;
+    prevFingerprint.current = fingerprint;
+    void queryClient.invalidateQueries({
+      queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
+    });
+  }, [fingerprint, channelsQuery.status, queryClient]);
+
   return useQuery({
     // Deliberately NOT nested under ["channels"]. `useMarkChannelRead`
     // invalidates that whole prefix, and TanStack Query matches prefixes
@@ -168,7 +188,7 @@ export function useChannelNotificationPreferences() {
     // AND close — two extra round trips per channel switch, each one re-running
     // the accessible-channel predicate server-side. Mute state does not change
     // when a read receipt is written, so it should not be invalidated by one.
-    queryKey: [...CHANNEL_NOTIFICATION_PREFERENCES_KEY, fingerprint],
+    queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
     queryFn: async () => {
       const { data, error } = await client.GET(
         "/v1/channels/notification-preferences",
@@ -176,10 +196,6 @@ export function useChannelNotificationPreferences() {
       if (error) throw error;
       return (data ?? []) as ChannelNotificationPreference[];
     },
-    // Wait for the channel list so the first key already carries the real
-    // fingerprint. Fetching against `""` and then again against the loaded
-    // set would double the mount cost the prefix-lift was meant to remove.
-    enabled: channelsReady,
     // Matches `useChannels`: mute state changes far less often than unread
     // counts, and a stale mute badge is not the visible defect a stale unread
     // badge is.
