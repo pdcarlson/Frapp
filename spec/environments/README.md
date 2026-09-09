@@ -260,7 +260,7 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 > **#1578** (2026-09-04) built the replacement deploys — `vercel build` on the runner, then
 > `vercel deploy --prebuilt`, for both staging and production. Render **staging** (the
 > `deploy-api.yml` push path) and EAS were unaffected throughout. **ADR-21** in
-> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the freeze points and the repairs.
 
 Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-api.yml` runs database migrations and triggers the Render staging deploy, and `deploy-vercel-staging.yml` builds and uploads web and landing. Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
@@ -288,7 +288,7 @@ secrets.
 
 > **Current state (2026-09-04) — both projects are unlinked from Git** (Vercel reports
 > `link: null` for both) and **all deploys come from CI**. **ADR-21** in
-> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the per-project freeze points and the repairs; **#1579** (2026-09-02) fixed the guardrails half
 > and **#1578** (2026-09-04) built the deploys described below.
 

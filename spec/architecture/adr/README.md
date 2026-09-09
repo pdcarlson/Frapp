@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-One file per ADR. [`spec/architecture/README.md`](../README.md) is the system map; this folder is the decision log. ADRs are ordinary documentation: when an ADR says something no longer true, fix it in place and date the correction. The decision and why — including alternatives rejected — stay here because the code cannot reconstruct them. Policy: [`AGENTS.md` § ADR discipline](../../../AGENTS.md#adr-discipline).
+One file per ADR. [`spec/architecture/README.md`](../README.md) is the system map; this folder is the decision log. Policy: [`AGENTS.md` § ADR discipline](../../../AGENTS.md#adr-discipline).
 
 | ADR | File |
 | --- | --- |

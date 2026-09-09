@@ -278,7 +278,7 @@ on both API services.
 > longer observes this repository at all: no push produces a preview, there is no Production Branch
 > setting, and no dashboard toggle decides what ships. Four things broke as a result; **all four are
 > now repaired** — two by **#1579** (2026-09-02) and two by **#1578** (2026-09-04). **ADR-21** in
-> [`spec/architecture/README.md`](../../../spec/architecture/README.md) is the canonical record of
+> [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md) is the canonical record of
 > the *decision and its history* — the per-project dates and freeze points, each breakage in full,
 > and the amendments recording what each issue changed. Do not restate any of that here; this
 > section carries only what an operator needs at the console.
