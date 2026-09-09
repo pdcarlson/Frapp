@@ -62,7 +62,7 @@ describe("calendar-export", () => {
       const expectedLines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
-        "PRODID:-//Frapp//Chapter Events//EN",
+        "PRODID:-//Signet//Chapter Events//EN",
         "CALSCALE:GREGORIAN",
         "BEGIN:VEVENT",
         "UID:20240215T140000Z-Team Meeting@frapp.live",

@@ -48,7 +48,7 @@ export function buildIcsContent(input: CalendarExportInput): string {
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Frapp//Chapter Events//EN",
+    "PRODID:-//Signet//Chapter Events//EN",
     "CALSCALE:GREGORIAN",
     "BEGIN:VEVENT",
     `UID:${uid}`,
