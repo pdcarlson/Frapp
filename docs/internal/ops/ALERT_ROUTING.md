@@ -40,7 +40,33 @@
 > (`development` / `staging` / `production`), not a dashboard value — an EAS profile exposes no
 > `VERCEL_ENV` equivalent to the bundle.
 
-> **Sentry alert rules are dashboard-only.** Sentry's issue-alert-rule API answers `HTTP 410 {"message":"This API no longer exists."}`, so no agent or script can create, read, or verify a rule. Every rule below has to be created by a human in the Sentry UI, and its existence cannot be asserted in CI — treat the dashboard as the source of truth and re-check it by hand when routing changes.
+> **Sentry *issue-alert* read works; *metric-alert* read still 410s; *create* is human-only.**
+> Observed **2026-09-09** via Sentry MCP `find_alert_rules` / `get_alert_rule` (org
+> `frapp-live`, region `https://us.sentry.io`):
+>
+> - Each of `frapp-api`, `frapp-web`, and `frapp-mobile` has one enabled issue rule named
+>   “Send a notification for high priority issues” (ids `3133192` / `3855503` / `3914865`).
+>   Action is Email (`target type: issue_owners`, fallthrough `ActiveMembers`).
+>   `environment` is null — not scoped to production. None is named or tagged for
+>   `security_event: auth_failure_spike` or `billing_event: checkout_unknown_chapter`.
+>   `frapp-api` `3133192` last triggered 2026-09-07T22:09:12Z; the web and mobile defaults
+>   have `lastTriggered: null`.
+> - `find_alert_rules(kind=metric)` against the org still answers
+>   `HTTP 410 {"message":"This API no longer exists."}` — metric rules were **not**
+>   verified this session. Do not read an empty issue-alert list as “no metric alerts”.
+>
+> The 2026-08-era claim that *every* Sentry alert-rule API is 410 is therefore **stale for
+> issue alerts only** (read recovered, noted on #863 on 2026-09-07, reconfirmed this date).
+> Creating or scoping a rule is still unreachable from an agent session (MCP catalog has
+> `find_alert_rules` / `get_alert_rule`, not create). Every *intended* rule below still has
+> to be created by a human in the Sentry UI, and its existence cannot be asserted in CI.
+> Re-check by reading live rules, not by assuming this paragraph.
+>
+> **Render paging rules were not verified this session** (Render MCP `list_workspaces`
+> unauthorized). **PostHog** (org Signet, project `569878`, same date): no insight alerts, no
+> error-tracking alerts, no workflows — which is also the live proof that #709 is still missing.
+> GitHub-issue watchdogs
+> in the table below are not evidence of provider-side Render or PostHog paging.
 
 ## Automated GitHub-issue alerts
 
@@ -173,7 +199,18 @@ The event carries a pseudonymized `chapter` tag when `ANALYTICS_HMAC_SALT` is se
 
 The API's cooldown reduces duplicates but **does not guarantee one event per occurrence** — the map is in-memory, so it is per-instance, reset by every deploy, and bounded, so a busy period can evict an entry early. Tune thresholds on "at least one", never on an exact count.
 
-Per the note above, Sentry alert rules are dashboard-only and cannot be asserted in CI, so **the row above describes a rule a human still has to create**; until then the event lands in the default unresolved stream. Do not add a second rule for the subscription case — see the paragraph above for why it would page on an expected flow.
+Per the note above, Sentry alert-rule *create* is still dashboard-only and cannot be asserted in CI, so **the row above describes a rule a human still has to create**; until then the event lands in the default unresolved stream. Observed 2026-09-09: that rule is absent (see the Sentry issue-alert callout). Do not add a second rule for the subscription case — see the paragraph above for why it would page on an expected flow.
+
+### Thresholds that exist only as intended lists
+
+[`spec/behavior/observability.md`](../../../spec/behavior/observability.md) § Alerting names
+API downtime, 5xx rate, database pool exhaustion, Stripe webhook failures, and the
+authorization-denial / throttle-saturation rows. This file records **implemented or
+human-create** thresholds for push delivery, the in-process auth-failure spike, and the
+billing unknown-chapter event. The rest have **no recorded provider rule**. Observed
+2026-09-09: Sentry *issue* alerts are only the default high-priority notification per
+project; Sentry *metric* alerts were unread (`HTTP 410`); PostHog has none; Render was
+unread. Treat a missing threshold as a gap, not as a pointer to follow in a dashboard.
 
 ## Escalation
 

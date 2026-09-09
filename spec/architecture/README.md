@@ -18,7 +18,7 @@
 | Realtime       | Supabase Realtime                            | Postgres changes for chat + the audit-log worker (publication membership is required and was missing until #867). Private broadcast for dashboard change-pings. Broadcast for typing indicators. Presence for online status. |
 | Billing        | Stripe                                       | Subscriptions, checkout, webhooks, invoices.                                                                          |
 | Push           | Expo Push Service                            | Mobile push notifications via `expo-server-sdk`.                                                                      |
-| Observability  | Sentry + structured logging                  | Error tracking, request tracing, metrics.                                                                             |
+| Observability  | Sentry + PostHog + structured logging        | Contract: [`spec/behavior/observability.md`](../behavior/observability.md). Decision: [ADR-22](adr/adr-22.md). |
 | CI/CD          | GitHub Actions + Vercel + EAS                | Lint, typecheck, test, deploy.                                                                                        |
 
 ---
@@ -66,7 +66,7 @@ Frapp/
   - `PermissionsGuard`: Checks `@RequirePermissions()` metadata against the user's flattened permission set.
 - **Validation:** Global `ValidationPipe` using `class-validator` and `class-transformer`.
 - **Documentation:** Swagger UI at `/docs` via `@nestjs/swagger`.
-- **Observability:** Structured JSON logging, request tracing via `x-request-id`, Sentry integration, health check endpoint.
+- **Observability:** Structured JSON logging, `x-request-id`, Sentry (exceptions and traces), PostHog via the API analytics transport. Contract: [`spec/behavior/observability.md`](../behavior/observability.md).
 
 ### 3.2 Web App (`apps/web`)
 
@@ -93,6 +93,7 @@ Frapp/
 
 - **Framework:** Next.js (App Router), Tailwind.
 - **Role:** Marketing, pricing, CTA. No auth state. Links to app.frapp.live for sign-up/log-in.
+- **Observability:** Not initialized today. When wired, landing stays anonymous — no identity call, no alias onto an authenticated distinct id ([`observability.md`](../behavior/observability.md#provider-ownership)).
 - **Deployment:** Vercel, independent from the web app.
 
 ### 3.5 Documentation (no `apps/docs` web app)
@@ -332,65 +333,21 @@ Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_
 
 ## 9. Observability
 
-### Structured Logging
+The **behavior contract** — provider ownership, correlation identifiers, privacy and replay,
+release naming, logging sinks, sampling, and verification — lives in
+[`spec/behavior/observability.md`](../behavior/observability.md). The **decision** (why Sentry
+owns exceptions and traces, why PostHog owns product analytics, alternatives rejected) is
+[ADR-22](adr/adr-22.md).
+Operational routing and dated live-rule observations:
+[`ALERT_ROUTING.md`](../../docs/internal/ops/ALERT_ROUTING.md).
 
-Every API request is logged as structured JSON:
+This page does not restate the request-log JSON, the metrics list, or the alert conditions.
+Those copies had already drifted: the JSON omitted `xffCount` / `xffSocketIsLast`, and Error
+Tracking here still claimed raw user and chapter ids left the process. The stale copies are
+deleted rather than synced.
 
-```json
-{
-  "requestId": "req_abc123",
-  "userId": "uuid",
-  "chapterId": "uuid",
-  "method": "POST",
-  "path": "/v1/points/adjust",
-  "statusCode": 200,
-  "latencyMs": 45,
-  "timestamp": "2026-02-25T12:00:00Z"
-}
-```
-
-### Request Tracing
-
-A unique `x-request-id` header is generated for each incoming request (or preserved if the client sends one). This ID is included in all log entries, all error responses, and all Sentry reports.
-
-### Health Check
-
-Two unauthenticated endpoints — `GET /health` (liveness, always 2xx while the
-process is up) and `GET /health/ready` (readiness, 503 when a dependency is
-degraded, which is what the post-deploy smoke checks poll).
-
-The response bodies and the reason the two differ are owned by
-[`spec/behavior/observability.md`](../behavior/observability.md) § Health Check
-and are not restated here.
-
-### Error Tracking
-
-Sentry (or equivalent) integration. All unhandled exceptions and 5xx responses are reported with full context (request ID, user ID, chapter ID, stack trace). PII is scrubbed before reporting.
-
-### Metrics
-
-Key metrics exported for monitoring dashboards:
-
-- Request rate (per endpoint, per status code).
-- Error rate (4xx, 5xx).
-- Response latency (p50, p95, p99).
-- Active Realtime connections.
-- Active study sessions.
-- Push notification delivery success/failure rate.
-
-### Alerting
-
-Configurable alerts via the monitoring provider. The list is not restated here — it is owned by
-[`../behavior/observability.md`](../behavior/observability.md) § Alerting, which carries all five
-conditions. This copy had already drifted: it carried an "API downtime … for >1 minute" duration
-that no document states and no provider configuration in the repo backs, so the number is deleted
-rather than moved.
-
-**Most of those alerts have no recorded threshold.** [`ALERT_ROUTING.md`](../../docs/internal/ops/ALERT_ROUTING.md)
-§ Thresholds documents two — push notification delivery, and security events. API downtime, database
-connection-pool exhaustion and Stripe webhook failures have none written down anywhere; they live
-only in the provider dashboard, if they are configured at all. Read that as a gap, not as a pointer
-to go and follow.
+Health-check response bodies remain owned by
+[`spec/behavior/observability.md`](../behavior/observability.md) § Health Check.
 
 ---
 
