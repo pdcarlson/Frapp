@@ -6,19 +6,14 @@
 
 ## What runs now
 
-Review is a **local pre-push gate**, not a CI job:
+Review is a **local pre-push gate**, not a CI job. Cursor Cloud is the primary agent environment; Claude Code is the fallback. Same evidence marker either way.
 
-- A Claude Code **PreToolUse hook** — [`.claude/hooks/pre-push-review-gate.sh`](../../../.claude/hooks/pre-push-review-gate.sh),
-  wired under `hooks.PreToolUse` in [`.claude/settings.json`](../../../.claude/settings.json) — intercepts
-  `git push`.
-- A push is **blocked until the current branch HEAD has actually been reviewed**, with guidance to run a
-  review skill in the same chat session on the current diff. Address every finding (fix it, or file a
-  tracked Triage follow-up with a reason), then re-push.
-- Review **sub-agents inherit the session model** (Opus in a normal session) — `CLAUDE_CODE_SUBAGENT_MODEL`
-  is no longer pinned.
+- **Cursor Cloud (primary):** [`.cursor/hooks.json`](../../../.cursor/hooks.json) `beforeShellExecution` runs [`.cursor/hooks/pre-push-review-gate.sh`](../../../.cursor/hooks/pre-push-review-gate.sh), a thin adapter around the Claude hook. Cursor defaults **fail-open** on crash, timeout, or invalid JSON ([docs](https://cursor.com/docs/agent/hooks)); this gate sets `failClosed: true` and always emits valid Cursor JSON so an empty Claude-allow stdout cannot be treated as invalid JSON.
+- **Claude Code (fallback):** a **PreToolUse hook** — [`.claude/hooks/pre-push-review-gate.sh`](../../../.claude/hooks/pre-push-review-gate.sh), wired under `hooks.PreToolUse` in [`.claude/settings.json`](../../../.claude/settings.json) — intercepts `git push`. Parse failure of a push-like payload **denies**.
+- A push is **blocked until the current branch HEAD has actually been reviewed**, with guidance to run a review skill in the same chat session on the current diff. Address every finding (fix it, or file a tracked Triage follow-up with a reason), then re-push.
+- Review **sub-agents inherit the session model** (Opus in a normal session) — `CLAUDE_CODE_SUBAGENT_MODEL` is no longer pinned.
 
-This is the **single** pre-PR review gate. The `/next` flow no longer runs review as a separate step —
-the push hook drives it exactly once per HEAD.
+This is the **single** pre-PR review gate (one matcher/marker/livelock implementation; two harness adapters). The `/next` flow no longer runs review as a separate step — the push hook drives it exactly once per HEAD. Frapp's gate is **`/diff-review`**. Cursor built-ins (`/review`, Bugbot) are not canonical and do not write the evidence marker.
 
 ### Which review skill
 

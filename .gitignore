@@ -51,12 +51,24 @@ supabase/.branches/
 .DS_Store
 *.pem
 
-# Local editor state (incl. the retired Cursor IDE — .cursor/mcp.json can carry credentials).
-# Ignore everything under .cursor/ EXCEPT the committed Cloud Agent environment config
-# (.cursor/environment.json is repo-managed and carries no secrets). The `.cursor/*` form
-# (not `.cursor/`) is required so git still descends into the dir to honor the negation.
+# Local editor state (.cursor/mcp.json can carry credentials). Ignore everything under
+# .cursor/ EXCEPT the committed Cursor Cloud contract. The `.cursor/*` form (not `.cursor/`)
+# is required so git still descends into the dir to honor the negations. Keep the Prompt 1
+# / Prompt 2 paste-file exceptions even when those files live on another branch.
 .cursor/*
 !.cursor/environment.json
+!.cursor/hooks.json
+!.cursor/hooks/
+!.cursor/hooks/**
+!.cursor/commands/
+!.cursor/commands/**
+!.cursor/ENV_SETUP_PROMPT.md
+!.cursor/CLEANUP_PROMPT.md
+# Last-match wins: keep secrets ignored even under un-ignored contract dirs.
+.cursor/**/.env
+.cursor/**/.env.*
+.cursor/**/*.pem
+.cursor/**/mcp.json
 
 # Agent-local state, never committed:
 #   settings.local.json holds one machine's permission grants (previously ignored
