@@ -237,7 +237,7 @@ export default function ChatThreadScreen() {
           ? null
           : "Offline — messages will send when you reconnect"
         : connection === "polling"
-          ? // Verbatim from spec/ui/resilience.md § 3.2, which declares this
+          ? // Verbatim from spec/ui/resilience/message-delivery.md#receiving-messages-realtime, which declares this
             // string normative; `apps/web`'s reconnect pill carries the same
             // one. Polling is a working degraded mode, so calling it
             // "reconnecting" would report a live surface as broken.
@@ -300,7 +300,7 @@ export default function ChatThreadScreen() {
           on the same screen in two different sentences. So the pill yields its
           offline branch to the banner and keeps the two it alone can report.
           `polling` in particular must survive: it is a working degraded mode,
-          and `spec/ui/resilience.md` § 3.2 declares its string normative.
+          and `spec/ui/resilience/message-delivery.md#receiving-messages-realtime` declares its string normative.
         */}
         {pillMessage ? (
           <View style={styles.connectionPill}>

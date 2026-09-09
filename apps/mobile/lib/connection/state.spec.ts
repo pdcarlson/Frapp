@@ -42,7 +42,7 @@ describe("deriveConnectionState", () => {
   });
 
   it("is OFFLINE at the threshold, as the spec states", () => {
-    // `spec/ui/resilience.md` § 2: "'OFFLINE': !navigator.onLine OR health
+    // `spec/ui/resilience/connection-state.md`: "'OFFLINE': !navigator.onLine OR health
     // check to /health fails 3 times". Web and mobile both call the shared
     // `deriveConnectionState` — identity is asserted above.
     expect(
@@ -78,7 +78,7 @@ describe("connectionBannerCopy", () => {
 describe("writeBlockedReason", () => {
   it("blocks only when offline", () => {
     expect(writeBlockedReason("ONLINE")).toBeNull();
-    // DEGRADED explicitly does not block: § 2's table keeps write actions
+    // DEGRADED explicitly does not block: the UI Indicators table keeps write actions
     // "Enabled (with extended timeouts)" there.
     expect(writeBlockedReason("DEGRADED")).toBeNull();
     expect(writeBlockedReason("OFFLINE")).toBe("Reconnect to make changes.");
