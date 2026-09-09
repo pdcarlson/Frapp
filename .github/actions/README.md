@@ -78,5 +78,5 @@ gate pass vacuously. Git does not track empty directories, so without a committe
 here, removing the last composite action would fail that gate with a message about
 Infisical slugs — which would be a long way from the actual cause.
 
-Background: ADR-15's 2026-09-02 amendment in [`spec/architecture/README.md`](../../spec/architecture/README.md),
+Background: ADR-15's 2026-09-02 amendment in [`spec/architecture/adr/adr-15.md`](../../spec/architecture/adr/adr-15.md),
 and the **Composite actions** row in [`AGENT_INFRA.md`](../../docs/internal/ci-cd/AGENT_INFRA.md).
