@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -16,7 +15,6 @@ import {
   ApiBearerAuth,
   ApiOkResponse,
   ApiOperation,
-  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { ChatService } from '../../application/services/chat.service';
@@ -51,6 +49,7 @@ import {
   KindNotificationPreferenceDto,
   ClearedKindNotificationPreferenceDto,
   ResolveAuthorAvatarsDto,
+  GetChannelMessagesQueryDto,
 } from '../dtos/chat.dto';
 import type { ChannelType } from '#domain/entities/chat.entity';
 
@@ -307,40 +306,16 @@ export class ChatController {
   @ApiOperation({
     summary: 'Get channel message history (supports since= reconnect replay)',
   })
-  @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiQuery({
-    name: 'before',
-    required: false,
-    description: 'Cursor for pagination (ISO timestamp)',
-  })
-  @ApiQuery({
-    name: 'since',
-    required: false,
-    description:
-      'Message UUID — returns messages created after this message (reconnect replay)',
-  })
   async getMessages(
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Query('limit') limit?: number,
-    @Query('before') before?: string,
-    @Query('since') since?: string,
+    @Query() query: GetChannelMessagesQueryDto,
   ) {
-    if (since !== undefined) {
-      try {
-        await new ParseUUIDPipe().transform(since, {
-          type: 'query',
-          data: 'since',
-        });
-      } catch {
-        throw new BadRequestException('since must be a valid UUID');
-      }
-    }
     return this.chatService.getMessages(channelId, chapterId, userId, {
-      limit,
-      before,
-      since,
+      limit: query.limit,
+      before: query.before,
+      since: query.since,
     });
   }
 
