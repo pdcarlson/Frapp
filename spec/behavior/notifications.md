@@ -171,6 +171,16 @@ Both write through the same PUT and read the same effective-level GET; the two s
 (unknown trigger, header-scoped write failure) apply on both surfaces. The worker already
 honours those levels for every client.
 
+The effective-level query is keyed **outside** the `["channels"]` prefix so a mark-read does
+not refetch it on every channel switch (that coupling was two extra round trips per switch,
+each re-running the accessible-channel predicate). The hook still observes the channel list
+and fingerprints each readable channel's `id` and `name`; a Discord import or a rename to or
+from `announcements` / `chapter-audit` that lands in that list — including via that mark-read
+invalidation — invalidates the prefs query. The key itself does not change, so already-known
+channels keep their mute control while the new GET is in flight; a brand-new channel stays
+unavailable until its row arrives. Channel-set mutations still invalidate the same key.
+See #1401.
+
 Two states the control must not fake. When the effective level is **not yet known** — the read
 has not landed, or failed — the trigger is disabled and announces "Notification level
 unavailable" rather than standing in `mentions`, because on `#announcements` or `#chapter-audit`
@@ -299,7 +309,7 @@ The window's lower bound is `now`, exclusive, so a reminder is never sent about 
 
 **Two limits worth stating plainly**, because both fail silently:
 
-- **No lookback.** Six ticks per event and no catch-up, so anything costing all six drops that event's reminder permanently — no claim is written and nothing retries. A failing candidate query is audible (`event-reminder sweep: event lookup failed`, once per tick); a worker that never ran is not, and neither is a healthy tick with nothing upcoming, so a zero count on its own means nothing. See [`DEPLOYMENT.md`](../../docs/internal/ops/DEPLOYMENT.md) §5.6 before scheduling a long evening maintenance window.
+- **No lookback.** Six ticks per event and no catch-up, so anything costing all six drops that event's reminder permanently — no claim is written and nothing retries. A failing candidate query is audible (`event-reminder sweep: event lookup failed`, once per tick); a worker that never ran is not, and neither is a healthy tick with nothing upcoming, so a zero count on its own means nothing. See [`render.md`](../../docs/internal/ops/deployment/render.md#56-in-process-scheduled-jobs) before scheduling a long evening maintenance window.
 - **A same-UTC-day reschedule is not re-armed.** `scheduled_notification_dispatches.due_date` is a `date`, so moving an event from 14:00 to 20:00 the same day reuses the claim key and the second claim loses — the only reminder members got named the old time. Moving it across a UTC day boundary does re-arm. The separate "event updated" push softens this but does not replace the reminder. Widening the key needs a schema change shared with three other sweeps; tracked in #1550.
 
 Quiet hours and the member's `events` category preference are **not** special-cased here. The sweep sends at `NotificationService.notifyUser`'s default NORMAL priority precisely so both apply — URGENT is the priority that bypasses them, and naming one here would silently opt reminders out of both.

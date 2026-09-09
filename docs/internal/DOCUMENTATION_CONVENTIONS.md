@@ -17,7 +17,7 @@ them against the section whose wording matches.
 
 ## Where things go
 
-Two rules make the table decidable, because rows nest and a directory is not a filename. **Take the most specific row that matches** — chat behavior goes to `spec/behavior/chat/`, not to the broader `spec/behavior/` row above it, and design-system work goes to `spec/ui/design-system/`, not to `spec/ui/`. **Inside the directory a row names, a topic is one file, `<topic>.md`**, and earns its own `<topic>/` folder with a `README.md` routing to its files only once it has 2+ of them; `spec/behavior/chat/`, `spec/behavior/settings/`, `spec/architecture/adr/`, and `spec/ui/resilience/` are the ones that crossed that line.
+Two rules make the table decidable, because rows nest and a directory is not a filename. **Take the most specific row that matches** — chat behavior goes to `spec/behavior/chat/`, not to the broader `spec/behavior/` row above it, and design-system work goes to `spec/ui/design-system/`, not to `spec/ui/`. **Inside the directory a row names, a topic is one file, `<topic>.md`**, and earns its own `<topic>/` folder with a `README.md` routing to its files only once it has 2+ of them; `spec/behavior/chat/`, `spec/behavior/settings/`, `spec/architecture/adr/`, `spec/ui/resilience/`, and `docs/internal/ops/deployment/` are the ones that crossed that line.
 
 | Kind of change | Canonical home |
 | -------------- | -------------- |
@@ -39,7 +39,8 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | How to run locally / test / contribute | `docs/guides/` |
 | Documentation conventions and internal reference that is not a runbook | `docs/internal/` |
 | CI / agent infra / automations | `docs/internal/ci-cd/` |
-| Ops runbooks (DB, incidents, branch protection, deploy) | `docs/internal/ops/` |
+| Ops runbooks (DB, incidents, branch protection) | `docs/internal/ops/` |
+| Deploy runbook (providers, CI/CD gate, launch) | `docs/internal/ops/deployment/` — folder-as-index; cite a named leaf and heading, never `§N` |
 | Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |
 | Security implementation notes / fixes log | `docs/internal/security/` |
 | Accessibility / PR-review process | `docs/internal/quality/` |
