@@ -674,7 +674,7 @@ useEffect(() => {
 > successor has registered and tear down the live channel.
 >
 > The topic string itself must stay `chat:channel:<id>`: the push worker reads
-> presence on the same topic (§ ADR-10, `spec/architecture/README.md`), so
+> presence on the same topic (§ ADR-10, [`spec/architecture/adr/adr-10.md`](../architecture/adr/adr-10.md)), so
 > re-keying it to dodge a collision would silently disable push suppression.
 
 ---
