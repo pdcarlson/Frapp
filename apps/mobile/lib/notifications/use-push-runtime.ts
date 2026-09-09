@@ -37,10 +37,15 @@
  * `clearAuthToken` both notify, so the SecureStore mirror *is* the sign-in /
  * sign-out edge. `useIsApiAuthenticated()` already reads it that way.
  *
+ * Expo can also rotate the token while the member stays signed in. That is
+ * not an auth edge, so a second subscription (`addPushTokenListener` via
+ * `push.ts`) re-reads the Expo token and runs the same register path. A
+ * rotation while signed out must not POST.
+ *
  * Registration failure is deliberately quiet. Push is an enhancement over an
  * in-app history (s14) that renders without it, so a failed register logs and
- * waits for the next auth edge rather than taking a toast to a member who can
- * do nothing about it.
+ * waits for the next auth edge or token rotation rather than taking a toast to
+ * a member who can do nothing about it.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -55,6 +60,7 @@ import { useIsApiAuthenticated } from "../use-is-api-authenticated";
 import { asRoute } from "../href";
 import {
   addNotificationResponseListener,
+  addPushTokenListener,
   configureForegroundPresentation,
   ensureAndroidChannel,
   getExpoPushToken,
@@ -63,11 +69,14 @@ import {
 } from "./push";
 import {
   clearStoredPushTokenRow,
-  isAlreadyRegistered,
-  narrowPushTokenRow,
   readStoredPushTokenRow,
   writeStoredPushTokenRow,
 } from "./push-registration";
+import {
+  deregisterStoredPushToken,
+  registerCurrentPushToken,
+  sessionOwnsPushRegistration,
+} from "./push-token-lifecycle";
 import {
   NOTIFICATION_FALLBACK_PATHNAME,
   notificationHref,
@@ -108,11 +117,13 @@ export function usePushRuntime(): void {
   const registerRef = useRef(registerToken);
   const removeRef = useRef(removeToken);
   const markReadRef = useRef(markRead);
+  const authRef = useRef({ isAuthenticated, status });
   useLayoutEffect(() => {
     registerRef.current = registerToken;
     removeRef.current = removeToken;
     markReadRef.current = markRead;
-  }, [registerToken, removeToken, markRead]);
+    authRef.current = { isAuthenticated, status };
+  }, [registerToken, removeToken, markRead, isAuthenticated, status]);
 
   const handleResponse = useCallback((response: PushNotificationResponse) => {
     const data = response.notification.request.content.data;
@@ -194,67 +205,25 @@ export function usePushRuntime(): void {
     }
   }, [pendingTap, status, isChapterResolving, isAuthenticated, router]);
 
+  const tokenLifecycleDeps = {
+    getToken: getExpoPushToken,
+    register: (body: { token: string }) =>
+      registerRef.current.mutateAsync(body),
+    remove: (id: string) => removeRef.current.mutateAsync(id),
+    readStored: readStoredPushTokenRow,
+    writeStored: writeStoredPushTokenRow,
+    clearStored: clearStoredPushTokenRow,
+    warn: (message: string, error?: unknown) => {
+      if (error === undefined) console.warn(message);
+      else console.warn(message, error);
+    },
+  };
+
   // Token lifecycle. Keyed on `isAuthenticated`, which is the SecureStore
   // mirror — the same edge `useIsApiAuthenticated` reports.
   useEffect(() => {
     let cancelled = false;
-
-    async function register() {
-      if (!isPushAvailable()) return;
-      try {
-        const token = await getExpoPushToken();
-        if (!token || cancelled) return;
-
-        const stored = await readStoredPushTokenRow();
-        if (isAlreadyRegistered(stored, token) || cancelled) return;
-
-        // `POST /v1/push-tokens` carries no response schema, so this resolves
-        // untyped — see `push-registration.ts`. Narrow, never cast.
-        const created: unknown = await registerRef.current.mutateAsync({
-          token,
-        });
-        if (cancelled) return;
-
-        const row = narrowPushTokenRow(created);
-        await writeStoredPushTokenRow(row ?? { id: null, token });
-        if (!row?.id) {
-          console.warn(
-            "Push token registered but its row id could not be read; sign-out will not be able to deregister it.",
-          );
-        }
-      } catch (error) {
-        console.warn(
-          "Push token registration failed; will retry on the next sign-in.",
-          error,
-        );
-      }
-    }
-
-    async function deregister() {
-      const stored = await readStoredPushTokenRow();
-      if (cancelled) return;
-      if (!stored?.id) {
-        await clearStoredPushTokenRow();
-        return;
-      }
-      try {
-        // DELETE **before** clearing storage. The other order looks safer and
-        // is not: `registerPushToken` returns the *existing* row for the same
-        // user and token, and the Expo token is stable across sign-outs — so a
-        // sign-out immediately followed by a sign-in could re-create row X,
-        // persist it, and only then have this DELETE land and remove the row
-        // the live session depends on, leaving push silently dead for that
-        // install until storage is wiped. Deleting first means the worst case
-        // is a stale local row, which the next register overwrites.
-        await removeRef.current.mutateAsync(stored.id);
-      } catch (error) {
-        console.warn(
-          "Push token deregistration failed; the server row may outlive the session.",
-          error,
-        );
-      }
-      await clearStoredPushTokenRow();
-    }
+    const isCancelled = () => cancelled;
 
     // Both conditions, deliberately. `signOut` sets `status` synchronously while
     // `isAuthenticated` only flips once `clearAuthToken()` has round-tripped
@@ -263,17 +232,55 @@ export function usePushRuntime(): void {
     // `isAuthenticated` alone re-registers a token *during* sign-out, creating a
     // row the deregister that follows can no longer see — the "a token MUST NOT
     // outlive the session that created it" rule, inverted.
-    if (isAuthenticated && status === "authenticated") {
-      void register();
+    if (sessionOwnsPushRegistration(isAuthenticated, status)) {
+      if (isPushAvailable()) {
+        void registerCurrentPushToken({
+          ...tokenLifecycleDeps,
+          isCancelled,
+        });
+      }
     } else if (status === "unauthenticated") {
       // Only on a real sign-out. `status === "hydrating"` also reports
       // unauthenticated-ish state at launch, and deregistering there would
       // delete a perfectly good row on every cold start.
-      void deregister();
+      void deregisterStoredPushToken({
+        ...tokenLifecycleDeps,
+        isCancelled,
+      });
     }
 
     return () => {
       cancelled = true;
     };
+    // tokenLifecycleDeps is a per-render bag of refs — same reason the
+    // mutation objects themselves are not effect deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   }, [isAuthenticated, status]);
+
+  // Mid-session token rotation. Auth edges above never see this: Expo can
+  // roll the token while the member stays signed in, and nothing in that
+  // path re-reads it. The listener is subscribed for the process lifetime;
+  // the handler no-ops unless the session currently owns a registration, so
+  // a rotation while signed out cannot POST a row for a signed-out member.
+  useEffect(() => {
+    let cancelled = false;
+    const subscription = addPushTokenListener(() => {
+      if (cancelled) return;
+      const auth = authRef.current;
+      if (!sessionOwnsPushRegistration(auth.isAuthenticated, auth.status)) {
+        return;
+      }
+      if (!isPushAvailable()) return;
+      void registerCurrentPushToken({
+        ...tokenLifecycleDeps,
+        isCancelled: () => cancelled,
+      });
+    });
+    return () => {
+      cancelled = true;
+      subscription?.remove();
+    };
+    // Subscribe once; the handler reads authRef / mutation refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+  }, []);
 }

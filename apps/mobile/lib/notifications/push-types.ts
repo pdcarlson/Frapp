@@ -108,6 +108,13 @@ export interface NotificationsModule {
   addNotificationResponseReceivedListener(
     listener: (response: PushNotificationResponse) => void,
   ): PushSubscription;
+  /**
+   * Fires when the *device* push token rotates. The argument is the device
+   * token — we ignore it and re-read the Expo token, because delivery is Expo
+   * push and `getDevicePushTokenAsync` is deliberately absent from this type
+   * (`patterns.md` § Push notifications).
+   */
+  addPushTokenListener(listener: (token: unknown) => void): PushSubscription;
   scheduleNotificationAsync(request: PushScheduleRequest): Promise<string>;
   cancelScheduledNotificationAsync(identifier: string): Promise<void>;
   dismissNotificationAsync(identifier: string): Promise<void>;
