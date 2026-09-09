@@ -226,7 +226,7 @@ angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus fo
 defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
 `.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
-**Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment; Cursor adapter ADR-16 amendment 8). Cursor Cloud: [`.cursor/hooks.json`](../../.cursor/hooks.json) `beforeShellExecution` (`failClosed: true`). Claude fallback: `.claude/hooks/pre-push-review-gate.sh`. Both gate `git push` on *evidence* that a review ran for the
+**Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment; Cursor adapter ADR-16 amendment 8). Frapp's gate is **`/diff-review`** — not Bugbot. Cursor Cloud: [`.cursor/hooks.json`](../../.cursor/hooks.json) `beforeShellExecution` (`failClosed: true`). Claude fallback: `.claude/hooks/pre-push-review-gate.sh`. Both gate `git push` on *evidence* that a review ran for the
 current HEAD — evidence, not an attempt, so retrying a denied push does not satisfy it. A push that
 publishes no objects (a dry run, or a `--delete` ref deletion) is exempt, having no diff to review.
 Which review to run, how the evidence is recorded, and the livelock release are the runbook's to

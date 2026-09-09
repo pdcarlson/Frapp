@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# Cursor Cloud Agent START phase. This script is part of Cursor's public
-# contract (`.cursor/environment.json` `start`). Runs on every boot. Applies the
-# kernel settings Docker networking needs (runtime-only; a build snapshot does not
-# capture them), then delegates to the shared per-session bringup
+# Cursor Cloud Agent START phase. Runs on every boot. Applies the kernel settings the
+# Docker networking needs (these are runtime-only and are NOT captured by the build
+# snapshot), then delegates to the repo's canonical per-session bringup
 # (scripts/cloud-sandbox-up.sh): start dockerd, `supabase start`, `db push --local`,
 # write apps/api/.env.local + apps/web/.env.local, repair Postgres ACLs, seed, verify deps.
 #
 # It must tolerate restarts and return. cloud-sandbox-up.sh is idempotent and returns after
 # writing .cloud-sandbox-up.done (success) or .cloud-sandbox-up.failed (error); this script
-# propagates that outcome as its exit status. A failed start cannot run Hygiene Scan.
+# propagates that outcome as its exit status.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

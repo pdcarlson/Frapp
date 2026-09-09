@@ -499,8 +499,8 @@ Move **every member** to **In Review**: swap its `in-progress` label for **`in-r
 (read-modify-write) and `add_issue_comment` the PR link on each. Do **not** post an
 `AGENT-RELEASE` — the open PR is the marker now, and the claim comments stay as the record of who
 did the work. **Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR
-lifecycle.** On **Cursor Cloud** (primary): `subscribe_github_pr` + `subscribe_github_ci`. `subscribe_timer` is a conversation timer, not Claude `send_later` — do not ban it by analogy. On **Claude Code** (fallback): rely on the wake layers that don't prompt (PR-activity webhook + `CI wake` and
-`PR base sync` comments) — **do not call `send_later`** (Claude-specific; it still prompts the owner). Triage each
+lifecycle:** subscribe using this harness's PR/CI tools; repo-side wake comments (`CI wake`,
+`PR base sync`) still apply. Triage each
 red check infra-vs-code before pushing a "fix" — an ordinary red CI arrives silently through the
 webhook and is yours to classify from the run itself; a `CI wake` comment appears only when the
 outcome was cancelled/timed-out or an infra retry gave up — address and resolve review threads. On merge, GitHub closes each `Fixes`-named issue as `completed`; for any member
@@ -538,7 +538,7 @@ hypothetical:
   `strict: true` re-runs the collision check after the first merge; expect an
   `update_pull_request_branch` + fresh-CI cycle on the surviving PR, and don't try to re-review
   `main`'s own merge delta — the gate doesn't ask for it.
-- The [`AGENTS.md`](../../AGENTS.md) babysit obligations read **plural**: on Cursor Cloud, `subscribe_github_pr` + `subscribe_github_ci` per PR; Claude fallback, a `subscribe_pr_activity` per PR. Wake comments read per PR, stop conditions evaluated over the set.
+- The [`AGENTS.md`](../../AGENTS.md) babysit obligations read **plural**: subscribe per PR using this harness's tools. Wake comments read per PR, stop conditions evaluated over the set.
 
 ## Exits
 
