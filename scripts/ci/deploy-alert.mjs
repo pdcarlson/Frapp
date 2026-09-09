@@ -116,7 +116,7 @@ export const DEPLOY_API_CONFIG = {
   noOpIsUnexpected: false,
   noOpNote:
     "The changed-path gate (`check-changes`) found no changes under `apps/api/`, " +
-    "`packages/validation/`, `packages/typescript-config/`, or `supabase/migrations/`, " +
+    "`packages/validation/`, `packages/observability/`, `packages/typescript-config/`, or `supabase/migrations/`, " +
     "so every migrate and deploy job was skipped. **A green run of this shape is not " +
     "evidence that deploys work** — see issue #763.",
   whyLines: [
