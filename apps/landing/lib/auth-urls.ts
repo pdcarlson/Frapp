@@ -157,7 +157,7 @@ export function buildJoinUrl(
  * 500 the homepage from a server component, and falling back to the default
  * would silently send staging visitors to production. The cost is that a
  * basic-auth-gated base now yields CTAs that 401 instead of authenticating,
- * with nothing logged. No such base is configured (`DEPLOYMENT.md` § 4.2).
+ * with nothing logged. No such base is configured (`docs/internal/ops/deployment/vercel.md` § 4.2).
  * Blank / scheme-less bases are a different case — they never parse, so they
  * fall back in `resolveAppBaseUrl` before this helper runs (#1777).
  */

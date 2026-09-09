@@ -436,7 +436,7 @@ export async function checkAuthRedirects({
       FAIL,
       `uri_allow_list is missing ${missing.map((m) => `"${m}"`).join(" and ")} — a bare origin ` +
         "matches only itself, so GoTrue is dropping the web emailRedirectTo paths (and any invite " +
-        "token in them) onto the Site URL. See docs/internal/ops/DEPLOYMENT.md § Auth settings.",
+        "token in them) onto the Site URL. See docs/internal/ops/deployment/supabase.md § Auth settings.",
     );
   }
   return result("auth-redirects", label, PASS, `site_url=${siteUrl}; ${required.join(", ")} present`);

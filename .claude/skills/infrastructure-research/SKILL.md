@@ -394,7 +394,7 @@ done
    production deploys on 2026-09-02 — it read the retired Vercel Git link as a violation — but
    #1579 inverted the assertion the same day, so it passes against the unlinked state and
    production deploys are **not** blocked; a *present* Git link is now the violation. Gate list:
-   [`docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md) § How Deployments Are Gated
+   [`docs/internal/ops/deployment/ci-cd.md`](../../../docs/internal/ops/deployment/ci-cd.md#how-deployments-are-gated) § How Deployments Are Gated
 3. Check [`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md) for promotion status
 
 ### "Are secrets in sync?"
