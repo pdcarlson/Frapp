@@ -43,7 +43,6 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@electric-sql/pglite-pgvector": "^0.0.9",
-    "@infisical/cli": "0.43.128",
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitest/coverage-v8": "4.1.11",
     "concurrently": "^10.0.5",
@@ -54,6 +53,9 @@
     "squawk-cli": "2.63.0",
     "turbo": "^2.10.12",
     "typescript": "npm:@typescript/typescript6@6.0.2"
+  },
+  "optionalDependencies": {
+    "@infisical/cli": "0.43.128"
   },
   "overrides": {
     "react": "19.2.3",
