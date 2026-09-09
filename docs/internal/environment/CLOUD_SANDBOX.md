@@ -341,8 +341,10 @@ If you hit that error, the file is missing rather than your change being wrong: 
 ## When bringup fails — STOP and report
 
 If `.cloud-sandbox-up.failed` is present, **do not work around it** — stop and tell the user
-exactly what to add or change in the Claude Code web environment, then wait. Most of these
-failures are environment config the agent cannot fix from inside the session.
+exactly what to add or change in the **Cursor Cloud environment dashboard** (network policy,
+env var, secrets) — or, on the Claude Code fallback path, in the Claude web environment —
+then wait. Most of these failures are environment config the agent cannot fix from inside
+the session.
 
 **Read the sentinel first — then still read the log.** For the `supabase start` step,
 `.cloud-sandbox-up.failed` names the failure class and the remedy (`'supabase start' failed

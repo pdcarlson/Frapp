@@ -15,10 +15,13 @@
 # Claude allow = empty stdout. Under failClosed, empty stdout is invalid JSON
 # and would DENY every non-push command. So this wrapper never emits empty
 # stdout: allow is {"permission":"allow",...}.
+#
+# Encoding uses env vars, not `node -e` argv: Node's argv after `-e` is not
+# portable across binaries (some include `-e`/`[eval]`, some strip them).
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-INNER="$ROOT/.claude/hooks/pre-push-review-gate.sh"
+INNER="${FRAPP_REVIEW_GATE_INNER:-$ROOT/.claude/hooks/pre-push-review-gate.sh}"
 
 payload="$(cat)"
 
@@ -27,24 +30,30 @@ emit() {
   local perm="$1"
   local user_msg="$2"
   local agent_msg="$3"
-  if python3 -c 'import json,sys; print(json.dumps({"permission":sys.argv[1],"user_message":sys.argv[2],"agent_message":sys.argv[3]}))' \
-    "$perm" "$user_msg" "$agent_msg" 2>/dev/null; then
+  if FRAPP_HOOK_PERM="$perm" FRAPP_HOOK_USER="$user_msg" FRAPP_HOOK_AGENT="$agent_msg" \
+    python3 -c 'import json,os; print(json.dumps({"permission":os.environ.get("FRAPP_HOOK_PERM","deny"),"user_message":os.environ.get("FRAPP_HOOK_USER",""),"agent_message":os.environ.get("FRAPP_HOOK_AGENT","")}))' \
+    2>/dev/null; then
     return 0
   fi
-  if node -e 'const [p,u,a]=process.argv.slice(1); process.stdout.write(JSON.stringify({permission:p,user_message:u,agent_message:a})+"\n")' \
-    "$perm" "$user_msg" "$agent_msg" 2>/dev/null; then
+  if FRAPP_HOOK_PERM="$perm" FRAPP_HOOK_USER="$user_msg" FRAPP_HOOK_AGENT="$agent_msg" \
+    node -e 'const e=process.env; process.stdout.write(JSON.stringify({permission:e.FRAPP_HOOK_PERM||"deny",user_message:e.FRAPP_HOOK_USER||"",agent_message:e.FRAPP_HOOK_AGENT||""})+"\n")' \
+    2>/dev/null; then
     return 0
   fi
   # No interpreter: still valid JSON. Fail closed.
   printf '%s\n' '{"permission":"deny","user_message":"Review gate adapter could not serialize JSON.","agent_message":"Fail-closed: neither python3 nor node was available to emit Cursor hook JSON."}'
 }
 
-payload_looks_like_push() {
+text_looks_like_push() {
   # grep 1 = definite no-match (allow). Anything else (0, 2, 127) gates — same
   # fail-closed shape as the inner hook's parse-failure path.
-  printf '%s' "$payload" | grep -q 'push'
+  printf '%s' "$1" | grep -q 'push'
   local rc=$?
   [ "$rc" -ne 1 ]
+}
+
+payload_looks_like_push() {
+  text_looks_like_push "$payload"
 }
 
 parse_cursor() {
@@ -86,10 +95,14 @@ command="${fields%%$'\t'*}"
 command_cwd="${fields#*$'\t'}"
 
 build_claude_payload() {
-  python3 -c 'import json,sys; print(json.dumps({"tool_input":{"command":sys.argv[1]},"transcript_path":"","cwd":sys.argv[2]}))' \
-    "$command" "$command_cwd" 2>/dev/null && return 0
-  node -e 'const [c,w]=process.argv.slice(1); process.stdout.write(JSON.stringify({tool_input:{command:c},transcript_path:"",cwd:w})+"\n")' \
-    "$command" "$command_cwd" 2>/dev/null && return 0
+  FRAPP_HOOK_CMD="$command" FRAPP_HOOK_CWD="$command_cwd" python3 -c '
+import json, os
+print(json.dumps({"tool_input":{"command":os.environ.get("FRAPP_HOOK_CMD","")},"transcript_path":"","cwd":os.environ.get("FRAPP_HOOK_CWD","")}))
+' 2>/dev/null && return 0
+  FRAPP_HOOK_CMD="$command" FRAPP_HOOK_CWD="$command_cwd" node -e '
+const e=process.env;
+process.stdout.write(JSON.stringify({tool_input:{command:e.FRAPP_HOOK_CMD||""},transcript_path:"",cwd:e.FRAPP_HOOK_CWD||""})+"\n");
+' 2>/dev/null && return 0
   return 1
 }
 
@@ -108,7 +121,8 @@ if [ ! -f "$INNER" ]; then
 fi
 
 err_file="$(mktemp "${TMPDIR:-/tmp}/cursor-review-gate.XXXXXX")"
-inner_out="$(printf '%s' "$claude_payload" | bash "$INNER" 2>"$err_file" || true)"
+inner_rc=0
+inner_out="$(printf '%s' "$claude_payload" | bash "$INNER" 2>"$err_file")" || inner_rc=$?
 inner_err="$(cat "$err_file" 2>/dev/null || true)"
 rm -f "$err_file"
 
@@ -145,6 +159,16 @@ let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
 }
 
 if emit_deny_from_inner; then
+  exit 0
+fi
+
+# Inner crash / empty stdout on a push-like command: deny. Claude allow is also
+# empty stdout, but that path exits 0. Swallowing a non-zero inner exit used to
+# emit Cursor allow and bypass failClosed.
+if [ "$inner_rc" -ne 0 ] && text_looks_like_push "$command"; then
+  emit "deny" \
+    "Review gate inner hook failed; fail-closed on a push-like command." \
+    "The Cursor adapter invoked the inner review gate and it exited ${inner_rc} without a deny JSON. Unreviewed push is not allowed. Export FRAPP_SKIP_REVIEW_GATE=1 only for emergencies."
   exit 0
 fi
 

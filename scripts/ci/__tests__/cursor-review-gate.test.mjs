@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -141,6 +141,61 @@ test("denied push carries a review-gate reason from the inner hook", () => {
   assert.match(parsed.user_message, /review/i);
 });
 
+test("inner hook crash on git push is denied (not Cursor-allow)", () => {
+  clearMarker();
+  const crash = path.join(mkdtempSync(path.join(tmpdir(), "crg-crash-")), "inner.sh");
+  writeFileSync(crash, "#!/bin/bash\nexit 1\n");
+  execFileSync("chmod", ["+x", crash]);
+  assertCursorDeny(
+    runAdapter("git push", { env: { FRAPP_REVIEW_GATE_INNER: crash } }),
+    "inner crash push",
+  );
+  assertCursorAllow(
+    runAdapter("ls -la", { env: { FRAPP_REVIEW_GATE_INNER: crash } }),
+    "inner crash non-push",
+  );
+});
+
+const STUB_BINS = [
+  "bash",
+  "cat",
+  "grep",
+  "mkdir",
+  "dirname",
+  "id",
+  "git",
+  "rm",
+  "sed",
+  "env",
+  "node",
+  "python3",
+  "mktemp",
+  "chmod",
+];
+
+function makeStub(keep) {
+  const dir = mkdtempSync(path.join(tmpdir(), "crg-stub-"));
+  for (const bin of keep) {
+    const src = spawnSync("bash", ["-c", `command -v ${bin}`], { encoding: "utf8" }).stdout.trim();
+    assert.ok(src && src.startsWith("/"), `stub needs a real path for ${bin}, got ${JSON.stringify(src)}`);
+    symlinkSync(src, path.join(dir, bin));
+  }
+  return dir;
+}
+
+test("node path still denies unreviewed git push when python3 is absent", () => {
+  clearMarker();
+  const stub = makeStub(STUB_BINS.filter((b) => b !== "python3"));
+  const parsed = parseOut(
+    runAdapter("git push", { env: { PATH: stub } }),
+    "no python3 push",
+  );
+  assert.equal(parsed.permission, "deny");
+  assert.match(parsed.user_message, /review/i);
+  assertCursorAllow(runAdapter("ls -la", { env: { PATH: stub } }), "no python3 non-push");
+  rmSync(stub, { recursive: true, force: true });
+});
+
 test("gitignore tracks Cursor hook files (not only environment.json)", () => {
   const root = fileURLToPath(new URL("../../..", import.meta.url));
   const res = spawnSync(
@@ -152,5 +207,19 @@ test("gitignore tracks Cursor hook files (not only environment.json)", () => {
     res.status,
     1,
     `hook contract files must not be gitignored (status ${res.status}; stdout=${res.stdout} stderr=${res.stderr})`,
+  );
+});
+
+test("gitignore still ignores secrets under un-ignored .cursor contract dirs", () => {
+  const root = fileURLToPath(new URL("../../..", import.meta.url));
+  const res = spawnSync(
+    "git",
+    ["check-ignore", "--no-index", ".cursor/hooks/.env", ".cursor/commands/mcp.json", ".cursor/hooks/id.pem"],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(
+    res.status,
+    0,
+    `secret filenames under .cursor/hooks|commands must stay ignored (status ${res.status}; stdout=${res.stdout} stderr=${res.stderr})`,
   );
 });

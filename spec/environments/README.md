@@ -456,9 +456,10 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 ## Cursor Cloud (primary) and Claude Code fallback
 
 Frapp is primarily developed in **Cursor Cloud**. The public contract is
-[`.cursor/environment.json`](../../.cursor/environment.json); per-boot bringup is
-`scripts/cloud-sandbox-up.sh`. Claude Code web remains a fallback and shares that
-script. Full configuration and failure troubleshooting:
+[`.cursor/environment.json`](../../.cursor/environment.json) (`start` is
+`scripts/cursor-cloud-up.sh`, which runs shared `scripts/cloud-sandbox-up.sh`).
+Claude Code web remains a fallback and shares that bringup script. Full
+configuration and failure troubleshooting:
 [`docs/internal/environment/CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md).
 Agent instructions: [`AGENTS.md`](../../AGENTS.md) § Cursor Cloud specific instructions.
 
