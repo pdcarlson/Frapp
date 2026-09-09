@@ -32,6 +32,19 @@ describe("OPS_NUDGE_MODULES", () => {
     }
   });
 
+  it("names Signet, not Frapp, in nudge headlines", () => {
+    for (const module of OPS_NUDGE_MODULES) {
+      expect(`${module.headline} ${module.description}`).not.toMatch(
+        /\bFrapp\b/i,
+      );
+    }
+    expect(OPS_NUDGE_MODULES.find((module) => module.key === "dues")?.headline)
+      .toBe("Collect dues in Signet");
+    expect(
+      OPS_NUDGE_MODULES.find((module) => module.key === "events")?.headline,
+    ).toBe("Run your calendar in Signet");
+  });
+
   it("gives every module non-empty copy", () => {
     for (const module of OPS_NUDGE_MODULES) {
       expect(module.headline.length).toBeGreaterThan(0);
