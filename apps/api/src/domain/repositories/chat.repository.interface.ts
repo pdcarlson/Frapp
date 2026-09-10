@@ -63,6 +63,13 @@ export class ChatMessageActionDuplicateError extends Error {
 export interface IChatChannelRepository {
   findById(id: string, chapterId: string): Promise<ChatChannel | null>;
   findByChapter(chapterId: string): Promise<ChatChannel[]>;
+  /**
+   * Load the given channel ids that belong to `chapterId`. `chapterId` is
+   * required: callers treat membership in that chapter as `isChapterMember`
+   * for these rows, so an unscoped lookup would admit foreign PUBLIC channels.
+   * Does not filter `archived_at` — that distinction stays with the caller (#348).
+   */
+  findByIds(chapterId: string, ids: string[]): Promise<ChatChannel[]>;
   findDm(chapterId: string, memberIds: string[]): Promise<ChatChannel | null>;
   create(data: Partial<ChatChannel>): Promise<ChatChannel>;
   update(
