@@ -1872,3 +1872,25 @@ Only roll back alongside dropping `chat_message_bookmarks` itself.
 **Re-applying is safe** and idempotent; the extra delete is a no-op on a user
 with no bookmarks, and re-running the whole function on an already-tombstoned
 user is the documented retry path.
+
+## Rollback rush candidates (20260910020000)
+
+* **Migration**: `20260910020000_rush_candidates.sql`
+
+Purely additive DDL — two tables, generated column, unique indexes, RLS on with no policies (#494). Nothing existing is altered.
+
+```sql
+DROP TABLE IF EXISTS rush_candidate_votes;
+DROP TABLE IF EXISTS rush_candidates;
+```
+
+Drop votes first (FK to `rush_candidates`). **Redeploy the API first** to a build without `RushModule`: `POST /v1/rush/candidates` 500s if the tables are gone while that build is serving.
+
+**Data caveat**: rolling back deletes every candidate and ballot. Capture if you intend to restore:
+
+```sql
+SELECT * FROM rush_candidates;
+SELECT candidate_id, chapter_id, voter_id, created_at FROM rush_candidate_votes;
+```
+
+`voter_id` is stored for uniqueness and is never listed on the card; dumping the vote table still contains who voted. Treat that dump as restricted.

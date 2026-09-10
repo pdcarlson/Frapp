@@ -500,6 +500,18 @@ the same run). Hosted projects are not applied from a cloud-agent session.
 
 **Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the Stripe subscription webhook previous-status return.
 
+## 2026-09-10: Rush candidates + ballots (#494)
+
+### 20260910020000_rush_candidates.sql
+* **Purpose**: Additive tables `rush_candidates` and `rush_candidate_votes` for the `/<vocab> add|vote|bid` slash command. RLS enabled, no policies (API service role). Unique `(chapter_id, name_key)` on candidates; unique `(candidate_id, voter_id)` on votes. `name_key` is a generated `lower(trim(display_name))` column.
+* **Checks**: After `db push`,
+  `select tablename from pg_tables where tablename in ('rush_candidates','rush_candidate_votes');` returns 2 rows;
+  `select relrowsecurity from pg_class where relname in ('rush_candidates','rush_candidate_votes');` is `true` for both;
+  `select indexname from pg_indexes where indexname = 'rush_candidates_chapter_name_key';` returns 1 row.
+* **Promoter notes**: Additive only. Ship with the API that writes them (`RushModule`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback rush candidates.
+
 ## 2026-09-09: System actor display_name becomes Signet System (#1935)
 
 * **Migration**: `20260909120000_rename_system_user_display_name.sql`

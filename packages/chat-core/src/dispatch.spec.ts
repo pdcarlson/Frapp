@@ -75,13 +75,11 @@ function dispatchGrant(ctx: ChatActionContext) {
 
 describe("dispatchPoints — card_posted (#544)", () => {
   it("leaves the placeholder for the Realtime echo when the card posted", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: true },
-        error: null,
-        response: { status: 200 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 200 },
+    });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -93,13 +91,11 @@ describe("dispatchPoints — card_posted (#544)", () => {
   });
 
   it("keeps a recorded row and warns when the card did not post", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 200 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 200 },
+    });
     const kv = memoryStore();
     const ctx = buildCtx(post, kv);
 
@@ -126,13 +122,11 @@ describe("dispatchPoints — card_posted (#544)", () => {
   // toast it destructively and invite a retry, and a retry writes a SECOND
   // ledger row — the grant already committed.
   it("does not report the committed grant as a failure", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 200 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 200 },
+    });
 
     const result = await dispatchGrant(buildCtx(post));
 
@@ -510,13 +504,11 @@ describe("dispatchPoints — replay refusals and resolution (#1733 review)", () 
 
   // A 2xx whose body did not parse is a SUCCESS, not a lost response.
   it("does not call a bodyless 2xx unconfirmed", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: undefined,
-        error: null,
-        response: { status: 204 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: null,
+      response: { status: 204 },
+    });
     const ctx = buildCtx(post);
 
     const result = await dispatchGrant(ctx);
@@ -636,13 +628,11 @@ function dispatchHoursCmd(ctx: ChatActionContext) {
 
 describe("dispatchTask — card_posted (#1717)", () => {
   it("leaves the placeholder for the Realtime echo when the card posted", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: true },
-        error: null,
-        response: { status: 201 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 201 },
+    });
     const ctx = buildCtx(post);
 
     const result = await dispatchTaskCmd(ctx);
@@ -652,13 +642,11 @@ describe("dispatchTask — card_posted (#1717)", () => {
   });
 
   it("keeps a recorded row and warns when the card did not post", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 201 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 201 },
+    });
     const ctx = buildCtx(post);
 
     const result = await dispatchTaskCmd(ctx);
@@ -673,13 +661,11 @@ describe("dispatchTask — card_posted (#1717)", () => {
   });
 
   it("does not report the committed create as a failure", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 201 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 201 },
+    });
 
     const result = await dispatchTaskCmd(buildCtx(post));
 
@@ -748,13 +734,11 @@ describe("dispatchTask — card_posted (#1717)", () => {
 
 describe("dispatchEvent — card_posted (#1717)", () => {
   it("leaves the placeholder for the Realtime echo when the card posted", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: true },
-        error: null,
-        response: { status: 201 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 201 },
+    });
     const ctx = buildCtx(post);
 
     const result = await dispatchEventCmd(ctx);
@@ -764,13 +748,11 @@ describe("dispatchEvent — card_posted (#1717)", () => {
   });
 
   it("keeps a recorded row and warns when the card did not post", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 201 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 201 },
+    });
     const ctx = buildCtx(post);
 
     const result = await dispatchEventCmd(ctx);
@@ -785,13 +767,11 @@ describe("dispatchEvent — card_posted (#1717)", () => {
   });
 
   it("does not report the committed create as a failure", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 201 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 201 },
+    });
 
     const result = await dispatchEventCmd(buildCtx(post));
 
@@ -857,13 +837,11 @@ describe("dispatchEvent — card_posted (#1717)", () => {
 
 describe("dispatchHours — card_posted", () => {
   it("leaves the placeholder for the Realtime echo when the card posted", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: true },
-        error: null,
-        response: { status: 201 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 201 },
+    });
     const ctx = buildCtx(post);
 
     const result = await dispatchHoursCmd(ctx);
@@ -883,13 +861,11 @@ describe("dispatchHours — card_posted", () => {
   });
 
   it("keeps a recorded row and warns when the card did not post", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 201 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 201 },
+    });
     const ctx = buildCtx(post);
 
     const result = await dispatchHoursCmd(ctx);
@@ -904,13 +880,11 @@ describe("dispatchHours — card_posted", () => {
   });
 
   it("does not report the committed create as a failure", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 201 },
-      });
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 201 },
+    });
 
     const result = await dispatchHoursCmd(buildCtx(post));
 
@@ -1104,9 +1078,7 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
     async (which) => {
       const post = postingApi();
       const outbox = stubOutbox({
-        clearDraft: vi
-          .fn()
-          .mockRejectedValue(new Error("DatabaseClosedError")),
+        clearDraft: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
       });
       const ctx = buildSimpleCtx(post, outbox);
 
@@ -1140,4 +1112,203 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
       expect(onlyRow(ctx).kind).toBe(which.kind);
     },
   );
+});
+
+const RUSH_COMMAND: SlashCommand = {
+  name: "rush",
+  description: "Add a candidate, vote, or extend a bid",
+  requiredModule: "rush",
+  implemented: true,
+};
+
+function dispatchRushAddCmd(ctx: ChatActionContext) {
+  return dispatchSlashCommand(ctx, {
+    command: RUSH_COMMAND,
+    args: "add @Jane Doe",
+    channelId: CHANNEL_ID,
+    announcementsChannelId: null,
+  });
+}
+
+function dispatchRushVoteCmd(ctx: ChatActionContext, args: string) {
+  return dispatchSlashCommand(ctx, {
+    command: RUSH_COMMAND,
+    args,
+    channelId: CHANNEL_ID,
+    announcementsChannelId: null,
+  });
+}
+
+describe("dispatchRush — add card_posted", () => {
+  it("leaves the placeholder for the Realtime echo when the card posted", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: true },
+      error: null,
+      response: { status: 201 },
+    });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchRushAddCmd(ctx);
+
+    expect(result).toEqual({ ok: true });
+    expect(placeholderCount(ctx)).toBe(1);
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          display_name: "Jane Doe",
+          channel_id: CHANNEL_ID,
+        }),
+      }),
+    );
+  });
+
+  it("keeps a recorded row and warns when the card did not post", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: { card_posted: false },
+      error: null,
+      response: { status: 201 },
+    });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchRushAddCmd(ctx);
+
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.warning).toMatch(/don't run the command again/i);
+    expect(placeholderCount(ctx)).toBe(1);
+    expect(onlyRow(ctx)._status).toBe("recorded");
+  });
+
+  it("drops the placeholder on an HTTP error", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: {
+        message: "A candidate with that name already exists in this chapter",
+      },
+      response: { status: 409 },
+    });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchRushAddCmd(ctx);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "A candidate with that name already exists in this chapter",
+    });
+    expect(placeholderCount(ctx)).toBe(0);
+  });
+});
+
+describe("dispatchRush — vote and bid", () => {
+  it("votes by UUID without a placeholder", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const post = vi.fn().mockResolvedValue({
+      data: { viewer_has_voted: true },
+      error: null,
+      response: { status: 200 },
+    });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchRushVoteCmd(ctx, `vote ${id}`);
+
+    expect(result).toEqual({ ok: true });
+    expect(placeholderCount(ctx)).toBe(0);
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates/{id}/vote",
+      expect.objectContaining({ params: { path: { id } } }),
+    );
+  });
+
+  it("looks up a candidate by name before voting", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: { id: "cand-1" },
+      error: null,
+      response: { status: 200 },
+    });
+    const post = vi.fn().mockResolvedValue({
+      data: {},
+      error: null,
+      response: { status: 200 },
+    });
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
+
+    const result = await dispatchRushVoteCmd(ctx, "vote Jane");
+
+    expect(result).toEqual({ ok: true });
+    expect(get).toHaveBeenCalledWith(
+      "/v1/rush/candidates",
+      expect.objectContaining({
+        params: { query: { name: "Jane" } },
+      }),
+    );
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates/{id}/vote",
+      expect.objectContaining({ params: { path: { id: "cand-1" } } }),
+    );
+  });
+
+  it("fails closed when the name lookup misses", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "Candidate not found" },
+      response: { status: 404 },
+    });
+    const post = vi.fn();
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
+
+    const result = await dispatchRushVoteCmd(ctx, "vote Nobody");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "No candidate matches that name",
+    });
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("extends a bid by name without a placeholder", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: { id: "cand-1" },
+      error: null,
+      response: { status: 200 },
+    });
+    const post = vi.fn().mockResolvedValue({
+      data: { bid_status: "extended" },
+      error: null,
+      response: { status: 200 },
+    });
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
+
+    const result = await dispatchSlashCommand(ctx, {
+      command: RUSH_COMMAND,
+      args: "bid Jane",
+      channelId: CHANNEL_ID,
+      announcementsChannelId: null,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(placeholderCount(ctx)).toBe(0);
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates/{id}/bid",
+      expect.objectContaining({ params: { path: { id: "cand-1" } } }),
+    );
+  });
 });

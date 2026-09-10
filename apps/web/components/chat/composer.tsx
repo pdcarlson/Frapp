@@ -136,6 +136,12 @@ interface ComposerBaseProps {
   onTyping: () => void;
   isModuleEnabled: (moduleKey: string) => boolean;
   /**
+   * Chapter recruitment vocabulary. Threaded to the palette so `/intake`
+   * displays when that is the chapter's term, and to `getSlashCommand` so a
+   * typed alias still dispatches as `rush`.
+   */
+  recruitmentVocab?: string;
+  /**
    * Status of the underlying chapter-config query. `"loading"` and `"error"`
    * surface explicit states inside the slash palette instead of an empty
    * filter; defaults to `"ready"` for callers that don't gate the catalog.
@@ -213,6 +219,10 @@ function buildDocFromPlainText(text: string): JSONContent {
 /** `#` only for an actual channel — a DM's name is a person's. */
 export function composerPlaceholder(channelName: string, isDirect?: boolean) {
   return isDirect ? `Message ${channelName}` : `Message #${channelName}`;
+}
+
+function slashToken(command: SlashCommand): string {
+  return command.displayName ?? command.name;
 }
 
 /**
@@ -348,6 +358,7 @@ export function Composer({
   onSlashDispatch,
   onTyping,
   isModuleEnabled,
+  recruitmentVocab,
   slashCommandsStatus = "ready",
   onRetrySlashCommands,
   isOffline,
@@ -429,7 +440,8 @@ export function Composer({
       onTyping();
       const parsed = parseSlashInput(text);
       const opensPalette =
-        parsed.isSlash && (parsed.command == null || parsed.command.length <= 24);
+        parsed.isSlash &&
+        (parsed.command == null || parsed.command.length <= 24);
       if (opensPalette) {
         setPalette((prev) =>
           prev.open && prev.query === (parsed.command ?? "")
@@ -440,9 +452,7 @@ export function Composer({
         // Composer text is no longer a slash invocation (user backspaced the
         // leading `/`, or typed a too-long token). Close the palette so it
         // doesn't trap the user behind a stale list.
-        setPalette((prev) =>
-          prev.open ? { open: false, query: "" } : prev,
-        );
+        setPalette((prev) => (prev.open ? { open: false, query: "" } : prev));
       }
     },
     immediatelyRender: false,
@@ -503,7 +513,7 @@ export function Composer({
       // refuses and says why.
       if (isOffline) {
         return {
-          title: `/${command.name} needs a connection`,
+          title: `/${slashToken(command)} needs a connection`,
           description:
             "Slash commands aren't queued. Your text is still here — send it when you're back online.",
         };
@@ -511,7 +521,7 @@ export function Composer({
       // A slash command posts a card, which has nowhere to hang a file.
       if (pending.length > 0) {
         return {
-          title: `/${command.name} can't carry attachments`,
+          title: `/${slashToken(command)} can't carry attachments`,
           description:
             "Remove the attached file, or send it as its own message first.",
         };
@@ -519,7 +529,7 @@ export function Composer({
       // Same shape, same reason, for a staged reply (#489).
       if (replyTo) {
         return {
-          title: `/${command.name} can't reply to a message`,
+          title: `/${slashToken(command)} can't reply to a message`,
           description:
             "Dismiss the reply first, or send your reply as an ordinary message.",
         };
@@ -541,7 +551,9 @@ export function Composer({
     // Enter on `/poll "Q?" A B` posts a poll card, not a text bubble.
     const parsed = parseSlashInput(text);
     if (parsed.isSlash && parsed.command && onSlashDispatch) {
-      const command = getSlashCommand(parsed.command);
+      const command = getSlashCommand(parsed.command, {
+        recruitment: recruitmentVocab,
+      });
       if (command?.implemented) {
         const refusal = slashRefusal(command);
         if (refusal) {
@@ -552,7 +564,7 @@ export function Composer({
         void (async () => {
           notifyDispatchOutcome(
             toast,
-            command.name,
+            slashToken(command),
             await runDispatch(onSlashDispatch, command, parsed.args),
           );
         })();
@@ -563,7 +575,15 @@ export function Composer({
     // Only clear when a send was actually issued.
     editor.commands.clearContent(true);
     setPending([]);
-  }, [editor, onSend, onSlashDispatch, pending, slashRefusal, toast]);
+  }, [
+    editor,
+    onSend,
+    onSlashDispatch,
+    pending,
+    recruitmentVocab,
+    slashRefusal,
+    toast,
+  ]);
   useLayoutEffect(() => {
     sendRef.current = submit;
   }, [submit]);
@@ -697,7 +717,7 @@ export function Composer({
       // the "coming soon" toast so the Chunk 10 stubs still surface intent.
       if (!command.implemented || !onSlashDispatch) {
         toast({
-          title: `/${command.name}`,
+          title: `/${slashToken(command)}`,
           description:
             "This command will ship in a later chunk. The catalog is gated by your chapter's enabled modules.",
         });
@@ -715,18 +735,21 @@ export function Composer({
       }
       const text = editor?.getText() ?? "";
       const parsed = parseSlashInput(text);
-      const args = parsed.command === command.name ? parsed.args : "";
+      const typed = parsed.command
+        ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
+        : undefined;
+      const args = typed?.name === command.name ? parsed.args : "";
       // Clear the composer optimistically — the dispatch enqueues the message
       // through the same hot path as `onSend`, so the optimistic card appears
       // immediately and a toast surfaces any parse / authz failure.
       if (editor) editor.commands.clearContent(true);
       notifyDispatchOutcome(
         toast,
-        command.name,
+        slashToken(command),
         await runDispatch(onSlashDispatch, command, args),
       );
     },
-    [editor, onSlashDispatch, slashRefusal, toast],
+    [editor, onSlashDispatch, recruitmentVocab, slashRefusal, toast],
   );
 
   // `canPost` is the single source of truth for whether *this caller* may
@@ -766,8 +789,7 @@ export function Composer({
     );
   }
 
-  const attachPending =
-    requestUploadUrl.isPending || uploadSignedUrl.isPending;
+  const attachPending = requestUploadUrl.isPending || uploadSignedUrl.isPending;
 
   return (
     <div className="border-t border-border p-3" onKeyDown={handleHostKey}>
@@ -932,15 +954,18 @@ export function Composer({
       <SlashPalette
         open={palette.open}
         initialQuery={palette.query}
-        onQueryChange={(query) =>
-          setPalette((prev) => ({ ...prev, query }))
-        }
+        onQueryChange={(query) => setPalette((prev) => ({ ...prev, query }))}
         isModuleEnabled={isModuleEnabled}
+        recruitmentVocab={recruitmentVocab}
         status={slashCommandsStatus}
         onRetry={onRetrySlashCommands}
         onSelect={onPaletteSelect}
         onOpenChange={(open) =>
-          setPalette((prev) => ({ ...prev, open, query: open ? prev.query : "" }))
+          setPalette((prev) => ({
+            ...prev,
+            open,
+            query: open ? prev.query : "",
+          }))
         }
       />
     </div>

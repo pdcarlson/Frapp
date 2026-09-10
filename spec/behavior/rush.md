@@ -14,7 +14,9 @@ The recruitment module manages prospective members from first contact through bi
 ## Voting and Bids
 
 - Members vote on a candidate via `/<vocab> vote <candidate-id>` and extend a bid via `/<vocab> bid @candidate`.
-- Vote and bid actor identity comes from the authenticated session (`viewer.id`), never a client-supplied id — see the actor-identity rule in [`integrations.md`](integrations.md).
+- Vote and bid actor identity comes from the authenticated session (`viewer.id`), never a client-supplied id — see the actor-identity rule in [`integrations.md`](chat/integrations.md).
+- Ballots store `voter_id` so a member can vote once. The card and GET projection publish `vote_count` and `viewer_has_voted` only — voter names are never listed (`wf_rush_anon_vote` is seed-default on). Vote is one-click, not a toggle.
+- There is no `rush:*` permission. Slash and REST are gated by the `rush` module plus `members:view` (any chapter member).
 
 ## Funnel
 
