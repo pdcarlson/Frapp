@@ -1,18 +1,20 @@
 /**
  * Pseudonymous analytics keying + payload hygiene.
  *
- * Shared by the API (server-originated events), apps/web, and apps/mobile so
- * that all three derive the *same* pseudonymous user key from the same inputs.
- * The raw `user_id` must never reach the analytics provider — events are keyed
- * by `hmac_sha256(salt, user_id)`. See `spec/behavior/data-retention.md`
- * (#analytics-events-pseudonymous).
+ * HMAC keying (`hashUserIdForAnalytics`, `hashChapterIdForAnalytics`,
+ * `hashIpForObservability`) is API-only. The raw `user_id` must never reach
+ * the analytics provider — events are keyed by `hmac_sha256(salt, user_id)`.
+ * Web and mobile do not hold the salt and do not derive: they fetch
+ * already-hashed hex from `GET /v1/analytics/identity`
+ * (`spec/behavior/observability.md` § Correlation schema). Named product
+ * events still post through `POST /v1/analytics/events`. See
+ * `spec/behavior/data-retention.md` (#analytics-events-pseudonymous).
  *
- * The HMAC is implemented in pure TypeScript on purpose: this module runs on
- * Node (server), the browser (web), and React Native (mobile), and a single
- * dependency-free implementation guarantees byte-identical output everywhere
- * with no `node:crypto` / `SubtleCrypto` platform branching. Verified against
- * the RFC 4231 HMAC-SHA-256 test vectors in `analytics.spec` (run in the API
- * Jest suite, which already imports `@repo/validation`).
+ * Payload hygiene (`assertContentFreeProperties`, `AnalyticsEvent`) is what
+ * clients share from this file. The HMAC is implemented in pure TypeScript so
+ * the API (and its Jest suite) can produce byte-identical RFC 4231
+ * HMAC-SHA-256 output without `node:crypto` / `SubtleCrypto` platform
+ * branching.
  */
 
 // ── SHA-256 (FIPS 180-4) over bytes ──────────────────────────────────────────
