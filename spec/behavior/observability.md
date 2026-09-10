@@ -23,6 +23,8 @@ Landing stays **anonymous**: no `GET /v1/analytics/identity`, no alias onto an a
 
 **Correction (2026-09-10):** `apps/web` PostHog JS still has `capture_pageview: false`, but `posthog-js` attaches `$current_url` / `$pathname` / `$referrer` and `$initial_current_url` on **every** `capture` / `identify` (including `sentry-error-correlated`) from `window.location`. Those URL-shaped properties are path-only via `sanitizeIdentifiedPostHogCapture` (`before_send`). That helper keeps sanitized `$set` / `$set_once` and `$groups` whose values are 64-hex. It lives on `@repo/observability/next` and still exports no identify / group / `setUser` APIs. `property_denylist` on web matches landing (`$ip`, `ip`, `email`, `$email`).
 
+**Correction (2026-09-10):** `apps/mobile` PostHog RN has the same URL-shaped gap on capture/identify (current-route and deep-link query strings such as `/join?token=` and OAuth `state`). `posthog-react-native` inherits core `before_send` with the same CaptureEvent envelope as posthog-js; `buildMobilePostHogInitOptions` points it at the same `sanitizeIdentifiedPostHogCapture` helper (DOM-free: no `window` / `document`). RN has no `property_denylist`; those keys are dropped in the sanitizer. Replay stays off. Landing still uses `sanitizeAnonymousPostHogCapture` (drops `$set`).
+
 LLM telemetry is allowed only at a real consumed server AI adapter. The mobile Ask mock (`apps/mobile/lib/ask/corpus.ts`) must not emit LLM analytics.
 
 ## Correlation schema
