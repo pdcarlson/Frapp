@@ -4572,7 +4572,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateServiceEntryResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -9439,12 +9446,93 @@
           "proof_path": {
             "type": "string",
             "description": "Storage path to proof file (e.g. from upload)"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry."
           }
         },
         "required": [
           "date",
           "duration_minutes",
           "description"
+        ]
+      },
+      "CreateServiceEntryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "duration_minutes": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "proof_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "reviewed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "review_comment": {
+            "type": "string",
+            "nullable": true
+          },
+          "points_awarded": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "card_posted": {
+            "type": "boolean",
+            "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the entry row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "user_id",
+          "date",
+          "duration_minutes",
+          "description",
+          "proof_path",
+          "status",
+          "reviewed_by",
+          "review_comment",
+          "points_awarded",
+          "created_at"
         ]
       },
       "ReviewServiceEntryDto": {

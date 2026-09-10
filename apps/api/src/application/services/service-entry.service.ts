@@ -4,8 +4,10 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { formatMinutesExact } from '@repo/formatting';
 import {
   isAllowedUploadExtension,
   isAllowedUploadMime,
@@ -30,6 +32,9 @@ import {
 } from './chapter-workflows.service';
 import { isUnsafeStoragePath } from '#domain/utils/storage-path';
 import { ChapterServiceConfigService } from './chapter-service-config.service';
+import { ChatService } from './chat.service';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 
 const SERVICE_BUCKET = 'service';
 
@@ -51,7 +56,29 @@ export interface CreateServiceEntryInput {
   duration_minutes: number;
   description: string;
   proof_path?: string | null;
+  /**
+   * When set together with `client_message_id`, a read-only hours card is
+   * posted to this chat channel after the row commits (the `/hours log`
+   * slash command). Omitted for dashboard creates.
+   */
+  channel_id?: string;
+  client_message_id?: string;
 }
+
+/**
+ * The created service-entry row, plus whether the chat card that accompanies
+ * it was posted.
+ *
+ * `card_posted` is present ONLY when this request actually attempted a card —
+ * chat context supplied (`channel_id` + `client_message_id`). A dashboard
+ * create's response shape is therefore unchanged. The card stays best-effort
+ * — a failed post never rolls the entry back — but the caller now learns it
+ * failed instead of inferring success from the 2xx and leaving its optimistic
+ * placeholder up forever (same contract as `/task` / `/event`, #1717).
+ */
+export type CreateServiceEntryResult = ServiceEntry & {
+  card_posted?: boolean;
+};
 
 export interface RequestProofUploadUrlInput {
   chapterId: string;
@@ -62,6 +89,8 @@ export interface RequestProofUploadUrlInput {
 
 @Injectable()
 export class ServiceEntryService {
+  private readonly logger = new Logger(ServiceEntryService.name);
+
   constructor(
     @Inject(SERVICE_ENTRY_REPOSITORY)
     private readonly serviceEntryRepo: IServiceEntryRepository,
@@ -70,6 +99,8 @@ export class ServiceEntryService {
     private readonly notificationService: NotificationService,
     private readonly chapterWorkflows: ChapterWorkflowsService,
     private readonly chapterServiceConfig: ChapterServiceConfigService,
+    private readonly chatService: ChatService,
+    @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
   ) {}
 
   async requestProofUploadUrl(input: RequestProofUploadUrlInput): Promise<{
@@ -300,7 +331,9 @@ export class ServiceEntryService {
     }
   }
 
-  async create(input: CreateServiceEntryInput): Promise<ServiceEntry> {
+  async create(
+    input: CreateServiceEntryInput,
+  ): Promise<CreateServiceEntryResult> {
     const { date, duration_minutes, description } = input;
 
     const parsedDate = new Date(date);
@@ -348,7 +381,7 @@ export class ServiceEntryService {
       await this.assertValidProofPath(input.chapter_id, proofPath);
     }
 
-    return this.serviceEntryRepo.create({
+    const entry = await this.serviceEntryRepo.create({
       chapter_id: input.chapter_id,
       user_id: input.user_id,
       date: input.date,
@@ -359,6 +392,96 @@ export class ServiceEntryService {
       reviewed_by: null,
       review_comment: null,
       points_awarded: false,
+    });
+
+    // The `/hours log` slash command asks us to surface a read-only hours
+    // card in chat. The card is server-originated (a client cannot forge
+    // `kind:"hours"` — see ChatService.SERVER_ONLY_KINDS) and best-effort: the
+    // entry row is the source of truth, so a failed post is logged and never
+    // rolls the entry back — but the outcome is now REPORTED rather than
+    // swallowed. The client renders an optimistic `loading` placeholder keyed
+    // on `client_message_id` and waits for the Realtime echo of this card to
+    // reconcile it; when the post fails that echo never arrives, so without
+    // an explicit signal the placeholder is permanent and the member cannot
+    // tell a committed create from a lost one (#1717).
+    //
+    // `undefined` means no card was attempted (a dashboard create), which is
+    // reported as an ABSENT field rather than a `false` that would claim a
+    // card failed when none was ever due.
+    //
+    // Chat cannot attach proof. The receipt-policy 400 above still fires for
+    // a slash create — that is the correct UX, not a bypass of
+    // `wf_hours_receipt`.
+    const cardPosted = await this.tryPostHoursCard(input, entry);
+
+    return cardPosted === undefined
+      ? entry
+      : { ...entry, card_posted: cardPosted };
+  }
+
+  /**
+   * Returns whether the card posted, or `undefined` when no card was due
+   * (no chat context) — the three-way distinction `card_posted` publishes.
+   */
+  private async tryPostHoursCard(
+    input: CreateServiceEntryInput,
+    entry: ServiceEntry,
+  ): Promise<boolean | undefined> {
+    if (!input.channel_id || !input.client_message_id) return undefined;
+
+    try {
+      await this.postHoursCard(input, entry);
+      return true;
+    } catch (error) {
+      this.logger.warn('Failed to post hours card to chat', {
+        entryId: entry.id,
+        channelId: input.channel_id,
+        chapterId: input.chapter_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Post the `kind:"hours"` card for a committed service entry. The member's
+   * display name is resolved here and embedded in the payload so the snapshot
+   * stays a correct record even if they later leave the chapter. Posts as the
+   * member (the creator) into the channel they ran the command from; channel
+   * access is re-checked by `ChatService.sendMessage`.
+   */
+  private async postHoursCard(
+    input: CreateServiceEntryInput,
+    entry: ServiceEntry,
+  ): Promise<void> {
+    const users = await this.userRepo.findByIds([input.user_id]);
+    const userName =
+      users.find((u) => u.id === input.user_id)?.display_name ??
+      'Unknown member';
+
+    const payload = {
+      entry_id: entry.id,
+      user_id: input.user_id,
+      user_name: userName,
+      duration_minutes: entry.duration_minutes,
+      description: entry.description,
+      date: entry.date,
+      status: 'PENDING' as const,
+      created_at: entry.created_at,
+    };
+
+    const duration = formatMinutesExact(entry.duration_minutes);
+    const content = `${userName} logged ${duration} of service on ${entry.date}: ${entry.description}`;
+
+    await this.chatService.sendMessage({
+      chapter_id: input.chapter_id,
+      channel_id: input.channel_id!,
+      sender_id: input.user_id,
+      content,
+      kind: 'hours',
+      payload,
+      client_message_id: input.client_message_id,
+      system_originated: true,
     });
   }
 
