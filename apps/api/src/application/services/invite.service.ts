@@ -277,6 +277,11 @@ export class InviteService {
     return { invites, failed };
   }
 
+  /**
+   * Bind the *current* user to this token. Invite email is not matched against
+   * `users.email`, so Apple Hide My Email / `privaterelay.appleid.com` still
+   * joins when the member opens the invite after signing in.
+   */
   async redeem(
     token: string,
     userId: string,
