@@ -67,6 +67,7 @@ describe('ChannelAccessService', () => {
     mockChannelRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      findByIds: jest.fn(),
       findDm: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -412,6 +413,7 @@ describe('ChannelAccessService', () => {
 
       expect(result.size).toBe(0);
       expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+      expect(mockChannelRepo.findByIds).not.toHaveBeenCalled();
       expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
     });
 
@@ -425,12 +427,13 @@ describe('ChannelAccessService', () => {
       );
 
       expect(result.size).toBe(0);
+      expect(mockChannelRepo.findByIds).not.toHaveBeenCalled();
       expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
     });
 
     it('keeps only the channels the caller can read', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
-      mockChannelRepo.findByChapter.mockResolvedValue([
+      mockChannelRepo.findByIds.mockResolvedValue([
         publicChannel,
         privateChannel,
         { ...publicChannel, id: 'ch-other' },
@@ -443,13 +446,19 @@ describe('ChannelAccessService', () => {
       );
 
       expect([...result].sort()).toEqual(['ch-public']);
+      expect(mockChannelRepo.findByIds).toHaveBeenCalledTimes(1);
+      expect(mockChannelRepo.findByIds).toHaveBeenCalledWith('chap-1', [
+        'ch-public',
+        'ch-private',
+      ]);
+      expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
       // No ROLE_GATED candidate → no permission lookup.
       expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalled();
     });
 
     it('loads permissions once when a ROLE_GATED channel is among the candidates', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
-      mockChannelRepo.findByChapter.mockResolvedValue([
+      mockChannelRepo.findByIds.mockResolvedValue([
         publicChannel,
         roleGatedChannel,
       ]);
@@ -462,7 +471,80 @@ describe('ChannelAccessService', () => {
       );
 
       expect([...result].sort()).toEqual(['ch-public', 'ch-role']);
+      expect(mockChannelRepo.findByIds).toHaveBeenCalledTimes(1);
+      expect(mockChannelRepo.findByIds).toHaveBeenCalledWith('chap-1', [
+        'ch-public',
+        'ch-role',
+      ]);
+      expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
       expect(mockRbac.getEffectivePermissions).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops a wanted id the repository does not return for this chapter', async () => {
+      // The chapter-scoped batch is load-bearing: `applyReadPredicate` treats
+      // membership in `chap-1` as `isChapterMember` for every returned row. A
+      // foreign PUBLIC channel must never come back from `findByIds`.
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      mockChannelRepo.findByIds.mockResolvedValue([publicChannel]);
+
+      const result = await service.filterAccessibleChannelIds(
+        'chap-1',
+        'user-1',
+        ['ch-public', 'ch-foreign'],
+      );
+
+      expect([...result]).toEqual(['ch-public']);
+      expect(mockChannelRepo.findByIds).toHaveBeenCalledWith('chap-1', [
+        'ch-public',
+        'ch-foreign',
+      ]);
+    });
+
+    it('drops an archived Group DM from the active list by default', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      const archivedGroupDm: ChatChannel = {
+        ...publicChannel,
+        id: 'ch-archived',
+        type: 'GROUP_DM',
+        member_ids: ['user-1'],
+        archived_at: '2026-01-02T00:00:00.000Z',
+      };
+      mockChannelRepo.findByIds.mockResolvedValue([
+        publicChannel,
+        archivedGroupDm,
+      ]);
+
+      const result = await service.filterAccessibleChannelIds(
+        'chap-1',
+        'user-1',
+        ['ch-public', 'ch-archived'],
+      );
+
+      expect([...result]).toEqual(['ch-public']);
+    });
+
+    it('keeps an archived Group DM when includeArchived is set', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      const archivedGroupDm: ChatChannel = {
+        ...publicChannel,
+        id: 'ch-archived',
+        type: 'GROUP_DM',
+        member_ids: ['user-1'],
+        archived_at: '2026-01-02T00:00:00.000Z',
+      };
+      mockChannelRepo.findByIds.mockResolvedValue([
+        publicChannel,
+        archivedGroupDm,
+      ]);
+
+      const result = await service.filterAccessibleChannelIds(
+        'chap-1',
+        'user-1',
+        ['ch-public', 'ch-archived'],
+        { includeArchived: true },
+      );
+
+      expect([...result].sort()).toEqual(['ch-archived', 'ch-public']);
     });
   });
 
