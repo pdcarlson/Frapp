@@ -2,7 +2,7 @@
   "name": "@repo/observability",
   "version": "0.0.0",
   "private": true,
-  "description": "Browser-safe observability policy: Sentry PII scrubbing, correlation types, and sample-rate parsing. Vendor SDK init stays runtime-local to each app.",
+  "description": "Browser-safe observability policy plus an anonymous Next.js entry (`./next`) with no identify/group/setUser APIs. Vendor SDK init calls stay runtime-local to each app.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -11,12 +11,18 @@
       "require": "./dist/index.js",
       "import": "./src/index.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./next": {
+      "types": "./next/index.ts",
+      "import": "./next/index.ts",
+      "default": "./next/index.ts"
+    },
+    "./next/sentry-build-config.js": "./next/sentry-build-config.mjs"
   },
   "scripts": {
     "build": "tsc",
     "lint": "eslint . --max-warnings 0",
-    "check-types": "tsc --noEmit",
+    "check-types": "tsc --noEmit && tsc --noEmit -p tsconfig.next.json",
     "test": "vitest run",
     "test:cov": "vitest run --coverage"
   },
