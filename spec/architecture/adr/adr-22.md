@@ -20,11 +20,16 @@
   parsing, PII redaction) lives in the browser-safe `@repo/observability` package
   (`packages/observability`). Identify / groups / hex validation / Sentry correlation attach live
   on `@repo/observability/identified-posthog` so landing cannot inherit them from the barrel.
-  Landing's anonymous page/CTA helpers live on `@repo/observability/next`.
+  Landing's anonymous Next.js option builders live on `@repo/observability/next`.
   Vendor SDK init stays in NestJS, Next.js, and React Native.
   **Correction (2026-09-09):** the original decision named this as a later slice and still
   pointed at `packages/validation/src/sentry-scrubbing.ts`. That module was **moved**, not
   copied. The package is listed under [`spec/architecture/README.md` §4](../README.md#4-shared-packages).
+  **Correction (2026-09-10):** init *calls* stay runtime-local. Anonymous Next.js option
+  builders (replay-off, both scrubber hooks, debug-ID webpack defaults, path-only
+  analytics, session/replay tags) now live on `@repo/observability/next` and export no
+  identify / group / `setUser` / `posthog_distinct_id` APIs. Landing imports only that
+  entry. Web keeps identity in `apps/web`.
 
 The product rules, identifier table, sampling bounds, and definition of done live in
 [`spec/behavior/observability.md`](../../behavior/observability.md) and are not restated here.
@@ -79,8 +84,8 @@ created (org disables member create).
 attach are no longer copied per app. They live on
 `@repo/observability/identified-posthog`, not the package barrel, so
 landing cannot inherit identify APIs. Landing uses
-`@repo/observability/next` for anonymous page/CTA capture and correlation
-(no distinct id, no Sentry user). Each app still constructs its own
+`@repo/observability/next` for anonymous Next.js option builders and
+correlation (no distinct id, no Sentry user). Each app still constructs its own
 vendor client (`posthog-js` / `posthog-react-native`) and calls
 `Sentry.init`. The WS7 copy of the web adapter was the clone that
 breached the jscpd ratchet; the package is the cutover, not a second copy.

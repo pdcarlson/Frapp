@@ -1,7 +1,4 @@
-import {
-  POSTHOG_EXCEPTION_AUTOCAPTURE,
-  shouldEnablePostHogReplay,
-} from "@repo/observability";
+import { buildAnonymousPostHogBrowserOptions } from "@repo/observability/next";
 import type { PostHogConfig } from "posthog-js";
 
 /**
@@ -38,8 +35,10 @@ export type WebPostHogInitOptions = Pick<
 >;
 
 /**
- * Options the app actually passes to `posthog.init`. Specs assert against
- * this object rather than a copy of the literals.
+ * Web extras on the anonymous Next PostHog options. Identity is *not* in
+ * this object — `applyAnalyticsIdentity` in `client.ts` calls `identify`
+ * after `GET /v1/analytics/identity`. `person_profiles: "identified_only"`
+ * is the web-only person-profile mode.
  */
 export function buildWebPostHogInitOptions(opts?: {
   environment?: string;
@@ -48,21 +47,12 @@ export function buildWebPostHogInitOptions(opts?: {
     opts?.environment ??
     process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ??
     "development";
-  const replayOn = shouldEnablePostHogReplay({ environment });
 
   return {
-    api_host: webPostHogHost(),
-    autocapture: false,
-    capture_pageview: false,
-    capture_pageleave: false,
-    capture_exceptions: POSTHOG_EXCEPTION_AUTOCAPTURE,
-    capture_heatmaps: false,
-    disable_session_recording: !replayOn,
+    ...buildAnonymousPostHogBrowserOptions({
+      apiHost: webPostHogHost(),
+      environment,
+    }),
     person_profiles: "identified_only",
-    session_recording: {
-      maskAllInputs: true,
-      maskTextSelector: "*",
-      blockClass: "ph-no-capture",
-    },
   };
 }

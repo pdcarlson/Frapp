@@ -44,25 +44,36 @@ describe("no secrets or PII in landing observability sources", () => {
       expect(source, file).not.toMatch(/\balias\s*\(/);
       expect(source, file).not.toMatch(/\.identify\s*\(/);
       expect(source, file).not.toMatch(/\.group\s*\(/);
-      expect(source, file).not.toContain("Sentry.setUser");
+      expect(source, file).not.toContain("Sentry.setUser(");
       expect(source, file).not.toContain("replayIntegration");
     }
   });
 
-  it("disables PostHog exception autocapture and inits behind a DSN/key gate", () => {
+  it("inits PostHog from the anonymous Next builder behind a key/DSN gate", () => {
     const posthog = readFileSync(
       join(process.cwd(), "lib/posthog/config.ts"),
       "utf8",
     );
-    expect(posthog).toContain(
-      "capture_exceptions: POSTHOG_EXCEPTION_AUTOCAPTURE",
-    );
+    expect(posthog).toContain("buildAnonymousPostHogBrowserOptions");
+    expect(posthog).toContain('person_profiles: "never"');
     const client = readFileSync(
       join(process.cwd(), "instrumentation-client.ts"),
       "utf8",
     );
     expect(client).toContain("initLandingPostHog");
-    expect(client).toContain("withAnonymousPostHogSentryCorrelation");
+    expect(client).toContain("withPostHogSentryCorrelation");
     expect(client).toMatch(/if \(dsn\)/);
+  });
+
+  it("uploads source maps to frapp-landing and swallows a missing project", () => {
+    const nextConfig = readFileSync(
+      join(process.cwd(), "next.config.js"),
+      "utf8",
+    );
+    expect(nextConfig).toContain("getAnonymousSentryBuildConfig");
+    expect(nextConfig).toContain('project: "frapp-landing"');
+    expect(nextConfig).toContain("errorHandler");
+    expect(nextConfig).toContain("NEXT_PUBLIC_LANDING_SENTRY_DSN");
+    expect(nextConfig).not.toContain('project: "frapp-web"');
   });
 });

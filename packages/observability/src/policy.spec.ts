@@ -13,8 +13,10 @@ import {
   POSTHOG_PRODUCTION_REPLAY_ENABLED,
   shouldEnablePostHogReplay,
   SENTRY_ERROR_CORRELATED_EVENT,
+  SENTRY_ERROR_CORRELATED_PROPERTY_KEYS,
   SENTRY_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_ENABLED,
+  pickSentryErrorCorrelatedProperties,
 } from "./policy";
 import { DEFAULT_TRACES_SAMPLE_RATE } from "./sample-rate";
 
@@ -50,6 +52,13 @@ describe("policy constants", () => {
     expect(POSTHOG_PRODUCTION_REPLAY_ENABLED).toBe(false);
     expect(SENTRY_ERROR_SAMPLE_RATE).toBe(1);
     expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
+    expect(SENTRY_ERROR_CORRELATED_PROPERTY_KEYS).toContain("sentry_event_id");
+    expect(
+      pickSentryErrorCorrelatedProperties({
+        sentry_event_id: "evt",
+        exception: "Error: secret",
+      }),
+    ).toEqual({ sentry_event_id: "evt" });
     expect(DEFAULT_POSTHOG_LOGS_SAMPLE_RATE).toBe(1);
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
   });

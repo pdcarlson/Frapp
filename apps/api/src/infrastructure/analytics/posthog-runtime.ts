@@ -5,9 +5,11 @@ import {
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   SENTRY_ERROR_CORRELATED_EVENT,
+  SENTRY_ERROR_CORRELATED_PROPERTY_KEYS,
   formatSampleRateWarning,
   isPseudonymHex,
   parseSampleRate,
+  pickSentryErrorCorrelatedProperties,
 } from '@repo/observability';
 import type { AnalyticsEvent } from '@repo/validation';
 import { PostHog, type EventMessage } from 'posthog-node';
@@ -24,19 +26,11 @@ import type { PosthogFetch } from './posthog-transport';
  * dropped rather than forwarded — exception type, stack, message, body, and
  * query string must never ride along even if a caller passes them.
  */
-export const SENTRY_ERROR_CORRELATED_ALLOWLIST = [
-  'sentry_event_id',
-  'trace_id',
-  'request_id',
-  'route',
-  'status_class',
-  'release',
-] as const;
+export const SENTRY_ERROR_CORRELATED_ALLOWLIST =
+  SENTRY_ERROR_CORRELATED_PROPERTY_KEYS;
 
 export type SentryErrorCorrelatedProperty =
-  (typeof SENTRY_ERROR_CORRELATED_ALLOWLIST)[number];
-
-const MARKER_ALLOWLIST = new Set<string>(SENTRY_ERROR_CORRELATED_ALLOWLIST);
+  (typeof SENTRY_ERROR_CORRELATED_PROPERTY_KEYS)[number];
 
 export interface SanitizedLogRecord {
   body: string;
@@ -242,11 +236,9 @@ export class PosthogRuntime {
       const props: Record<string, unknown> = {
         ...((event.properties ?? {}) as Record<string, unknown>),
       };
-      const next: Record<string, unknown> = {};
-      for (const key of MARKER_ALLOWLIST) {
-        const value: unknown = props[key];
-        if (typeof value === 'string' && value.length > 0) next[key] = value;
-      }
+      const next: Record<string, unknown> = {
+        ...pickSentryErrorCorrelatedProperties(props),
+      };
       if (props.$process_person_profile === false) {
         next.$process_person_profile = false;
       }

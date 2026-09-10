@@ -1,27 +1,27 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { SENTRY_ERROR_CORRELATED_EVENT } from "@repo/observability";
 import {
   bindPostHogAdapterForTests,
+  captureLandingCta,
+  captureLandingPageview,
+  captureSentryErrorCorrelated,
   createMemoryPostHogAdapter,
-} from "@repo/observability/next";
-import { captureLandingCta, captureLandingPageview, initLandingPostHog } from "./client";
+  initLandingPostHog,
+} from "./client";
 import { LANDING_CTA_EVENT } from "./events";
 
+const EMAIL = "treasurer@chapter.example.edu";
+const ANON_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
+
 const posthogInit = vi.hoisted(() => vi.fn());
-const posthogIdentify = vi.hoisted(() => vi.fn());
-const posthogGroup = vi.hoisted(() => vi.fn());
-const posthogAlias = vi.hoisted(() => vi.fn());
 
 vi.mock("posthog-js", () => ({
   default: {
     init: posthogInit,
     capture: vi.fn(),
-    identify: posthogIdentify,
-    group: posthogGroup,
-    alias: posthogAlias,
     get_session_id: () => "",
     get_distinct_id: () => "",
     sessionRecordingStarted: () => false,
-    stopSessionRecording: vi.fn(),
   },
 }));
 
@@ -29,43 +29,37 @@ afterEach(() => {
   bindPostHogAdapterForTests(null);
   vi.unstubAllEnvs();
   posthogInit.mockClear();
-  posthogIdentify.mockClear();
-  posthogGroup.mockClear();
-  posthogAlias.mockClear();
 });
 
 describe("initLandingPostHog", () => {
-  it("skips construction when the write-only key is blank", () => {
+  it("is a no-op without a key and never opens a transport", () => {
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "");
     initLandingPostHog();
     initLandingPostHog();
     expect(posthogInit).not.toHaveBeenCalled();
   });
 
-  it("constructs the JS SDK once and never aliases the visitor", () => {
+  it("initializes exactly once when a key is present", () => {
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
     vi.stubGlobal("window", {});
     initLandingPostHog();
     initLandingPostHog();
     expect(posthogInit).toHaveBeenCalledTimes(1);
-    expect(posthogIdentify).not.toHaveBeenCalled();
-    expect(posthogGroup).not.toHaveBeenCalled();
-    expect(posthogAlias).not.toHaveBeenCalled();
-    const shipped = posthogInit.mock.calls[0]?.[1] as {
-      person_profiles?: string;
-      cross_subdomain_cookie?: boolean;
+    const options = posthogInit.mock.calls[0]?.[1] as {
       capture_exceptions?: boolean;
       disable_session_recording?: boolean;
+      person_profiles?: string;
+      cross_subdomain_cookie?: boolean;
     };
-    expect(shipped.person_profiles).toBe("never");
-    expect(shipped.cross_subdomain_cookie).toBe(false);
-    expect(shipped.capture_exceptions).toBe(false);
-    expect(shipped.disable_session_recording).toBe(true);
+    expect(options.capture_exceptions).toBe(false);
+    expect(options.disable_session_recording).toBe(true);
+    expect(options.person_profiles).toBe("never");
+    expect(options.cross_subdomain_cookie).toBe(false);
   });
 });
 
-describe("landing-only captures", () => {
-  it("keeps $pageview path-only and drops query or fragment hrefs", () => {
+describe("anonymous capture", () => {
+  it("records path-only pageviews and drops query-bearing paths", () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);
 
@@ -73,16 +67,17 @@ describe("landing-only captures", () => {
     captureLandingPageview("/join?token=invite-token-secret");
     captureLandingPageview("/join#frag");
 
-    const pageviews = memory.calls.filter((c) => c.type === "capture");
-    expect(pageviews).toHaveLength(1);
-    expect(pageviews[0]).toMatchObject({
-      event: "$pageview",
-      properties: { $pathname: "/privacy", $current_url: "/privacy" },
-    });
-    expect(JSON.stringify(pageviews)).not.toContain("token=");
+    expect(memory.calls).toEqual([
+      {
+        type: "capture",
+        event: "$pageview",
+        properties: { $pathname: "/privacy", $current_url: "/privacy" },
+      },
+    ]);
+    expect(JSON.stringify(memory.calls)).not.toContain("token=");
   });
 
-  it("accepts only the CTA allowlist", () => {
+  it("records allowlisted CTA properties only, never href or email", () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);
 
@@ -90,12 +85,45 @@ describe("landing-only captures", () => {
     captureLandingCta("not-a-cta", "header");
     captureLandingCta("log-in", "not-a-surface");
 
-    expect(memory.calls.filter((c) => c.type === "capture")).toEqual([
+    expect(memory.calls).toEqual([
       {
         type: "capture",
         event: LANDING_CTA_EVENT,
         properties: { cta: "get-started", surface: "header" },
       },
     ]);
+    expect(JSON.stringify(memory.calls)).not.toContain(EMAIL);
+    expect(JSON.stringify(memory.calls)).not.toContain("href");
+  });
+
+  it("does not expose identify, alias, or group on the adapter", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    expect(memory.adapter).not.toHaveProperty("identify");
+    expect(memory.adapter).not.toHaveProperty("alias");
+    expect(memory.adapter).not.toHaveProperty("group");
+    expect(JSON.stringify(memory.calls)).not.toContain(ANON_UUID);
+  });
+});
+
+describe("sentry-error-correlated marker", () => {
+  it("drops exception type, stack, and query from the marker", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    captureSentryErrorCorrelated({
+      sentry_event_id: "evt_landing",
+      exception: "Error: secret",
+      stack: `at ${EMAIL}`,
+      query: "?token=abc",
+    });
+    const capture = memory.calls.find((c) => c.type === "capture");
+    expect(capture?.type === "capture" && capture.event).toBe(
+      SENTRY_ERROR_CORRELATED_EVENT,
+    );
+    expect(
+      capture && capture.type === "capture" && capture.properties,
+    ).toEqual({ sentry_event_id: "evt_landing" });
+    expect(JSON.stringify(capture)).not.toContain("secret");
+    expect(JSON.stringify(capture)).not.toContain(EMAIL);
   });
 });

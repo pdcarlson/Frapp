@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
-import { withAnonymousPostHogSentryCorrelation } from "@repo/observability/next";
 import { initLandingPostHog } from "./lib/posthog/client";
+import { withPostHogSentryCorrelation } from "./lib/sentry/correlation";
 import {
   buildLandingSentryOptions,
   landingSentryDsn,
@@ -23,7 +23,7 @@ if (dsn) {
   const options = buildLandingSentryOptions(dsn);
   Sentry.init({
     ...options,
-    beforeSend: withAnonymousPostHogSentryCorrelation(options.beforeSend),
+    beforeSend: withPostHogSentryCorrelation(options.beforeSend),
   });
 }
 

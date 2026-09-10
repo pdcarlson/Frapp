@@ -7,17 +7,19 @@ import {
   REQUEST_ID_HEADER,
   SENTRY_TRACE_HEADER,
   SENTRY_ERROR_CORRELATED_EVENT,
-  SENTRY_ERROR_CORRELATED_ALLOWLIST,
+  SENTRY_ERROR_CORRELATED_PROPERTY_KEYS,
   SENTRY_REPLAY_ENABLED,
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
   createSentryScrubber,
   createNoPseudonymScrubHooks,
   parseSampleRate,
+  pathOnlyAnalyticsPath,
+  pickSentryErrorCorrelatedProperties,
   stripAuthority,
   shouldEnablePostHogReplay,
 } from "./index";
 import * as barrel from "./index";
-import * as anonymousNext from "./next";
+import * as anonymousNext from "../next";
 
 describe("public API", () => {
   it("exports the scrubber, parser, and policy constants from the barrel", () => {
@@ -33,7 +35,16 @@ describe("public API", () => {
     expect(SENTRY_REPLAY_ENABLED).toBe(false);
     expect(POSTHOG_EXCEPTION_AUTOCAPTURE).toBe(false);
     expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
-    expect(SENTRY_ERROR_CORRELATED_ALLOWLIST).toContain("sentry_event_id");
+    expect(SENTRY_ERROR_CORRELATED_PROPERTY_KEYS).toEqual([
+      "sentry_event_id",
+      "trace_id",
+      "request_id",
+      "route",
+      "status_class",
+      "release",
+    ]);
+    expect(typeof pickSentryErrorCorrelatedProperties).toBe("function");
+    expect(typeof pathOnlyAnalyticsPath).toBe("function");
     expect(DEFAULT_POSTHOG_LOGS_SAMPLE_RATE).toBe(1);
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
   });
@@ -51,10 +62,16 @@ describe("public API", () => {
     expect(typeof anonymousNext.withAnonymousPostHogSentryCorrelation).toBe(
       "function",
     );
-    expect(typeof anonymousNext.captureAnalyticsEvent).toBe("function");
+    expect(typeof anonymousNext.buildAnonymousBrowserSentryOptions).toBe(
+      "function",
+    );
+    expect(typeof anonymousNext.buildAnonymousPostHogBrowserOptions).toBe(
+      "function",
+    );
     expect("applyAnalyticsIdentity" in anonymousNext).toBe(false);
     expect("applyObservabilityIdentity" in anonymousNext).toBe(false);
     expect("attachPostHogCorrelation" in anonymousNext).toBe(false);
     expect("withPostHogSentryCorrelation" in anonymousNext).toBe(false);
+    expect("createMemoryPostHogAdapter" in anonymousNext).toBe(false);
   });
 });

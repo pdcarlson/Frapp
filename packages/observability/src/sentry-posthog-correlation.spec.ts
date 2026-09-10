@@ -1,25 +1,22 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { SENTRY_ERROR_CORRELATED_EVENT } from "./policy";
 import {
   bindPostHogAdapterForTests,
   createMemoryPostHogAdapter,
 } from "./posthog-adapter";
 import {
-  attachAnonymousPostHogCorrelation,
   attachPostHogCorrelation,
   withPostHogSentryCorrelation,
 } from "./sentry-posthog-correlation";
 
 const HEX = "a".repeat(64);
-const EMAIL = "treasurer@chapter.example.edu";
 const UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
 
 afterEach(() => {
   bindPostHogAdapterForTests(null);
 });
 
-describe("attachPostHogCorrelation", () => {
-  it("attaches validated PostHog ids after scrub and emits the marker", () => {
+describe("identified attachPostHogCorrelation", () => {
+  it("attaches the validated hex distinct id and leaves user alone", () => {
     const memory = createMemoryPostHogAdapter();
     memory.setRecording(true);
     bindPostHogAdapterForTests(memory.adapter);
@@ -29,6 +26,7 @@ describe("attachPostHogCorrelation", () => {
       event_id: "sentry-evt",
       release: "abc123",
       transaction: "/v1/members",
+      user: { id: HEX },
       request: { headers: { "x-request-id": "req_from_sdk" } },
       contexts: {
         trace: { trace_id: "trace-abc" },
@@ -37,46 +35,8 @@ describe("attachPostHogCorrelation", () => {
     });
 
     expect(event.tags?.posthog_distinct_id).toBe(HEX);
-    expect(event.tags?.posthog_session_id).toBe("ph_session_test");
-    expect(event.tags?.posthog_replay_id).toBe("ph_session_test");
-
-    const capture = memory.calls.find((c) => c.type === "capture");
-    expect(capture?.type === "capture" && capture.event).toBe(
-      SENTRY_ERROR_CORRELATED_EVENT,
-    );
-    expect(capture && capture.type === "capture" && capture.properties).toEqual({
-      sentry_event_id: "sentry-evt",
-      trace_id: "trace-abc",
-      request_id: "req_from_sdk",
-      route: "/v1/members",
-      status_class: "5xx",
-      release: "abc123",
-    });
-    expect(JSON.stringify(capture)).not.toContain(EMAIL);
-    expect(capture && capture.type === "capture" && capture.properties).not.toHaveProperty(
-      "exception",
-    );
+    expect(event.user).toEqual({ id: HEX });
     expect(event.tags?.posthog_distinct_id).not.toBe(UUID);
-  });
-
-  it("anonymous attach never copies a visitor UUID onto Sentry user or tags", () => {
-    const memory = createMemoryPostHogAdapter();
-    memory.setRecording(true);
-    bindPostHogAdapterForTests(memory.adapter);
-    memory.adapter.identify(UUID);
-
-    const event = attachAnonymousPostHogCorrelation({
-      event_id: "landing-evt",
-      user: { id: UUID, email: EMAIL },
-      tags: { posthog_distinct_id: UUID },
-    });
-
-    expect(event.user).toBeUndefined();
-    expect(event.tags?.posthog_distinct_id).toBeUndefined();
-    expect(event.tags?.posthog_session_id).toBe("ph_session_test");
-    expect(event.tags?.posthog_replay_id).toBe("ph_session_test");
-    expect(JSON.stringify(event.tags)).not.toContain(UUID);
-    expect(JSON.stringify(event.tags)).not.toContain(EMAIL);
   });
 
   it("does not copy the Sentry trace id into request_id", () => {

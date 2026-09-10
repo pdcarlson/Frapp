@@ -1,6 +1,7 @@
 /**
- * Shared observability policy constants. Vendor SDK **init** is not here —
- * each app's options module reads these and applies them locally.
+ * Shared observability policy constants. Vendor SDK **init calls** are not
+ * here — each app still calls `Sentry.init` / `posthog.init` locally.
+ * Anonymous Next.js option builders live in `@repo/observability/next`.
  *
  * Values match the intended contract in `spec/behavior/observability.md`.
  * A dashboard that disagrees is a tracked bug, not a reason to change these.
@@ -54,8 +55,12 @@ export const OBSERVABILITY_PROVIDERS = {
  */
 export const SENTRY_ERROR_CORRELATED_EVENT = "sentry-error-correlated";
 
-/** Keys the content-free timeline marker may carry. Unknown keys are dropped. */
-export const SENTRY_ERROR_CORRELATED_ALLOWLIST = [
+/**
+ * Keys the `sentry-error-correlated` marker may carry. Unknown keys are
+ * dropped rather than forwarded — exception type, stack, message, body,
+ * and query string must never ride along even if a caller passes them.
+ */
+export const SENTRY_ERROR_CORRELATED_PROPERTY_KEYS = [
   "sentry_event_id",
   "trace_id",
   "request_id",
@@ -63,6 +68,22 @@ export const SENTRY_ERROR_CORRELATED_ALLOWLIST = [
   "status_class",
   "release",
 ] as const;
+
+/**
+ * Keep only allowlisted string properties for the timeline marker.
+ */
+export function pickSentryErrorCorrelatedProperties(
+  properties: Record<string, unknown>,
+): Record<string, string> {
+  const allowed = new Set<string>(SENTRY_ERROR_CORRELATED_PROPERTY_KEYS);
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(properties)) {
+    if (!allowed.has(key)) continue;
+    if (typeof value !== "string" || value.length === 0) continue;
+    sanitized[key] = value;
+  }
+  return sanitized;
+}
 
 /**
  * Default sample rate for sanitized PostHog logs (request log,

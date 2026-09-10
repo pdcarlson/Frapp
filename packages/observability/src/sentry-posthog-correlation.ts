@@ -5,6 +5,9 @@ import {
   getPostHogReplayId,
   getPostHogSessionId,
 } from "./posthog-adapter";
+import { headerValue, httpStatusClass } from "./sentry-http";
+
+export { headerValue, httpStatusClass } from "./sentry-http";
 
 /**
  * The fields web and mobile Sentry events share for PostHog correlation.
@@ -30,24 +33,6 @@ export interface PostHogSentryCorrelationOptions {
    * visitor onto a later authenticated distinct id is rejected (ADR-22).
    */
   anonymous?: boolean;
-}
-
-export function headerValue(
-  headers: unknown,
-  name: string,
-): string | undefined {
-  if (!headers || typeof headers !== "object") return undefined;
-  const record = headers as Record<string, unknown>;
-  const direct = record[name] ?? record[name.toLowerCase()];
-  return typeof direct === "string" && direct.length > 0 ? direct : undefined;
-}
-
-export function httpStatusClass(status: unknown): string | undefined {
-  if (typeof status !== "number" || !Number.isFinite(status)) return undefined;
-  if (status >= 200 && status < 300) return "2xx";
-  if (status >= 400 && status < 500) return "4xx";
-  if (status >= 500 && status < 600) return "5xx";
-  return undefined;
 }
 
 function traceIdFrom(event: CorrelatableSentryEvent): string | undefined {
@@ -137,21 +122,4 @@ export function withPostHogSentryCorrelation<
         : null,
     );
   };
-}
-
-export function attachAnonymousPostHogCorrelation<
-  T extends CorrelatableSentryEvent,
->(event: T, extras?: { statusClass?: string }): T {
-  return attachPostHogCorrelation(event, { ...extras, anonymous: true });
-}
-
-export function withAnonymousPostHogSentryCorrelation<
-  E extends CorrelatableSentryEvent,
-  H,
->(
-  beforeSend?:
-    | ((event: E, hint: H) => E | null | PromiseLike<E | null> | undefined)
-    | undefined,
-): (event: E, hint: H) => Promise<E | null> {
-  return withPostHogSentryCorrelation(beforeSend, { anonymous: true });
 }

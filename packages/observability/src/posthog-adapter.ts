@@ -1,5 +1,5 @@
 import {
-  SENTRY_ERROR_CORRELATED_ALLOWLIST,
+  pickSentryErrorCorrelatedProperties,
   SENTRY_ERROR_CORRELATED_EVENT,
 } from "./policy";
 import { validatedChapterGroupId, validatedDistinctId } from "./identity";
@@ -200,8 +200,6 @@ export function getPostHogReplayId(): string | undefined {
   return currentAdapter()?.getReplayId();
 }
 
-const MARKER_ALLOWLIST = new Set<string>(SENTRY_ERROR_CORRELATED_ALLOWLIST);
-
 /**
  * Product-only. Do not call this from a permission check — `can()` in
  * `@repo/validation` is the authorization input.
@@ -222,11 +220,8 @@ export function captureSentryErrorCorrelated(
   if (optedOut) return;
   const adapter = currentAdapter();
   if (!adapter) return;
-  const sanitized: Record<string, string> = {};
-  for (const [key, value] of Object.entries(properties)) {
-    if (!MARKER_ALLOWLIST.has(key)) continue;
-    if (typeof value !== "string" || value.length === 0) continue;
-    sanitized[key] = value;
-  }
-  adapter.capture(SENTRY_ERROR_CORRELATED_EVENT, sanitized);
+  adapter.capture(
+    SENTRY_ERROR_CORRELATED_EVENT,
+    pickSentryErrorCorrelatedProperties(properties),
+  );
 }
