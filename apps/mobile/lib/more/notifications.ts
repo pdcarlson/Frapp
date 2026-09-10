@@ -14,7 +14,7 @@
  * Rows whose target names no known screen fall back to no label rather than to
  * a guessed one.
  */
-import { parseInstantOrBareUtcNoon } from "@repo/formatting";
+import { dayDelta, parseInstantOrBareUtcNoon } from "@repo/formatting";
 import { isRecord, records, str } from "./narrow";
 import {
   notificationHref,
@@ -91,22 +91,6 @@ function targetScreen(data: unknown): string | null {
 export function categoryLabelFor(data: unknown): string | null {
   const screen = targetScreen(data);
   return screen ? (SCREEN_LABELS[screen] ?? null) : null;
-}
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-/**
- * Whole calendar days between two instants, ignoring time of day.
- *
- * `Date.UTC` of each *local* Y/M/D — identical to `lib/tasks/format.ts` and
- * `lib/events/format.ts`. TODAY/EARLIER is a local-calendar split, not a UTC
- * date split: a `created_at` of `2026-08-17T09:00:00.000Z` is yesterday
- * evening in Tokyo when `now` is `2026-08-17T20:00:00.000Z`.
- */
-function dayDelta(from: Date, to: Date): number {
-  const a = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
-  const b = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
-  return Math.round((b - a) / MS_PER_DAY);
 }
 
 function parseCreatedAt(value: string): Date | null {

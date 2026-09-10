@@ -9,8 +9,9 @@
  * rather than rendering "Invalid Date" downstream.
  */
 
+import { dayDelta } from "@repo/formatting";
 import { num, records, str } from "@/lib/more/narrow";
-import { dayDelta, daysSinceCompletion, parseTaskDate } from "./format";
+import { daysSinceCompletion, parseTaskDate } from "./format";
 import { isOpenTask } from "./transitions";
 
 /**
