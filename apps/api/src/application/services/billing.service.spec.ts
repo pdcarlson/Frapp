@@ -764,9 +764,7 @@ describe('BillingService', () => {
       expect(printed).toContain('Failed to create portal session');
       expect(printed).toContain('23505');
       expect(printed).not.toContain('alice@example.com');
-      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(
-        true,
-      );
+      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(true);
     } finally {
       errorSpy.mockRestore();
     }

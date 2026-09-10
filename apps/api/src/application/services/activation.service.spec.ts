@@ -133,18 +133,14 @@ describe('ActivationService', () => {
       const printed = errorSpy.mock.calls
         .map((args) =>
           args
-            .map((arg) =>
-              typeof arg === 'string' ? arg : JSON.stringify(arg),
-            )
+            .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
             .join('\n'),
         )
         .join('\n');
       expect(printed).toContain('Failed to record activation milestone');
       expect(printed).toContain('23505');
       expect(printed).not.toContain('alice@example.com');
-      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(
-        true,
-      );
+      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(true);
     } finally {
       errorSpy.mockRestore();
     }
