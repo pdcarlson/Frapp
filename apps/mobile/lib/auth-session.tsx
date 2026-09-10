@@ -258,12 +258,29 @@ export function AuthSessionProvider({
 
     let cancelled = false;
 
+    const applySession = (
+      nextSession: Session | null,
+      opts: { clearCallbackError: boolean },
+    ) => {
+      if (cancelled) return;
+      // Memory-token update is synchronous inside write/clear so identity
+      // GET cannot go out with the previous member's Bearer. Child effects
+      // run before the token-mirror effect below.
+      if (nextSession?.access_token) {
+        void writeAuthToken(nextSession.access_token);
+      } else {
+        void clearAuthToken();
+      }
+      setSession(nextSession ?? null);
+      setStatus(nextSession ? "authenticated" : "unauthenticated");
+      if (opts.clearCallbackError && nextSession) setCallbackError(null);
+    };
+
     supabase.auth
       .getSession()
       .then(({ data }) => {
         if (cancelled) return;
-        setSession(data.session ?? null);
-        setStatus(data.session ? "authenticated" : "unauthenticated");
+        applySession(data.session ?? null, { clearCallbackError: false });
       })
       .catch(() => {
         if (!cancelled) setStatus("unauthenticated");
@@ -271,11 +288,7 @@ export function AuthSessionProvider({
 
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (cancelled) return;
-      setSession(nextSession ?? null);
-      setStatus(nextSession ? "authenticated" : "unauthenticated");
-      // A session arriving answers whatever the last failed link complained
-      // about; leaving it set would show a stale error on the next sign-out.
-      if (nextSession) setCallbackError(null);
+      applySession(nextSession ?? null, { clearCallbackError: true });
     });
 
     return () => {
@@ -287,13 +300,16 @@ export function AuthSessionProvider({
   // Mirror the access token into SecureStore under the key the API SDK already
   // reads (`AUTH_TOKEN_STORAGE_KEY`). This is the whole seam: the SDK client
   // stays unaware of Supabase, and every refreshed token propagates for free.
+  // Skip hydrating: first paint has no session yet and must not `clearAuthToken`
+  // (that would poison the in-process token before `getSession` resolves).
   useEffect(() => {
+    if (status === "hydrating") return;
     if (accessToken) {
       void writeAuthToken(accessToken);
     } else {
       void clearAuthToken();
     }
-  }, [accessToken]);
+  }, [accessToken, status]);
 
   /**
    * Chapter context comes from the token claim, never from a local pick.
