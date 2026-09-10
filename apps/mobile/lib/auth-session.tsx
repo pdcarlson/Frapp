@@ -295,7 +295,8 @@ export function AuthSessionProvider({
    * False with no token (do not treat the pre-`getSession()` mount as resolved)
    * and false the moment `claimKey` changes, even before the claim effect re-runs.
    */
-  const hasReadChapterClaim = Boolean(claimKey) && claimReadForUserId === claimKey;
+  const hasReadChapterClaim =
+    Boolean(claimKey) && claimReadForUserId === claimKey;
 
   // Hydrate from persisted storage, then follow every subsequent change.
   useEffect(() => {
@@ -566,10 +567,19 @@ export function AuthSessionProvider({
         throw new Error("Unable to finish sign-in. Retry in a moment.");
       }
 
+      // `openAuthSessionAsync` returning success and `Linking.useURL`
+      // delivering the same URL are the same event on iOS. Claim the URL
+      // synchronously before any await so the Linking effect cannot start a
+      // second exchange of a single-use `code`. If Linking already claimed it,
+      // the session (or callbackError) is already in flight — do not throw a
+      // stale "invalid code" over a sign-in that succeeded.
+      if (lastHandledCallbackUrl.current === result.url) {
+        return;
+      }
       lastHandledCallbackUrl.current = result.url;
       const message = await createSessionFromUrl(supabase, result.url);
       if (message) {
-        throw new Error(describeOAuthKickoffError({ message }));
+        throw new Error(message);
       }
     },
     [supabase],

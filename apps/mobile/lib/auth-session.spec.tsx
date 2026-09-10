@@ -646,7 +646,10 @@ describe("AuthSessionProvider — chapter context", () => {
     });
     await waitFor(() => expect(result.current.userId).toBe("user-1"));
     await waitFor(() =>
-      expect(seen).toContainEqual({ userId: "user-1", token: "access-token-1" }),
+      expect(seen).toContainEqual({
+        userId: "user-1",
+        token: "access-token-1",
+      }),
     );
 
     await act(async () => {
@@ -894,8 +897,7 @@ describe("AuthSessionProvider — magic-link callback", () => {
   });
 
   it("verifies a token_hash on the app scheme without going through supabase.co", async () => {
-    mockState.deepLinkUrl =
-      "frapp:///?token_hash=pkce_hash&type=magiclink";
+    mockState.deepLinkUrl = "frapp:///?token_hash=pkce_hash&type=magiclink";
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
@@ -1034,6 +1036,37 @@ describe("AuthSessionProvider — OAuth", () => {
       await Promise.resolve();
     });
     expect(client!.auth.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not exchange twice or throw when the deep link arrives first", async () => {
+    const oauthUrl = "frapp:///?code=oauth-once";
+    mockState.deepLinkUrl = oauthUrl;
+    mockState.authSessionResult = { type: "success", url: oauthUrl };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    await waitFor(() =>
+      expect(client!.auth.exchangeCodeForSession).toHaveBeenCalledTimes(1),
+    );
+
+    vi.mocked(client!.auth.exchangeCodeForSession).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: {
+        message:
+          "invalid request: both auth code and code verifier should be non-empty",
+      },
+    } as never);
+
+    await act(async () => {
+      await expect(
+        result.current.signInWithOAuthProvider("google"),
+      ).resolves.toBeUndefined();
+    });
+    expect(client!.auth.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+    expect(result.current.callbackError).toBeNull();
   });
 });
 
