@@ -8,6 +8,7 @@ import {
   formatSampleRateWarning,
   isPseudonymHex,
   parseSampleRate,
+  pickSentryErrorCorrelatedProperties,
 } from '@repo/observability';
 import type { AnalyticsEvent } from '@repo/validation';
 import { PostHog, type EventMessage } from 'posthog-node';
@@ -17,26 +18,6 @@ import { NoopAnalyticsProvider } from './noop-analytics.provider';
 import { NoopFeatureFlagProvider } from './noop-feature-flags.provider';
 import { parsePosthogConfig, type PosthogConfig } from './posthog-config';
 import type { PosthogFetch } from './posthog-transport';
-
-/**
- * Content-free `sentry-error-correlated` properties named in
- * `spec/behavior/observability.md` § Privacy and replay. Unknown keys are
- * dropped rather than forwarded — exception type, stack, message, body, and
- * query string must never ride along even if a caller passes them.
- */
-export const SENTRY_ERROR_CORRELATED_ALLOWLIST = [
-  'sentry_event_id',
-  'trace_id',
-  'request_id',
-  'route',
-  'status_class',
-  'release',
-] as const;
-
-export type SentryErrorCorrelatedProperty =
-  (typeof SENTRY_ERROR_CORRELATED_ALLOWLIST)[number];
-
-const MARKER_ALLOWLIST = new Set<string>(SENTRY_ERROR_CORRELATED_ALLOWLIST);
 
 export interface SanitizedLogRecord {
   body: string;
@@ -158,17 +139,11 @@ export class PosthogRuntime {
     distinctId: string,
     properties: Record<string, unknown>,
   ): void {
-    const sanitized: Record<string, string> = {};
-    for (const [key, value] of Object.entries(properties)) {
-      if (!MARKER_ALLOWLIST.has(key)) continue;
-      if (typeof value !== 'string' || value.length === 0) continue;
-      sanitized[key] = value;
-    }
     this.client.capture({
       distinctId,
       event: SENTRY_ERROR_CORRELATED_EVENT,
       properties: {
-        ...sanitized,
+        ...pickSentryErrorCorrelatedProperties(properties),
         $process_person_profile: false,
       },
       sendFeatureFlags: false,
@@ -242,11 +217,9 @@ export class PosthogRuntime {
       const props: Record<string, unknown> = {
         ...((event.properties ?? {}) as Record<string, unknown>),
       };
-      const next: Record<string, unknown> = {};
-      for (const key of MARKER_ALLOWLIST) {
-        const value: unknown = props[key];
-        if (typeof value === 'string' && value.length > 0) next[key] = value;
-      }
+      const next: Record<string, unknown> = {
+        ...pickSentryErrorCorrelatedProperties(props),
+      };
       if (props.$process_person_profile === false) {
         next.$process_person_profile = false;
       }

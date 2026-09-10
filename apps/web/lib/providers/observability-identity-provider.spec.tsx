@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bindPostHogAdapterForTests,
   createMemoryPostHogAdapter,
-} from "@/lib/posthog/client";
+} from "@repo/observability/identified-posthog";
 
 const HEX = "a".repeat(64);
 const OTHER = "b".repeat(64);

@@ -12,6 +12,7 @@ import {
 } from "react";
 import { AppState } from "react-native";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
+import { resetObservabilityOnLogout } from "./observability/reset";
 import { queryClient } from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
@@ -484,6 +485,7 @@ export function AuthSessionProvider({
     setClaimedChapter({ userId: null, chapterId: null });
     setClaimReadForUserId(null);
     setStatus("unauthenticated");
+    resetObservabilityOnLogout();
   }, [supabase]);
 
   // Only the first read blocks, and only while signed in — see the state's own

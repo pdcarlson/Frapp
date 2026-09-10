@@ -1,31 +1,20 @@
 import {
   POSTHOG_EXCEPTION_AUTOCAPTURE,
-  POSTHOG_PRODUCTION_REPLAY_ENABLED,
   isPseudonymHex,
   pathOnlyAnalyticsPath,
+  shouldEnablePostHogReplay,
 } from "../src/index";
+
+export { shouldEnablePostHogReplay } from "../src/index";
 
 /**
  * Anonymous PostHog JS options shared by Next.js apps.
  *
  * Replay-off, exception autocapture off, no pageview autocapture.
  * This object has **no** `person_profiles`, identify, group, or alias
- * fields. Web adds `identified_only` in `apps/web`. Landing adds `never`.
+ * fields. Web and mobile add `identified_only` in their app PostHog
+ * config. Landing adds `never`.
  */
-
-/**
- * Session replay stays off in every environment until Paul approves
- * production replay (#2038). Production cannot turn on while
- * {@link POSTHOG_PRODUCTION_REPLAY_ENABLED} is false.
- */
-export function shouldEnablePostHogReplay(opts: {
-  environment: string;
-}): boolean {
-  if (opts.environment === "production") {
-    return POSTHOG_PRODUCTION_REPLAY_ENABLED;
-  }
-  return false;
-}
 
 export const ANONYMOUS_POSTHOG_SESSION_RECORDING = {
   maskAllInputs: true,

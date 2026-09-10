@@ -6,11 +6,14 @@
  * `Sentry.init` or construct a PostHog client. Those stay runtime-local to
  * NestJS, Next.js, and React Native.
  *
+ * Identified-client helpers (identify / groups / hex `posthog_distinct_id`)
+ * are **not** on this barrel. Import `@repo/observability/identified-posthog`
+ * from web or mobile. Landing must not import that entry.
+ *
  * Anonymous Next.js option builders (replay-off, both scrubber hooks,
  * debug-ID webpack defaults, path-only analytics, session/replay tags)
- * live on the `@repo/observability/next` entry. That entry exports **no**
- * identify / group / `setUser` / `posthog_distinct_id` APIs. Identity stays
- * in `apps/web`.
+ * live on `@repo/observability/next`. That entry exports **no** identify /
+ * group / `setUser` / `posthog_distinct_id` APIs.
  *
  * No DOM, no `node:*`, no `process.env`. The API is a CommonJS consumer, so
  * this package does not declare `"type": "module"` and its `dist` is CJS.
@@ -60,6 +63,7 @@ export {
   SENTRY_REPLAY_ENABLED,
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   POSTHOG_PRODUCTION_REPLAY_ENABLED,
+  shouldEnablePostHogReplay,
   OBSERVABILITY_PROVIDERS,
   SENTRY_ERROR_CORRELATED_EVENT,
   SENTRY_ERROR_CORRELATED_PROPERTY_KEYS,
@@ -68,3 +72,12 @@ export {
 } from "./policy";
 
 export { pathOnlyAnalyticsPath } from "./analytics-path";
+
+export {
+  FIRST_PARTY_API_ORIGINS,
+  firstPartyTracePropagationTargets,
+} from "./trace-targets";
+
+export { createNoPseudonymScrubHooks } from "./sentry-scrub-hooks";
+
+export { headerValue, httpStatusClass } from "./sentry-http";

@@ -1,15 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  POSTHOG_EXCEPTION_AUTOCAPTURE,
-  POSTHOG_PRODUCTION_REPLAY_ENABLED,
-} from "../src/policy";
+import { POSTHOG_EXCEPTION_AUTOCAPTURE } from "../src/policy";
 import {
   POSTHOG_PROPERTY_DENYLIST,
   buildAnonymousPostHogBrowserOptions,
   sanitizeAnonymousPostHogCapture,
   sanitizeAnonymousPostHogProperties,
   sanitizeIdentifiedPostHogCapture,
-  shouldEnablePostHogReplay,
 } from "./posthog-options";
 
 const HEX = "a".repeat(64);
@@ -17,19 +13,6 @@ const CHAPTER_HEX = "b".repeat(64);
 const UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
 const JOIN_WITH_TOKEN =
   "https://app.frapp.live/join?token=invite-token-secret&email=treasurer@chapter.example.edu";
-
-describe("replay decision", () => {
-  it("cannot turn production replay on while the policy constant is false", () => {
-    expect(POSTHOG_PRODUCTION_REPLAY_ENABLED).toBe(false);
-    expect(shouldEnablePostHogReplay({ environment: "production" })).toBe(
-      false,
-    );
-    expect(shouldEnablePostHogReplay({ environment: "preview" })).toBe(false);
-    expect(shouldEnablePostHogReplay({ environment: "development" })).toBe(
-      false,
-    );
-  });
-});
 
 describe("anonymous PostHog JS options", () => {
   it("disables exception autocapture, pageviews, and session recording", () => {
