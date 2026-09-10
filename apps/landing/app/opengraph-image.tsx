@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
 export const runtime = "nodejs";
@@ -16,10 +18,10 @@ export const contentType = "image/png";
  * Design's raster, not the reconstructed crest SVG.
  */
 export default async function OpenGraphImage() {
-  const emblemBytes = await fetch(
-    new URL("./opengraph-emblem.png", import.meta.url),
-  ).then((res) => res.arrayBuffer());
-  const emblem = `data:image/png;base64,${Buffer.from(emblemBytes).toString("base64")}`;
+  const emblemBytes = await readFile(
+    join(process.cwd(), "app/opengraph-emblem.png"),
+  );
+  const emblem = `data:image/png;base64,${emblemBytes.toString("base64")}`;
 
   return new ImageResponse(
     <div

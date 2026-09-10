@@ -40,13 +40,13 @@ Entrance motion is opt-out throughout: every animated block pairs `motion-safe:a
 
 ## OG image (gotcha)
 
-Do **not** point `openGraph.images` / `twitter.images` at a static `/og-image.png` — no such file exists in `public/`. The canonical social image is the dynamic App Router route [`apps/landing/app/opengraph-image.tsx`](../../../apps/landing/app/opengraph-image.tsx) (edge runtime, 1200×630). [`apps/landing/app/layout.tsx`](../../../apps/landing/app/layout.tsx) is correct as built: `metadataBase` is `https://frapp.live`, `openGraph.images` is `{ url: "/opengraph-image", width: 1200, height: 630, alt }`, and `twitter.images` is `["/opengraph-image"]` with a `summary_large_image` card, so previews resolve to the generated image at runtime.
+Do **not** point `openGraph.images` / `twitter.images` at a static `/og-image.png` — no such file exists in `public/`. The canonical social image is the dynamic App Router route [`apps/landing/app/opengraph-image.tsx`](../../../apps/landing/app/opengraph-image.tsx) (nodejs runtime so it can `readFile` the Design PNG, 1200×630). [`apps/landing/app/layout.tsx`](../../../apps/landing/app/layout.tsx) is correct as built: `metadataBase` is `https://frapp.live`, `openGraph.images` is `{ url: "/opengraph-image", width: 1200, height: 630, alt }`, and `twitter.images` is `["/opengraph-image"]` with a `summary_large_image` card, so previews resolve to the generated image at runtime.
 
 ## Performance
 
 **The hero paints text, not an image.** The LCP element is the H1 block — there is no hero image, and no `next/image` call renders above the fold. That is the guard: nothing above the fold may become an image without re-deciding the LCP story, and no `priority` image should be introduced to a hero that has none.
 
-The only two `next/image` calls are the below-fold showcase mockups in [`apps/landing/app/page.tsx`](../../../apps/landing/app/page.tsx), both explicitly `priority={false}` so they stay lazy and never preempt the text paint. Keep them that way.
+The header lockup is a 32×32 `next/image` of the Design tile (`priority` unset, so not LCP). The only other `next/image` calls are the below-fold showcase mockups in [`apps/landing/app/page.tsx`](../../../apps/landing/app/page.tsx), both explicitly `priority={false}` so they stay lazy and never preempt the text paint. Keep them that way.
 
 ## Pricing truth
 
