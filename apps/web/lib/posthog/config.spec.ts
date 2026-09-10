@@ -31,7 +31,16 @@ describe("web-only person profiles", () => {
     expect(options.person_profiles).toBe("identified_only");
     expect(options).not.toHaveProperty("cross_subdomain_cookie");
     expect(options).not.toHaveProperty("advanced_disable_feature_flags");
-    expect(options).not.toHaveProperty("before_send");
-    expect(options).not.toHaveProperty("property_denylist");
+    expect(options.property_denylist).toEqual(["$ip", "ip", "email", "$email"]);
+    expect(typeof options.before_send).toBe("function");
+  });
+
+  it("wires the identified sanitizer, not landing's drop-$set helper", async () => {
+    const { sanitizeIdentifiedPostHogCapture, sanitizeAnonymousPostHogCapture } =
+      await import("@repo/observability/next");
+    const { buildWebPostHogInitOptions } = await load();
+    const options = buildWebPostHogInitOptions({ environment: "preview" });
+    expect(options.before_send).toBe(sanitizeIdentifiedPostHogCapture);
+    expect(options.before_send).not.toBe(sanitizeAnonymousPostHogCapture);
   });
 });

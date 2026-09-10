@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bindPostHogAdapterForTests,
   createMemoryPostHogAdapter,
-} from "@/lib/posthog/client";
+  observabilityIdentityQueryKey,
+} from "@repo/observability/identified-posthog";
 
 const HEX = "a".repeat(64);
 const OTHER = "b".repeat(64);
@@ -12,6 +13,7 @@ const UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
 const EMAIL = "treasurer@chapter.example.edu";
 
 const state = vi.hoisted(() => ({
+  authUserId: "web-user-a" as string | null,
   chapterId: "chap-1" as string | null,
   get: vi.fn(),
   dsn: "https://examplepublickey@o0.ingest.sentry.io/0" as string | undefined,
@@ -23,6 +25,10 @@ const setUser = vi.hoisted(() => vi.fn());
 vi.mock("@repo/hooks", () => ({
   useFrappClient: () => ({ GET: state.get }),
   useActiveChapterId: () => state.chapterId,
+}));
+
+vi.mock("@/lib/auth/use-auth-user-id", () => ({
+  useAuthUserId: () => state.authUserId,
 }));
 
 vi.mock("@/lib/sentry/options", () => ({
@@ -41,21 +47,28 @@ const { ObservabilityIdentityProvider } = await import(
   "./observability-identity-provider"
 );
 
-function renderProvider() {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
+function identityTree(qc: QueryClient) {
+  return (
     <QueryClientProvider client={qc}>
       <ObservabilityIdentityProvider>
         <div />
       </ObservabilityIdentityProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+function renderProvider(client?: QueryClient) {
+  const qc =
+    client ??
+    new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+  return render(identityTree(qc));
 }
 
 describe("ObservabilityIdentityProvider", () => {
   beforeEach(() => {
+    state.authUserId = "web-user-a";
     state.chapterId = "chap-1";
     state.dsn = "https://examplepublickey@o0.ingest.sentry.io/0";
     state.posthog = true;
@@ -151,4 +164,87 @@ describe("ObservabilityIdentityProvider", () => {
     renderProvider();
     expect(state.get).not.toHaveBeenCalled();
   });
+
+  it("does not fetch under the none subject before the auth uid is known", () => {
+    state.authUserId = null;
+    renderProvider();
+    expect(state.get).not.toHaveBeenCalled();
+    expect(setUser).not.toHaveBeenCalled();
+  });
+
+  it("does not keep the previous member's hex after a same-tab account swap", async () => {
+    const otherHex = "c".repeat(64);
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    state.get.mockImplementation(async () => ({
+      data: {
+        enabled: true,
+        distinct_id: state.authUserId === "web-user-b" ? otherHex : HEX,
+        chapter_group_id: OTHER,
+      },
+      error: undefined,
+    }));
+
+    const view = render(identityTree(qc));
+    await waitFor(() => {
+      expect(setUser).toHaveBeenCalledWith({ id: HEX });
+    });
+
+    state.authUserId = "web-user-b";
+    view.rerender(identityTree(qc));
+
+    await waitFor(() => {
+      expect(setUser).toHaveBeenCalledWith({ id: otherHex });
+    });
+    expect(state.get).toHaveBeenCalledTimes(2);
+    expect(memory.calls).toEqual(
+      expect.arrayContaining([
+        { type: "identify", distinctId: HEX },
+        { type: "reset" },
+        { type: "identify", distinctId: otherHex },
+      ]),
+    );
+    expect(memory.adapter.getDistinctId()).toBe(otherHex);
+  });
+
+  it("does not re-identify from a leftover none-key cache after logout", async () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    state.get.mockResolvedValue({
+      data: { enabled: true, distinct_id: HEX, chapter_group_id: OTHER },
+      error: undefined,
+    });
+
+    const view = render(identityTree(qc));
+    await waitFor(() => {
+      expect(memory.adapter.getDistinctId()).toBe(HEX);
+    });
+
+    qc.setQueryData(observabilityIdentityQueryKey(null, "chap-1"), {
+      enabled: true,
+      distinct_id: HEX,
+      chapter_group_id: OTHER,
+    });
+
+    memory.adapter.reset();
+    setUser.mockClear();
+    state.authUserId = null;
+    view.rerender(identityTree(qc));
+
+    await waitFor(() => {
+      expect(state.get).toHaveBeenCalledTimes(1);
+    });
+    expect(memory.adapter.getDistinctId()).toBeUndefined();
+    expect(setUser).not.toHaveBeenCalledWith({ id: HEX });
+    expect(memory.calls.filter((c) => c.type === "identify")).toEqual([
+      { type: "identify", distinctId: HEX },
+    ]);
+  });
+
 });

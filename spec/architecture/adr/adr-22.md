@@ -18,7 +18,10 @@
   disclosure, consent, and retention.
 - **Vendor SDK init stays runtime-local.** Shared policy (scrubber, correlation types, safe env
   parsing, PII redaction) lives in the browser-safe `@repo/observability` package
-  (`packages/observability`). Vendor SDK init stays in NestJS, Next.js, and React Native.
+  (`packages/observability`). Identify / groups / hex validation / Sentry correlation attach live
+  on `@repo/observability/identified-posthog` so landing cannot inherit them from the barrel.
+  Landing's anonymous Next.js option builders live on `@repo/observability/next`.
+  Vendor SDK init stays in NestJS, Next.js, and React Native.
   **Correction (2026-09-09):** the original decision named this as a later slice and still
   pointed at `packages/validation/src/sentry-scrubbing.ts`. That module was **moved**, not
   copied. The package is listed under [`spec/architecture/README.md` §4](../README.md#4-shared-packages).
@@ -26,7 +29,11 @@
   builders (replay-off, both scrubber hooks, debug-ID webpack defaults, path-only
   analytics, session/replay tags) now live on `@repo/observability/next` and export no
   identify / group / `setUser` / `posthog_distinct_id` APIs. Landing imports only that
-  entry. Web keeps identity in `apps/web`.
+  entry. Web and mobile keep identity on `@repo/observability/identified-posthog`;
+  identify must not land on `/next` or the CJS barrel.
+  **Correction (2026-09-10):** “Web keeps identity in `apps/web`” was true before
+  this PR extracted identified PostHog into the shared package. The split is now
+  identified-posthog vs `/next`, not web vs landing folder.
 
 The product rules, identifier table, sampling bounds, and definition of done live in
 [`spec/behavior/observability.md`](../../behavior/observability.md) and are not restated here.
@@ -65,12 +72,34 @@ context is AsyncLocalStorage bound in `requestIdMiddleware`, not a second tracer
 **Correction (2026-09-09):** `apps/web` initializes PostHog JS for identify /
 chapter groups / flags / replay-gates / `sentry-error-correlated`. Replay stays
 off in every environment in that slice.
+**Correction (2026-09-09):** `apps/mobile` initializes PostHog RN the same way
+(identify / chapter groups / flags / replay-gates / the marker). Sentry Replay
+stays off. PostHog replay stays off in every environment. Release is
+`bundleId@version+nativeBuildNumber`; git SHA is a `git_sha` tag, not the
+release name. Native crash / EAS DSN proof remains #938 / #1361.
+**Correction (2026-09-10):** identified PostHog JS on web runs
+`sanitizeIdentifiedPostHogCapture` as `before_send` so SDK `$current_url`
+(and invite-token query strings) are path-only without dropping `$set` or
+hex `$groups`. Landing still uses the anonymous sanitizer that drops `$set`.
+**Correction (2026-09-10):** identified PostHog RN on mobile uses the same
+helper as `before_send` (`posthog-react-native` core CaptureEvent matches
+the web envelope; the helper is DOM-free). Replay stays off.
 **Correction (2026-09-09):** `apps/landing` initializes anonymous Sentry
 (`NEXT_PUBLIC_LANDING_SENTRY_DSN` → `frapp-landing`) and PostHog JS for
 path-only pageviews and CTA clicks. No identity call, no alias, no chapter
 group, no flags. Replay stays off in every environment. Privacy copy names
 both vendors. The `frapp-landing` Sentry project may still need to be
 created (org disables member create).
+**Correction (2026-09-10):** identify / groups / opt-out / the
+`sentry-error-correlated` marker / hex identity validation / Sentry tag
+attach are no longer copied per app. They live on
+`@repo/observability/identified-posthog`, not the package barrel, so
+landing cannot inherit identify APIs. Landing uses
+`@repo/observability/next` for anonymous Next.js option builders and
+correlation (no distinct id, no Sentry user). Each app still constructs its own
+vendor client (`posthog-js` / `posthog-react-native`) and calls
+`Sentry.init`. The WS7 copy of the web adapter was the clone that
+breached the jscpd ratchet; the package is the cutover, not a second copy.
 
 **Alternatives rejected.**
 

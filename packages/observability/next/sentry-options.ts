@@ -1,14 +1,12 @@
 import {
-  createSentryScrubber,
-  NO_PSEUDONYMS,
+  createNoPseudonymScrubHooks,
   parseTracesSampleRate,
   SENTRY_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_ENABLED,
-  type ScrubbableEvent,
 } from "../src/index";
 
 /**
- * Anonymous Next.js Sentry options: scrubber with {@link NO_PSEUDONYMS},
+ * Anonymous Next.js Sentry options: scrubber with `NO_PSEUDONYMS`,
  * both `beforeSend` hooks, Sentry Replay off.
  *
  * This module does not read `process.env`. Callers pass already-inlined
@@ -16,8 +14,8 @@ import {
  * that names the DSN (`NEXT_PUBLIC_SENTRY_DSN` vs
  * `NEXT_PUBLIC_LANDING_SENTRY_DSN`).
  *
- * No identify / `setUser` / `posthog_distinct_id`. Web attaches those in
- * `apps/web`. Landing must not.
+ * No identify / `setUser` / `posthog_distinct_id`. Identified web/mobile
+ * attach those via `@repo/observability/identified-posthog`. Landing must not.
  */
 
 export interface AnonymousNextSentryRuntime {
@@ -28,19 +26,7 @@ export interface AnonymousNextSentryRuntime {
   tracePropagationTargets?: string[];
 }
 
-const scrubber = createSentryScrubber(NO_PSEUDONYMS);
-
-function scrubError<T>(event: T): T | null {
-  return scrubber.scrubSentryEvent(
-    event as unknown as ScrubbableEvent,
-  ) as T | null;
-}
-
-function scrubTransaction<T>(event: T): T | null {
-  return scrubber.scrubSentryTransaction(
-    event as unknown as ScrubbableEvent,
-  ) as T | null;
-}
+const { scrubError, scrubTransaction } = createNoPseudonymScrubHooks();
 
 function sharedRuntimeOptions(runtime: AnonymousNextSentryRuntime) {
   const release = runtime.release || undefined;

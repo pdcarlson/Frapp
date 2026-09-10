@@ -7,9 +7,9 @@
  * analytics, session/replay correlation tags.
  *
  * **This module has no identify / group / alias / `setUser` /
- * `posthog_distinct_id` APIs.** Web keeps identity in `apps/web`. Landing
- * must import only this entry (plus the CJS policy barrel), never web's
- * identity helpers.
+ * `posthog_distinct_id` APIs.** Web and mobile keep identity on
+ * `@repo/observability/identified-posthog`. Landing must import only this
+ * entry (plus the CJS policy barrel), never the identified entry.
  *
  * Webpack-plugin options live on the Node-only subpath
  * `@repo/observability/next/sentry-build-config.js` so this barrel (imported
@@ -38,8 +38,10 @@ export type {
 
 export {
   ANONYMOUS_POSTHOG_SESSION_RECORDING,
+  POSTHOG_PROPERTY_DENYLIST,
   buildAnonymousPostHogBrowserOptions,
   sanitizeAnonymousPostHogCapture,
   sanitizeAnonymousPostHogProperties,
+  sanitizeIdentifiedPostHogCapture,
   shouldEnablePostHogReplay,
 } from "./posthog-options";

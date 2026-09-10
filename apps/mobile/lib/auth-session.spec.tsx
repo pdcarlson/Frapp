@@ -44,6 +44,12 @@ const mockState = vi.hoisted(() => ({
   deepLinkUrl: null as string | null,
 }));
 
+const resetObservabilityOnLogout = vi.hoisted(() => vi.fn());
+
+vi.mock("./observability/reset", () => ({
+  resetObservabilityOnLogout,
+}));
+
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(
     async (key: string) => mockState.secureStore.get(key) ?? null,
@@ -127,7 +133,7 @@ vi.mock("./supabase", async () => {
 });
 
 import { AuthSessionProvider, useAuthSession } from "./auth-session";
-import { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
+import { AUTH_TOKEN_STORAGE_KEY, readAuthToken } from "./auth-token";
 import { useIsApiAuthenticated } from "./use-is-api-authenticated";
 import { sessionStorageAdapter, getSupabaseClient } from "./supabase";
 import { queryClient } from "./query-client";
@@ -290,6 +296,7 @@ beforeEach(async () => {
   mockState.configured = true;
   mockState.deepLinkUrl = null;
   queryClient.clear();
+  resetObservabilityOnLogout.mockReset();
 });
 
 afterEach(() => {
@@ -363,6 +370,7 @@ describe("AuthSessionProvider — token persistence", () => {
     // Owned here rather than in each screen: there are three sign-out paths and
     // the picker's clear landed only after the leak was noticed a second time.
     expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
+    expect(resetObservabilityOnLogout).toHaveBeenCalledTimes(1);
   });
 
   it("signs out locally, without throwing, when the remote revoke fails", async () => {
@@ -399,6 +407,7 @@ describe("AuthSessionProvider — token persistence", () => {
     // The cache drop is on the same always-run path as the token clear, so a
     // failed remote revoke must not leave the previous member's rows behind.
     expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
+    expect(resetObservabilityOnLogout).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -537,6 +546,7 @@ describe("AuthSessionProvider — chapter context", () => {
     await waitFor(() =>
       expect(result.current.chapterId).toBe("chapter-uuid-1"),
     );
+    expect(result.current.userId).toBe("user-1");
 
     // A magic link can swap accounts with no sign-out in between. Retention is
     // scoped to one user precisely so the next member does not inherit this
@@ -550,6 +560,51 @@ describe("AuthSessionProvider — chapter context", () => {
     });
 
     await waitFor(() => expect(result.current.chapterId).toBeNull());
+    expect(result.current.userId).toBe("user-2");
+  });
+
+  it("exposes the new Bearer to child effects on the same turn as a swap", async () => {
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+    const seen: Array<{ userId: string | null; token: string | null }> = [];
+
+    function Probe() {
+      const { userId } = useAuthSession();
+      React.useEffect(() => {
+        void readAuthToken().then((token) => {
+          seen.push({ userId, token });
+        });
+      }, [userId]);
+      return null;
+    }
+
+    const { result } = renderHook(() => useAuthSession(), {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <AuthSessionProvider>
+          <Probe />
+          {children}
+        </AuthSessionProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.userId).toBe("user-1"));
+    await waitFor(() =>
+      expect(seen).toContainEqual({ userId: "user-1", token: "access-token-1" }),
+    );
+
+    await act(async () => {
+      emitAuthChange({
+        access_token: "access-token-2",
+        user: { email: "other@university.edu", id: "user-2" },
+      });
+    });
+
+    // Child effects run before the parent token-mirror effect. If the
+    // Bearer were only written in that parent effect, this sample would
+    // still be User A's token.
+    expect(seen).toContainEqual({ userId: "user-2", token: "access-token-2" });
   });
 });
 

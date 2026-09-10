@@ -255,7 +255,8 @@ writing a screen. The constraints below are the ones most often violated by web 
   `@repo/theme/signet` — there is no light/dark preference, no `resolvedTheme`, and no
   `useColorScheme` in the theme layer. Provider chain (outer→inner): `GestureHandlerRootView` >
   `SafeAreaProvider` > `FrappThemeProvider` > `AuthSessionProvider` > `FrappProvider` >
-  `AnalyticsProvider` > `KeyboardProviderGuarded` > `BottomSheetModalProvider`.
+  `ObservabilityIdentityProvider` > `AnalyticsProvider` > `KeyboardProviderGuarded` >
+  `BottomSheetModalProvider`.
 - **No raw hex in screen code, no hand-set type.** Colors come from the Signet tokens; type is set
   only through `typeRole(tokens.typography.role.X)` (which carries the per-weight Figtree family —
   `fontSize`/`fontWeight` literals or arithmetic on a role token are defects). Semantic fills use
