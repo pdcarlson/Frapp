@@ -1,36 +1,30 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POSTHOG_EXCEPTION_AUTOCAPTURE } from "@repo/observability";
+import { buildMobilePostHogInitOptions } from "./config";
 
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
 });
 
-async function load() {
-  return import("./config");
-}
-
-describe("PostHog RN credentials", () => {
-  it("is unconfigured when the write-only key is unset", async () => {
+describe("Expo PostHog write-only credentials", () => {
+  it("treats a missing EXPO_PUBLIC_POSTHOG_KEY as unconfigured", async () => {
     vi.stubEnv("EXPO_PUBLIC_POSTHOG_KEY", "");
-    const { isPostHogConfigured, mobilePostHogKey } = await load();
+    const { isPostHogConfigured, mobilePostHogKey } = await import("./config");
     expect(mobilePostHogKey()).toBeUndefined();
     expect(isPostHogConfigured()).toBe(false);
   });
 
-  it("reads the host from env and defaults to US Cloud", async () => {
+  it("defaults the ingest host to US Cloud", async () => {
     vi.stubEnv("EXPO_PUBLIC_POSTHOG_HOST", "");
-    const { mobilePostHogHost } = await load();
+    const { mobilePostHogHost } = await import("./config");
     expect(mobilePostHogHost()).toBe("https://us.i.posthog.com");
   });
 });
 
-describe("init options the app ships", () => {
-  it("disables exception autocapture, lifecycle events, and session replay", async () => {
-    const { buildMobilePostHogInitOptions } = await load();
-    const options = buildMobilePostHogInitOptions({
-      environment: "preview",
-    });
+describe("RN init options the app ships", () => {
+  it("keeps autocapture, lifecycle, push, and replay off", () => {
+    const options = buildMobilePostHogInitOptions({ environment: "preview" });
     expect(options.errorTracking?.autocapture).toBe(
       POSTHOG_EXCEPTION_AUTOCAPTURE,
     );
@@ -48,8 +42,7 @@ describe("init options the app ships", () => {
     expect(options.capturePushNotificationOpened).toBe(false);
   });
 
-  it("still disables recording when asked for production", async () => {
-    const { buildMobilePostHogInitOptions } = await load();
+  it("does not enable recording for a production environment argument", () => {
     const options = buildMobilePostHogInitOptions({
       environment: "production",
     });

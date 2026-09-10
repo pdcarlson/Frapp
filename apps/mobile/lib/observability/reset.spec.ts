@@ -12,15 +12,15 @@ vi.mock("@sentry/react-native", () => ({
 }));
 
 afterEach(() => {
-  resetPostHog.mockReset();
-  setUser.mockReset();
+  resetPostHog.mockClear();
+  setUser.mockClear();
 });
 
-describe("resetObservabilityOnLogout", () => {
-  it("clears PostHog and Sentry user", async () => {
+describe("mobile logout observability", () => {
+  it("resets the shared PostHog adapter and drops Sentry user", async () => {
     const { resetObservabilityOnLogout } = await import("./reset");
     resetObservabilityOnLogout();
-    expect(resetPostHog).toHaveBeenCalledTimes(1);
+    expect(resetPostHog).toHaveBeenCalledOnce();
     expect(setUser).toHaveBeenCalledWith(null);
   });
 });
