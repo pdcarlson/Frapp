@@ -1,4 +1,5 @@
 import {
+  POSTHOG_PROPERTY_DENYLIST,
   buildAnonymousPostHogBrowserOptions,
   sanitizeAnonymousPostHogCapture,
 } from "@repo/observability/next";
@@ -64,7 +65,7 @@ export function buildLandingPostHogInitOptions(opts?: {
     person_profiles: "never",
     cross_subdomain_cookie: false,
     advanced_disable_feature_flags: true,
-    property_denylist: ["$ip", "ip", "email", "$email"],
+    property_denylist: [...POSTHOG_PROPERTY_DENYLIST],
     before_send: sanitizeAnonymousPostHogCapture,
   };
 }

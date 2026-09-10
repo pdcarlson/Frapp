@@ -19,7 +19,9 @@ Clients do not hold `ANALYTICS_HMAC_SALT` or a PostHog **personal** API key. A w
 
 **Correction (2026-09-09):** an earlier revision of this paragraph said clients do not hold a PostHog project API key and that the API is the only analytics transport. Workstream 5 ships PostHog JS in `apps/web`. Workstream 6 ships PostHog JS on `apps/landing` for anonymous page/CTA analytics only. Workstream 7 ships PostHog RN in `apps/mobile` the same way as web. The salt and personal API keys stay out of every bundle.
 
-Landing stays **anonymous**: no `GET /v1/analytics/identity`, no alias onto an authenticated distinct id, no chapter group.
+Landing stays **anonymous**: no `GET /v1/analytics/identity`, no alias onto an authenticated distinct id, no chapter group. Landing's PostHog `before_send` is `sanitizeAnonymousPostHogCapture`, which drops `$set` / `$set_once`.
+
+**Correction (2026-09-10):** `apps/web` PostHog JS still has `capture_pageview: false`, but `posthog-js` attaches `$current_url` / `$pathname` / `$referrer` and `$initial_current_url` on **every** `capture` / `identify` (including `sentry-error-correlated`) from `window.location`. Those URL-shaped properties are path-only via `sanitizeIdentifiedPostHogCapture` (`before_send`). That helper keeps sanitized `$set` / `$set_once` and `$groups` whose values are 64-hex. It lives on `@repo/observability/next` and still exports no identify / group / `setUser` APIs. `property_denylist` on web matches landing (`$ip`, `ip`, `email`, `$email`).
 
 LLM telemetry is allowed only at a real consumed server AI adapter. The mobile Ask mock (`apps/mobile/lib/ask/corpus.ts`) must not emit LLM analytics.
 

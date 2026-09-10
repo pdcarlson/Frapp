@@ -77,6 +77,10 @@ off in every environment in that slice.
 stays off. PostHog replay stays off in every environment. Release is
 `bundleId@version+nativeBuildNumber`; git SHA is a `git_sha` tag, not the
 release name. Native crash / EAS DSN proof remains #938 / #1361.
+**Correction (2026-09-10):** identified PostHog JS on web runs
+`sanitizeIdentifiedPostHogCapture` as `before_send` so SDK `$current_url`
+(and invite-token query strings) are path-only without dropping `$set` or
+hex `$groups`. Landing still uses the anonymous sanitizer that drops `$set`.
 **Correction (2026-09-09):** `apps/landing` initializes anonymous Sentry
 (`NEXT_PUBLIC_LANDING_SENTRY_DSN` → `frapp-landing`) and PostHog JS for
 path-only pageviews and CTA clicks. No identity call, no alias, no chapter
