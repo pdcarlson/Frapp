@@ -242,6 +242,7 @@ vi.mock("posthog-react-native", () => {
     isFeatureEnabled() {
       return false;
     }
+    reloadFeatureFlags() {}
   }
   return { default: PostHog, PostHog };
 });

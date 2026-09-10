@@ -66,6 +66,7 @@ describe("public API", () => {
     expect("observabilityIdentityQueryOptions" in barrel).toBe(false);
     expect("isObservabilityIdentitySubjectReady" in barrel).toBe(false);
     expect("createMemoryPostHogAdapter" in barrel).toBe(false);
+    expect("isProductFlagEnabled" in barrel).toBe(false);
     expect("attachPostHogCorrelation" in barrel).toBe(false);
     expect("withPostHogSentryCorrelation" in barrel).toBe(false);
   });
