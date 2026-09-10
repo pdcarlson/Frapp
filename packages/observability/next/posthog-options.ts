@@ -138,9 +138,11 @@ function sanitizeGroups(
 }
 
 /**
- * Identified PostHog JS (`apps/web`). Same path-only / no-email / no-IP
- * rules as the anonymous filter, but `$set` / `$set_once` are sanitized
- * rather than dropped, and `$groups` survive when every value is 64-hex.
+ * Identified PostHog JS (`apps/web`) and RN (`apps/mobile`). Same path-only
+ * / no-email / no-IP rules as the anonymous filter, but `$set` / `$set_once`
+ * are sanitized rather than dropped, and `$groups` survive when every value
+ * is 64-hex. DOM-free: RN core `before_send` uses the same CaptureEvent
+ * envelope as posthog-js.
  *
  * Do not point landing at this helper — a marketing visitor must not grow a
  * person profile.
