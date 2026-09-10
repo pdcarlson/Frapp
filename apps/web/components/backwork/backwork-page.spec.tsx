@@ -492,5 +492,41 @@ describe("BackworkPage upload allowlist", () => {
       filename: "notes.gif",
       content_type: "image/gif",
     });
+    expect(fetch).toHaveBeenCalledWith(
+      "https://storage.example/put",
+      expect.objectContaining({ method: "PUT" }),
+    );
+  });
+
+  it("toasts when the upload-URL ticket omits the signed URL", async () => {
+    mockRequestUpload.mockResolvedValue({
+      storage_path: "chapters/chap-1/backwork/res-1/notes.pdf",
+    });
+
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    const file = new File(["%PDF-1.4"], "notes.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(within(dialog).getByLabelText(/^file$/i), {
+      target: { files: [file] },
+    });
+
+    const submit = within(dialog).getByRole("button", { name: /^upload$/i });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.click(submit);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't upload backwork",
+          description: "Upload URL response missing signed URL or storage path.",
+        }),
+      ),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mockConfirmUpload).not.toHaveBeenCalled();
   });
 });

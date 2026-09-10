@@ -4047,7 +4047,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackworkUploadUrlResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5469,7 +5476,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUploadUrlResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -9466,6 +9480,28 @@
           "content_type"
         ]
       },
+      "BackworkUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send on the confirm-upload call."
+          },
+          "resource_id": {
+            "type": "string",
+            "description": "Server-allocated resource id embedded in storage_path."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path",
+          "resource_id"
+        ]
+      },
       "ConfirmBackworkUploadDto": {
         "type": "object",
         "properties": {
@@ -10166,6 +10202,28 @@
         "required": [
           "filename",
           "content_type"
+        ]
+      },
+      "DocumentUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send on the confirm-upload call."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "Server-allocated document id embedded in storage_path."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path",
+          "document_id"
         ]
       },
       "ConfirmDocumentUploadDto": {

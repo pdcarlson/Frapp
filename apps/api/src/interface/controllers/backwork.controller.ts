@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  InternalServerErrorException,
   Param,
   Patch,
   Post,
@@ -33,6 +34,7 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   RequestBackworkUploadUrlDto,
+  BackworkUploadUrlResponseDto,
   ConfirmBackworkUploadDto,
   UpdateDepartmentDto,
   UpdateProfessorDto,
@@ -56,16 +58,32 @@ export class BackworkController {
   @ThrottleFanOutWrite()
   @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
   @ApiOperation({ summary: 'Request a signed upload URL' })
+  @ApiCreatedResponse({ type: BackworkUploadUrlResponseDto })
   async requestUploadUrl(
     @CurrentChapterId() chapterId: string,
     @Body() dto: RequestBackworkUploadUrlDto,
-  ) {
-    return this.backworkService.requestUploadUrl({
+  ): Promise<BackworkUploadUrlResponseDto> {
+    // The service ticket is camelCase. The dashboard (and Discord's sibling
+    // upload tickets) read snake_case `upload_url` / `storage_path`. Passing
+    // the service object through produced a 201 whose body the client treated
+    // as empty — staging toast "Upload URL response missing signed URL or
+    // storage path."
+    const ticket = await this.backworkService.requestUploadUrl({
       chapterId,
       filename: dto.filename,
       contentType: dto.content_type,
       sizeBytes: dto.size_bytes,
     });
+    if (!ticket.signedUrl || !ticket.storagePath) {
+      throw new InternalServerErrorException(
+        'Storage did not return a signed upload URL or storage path.',
+      );
+    }
+    return {
+      upload_url: ticket.signedUrl,
+      storage_path: ticket.storagePath,
+      resource_id: ticket.resourceId,
+    };
   }
 
   @Post()
