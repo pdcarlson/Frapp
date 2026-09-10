@@ -64,6 +64,7 @@ describe("public API", () => {
     expect("applyFetchedObservabilityIdentity" in barrel).toBe(false);
     expect("namedAnalyticsEventBody" in barrel).toBe(false);
     expect("observabilityIdentityQueryOptions" in barrel).toBe(false);
+    expect("isObservabilityIdentitySubjectReady" in barrel).toBe(false);
     expect("createMemoryPostHogAdapter" in barrel).toBe(false);
     expect("attachPostHogCorrelation" in barrel).toBe(false);
     expect("withPostHogSentryCorrelation" in barrel).toBe(false);

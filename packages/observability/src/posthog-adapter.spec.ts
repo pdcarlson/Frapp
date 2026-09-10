@@ -128,13 +128,72 @@ describe("identity, groups, logout, opt-out", () => {
     expect(lastUser).toBeNull();
   });
 
-  it("does not apply identity while the query is still loading", () => {
+  it("clears a prior identify while the next subject's query is loading", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    applyObservabilityIdentity(
+      { enabled: true, distinct_id: HEX, chapter_group_id: null },
+      () => undefined,
+    );
     const setUser = vi.fn();
     applyFetchedObservabilityIdentity(true, undefined, setUser);
-    expect(setUser).not.toHaveBeenCalled();
+    expect(setUser).toHaveBeenCalledWith(null);
+    expect(memory.calls.at(-1)).toEqual({ type: "reset" });
+    expect(memory.adapter.getDistinctId()).toBeUndefined();
     applyFetchedObservabilityIdentity(false, null, setUser);
-    expect(setUser).not.toHaveBeenCalled();
+    expect(setUser).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    {
+      label: "enabled: false",
+      payload: {
+        enabled: false,
+        distinct_id: HEX,
+        chapter_group_id: null,
+      } as const,
+    },
+    { label: "null", payload: null },
+    {
+      label: "UUID",
+      payload: {
+        enabled: true,
+        distinct_id: UUID,
+        chapter_group_id: HEX,
+      } as const,
+    },
+    {
+      label: "email",
+      payload: {
+        enabled: true,
+        distinct_id: EMAIL,
+        chapter_group_id: HEX,
+      } as const,
+    },
+  ])(
+    "clears a prior identify when the next payload is $label",
+    ({ payload }) => {
+      const memory = createMemoryPostHogAdapter();
+      bindPostHogAdapterForTests(memory.adapter);
+      applyAnalyticsIdentity({
+        enabled: true,
+        distinct_id: HEX,
+        chapter_group_id: OTHER,
+      });
+      expect(memory.adapter.getDistinctId()).toBe(HEX);
+
+      applyAnalyticsIdentity(payload);
+
+      expect(memory.adapter.getDistinctId()).toBeUndefined();
+      expect(
+        memory.calls.filter((c) => c.type === "identify").map((c) =>
+          c.type === "identify" ? c.distinctId : "",
+        ),
+      ).toEqual([HEX]);
+      expect(JSON.stringify(memory.calls)).not.toContain(UUID);
+      expect(JSON.stringify(memory.calls)).not.toContain(EMAIL);
+    },
+  );
 });
 
 describe("namedAnalyticsEventBody", () => {

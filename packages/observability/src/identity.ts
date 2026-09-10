@@ -39,26 +39,53 @@ export async function fetchAnalyticsIdentity(
   return data ?? null;
 }
 
-/** TanStack Query key for `GET /v1/analytics/identity` (chapter switches refetch). */
+/**
+ * TanStack Query key for `GET /v1/analytics/identity`.
+ *
+ * Subject is the Supabase auth uid, not `users.id` / `useViewerUserId`.
+ * `["user","me"]` is not account-scoped, so a magic-link swap can keep the
+ * previous Frapp user row while the JWT has already changed. Chapter is
+ * second so a switch still refetches `chapter_group_id`.
+ */
 export function observabilityIdentityQueryKey(
+  subjectId: string | null | undefined,
   chapterId: string | null | undefined,
-): readonly ["observability-identity", string] {
-  return ["observability-identity", chapterId ?? "none"];
+): readonly ["observability-identity", string, string] {
+  return ["observability-identity", subjectId ?? "none", chapterId ?? "none"];
+}
+
+/**
+ * Whether `GET /v1/analytics/identity` may run for this subject.
+ *
+ * `"none"` is the query-key placeholder for a missing uid — it is never a
+ * live cache slot. Passing it (or `""`) as `subjectId` must not fetch.
+ */
+export function isObservabilityIdentitySubjectReady(
+  subjectId: string | null | undefined,
+): boolean {
+  return (
+    typeof subjectId === "string" &&
+    subjectId.length > 0 &&
+    subjectId !== "none"
+  );
 }
 
 /**
  * Shared `useQuery` options for the identity providers. Apps still own the
- * `enabled` predicate (web: vendor DSNs; mobile: authenticated + vendors).
+ * vendor/auth predicate (web: vendor DSNs; mobile: authenticated + vendors).
+ * A missing subject always disables the query: `subjectId ?? "none"` must
+ * not become a live `staleTime: Infinity` slot that a later logout reuses.
  */
 export function observabilityIdentityQueryOptions(
+  subjectId: string | null | undefined,
   chapterId: string | null | undefined,
   get: () => Promise<{ data?: AnalyticsIdentity | null; error?: unknown }>,
   enabled: boolean,
 ) {
   return {
-    queryKey: observabilityIdentityQueryKey(chapterId),
+    queryKey: observabilityIdentityQueryKey(subjectId, chapterId),
     queryFn: () => fetchAnalyticsIdentity(get),
-    enabled,
+    enabled: enabled && isObservabilityIdentitySubjectReady(subjectId),
     staleTime: Infinity,
     retry: false as const,
   };

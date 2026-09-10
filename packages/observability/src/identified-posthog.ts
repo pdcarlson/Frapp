@@ -11,6 +11,7 @@ export {
   validatedChapterGroupId,
   fetchAnalyticsIdentity,
   observabilityIdentityQueryKey,
+  isObservabilityIdentitySubjectReady,
   observabilityIdentityQueryOptions,
 } from "./identity";
 
