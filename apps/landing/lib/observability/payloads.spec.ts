@@ -2,24 +2,25 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-function productionSources(dir: string): string[] {
-  return readdirSync(dir)
-    .filter(
-      (f) =>
-        (f.endsWith(".ts") || f.endsWith(".tsx") || f.endsWith(".js")) &&
-        !f.includes(".spec."),
-    )
-    .map((f) => join(dir, f));
+function landingObservabilitySources(): string[] {
+  const files = [
+    join(process.cwd(), "instrumentation.ts"),
+    join(process.cwd(), "instrumentation-client.ts"),
+  ];
+  for (const dir of ["lib/posthog", "lib/sentry"] as const) {
+    const abs = join(process.cwd(), dir);
+    for (const name of readdirSync(abs)) {
+      if (name.includes(".spec.")) continue;
+      if (!/\.(ts|tsx|js)$/.test(name)) continue;
+      files.push(join(abs, name));
+    }
+  }
+  return files;
 }
 
 describe("no secrets or PII in landing observability sources", () => {
   it("never reads the HMAC salt, service-role key, or the web Sentry DSN", () => {
-    const files = [
-      ...productionSources(join(process.cwd(), "lib/posthog")),
-      ...productionSources(join(process.cwd(), "lib/sentry")),
-      join(process.cwd(), "instrumentation.ts"),
-      join(process.cwd(), "instrumentation-client.ts"),
-    ];
+    const files = landingObservabilitySources();
     expect(files.length).toBeGreaterThan(0);
     for (const file of files) {
       const source = readFileSync(file, "utf8");
@@ -28,18 +29,14 @@ describe("no secrets or PII in landing observability sources", () => {
       expect(source, file).not.toContain("POSTHOG_PERSONAL_API_KEY");
       expect(source, file).not.toContain("process.env.NEXT_PUBLIC_SENTRY_DSN");
       expect(source, file).not.toContain("/v1/analytics/identity");
-      expect(source, file).not.toContain("@repo/observability/identified-posthog");
+      expect(source, file).not.toContain(
+        "@repo/observability/identified-posthog",
+      );
     }
   });
 
   it("does not identify, alias, group, or set a Sentry user", () => {
-    const files = [
-      ...productionSources(join(process.cwd(), "lib/posthog")),
-      ...productionSources(join(process.cwd(), "lib/sentry")),
-      join(process.cwd(), "instrumentation.ts"),
-      join(process.cwd(), "instrumentation-client.ts"),
-    ];
-    for (const file of files) {
+    for (const file of landingObservabilitySources()) {
       const source = readFileSync(file, "utf8");
       expect(source, file).not.toMatch(/\balias\s*\(/);
       expect(source, file).not.toMatch(/\.identify\s*\(/);

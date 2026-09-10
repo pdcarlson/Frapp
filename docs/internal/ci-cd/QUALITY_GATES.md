@@ -273,11 +273,13 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 4.30%** duplicated lines (1,001 clones, 12,193 duplicated lines, across
-  1,292 files analysed) — measured 2026-09-10 with `npm run check:duplication` after merging
-  #2081 (`packages/observability/next/` option builders) onto this branch.
-  The raw ratio is 12,193 / 283,705 = 4.298%, under the 4.3% threshold.
-- **Threshold: 4.3%**, just above it. Not ratcheted down: headroom is a few dozen lines.
+- **Current measurement: 4.18%** duplicated lines (979 clones, 11,904 duplicated lines, across
+  1,294 files analysed) — measured 2026-09-10 with `npm run check:duplication` after resolving
+  #2077 against `main` (#2081 `/next` plus #2083 `/hours`), sharing `/task` `/event` `/hours`
+  `card_posted` cases in `packages/chat-core/src/dispatch.spec.ts`, and extracting first-party
+  Sentry trace origins onto `@repo/observability`. The raw ratio is 11,904 / 284,609 = 4.182%,
+  under the 4.3% threshold.
+- **Threshold: 4.3%**, just above it. Not ratcheted down.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
   make a red run green. Set the new value from a *measured* run, never from a guess, and leave
   enough headroom that ordinary drift does not redden it.

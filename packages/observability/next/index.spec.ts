@@ -23,6 +23,10 @@ describe("@repo/observability/next public API", () => {
     expect(next).not.toHaveProperty("setUser");
     expect(next).not.toHaveProperty("applyAnalyticsIdentity");
     expect(next).not.toHaveProperty("getPostHogDistinctId");
+    expect(next).not.toHaveProperty("captureAnalyticsEvent");
+    expect(next).not.toHaveProperty("canStartLivePostHogInit");
+    expect(next).not.toHaveProperty("setLivePostHogAdapter");
+    expect(next).not.toHaveProperty("createMemoryPostHogAdapter");
   });
 });
 

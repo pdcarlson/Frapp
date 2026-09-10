@@ -1,32 +1,13 @@
-/**
- * First-party API origins that may receive Sentry `sentry-trace` / `baggage`
- * headers. `x-request-id` is a different identifier space (minted by
- * `@repo/api-sdk`) and is not copied from these trace ids.
- *
- * Do not add PostHog, Sentry ingest, Supabase, or the marketing origin.
- */
-
-export const FIRST_PARTY_API_ORIGINS = [
-  "http://localhost:3001",
-  "https://api-staging.frapp.live",
-  "https://api.frapp.live",
-] as const;
+import { firstPartyTracePropagationTargets } from "@repo/observability";
 
 /**
- * Exact origins Sentry React Native tracing may propagate to.
- *
- * Direct `process.env.EXPO_PUBLIC_API_URL` member access so Expo inlines it.
+ * Mobile Sentry trace targets. Expo inlines `EXPO_PUBLIC_API_URL` here.
  */
+
 export function mobileTracePropagationTargets(
-  apiUrl: string | undefined = process.env.EXPO_PUBLIC_API_URL,
+  apiUrl?: string,
 ): string[] {
-  const origins = new Set<string>(FIRST_PARTY_API_ORIGINS);
-  if (apiUrl) {
-    try {
-      origins.add(new URL(apiUrl).origin);
-    } catch {
-      // Unparseable API URL is ignored; the static first-party list remains.
-    }
-  }
-  return [...origins];
+  return firstPartyTracePropagationTargets(
+    apiUrl ?? process.env.EXPO_PUBLIC_API_URL,
+  );
 }

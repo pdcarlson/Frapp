@@ -11,45 +11,47 @@ import {
 import { isPostHogConfigured } from "@/lib/posthog/config";
 
 /**
- * Attaches the caller's **server-derived** pseudonym to PostHog and Sentry.
+ * Attaches the caller's **server-derived** HMAC hex to PostHog RN and Sentry.
  *
- * The salt is API-only (`ENV_REFERENCE.md`); this provider only ever *reads*
- * `{ distinct_id, enabled, chapter_group_id }` from `GET /v1/analytics/identity`
- * and rejects anything that is not 64 lowercase hex. Chapter switches refetch
- * because `chapter_group_id` is a function of the active chapter.
+ * Auth-gated: this provider wraps signed-in tabs *and* the auth stack, so
+ * `GET /v1/analytics/identity` waits until `status === "authenticated"`. Web
+ * does not need that gate (its tree is already behind the session).
+ *
+ * The salt is API-only (`ENV_REFERENCE.md`). Anything that is not 64
+ * lowercase hex is dropped. Chapter switches refetch because
+ * `chapter_group_id` is a function of the active chapter.
  *
  * Opt-out still identifies (so opt-in does not need a refetch) and still sets
- * Sentry `user.id` — it only stops capturing. `enabled: false` from the API
- * means analytics is unconfigured; that is not the same as opt-out.
- *
- * The identity request is skipped until the member is authenticated: this
- * provider sits above the auth screens as well as the signed-in tabs.
+ * Sentry `user.id`. `enabled: false` from the API means analytics is
+ * unconfigured, not the same as opt-out.
  */
 export function ObservabilityIdentityProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { status } = useAuthSession();
+  const session = useAuthSession();
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
-  const vendorsConfigured = Boolean(mobileSentryDsn()) || isPostHogConfigured();
-  const fetchEnabled = status === "authenticated" && vendorsConfigured;
+  const vendorsLive = Boolean(mobileSentryDsn()) || isPostHogConfigured();
+  const canFetchIdentity =
+    session.status === "authenticated" && vendorsLive;
 
-  const { data } = useQuery({
-    queryKey: ["observability-identity", chapterId ?? "none"],
+  const identityQuery = useQuery({
+    queryKey: ["mobile-observability-identity", chapterId ?? "none"],
     queryFn: () =>
       fetchAnalyticsIdentity(() => client.GET("/v1/analytics/identity")),
-    enabled: fetchEnabled,
-    staleTime: Infinity,
-    retry: false,
+    enabled: canFetchIdentity,
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: 0,
   });
 
   useEffect(() => {
-    if (!fetchEnabled) return;
-    if (data === undefined) return;
-    applyObservabilityIdentity(data, Sentry.setUser);
-  }, [data, fetchEnabled]);
+    if (!canFetchIdentity || identityQuery.data === undefined) {
+      return;
+    }
+    applyObservabilityIdentity(identityQuery.data, Sentry.setUser);
+  }, [canFetchIdentity, identityQuery.data]);
 
   return <>{children}</>;
 }
