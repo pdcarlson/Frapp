@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FrappLockup } from "../components/frapp-lockup";
+import { TrackedCta } from "../components/tracked-cta";
 import { buildAuthUrls } from "../lib/auth-urls";
 import {
   BookOpen,
@@ -160,18 +161,22 @@ export default function Home() {
             </Link>
           </nav>
           <div className="flex items-center gap-3">
-            <Link
+            <TrackedCta
+              cta="log-in"
+              surface="header"
               href={loginUrl}
               className="hidden rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted md:inline-flex"
             >
               Log In
-            </Link>
-            <Link
+            </TrackedCta>
+            <TrackedCta
+              cta="get-started"
+              surface="header"
               href={signupUrl}
               className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
             >
               Get Started
-            </Link>
+            </TrackedCta>
           </div>
         </div>
       </header>
@@ -194,18 +199,22 @@ export default function Home() {
               without duct-taped tools.
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              <Link
+              <TrackedCta
+                cta="get-started"
+                surface="hero"
                 href={signupUrl}
                 className="inline-flex h-11 items-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Get Started
-              </Link>
-              <Link
+              </TrackedCta>
+              <TrackedCta
+                cta="explore-the-product"
+                surface="hero"
                 href="#showcase"
                 className="inline-flex h-11 items-center rounded-md border border-border bg-card px-6 text-sm font-semibold transition-colors hover:bg-muted"
               >
                 Explore the product
-              </Link>
+              </TrackedCta>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
@@ -435,12 +444,14 @@ export default function Home() {
                 </li>
               ))}
             </ul>
-            <Link
+            <TrackedCta
+              cta="start-free-trial"
+              surface="pricing"
               href={signupUrl}
               className="mt-8 inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
             >
               Start free trial
-            </Link>
+            </TrackedCta>
           </div>
           <div className="space-y-4">
             {faqs.map((faq) => (
@@ -500,12 +511,14 @@ export default function Home() {
             Join the chapters using Frapp to consolidate operations, reduce
             leadership overhead, and improve member engagement.
           </p>
-          <Link
+          <TrackedCta
+            cta="get-started"
+            surface="cta-band"
             href={signupUrl}
             className="mt-8 inline-flex h-11 items-center rounded-md bg-white px-6 text-sm font-semibold text-navy transition-colors hover:bg-white/90"
           >
             Get Started
-          </Link>
+          </TrackedCta>
         </div>
       </section>
 
@@ -525,9 +538,14 @@ export default function Home() {
                 </Link>
               </li>
               <li>
-                <Link href={signupUrl} className="hover:text-foreground">
+                <TrackedCta
+                  cta="get-started"
+                  surface="footer"
+                  href={signupUrl}
+                  className="hover:text-foreground"
+                >
                   Get Started
-                </Link>
+                </TrackedCta>
               </li>
             </ul>
           </div>
@@ -545,9 +563,14 @@ export default function Home() {
                 </a>
               </li>
               <li>
-                <Link href={loginUrl} className="hover:text-foreground">
+                <TrackedCta
+                  cta="log-in"
+                  surface="footer"
+                  href={loginUrl}
+                  className="hover:text-foreground"
+                >
                   Log In
-                </Link>
+                </TrackedCta>
               </li>
             </ul>
           </div>
