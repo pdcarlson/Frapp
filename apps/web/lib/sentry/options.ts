@@ -1,10 +1,8 @@
 import {
-  createSentryScrubber,
-  NO_PSEUDONYMS,
+  createNoPseudonymScrubHooks,
   parseTracesSampleRate,
   SENTRY_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_ENABLED,
-  type ScrubbableEvent,
 } from "@repo/observability";
 import type { BrowserOptions, NodeOptions } from "@sentry/nextjs";
 import { webTracePropagationTargets } from "./trace-targets";
@@ -23,7 +21,7 @@ import { webTracePropagationTargets } from "./trace-targets";
  * `ENV_REFERENCE.md` is explicit that `ANALYTICS_HMAC_SALT` is API-only:
  * exposing it to a client bundle would let the analytics dataset be
  * rainbow-tabled back to raw user ids. So this binding passes
- * {@link NO_PSEUDONYMS}, and every identifier the free-text sweep finds is
+ * `NO_PSEUDONYMS`, and every identifier the free-text sweep finds is
  * replaced with a placeholder (`[redacted:id]`) instead of a stable hash
  * (`[id:<hmac>]`). That is the shared scrubber's existing fail-closed branch —
  * the one the API takes when its own salt is unset — not new behavior.
@@ -40,7 +38,7 @@ import { webTracePropagationTargets } from "./trace-targets";
  * `posthog-js` into the server/edge graph.
  */
 
-const scrubber = createSentryScrubber(NO_PSEUDONYMS);
+const { scrubError, scrubTransaction } = createNoPseudonymScrubHooks();
 
 /**
  * Derived from the option types rather than imported by name, matching the API
@@ -57,26 +55,6 @@ type ServerErrorEvent = Parameters<NonNullable<NodeOptions["beforeSend"]>>[0];
 type ServerTransactionEvent = Parameters<
   NonNullable<NodeOptions["beforeSendTransaction"]>
 >[0];
-
-/**
- * Both hooks, for either runtime.
- *
- * The web app initializes Sentry three times — browser, Node server, and edge —
- * and all three must scrub. Wiring only the browser would leave server
- * components and route handlers reporting unscrubbed, which is the same
- * one-hook-of-two gap #896 closed on the API.
- */
-function scrubError<T>(event: T): T | null {
-  return scrubber.scrubSentryEvent(
-    event as unknown as ScrubbableEvent,
-  ) as T | null;
-}
-
-function scrubTransaction<T>(event: T): T | null {
-  return scrubber.scrubSentryTransaction(
-    event as unknown as ScrubbableEvent,
-  ) as T | null;
-}
 
 /**
  * The DSN, or `undefined` when Sentry must stay dark.

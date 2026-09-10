@@ -57,6 +57,7 @@ export {
   shouldEnablePostHogReplay,
   OBSERVABILITY_PROVIDERS,
   SENTRY_ERROR_CORRELATED_EVENT,
+  SENTRY_ERROR_CORRELATED_ALLOWLIST,
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
 } from "./policy";
 
@@ -82,13 +83,21 @@ export {
   getPostHogReplayId,
   isProductFlagEnabled,
   captureSentryErrorCorrelated,
+  captureAnalyticsEvent,
 } from "./posthog-adapter";
 export type { PostHogAdapter, MemoryPostHogCall } from "./posthog-adapter";
 
 export {
   attachPostHogCorrelation,
+  attachAnonymousPostHogCorrelation,
   withPostHogSentryCorrelation,
+  withAnonymousPostHogSentryCorrelation,
   headerValue,
   httpStatusClass,
 } from "./sentry-posthog-correlation";
-export type { CorrelatableSentryEvent } from "./sentry-posthog-correlation";
+export type {
+  CorrelatableSentryEvent,
+  PostHogSentryCorrelationOptions,
+} from "./sentry-posthog-correlation";
+
+export { createNoPseudonymScrubHooks } from "./sentry-scrub-hooks";

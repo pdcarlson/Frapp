@@ -5,6 +5,7 @@ import {
   createMemoryPostHogAdapter,
 } from "./posthog-adapter";
 import {
+  attachAnonymousPostHogCorrelation,
   attachPostHogCorrelation,
   withPostHogSentryCorrelation,
 } from "./sentry-posthog-correlation";
@@ -56,6 +57,26 @@ describe("attachPostHogCorrelation", () => {
       "exception",
     );
     expect(event.tags?.posthog_distinct_id).not.toBe(UUID);
+  });
+
+  it("anonymous attach never copies a visitor UUID onto Sentry user or tags", () => {
+    const memory = createMemoryPostHogAdapter();
+    memory.setRecording(true);
+    bindPostHogAdapterForTests(memory.adapter);
+    memory.adapter.identify(UUID);
+
+    const event = attachAnonymousPostHogCorrelation({
+      event_id: "landing-evt",
+      user: { id: UUID, email: EMAIL },
+      tags: { posthog_distinct_id: UUID },
+    });
+
+    expect(event.user).toBeUndefined();
+    expect(event.tags?.posthog_distinct_id).toBeUndefined();
+    expect(event.tags?.posthog_session_id).toBe("ph_session_test");
+    expect(event.tags?.posthog_replay_id).toBe("ph_session_test");
+    expect(JSON.stringify(event.tags)).not.toContain(UUID);
+    expect(JSON.stringify(event.tags)).not.toContain(EMAIL);
   });
 
   it("does not copy the Sentry trace id into request_id", () => {

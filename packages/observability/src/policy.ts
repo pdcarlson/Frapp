@@ -54,6 +54,16 @@ export const OBSERVABILITY_PROVIDERS = {
  */
 export const SENTRY_ERROR_CORRELATED_EVENT = "sentry-error-correlated";
 
+/** Keys the content-free timeline marker may carry. Unknown keys are dropped. */
+export const SENTRY_ERROR_CORRELATED_ALLOWLIST = [
+  "sentry_event_id",
+  "trace_id",
+  "request_id",
+  "route",
+  "status_class",
+  "release",
+] as const;
+
 /**
  * Default sample rate for sanitized PostHog logs (request log,
  * `security_event`, `push_delivery`). Override with `POSTHOG_LOGS_SAMPLE_RATE`.

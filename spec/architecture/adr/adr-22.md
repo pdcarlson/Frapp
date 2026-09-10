@@ -49,8 +49,8 @@ Code-side gaps on the same date (current behavior, not this decision): identity 
 (privacy copy still names Sentry); API/web `tracesSampleRate` was still `Number(env ?? '0.1')`
 and could be `NaN` (closed #904 covered mobile only).
 **Correction (2026-09-09):** `@repo/observability` `parseTracesSampleRate` now clamps API and
-web traces rates to finite `[0, 1]` with default `0.1` (#2040). Landing still
-has no Sentry/PostHog SDK.
+web traces rates to finite `[0, 1]` with default `0.1` (#2040). Landing now uses the same
+parser via `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE`.
 **Correction (2026-09-09):** `GET /v1/analytics/identity` now returns
 `chapter_group_id` (64-hex HMAC of `chapter_id`, or `null`) alongside
 `distinct_id` / `enabled` (#2042). HMAC stays API-side.
@@ -65,15 +65,21 @@ off in every environment in that slice.
 (identify / chapter groups / flags / replay-gates / the marker). Sentry Replay
 stays off. PostHog replay stays off in every environment. Release is
 `bundleId@version+nativeBuildNumber`; git SHA is a `git_sha` tag, not the
-release name. Native crash / EAS DSN proof remains #938 / #1361. Landing
-still has no Sentry/PostHog SDK (WS6).
+release name. Native crash / EAS DSN proof remains #938 / #1361.
+**Correction (2026-09-09):** `apps/landing` initializes anonymous Sentry
+(`NEXT_PUBLIC_LANDING_SENTRY_DSN` → `frapp-landing`) and PostHog JS for
+path-only pageviews and CTA clicks. No identity call, no alias, no chapter
+group, no flags. Replay stays off in every environment. Privacy copy names
+both vendors. The `frapp-landing` Sentry project may still need to be
+created (org disables member create).
 **Correction (2026-09-10):** identify / groups / opt-out / the
 `sentry-error-correlated` marker / hex identity validation / Sentry tag
 attach are no longer copied per app. They live in `@repo/observability`.
 Each app still constructs its own vendor client (`posthog-js` /
-`posthog-react-native`) and calls `Sentry.init`. The WS7 copy of the web
-adapter was the clone that breached the jscpd ratchet; the package is
-the cutover, not a second copy.
+`posthog-react-native`) and calls `Sentry.init`. Landing uses the same
+package for anonymous correlation (no distinct id, no Sentry user). The
+WS7 copy of the web adapter was the clone that breached the jscpd ratchet;
+the package is the cutover, not a second copy.
 
 **Alternatives rejected.**
 
@@ -95,7 +101,8 @@ the cutover, not a second copy.
   **Correction (2026-09-09):** Workstream 5 ships PostHog JS in `apps/web` with
   `NEXT_PUBLIC_POSTHOG_KEY` (`${POSTHOG_API_KEY}`). Named product events remain
   `POST /v1/analytics/events` so they are not double-counted with the API
-  adapter. Landing stays out of that slice (WS6).
+  adapter. Workstream 6 ships the same write-only key on `apps/landing` for
+  anonymous page/CTA analytics only — still no alias onto an authenticated id.
 - **Reusing `x-request-id` as the trace id.** Inbound clients already send one; Sentry/OTEL
   traces are a different identifier space. Collapsing them loses either inbound honor or
   vendor trace continuity.

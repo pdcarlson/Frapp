@@ -94,7 +94,7 @@ Frapp/
 
 - **Framework:** Next.js (App Router), Tailwind.
 - **Role:** Marketing, pricing, CTA. No auth state. Links to app.frapp.live for sign-up/log-in.
-- **Observability:** Not initialized today. When wired, landing stays anonymous — no identity call, no alias onto an authenticated distinct id ([`observability.md`](../behavior/observability.md#provider-ownership)).
+- **Observability:** Anonymous Sentry errors and PostHog page/CTA analytics when credentials are set. No identity call, no alias onto an authenticated distinct id, no chapter group ([`observability.md`](../behavior/observability.md#provider-ownership)). Replay stays off in every environment until #2038.
 - **Deployment:** Vercel, independent from the web app.
 
 ### 3.5 Documentation (no `apps/docs` web app)
@@ -120,7 +120,7 @@ Frapp/
 | `@repo/eslint-config`     | Shared ESLint rules.                                                      |
 | `@repo/formatting`        | Shared date/time/duration display helpers. Generic locale formatters (`formatClock`, `formatLocaleDateTime`, `formatLocaleDate`) plus three **protected clusters** that must stay distinct: stopwatch padding (`formatPaddedStopwatch` / `formatTimer`), bare-date timezone parsing (`parseBareDateLocalMidnight` / `parseBareDateUtcNoon`), and minute-duration rounding (`formatMinutesExact` / `formatMinutesRounded`). Used by web + mobile. |
 | `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
-| `@repo/observability`      | Browser-safe observability policy: Sentry PII scrubbing, correlation types, sample-rate parsing in `[0,1]`, the constants that describe the Sentry/PostHog split, hex identity validation, the PostHog adapter surface, and Sentry↔PostHog correlation attach. Vendor SDK init stays runtime-local to NestJS, Next.js, and React Native. Used by API + web + mobile. |
+| `@repo/observability`      | Browser-safe observability policy: Sentry PII scrubbing, correlation types, sample-rate parsing in `[0,1]`, the constants that describe the Sentry/PostHog split, hex identity validation, the PostHog adapter surface, and Sentry↔PostHog correlation attach. Vendor SDK init stays runtime-local to NestJS, Next.js, and React Native. Used by API + web + mobile + landing. |
 | `@repo/org-archetypes`    | Greek-org directory / archetype data for onboarding autofill. Consumed by the API (chapter config seed), web Settings + first-officer wizard, and `apps/mobile` (`package.json` declares the workspace dependency; the wizard reads `ARCHETYPES` directly). |
 | `@repo/theme`             | Shared Tailwind preset plus two stylesheets: `signet.css` (dark-only Signet tokens, imported by `apps/web`) and the legacy bone/bronze `globals.css` (imported by `apps/landing` only). Typed tokens for non-Tailwind consumers; `accent.ts` holds `resolveChapterAccentColor`, the per-surface accent re-validator. |
 | `@repo/typescript-config` | Shared tsconfig presets.                                                  |

@@ -1,10 +1,8 @@
 import {
-  createSentryScrubber,
+  createNoPseudonymScrubHooks,
   DEFAULT_TRACES_SAMPLE_RATE,
-  NO_PSEUDONYMS,
   SENTRY_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_ENABLED,
-  type ScrubbableEvent,
 } from "@repo/observability";
 import type { ReactNativeOptions } from "@sentry/react-native";
 import { mobileTracePropagationTargets } from "./trace-targets";
@@ -32,7 +30,7 @@ import { mobileTracePropagationTargets } from "./trace-targets";
  * `apps/web` records applies here unchanged: `ANALYTICS_HMAC_SALT` is API-only
  * (`ENV_REFERENCE.md`), because exposing it to a client would let the analytics
  * dataset be rainbow-tabled back to raw user ids. So this binding passes
- * {@link NO_PSEUDONYMS}, and every identifier the free-text sweep finds is
+ * `NO_PSEUDONYMS`, and every identifier the free-text sweep finds is
  * replaced with a placeholder (`[redacted:id]`) instead of a stable hash
  * (`[id:<hmac>]`). That is the shared scrubber's existing fail-closed branch —
  * the one the API takes when its own salt is unset — not new behavior.
@@ -49,7 +47,7 @@ import { mobileTracePropagationTargets } from "./trace-targets";
  * add `mobileReplayIntegration`.
  */
 
-const scrubber = createSentryScrubber(NO_PSEUDONYMS);
+const { scrubError, scrubTransaction } = createNoPseudonymScrubHooks();
 
 /**
  * Derived from the option type rather than imported by name, matching the web
@@ -62,18 +60,6 @@ type ErrorEvent = Parameters<NonNullable<ReactNativeOptions["beforeSend"]>>[0];
 type TransactionEvent = Parameters<
   NonNullable<ReactNativeOptions["beforeSendTransaction"]>
 >[0];
-
-function scrubError<T>(event: T): T | null {
-  return scrubber.scrubSentryEvent(
-    event as unknown as ScrubbableEvent,
-  ) as T | null;
-}
-
-function scrubTransaction<T>(event: T): T | null {
-  return scrubber.scrubSentryTransaction(
-    event as unknown as ScrubbableEvent,
-  ) as T | null;
-}
 
 /**
  * The DSN, or `undefined` when Sentry must stay dark.

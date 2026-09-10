@@ -16,6 +16,9 @@ import {
   shouldEnablePostHogReplay,
   createMemoryPostHogAdapter,
   attachPostHogCorrelation,
+  attachAnonymousPostHogCorrelation,
+  createNoPseudonymScrubHooks,
+  SENTRY_ERROR_CORRELATED_ALLOWLIST,
 } from "./index";
 
 describe("public API", () => {
@@ -36,5 +39,8 @@ describe("public API", () => {
     expect(typeof shouldEnablePostHogReplay).toBe("function");
     expect(typeof createMemoryPostHogAdapter).toBe("function");
     expect(typeof attachPostHogCorrelation).toBe("function");
+    expect(typeof attachAnonymousPostHogCorrelation).toBe("function");
+    expect(typeof createNoPseudonymScrubHooks).toBe("function");
+    expect(SENTRY_ERROR_CORRELATED_ALLOWLIST).toContain("sentry_event_id");
   });
 });

@@ -1,4 +1,7 @@
-import { SENTRY_ERROR_CORRELATED_EVENT } from "./policy";
+import {
+  SENTRY_ERROR_CORRELATED_ALLOWLIST,
+  SENTRY_ERROR_CORRELATED_EVENT,
+} from "./policy";
 import { validatedChapterGroupId, validatedDistinctId } from "./identity";
 import type { AnalyticsIdentity } from "./correlation";
 
@@ -171,6 +174,18 @@ export function resetPostHog(): void {
   currentAdapter()?.reset();
 }
 
+/**
+ * Capture a product or page event on the bound adapter. Landing uses this
+ * for path-only pageviews and CTA clicks so it does not fork the singleton.
+ */
+export function captureAnalyticsEvent(
+  event: string,
+  properties?: Record<string, unknown>,
+): void {
+  if (optedOut) return;
+  currentAdapter()?.capture(event, properties);
+}
+
 export function getPostHogDistinctId(): string | undefined {
   const id = currentAdapter()?.getDistinctId();
   return id || undefined;
@@ -185,14 +200,7 @@ export function getPostHogReplayId(): string | undefined {
   return currentAdapter()?.getReplayId();
 }
 
-const MARKER_ALLOWLIST = new Set([
-  "sentry_event_id",
-  "trace_id",
-  "request_id",
-  "route",
-  "status_class",
-  "release",
-]);
+const MARKER_ALLOWLIST = new Set<string>(SENTRY_ERROR_CORRELATED_ALLOWLIST);
 
 /**
  * Product-only. Do not call this from a permission check — `can()` in
