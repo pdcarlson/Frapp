@@ -47,6 +47,23 @@ RUN npm run build --workspace=packages/formatting
 RUN npm run build --workspace=packages/observability
 RUN npm run build --workspace=apps/api
 
+# Source maps: nest emits `dist/*.js.map` (`sourceMap: true`). ContextLines
+# then shows on-disk JS, which is what live FRAPP-API-1 / FRAPP-API-3 look
+# like — that is not TypeScript symbolication. Upload belongs on THIS image
+# (the one Render runs), not on CI `api-docker-build` (discarded, and a
+# second inject would mint debug IDs that never execute).
+#
+# ARG, not ENV: do not bake `SENTRY_AUTH_TOKEN` into later layers. Render
+# passes service env vars matching these ARG names at build time. Unset
+# (CI, laptops, Render until Infisical carries the name) → the script
+# skips sentry-cli and still strips `*.map` so the runner does not ship
+# TypeScript. `gcompat` is Alpine's glibc shim for the linux-x64 CLI
+# binary; only needed when a token is present.
+ARG SENTRY_AUTH_TOKEN
+ARG RENDER_GIT_COMMIT
+RUN if [ -n "$SENTRY_AUTH_TOKEN" ]; then apk add --no-cache gcompat; fi \
+    && node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js
+
 # Stage 3: Production-only dependencies (clean install, no dev deps)
 FROM node:20-alpine AS prod-deps
 WORKDIR /app

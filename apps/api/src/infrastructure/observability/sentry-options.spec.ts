@@ -60,4 +60,20 @@ describe('buildSentryOptions — Node tracer ownership', () => {
   it('wires the safe-integrations mapper as the production integrations hook', () => {
     expect(options().integrations).toBe(withSafeSentryIntegrations);
   });
+
+  it('sets release from RENDER_GIT_COMMIT and omits it when unset', () => {
+    const previous = process.env.RENDER_GIT_COMMIT;
+    try {
+      process.env.RENDER_GIT_COMMIT =
+        'd85d933302834b3376c9733a761819020d7b0939';
+      expect(options().release).toBe(
+        'd85d933302834b3376c9733a761819020d7b0939',
+      );
+      delete process.env.RENDER_GIT_COMMIT;
+      expect(options().release).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.RENDER_GIT_COMMIT;
+      else process.env.RENDER_GIT_COMMIT = previous;
+    }
+  });
 });
