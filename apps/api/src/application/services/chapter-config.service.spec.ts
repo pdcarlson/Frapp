@@ -51,7 +51,7 @@ jest.mock('@repo/chapter-theme', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { ChapterConfigService } from './chapter-config.service';
 import { SERVICE_CONFIG_DEFAULTS } from './chapter-service-config.service';
 import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
@@ -82,6 +82,12 @@ function makeSupabase(
   options: {
     defaultInviteRoleId?: string | null;
     roleLookupRow?: { id: string } | null;
+    roleLookupError?: {
+      code?: string;
+      message: string;
+      details?: string;
+      hint?: string;
+    };
     // #1626: inject a transient read failure on any of getConfig's reads. The harness pinned `error: null` on all of them,
     // which is why nothing caught that a swallowed error was substituting
     // defaults for the chapter's real config and then writing them back.
@@ -267,6 +273,12 @@ function makeSupabase(
         return builder;
       });
       builder.maybeSingle = jest.fn(() => {
+        if (options.roleLookupError) {
+          return Promise.resolve({
+            data: null,
+            error: options.roleLookupError,
+          });
+        }
         const row = options.roleLookupRow ?? null;
         const scoped =
           filters.chapter_id === CHAPTER_ID && filters.id !== undefined;
@@ -1039,6 +1051,47 @@ describe('ChapterConfigService default invite role (#422)', () => {
     });
 
     expect(supabase.chapterUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not log PostgREST details when the default-invite-role lookup fails (#1669)', async () => {
+    const details =
+      'Key (email)=(alice@example.com) is not present in table "users".';
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    const supabase = makeSupabase([], null, {}, null, null, {
+      roleLookupError: {
+        code: 'PGRST116',
+        message: 'JSON object requested, multiple (or no) rows returned',
+        details,
+        hint: 'Check the role id.',
+      },
+    });
+    const service = await buildService(supabase);
+
+    try {
+      await expect(
+        service.patchConfig(CHAPTER_ID, 'user-1', {
+          default_invite_role_id: 'role-pledge',
+        }),
+      ).rejects.toEqual(expect.objectContaining({ details }));
+
+      expect(errorSpy).toHaveBeenCalled();
+      const printed = errorSpy.mock.calls
+        .map((args) =>
+          args.map((arg) =>
+            typeof arg === 'string' ? arg : JSON.stringify(arg),
+          ),
+        )
+        .flat()
+        .join('\n');
+      expect(printed).toContain('Failed to validate default invite role');
+      expect(printed).toContain('PGRST116');
+      expect(printed).not.toContain('alice@example.com');
+      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
 

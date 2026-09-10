@@ -15,6 +15,7 @@ import type {
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 interface AuditLogRow {
   id: string;
@@ -121,7 +122,9 @@ export class ChatBridgeWorkerService
         .eq('name', 'chapter-audit')
         .maybeSingle();
       if (channelError) {
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           `chat-bridge: chapter-audit channel lookup failed for chapter ${row.chapter_id}`,
           channelError,
         );
@@ -151,7 +154,9 @@ export class ChatBridgeWorkerService
         .from('chat_messages')
         .insert(message);
       if (insertError) {
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           `chat-bridge: system_audit insert failed for audit ${row.id}`,
           insertError,
         );
