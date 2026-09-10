@@ -16,9 +16,10 @@ export const contentType = "image/png";
  * Design's raster, not the reconstructed crest SVG.
  */
 export default async function OpenGraphImage() {
-  const emblem = await fetch(
+  const emblemBytes = await fetch(
     new URL("./opengraph-emblem.png", import.meta.url),
   ).then((res) => res.arrayBuffer());
+  const emblem = `data:image/png;base64,${Buffer.from(emblemBytes).toString("base64")}`;
 
   return new ImageResponse(
     <div
