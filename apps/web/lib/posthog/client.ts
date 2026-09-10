@@ -54,5 +54,8 @@ export function initWebPostHog(): void {
         : undefined,
     getDistinctId: () => posthog.get_distinct_id() || undefined,
     isFeatureEnabled: (flag) => posthog.isFeatureEnabled(flag) ?? undefined,
+    reloadFeatureFlags: () => {
+      posthog.reloadFeatureFlags();
+    },
   });
 }

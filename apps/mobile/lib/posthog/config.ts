@@ -2,6 +2,7 @@ import {
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   shouldEnablePostHogReplay,
 } from "@repo/observability";
+import { sanitizeIdentifiedPostHogCapture } from "@repo/observability/next";
 import type { PostHogOptions, PostHogSessionReplayConfig } from "posthog-react-native";
 
 /**
@@ -40,6 +41,7 @@ export type MobilePostHogInitOptions = Pick<
   | "capturePushNotificationSubscriptions"
   | "capturePushNotificationOpened"
   | "disableGeoip"
+  | "before_send"
 >;
 
 /**
@@ -61,6 +63,13 @@ export function mobileSessionReplayConfig(): PostHogSessionReplayConfig {
 /**
  * Options the app actually passes to `new PostHog`. Specs assert against this
  * object rather than a copy of the literals.
+ *
+ * `before_send` is the identified sanitizer (same helper as web). RN core
+ * uses the same CaptureEvent envelope as posthog-js; the helper is DOM-free.
+ * `$set` / hex `$groups` must survive. URL-shaped SDK properties
+ * (`$current_url`, `$pathname`, `$referrer`, `$initial_current_url`,
+ * deep-link `frapp://join?token=`) still go path-only. RN has no
+ * `property_denylist`; those keys are dropped in the sanitizer.
  */
 export function buildMobilePostHogInitOptions(opts?: {
   environment?: string;
@@ -85,5 +94,6 @@ export function buildMobilePostHogInitOptions(opts?: {
     capturePushNotificationSubscriptions: false,
     capturePushNotificationOpened: false,
     disableGeoip: true,
+    before_send: sanitizeIdentifiedPostHogCapture,
   };
 }

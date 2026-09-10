@@ -451,6 +451,7 @@ export const CHAT_MESSAGE_KINDS = [
   "dues",
   "points",
   "hours",
+  "rush",
   "system_audit",
   "imported",
   "loading",

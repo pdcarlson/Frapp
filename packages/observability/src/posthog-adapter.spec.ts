@@ -46,6 +46,7 @@ describe("identity, groups, logout, opt-out", () => {
     expect(memory.calls).toEqual([
       { type: "identify", distinctId: HEX },
       { type: "group", groupType: "chapter", groupKey: OTHER },
+      { type: "reloadFeatureFlags" },
     ]);
 
     applyAnalyticsIdentity({
@@ -53,7 +54,10 @@ describe("identity, groups, logout, opt-out", () => {
       distinct_id: HEX,
       chapter_group_id: null,
     });
-    expect(memory.calls.at(-1)).toEqual({ type: "resetGroups" });
+    expect(memory.calls.slice(-2)).toEqual([
+      { type: "resetGroups" },
+      { type: "reloadFeatureFlags" },
+    ]);
 
     applyAnalyticsIdentity({
       enabled: true,
@@ -287,5 +291,68 @@ describe("sentry-error-correlated marker", () => {
         (c) => c.type === "capture" && c.event.includes("exception"),
       ),
     ).toBe(false);
+  });
+});
+
+describe("isProductFlagEnabled", () => {
+  it("fails closed until identify settles a hex distinct id, then reloads flags", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const vendorEnabled = vi.fn(() => true);
+    memory.adapter.isFeatureEnabled = vendorEnabled;
+    const readDistinctId = memory.adapter.getDistinctId.bind(memory.adapter);
+
+    expect(isProductFlagEnabled("new-composer")).toBe(false);
+    expect(vendorEnabled).not.toHaveBeenCalled();
+
+    memory.adapter.getDistinctId = () => UUID;
+    expect(isProductFlagEnabled("new-composer")).toBe(false);
+    expect(vendorEnabled).not.toHaveBeenCalled();
+
+    memory.adapter.getDistinctId = () => EMAIL;
+    expect(isProductFlagEnabled("new-composer")).toBe(false);
+    expect(vendorEnabled).not.toHaveBeenCalled();
+
+    memory.adapter.getDistinctId = readDistinctId;
+    applyAnalyticsIdentity({
+      enabled: true,
+      distinct_id: HEX,
+      chapter_group_id: OTHER,
+    });
+    expect(memory.calls).toEqual([
+      { type: "identify", distinctId: HEX },
+      { type: "group", groupType: "chapter", groupKey: OTHER },
+      { type: "reloadFeatureFlags" },
+    ]);
+    expect(JSON.stringify(memory.calls)).not.toContain(EMAIL);
+    expect(isProductFlagEnabled("new-composer")).toBe(true);
+    expect(vendorEnabled).toHaveBeenCalledWith("new-composer");
+
+    applyAnalyticsIdentity({
+      enabled: true,
+      distinct_id: UUID,
+      chapter_group_id: HEX,
+    });
+    vendorEnabled.mockClear();
+    expect(isProductFlagEnabled("new-composer")).toBe(false);
+    expect(vendorEnabled).not.toHaveBeenCalled();
+  });
+
+  it("fails closed for a missing adapter, opt-out, and a vendor miss after hex identify", () => {
+    expect(isProductFlagEnabled("new-composer")).toBe(false);
+
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    applyAnalyticsIdentity({
+      enabled: true,
+      distinct_id: HEX,
+      chapter_group_id: null,
+    });
+    expect(memory.calls.at(-1)).toEqual({ type: "reloadFeatureFlags" });
+    expect(isProductFlagEnabled("new-composer")).toBe(false);
+
+    memory.adapter.isFeatureEnabled = () => true;
+    applyAnalyticsOptOut(true);
+    expect(isProductFlagEnabled("new-composer")).toBe(false);
   });
 });

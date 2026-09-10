@@ -5,6 +5,7 @@ import { AttendanceController } from '../controllers/attendance.controller';
 import { TaskController } from '../controllers/task.controller';
 import { PointsController } from '../controllers/points.controller';
 import { ServiceEntryController } from '../controllers/service-entry.controller';
+import { RushController } from '../controllers/rush.controller';
 import { PollController } from '../controllers/poll.controller';
 import { BackworkController } from '../controllers/backwork.controller';
 import { ChapterDocumentController } from '../controllers/chapter-document.controller';
@@ -48,6 +49,7 @@ describe('RequireModule', () => {
       ['TaskController', TaskController, 'tasks'],
       ['PointsController', PointsController, 'points'],
       ['ServiceEntryController', ServiceEntryController, 'hours'],
+      ['RushController', RushController, 'rush'],
       ['PollController', PollController, 'polls'],
       ['BackworkController', BackworkController, 'backwork'],
       ['ChapterDocumentController', ChapterDocumentController, 'documents'],

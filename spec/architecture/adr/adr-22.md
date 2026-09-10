@@ -86,6 +86,9 @@ release name. Native crash / EAS DSN proof remains #938 / #1361.
 `sanitizeIdentifiedPostHogCapture` as `before_send` so SDK `$current_url`
 (and invite-token query strings) are path-only without dropping `$set` or
 hex `$groups`. Landing still uses the anonymous sanitizer that drops `$set`.
+**Correction (2026-09-10):** identified PostHog RN on mobile uses the same
+helper as `before_send` (`posthog-react-native` core CaptureEvent matches
+the web envelope; the helper is DOM-free). Replay stays off.
 **Correction (2026-09-09):** `apps/landing` initializes anonymous Sentry
 (`NEXT_PUBLIC_LANDING_SENTRY_DSN` → `frapp-landing`) and PostHog JS for
 path-only pageviews and CTA clicks. No identity call, no alias, no chapter
