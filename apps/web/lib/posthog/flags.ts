@@ -4,4 +4,4 @@
  * check. A flag may change copy, a prompt, or a rollout; it must not
  * substitute for `chapter-config:manage` or any other grant.
  */
-export { isProductFlagEnabled } from "./client";
+export { isProductFlagEnabled } from "@repo/observability";

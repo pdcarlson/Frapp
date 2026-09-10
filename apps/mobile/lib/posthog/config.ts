@@ -1,6 +1,6 @@
 import {
   POSTHOG_EXCEPTION_AUTOCAPTURE,
-  POSTHOG_PRODUCTION_REPLAY_ENABLED,
+  shouldEnablePostHogReplay,
 } from "@repo/observability";
 import type { PostHogOptions, PostHogSessionReplayConfig } from "posthog-react-native";
 
@@ -26,20 +26,6 @@ export function mobilePostHogHost(): string {
 
 export function isPostHogConfigured(): boolean {
   return Boolean(mobilePostHogKey());
-}
-
-/**
- * Session replay stays off in every environment until chat/document capture
- * is proven masked and Paul approves production replay (#2038). The production
- * path cannot turn on while {@link POSTHOG_PRODUCTION_REPLAY_ENABLED} is false.
- */
-export function shouldEnablePostHogReplay(opts: {
-  environment: string;
-}): boolean {
-  if (opts.environment === "production") {
-    return POSTHOG_PRODUCTION_REPLAY_ENABLED;
-  }
-  return false;
 }
 
 export type MobilePostHogInitOptions = Pick<

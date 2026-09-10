@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const resetPostHog = vi.hoisted(() => vi.fn());
 const setUser = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/posthog/client", () => ({
+vi.mock("@repo/observability", () => ({
   resetPostHog,
 }));
 

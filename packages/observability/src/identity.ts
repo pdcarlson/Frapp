@@ -1,4 +1,4 @@
-import { isPseudonymHex, type AnalyticsIdentity } from "@repo/observability";
+import { isPseudonymHex, type AnalyticsIdentity } from "./correlation";
 
 /**
  * The only identifier PostHog `identify` and Sentry `user.id` may hold.
@@ -25,4 +25,16 @@ export function validatedChapterGroupId(
   return isPseudonymHex(identity?.chapter_group_id)
     ? identity.chapter_group_id
     : null;
+}
+
+/**
+ * `GET /v1/analytics/identity` through the generated client. Apps pass the
+ * bound `GET` so this package never imports the SDK.
+ */
+export async function fetchAnalyticsIdentity(
+  get: () => Promise<{ data?: AnalyticsIdentity | null; error?: unknown }>,
+): Promise<AnalyticsIdentity | null> {
+  const { data, error } = await get();
+  if (error) throw error;
+  return data ?? null;
 }

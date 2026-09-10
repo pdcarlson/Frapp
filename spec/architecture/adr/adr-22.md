@@ -17,7 +17,8 @@
   `chapters.analytics_opt_out`, and **production-disabled until Paul approves** privacy
   disclosure, consent, and retention.
 - **Vendor SDK init stays runtime-local.** Shared policy (scrubber, correlation types, safe env
-  parsing, PII redaction) lives in the browser-safe `@repo/observability` package
+  parsing, PII redaction, hex identity validation, the PostHog adapter surface, and
+  Sentry↔PostHog correlation attach) lives in the browser-safe `@repo/observability` package
   (`packages/observability`). Vendor SDK init stays in NestJS, Next.js, and React Native.
   **Correction (2026-09-09):** the original decision named this as a later slice and still
   pointed at `packages/validation/src/sentry-scrubbing.ts`. That module was **moved**, not
@@ -66,6 +67,13 @@ stays off. PostHog replay stays off in every environment. Release is
 `bundleId@version+nativeBuildNumber`; git SHA is a `git_sha` tag, not the
 release name. Native crash / EAS DSN proof remains #938 / #1361. Landing
 still has no Sentry/PostHog SDK (WS6).
+**Correction (2026-09-10):** identify / groups / opt-out / the
+`sentry-error-correlated` marker / hex identity validation / Sentry tag
+attach are no longer copied per app. They live in `@repo/observability`.
+Each app still constructs its own vendor client (`posthog-js` /
+`posthog-react-native`) and calls `Sentry.init`. The WS7 copy of the web
+adapter was the clone that breached the jscpd ratchet; the package is
+the cutover, not a second copy.
 
 **Alternatives rejected.**
 

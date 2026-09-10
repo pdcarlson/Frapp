@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * This package is imported by web and landing bundles. A `node:` import or a
- * `process.env` read here would pull Node-only APIs into those graphs, or put
- * a salt-shaped lookup in a client package.
+ * This package is imported by web, mobile, and landing bundles. A `node:`
+ * import or a `process.env` read here would pull Node-only APIs into those
+ * graphs, or put a salt-shaped lookup in a client package.
  *
  * Specs are excluded: this file names the forbidden strings in its assertions.
  */

@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/react-native";
-import { resetPostHog } from "@/lib/posthog/client";
+import { resetPostHog } from "@repo/observability";
 
 /**
  * Clears PostHog identity/groups and Sentry user on logout. Called from

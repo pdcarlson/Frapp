@@ -4,7 +4,7 @@ const resetPostHog = vi.hoisted(() => vi.fn());
 const setUser = vi.hoisted(() => vi.fn());
 const signOut = vi.hoisted(() => vi.fn(async () => ({ error: null })));
 
-vi.mock("@/lib/posthog/client", () => ({
+vi.mock("@repo/observability", () => ({
   resetPostHog,
 }));
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { validatedChapterGroupId, validatedDistinctId } from "./identity";
+import {
+  fetchAnalyticsIdentity,
+  validatedChapterGroupId,
+  validatedDistinctId,
+} from "./identity";
 
 const HEX = "a".repeat(64);
 const UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
@@ -33,5 +37,23 @@ describe("validatedChapterGroupId", () => {
     expect(validatedChapterGroupId({ chapter_group_id: HEX })).toBe(HEX);
     expect(validatedChapterGroupId({ chapter_group_id: UUID })).toBeNull();
     expect(validatedChapterGroupId({ chapter_group_id: null })).toBeNull();
+  });
+});
+
+describe("fetchAnalyticsIdentity", () => {
+  it("returns the body and throws on error", async () => {
+    await expect(
+      fetchAnalyticsIdentity(async () => ({
+        data: { enabled: true, distinct_id: HEX, chapter_group_id: null },
+      })),
+    ).resolves.toEqual({
+      enabled: true,
+      distinct_id: HEX,
+      chapter_group_id: null,
+    });
+    await expect(
+      fetchAnalyticsIdentity(async () => ({ error: new Error("nope") })),
+    ).rejects.toThrow("nope");
+    await expect(fetchAnalyticsIdentity(async () => ({}))).resolves.toBeNull();
   });
 });

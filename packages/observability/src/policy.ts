@@ -24,6 +24,20 @@ export const POSTHOG_EXCEPTION_AUTOCAPTURE = false;
  */
 export const POSTHOG_PRODUCTION_REPLAY_ENABLED = false;
 
+/**
+ * Session replay stays off in every environment until chat/document capture
+ * is proven masked and Paul approves production replay. The production path
+ * cannot turn on while {@link POSTHOG_PRODUCTION_REPLAY_ENABLED} is false.
+ */
+export function shouldEnablePostHogReplay(opts: {
+  environment: string;
+}): boolean {
+  if (opts.environment === "production") {
+    return POSTHOG_PRODUCTION_REPLAY_ENABLED;
+  }
+  return false;
+}
+
 export const OBSERVABILITY_PROVIDERS = {
   exceptions: "sentry",
   traces: "sentry",

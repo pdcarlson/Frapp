@@ -11,6 +11,7 @@ import {
   OBSERVABILITY_PROVIDERS,
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   POSTHOG_PRODUCTION_REPLAY_ENABLED,
+  shouldEnablePostHogReplay,
   SENTRY_ERROR_CORRELATED_EVENT,
   SENTRY_ERROR_SAMPLE_RATE,
   SENTRY_REPLAY_ENABLED,
@@ -51,5 +52,16 @@ describe("policy constants", () => {
     expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
     expect(DEFAULT_POSTHOG_LOGS_SAMPLE_RATE).toBe(1);
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
+  });
+
+  it("cannot turn production replay on while the policy constant is false", () => {
+    expect(POSTHOG_PRODUCTION_REPLAY_ENABLED).toBe(false);
+    expect(shouldEnablePostHogReplay({ environment: "production" })).toBe(
+      false,
+    );
+    expect(shouldEnablePostHogReplay({ environment: "preview" })).toBe(false);
+    expect(shouldEnablePostHogReplay({ environment: "development" })).toBe(
+      false,
+    );
   });
 });

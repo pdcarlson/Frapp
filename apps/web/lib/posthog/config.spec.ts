@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  POSTHOG_EXCEPTION_AUTOCAPTURE,
-  POSTHOG_PRODUCTION_REPLAY_ENABLED,
-} from "@repo/observability";
+import { POSTHOG_EXCEPTION_AUTOCAPTURE } from "@repo/observability";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -25,20 +22,6 @@ describe("PostHog JS credentials", () => {
     vi.stubEnv("NEXT_PUBLIC_POSTHOG_HOST", "");
     const { webPostHogHost } = await load();
     expect(webPostHogHost()).toBe("https://us.i.posthog.com");
-  });
-});
-
-describe("replay decision", () => {
-  it("cannot turn production replay on while the policy constant is false", async () => {
-    const { shouldEnablePostHogReplay } = await load();
-    expect(POSTHOG_PRODUCTION_REPLAY_ENABLED).toBe(false);
-    expect(shouldEnablePostHogReplay({ environment: "production" })).toBe(
-      false,
-    );
-    expect(shouldEnablePostHogReplay({ environment: "preview" })).toBe(false);
-    expect(shouldEnablePostHogReplay({ environment: "development" })).toBe(
-      false,
-    );
   });
 });
 

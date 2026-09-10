@@ -273,9 +273,12 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 4.15%** duplicated lines (859 clones, 10,579 duplicated lines, across
-  1,131 files analysed) — measured 2026-09-06.
-- **Threshold: 4.3%**, just above it.
+- **Current measurement: 4.30%** duplicated lines (993 clones, 12,111 duplicated lines, across
+  1,261 files analysed) — measured 2026-09-10 with `npm run check:duplication` after moving the
+  web/mobile PostHog adapter, identity validators, and Sentry correlation attach into
+  `@repo/observability`. The raw ratio is 12,111 / 281,823 = 4.297%, which is under the
+  4.3% threshold (jscpd prints one decimal).
+- **Threshold: 4.3%**, just above it. Not ratcheted down: headroom is a few dozen lines.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
   make a red run green. Set the new value from a *measured* run, never from a guess, and leave
   enough headroom that ordinary drift does not redden it.

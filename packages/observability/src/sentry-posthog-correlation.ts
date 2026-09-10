@@ -1,18 +1,28 @@
-import type { ReactNativeOptions } from "@sentry/react-native";
-import { isPseudonymHex, REQUEST_ID_HEADER } from "@repo/observability";
+import { isPseudonymHex, REQUEST_ID_HEADER } from "./correlation";
 import {
   captureSentryErrorCorrelated,
   getPostHogDistinctId,
   getPostHogReplayId,
   getPostHogSessionId,
-} from "@/lib/posthog/client";
+} from "./posthog-adapter";
 
-type NativeErrorEvent = Parameters<
-  NonNullable<ReactNativeOptions["beforeSend"]>
->[0];
-type NativeHint = Parameters<NonNullable<ReactNativeOptions["beforeSend"]>>[1];
+/**
+ * The fields web and mobile Sentry events share for PostHog correlation.
+ * Vendor event types are structural supersets of this.
+ */
+export interface CorrelatableSentryEvent {
+  event_id?: string;
+  transaction?: unknown;
+  release?: unknown;
+  tags?: Record<string, unknown>;
+  request?: { headers?: unknown };
+  contexts?: {
+    trace?: { trace_id?: unknown };
+    response?: { status_code?: unknown };
+  };
+}
 
-function headerValue(
+export function headerValue(
   headers: unknown,
   name: string,
 ): string | undefined {
@@ -22,7 +32,7 @@ function headerValue(
   return typeof direct === "string" && direct.length > 0 ? direct : undefined;
 }
 
-function httpStatusClass(status: unknown): string | undefined {
+export function httpStatusClass(status: unknown): string | undefined {
   if (typeof status !== "number" || !Number.isFinite(status)) return undefined;
   if (status >= 200 && status < 300) return "2xx";
   if (status >= 400 && status < 500) return "4xx";
@@ -30,17 +40,17 @@ function httpStatusClass(status: unknown): string | undefined {
   return undefined;
 }
 
-function traceIdFrom(event: NativeErrorEvent): string | undefined {
+function traceIdFrom(event: CorrelatableSentryEvent): string | undefined {
   const trace = event.contexts?.trace;
   if (!trace || typeof trace !== "object") return undefined;
-  const id = (trace as { trace_id?: unknown }).trace_id;
+  const id = trace.trace_id;
   return typeof id === "string" && id.length > 0 ? id : undefined;
 }
 
-function statusFrom(event: NativeErrorEvent): unknown {
+function statusFrom(event: CorrelatableSentryEvent): unknown {
   const response = event.contexts?.response;
   if (response && typeof response === "object") {
-    return (response as { status_code?: unknown }).status_code;
+    return response.status_code;
   }
   const tag = event.tags?.["http.status_code"];
   if (typeof tag === "number") return tag;
@@ -52,12 +62,12 @@ function statusFrom(event: NativeErrorEvent): unknown {
  * After the scrubber runs, attach PostHog ids as tags (so an unknown-tag
  * rebuild cannot drop them) and emit the content-free timeline marker.
  */
-export function attachPostHogCorrelation(
-  event: NativeErrorEvent,
+export function attachPostHogCorrelation<T extends CorrelatableSentryEvent>(
+  event: T,
   extras?: { statusClass?: string },
-): NativeErrorEvent {
-  const tags: Record<string, string> = {
-    ...((event.tags as Record<string, string> | undefined) ?? {}),
+): T {
+  const tags: Record<string, unknown> = {
+    ...(event.tags ?? {}),
   };
   const distinct = getPostHogDistinctId();
   if (isPseudonymHex(distinct)) {
@@ -87,10 +97,15 @@ export function attachPostHogCorrelation(
   return event;
 }
 
-export function withPostHogSentryCorrelation(
-  beforeSend: ReactNativeOptions["beforeSend"],
-): NonNullable<ReactNativeOptions["beforeSend"]> {
-  return (event: NativeErrorEvent, hint: NativeHint) => {
+export function withPostHogSentryCorrelation<
+  E extends CorrelatableSentryEvent,
+  H,
+>(
+  beforeSend?:
+    | ((event: E, hint: H) => E | null | PromiseLike<E | null> | undefined)
+    | undefined,
+): (event: E, hint: H) => Promise<E | null> {
+  return (event: E, hint: H) => {
     // `contexts.response` is dropped by the scrubber allowlist. Read the
     // status class first so the timeline marker can still carry 2xx/4xx/5xx.
     const statusClass = httpStatusClass(statusFrom(event));

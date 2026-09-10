@@ -18,7 +18,7 @@ vi.mock("@repo/hooks", () => ({
   useOrgConfig: () => mockUseOrgConfig(),
 }));
 
-vi.mock("@/lib/posthog/client", () => ({
+vi.mock("@repo/observability", () => ({
   applyAnalyticsOptOut: (...args: unknown[]) => applyAnalyticsOptOut(...args),
 }));
 

@@ -1,6 +1,6 @@
 import {
   POSTHOG_EXCEPTION_AUTOCAPTURE,
-  POSTHOG_PRODUCTION_REPLAY_ENABLED,
+  shouldEnablePostHogReplay,
 } from "@repo/observability";
 import type { PostHogConfig } from "posthog-js";
 
@@ -22,20 +22,6 @@ export function webPostHogHost(): string {
 
 export function isPostHogConfigured(): boolean {
   return Boolean(webPostHogKey());
-}
-
-/**
- * Session replay stays off in every environment until chat/document DOM is
- * proven masked and Paul approves production replay (#2038). The production
- * path cannot turn on while {@link POSTHOG_PRODUCTION_REPLAY_ENABLED} is false.
- */
-export function shouldEnablePostHogReplay(opts: {
-  environment: string;
-}): boolean {
-  if (opts.environment === "production") {
-    return POSTHOG_PRODUCTION_REPLAY_ENABLED;
-  }
-  return false;
 }
 
 export type WebPostHogInitOptions = Pick<

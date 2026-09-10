@@ -12,6 +12,10 @@ import {
   createSentryScrubber,
   parseSampleRate,
   stripAuthority,
+  validatedDistinctId,
+  shouldEnablePostHogReplay,
+  createMemoryPostHogAdapter,
+  attachPostHogCorrelation,
 } from "./index";
 
 describe("public API", () => {
@@ -28,5 +32,9 @@ describe("public API", () => {
     expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
     expect(DEFAULT_POSTHOG_LOGS_SAMPLE_RATE).toBe(1);
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
+    expect(typeof validatedDistinctId).toBe("function");
+    expect(typeof shouldEnablePostHogReplay).toBe("function");
+    expect(typeof createMemoryPostHogAdapter).toBe("function");
+    expect(typeof attachPostHogCorrelation).toBe("function");
   });
 });

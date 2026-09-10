@@ -4,9 +4,11 @@ import { useActiveChapterId, useFrappClient } from "@repo/hooks";
 import * as Sentry from "@sentry/react-native";
 import { useAuthSession } from "@/lib/auth-session";
 import { mobileSentryDsn } from "@/lib/sentry/options";
+import {
+  applyObservabilityIdentity,
+  fetchAnalyticsIdentity,
+} from "@repo/observability";
 import { isPostHogConfigured } from "@/lib/posthog/config";
-import { applyAnalyticsIdentity } from "@/lib/posthog/client";
-import { validatedDistinctId } from "@/lib/posthog/identity";
 
 /**
  * Attaches the caller's **server-derived** pseudonym to PostHog and Sentry.
@@ -36,11 +38,8 @@ export function ObservabilityIdentityProvider({
 
   const { data } = useQuery({
     queryKey: ["observability-identity", chapterId ?? "none"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/analytics/identity");
-      if (error) throw error;
-      return data ?? null;
-    },
+    queryFn: () =>
+      fetchAnalyticsIdentity(() => client.GET("/v1/analytics/identity")),
     enabled: fetchEnabled,
     staleTime: Infinity,
     retry: false,
@@ -49,9 +48,7 @@ export function ObservabilityIdentityProvider({
   useEffect(() => {
     if (!fetchEnabled) return;
     if (data === undefined) return;
-    applyAnalyticsIdentity(data);
-    const distinctId = validatedDistinctId(data);
-    Sentry.setUser(distinctId ? { id: distinctId } : null);
+    applyObservabilityIdentity(data, Sentry.setUser);
   }, [data, fetchEnabled]);
 
   return <>{children}</>;
