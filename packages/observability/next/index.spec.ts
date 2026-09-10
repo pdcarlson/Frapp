@@ -54,6 +54,9 @@ describe("identity firewall", () => {
       expect(source, file).not.toContain("/v1/analytics/identity");
       expect(source, file).not.toContain("process.env.ANALYTICS_HMAC_SALT");
       expect(source, file).not.toContain("process.env.NEXT_PUBLIC_SENTRY_DSN");
+      expect(source, file).not.toMatch(
+        /from ['"]@repo\/observability\/identified-posthog['"]/,
+      );
     }
   });
 });

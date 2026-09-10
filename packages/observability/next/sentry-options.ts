@@ -14,8 +14,8 @@ import {
  * that names the DSN (`NEXT_PUBLIC_SENTRY_DSN` vs
  * `NEXT_PUBLIC_LANDING_SENTRY_DSN`).
  *
- * No identify / `setUser` / `posthog_distinct_id`. Web attaches those in
- * `apps/web`. Landing must not.
+ * No identify / `setUser` / `posthog_distinct_id`. Identified web/mobile
+ * attach those via `@repo/observability/identified-posthog`. Landing must not.
  */
 
 export interface AnonymousNextSentryRuntime {

@@ -26,15 +26,6 @@ export interface CorrelatableSentryEvent {
   };
 }
 
-export interface PostHogSentryCorrelationOptions {
-  /**
-   * Landing visitors are anonymous PostHog UUIDs. Those must never become
-   * Sentry `user.id` or `tags.posthog_distinct_id` — aliasing a marketing
-   * visitor onto a later authenticated distinct id is rejected (ADR-22).
-   */
-  anonymous?: boolean;
-}
-
 function traceIdFrom(event: CorrelatableSentryEvent): string | undefined {
   const trace = event.contexts?.trace;
   if (!trace || typeof trace !== "object") return undefined;
@@ -56,24 +47,20 @@ function statusFrom(event: CorrelatableSentryEvent): unknown {
 /**
  * After the scrubber runs, attach PostHog ids as tags (so an unknown-tag
  * rebuild cannot drop them) and emit the content-free timeline marker.
+ *
+ * Identified web/mobile only. Landing uses
+ * `attachAnonymousPostHogCorrelation` from `@repo/observability/next`.
  */
 export function attachPostHogCorrelation<T extends CorrelatableSentryEvent>(
   event: T,
-  extras?: { statusClass?: string } & PostHogSentryCorrelationOptions,
+  extras?: { statusClass?: string },
 ): T {
-  if (extras?.anonymous && event.user) {
-    delete event.user;
-  }
   const tags: Record<string, unknown> = {
     ...(event.tags ?? {}),
   };
-  if (extras?.anonymous) {
-    delete tags.posthog_distinct_id;
-  } else {
-    const distinct = getPostHogDistinctId();
-    if (isPseudonymHex(distinct)) {
-      tags.posthog_distinct_id = distinct;
-    }
+  const distinct = getPostHogDistinctId();
+  if (isPseudonymHex(distinct)) {
+    tags.posthog_distinct_id = distinct;
   }
   const sessionId = getPostHogSessionId();
   if (sessionId) tags.posthog_session_id = sessionId;
@@ -106,7 +93,6 @@ export function withPostHogSentryCorrelation<
   beforeSend?:
     | ((event: E, hint: H) => E | null | PromiseLike<E | null> | undefined)
     | undefined,
-  options?: PostHogSentryCorrelationOptions,
 ): (event: E, hint: H) => Promise<E | null> {
   return (event: E, hint: H) => {
     // `contexts.response` is dropped by the scrubber allowlist. Read the
@@ -114,12 +100,7 @@ export function withPostHogSentryCorrelation<
     const statusClass = httpStatusClass(statusFrom(event));
     const next = beforeSend ? beforeSend(event, hint) : event;
     return Promise.resolve(next).then((resolved) =>
-      resolved
-        ? attachPostHogCorrelation(resolved, {
-            statusClass,
-            anonymous: options?.anonymous,
-          })
-        : null,
+      resolved ? attachPostHogCorrelation(resolved, { statusClass }) : null,
     );
   };
 }

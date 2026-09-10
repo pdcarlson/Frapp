@@ -39,6 +39,21 @@ describe("identified attachPostHogCorrelation", () => {
     expect(event.tags?.posthog_distinct_id).not.toBe(UUID);
   });
 
+  it("has no anonymous path that would strip user or the hex tag", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    memory.adapter.identify(HEX);
+
+    const event = attachPostHogCorrelation({
+      user: { id: HEX },
+      tags: { posthog_distinct_id: HEX, keep: "yes" },
+    });
+
+    expect(event.user).toEqual({ id: HEX });
+    expect(event.tags?.posthog_distinct_id).toBe(HEX);
+    expect(event.tags?.keep).toBe("yes");
+  });
+
   it("does not copy the Sentry trace id into request_id", () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);

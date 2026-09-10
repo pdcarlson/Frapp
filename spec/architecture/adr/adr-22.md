@@ -29,7 +29,11 @@
   builders (replay-off, both scrubber hooks, debug-ID webpack defaults, path-only
   analytics, session/replay tags) now live on `@repo/observability/next` and export no
   identify / group / `setUser` / `posthog_distinct_id` APIs. Landing imports only that
-  entry. Web keeps identity in `apps/web`.
+  entry. Web and mobile keep identity on `@repo/observability/identified-posthog`;
+  identify must not land on `/next` or the CJS barrel.
+  **Correction (2026-09-10):** “Web keeps identity in `apps/web`” was true before
+  this PR extracted identified PostHog into the shared package. The split is now
+  identified-posthog vs `/next`, not web vs landing folder.
 
 The product rules, identifier table, sampling bounds, and definition of done live in
 [`spec/behavior/observability.md`](../../behavior/observability.md) and are not restated here.

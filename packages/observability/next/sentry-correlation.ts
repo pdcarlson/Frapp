@@ -12,8 +12,9 @@ export { headerValue, httpStatusClass } from "../src/index";
  * content-free `sentry-error-correlated` marker.
  *
  * Does **not** attach `posthog_distinct_id`, call `identify`, or set
- * `Sentry.setUser`. Web adds the hex distinct id in `apps/web`. Landing
- * strips `user` and any distinct-id tag before calling this.
+ * `Sentry.setUser`. Identified web/mobile add the hex distinct id via
+ * `@repo/observability/identified-posthog`. Landing strips `user` and
+ * any distinct-id tag before calling this.
  */
 
 export interface AnonymousSentryEvent {

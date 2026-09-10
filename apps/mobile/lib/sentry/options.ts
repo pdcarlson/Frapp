@@ -37,7 +37,8 @@ import { mobileTracePropagationTargets } from "./trace-targets";
  *
  * The one identifier that *does* survive is the user pseudonym, and it survives
  * because the **server** derived it: `observability-identity-provider.tsx`
- * reads it from `GET /v1/analytics/identity` and hands it to `Sentry.setUser`.
+ * uses `@repo/observability/identified-posthog` to read it from
+ * `GET /v1/analytics/identity` and hand it to `Sentry.setUser`.
  * The scrubber's `/^[0-9a-f]{64}$/` gate accepts that value and rejects
  * everything else, so a raw id put there by a stray `setUser` call is still
  * dropped.

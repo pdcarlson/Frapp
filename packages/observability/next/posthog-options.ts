@@ -11,7 +11,8 @@ export { shouldEnablePostHogReplay } from "../src/index";
  *
  * Replay-off, exception autocapture off, no pageview autocapture.
  * This object has **no** `person_profiles`, identify, group, or alias
- * fields. Web adds `identified_only` in `apps/web`. Landing adds `never`.
+ * fields. Web and mobile add `identified_only` in their app PostHog
+ * config. Landing adds `never`.
  */
 
 export const ANONYMOUS_POSTHOG_SESSION_RECORDING = {
