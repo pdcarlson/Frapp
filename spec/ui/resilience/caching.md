@@ -6,9 +6,10 @@
 
 | Layer | Storage | TTL | Purpose |
 |-------|---------|-----|---------|
-| TanStack Query memory | In-memory | `staleTime` per query | Active session data |
-| TanStack Query persistence | `localStorage` via `persistQueryClient` | 24 hours | Survive page refreshes |
+| TanStack Query memory | In-memory | `staleTime` / `gcTime` per query | Active session data. Web: `apps/web/lib/providers/query-provider.tsx`. Mobile: `apps/mobile/lib/query-client.ts`. A refresh or process death discards it; the next load refetches. |
 | Service Worker (future) | Cache API | Varies | Offline asset caching |
+
+**Correction (2026-09-10):** an earlier revision of this table listed a third layer, `localStorage` via `persistQueryClient` with a 24-hour TTL so the product cache would survive page refreshes. That layer never existed — there is no `persistQueryClient`, persister, or `@tanstack/query-persist*` dependency — and it is not intended. The product cache is in-memory only. Delete-account and same-device account-swap paths assume a full document load (or `queryClient.clear()`) drops `["user","me"]` / `["settings"]`; a 24h snapshot would restore them.
 
 ## Per-Domain Cache Configuration
 
