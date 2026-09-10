@@ -3661,6 +3661,14 @@ export interface components {
             /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
             size_bytes?: number;
         };
+        BackworkUploadUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send on the confirm-upload call. */
+            storage_path: string;
+            /** @description Server-allocated resource id embedded in storage_path. */
+            resource_id: string;
+        };
         ConfirmBackworkUploadDto: {
             /** @description Storage path returned from upload-url */
             storage_path: string;
@@ -3902,6 +3910,14 @@ export interface components {
             content_type: string;
             /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
             size_bytes?: number;
+        };
+        DocumentUploadUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send on the confirm-upload call. */
+            storage_path: string;
+            /** @description Server-allocated document id embedded in storage_path. */
+            document_id: string;
         };
         ConfirmDocumentUploadDto: {
             /** @description Storage path returned from upload-url */
@@ -6778,7 +6794,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BackworkUploadUrlResponseDto"];
+                };
             };
         };
     };
@@ -7669,7 +7687,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DocumentUploadUrlResponseDto"];
+                };
             };
         };
     };
