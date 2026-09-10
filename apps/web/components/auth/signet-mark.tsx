@@ -8,6 +8,7 @@
  * wordmark the page already renders as text.
  */
 
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 const FIELD = "#1A1A1A";
@@ -36,7 +37,7 @@ export function SignetMark({
     <span
       aria-hidden="true"
       className={cn(
-        "signet-mark flex shrink-0 items-center justify-center overflow-hidden",
+        "signet-mark relative flex shrink-0 items-center justify-center overflow-hidden",
         SIZES[size],
         className,
       )}
@@ -44,13 +45,12 @@ export function SignetMark({
       data-gold={GOLD}
       style={{ backgroundColor: FIELD, color: GOLD }}
     >
-      <img
-        // Public raster of Design's lock. next/image is unnecessary for a
-        // 52px decorative tile already served from /brand.
-        // eslint-disable-next-line @next/next/no-img-element
+      <Image
         src="/brand/signet-emblem-B.png"
         alt=""
-        className="h-full w-full object-cover"
+        fill
+        sizes="52px"
+        className="object-cover"
       />
     </span>
   );

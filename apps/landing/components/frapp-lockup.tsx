@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 /**
@@ -16,8 +17,7 @@ export function FrappLockup() {
         className="inline-flex items-center gap-3 text-navy dark:text-white"
         aria-hidden="true"
       >
-        <img
-          // eslint-disable-next-line @next/next/no-img-element
+        <Image
           src="/brand/signet-emblem-B.png"
           alt=""
           width={32}

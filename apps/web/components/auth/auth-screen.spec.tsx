@@ -59,8 +59,8 @@ describe("the mark", () => {
     expect(mark).not.toBeNull();
     expect(mark!.getAttribute("data-field")).toBe("#1A1A1A");
     expect(mark!.getAttribute("data-gold")).toBe("#DDB844");
-    expect(mark!.querySelector("img")?.getAttribute("src")).toBe(
-      "/brand/signet-emblem-B.png",
+    expect(mark!.querySelector("img")?.getAttribute("src")).toContain(
+      "signet-emblem-B.png",
     );
     expect(mark!.getAttribute("aria-hidden")).toBe("true");
     expect(mark!.className).not.toMatch(/\bbg-primary\b/);
