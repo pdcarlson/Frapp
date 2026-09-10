@@ -82,17 +82,13 @@ async function contentSquare(input) {
   if (maxX <= minX || maxY <= minY) {
     throw new Error("master raster has no visible tile to crop");
   }
-  const side = Math.max(maxX - minX + 1, maxY - minY + 1);
+  let side = Math.max(maxX - minX + 1, maxY - minY + 1);
+  side = Math.min(side, width, height);
   const cx = Math.round((minX + maxX) / 2);
   const cy = Math.round((minY + maxY) / 2);
   const left = Math.max(0, Math.min(width - side, cx - Math.floor(side / 2)));
   const top = Math.max(0, Math.min(height - side, cy - Math.floor(side / 2)));
-  return {
-    left,
-    top,
-    width: Math.min(side, width - left),
-    height: Math.min(side, height - top),
-  };
+  return { left, top, width: side, height: side };
 }
 
 async function opaqueTile(size) {
