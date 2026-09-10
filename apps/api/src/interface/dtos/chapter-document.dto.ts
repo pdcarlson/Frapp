@@ -29,6 +29,23 @@ export class RequestDocumentUploadUrlDto {
   size_bytes?: number;
 }
 
+export class DocumentUploadUrlResponseDto {
+  @ApiProperty({
+    description: 'Short-lived signed URL; PUT the bytes to it.',
+  })
+  upload_url: string;
+
+  @ApiProperty({
+    description: 'Storage path to send on the confirm-upload call.',
+  })
+  storage_path: string;
+
+  @ApiProperty({
+    description: 'Server-allocated document id embedded in storage_path.',
+  })
+  document_id: string;
+}
+
 export class ConfirmDocumentUploadDto {
   @ApiProperty({ description: 'Storage path returned from upload-url' })
   @IsString()
