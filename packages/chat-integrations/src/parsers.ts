@@ -527,6 +527,86 @@ export function parseHoursArgs(args: string): ParseResult<HoursArgs> {
   return { ok: true, value: { durationMinutes, description } };
 }
 
+const RUSH_DISPLAY_NAME_MAX = 200;
+const RUSH_USAGE = "Usage: add @candidate | vote <candidate-id> | bid @candidate";
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Result of a successful parse for `/rush` (and vocab aliases). */
+export type RushArgs =
+  | { action: "add"; displayName: string }
+  | { action: "vote"; candidateId?: string; candidateToken?: string }
+  | { action: "bid"; candidateToken: string };
+
+function stripMention(token: string): string {
+  return token.startsWith("@") ? token.slice(1).trim() : token.trim();
+}
+
+/**
+ * Parse `/<vocab> add|vote|bid`. Member-facing errors omit the hardcoded
+ * `/rush` token so a chapter that says "intake" is not toasted "rush".
+ *
+ * - `add` takes `@Name`, a quoted name, or the rest of the line.
+ * - `vote` takes a candidate UUID, or a name token resolved at dispatch.
+ * - `bid` takes `@Name` or a UUID (resolved at dispatch when not a UUID).
+ */
+export function parseRushArgs(args: string): ParseResult<RushArgs> {
+  const tokens = tokenizeQuotedArgs(args.trim());
+  if (tokens === null) {
+    return { ok: false, error: "Unterminated quote in arguments" };
+  }
+  if (tokens.length === 0) {
+    return { ok: false, error: RUSH_USAGE };
+  }
+
+  const action = tokens[0]!.toLowerCase();
+  if (action === "add") {
+    const displayName = stripMention(tokens.slice(1).join(" ").trim());
+    if (displayName.length === 0) {
+      return { ok: false, error: "A candidate name is required. " + RUSH_USAGE };
+    }
+    if (displayName.length > RUSH_DISPLAY_NAME_MAX) {
+      return {
+        ok: false,
+        error: `Candidate name is too long (max ${RUSH_DISPLAY_NAME_MAX} chars)`,
+      };
+    }
+    return { ok: true, value: { action: "add", displayName } };
+  }
+
+  if (action === "vote") {
+    const rest = tokens.slice(1).join(" ").trim();
+    const token = stripMention(rest);
+    if (token.length === 0) {
+      return {
+        ok: false,
+        error: "A candidate id or name is required. " + RUSH_USAGE,
+      };
+    }
+    if (UUID_RE.test(token)) {
+      return { ok: true, value: { action: "vote", candidateId: token } };
+    }
+    return { ok: true, value: { action: "vote", candidateToken: token } };
+  }
+
+  if (action === "bid") {
+    const rest = tokens.slice(1).join(" ").trim();
+    const candidateToken = stripMention(rest);
+    if (candidateToken.length === 0) {
+      return {
+        ok: false,
+        error: "A candidate name or id is required. " + RUSH_USAGE,
+      };
+    }
+    return { ok: true, value: { action: "bid", candidateToken } };
+  }
+
+  return {
+    ok: false,
+    error: `Unknown action "${tokens[0]}". ${RUSH_USAGE}`,
+  };
+}
+
 /**
  * Guard-parses a numeric slash argument. Returns `null` for anything that
  * isn't a finite number so callers never propagate `NaN` (master-plan

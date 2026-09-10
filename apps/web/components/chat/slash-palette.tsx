@@ -25,6 +25,12 @@ export interface SlashPaletteProps {
   onQueryChange?: (query: string) => void;
   isModuleEnabled: (moduleKey: string) => boolean;
   /**
+   * Chapter recruitment vocabulary (`Rush` / `Intake` / …). The palette
+   * shows `/intake` when that is the chapter's term; dispatch still keys on
+   * canonical `rush`.
+   */
+  recruitmentVocab?: string;
+  /**
    * Reflects the chapter-config query state so the palette can fail closed
    * while modules are still loading or errored. Defaults to `"ready"` so
    * existing callers and tests don't need to thread the prop.
@@ -55,6 +61,7 @@ export function SlashPalette({
   initialQuery = "",
   onQueryChange,
   isModuleEnabled,
+  recruitmentVocab,
   status = "ready",
   onRetry,
   onSelect,
@@ -63,8 +70,13 @@ export function SlashPalette({
   const query = initialQuery;
 
   const commands = useMemo(
-    () => (status === "ready" ? filterSlashCommands(query, isModuleEnabled) : []),
-    [query, isModuleEnabled, status],
+    () =>
+      status === "ready"
+        ? filterSlashCommands(query, isModuleEnabled, {
+            recruitment: recruitmentVocab,
+          })
+        : [],
+    [query, isModuleEnabled, status, recruitmentVocab],
   );
 
   return (
@@ -104,7 +116,7 @@ export function SlashPalette({
                     onSelect={() => onSelect(command)}
                   >
                     <span className="font-mono text-[12.5px] text-muted-foreground">
-                      /{command.name}
+                      /{command.displayName ?? command.name}
                     </span>
                     <span className="ml-2 text-base">{command.description}</span>
                     {command.usage ? (

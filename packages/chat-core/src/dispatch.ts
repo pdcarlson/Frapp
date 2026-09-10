@@ -16,6 +16,7 @@ import {
   parseHoursArgs,
   parsePollArgs,
   parsePointsArgs,
+  parseRushArgs,
   parseTaskArgs,
   type AnnouncementPayload,
   type PollPayload,
@@ -133,6 +134,8 @@ export async function dispatchSlashCommand(
       return dispatchEvent(ctx, args, channelId);
     case "hours":
       return dispatchHours(ctx, args, channelId);
+    case "rush":
+      return dispatchRush(ctx, args, channelId, resolveMember);
     default:
       return {
         ok: false,
@@ -530,6 +533,12 @@ const EVENT_RECORDED_ROW_NOTE =
 const HOURS_RECORDED_ROW_NOTE =
   "Hours logged — the chat card didn't post. Don't run this command again.";
 
+const RUSH_CARD_LOST_WARNING =
+  "Candidate was added, but the chat card couldn't be posted. Don't run the command again.";
+
+const RUSH_RECORDED_ROW_NOTE =
+  "Candidate added — the chat card didn't post. Don't run this command again.";
+
 const REPLAY_ACCEPTED_WARNING =
   "These points were already recorded — the retry didn't add a second entry. Whether the original chat card posted isn't something the server can tell us, so check the channel or the points ledger if you need to be sure.";
 
@@ -906,6 +915,141 @@ async function dispatchHours(
   } catch {
     removeLocalPlaceholder(ctx, channelId, clientMessageId);
     return { ok: false, error: "Couldn't reach the hours service" };
+  }
+
+  return { ok: true };
+}
+
+async function resolveRushCandidateId(
+  ctx: ChatActionContext,
+  token: string,
+): Promise<string | null> {
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      token,
+    )
+  ) {
+    return token;
+  }
+  try {
+    const result = await ctx.apiClient.GET("/v1/rush/candidates", {
+      params: { query: { name: token } },
+    });
+    const status = result.response?.status;
+    const ok = typeof status === "number" && status >= 200 && status < 300;
+    const id = (result.data as { id?: string } | undefined)?.id;
+    if (!ok || typeof id !== "string") return null;
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Dispatch `/<vocab> add|vote|bid`. `add` is a heavy command (loading
+ * placeholder + `POST /v1/rush/candidates` + `card_posted`). `vote` and `bid`
+ * mutate in place with no placeholder — the existing card live-updates.
+ */
+async function dispatchRush(
+  ctx: ChatActionContext,
+  args: string,
+  channelId: string,
+  resolveMember: ResolveMember | undefined,
+): Promise<DispatchResult> {
+  const parsed = parseRushArgs(args);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  if (parsed.value.action === "add") {
+    return dispatchRushAdd(
+      ctx,
+      parsed.value.displayName,
+      channelId,
+      resolveMember,
+    );
+  }
+
+  const token =
+    parsed.value.action === "vote"
+      ? (parsed.value.candidateId ?? parsed.value.candidateToken ?? "")
+      : parsed.value.candidateToken;
+  const id = await resolveRushCandidateId(ctx, token);
+  if (!id) {
+    return { ok: false, error: "No candidate matches that name" };
+  }
+
+  const path =
+    parsed.value.action === "vote"
+      ? "/v1/rush/candidates/{id}/vote"
+      : "/v1/rush/candidates/{id}/bid";
+  const fallback =
+    parsed.value.action === "vote"
+      ? "Couldn't record that vote"
+      : "Couldn't extend that bid";
+
+  try {
+    const result = await ctx.apiClient.POST(path, {
+      params: { path: { id } },
+    });
+    let status = result.response?.status;
+    if (result.error) status ??= 0;
+    const ok = typeof status === "number" && status >= 200 && status < 300;
+    if (!ok) {
+      return { ok: false, error: apiErrorMessage(result.error, fallback) };
+    }
+  } catch {
+    return { ok: false, error: "Couldn't reach the recruitment service" };
+  }
+  return { ok: true };
+}
+
+async function dispatchRushAdd(
+  ctx: ChatActionContext,
+  displayName: string,
+  channelId: string,
+  resolveMember: ResolveMember | undefined,
+): Promise<DispatchResult> {
+  const clientMessageId = randomClientId();
+  const placeholderContent = `Adding candidate ${displayName}…`;
+  const member = resolveMember?.(displayName);
+
+  insertLocalPlaceholder(ctx, {
+    channelId,
+    clientMessageId,
+    content: placeholderContent,
+  });
+
+  try {
+    const result = await ctx.apiClient.POST("/v1/rush/candidates", {
+      body: {
+        display_name: displayName,
+        ...(member?.user_id ? { user_id: member.user_id } : {}),
+        channel_id: channelId,
+        client_message_id: clientMessageId,
+      },
+    });
+    const data = result.data as CardPostedResponse | undefined;
+    let status = result.response?.status;
+    if (result.error) status ??= 0;
+    const ok = typeof status === "number" && status >= 200 && status < 300;
+    if (!ok) {
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return {
+        ok: false,
+        error: apiErrorMessage(result.error, "Couldn't add that candidate"),
+      };
+    }
+    if (data?.card_posted === false) {
+      markLocalRecorded(ctx, {
+        channelId,
+        clientMessageId,
+        note: RUSH_RECORDED_ROW_NOTE,
+        content: placeholderContent,
+      });
+      return { ok: true, warning: RUSH_CARD_LOST_WARNING };
+    }
+  } catch {
+    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    return { ok: false, error: "Couldn't reach the recruitment service" };
   }
 
   return { ok: true };

@@ -1261,6 +1261,7 @@ export function ChatShell({
             }
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
+            recruitmentVocab={orgConfig.data?.vocabulary?.recruitment}
             slashCommandsStatus={slashCommandsStatus}
             onRetrySlashCommands={onRetrySlashCommands}
             // Never `disabled` while offline: the send path enqueues to the

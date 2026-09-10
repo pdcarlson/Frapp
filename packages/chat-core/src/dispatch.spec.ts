@@ -634,6 +634,31 @@ function dispatchHoursCmd(ctx: ChatActionContext) {
   });
 }
 
+const RUSH_COMMAND: SlashCommand = {
+  name: "rush",
+  description: "Add a candidate, vote, or extend a bid",
+  requiredModule: "rush",
+  implemented: true,
+};
+
+function dispatchRushAddCmd(ctx: ChatActionContext) {
+  return dispatchSlashCommand(ctx, {
+    command: RUSH_COMMAND,
+    args: "add @Jane Doe",
+    channelId: CHANNEL_ID,
+    announcementsChannelId: null,
+  });
+}
+
+function dispatchRushVoteCmd(ctx: ChatActionContext, args: string) {
+  return dispatchSlashCommand(ctx, {
+    command: RUSH_COMMAND,
+    args,
+    channelId: CHANNEL_ID,
+    announcementsChannelId: null,
+  });
+}
+
 type CreateDispatch = (
   ctx: ChatActionContext,
 ) => ReturnType<typeof dispatchSlashCommand>;
@@ -652,7 +677,8 @@ function posted201(cardPosted: boolean | "absent") {
 }
 
 /**
- * Shared `/task` `/event` `/hours` card_posted cases. Empty-body gateway 502
+ * Shared `/task` `/event` `/hours` `/rush add` card_posted cases. Empty-body
+ * gateway 502
  * (`error: undefined` from openapi-fetch) must drop the placeholder — these
  * creates have no server-side dedupe, so a stranded row invites a retry.
  */
@@ -774,6 +800,24 @@ describeCreateCardPosted("dispatchHours — card_posted", dispatchHoursCmd, {
         body: expect.objectContaining({
           duration_minutes: 120,
           description: "Community cleanup",
+          channel_id: CHANNEL_ID,
+        }),
+      }),
+    );
+  },
+});
+
+describeCreateCardPosted("dispatchRush — add card_posted", dispatchRushAddCmd, {
+  recordedVerb: /added/i,
+  fourXxMessage: "A candidate with that name already exists in this chapter",
+  gatewayError: /Couldn't add that candidate/i,
+  transportError: "Couldn't reach the recruitment service",
+  onPosted: (post) => {
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          display_name: "Jane Doe",
           channel_id: CHANNEL_ID,
         }),
       }),
@@ -944,4 +988,117 @@ describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () =>
       expect(onlyRow(ctx).kind).toBe(which.kind);
     },
   );
+});
+
+describe("dispatchRush — vote and bid", () => {
+  it("votes by UUID without a placeholder", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const post = vi.fn().mockResolvedValue({
+      data: { viewer_has_voted: true },
+      error: null,
+      response: { status: 200 },
+    });
+    const ctx = buildCtx(post);
+
+    const result = await dispatchRushVoteCmd(ctx, `vote ${id}`);
+
+    expect(result).toEqual({ ok: true });
+    expect(placeholderCount(ctx)).toBe(0);
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates/{id}/vote",
+      expect.objectContaining({ params: { path: { id } } }),
+    );
+  });
+
+  it("looks up a candidate by name before voting", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: { id: "cand-1" },
+      error: null,
+      response: { status: 200 },
+    });
+    const post = vi.fn().mockResolvedValue({
+      data: {},
+      error: null,
+      response: { status: 200 },
+    });
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
+
+    const result = await dispatchRushVoteCmd(ctx, "vote Jane");
+
+    expect(result).toEqual({ ok: true });
+    expect(get).toHaveBeenCalledWith(
+      "/v1/rush/candidates",
+      expect.objectContaining({
+        params: { query: { name: "Jane" } },
+      }),
+    );
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates/{id}/vote",
+      expect.objectContaining({ params: { path: { id: "cand-1" } } }),
+    );
+  });
+
+  it("fails closed when the name lookup misses", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "Candidate not found" },
+      response: { status: 404 },
+    });
+    const post = vi.fn();
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
+
+    const result = await dispatchRushVoteCmd(ctx, "vote Nobody");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "No candidate matches that name",
+    });
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("extends a bid by name without a placeholder", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: { id: "cand-1" },
+      error: null,
+      response: { status: 200 },
+    });
+    const post = vi.fn().mockResolvedValue({
+      data: { bid_status: "extended" },
+      error: null,
+      response: { status: 200 },
+    });
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
+
+    const result = await dispatchSlashCommand(ctx, {
+      command: RUSH_COMMAND,
+      args: "bid Jane",
+      channelId: CHANNEL_ID,
+      announcementsChannelId: null,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(placeholderCount(ctx)).toBe(0);
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates/{id}/bid",
+      expect.objectContaining({ params: { path: { id: "cand-1" } } }),
+    );
+  });
 });

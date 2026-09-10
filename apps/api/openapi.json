@@ -5007,6 +5007,186 @@
         ]
       }
     },
+    "/v1/rush/candidates": {
+      "get": {
+        "operationId": "RushController_lookup_v1",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "query",
+            "description": "Candidate display name (case-insensitive)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RushCandidateViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Look up a candidate by display name",
+        "tags": [
+          "Rush"
+        ]
+      },
+      "post": {
+        "operationId": "RushController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRushCandidateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateRushCandidateResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a recruitment candidate",
+        "tags": [
+          "Rush"
+        ]
+      }
+    },
+    "/v1/rush/candidates/{id}": {
+      "get": {
+        "operationId": "RushController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RushCandidateViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a candidate with live vote and bid status",
+        "tags": [
+          "Rush"
+        ]
+      }
+    },
+    "/v1/rush/candidates/{id}/vote": {
+      "post": {
+        "operationId": "RushController_vote_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RushCandidateViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cast a vote on a candidate (idempotent; already-voted is 200)",
+        "tags": [
+          "Rush"
+        ]
+      }
+    },
+    "/v1/rush/candidates/{id}/bid": {
+      "post": {
+        "operationId": "RushController_bid_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RushCandidateViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Extend a bid (idempotent; already-extended is 200)",
+        "tags": [
+          "Rush"
+        ]
+      }
+    },
     "/v1/geofences": {
       "get": {
         "operationId": "StudyGeofenceController_list_v1",
@@ -8300,6 +8480,7 @@
               "dues",
               "points",
               "hours",
+              "rush",
               "system_audit",
               "announcement"
             ],
@@ -8351,6 +8532,7 @@
               "dues",
               "points",
               "hours",
+              "rush",
               "system_audit",
               "imported",
               "loading",
@@ -8544,6 +8726,7 @@
               "dues",
               "points",
               "hours",
+              "rush",
               "system_audit",
               "imported",
               "loading",
@@ -9696,6 +9879,150 @@
             "description": "Optional comment for rejection"
           }
         }
+      },
+      "RushCandidateViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "name_key": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "stage": {
+            "type": "string"
+          },
+          "bid_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "extended"
+            ]
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vote_count": {
+            "type": "number",
+            "description": "Ballot count. Voter names are never returned."
+          },
+          "viewer_has_voted": {
+            "type": "boolean",
+            "description": "Whether the authenticated caller has already voted."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "display_name",
+          "name_key",
+          "user_id",
+          "stage",
+          "bid_status",
+          "created_by",
+          "created_at",
+          "vote_count",
+          "viewer_has_voted"
+        ]
+      },
+      "CreateRushCandidateDto": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "user_id": {
+            "type": "string",
+            "description": "When the candidate is already a chapter member, the resolved user id. Omit for an external prospect."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts a rush candidate card to this chat channel after the row is created (the vocab-aware slash command). Omit for non-chat creates."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate candidate."
+          }
+        },
+        "required": [
+          "display_name"
+        ]
+      },
+      "CreateRushCandidateResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "name_key": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "stage": {
+            "type": "string"
+          },
+          "bid_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "extended"
+            ]
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "card_posted": {
+            "type": "boolean",
+            "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the candidate row committed and the card did not. Absent means no card was attempted. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "display_name",
+          "name_key",
+          "user_id",
+          "stage",
+          "bid_status",
+          "created_by",
+          "created_at"
+        ]
       },
       "CreateGeofenceDto": {
         "type": "object",
