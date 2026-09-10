@@ -141,8 +141,29 @@ own `type` (`signup`, `invite`, `recovery`) — copying this body onto those bre
 Do **not** paste that on a host whose web deploy does not yet include the `token_hash` handler.
 Leave Resend open/click tracking off (single-use links). Production SMTP uses the prod
 mail subdomain From above, then 300/hour — dashboard-only; do not put the key in Slack
-or git. `RESEND_API_KEY` on Render `frapp-api-prod` and `frapp-api-staging` is a
-separate invite-mail path and is still absent on both — that is the remaining
-human work on #1824. Auth SMTP itself is proven on staging and production.
+or git. Auth SMTP itself is proven on staging and production.
+
+### Invite mail (API, Render)
+
+This is **not** Auth SMTP. Auth Magic Links use GoTrue + the `supabase-smtp-key-*`
+Resend keys on the Supabase project. Invite mail is the API's `RESEND_API_KEY`
+path (`selectEmailProvider()`). Do not treat a proven Magic Link as proof that
+chapter invites send, or a Render env row as proof that Auth SMTP works.
+
+Observation 2026-09-09 (owner confirmation, **names only**; values not opened).
+This session's Render MCP could not re-read env-var lists (`unauthorized`); the
+destination proof is Paul's dashboard read of the row names, not a Render API
+dump.
+
+| Surface | State |
+| --- | --- |
+| Render `frapp-api-staging` | env-var **row named** `RESEND_API_KEY` **present** |
+| Render `frapp-api-prod` | env-var **row named** `RESEND_API_KEY` **present** |
+| Infisical → Render syncs | already green (not re-opened here) |
+| Resend keys for this path | `invite-mail-staging`, `invite-mail-prod` (listed 2026-09-09; separate from `supabase-smtp-key-staging` / `supabase-smtp-key-prod`) |
+
+Did **not** Deploy production. A present env-var **name** is not proof the running
+process has left the no-op provider — that would take a restart/Deploy, which
+this observation did not do.
 
 ---
