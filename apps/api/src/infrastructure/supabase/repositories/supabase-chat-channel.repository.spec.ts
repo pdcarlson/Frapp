@@ -65,6 +65,72 @@ describe('SupabaseChatChannelRepository — tenant scope', () => {
     expect(channels.map((c) => c.id)).toEqual([CHANNEL_B]);
   });
 
+  describe('findByIds', () => {
+    it('drops ids belonging to another chapter', async () => {
+      // `filterAccessibleChannelIds` treats membership in CHAPTER_B as
+      // `isChapterMember` for every returned row. CHANNEL_A is PUBLIC; if it
+      // survived this query it would be returned as accessible.
+      const channels = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.findByIds(CHAPTER_B, [CHANNEL_A, CHANNEL_B]),
+      );
+
+      expect(channels.map((c) => c.id)).toEqual([CHANNEL_B]);
+    });
+
+    it('returns [] without querying when ids is empty', async () => {
+      await expect(repo.findByIds(CHAPTER_B, [])).resolves.toEqual([]);
+      expect(harness.ops).toEqual([]);
+    });
+
+    it('does not filter archived_at', async () => {
+      // Bookmarks pass `{ includeArchived: true }` and decide in memory.
+      // Pushing the archive filter into SQL would redact rows that path can
+      // still read (#348 / #736).
+      const ARCHIVED_A = '0a000000-0000-4000-8000-000000000081';
+      const ARCHIVED_B = '0b000000-0000-4000-8000-000000000081';
+      harness = createTenantHarness({
+        tables: {
+          chat_channels: [
+            ...seed().chat_channels,
+            inA({
+              id: ARCHIVED_A,
+              name: 'archived',
+              description: null,
+              type: 'PUBLIC',
+              required_permissions: [],
+              member_ids: [],
+              category_id: null,
+              is_read_only: false,
+              created_at: '2026-01-02T00:00:00.000Z',
+              archived_at: '2026-01-02T00:00:00.000Z',
+            }),
+            inB({
+              id: ARCHIVED_B,
+              name: 'archived',
+              description: null,
+              type: 'PUBLIC',
+              required_permissions: [],
+              member_ids: [],
+              category_id: null,
+              is_read_only: false,
+              created_at: '2026-01-02T00:00:00.000Z',
+              archived_at: '2026-01-02T00:00:00.000Z',
+            }),
+          ],
+        },
+      });
+      repo = new SupabaseChatChannelRepository(harness.client);
+
+      const channels = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.findByIds(CHAPTER_B, [CHANNEL_B, ARCHIVED_A, ARCHIVED_B]),
+      );
+
+      expect(channels.map((c) => c.id).sort()).toEqual(
+        [ARCHIVED_B, CHANNEL_B].sort(),
+      );
+    });
+  });
+
   it('findById refuses a channel id from another chapter', async () => {
     // The single most load-bearing filter in chat: `assertChannelAccess` turns a
     // null here into a 404 and every message, reaction and vote under that
