@@ -3,7 +3,8 @@
  *
  * This is a platform env, not an Infisical secret — do not add a `GIT_SHA`
  * slug to invent a second home. Local and CI leave it unset, so `/health`
- * omits `commit` rather than guessing.
+ * omits `commit` rather than guessing. Sentry `release` and source-map upload
+ * use the same helper so classic map matching agrees with the event envelope.
  */
 export const RENDER_GIT_COMMIT_ENV = 'RENDER_GIT_COMMIT';
 
