@@ -1630,11 +1630,11 @@ describe('ChatService', () => {
       });
     });
 
-    it('rejects client posts of server-originated kinds (points, system_audit)', async () => {
+    it('rejects client posts of server-originated kinds (points, system_audit, hours)', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockMessageRepo.create.mockResolvedValue(baseMessage);
 
-      for (const kind of ['points', 'system_audit'] as const) {
+      for (const kind of ['points', 'system_audit', 'hours'] as const) {
         await expect(
           service.sendMessage({
             chapter_id: 'ch-1',
