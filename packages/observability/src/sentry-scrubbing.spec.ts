@@ -224,6 +224,65 @@ describe("browser path — no salt available", () => {
       "sentry.source": "route",
     });
   });
+
+  it("reduces HTTP-shaped span descriptions to method + path-only (#2080)", () => {
+    const ingest = "https://us.i.posthog.com/i/v1/logs";
+    const credentialled = "https://svc:s3cr3t@us.i.posthog.com/i/v1/logs?token=abc";
+    const scrubbed = browser.scrubSentryTransaction({
+      transaction: `POST ${ingest}`,
+      spans: [
+        {
+          span_id: "s1",
+          op: "http.client",
+          description: `POST ${ingest}`,
+          data: {
+            "http.request.method": "POST",
+            "http.response.status_code": 200,
+          },
+        },
+        {
+          span_id: "s2",
+          op: "http.client",
+          description: `POST ${credentialled}`,
+        },
+      ],
+      contexts: {
+        trace: {
+          op: "http.client",
+          description: `POST ${ingest}`,
+        },
+      },
+    });
+
+    const json = serialize(scrubbed);
+    expect(json).not.toContain("us.i.posthog.com");
+    expect(json).not.toContain(ingest);
+    expect(json).not.toContain("s3cr3t");
+    expect(json).not.toContain("token=abc");
+    expect(json).toContain("POST /i/v1/logs");
+    // Span tree still survives — emptying it is the #896 failure mode.
+    expect(
+      (scrubbed as { spans?: unknown[] } | null)?.spans,
+    ).toHaveLength(2);
+
+    const spans = (
+      scrubbed as {
+        spans?: { description?: string }[];
+      } | null
+    )?.spans;
+    expect(spans?.[0]?.description).toBe("POST /i/v1/logs");
+    expect(spans?.[1]?.description).toBe("POST /i/v1/logs");
+    expect(
+      (scrubbed as { transaction?: string } | null)?.transaction,
+    ).toBe("POST /i/v1/logs");
+    expect(
+      (
+        scrubbed as {
+          contexts?: { trace?: { description?: string } };
+        } | null
+      )?.contexts?.trace?.description,
+    ).toBe("POST /i/v1/logs");
+  });
 });
 
 describe("shared rules hold regardless of which app binds them", () => {
@@ -440,7 +499,8 @@ describe("sentry scrubbing — URL authority", () => {
 
 /**
  * `userinfo` in a URL that reaches Sentry as *prose* rather than as a URL field
- * (#1388). `stripAuthority` covers `request.url` and the transaction name; a
+ * (#1388). `stripAuthority` covers `request.url`, the transaction name, and
+ * HTTP-shaped span descriptions; a
  * driver that cannot reach its database puts the whole DSN into the message it
  * throws, and that path is free text.
  */
