@@ -1,0 +1,11 @@
+{
+  "extends": "@repo/typescript-config/base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["es2022"],
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": ["next/**/*.ts", "next/**/*.js", "next/**/*.mjs"],
+  "exclude": ["next/**/*.spec.ts", "node_modules", "dist"]
+}
