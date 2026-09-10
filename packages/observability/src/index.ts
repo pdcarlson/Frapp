@@ -1,13 +1,21 @@
 /**
  * `@repo/observability` — browser-safe shared policy for Sentry/PostHog.
  *
- * This package owns scrubbing, correlation types, sample-rate parsing, and
+ * This barrel owns scrubbing, correlation types, sample-rate parsing, and
  * the constants that describe the intended split. It does **not** call
  * `Sentry.init` or construct a PostHog client. Those stay runtime-local to
  * NestJS, Next.js, and React Native.
  *
+ * Anonymous Next.js option builders (replay-off, both scrubber hooks,
+ * debug-ID webpack defaults, path-only analytics, session/replay tags)
+ * live on the `@repo/observability/next` entry. That entry exports **no**
+ * identify / group / `setUser` / `posthog_distinct_id` APIs. Identity stays
+ * in `apps/web`.
+ *
  * No DOM, no `node:*`, no `process.env`. The API is a CommonJS consumer, so
  * this package does not declare `"type": "module"` and its `dist` is CJS.
+ * `@repo/observability/next` is TypeScript source consumed via
+ * `transpilePackages` and is not compiled into `dist`.
  */
 
 export {
@@ -54,5 +62,9 @@ export {
   POSTHOG_PRODUCTION_REPLAY_ENABLED,
   OBSERVABILITY_PROVIDERS,
   SENTRY_ERROR_CORRELATED_EVENT,
+  SENTRY_ERROR_CORRELATED_PROPERTY_KEYS,
+  pickSentryErrorCorrelatedProperties,
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
 } from "./policy";
+
+export { pathOnlyAnalyticsPath } from "./analytics-path";

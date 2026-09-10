@@ -1,6 +1,6 @@
 import { withSentryConfig } from "@sentry/nextjs";
+import { getAnonymousSentryBuildConfig } from "@repo/observability/next/sentry-build-config.js";
 import { assertProductionLandingAppEnv } from "./lib/assert-production-app-env.js";
-import { getSentryBuildConfig } from "./lib/sentry/build-config.js";
 
 // Vercel Production (`VERCEL_ENV=production`) inlines NEXT_PUBLIC_APP_URL
 // into CTAs and the /join redirect. A staging origin 500s every request
@@ -89,4 +89,17 @@ const nextConfig = {
  * The wrapper applies regardless of whether a DSN is configured. The runtime
  * no-op is in `instrumentation.ts` / `instrumentation-client.ts`.
  */
-export default withSentryConfig(nextConfig, getSentryBuildConfig());
+export default withSentryConfig(
+  nextConfig,
+  getAnonymousSentryBuildConfig({
+    project: "frapp-landing",
+    authToken: process.env.SENTRY_AUTH_TOKEN,
+    errorHandler(err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        "[landing sentry] source map upload skipped; debug IDs remain in the bundle:",
+        message,
+      );
+    },
+  }),
+);

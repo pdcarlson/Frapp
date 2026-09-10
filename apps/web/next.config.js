@@ -1,6 +1,6 @@
 import { withSentryConfig } from "@sentry/nextjs";
+import { getAnonymousSentryBuildConfig } from "@repo/observability/next/sentry-build-config.js";
 import { assertProductionWebPublicEnv } from "./lib/assert-production-public-env.js";
-import { getSentryBuildConfig } from "./lib/sentry/build-config.js";
 
 // Vercel Production (`VERCEL_ENV=production`) inlines NEXT_PUBLIC_* into the
 // dashboard. Unset/staging/localhost would ship FrappProvider's
@@ -131,4 +131,10 @@ const nextConfig = {
  * unset is enforced separately, in `instrumentation.ts` and
  * `instrumentation-client.ts`, which skip `Sentry.init` entirely.
  */
-export default withSentryConfig(nextConfig, getSentryBuildConfig());
+export default withSentryConfig(
+  nextConfig,
+  getAnonymousSentryBuildConfig({
+    project: "frapp-web",
+    authToken: process.env.SENTRY_AUTH_TOKEN,
+  }),
+);
