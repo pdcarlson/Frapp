@@ -31,6 +31,12 @@ type AuthStatus = "hydrating" | "authenticated" | "unauthenticated";
 type AuthSessionContextValue = {
   status: AuthStatus;
   email: string | null;
+  /**
+   * Supabase auth uid. Changes on the same render as a magic-link account
+   * swap — chapter claim already keys on this. Observability identity must
+   * too; `useViewerUserId` can still hold the previous `["user","me"]` row.
+   */
+  userId: string | null;
   /** Resolved from the access token's `active_chapter_id` claim; see below. */
   chapterId: string | null;
   /**
@@ -496,6 +502,7 @@ export function AuthSessionProvider({
     () => ({
       status,
       email: session?.user?.email ?? null,
+      userId,
       chapterId,
       isChapterResolving,
       isConfigured: configured,
@@ -514,6 +521,7 @@ export function AuthSessionProvider({
       signInWithPassword,
       signOut,
       status,
+      userId,
     ],
   );
 

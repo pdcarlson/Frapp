@@ -546,6 +546,7 @@ describe("AuthSessionProvider — chapter context", () => {
     await waitFor(() =>
       expect(result.current.chapterId).toBe("chapter-uuid-1"),
     );
+    expect(result.current.userId).toBe("user-1");
 
     // A magic link can swap accounts with no sign-out in between. Retention is
     // scoped to one user precisely so the next member does not inherit this
@@ -559,6 +560,7 @@ describe("AuthSessionProvider — chapter context", () => {
     });
 
     await waitFor(() => expect(result.current.chapterId).toBeNull());
+    expect(result.current.userId).toBe("user-2");
   });
 });
 
