@@ -123,6 +123,7 @@ describe('ChatService', () => {
     mockChannelRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      findByIds: jest.fn(),
       findDm: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -3388,7 +3389,7 @@ describe('ChatService', () => {
       // filter is the only thing standing between a member and the knowledge
       // that two other members have an active private conversation. An unread
       // count alone is enough to leak that.
-      mockChannelRepo.findByChapter.mockResolvedValue([
+      mockChannelRepo.findByIds.mockResolvedValue([
         baseChannel,
         PRIVATE_OTHERS,
       ]);
@@ -3406,7 +3407,7 @@ describe('ChatService', () => {
 
     it('keeps a readable channel with nothing unread rather than dropping it', async () => {
       // The list needs a row per channel to render; a zero is a real answer.
-      mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+      mockChannelRepo.findByIds.mockResolvedValue([baseChannel]);
       mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([
         { channel_id: baseChannel.id, unread_count: 0, mention_count: 0 },
       ]);
@@ -3422,12 +3423,13 @@ describe('ChatService', () => {
       await expect(service.getUnreadCounts('ch-1', 'user-1')).resolves.toEqual(
         [],
       );
+      expect(mockChannelRepo.findByIds).not.toHaveBeenCalled();
       expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
     });
 
     it('returns nothing for a non-member rather than the whole chapter', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
-      mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+      mockChannelRepo.findByIds.mockResolvedValue([baseChannel]);
       mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([
         { channel_id: baseChannel.id, unread_count: 5, mention_count: 0 },
       ]);

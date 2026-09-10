@@ -91,6 +91,7 @@ describe('PollService', () => {
     mockChannelRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      findByIds: jest.fn(),
       findDm: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -131,7 +132,7 @@ describe('PollService', () => {
       id: 'm-1',
     });
     mockRbac.getEffectivePermissions.mockResolvedValue([]);
-    mockChannelRepo.findByChapter.mockResolvedValue([
+    mockChannelRepo.findByIds.mockResolvedValue([
       { ...baseChannel, id: 'channel-1', type: 'PUBLIC', member_ids: null },
     ]);
 
@@ -998,7 +999,7 @@ describe('PollService', () => {
         visiblePoll,
         hiddenPoll,
       ]);
-      mockChannelRepo.findByChapter.mockResolvedValue([
+      mockChannelRepo.findByIds.mockResolvedValue([
         { ...baseChannel, id: 'channel-1', type: 'PUBLIC', member_ids: null },
         {
           ...baseChannel,
