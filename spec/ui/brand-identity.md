@@ -19,7 +19,7 @@
 
 ## 2. The mark
 
-The shipping mark is **locked emblem B**: an abstract crest with a neck break, gold on charcoal. Treat it as a crest — never as a dog, seal, or mascot in marketing copy. Canonical files live in [`assets.md`](assets.md) (`packages/brand-assets/assets/app-icon.svg` and `signet-emblem-B-locked.png`). House UI accent stays `#EFB63B`; the mark itself is not that token.
+The shipping mark is **locked emblem B**: an abstract crest with a neck break, gold on charcoal. Treat it as a crest, never as a dog, seal, or mascot in marketing copy. Canonical master is Design's raster in [`assets.md`](assets.md) (`packages/brand-assets/assets/signet-emblem-B-locked.png`). House UI accent stays `#EFB63B`; the mark itself is not that token.
 
 | Fact             | Value                                                                                                                        |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |

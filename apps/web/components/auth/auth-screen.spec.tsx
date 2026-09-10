@@ -57,8 +57,11 @@ describe("the mark", () => {
     const { container } = render(<SignInPage />);
     const mark = container.querySelector(".signet-mark");
     expect(mark).not.toBeNull();
-    expect(mark!.innerHTML).toContain("#1A1A1A");
-    expect(mark!.innerHTML).toContain("#DDB844");
+    expect(mark!.getAttribute("data-field")).toBe("#1A1A1A");
+    expect(mark!.getAttribute("data-gold")).toBe("#DDB844");
+    expect(mark!.querySelector("img")?.getAttribute("src")).toBe(
+      "/brand/signet-emblem-B.png",
+    );
     expect(mark!.getAttribute("aria-hidden")).toBe("true");
     expect(mark!.className).not.toMatch(/\bbg-primary\b/);
   });
