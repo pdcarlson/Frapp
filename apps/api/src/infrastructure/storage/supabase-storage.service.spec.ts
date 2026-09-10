@@ -1,4 +1,7 @@
-import { BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseStorageService } from './supabase-storage.service';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
