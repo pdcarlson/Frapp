@@ -8,7 +8,10 @@
  * rule (no NaN propagation) holds.
  */
 
-import { POINTS_REASON_MAX_LENGTH } from "@repo/validation";
+import {
+  POINTS_ADJUSTMENT_MAX,
+  POINTS_REASON_MAX_LENGTH,
+} from "@repo/validation";
 
 /** Result of a successful parse for `/poll`. */
 export interface PollArgs {
@@ -45,6 +48,13 @@ export interface PointsArgs {
   reason: string;
   /** grant → MANUAL (reward), deduct → FINE (penalty). Matches `point_transactions.category`. */
   category: "MANUAL" | "FINE";
+}
+
+/** Result of a successful parse for `/hours log`. */
+export interface HoursArgs {
+  /** Duration in whole minutes (≥ 1), matching `CreateServiceEntryDto`. */
+  durationMinutes: number;
+  description: string;
 }
 
 /** Result of a successful parse for `/event`. */
@@ -425,6 +435,96 @@ export function parseEventArgs(args: string): ParseResult<EventArgs> {
       pointValue,
     },
   };
+}
+
+const HOURS_DESCRIPTION_MAX = 2000;
+const HOURS_USAGE = "Usage: /hours log <duration> <description>";
+
+/**
+ * Parse a duration token into whole minutes.
+ *
+ * Accepted forms:
+ * - `2h` / `2.5h` — hours (fractional hours round to the nearest minute)
+ * - `90m` / `90min` — minutes
+ * - a bare number — hours, matching the catalog hint `log <amount>`
+ *
+ * Returns `null` for anything that is not a finite positive duration so
+ * callers never propagate `NaN`. Values above {@link POINTS_ADJUSTMENT_MAX}
+ * minutes (the same ceiling as `CreateServiceEntryDto`) are `null` too.
+ */
+function parseDurationToMinutes(token: string | undefined): number | null {
+  if (!token) return null;
+  const t = token.trim().toLowerCase();
+  let minutes: number | null = null;
+  const hourMatch = /^(\d+(?:\.\d+)?)h$/.exec(t);
+  if (hourMatch) {
+    minutes = Math.round(Number(hourMatch[1]) * 60);
+  } else {
+    const minMatch = /^(\d+(?:\.\d+)?)(?:m|min)$/.exec(t);
+    if (minMatch) {
+      minutes = Math.round(Number(minMatch[1]));
+    } else if (/^\d+(?:\.\d+)?$/.test(t)) {
+      minutes = Math.round(Number(t) * 60);
+    }
+  }
+  if (
+    minutes === null ||
+    !Number.isInteger(minutes) ||
+    minutes < 1 ||
+    minutes > POINTS_ADJUSTMENT_MAX
+  ) {
+    return null;
+  }
+  return minutes;
+}
+
+/**
+ * Parse `/hours log <duration> <description>`. The only implemented action is
+ * `log`; `/hours review` is dashboard-only and is not a slash surface. Duration
+ * accepts `2h`, `90m`/`90min`, or a bare number of hours. Description is
+ * everything after the duration (quoted spans allowed, same tokenizer as
+ * `/poll`). Date is not parsed here — dispatch stamps today's local
+ * `YYYY-MM-DD`. Chat cannot attach proof; when `wf_hours_receipt` is on, the
+ * API 400s and that is the correct UX.
+ */
+export function parseHoursArgs(args: string): ParseResult<HoursArgs> {
+  const tokens = tokenizeQuotedArgs(args.trim());
+  if (tokens === null) {
+    return { ok: false, error: "Unterminated quote in /hours arguments" };
+  }
+  if (tokens.length === 0) {
+    return { ok: false, error: HOURS_USAGE };
+  }
+
+  const action = tokens[0]!.toLowerCase();
+  if (action !== "log") {
+    return {
+      ok: false,
+      error: `Unknown /hours action "${tokens[0]}". ${HOURS_USAGE}`,
+    };
+  }
+
+  const durationMinutes = parseDurationToMinutes(tokens[1]);
+  if (durationMinutes === null) {
+    return {
+      ok: false,
+      error:
+        "Duration must be a positive amount (e.g. 2h, 90m, or 2 for two hours)",
+    };
+  }
+
+  const description = tokens.slice(2).join(" ").trim();
+  if (description.length === 0) {
+    return { ok: false, error: "A description of the service is required" };
+  }
+  if (description.length > HOURS_DESCRIPTION_MAX) {
+    return {
+      ok: false,
+      error: `Description is too long (max ${HOURS_DESCRIPTION_MAX} chars)`,
+    };
+  }
+
+  return { ok: true, value: { durationMinutes, description } };
 }
 
 /**

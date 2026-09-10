@@ -8,9 +8,19 @@ import { SupabaseStorageService } from '../../infrastructure/storage/supabase-st
 import { RbacModule } from '../rbac/rbac.module';
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
+import { ChatModule } from '../chat/chat.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [RbacModule, NotificationModule, ChapterConfigModule],
+  // ChatModule → ChatService (posts the /hours card); AuthModule → USER_REPOSITORY
+  // (resolves the member display name embedded in the card payload).
+  imports: [
+    RbacModule,
+    NotificationModule,
+    ChapterConfigModule,
+    ChatModule,
+    AuthModule,
+  ],
   controllers: [ServiceEntryController],
   providers: [
     ServiceEntryService,

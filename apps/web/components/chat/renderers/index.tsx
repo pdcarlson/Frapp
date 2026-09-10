@@ -4,6 +4,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { AnnouncementCard } from "./announcement-card";
 import { ComingSoonCard } from "./coming-soon-card";
 import { EventCard } from "./event-card";
+import { HoursCard } from "./hours-card";
 import { LoadingCard } from "./loading-card";
 import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
@@ -106,8 +107,9 @@ export function MessageRenderer({
       );
     case "event":
       return <EventCard message={message} isConfirmed={isConfirmed} />;
-    case "dues":
     case "hours":
+      return <HoursCard message={message} />;
+    case "dues":
       return <ComingSoonCard message={message} />;
     default:
       return <TextRenderer message={message} isSelf={isSelf} />;
