@@ -9,38 +9,18 @@ import {
   type AnalyticsProperties,
   type CurrentChapterPayload,
 } from "@repo/validation";
-import { applyAnalyticsOptOut } from "@repo/observability/identified-posthog";
+import {
+  applyAnalyticsOptOut,
+  namedAnalyticsEventBody,
+} from "@repo/observability/identified-posthog";
 
 /**
- * Pseudonymous analytics for the mobile app (issue #464) — the Expo mirror of
- * the web provider.
+ * Expo `track` for named product events. Posts `POST /v1/analytics/events`
+ * only — PostHog RN does not capture those names. Without an active chapter
+ * the server cannot apply per-chapter opt-out, so `track` is a no-op.
  *
- * The client never holds the per-environment salt. It posts behavioral events
- * to the API (`POST /v1/analytics/events`), which derives the pseudonymous key
- * `hmac_sha256(salt, user_id)` server-side and enforces the per-chapter
- * opt-out. The raw user id never reaches the analytics provider, and the salt
- * never ships in the app bundle. See `spec/behavior/data-retention.md`
- * (#analytics-events-pseudonymous).
- *
- * Client-side opt-out is the fourth shared gate (`isAnalyticsOptedOut` in
- * `@repo/validation`), next to `can`, `isModuleEnabled`, and
- * `subscriptionWriteState`. The flag is read from `useCurrentChapter()` —
- * the same `GET /v1/chapters/current` payload mobile already uses for
- * `enabled_modules` — not a mobile-only one-off.
- *
- * `track` posts named product events to the API only. PostHog RN does **not**
- * capture those names — the API adapter already forwards them, and a second
- * `posthog.capture` would double-count. The SDK is identify / groups / flags /
- * replay-gates / the `sentry-error-correlated` marker.
- *
- * `track` is fire-and-forget so a failed event never disrupts the UI.
- *
- * Without an active chapter id the server cannot apply the per-chapter
- * opt-out to a client event, so `track` is a no-op until one exists.
- *
- * There is no `useAnalytics` convenience hook — it had zero production
- * callers. Opt-out is enforced inside `track` itself, so a future emitter
- * that reads this context inherits the gate without a wrapper.
+ * Opt-out is read from `useCurrentChapter()` (`GET /v1/chapters/current`),
+ * not `useOrgConfig`. Fire-and-forget: a failed post never surfaces in UI.
  */
 type TrackFn = (name: string, properties?: AnalyticsProperties) => void;
 
@@ -61,25 +41,22 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
 
   const track = useCallback<TrackFn>(
     (name, properties) => {
-      if (!chapterId) return;
       if (optedOut) return;
+      const body = namedAnalyticsEventBody({
+        name,
+        chapterId,
+        properties,
+        requireChapter: true,
+      });
+      if (!body) return;
       void client
-        .POST("/v1/analytics/events", {
-          body: {
-            name,
-            chapter_id: chapterId,
-            ...(properties ? { properties } : {}),
-          },
-        })
-        .catch(() => {
-          // Best-effort: analytics must never surface an error to the user.
-        });
+        .POST("/v1/analytics/events", { body })
+        .catch(() => undefined);
     },
-    [client, chapterId, optedOut],
+    [chapterId, client, optedOut],
   );
 
   const value = useMemo(() => track, [track]);
-
   return (
     <AnalyticsContext.Provider value={value}>
       {children}

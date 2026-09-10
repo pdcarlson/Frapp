@@ -3,81 +3,88 @@ import { useContext } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { mockPost, mockUseCurrentChapter, applyAnalyticsOptOut } = vi.hoisted(
-  () => ({
-    mockPost: vi.fn(),
-    mockUseCurrentChapter: vi.fn(),
-    applyAnalyticsOptOut: vi.fn(),
-  }),
-);
+const harness = vi.hoisted(() => ({
+  post: vi.fn(),
+  chapter: vi.fn(),
+  activeChapter: "chap-mobile" as string | null,
+  optOut: vi.fn(),
+}));
 
 vi.mock("@repo/hooks", () => ({
-  useFrappClient: () => ({ POST: mockPost }),
-  useActiveChapterId: () => "chap-1",
-  useCurrentChapter: () => mockUseCurrentChapter(),
+  useFrappClient: () => ({ POST: harness.post }),
+  useActiveChapterId: () => harness.activeChapter,
+  useCurrentChapter: () => harness.chapter(),
 }));
 
-vi.mock("@repo/observability/identified-posthog", () => ({
-  applyAnalyticsOptOut: (...args: unknown[]) => applyAnalyticsOptOut(...args),
-}));
+vi.mock("@repo/observability/identified-posthog", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@repo/observability/identified-posthog")>();
+  return {
+    ...actual,
+    applyAnalyticsOptOut: (...args: unknown[]) => harness.optOut(...args),
+  };
+});
 
 const { AnalyticsProvider, AnalyticsContext } = await import(
   "./analytics-provider"
 );
 
-function Emitter() {
+function TrackButton({ eventName }: { eventName: string }) {
   const track = useContext(AnalyticsContext) ?? (() => {});
   return (
-    <button type="button" onClick={() => track("opened-channel")}>
-      emit
+    <button type="button" onClick={() => track(eventName)}>
+      send
     </button>
   );
 }
 
-function renderWithOptOut(optOut: boolean | undefined) {
-  mockUseCurrentChapter.mockReturnValue({
+function mountProvider(optOut: boolean | undefined) {
+  harness.chapter.mockReturnValue({
     data: { analytics_opt_out: optOut },
   });
   render(
     <AnalyticsProvider>
-      <Emitter />
+      <TrackButton eventName="logged-hours" />
     </AnalyticsProvider>,
   );
 }
 
-describe("mobile AnalyticsProvider client-side opt-out", () => {
+describe("mobile AnalyticsProvider", () => {
   beforeEach(() => {
-    mockPost.mockReset();
-    mockPost.mockResolvedValue({ data: {}, error: undefined });
-    mockUseCurrentChapter.mockReset();
-    applyAnalyticsOptOut.mockReset();
+    harness.activeChapter = "chap-mobile";
+    harness.post.mockReset();
+    harness.post.mockResolvedValue({ data: {}, error: undefined });
+    harness.chapter.mockReset();
+    harness.optOut.mockReset();
   });
 
-  it("posts the event when the chapter has not opted out", () => {
-    renderWithOptOut(false);
-    fireEvent.click(screen.getByText("emit"));
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    expect(mockPost).toHaveBeenCalledWith(
-      "/v1/analytics/events",
-      expect.objectContaining({
-        body: expect.objectContaining({
-          name: "opened-channel",
-          chapter_id: "chap-1",
-        }),
-      }),
-    );
+  it("posts logged-hours with the active chapter when opt-out is false", () => {
+    mountProvider(false);
+    fireEvent.click(screen.getByRole("button", { name: "send" }));
+    expect(harness.post).toHaveBeenCalledTimes(1);
+    expect(harness.post.mock.calls[0]?.[0]).toBe("/v1/analytics/events");
+    expect(harness.post.mock.calls[0]?.[1]).toEqual({
+      body: { name: "logged-hours", chapter_id: "chap-mobile" },
+    });
   });
 
-  it("emits zero events when the chapter has opted out", () => {
-    renderWithOptOut(true);
-    fireEvent.click(screen.getByText("emit"));
-    expect(mockPost).not.toHaveBeenCalled();
-    expect(applyAnalyticsOptOut).toHaveBeenCalledWith(true);
+  it("does not POST when the chapter opted out, and still tells the SDK", () => {
+    mountProvider(true);
+    fireEvent.click(screen.getByRole("button", { name: "send" }));
+    expect(harness.post).not.toHaveBeenCalled();
+    expect(harness.optOut).toHaveBeenCalledWith(true);
   });
 
-  it("fails open when the flag is missing from the chapter payload", () => {
-    renderWithOptOut(undefined);
-    fireEvent.click(screen.getByText("emit"));
-    expect(mockPost).toHaveBeenCalledTimes(1);
+  it("treats a missing analytics_opt_out as opted in", () => {
+    mountProvider(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "send" }));
+    expect(harness.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a no-op until an active chapter exists", () => {
+    harness.activeChapter = null;
+    mountProvider(false);
+    fireEvent.click(screen.getByRole("button", { name: "send" }));
+    expect(harness.post).not.toHaveBeenCalled();
   });
 });

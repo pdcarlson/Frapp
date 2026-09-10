@@ -6,8 +6,8 @@ import { useActiveChapterId, useFrappClient } from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import { webSentryDsn } from "@/lib/sentry/options";
 import {
-  applyObservabilityIdentity,
-  fetchAnalyticsIdentity,
+  applyFetchedObservabilityIdentity,
+  observabilityIdentityQueryOptions,
 } from "@repo/observability/identified-posthog";
 import { isPostHogConfigured } from "@/lib/posthog/config";
 
@@ -32,20 +32,16 @@ export function ObservabilityIdentityProvider({
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const fetchEnabled = Boolean(webSentryDsn()) || isPostHogConfigured();
-
-  const { data } = useQuery({
-    queryKey: ["observability-identity", chapterId ?? "none"],
-    queryFn: () =>
-      fetchAnalyticsIdentity(() => client.GET("/v1/analytics/identity")),
-    enabled: fetchEnabled,
-    staleTime: Infinity,
-    retry: false,
-  });
+  const { data } = useQuery(
+    observabilityIdentityQueryOptions(
+      chapterId,
+      () => client.GET("/v1/analytics/identity"),
+      fetchEnabled,
+    ),
+  );
 
   useEffect(() => {
-    if (!fetchEnabled) return;
-    if (data === undefined) return;
-    applyObservabilityIdentity(data, Sentry.setUser);
+    applyFetchedObservabilityIdentity(fetchEnabled, data, Sentry.setUser);
   }, [data, fetchEnabled]);
 
   return <>{children}</>;

@@ -7,65 +7,67 @@ import {
   createMemoryPostHogAdapter,
 } from "@repo/observability/identified-posthog";
 
-const HEX = "a".repeat(64);
-const OTHER = "b".repeat(64);
+const DISTINCT = "c".repeat(64);
+const CHAPTER_GROUP = "d".repeat(64);
 
-const state = vi.hoisted(() => ({
-  chapterId: "chap-1" as string | null,
-  status: "authenticated" as "authenticated" | "unauthenticated" | "hydrating",
-  get: vi.fn(),
-  dsn: "https://examplepublickey@o0.ingest.sentry.io/0" as string | undefined,
-  posthog: true,
+const session = vi.hoisted(() => ({
+  auth: "authenticated" as "authenticated" | "unauthenticated" | "hydrating",
+  chapter: "mobile-chap" as string | null,
+  getIdentity: vi.fn(),
+  sentryDsn: "https://examplepublickey@o0.ingest.sentry.io/0" as
+    | string
+    | undefined,
+  posthogReady: true,
 }));
 
-const setUser = vi.hoisted(() => vi.fn());
+const sentrySetUser = vi.hoisted(() => vi.fn());
 
 vi.mock("@repo/hooks", () => ({
-  useFrappClient: () => ({ GET: state.get }),
-  useActiveChapterId: () => state.chapterId,
+  useFrappClient: () => ({ GET: session.getIdentity }),
+  useActiveChapterId: () => session.chapter,
 }));
 
 vi.mock("@/lib/auth-session", () => ({
-  useAuthSession: () => ({ status: state.status }),
+  useAuthSession: () => ({ status: session.auth }),
 }));
 
 vi.mock("@/lib/sentry/options", () => ({
-  mobileSentryDsn: () => state.dsn,
+  mobileSentryDsn: () => session.sentryDsn,
 }));
 
 vi.mock("@/lib/posthog/config", () => ({
-  isPostHogConfigured: () => state.posthog,
+  isPostHogConfigured: () => session.posthogReady,
 }));
 
 vi.mock("@sentry/react-native", () => ({
-  setUser,
+  setUser: sentrySetUser,
 }));
 
 const { ObservabilityIdentityProvider } = await import(
   "./observability-identity-provider"
 );
 
-function renderProvider() {
-  const qc = new QueryClient({
+function mountIdentityTree() {
+  const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
-    <QueryClientProvider client={qc}>
+    <QueryClientProvider client={client}>
       <ObservabilityIdentityProvider>
-        <div />
+        <span>child</span>
       </ObservabilityIdentityProvider>
     </QueryClientProvider>,
   );
 }
 
-describe("ObservabilityIdentityProvider", () => {
+describe("mobile ObservabilityIdentityProvider", () => {
   beforeEach(() => {
-    state.chapterId = "chap-1";
-    state.status = "authenticated";
-    state.dsn = "https://examplepublickey@o0.ingest.sentry.io/0";
-    state.posthog = true;
-    state.get.mockReset();
-    setUser.mockReset();
+    session.chapter = "mobile-chap";
+    session.auth = "authenticated";
+    session.sentryDsn = "https://examplepublickey@o0.ingest.sentry.io/0";
+    session.posthogReady = true;
+    session.getIdentity.mockReset();
+    sentrySetUser.mockReset();
     bindPostHogAdapterForTests(null);
   });
 
@@ -73,30 +75,43 @@ describe("ObservabilityIdentityProvider", () => {
     bindPostHogAdapterForTests(null);
   });
 
-  it("wires the shared helper after the member is authenticated", async () => {
+  it("fetches identity only after auth, then applies the shared helper", async () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);
-    state.get.mockResolvedValue({
-      data: { enabled: true, distinct_id: HEX, chapter_group_id: OTHER },
+    session.getIdentity.mockResolvedValue({
+      data: {
+        enabled: true,
+        distinct_id: DISTINCT,
+        chapter_group_id: CHAPTER_GROUP,
+      },
       error: undefined,
     });
-    renderProvider();
+
+    mountIdentityTree();
+
     await waitFor(() => {
-      expect(setUser).toHaveBeenCalledWith({ id: HEX });
+      expect(sentrySetUser).toHaveBeenCalledWith({ id: DISTINCT });
     });
-    expect(state.get).toHaveBeenCalledWith("/v1/analytics/identity");
+    expect(session.getIdentity).toHaveBeenCalledWith("/v1/analytics/identity");
+    expect(memory.calls).toEqual(
+      expect.arrayContaining([
+        { type: "identify", distinctId: DISTINCT },
+        { type: "group", groupType: "chapter", groupKey: CHAPTER_GROUP },
+      ]),
+    );
   });
 
-  it("skips the identity request when neither Sentry nor PostHog is configured", () => {
-    state.dsn = undefined;
-    state.posthog = false;
-    renderProvider();
-    expect(state.get).not.toHaveBeenCalled();
+  it("does not call GET /v1/analytics/identity on the auth screens", () => {
+    session.auth = "unauthenticated";
+    mountIdentityTree();
+    expect(session.getIdentity).not.toHaveBeenCalled();
+    expect(sentrySetUser).not.toHaveBeenCalled();
   });
 
-  it("skips the identity request until the member is authenticated", () => {
-    state.status = "unauthenticated";
-    renderProvider();
-    expect(state.get).not.toHaveBeenCalled();
+  it("does not call GET /v1/analytics/identity when both vendors are dark", () => {
+    session.sentryDsn = undefined;
+    session.posthogReady = false;
+    mountIdentityTree();
+    expect(session.getIdentity).not.toHaveBeenCalled();
   });
 });

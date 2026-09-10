@@ -18,9 +18,16 @@ vi.mock("@repo/hooks", () => ({
   useOrgConfig: () => mockUseOrgConfig(),
 }));
 
-vi.mock("@repo/observability/identified-posthog", () => ({
-  applyAnalyticsOptOut: (...args: unknown[]) => applyAnalyticsOptOut(...args),
-}));
+vi.mock("@repo/observability/identified-posthog", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@repo/observability/identified-posthog")
+    >();
+  return {
+    ...actual,
+    applyAnalyticsOptOut: (...args: unknown[]) => applyAnalyticsOptOut(...args),
+  };
+});
 
 const { AnalyticsProvider, AnalyticsContext } = await import(
   "./analytics-provider"

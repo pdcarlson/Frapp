@@ -53,6 +53,9 @@ describe("public API", () => {
     expect("validatedDistinctId" in barrel).toBe(false);
     expect("applyAnalyticsIdentity" in barrel).toBe(false);
     expect("applyObservabilityIdentity" in barrel).toBe(false);
+    expect("applyFetchedObservabilityIdentity" in barrel).toBe(false);
+    expect("namedAnalyticsEventBody" in barrel).toBe(false);
+    expect("observabilityIdentityQueryOptions" in barrel).toBe(false);
     expect("createMemoryPostHogAdapter" in barrel).toBe(false);
     expect("attachPostHogCorrelation" in barrel).toBe(false);
     expect("withPostHogSentryCorrelation" in barrel).toBe(false);

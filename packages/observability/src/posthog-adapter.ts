@@ -170,6 +170,43 @@ export function applyObservabilityIdentity(
   setSentryUser(distinctId ? { id: distinctId } : null);
 }
 
+/**
+ * Apply only after the identity query has settled. `undefined` is still
+ * loading; `null` is a fetched empty payload and clears identify / Sentry.
+ */
+export function applyFetchedObservabilityIdentity(
+  fetchEnabled: boolean,
+  identity: AnalyticsIdentity | null | undefined,
+  setSentryUser: (user: { id: string } | null) => void,
+): void {
+  if (!fetchEnabled || identity === undefined) return;
+  applyObservabilityIdentity(identity, setSentryUser);
+}
+
+export type NamedAnalyticsEventBody = {
+  name: string;
+  chapter_id?: string;
+  properties?: Record<string, unknown>;
+};
+
+/**
+ * Body for `POST /v1/analytics/events`. Named product events never go to the
+ * vendor SDK. Returns `null` when a chapter id is required and missing.
+ */
+export function namedAnalyticsEventBody(input: {
+  name: string;
+  chapterId?: string | null;
+  properties?: Record<string, unknown>;
+  requireChapter?: boolean;
+}): NamedAnalyticsEventBody | null {
+  if (input.requireChapter && !input.chapterId) return null;
+  return {
+    name: input.name,
+    ...(input.chapterId ? { chapter_id: input.chapterId } : {}),
+    ...(input.properties == undefined ? {} : { properties: input.properties }),
+  };
+}
+
 export function resetPostHog(): void {
   currentAdapter()?.reset();
 }

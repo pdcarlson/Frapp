@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   fetchAnalyticsIdentity,
+  observabilityIdentityQueryKey,
+  observabilityIdentityQueryOptions,
   validatedChapterGroupId,
   validatedDistinctId,
 } from "./identity";
@@ -55,5 +57,29 @@ describe("fetchAnalyticsIdentity", () => {
       fetchAnalyticsIdentity(async () => ({ error: new Error("nope") })),
     ).rejects.toThrow("nope");
     await expect(fetchAnalyticsIdentity(async () => ({}))).resolves.toBeNull();
+  });
+});
+
+describe("observabilityIdentityQueryKey / options", () => {
+  it("keys the query on the chapter, or none", () => {
+    expect(observabilityIdentityQueryKey("chap-1")).toEqual([
+      "observability-identity",
+      "chap-1",
+    ]);
+    expect(observabilityIdentityQueryKey(null)).toEqual([
+      "observability-identity",
+      "none",
+    ]);
+  });
+
+  it("disables the query when the app says so", () => {
+    const options = observabilityIdentityQueryOptions(
+      "chap-1",
+      async () => ({}),
+      false,
+    );
+    expect(options.enabled).toBe(false);
+    expect(options.retry).toBe(false);
+    expect(options.queryKey).toEqual(["observability-identity", "chap-1"]);
   });
 });

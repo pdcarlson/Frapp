@@ -10,6 +10,8 @@ export {
   validatedDistinctId,
   validatedChapterGroupId,
   fetchAnalyticsIdentity,
+  observabilityIdentityQueryKey,
+  observabilityIdentityQueryOptions,
 } from "./identity";
 
 export {
@@ -22,6 +24,8 @@ export {
   applyAnalyticsOptOut,
   applyAnalyticsIdentity,
   applyObservabilityIdentity,
+  applyFetchedObservabilityIdentity,
+  namedAnalyticsEventBody,
   resetPostHog,
   getPostHogDistinctId,
   getPostHogSessionId,
@@ -30,7 +34,11 @@ export {
   captureSentryErrorCorrelated,
   captureAnalyticsEvent,
 } from "./posthog-adapter";
-export type { PostHogAdapter, MemoryPostHogCall } from "./posthog-adapter";
+export type {
+  PostHogAdapter,
+  MemoryPostHogCall,
+  NamedAnalyticsEventBody,
+} from "./posthog-adapter";
 
 export {
   attachPostHogCorrelation,

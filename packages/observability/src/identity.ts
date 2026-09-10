@@ -38,3 +38,28 @@ export async function fetchAnalyticsIdentity(
   if (error) throw error;
   return data ?? null;
 }
+
+/** TanStack Query key for `GET /v1/analytics/identity` (chapter switches refetch). */
+export function observabilityIdentityQueryKey(
+  chapterId: string | null | undefined,
+): readonly ["observability-identity", string] {
+  return ["observability-identity", chapterId ?? "none"];
+}
+
+/**
+ * Shared `useQuery` options for the identity providers. Apps still own the
+ * `enabled` predicate (web: vendor DSNs; mobile: authenticated + vendors).
+ */
+export function observabilityIdentityQueryOptions(
+  chapterId: string | null | undefined,
+  get: () => Promise<{ data?: AnalyticsIdentity | null; error?: unknown }>,
+  enabled: boolean,
+) {
+  return {
+    queryKey: observabilityIdentityQueryKey(chapterId),
+    queryFn: () => fetchAnalyticsIdentity(get),
+    enabled,
+    staleTime: Infinity,
+    retry: false as const,
+  };
+}

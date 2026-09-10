@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SENTRY_ERROR_CORRELATED_EVENT } from "./policy";
 import {
   applyAnalyticsIdentity,
   applyAnalyticsOptOut,
+  applyFetchedObservabilityIdentity,
   applyObservabilityIdentity,
+  namedAnalyticsEventBody,
   bindPostHogAdapterForTests,
   captureSentryErrorCorrelated,
   createMemoryPostHogAdapter,
@@ -114,6 +116,43 @@ describe("identity, groups, logout, opt-out", () => {
       setUser,
     );
     expect(lastUser).toBeNull();
+  });
+
+  it("does not apply identity while the query is still loading", () => {
+    const setUser = vi.fn();
+    applyFetchedObservabilityIdentity(true, undefined, setUser);
+    expect(setUser).not.toHaveBeenCalled();
+    applyFetchedObservabilityIdentity(false, null, setUser);
+    expect(setUser).not.toHaveBeenCalled();
+  });
+});
+
+describe("namedAnalyticsEventBody", () => {
+  it("omits chapter and properties when they are absent", () => {
+    expect(namedAnalyticsEventBody({ name: "opened-channel" })).toEqual({
+      name: "opened-channel",
+    });
+  });
+
+  it("requires a chapter when asked, then includes it", () => {
+    expect(
+      namedAnalyticsEventBody({
+        name: "logged-hours",
+        requireChapter: true,
+      }),
+    ).toBeNull();
+    expect(
+      namedAnalyticsEventBody({
+        name: "logged-hours",
+        chapterId: "chap-1",
+        properties: { minutes: 60 },
+        requireChapter: true,
+      }),
+    ).toEqual({
+      name: "logged-hours",
+      chapter_id: "chap-1",
+      properties: { minutes: 60 },
+    });
   });
 });
 
