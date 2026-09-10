@@ -5,7 +5,6 @@ import {
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
   POSTHOG_EXCEPTION_AUTOCAPTURE,
   SENTRY_ERROR_CORRELATED_EVENT,
-  SENTRY_ERROR_CORRELATED_PROPERTY_KEYS,
   formatSampleRateWarning,
   isPseudonymHex,
   parseSampleRate,
@@ -19,18 +18,6 @@ import { NoopAnalyticsProvider } from './noop-analytics.provider';
 import { NoopFeatureFlagProvider } from './noop-feature-flags.provider';
 import { parsePosthogConfig, type PosthogConfig } from './posthog-config';
 import type { PosthogFetch } from './posthog-transport';
-
-/**
- * Content-free `sentry-error-correlated` properties named in
- * `spec/behavior/observability.md` § Privacy and replay. Unknown keys are
- * dropped rather than forwarded — exception type, stack, message, body, and
- * query string must never ride along even if a caller passes them.
- */
-export const SENTRY_ERROR_CORRELATED_ALLOWLIST =
-  SENTRY_ERROR_CORRELATED_PROPERTY_KEYS;
-
-export type SentryErrorCorrelatedProperty =
-  (typeof SENTRY_ERROR_CORRELATED_PROPERTY_KEYS)[number];
 
 export interface SanitizedLogRecord {
   body: string;
@@ -152,17 +139,11 @@ export class PosthogRuntime {
     distinctId: string,
     properties: Record<string, unknown>,
   ): void {
-    const sanitized: Record<string, string> = {};
-    for (const [key, value] of Object.entries(properties)) {
-      if (!MARKER_ALLOWLIST.has(key)) continue;
-      if (typeof value !== 'string' || value.length === 0) continue;
-      sanitized[key] = value;
-    }
     this.client.capture({
       distinctId,
       event: SENTRY_ERROR_CORRELATED_EVENT,
       properties: {
-        ...sanitized,
+        ...pickSentryErrorCorrelatedProperties(properties),
         $process_person_profile: false,
       },
       sendFeatureFlags: false,
