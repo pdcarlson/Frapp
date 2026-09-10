@@ -65,7 +65,7 @@ export const LocationPrimerSheet = forwardRef<
 
         <View style={styles.points}>
           <Text style={styles.point}>
-            · Location is read only while Signet is open — never in the background.
+            · Location is read only while Signet is open, never in the background.
           </Text>
           <Text style={styles.point}>
             · Nothing is stored beyond the zone check itself.

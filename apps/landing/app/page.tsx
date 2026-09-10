@@ -97,7 +97,7 @@ const faqs = [
   {
     question: "Is there a trial period?",
     answer:
-      "Yes, every new chapter starts with a 14-day trial so your leadership team can evaluate fit.",
+      "Yes. Every new chapter starts with a 14-day trial.",
   },
   {
     question: "Can alumni and active members both use Signet?",

@@ -20,8 +20,8 @@ on #1829 / #1901 — this file is the listing paste, not the trademark search.
 | Subtitle (iOS, 30 chars) / Short description (Android, 80 chars) | Your chapter, in one place |
 | Bundle id / package | `live.frapp.mobile` |
 | Category | Productivity (primary); Social Networking (secondary, iOS) |
-| Age rating | 4+ / Everyone — no user-generated content is public; chat is private to a chapter |
-| Price | Free (chapters pay a subscription through the web dashboard; the app has no in-app purchases — the only payment in the app is a member paying their own chapter's dues by card, a real-world service) |
+| Age rating | 4+ / Everyone (chat is private to a chapter; no public user-generated content) |
+| Price | Free (chapters subscribe on the web dashboard. The app has no in-app purchases. The only payment in the app is a member paying their own chapter's dues by card, a real-world service.) |
 | Privacy policy URL | https://frapp.live/privacy |
 | Terms URL | https://frapp.live/terms |
 | Support URL | https://frapp.live/support |
