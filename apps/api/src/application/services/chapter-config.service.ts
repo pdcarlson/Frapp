@@ -35,6 +35,7 @@ import {
   type PointsConfig,
 } from './chapter-points-config.service';
 import { ActivationService } from './activation.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * Paid module keys, read from the catalog rather than a second hand-kept list —
@@ -421,7 +422,12 @@ export class ChapterConfigService {
       .maybeSingle();
 
     if (error) {
-      this.logger.error('Failed to validate default invite role', error);
+      logThrowable(
+        this.logger,
+        'error',
+        'Failed to validate default invite role',
+        error,
+      );
       throw error;
     }
     if (!data) {
@@ -678,7 +684,12 @@ export class ChapterConfigService {
         .eq('id', chapterId);
 
       if (updateError) {
-        this.logger.error('Failed to update chapter config', updateError);
+        logThrowable(
+          this.logger,
+          'error',
+          'Failed to update chapter config',
+          updateError,
+        );
         throw updateError;
       }
     }
@@ -689,7 +700,12 @@ export class ChapterConfigService {
         .upsert(workflowUpserts, { onConflict: 'chapter_id,key' });
 
       if (workflowError) {
-        this.logger.error('Failed to update chapter workflows', workflowError);
+        logThrowable(
+          this.logger,
+          'error',
+          'Failed to update chapter workflows',
+          workflowError,
+        );
         throw workflowError;
       }
     }
@@ -700,7 +716,12 @@ export class ChapterConfigService {
         .upsert(duesUpsert, { onConflict: 'chapter_id' });
 
       if (duesError) {
-        this.logger.error('Failed to update chapter dues config', duesError);
+        logThrowable(
+          this.logger,
+          'error',
+          'Failed to update chapter dues config',
+          duesError,
+        );
         throw duesError;
       }
     }
@@ -711,7 +732,9 @@ export class ChapterConfigService {
         .upsert(serviceUpsert, { onConflict: 'chapter_id' });
 
       if (serviceError) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           'Failed to update chapter service config',
           serviceError,
         );
@@ -725,7 +748,9 @@ export class ChapterConfigService {
         .upsert(pointsUpsert, { onConflict: 'chapter_id' });
 
       if (pointsError) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           'Failed to update chapter points config',
           pointsError,
         );
@@ -750,7 +775,12 @@ export class ChapterConfigService {
       .insert(audit);
 
     if (auditError) {
-      this.logger.error('Failed to write chapter audit log', auditError);
+      logThrowable(
+        this.logger,
+        'error',
+        'Failed to write chapter audit log',
+        auditError,
+      );
       throw auditError;
     }
 
@@ -790,7 +820,7 @@ export class ChapterConfigService {
         const build = await this.recomputePalette(chapterId, mergedColors);
         committedThemePalette = build.palette;
       } catch (err) {
-        this.logger.warn('Failed to recompute palette', err);
+        logThrowable(this.logger, 'warn', 'Failed to recompute palette', err);
       }
     }
 
@@ -971,7 +1001,12 @@ export class ChapterConfigService {
       .eq('id', chapterId);
 
     if (error) {
-      this.logger.error('Failed to persist theme palette', error);
+      logThrowable(
+        this.logger,
+        'error',
+        'Failed to persist theme palette',
+        error,
+      );
       throw error;
     }
 

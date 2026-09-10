@@ -21,6 +21,7 @@ import { RbacService } from '../../application/services/rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { ChannelCacheService } from './channel-cache.service';
 import type { CachedChannelRow } from './channel-cache.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 interface ChatMessageRow {
   id: string;
@@ -345,7 +346,14 @@ export class ChatPushWorkerService
       .eq('id', channelId)
       .maybeSingle();
     if (error || !data) {
-      if (error) this.logger.warn('chat-push: channel lookup failed', error);
+      if (error) {
+        logThrowable(
+          this.logger,
+          'warn',
+          'chat-push: channel lookup failed',
+          error,
+        );
+      }
       return null;
     }
     const row: ChannelRow = data;

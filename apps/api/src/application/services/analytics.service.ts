@@ -22,6 +22,7 @@ import {
 } from '#domain/repositories/member.repository.interface';
 import type { Member } from '#domain/entities/member.entity';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** Same shape ChapterGuard / billing use; identity refuses to HMAC anything else. */
 const CHAPTER_ID_SHAPE =
@@ -358,7 +359,9 @@ export class AnalyticsService {
       .maybeSingle();
 
     if (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `analytics opt-out lookup failed for chapter ${chapterId}; suppressing event`,
         error,
       );

@@ -14,6 +14,7 @@ import type {
 } from '../../infrastructure/supabase/database.types';
 import { ChapterService } from './chapter.service';
 import { ActivationService } from './activation.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
@@ -143,11 +144,21 @@ export class ChapterOnboardingService {
     // half the failure surface below the alerting threshold.
     await this.provisionCustomFields(chapter.id, seed.customFields).catch(
       (err) =>
-        this.logger.error('Failed to provision archetype custom fields', err),
+        logThrowable(
+          this.logger,
+          'error',
+          'Failed to provision archetype custom fields',
+          err,
+        ),
     );
 
     await this.postWelcomeMessage(chapter.id, branding).catch((err) =>
-      this.logger.warn('Failed to post onboarding welcome message', err),
+      logThrowable(
+        this.logger,
+        'warn',
+        'Failed to post onboarding welcome message',
+        err,
+      ),
     );
 
     if (!dto.directory_id) {
@@ -158,7 +169,12 @@ export class ChapterOnboardingService {
         branding,
         seed.archetype,
       ).catch((err) =>
-        this.logger.warn('Failed to record chapter directory request', err),
+        logThrowable(
+          this.logger,
+          'warn',
+          'Failed to record chapter directory request',
+          err,
+        ),
       );
     }
 
@@ -241,7 +257,12 @@ export class ChapterOnboardingService {
       // one, since the rows are identical each time. A wrong conflict target or
       // a renamed column would otherwise seed nothing indefinitely with no
       // signal above debug noise.
-      this.logger.error('chapter_custom_fields seed insert failed', error);
+      logThrowable(
+        this.logger,
+        'error',
+        'chapter_custom_fields seed insert failed',
+        error,
+      );
     }
   }
 
@@ -272,7 +293,12 @@ export class ChapterOnboardingService {
       .from('chat_messages')
       .insert(welcomeMessage);
     if (error) {
-      this.logger.warn('Welcome system_audit message insert failed', error);
+      logThrowable(
+        this.logger,
+        'warn',
+        'Welcome system_audit message insert failed',
+        error,
+      );
     }
   }
 
@@ -302,7 +328,12 @@ export class ChapterOnboardingService {
       .from('chapter_directory_requests')
       .insert(request);
     if (error) {
-      this.logger.warn('chapter_directory_requests insert failed', error);
+      logThrowable(
+        this.logger,
+        'warn',
+        'chapter_directory_requests insert failed',
+        error,
+      );
     }
   }
 }

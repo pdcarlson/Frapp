@@ -19,6 +19,7 @@ import type {
   MemberCustomFieldValue,
 } from '#domain/entities/chapter-custom-field.entity';
 import type { CreateCustomField, UpdateCustomField } from '@repo/validation';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * What `create` and `update` accept.
@@ -396,7 +397,12 @@ export class CustomFieldService {
       .from('chapter_audit_log')
       .insert(audit);
     if (error) {
-      this.logger.error('Failed to write chapter audit log', error);
+      logThrowable(
+        this.logger,
+        'error',
+        'Failed to write chapter audit log',
+        error,
+      );
       throw error;
     }
   }
