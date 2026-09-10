@@ -13,7 +13,7 @@ import {
   useUpdateTaskStatus,
 } from "@repo/hooks";
 import type { TaskStatus } from "@repo/hooks";
-import { formatLocaleDate as formatDate } from "@repo/formatting";
+import { formatBareDate as formatDate } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import {
   Card,

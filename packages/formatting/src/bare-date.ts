@@ -5,7 +5,8 @@
  * {@link formatLocaleDate} uses) reads it as **UTC midnight**, which renders
  * as the previous calendar day west of Greenwich.
  *
- * Two members stay distinct on purpose:
+ * Two *parsers* stay distinct on purpose — and {@link formatBareDate} at the
+ * foot of this file is the cluster's formatter over them:
  * - {@link parseBareDateUtcNoon} — `T12:00:00Z`. Stays on the submitted
  *   calendar day in every zone from UTC−12 to UTC+12. Mobile service hours,
  *   invoices, and task due dates.
@@ -60,8 +61,10 @@ export function parseInstantOrBareUtcNoon(value: string): Date | null {
  * column that changes shape degrades to the old rendering rather than to a
  * placeholder.
  */
-export function formatBareDate(value: unknown): string {
-  if (typeof value !== "string" || value === "") return "—";
+export function formatBareDate(
+  value: string | null | undefined,
+): string {
+  if (!value) return "—";
   const parsed = parseInstantOrBareUtcNoon(value);
   return parsed ? parsed.toLocaleDateString() : "—";
 }

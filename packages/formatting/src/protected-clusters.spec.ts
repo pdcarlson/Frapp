@@ -84,9 +84,14 @@ describe("protected clusters stay distinct from the generic formatter", () => {
 
     /**
      * The cluster's formatter, and the assertion that fails on the defect
-     * #1641 fixed: five `apps/web` surfaces rendered a bare `date` column
-     * through `new Date(value).toLocaleDateString()`, which is what
-     * `formatLocaleDate` does and what this disagrees with.
+     * #1641 fixed.
+     *
+     * Scope, stated exactly: #1641 moved five `apps/web` call sites onto this
+     * package, but only the ones reading a **bare `date`** column were
+     * rendering the wrong day. The rest read `timestamptz`, where
+     * `new Date(value)` was already correct and the change was a dedup. Do not
+     * read this as "five wrong-day renders" — routing a `timestamptz` through
+     * `formatBareDate` would be its own bug, discarding the time of day.
      */
     it("renders the stored calendar day; the generic formatter renders the day before", () => {
       // Same string, two different rendered days, west of Greenwich.

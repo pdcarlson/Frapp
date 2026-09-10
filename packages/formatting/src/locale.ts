@@ -7,7 +7,12 @@
  *
  * Do **not** fold the protected clusters into these:
  * - stopwatch padding (`formatPaddedStopwatch` / `formatTimer`)
- * - bare-date timezone parsing (`parseBareDateLocalMidnight` / `parseBareDateUtcNoon`)
+ * - bare-date timezone parsing (`parseBareDateLocalMidnight` / `parseBareDateUtcNoon`),
+ *   and its own formatter `formatBareDate` — which returns the same shape as
+ *   {@link formatLocaleDate} (a `string`, `"—"` on failure) and is therefore
+ *   the member most likely to be mistaken for a duplicate wrapper. It is not:
+ *   it parses a bare `YYYY-MM-DD` at UTC noon where `formatLocaleDate` reads
+ *   it as UTC midnight. A `date` column takes `formatBareDate`.
  * - minute-duration rounding (`formatMinutesExact` / `formatMinutesRounded`)
  *
  * Specs in `protected-clusters.spec.ts` fail if a merge attempt uses these
