@@ -69,6 +69,11 @@ parser via `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE`.
 import from `main.ts`). `skipOpenTelemetrySetup` is explicitly `false` so Sentry owns
 the Node tracer; `@opentelemetry/sdk-node` is not a dependency. Request-correlation
 context is AsyncLocalStorage bound in `requestIdMiddleware`, not a second tracer.
+**Correction (2026-09-10):** API source maps are uploaded from `apps/api/Dockerfile` after
+`nest build`, not implied by `Sentry.init`. Live FRAPP-API-1 / FRAPP-API-3 showed
+`dist/*.js` ContextLines, not `.ts`. Upload targets `frapp-live` / `frapp-api` when
+`SENTRY_AUTH_TOKEN` is present; without it the image still builds. The token is
+Infisical → Render (same name as web). Replay stays off. Do not inject a 5xx to prove this.
 **Correction (2026-09-09):** `apps/web` initializes PostHog JS for identify /
 chapter groups / flags / replay-gates / `sentry-error-correlated`. Replay stays
 off in every environment in that slice.

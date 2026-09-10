@@ -1,6 +1,7 @@
 import { parseTracesSampleRate } from '@repo/observability';
 import * as Sentry from '@sentry/nestjs';
 import type { NodeOptions } from '@sentry/nestjs';
+import { readDeployedCommit } from './deployed-commit';
 import { scrubSentryEvent, scrubSentryTransaction } from './sentry-scrubbing';
 
 /**
@@ -79,6 +80,12 @@ export function buildSentryOptions(dsn: string): NodeOptions {
   return {
     dsn,
     environment: process.env.NODE_ENV ?? 'development',
+    /**
+     * Spec: API `release` is the git SHA (`RENDER_GIT_COMMIT`). Unset locally
+     * and in CI so we do not invent a SHA. Source-map upload uses the same
+     * helper as `--release` so classic matching agrees with the envelope.
+     */
+    release: readDeployedCommit(),
     tracesSampleRate: parseTracesSampleRate(
       process.env.SENTRY_TRACES_SAMPLE_RATE,
       { envName: 'SENTRY_TRACES_SAMPLE_RATE' },

@@ -31,7 +31,7 @@ import {
   captureSentryErrorCorrelated,
   enqueueSanitizedLog,
 } from '../../infrastructure/analytics/posthog-runtime';
-import { readDeployedCommit } from '../controllers/deployed-commit';
+import { readDeployedCommit } from '../../infrastructure/observability/deployed-commit';
 
 /**
  * The single seam for error-shaped observability (issues #846, #481).
