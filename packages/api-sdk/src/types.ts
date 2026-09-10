@@ -3652,6 +3652,33 @@ export interface components {
             description: string;
             /** @description Storage path to proof file (e.g. from upload) */
             proof_path?: string;
+            /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry. */
+            client_message_id?: string;
+        };
+        CreateServiceEntryResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** Format: date */
+            date: string;
+            duration_minutes: number;
+            description: string;
+            proof_path: string | null;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "REJECTED";
+            /** Format: uuid */
+            reviewed_by: string | null;
+            review_comment: string | null;
+            points_awarded: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the entry row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
+            card_posted?: boolean;
         };
         ReviewServiceEntryDto: {
             /** @enum {string} */
@@ -6933,7 +6960,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CreateServiceEntryResponseDto"];
+                };
             };
         };
     };

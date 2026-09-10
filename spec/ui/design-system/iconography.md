@@ -213,7 +213,7 @@ One pick worth pinning meanwhile:
 Since the #920 chat slice the chat family draws the duotone recipe (§1). The
 glyphs live in
 [`apps/web/components/chat/chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx),
-which composes the shared recipe module and re-exports the four silhouettes the
+which composes the shared recipe module and re-exports the five silhouettes the
 shell already draws rather than redrawing them. Rendered at 20px in headers and
 composer controls, 16px in card eyebrows and inline metadata (§2).
 
@@ -236,6 +236,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Event card | `EventsGlyph` (shared with the nav intent) |
 | Task card | `TasksGlyph` (shared) |
 | Points card | `PointsGlyph` (shared) |
+| Hours card | `ServiceGlyph` (shared with the nav intent) |
 | Channel search | `SearchGlyph` (shared) |
 
 Three things this table deliberately does not contain:
