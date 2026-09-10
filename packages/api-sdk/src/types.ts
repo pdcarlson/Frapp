@@ -104,7 +104,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get the caller's pseudonymous analytics id (HMAC of user id). Lets the client attribute events without ever holding the salt. */
+        /** Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter is in context). Lets the client attribute events without ever holding the salt. */
         get: operations["AnalyticsController_getIdentity_v1"];
         put?: never;
         post?: never;
@@ -1985,6 +1985,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/rush/candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Look up a candidate by display name */
+        get: operations["RushController_lookup_v1"];
+        put?: never;
+        /** Add a recruitment candidate */
+        post: operations["RushController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/rush/candidates/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a candidate with live vote and bid status */
+        get: operations["RushController_getOne_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/rush/candidates/{id}/vote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cast a vote on a candidate (idempotent; already-voted is 200) */
+        post: operations["RushController_vote_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/rush/candidates/{id}/bid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Extend a bid (idempotent; already-extended is 200) */
+        post: operations["RushController_bid_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/geofences": {
         parameters: {
             query?: never;
@@ -2808,10 +2877,12 @@ export interface components {
             content_type: string;
         };
         IdentityResponseDto: {
-            /** @description Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured. */
+            /** @description Pseudonymous analytics id: 64 lowercase hex HMAC of the user id, or null when analytics is unconfigured. Clients must not compute this; the salt is API-only. */
             distinct_id: string | null;
             /** @description Whether analytics is enabled for this caller. */
             enabled: boolean;
+            /** @description Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`), otherwise null. Same helper as analytics events. Clients must not compute this. */
+            chapter_group_id: string | null;
         };
         TrackEventDto: {
             /**
@@ -3262,7 +3333,7 @@ export interface components {
              * @description A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "announcement";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "announcement";
             /**
              * @description The member's chapter-wide override for this kind, or null when they have set none. Null is not a level: what a kind falls back to depends on the channel a message lands in (an `announcement` resolves `all` in a channel named `announcements` and `mentions` elsewhere), so there is no single default to report here. For the effective level of a real message, read GET /v1/channels/notification-preferences.
              * @enum {string|null}
@@ -3281,7 +3352,7 @@ export interface components {
              * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "imported" | "loading" | "announcement";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement";
             /**
              * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
              * @enum {string|null}
@@ -3335,7 +3406,7 @@ export interface components {
             content: string;
             attachments?: components["schemas"]["MessageAttachmentDto"][];
             /** @enum {string} */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "imported" | "loading" | "announcement";
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement";
             payload?: Record<string, never>;
             reply_to_id?: string;
             metadata?: Record<string, never>;
@@ -3590,6 +3661,14 @@ export interface components {
             /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
             size_bytes?: number;
         };
+        BackworkUploadUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send on the confirm-upload call. */
+            storage_path: string;
+            /** @description Server-allocated resource id embedded in storage_path. */
+            resource_id: string;
+        };
         ConfirmBackworkUploadDto: {
             /** @description Storage path returned from upload-url */
             storage_path: string;
@@ -3650,6 +3729,33 @@ export interface components {
             description: string;
             /** @description Storage path to proof file (e.g. from upload) */
             proof_path?: string;
+            /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry. */
+            client_message_id?: string;
+        };
+        CreateServiceEntryResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            user_id: string;
+            /** Format: date */
+            date: string;
+            duration_minutes: number;
+            description: string;
+            proof_path: string | null;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "REJECTED";
+            /** Format: uuid */
+            reviewed_by: string | null;
+            review_comment: string | null;
+            points_awarded: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the entry row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
+            card_posted?: boolean;
         };
         ReviewServiceEntryDto: {
             /** @enum {string} */
@@ -3705,6 +3811,55 @@ export interface components {
             /** @description Optional comment for rejection */
             comment?: string;
         };
+        RushCandidateViewDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            display_name: string;
+            name_key: string;
+            /** Format: uuid */
+            user_id: string | null;
+            stage: string;
+            /** @enum {string} */
+            bid_status: "none" | "extended";
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Ballot count. Voter names are never returned. */
+            vote_count: number;
+            /** @description Whether the authenticated caller has already voted. */
+            viewer_has_voted: boolean;
+        };
+        CreateRushCandidateDto: {
+            display_name: string;
+            /** @description When the candidate is already a chapter member, the resolved user id. Omit for an external prospect. */
+            user_id?: string;
+            /** @description When set with `client_message_id`, posts a rush candidate card to this chat channel after the row is created (the vocab-aware slash command). Omit for non-chat creates. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate candidate. */
+            client_message_id?: string;
+        };
+        CreateRushCandidateResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            display_name: string;
+            name_key: string;
+            /** Format: uuid */
+            user_id: string | null;
+            stage: string;
+            /** @enum {string} */
+            bid_status: "none" | "extended";
+            /** Format: uuid */
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the candidate row committed and the card did not. Absent means no card was attempted. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
+            card_posted?: boolean;
+        };
         CreateGeofenceDto: {
             name: string;
             coordinates: components["schemas"]["GeofenceCoordinateDto"][];
@@ -3755,6 +3910,14 @@ export interface components {
             content_type: string;
             /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
             size_bytes?: number;
+        };
+        DocumentUploadUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send on the confirm-upload call. */
+            storage_path: string;
+            /** @description Server-allocated document id embedded in storage_path. */
+            document_id: string;
         };
         ConfirmDocumentUploadDto: {
             /** @description Storage path returned from upload-url */
@@ -6631,7 +6794,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BackworkUploadUrlResponseDto"];
+                };
             };
         };
     };
@@ -6931,7 +7096,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CreateServiceEntryResponseDto"];
+                };
             };
         };
     };
@@ -7201,6 +7368,114 @@ export interface operations {
             };
         };
     };
+    RushController_lookup_v1: {
+        parameters: {
+            query: {
+                /** @description Candidate display name (case-insensitive) */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RushCandidateViewDto"];
+                };
+            };
+        };
+    };
+    RushController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRushCandidateDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateRushCandidateResponseDto"];
+                };
+            };
+        };
+    };
+    RushController_getOne_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RushCandidateViewDto"];
+                };
+            };
+        };
+    };
+    RushController_vote_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RushCandidateViewDto"];
+                };
+            };
+        };
+    };
+    RushController_bid_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RushCandidateViewDto"];
+                };
+            };
+        };
+    };
     StudyGeofenceController_list_v1: {
         parameters: {
             query?: never;
@@ -7412,7 +7687,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DocumentUploadUrlResponseDto"];
+                };
             };
         };
     };

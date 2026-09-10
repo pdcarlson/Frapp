@@ -1,7 +1,7 @@
 name: PR base guard
 
 # The one workflow with NO `on.pull_request.branches` filter, and that is the
-# entire point (docs/internal/ci-cd/AGENT_INFRA.md § CI branch filters).
+# entire point (docs/internal/ci-cd/pr-babysitting.md § CI branch filters).
 #
 # `ci.yml`, `docs.yml`, and `links.yml` all filter on `[main]`, which GitHub
 # matches against the PR **base**. A PR whose base is a feature branch therefore
@@ -72,7 +72,7 @@ jobs:
           the `production` branch was retired in #1340, and production is now
           deployed from `main` by the `Deploy production` workflow.
 
-          Background: docs/internal/ci-cd/AGENT_INFRA.md
+          Background: docs/internal/ci-cd/pr-babysitting.md
           § "CI branch filters: never target a feature branch"
           MSG
               exit 1

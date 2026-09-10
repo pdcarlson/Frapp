@@ -11,10 +11,8 @@ interface ComingSoonCardProps {
 
 /**
  * Placeholder renderer for the kinds that are in `CHAT_MESSAGE_KINDS` but have
- * no card yet — `dues` and `hours`, per the dispatcher in `./index.tsx`. The
- * docstring used to list `event`, `task` and `points` too, and the copy still
- * said "coming in Chunk 10"; all three shipped their own renderers long ago,
- * and chunks are not a unit anything else in the repo still counts in.
+ * no card yet — `dues`, per the dispatcher in `./index.tsx`. `/hours` has
+ * `HoursCard` and `/rush` has `RushCard`.
  *
  * The card always renders the raw `content` underneath so a misfired hot-path
  * send still surfaces something the user can read.

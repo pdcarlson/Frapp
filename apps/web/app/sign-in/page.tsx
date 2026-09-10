@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { AuthDivider, AuthScreen } from "@/components/auth/auth-screen";
+import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,11 @@ import {
   describeAuthError,
   resolveRedirectPath,
 } from "@/lib/auth/redirect";
+import {
+  describeOAuthKickoffError,
+  startWebOAuth,
+  type OAuthProvider,
+} from "@/lib/auth/oauth";
 
 /**
  * s01 — Sign in (`spec/ui/design-system/reference/canvas-screens.dc.html`).
@@ -27,9 +33,10 @@ import {
  * "What this unlocks") whose copy described the milestone rather than the
  * product, and whose four bullets named database behaviour to a member.
  *
- * s01's second method is "Continue with Apple"; web ships the magic link it
- * already had. The slot is the same and the geometry is the drawing's — this is
- * a transcription of the screen, not of the identity providers on it.
+ * s01's second method is "Continue with Apple". Web now ships Apple and Google
+ * as equal Secondary buttons in that slot (Guideline 4.8 once Google is
+ * offered), then the magic link as a third method of the same size. The
+ * password form stays the primary.
  *
  * The redirect plumbing is a data contract
  * (`spec/ui/web-dashboard/README.md` §Gating & routing semantics):
@@ -48,6 +55,7 @@ function SignInPageContent() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isMagicLinkPending, setIsMagicLinkPending] = useState(false);
+  const [pendingOAuth, setPendingOAuth] = useState<OAuthProvider | null>(null);
   const redirectTo = resolveRedirectPath(searchParams.get("redirectTo"));
   const authError = searchParams.get("authError");
 
@@ -127,6 +135,30 @@ function SignInPageContent() {
     }
   }
 
+  async function handleOAuth(provider: OAuthProvider) {
+    setPendingOAuth(provider);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { error } = await startWebOAuth(
+        supabase,
+        provider,
+        window.location.origin,
+        redirectTo,
+      );
+      if (error) throw error;
+    } catch (error) {
+      toast({
+        title: "Unable to sign in",
+        description: describeOAuthKickoffError(error),
+        variant: "destructive",
+      });
+    } finally {
+      setPendingOAuth(null);
+    }
+  }
+
+  const oauthBusy = pendingOAuth !== null;
+
   return (
     <AuthScreen
       mark
@@ -169,7 +201,7 @@ function SignInPageContent() {
             required
           />
         </div>
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
+        <Button type="submit" className="w-full" disabled={isSubmitting || oauthBusy}>
           {isSubmitting ? <Loader2 className="animate-spin" /> : null}
           Continue
         </Button>
@@ -177,12 +209,20 @@ function SignInPageContent() {
 
       <AuthDivider label="or" />
 
+      <OAuthButtons
+        onSelect={(provider) => {
+          void handleOAuth(provider);
+        }}
+        pending={pendingOAuth}
+        disabled={isSubmitting || isMagicLinkPending}
+      />
+
       <Button
         type="button"
         variant="secondary"
-        className="w-full"
+        className="mt-3 w-full"
         onClick={handleMagicLink}
-        disabled={isMagicLinkPending}
+        disabled={isMagicLinkPending || oauthBusy}
       >
         {isMagicLinkPending ? <Loader2 className="animate-spin" /> : null}
         Email me a magic link

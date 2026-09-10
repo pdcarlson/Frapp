@@ -37,6 +37,7 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
+import { CHAT_RAIL_STICKY_CLASS } from "@/components/shared/offline-banner-focus";
 import {
   ChannelList,
   type ChannelCategory,
@@ -476,20 +477,14 @@ export function ChatShell({
   // it straight through pinned a "could not save" alert onto every channel for
   // the rest of the session after a single failure — a confident, wrong claim
   // about channels the member never touched. Scope it to the channel the failed
-  // write was actually for, and clear it when they move away.
+  // write was actually for. Do not `reset()` on channel change: wiring that
+  // effect to `isError` cleared the alert on the channel that failed, and an
+  // unconditional reset detached in-flight writes. `failedChannelId ===
+  // activeChannel.id` is enough — returning to the failed channel still
+  // shows the error, which is honest.
   const failedChannelId = setNotificationLevel.isError
     ? setNotificationLevel.variables?.channelId
     : undefined;
-  const resetNotificationLevel = setNotificationLevel.reset;
-  const notificationLevelErrored = setNotificationLevel.isError;
-  useEffect(() => {
-    // Only when there is actually an error to clear. An unconditional reset
-    // detached the observer from an IN-FLIGHT write, so a mute that failed
-    // after the member changed channel was reported on no channel at all —
-    // and it forced a second full render of the shell on every switch to
-    // clear state that is almost never set.
-    if (notificationLevelErrored) resetNotificationLevel();
-  }, [activeChannelId, notificationLevelErrored, resetNotificationLevel]);
 
   // Opening a channel stamps the read cursor — the only thing that moves it, and
   // the only thing that clears the badges above. Without it the rail lights up
@@ -948,7 +943,10 @@ export function ChatShell({
       */}
       <section
         aria-label="Channels"
-        className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface-1 md:sticky md:top-20 md:max-h-[calc(100vh-6rem)] md:self-start"
+        className={cn(
+          "flex flex-col overflow-hidden rounded-xl border border-border bg-surface-1",
+          CHAT_RAIL_STICKY_CLASS,
+        )}
       >
         <header className="border-b border-border px-3 py-3">
           <h2 className="text-base font-bold text-foreground">Channels</h2>
@@ -1263,12 +1261,13 @@ export function ChatShell({
             }
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
+            recruitmentVocab={orgConfig.data?.vocabulary?.recruitment}
             slashCommandsStatus={slashCommandsStatus}
             onRetrySlashCommands={onRetrySlashCommands}
             // Never `disabled` while offline: the send path enqueues to the
             // Dexie outbox before it touches the network, so gating the
             // composer would defeat the queue built to make composing-while-
-            // offline work (`spec/ui/resilience.md` §2). It is labelled instead.
+            // offline work (`spec/ui/resilience/connection-state.md`). It is labelled instead.
             isOffline={channel.connection === "offline"}
             replyTo={replyTo}
             onCancelReply={cancelReply}
@@ -1278,7 +1277,10 @@ export function ChatShell({
 
       <aside
         aria-label="Thread"
-        className="flex flex-col overflow-hidden rounded-xl border border-border bg-surface-1 md:sticky md:top-20 md:max-h-[calc(100vh-6rem)] md:self-start"
+        className={cn(
+          "flex flex-col overflow-hidden rounded-xl border border-border bg-surface-1",
+          CHAT_RAIL_STICKY_CLASS,
+        )}
       >
         {threadParent ? (
           <ThreadPanel

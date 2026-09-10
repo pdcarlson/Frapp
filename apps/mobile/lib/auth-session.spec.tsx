@@ -39,9 +39,32 @@ const mockState = vi.hoisted(() => ({
   signInWithOtpResult: { error: null as { message: string } | null },
   signInWithPasswordCalls: [] as Array<{ email: string; password: string }>,
   signInWithOtpCalls: [] as Array<{ email: string }>,
+  signInWithOAuthCalls: [] as Array<{
+    provider: string;
+    options?: {
+      redirectTo?: string;
+      skipBrowserRedirect?: boolean;
+      queryParams?: Record<string, string> | undefined;
+    };
+  }>,
+  signInWithOAuthResult: {
+    data: { url: "https://accounts.google.com/o/oauth" as string | null },
+    error: null as { message: string; code?: string } | null,
+  },
+  authSessionResult: { type: "success", url: "frapp:///?code=oauth-code" } as {
+    type: string;
+    url?: string;
+  },
+  nativeAppleResult: "unavailable" as "completed" | "cancelled" | "unavailable",
   signOutCalls: 0,
   configured: true,
   deepLinkUrl: null as string | null,
+}));
+
+const resetObservabilityOnLogout = vi.hoisted(() => vi.fn());
+
+vi.mock("./observability/reset", () => ({
+  resetObservabilityOnLogout,
 }));
 
 vi.mock("expo-secure-store", () => ({
@@ -59,6 +82,19 @@ vi.mock("expo-secure-store", () => ({
 vi.mock("expo-linking", () => ({
   useURL: vi.fn(() => mockState.deepLinkUrl),
   createURL: vi.fn((path: string) => `frapp://${path}`),
+}));
+
+const mockAppleAuth = vi.hoisted(() => ({
+  signInWithNativeApple: vi.fn(async () => mockState.nativeAppleResult),
+}));
+
+vi.mock("./apple-auth", () => ({
+  signInWithNativeApple: mockAppleAuth.signInWithNativeApple,
+}));
+
+vi.mock("expo-web-browser", () => ({
+  maybeCompleteAuthSession: vi.fn(),
+  openAuthSessionAsync: vi.fn(async () => mockState.authSessionResult),
 }));
 
 vi.mock("./supabase", async () => {
@@ -107,6 +143,19 @@ vi.mock("./supabase", async () => {
         mockState.signInWithOtpCalls.push(input);
         return mockState.signInWithOtpResult;
       }),
+      signInWithOAuth: vi.fn(
+        async (input: {
+          provider: string;
+          options?: {
+            redirectTo?: string;
+            skipBrowserRedirect?: boolean;
+            queryParams?: Record<string, string> | undefined;
+          };
+        }) => {
+          mockState.signInWithOAuthCalls.push(input);
+          return mockState.signInWithOAuthResult;
+        },
+      ),
       signOut: vi.fn(async () => {
         mockState.signOutCalls += 1;
         return { error: null };
@@ -127,7 +176,7 @@ vi.mock("./supabase", async () => {
 });
 
 import { AuthSessionProvider, useAuthSession } from "./auth-session";
-import { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
+import { AUTH_TOKEN_STORAGE_KEY, readAuthToken } from "./auth-token";
 import { useIsApiAuthenticated } from "./use-is-api-authenticated";
 import { sessionStorageAdapter, getSupabaseClient } from "./supabase";
 import { queryClient } from "./query-client";
@@ -138,6 +187,8 @@ import { queryClient } from "./query-client";
  * survive into the next member's session on a shared device.
  */
 const ACCOUNT_AGNOSTIC_KEY = ["settings"];
+const USER_ME_KEY = ["user", "me"];
+const CHAPTER_KEY = ["members", "chapter-uuid-1"];
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <AuthSessionProvider>{children}</AuthSessionProvider>;
@@ -286,10 +337,21 @@ beforeEach(async () => {
   mockState.signInWithOtpResult = { error: null };
   mockState.signInWithPasswordCalls = [];
   mockState.signInWithOtpCalls = [];
+  mockState.signInWithOAuthCalls = [];
+  mockState.signInWithOAuthResult = {
+    data: { url: "https://accounts.google.com/o/oauth" },
+    error: null,
+  };
+  mockState.authSessionResult = {
+    type: "success",
+    url: "frapp:///?code=oauth-code",
+  };
+  mockState.nativeAppleResult = "unavailable";
   mockState.signOutCalls = 0;
   mockState.configured = true;
   mockState.deepLinkUrl = null;
   queryClient.clear();
+  resetObservabilityOnLogout.mockReset();
 });
 
 afterEach(() => {
@@ -363,6 +425,7 @@ describe("AuthSessionProvider — token persistence", () => {
     // Owned here rather than in each screen: there are three sign-out paths and
     // the picker's clear landed only after the leak was noticed a second time.
     expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
+    expect(resetObservabilityOnLogout).toHaveBeenCalledTimes(1);
   });
 
   it("signs out locally, without throwing, when the remote revoke fails", async () => {
@@ -399,6 +462,7 @@ describe("AuthSessionProvider — token persistence", () => {
     // The cache drop is on the same always-run path as the token clear, so a
     // failed remote revoke must not leave the previous member's rows behind.
     expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
+    expect(resetObservabilityOnLogout).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -537,6 +601,7 @@ describe("AuthSessionProvider — chapter context", () => {
     await waitFor(() =>
       expect(result.current.chapterId).toBe("chapter-uuid-1"),
     );
+    expect(result.current.userId).toBe("user-1");
 
     // A magic link can swap accounts with no sign-out in between. Retention is
     // scoped to one user precisely so the next member does not inherit this
@@ -550,6 +615,129 @@ describe("AuthSessionProvider — chapter context", () => {
     });
 
     await waitFor(() => expect(result.current.chapterId).toBeNull());
+    expect(result.current.userId).toBe("user-2");
+  });
+
+  it("exposes the new Bearer to child effects on the same turn as a swap", async () => {
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+    const seen: Array<{ userId: string | null; token: string | null }> = [];
+
+    function Probe() {
+      const { userId } = useAuthSession();
+      React.useEffect(() => {
+        void readAuthToken().then((token) => {
+          seen.push({ userId, token });
+        });
+      }, [userId]);
+      return null;
+    }
+
+    const { result } = renderHook(() => useAuthSession(), {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <AuthSessionProvider>
+          <Probe />
+          {children}
+        </AuthSessionProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.userId).toBe("user-1"));
+    await waitFor(() =>
+      expect(seen).toContainEqual({
+        userId: "user-1",
+        token: "access-token-1",
+      }),
+    );
+
+    await act(async () => {
+      emitAuthChange({
+        access_token: "access-token-2",
+        user: { email: "other@university.edu", id: "user-2" },
+      });
+    });
+
+    // Child effects run before the parent token-mirror effect. If the
+    // Bearer were only written in that parent effect, this sample would
+    // still be User A's token.
+    expect(seen).toContainEqual({ userId: "user-2", token: "access-token-2" });
+  });
+
+  it("drops unscoped product cache after writing the new Bearer on a same-chapter swap", async () => {
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    queryClient.setQueryData(ACCOUNT_AGNOSTIC_KEY, ["outgoing-settings"]);
+    queryClient.setQueryData(USER_ME_KEY, { id: "user-a-row" });
+    queryClient.setQueryData(CHAPTER_KEY, [{ id: "member-a" }]);
+
+    const realClear = queryClient.clear.bind(queryClient);
+    let tokenWhenCleared: Promise<string | null> | undefined;
+    queryClient.clear = () => {
+      tokenWhenCleared = readAuthToken();
+      realClear();
+    };
+
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-2" };
+    try {
+      await act(async () => {
+        emitAuthChange({
+          access_token: "access-token-2",
+          user: { email: "other@university.edu", id: "user-2" },
+        });
+      });
+
+      expect(tokenWhenCleared).toBeDefined();
+      await expect(tokenWhenCleared).resolves.toBe("access-token-2");
+      expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
+      expect(queryClient.getQueryData(USER_ME_KEY)).toBeUndefined();
+      expect(queryClient.getQueryData(CHAPTER_KEY)).toBeUndefined();
+      expect(result.current.userId).toBe("user-2");
+    } finally {
+      queryClient.clear = realClear;
+    }
+
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+  });
+
+  it("keeps the product cache when the same account refreshes its token", async () => {
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    queryClient.setQueryData(ACCOUNT_AGNOSTIC_KEY, ["keep-me"]);
+    queryClient.setQueryData(USER_ME_KEY, { id: "user-a-row" });
+
+    await act(async () => {
+      emitAuthChange({
+        access_token: "access-token-2",
+        user: { email: "officer@university.edu", id: "user-1" },
+      });
+    });
+
+    expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toEqual(["keep-me"]);
+    expect(queryClient.getQueryData(USER_ME_KEY)).toEqual({ id: "user-a-row" });
+    expect(result.current.userId).toBe("user-1");
+    expect(result.current.chapterId).toBe("chapter-uuid-1");
   });
 });
 
@@ -709,8 +897,7 @@ describe("AuthSessionProvider — magic-link callback", () => {
   });
 
   it("verifies a token_hash on the app scheme without going through supabase.co", async () => {
-    mockState.deepLinkUrl =
-      "frapp:///?token_hash=pkce_hash&type=magiclink";
+    mockState.deepLinkUrl = "frapp:///?token_hash=pkce_hash&type=magiclink";
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
     await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
@@ -724,6 +911,161 @@ describe("AuthSessionProvider — magic-link callback", () => {
       }),
     );
     expect(client!.auth.exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(result.current.callbackError).toBeNull();
+  });
+
+  it("maps an OAuth identity collision on the callback URL", async () => {
+    mockState.deepLinkUrl =
+      "frapp://#error=server_error&error_code=identity_already_exists&error_description=Identity+already+exists";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+
+    await waitFor(() =>
+      expect(result.current.callbackError).toMatch(/already exists/i),
+    );
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    expect(client!.auth.exchangeCodeForSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("AuthSessionProvider — OAuth", () => {
+  it("kicks off Google toward the magic-link redirect URL", async () => {
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google");
+    });
+
+    expect(mockState.signInWithOAuthCalls).toEqual([
+      {
+        provider: "google",
+        options: {
+          redirectTo: "frapp:///?",
+          skipBrowserRedirect: true,
+          queryParams: { prompt: "select_account" },
+        },
+      },
+    ]);
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    await waitFor(() =>
+      expect(client!.auth.exchangeCodeForSession).toHaveBeenCalledWith(
+        "oauth-code",
+      ),
+    );
+    const WebBrowser = await import("expo-web-browser");
+    expect(WebBrowser.openAuthSessionAsync).toHaveBeenCalledWith(
+      "https://accounts.google.com/o/oauth",
+      "frapp:///?",
+    );
+  });
+
+  it("uses native Apple and skips the browser session", async () => {
+    mockState.nativeAppleResult = "completed";
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("apple");
+    });
+
+    expect(mockAppleAuth.signInWithNativeApple).toHaveBeenCalled();
+    expect(mockState.signInWithOAuthCalls).toEqual([]);
+    const WebBrowser = await import("expo-web-browser");
+    expect(WebBrowser.openAuthSessionAsync).not.toHaveBeenCalled();
+  });
+
+  it("treats a cancelled native Apple prompt as success with no error", async () => {
+    mockState.nativeAppleResult = "cancelled";
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await expect(
+        result.current.signInWithOAuthProvider("apple"),
+      ).resolves.toBeUndefined();
+    });
+
+    expect(result.current.callbackError).toBeNull();
+    expect(mockState.signInWithOAuthCalls).toEqual([]);
+  });
+
+  it("maps a colliding Google identity to password/magic-link copy", async () => {
+    mockState.signInWithOAuthResult = {
+      data: { url: null },
+      error: {
+        message: "A user with this email address has already been registered",
+        code: "identity_already_exists",
+      },
+    };
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await expect(
+        result.current.signInWithOAuthProvider("google"),
+      ).rejects.toThrow(/already exists/i);
+    });
+    const WebBrowser = await import("expo-web-browser");
+    expect(WebBrowser.openAuthSessionAsync).not.toHaveBeenCalled();
+  });
+
+  it("does not exchange a single-use code twice when the deep link repeats", async () => {
+    const oauthUrl = "frapp:///?code=oauth-once";
+    mockState.authSessionResult = { type: "success", url: oauthUrl };
+
+    const { result, rerender } = renderHook(() => useAuthSession(), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    await act(async () => {
+      await result.current.signInWithOAuthProvider("google");
+    });
+
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    expect(client!.auth.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+
+    mockState.deepLinkUrl = oauthUrl;
+    rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(client!.auth.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not exchange twice or throw when the deep link arrives first", async () => {
+    const oauthUrl = "frapp:///?code=oauth-once";
+    mockState.deepLinkUrl = oauthUrl;
+    mockState.authSessionResult = { type: "success", url: oauthUrl };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    await waitFor(() =>
+      expect(client!.auth.exchangeCodeForSession).toHaveBeenCalledTimes(1),
+    );
+
+    vi.mocked(client!.auth.exchangeCodeForSession).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: {
+        message:
+          "invalid request: both auth code and code verifier should be non-empty",
+      },
+    } as never);
+
+    await act(async () => {
+      await expect(
+        result.current.signInWithOAuthProvider("google"),
+      ).resolves.toBeUndefined();
+    });
+    expect(client!.auth.exchangeCodeForSession).toHaveBeenCalledTimes(1);
     expect(result.current.callbackError).toBeNull();
   });
 });

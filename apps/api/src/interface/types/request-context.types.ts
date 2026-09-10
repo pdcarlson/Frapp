@@ -70,3 +70,21 @@ export function getHeaderValue(
   }
   return value;
 }
+
+/**
+ * Chapter id in context for routes that must not require ChapterGuard
+ * (identity still works before a chapter is selected). JWT claim wins; the
+ * `x-chapter-id` header is the unrefreshed-token fallback. A mismatch does
+ * **not** 403 here — identity must still return the user pseudonym for Sentry.
+ * Shape/HMAC validation lives in AnalyticsService, not this reader.
+ */
+export function getOptionalChapterId(
+  request: Pick<RequestContext, 'chapterId' | 'jwtClaims' | 'headers'>,
+): string | undefined {
+  if (typeof request.chapterId === 'string' && request.chapterId.length > 0) {
+    return request.chapterId;
+  }
+  const jwtChapterId = getActiveChapterClaim(request.jwtClaims);
+  if (jwtChapterId) return jwtChapterId;
+  return getHeaderValue(request.headers, 'x-chapter-id');
+}

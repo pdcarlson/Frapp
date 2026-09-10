@@ -38,7 +38,9 @@ import { readActiveChapterClaim } from "@/lib/auth/active-chapter-claim";
  * are different: `SIGNED_OUT` clears the store, and a `SIGNED_IN` whose token
  * carries no claim clears it too, so the previous account's chapter id never
  * survives in this browser's storage into the next account's session (and the
- * `FrappProvider` cache drop that keys on the store change runs). Clearing
+ * `FrappProvider` cache drop that keys on the store change runs). A same-chapter
+ * `SIGNED_IN` does not move the store; `FrappProvider` also drops the cache when
+ * the auth uid changes. Clearing
  * only at the boundary, not on every claim-less refresh, is deliberate: if the
  * access-token hook were ever switched off (it is a dashboard toggle the
  * conformance job watches), every token would lack the claim and a

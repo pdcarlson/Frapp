@@ -208,10 +208,11 @@ describe("the accent slot never paints a pre-auth screen", () => {
     expect(source).not.toMatch(/\bbg-primary\b/);
   });
 
-  it("draws the mark in house gold, not the accent slot", () => {
+  it("draws the mark in locked emblem colors, not the accent slot", () => {
     const source = code("components/auth/signet-mark.tsx");
-    expect(source).toMatch(/\bbg-gold-house\b/);
-    expect(source).toMatch(/\btext-gold-on-house\b/);
+    expect(source).toMatch(/#1A1A1A/);
+    expect(source).toMatch(/#DDB844/);
     expect(source).not.toMatch(/\bbg-primary\b/);
+    expect(source).not.toMatch(/\bbg-gold-house\b/);
   });
 });

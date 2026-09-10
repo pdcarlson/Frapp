@@ -20,8 +20,23 @@ export type SubscriptionWebhookPatch = {
   activate_if?: Array<'past_due' | 'incomplete'>;
 };
 
+/**
+ * Row returned by a winning `apply_subscription_webhook` call (#1979).
+ * `previous_subscription_status` is the pre-UPDATE value the RPC locked;
+ * optional on test doubles that do not exercise the notify gate.
+ */
+export type AppliedSubscriptionWebhook = Chapter & {
+  previous_subscription_status?: SubscriptionStatus;
+};
+
 export interface IChapterRepository {
   findById(id: string): Promise<Chapter | null>;
+  /**
+   * Batch PK lookup. Empty `ids` returns `[]` without querying. Result order
+   * is not the request order — callers that need membership order map by id
+   * (`ChapterService.listForUser`).
+   */
+  findByIds(ids: string[]): Promise<Chapter[]>;
   findBySubscriptionId(subscriptionId: string): Promise<Chapter | null>;
   /**
    * Resolve a chapter by its Stripe customer. `chapters.stripe_customer_id` is
@@ -46,18 +61,22 @@ export interface IChapterRepository {
     expectedSubscriptionId: string | null,
   ): Promise<Chapter | null>;
   /**
-   * Compare-and-set a subscription webhook onto the chapter (#731).
+   * Compare-and-set a subscription webhook onto the chapter (#731 / #1979).
    *
    * Updates only while `last_stripe_webhook_at` is null or `<= eventAt`.
    * Concurrent deliveries that both passed the in-memory stale check therefore
    * cannot both write: the loser updates zero rows and gets `null`. Same-second
    * events are allowed through (Stripe `event.created` is whole seconds).
+   *
+   * A win returns the committed row plus the `subscription_status` that was
+   * live when the UPDATE locked it. President-notify uses that pair (old ≠ new),
+   * not the handler's pre-CAS snapshot.
    */
   applySubscriptionWebhook(
     chapterId: string,
     eventAt: string,
     patch: SubscriptionWebhookPatch,
-  ): Promise<Chapter | null>;
+  ): Promise<AppliedSubscriptionWebhook | null>;
   create(data: Partial<Chapter>): Promise<Chapter>;
   update(id: string, data: Partial<Chapter>): Promise<Chapter>;
 }

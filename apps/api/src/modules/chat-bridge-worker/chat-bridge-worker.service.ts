@@ -15,6 +15,7 @@ import type {
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
 import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 interface AuditLogRow {
   id: string;
@@ -82,9 +83,11 @@ export class ChatBridgeWorkerService
           }
         });
     } catch (err) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         'chat-bridge failed to start; audit messages will not mirror',
-        err as Error,
+        err,
       );
     }
   }
@@ -94,7 +97,9 @@ export class ChatBridgeWorkerService
       try {
         await this.supabase.removeChannel(this.channel);
       } catch (err) {
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           'chat-bridge: error removing channel on shutdown',
           err,
         );
@@ -121,7 +126,9 @@ export class ChatBridgeWorkerService
         .eq('name', 'chapter-audit')
         .maybeSingle();
       if (channelError) {
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           `chat-bridge: chapter-audit channel lookup failed for chapter ${row.chapter_id}`,
           channelError,
         );
@@ -151,13 +158,17 @@ export class ChatBridgeWorkerService
         .from('chat_messages')
         .insert(message);
       if (insertError) {
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           `chat-bridge: system_audit insert failed for audit ${row.id}`,
           insertError,
         );
       }
     } catch (err) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `chat-bridge: unexpected error mirroring audit ${row.id}`,
         err,
       );

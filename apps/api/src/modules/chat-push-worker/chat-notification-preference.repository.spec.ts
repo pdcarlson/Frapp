@@ -433,9 +433,9 @@ describe('ChatNotificationPreferenceRepository — tenant scope', () => {
      * A PostgREST error carries `details`, which is Postgres' row-value
      * channel — it can quote the offending row, including a `Key (user_id)=(…)`
      * fragment, into plaintext application logs. #1669 is the open issue for
-     * call sites that hand the whole error object to a logger; this one builds
-     * a string through `toReportableError`, which joins `code`, `message` and
-     * `hint` and drops `details`.
+     * call sites that hand the whole error object to a logger; this one goes
+     * through `logThrowable` / `toReportableError`, which joins `code`,
+     * `message` and `hint` and drops `details`.
      *
      * The assertions below pin the property, not the formatting: one string
      * argument, the diagnostic fields present, the row value absent. That

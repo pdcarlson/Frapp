@@ -1,5 +1,6 @@
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { isPseudonymHex } from '@repo/observability';
 import {
   assertContentFreeProperties,
   hashChapterIdForAnalytics,
@@ -12,11 +13,27 @@ import {
   type IAnalyticsProvider,
 } from '#domain/adapters/analytics.interface';
 import {
+  FEATURE_FLAG_PROVIDER,
+  type IFeatureFlagProvider,
+} from '#domain/adapters/feature-flag.interface';
+import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
 import type { Member } from '#domain/entities/member.entity';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
+
+/** Same shape ChapterGuard / billing use; identity refuses to HMAC anything else. */
+const CHAPTER_ID_SHAPE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function canonicalChapterId(
+  chapterId: string | undefined | null,
+): string | null {
+  if (!chapterId || !CHAPTER_ID_SHAPE.test(chapterId)) return null;
+  return chapterId.toLowerCase();
+}
 
 export interface TrackOptions {
   /**
@@ -50,6 +67,8 @@ export class AnalyticsService {
     private readonly config: ConfigService,
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     @Inject(ANALYTICS_PROVIDER) private readonly provider: IAnalyticsProvider,
+    @Inject(FEATURE_FLAG_PROVIDER)
+    private readonly flags: IFeatureFlagProvider,
     @Inject(MEMBER_REPOSITORY) private readonly members: IMemberRepository,
   ) {
     // Optional: when unset, the keying salt is empty and tracking is disabled
@@ -69,8 +88,26 @@ export class AnalyticsService {
    * configured.
    */
   getDistinctId(userId: string): string | null {
+    if (!this.salt || !userId) return null;
+    const digest = hashUserIdForAnalytics(this.salt, userId);
+    return isPseudonymHex(digest) ? digest : null;
+  }
+
+  /**
+   * Pseudonymous PostHog chapter group. Same HMAC helper as funnel events.
+   * `null` when analytics is unconfigured, no chapter is in context, or the
+   * value is not a UUID (never HMAC a malformed header and call it a group).
+   *
+   * Opt-out does **not** suppress this: identity still returns the digest so
+   * Sentry `user.id` / a future client SDK can be set. Event capture stays
+   * gated by {@link track} / {@link trackForChapter}.
+   */
+  getChapterGroupId(chapterId: string | undefined | null): string | null {
     if (!this.salt) return null;
-    return hashUserIdForAnalytics(this.salt, userId);
+    const canonical = canonicalChapterId(chapterId);
+    if (!canonical) return null;
+    const digest = hashChapterIdForAnalytics(this.salt, canonical);
+    return isPseudonymHex(digest) ? digest : null;
   }
 
   /**
@@ -102,9 +139,11 @@ export class AnalyticsService {
       }
       await this.provider.capture(event);
     } catch (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `Failed to capture analytics event "${eventName}"`,
-        error as Error,
+        error,
       );
     }
   }
@@ -167,9 +206,11 @@ export class AnalyticsService {
           options.chapterId,
         );
       } catch (error) {
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           'analytics membership check failed; suppressing event',
-          error as Error,
+          error,
         );
         return;
       }
@@ -198,9 +239,11 @@ export class AnalyticsService {
       // Membership resolution is best-effort like the rest of the cold path: a
       // DB blip suppresses (fail closed) rather than 500-ing a fire-and-forget
       // telemetry call.
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         'analytics membership resolution failed; suppressing event',
-        error as Error,
+        error,
       );
       return;
     }
@@ -247,10 +290,41 @@ export class AnalyticsService {
       if (!(await this.isChapterAnalyticsEnabled(chapterId))) return;
       await this.provider.capture(event);
     } catch (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `Failed to capture chapter analytics event "${eventName}"`,
-        error as Error,
+        error,
       );
+    }
+  }
+
+  /**
+   * Server-side product-flag evaluation. Distinct id and chapter group are
+   * HMAC hex; a missing salt or a flag-provider miss fails closed (`false`).
+   * Flags are not an authorization input — `can()` / guards still decide.
+   */
+  async isProductFlagEnabled(
+    flagKey: string,
+    userId: string,
+    chapterId?: string | null,
+  ): Promise<boolean> {
+    const distinctId = this.getDistinctId(userId);
+    if (!distinctId) return false;
+    try {
+      return await this.flags.isEnabled(
+        flagKey,
+        distinctId,
+        this.getChapterGroupId(chapterId),
+      );
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Failed to evaluate product flag "${flagKey}"`,
+        error,
+      );
+      return false;
     }
   }
 
@@ -270,7 +344,12 @@ export class AnalyticsService {
     try {
       return await this.provider.forget(distinctId);
     } catch (error) {
-      this.logger.warn('Failed to forget analytics user', error as Error);
+      logThrowable(
+        this.logger,
+        'warn',
+        'Failed to forget analytics user',
+        error,
+      );
       return false;
     }
   }
@@ -295,7 +374,9 @@ export class AnalyticsService {
       .maybeSingle();
 
     if (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `analytics opt-out lookup failed for chapter ${chapterId}; suppressing event`,
         error,
       );

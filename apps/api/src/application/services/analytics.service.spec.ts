@@ -1,17 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, Logger } from '@nestjs/common';
 import {
   ContentFreePropertyError,
   hashChapterIdForAnalytics,
   hashUserIdForAnalytics,
 } from '@repo/validation';
+import { isPseudonymHex } from '@repo/observability';
 import { AnalyticsService } from './analytics.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
 } from '#domain/adapters/analytics.interface';
+import {
+  FEATURE_FLAG_PROVIDER,
+  type IFeatureFlagProvider,
+} from '#domain/adapters/feature-flag.interface';
 import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
@@ -20,6 +25,8 @@ import type { Member } from '#domain/entities/member.entity';
 
 const SALT = 'test-env-salt';
 const USER_ID = 'user-123';
+const CHAPTER_ID = '11111111-1111-4111-8111-111111111111';
+const OTHER_CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
 
 /** Builds a Supabase mock whose chapters lookup returns the given opt-out. */
 function makeSupabaseMock(result: {
@@ -64,6 +71,7 @@ async function buildService(opts: {
   supabase: unknown;
   provider: IAnalyticsProvider;
   members?: IMemberRepository;
+  flags?: IFeatureFlagProvider;
 }) {
   const config = {
     get: jest.fn((key: string) =>
@@ -76,6 +84,12 @@ async function buildService(opts: {
       { provide: ConfigService, useValue: config },
       { provide: SUPABASE_CLIENT, useValue: opts.supabase },
       { provide: ANALYTICS_PROVIDER, useValue: opts.provider },
+      {
+        provide: FEATURE_FLAG_PROVIDER,
+        useValue: opts.flags ?? {
+          isEnabled: jest.fn().mockResolvedValue(false),
+        },
+      },
       {
         provide: MEMBER_REPOSITORY,
         useValue: opts.members ?? makeMemberRepo(),
@@ -104,6 +118,7 @@ describe('AnalyticsService', () => {
       const distinctId = service.getDistinctId(USER_ID);
 
       expect(distinctId).toBe(hashUserIdForAnalytics(SALT, USER_ID));
+      expect(isPseudonymHex(distinctId)).toBe(true);
       expect(distinctId).not.toContain(USER_ID);
     });
 
@@ -116,6 +131,104 @@ describe('AnalyticsService', () => {
       });
 
       expect(service.getDistinctId(USER_ID)).toBeNull();
+    });
+  });
+
+  describe('getChapterGroupId', () => {
+    it('returns the HMAC of the chapter id, never the raw id', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      const groupId = service.getChapterGroupId(CHAPTER_ID);
+
+      expect(groupId).toBe(hashChapterIdForAnalytics(SALT, CHAPTER_ID));
+      expect(isPseudonymHex(groupId)).toBe(true);
+      expect(groupId).not.toContain(CHAPTER_ID);
+    });
+
+    it('is stable for one chapter and distinct across chapters', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      const a = service.getChapterGroupId(CHAPTER_ID);
+      const b = service.getChapterGroupId(OTHER_CHAPTER_ID);
+      expect(a).toBe(service.getChapterGroupId(CHAPTER_ID));
+      expect(a).not.toBe(b);
+    });
+
+    it('lowercases a UUID so header case cannot split the group', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      expect(service.getChapterGroupId(CHAPTER_ID.toUpperCase())).toBe(
+        hashChapterIdForAnalytics(SALT, CHAPTER_ID),
+      );
+    });
+
+    it('returns null when no chapter is in context', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      expect(service.getChapterGroupId(undefined)).toBeNull();
+      expect(service.getChapterGroupId(null)).toBeNull();
+      expect(service.getChapterGroupId('')).toBeNull();
+    });
+
+    it('returns null for a malformed chapter id instead of hashing it', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      expect(service.getChapterGroupId('not-a-uuid')).toBeNull();
+      expect(service.getChapterGroupId(USER_ID)).toBeNull();
+      expect(service.getChapterGroupId('user-123@example.com')).toBeNull();
+    });
+
+    it('returns null when no salt is configured', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: '',
+        supabase: client,
+        provider,
+      });
+
+      expect(service.getChapterGroupId(CHAPTER_ID)).toBeNull();
+    });
+
+    it('still returns the chapter group when the chapter has opted out', async () => {
+      const { client, from } = makeSupabaseMock({
+        data: { analytics_opt_out: true },
+        error: null,
+      });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      expect(service.getChapterGroupId(CHAPTER_ID)).toBe(
+        hashChapterIdForAnalytics(SALT, CHAPTER_ID),
+      );
+      expect(from).not.toHaveBeenCalled();
     });
   });
 
@@ -561,6 +674,58 @@ describe('AnalyticsService', () => {
       expect(provider.capture).not.toHaveBeenCalled();
     });
 
+    it('does not log PostgREST details when membership check throws a plain object', async () => {
+      const details =
+        'Key (email)=(alice@example.com) is not present in table "users".';
+      const members = makeMemberRepo();
+      members.findByUserAndChapter.mockRejectedValue({
+        code: 'PGRST116',
+        message: 'JSON object requested, multiple (or no) rows returned',
+        details,
+        hint: 'Check the membership.',
+      });
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+        members,
+      });
+
+      try {
+        await expect(
+          service.trackFromClient('opened-channel', USER_ID, {
+            chapterId: 'chapter-1',
+          }),
+        ).resolves.toBeUndefined();
+        expect(provider.capture).not.toHaveBeenCalled();
+        expect(warnSpy).toHaveBeenCalled();
+        const printed = warnSpy.mock.calls
+          .map((args) =>
+            args.map((arg) =>
+              typeof arg === 'string' ? arg : JSON.stringify(arg),
+            ),
+          )
+          .flat()
+          .join('\n');
+        expect(printed).toContain('analytics membership check failed');
+        expect(printed).toContain('PGRST116');
+        expect(printed).not.toContain('alice@example.com');
+        expect(
+          warnSpy.mock.calls
+            .filter((args) =>
+              String(args[0]).includes('analytics membership check failed'),
+            )
+            .every((args) => args.length === 1),
+        ).toBe(true);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
     it('is a no-op when analytics is unconfigured (no salt), without touching the DB', async () => {
       const members = makeMemberRepo();
       const { client } = makeSupabaseMock({ data: null, error: null });
@@ -679,6 +844,70 @@ describe('AnalyticsService', () => {
       await expect(service.forgetUser(USER_ID)).resolves.toBe(true);
 
       expect(provider.forget).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('isProductFlagEnabled', () => {
+    it('evaluates with HMAC distinct id and chapter group, never raw ids', async () => {
+      const flags: IFeatureFlagProvider = {
+        isEnabled: jest.fn().mockResolvedValue(true),
+      };
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+        flags,
+      });
+
+      await expect(
+        service.isProductFlagEnabled('new-composer', USER_ID, CHAPTER_ID),
+      ).resolves.toBe(true);
+
+      expect(flags.isEnabled).toHaveBeenCalledWith(
+        'new-composer',
+        hashUserIdForAnalytics(SALT, USER_ID),
+        hashChapterIdForAnalytics(SALT, CHAPTER_ID),
+      );
+      const [, distinctId, chapterGroupId] = (flags.isEnabled as jest.Mock).mock
+        .calls[0] as [string, string, string];
+      expect(distinctId).not.toBe(USER_ID);
+      expect(chapterGroupId).not.toBe(CHAPTER_ID);
+    });
+
+    it('fails closed when analytics is unconfigured', async () => {
+      const flags: IFeatureFlagProvider = {
+        isEnabled: jest.fn().mockResolvedValue(true),
+      };
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: '',
+        supabase: client,
+        provider,
+        flags,
+      });
+
+      await expect(
+        service.isProductFlagEnabled('new-composer', USER_ID, CHAPTER_ID),
+      ).resolves.toBe(false);
+      expect(flags.isEnabled).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the flag provider throws', async () => {
+      const flags: IFeatureFlagProvider = {
+        isEnabled: jest.fn().mockRejectedValue(new Error('flags down')),
+      };
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+        flags,
+      });
+
+      await expect(
+        service.isProductFlagEnabled('new-composer', USER_ID),
+      ).resolves.toBe(false);
     });
   });
 });

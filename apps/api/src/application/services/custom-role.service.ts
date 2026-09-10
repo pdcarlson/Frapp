@@ -17,6 +17,7 @@ import type {
 import type { ChapterCustomRole } from '#domain/entities/chapter-custom-role.entity';
 import { WILDCARD } from '#domain/constants/permissions';
 import type { CreateCustomRole, UpdateCustomRole } from '@repo/validation';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * What `create` and `update` accept.
@@ -264,7 +265,12 @@ export class CustomRoleService {
       .from('chapter_audit_log')
       .insert(audit);
     if (error) {
-      this.logger.error('Failed to write chapter audit log', error);
+      logThrowable(
+        this.logger,
+        'error',
+        'Failed to write chapter audit log',
+        error,
+      );
       throw error;
     }
   }

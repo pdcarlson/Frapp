@@ -2,18 +2,28 @@
 
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { AppState } from "react-native";
+import { signInWithNativeApple } from "./apple-auth";
+import {
+  describeOAuthKickoffError,
+  type OAuthProvider,
+} from "./auth-providers";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
-import { queryClient } from "./query-client";
+import { resetObservabilityOnLogout } from "./observability/reset";
+import { clearProductQueryCache } from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
+
+WebBrowser.maybeCompleteAuthSession();
 
 /**
  * The claim `custom_access_token_hook` stamps into every issued access token.
@@ -30,6 +40,12 @@ type AuthStatus = "hydrating" | "authenticated" | "unauthenticated";
 type AuthSessionContextValue = {
   status: AuthStatus;
   email: string | null;
+  /**
+   * Supabase auth uid. Changes on the same render as a magic-link account
+   * swap — chapter claim already keys on this. Observability identity must
+   * too; `useViewerUserId` can still hold the previous `["user","me"]` row.
+   */
+  userId: string | null;
   /** Resolved from the access token's `active_chapter_id` claim; see below. */
   chapterId: string | null;
   /**
@@ -54,6 +70,11 @@ type AuthSessionContextValue = {
     password: string;
   }) => Promise<void>;
   sendMagicLink: (input: { email: string }) => Promise<void>;
+  /**
+   * Google, or Apple. Native SIWA is tried first on iOS; otherwise an Expo
+   * auth session opens the provider and the returned URL is exchanged here.
+   */
+  signInWithOAuthProvider: (provider: OAuthProvider) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -97,6 +118,7 @@ function readAuthParams(url: string): {
   tokenHash: string | null;
   otpType: string | null;
   errorDescription: string | null;
+  errorCode: string | null;
 } {
   const hashIndex = url.indexOf("#");
   const queryIndex = url.indexOf("?");
@@ -122,7 +144,13 @@ function readAuthParams(url: string): {
     // so no extra unescaping here — doing it again would turn an encoded plus
     // sign in the provider's message into a space.
     errorDescription: read("error_description") ?? read("error"),
+    errorCode: read("error_code"),
   };
+}
+
+function oauthRedirectTo(): string {
+  const redirectTo = Linking.createURL("/");
+  return redirectTo.includes("?") ? redirectTo : `${redirectTo}?`;
 }
 
 /**
@@ -144,9 +172,15 @@ async function createSessionFromUrl(
     tokenHash,
     otpType,
     errorDescription,
+    errorCode,
   } = readAuthParams(url);
 
-  if (errorDescription) return errorDescription;
+  if (errorDescription || errorCode) {
+    return describeOAuthKickoffError({
+      message: errorDescription ?? errorCode ?? undefined,
+      code: errorCode ?? undefined,
+    });
+  }
   if (!accessToken && !refreshToken && !code && !tokenHash) return null;
 
   try {
@@ -155,7 +189,7 @@ async function createSessionFromUrl(
         access_token: accessToken,
         refresh_token: refreshToken,
       });
-      return error ? error.message : null;
+      return error ? describeOAuthKickoffError(error) : null;
     }
     if (tokenHash) {
       if (!otpType || !isEmailOtpType(otpType)) {
@@ -165,16 +199,16 @@ async function createSessionFromUrl(
         token_hash: tokenHash,
         type: otpType,
       });
-      return error ? error.message : null;
+      return error ? describeOAuthKickoffError(error) : null;
     }
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
-      return error ? error.message : null;
+      return error ? describeOAuthKickoffError(error) : null;
     }
     return null;
   } catch (error) {
     return error instanceof Error
-      ? error.message
+      ? describeOAuthKickoffError(error)
       : "That sign-in link could not be used. Request a new one.";
   }
 }
@@ -222,6 +256,24 @@ export function AuthSessionProvider({
     null,
   );
   const [callbackError, setCallbackError] = useState<string | null>(null);
+  /**
+   * Last auth uid observed in `applySession`.
+   *
+   * A magic-link swap stays `authenticated` and can keep the same chapter, so
+   * the chapter-keyed `FrappProvider` clear is not the product-cache owner.
+   * Comparing uid here — after the in-process Bearer write, before
+   * `setSession` — drops `["user","me"]` / `["settings"]` before the next
+   * session is treated as settled, while observers that refetch on the clear
+   * already see User B's token. Token refresh keeps the same uid and must not
+   * clear. A first uid (`null` → A) is a sign-in, not a swap.
+   */
+  const previousAuthUserIdRef = useRef<string | null>(null);
+  /**
+   * Last deep-link URL we already exchanged. OAuth `openAuthSessionAsync`
+   * returns the same URL that `Linking.useURL` then delivers; exchanging a
+   * single-use `code` twice would set callbackError on the winner.
+   */
+  const lastHandledCallbackUrl = useRef<string | null>(null);
 
   const url = Linking.useURL();
   const accessToken = session?.access_token ?? null;
@@ -243,7 +295,8 @@ export function AuthSessionProvider({
    * False with no token (do not treat the pre-`getSession()` mount as resolved)
    * and false the moment `claimKey` changes, even before the claim effect re-runs.
    */
-  const hasReadChapterClaim = Boolean(claimKey) && claimReadForUserId === claimKey;
+  const hasReadChapterClaim =
+    Boolean(claimKey) && claimReadForUserId === claimKey;
 
   // Hydrate from persisted storage, then follow every subsequent change.
   useEffect(() => {
@@ -251,12 +304,38 @@ export function AuthSessionProvider({
 
     let cancelled = false;
 
+    const applySession = (
+      nextSession: Session | null,
+      opts: { clearCallbackError: boolean },
+    ) => {
+      if (cancelled) return;
+      // Memory-token update is synchronous inside write/clear so identity
+      // GET cannot go out with the previous member's Bearer. Child effects
+      // run before the token-mirror effect below.
+      if (nextSession?.access_token) {
+        void writeAuthToken(nextSession.access_token);
+      } else {
+        void clearAuthToken();
+      }
+      // Product cache next, still on this turn: observers that refetch on
+      // `queryClient.clear()` must already see User B's Bearer. Clearing
+      // before the write would refill `["user","me"]` with User A's token.
+      const nextUserId = nextSession?.user?.id ?? null;
+      const previousUserId = previousAuthUserIdRef.current;
+      if (previousUserId && previousUserId !== nextUserId) {
+        clearProductQueryCache();
+      }
+      previousAuthUserIdRef.current = nextUserId;
+      setSession(nextSession ?? null);
+      setStatus(nextSession ? "authenticated" : "unauthenticated");
+      if (opts.clearCallbackError && nextSession) setCallbackError(null);
+    };
+
     supabase.auth
       .getSession()
       .then(({ data }) => {
         if (cancelled) return;
-        setSession(data.session ?? null);
-        setStatus(data.session ? "authenticated" : "unauthenticated");
+        applySession(data.session ?? null, { clearCallbackError: false });
       })
       .catch(() => {
         if (!cancelled) setStatus("unauthenticated");
@@ -264,11 +343,7 @@ export function AuthSessionProvider({
 
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (cancelled) return;
-      setSession(nextSession ?? null);
-      setStatus(nextSession ? "authenticated" : "unauthenticated");
-      // A session arriving answers whatever the last failed link complained
-      // about; leaving it set would show a stale error on the next sign-out.
-      if (nextSession) setCallbackError(null);
+      applySession(nextSession ?? null, { clearCallbackError: true });
     });
 
     return () => {
@@ -280,13 +355,16 @@ export function AuthSessionProvider({
   // Mirror the access token into SecureStore under the key the API SDK already
   // reads (`AUTH_TOKEN_STORAGE_KEY`). This is the whole seam: the SDK client
   // stays unaware of Supabase, and every refreshed token propagates for free.
+  // Skip hydrating: first paint has no session yet and must not `clearAuthToken`
+  // (that would poison the in-process token before `getSession` resolves).
   useEffect(() => {
+    if (status === "hydrating") return;
     if (accessToken) {
       void writeAuthToken(accessToken);
     } else {
       void clearAuthToken();
     }
-  }, [accessToken]);
+  }, [accessToken, status]);
 
   /**
    * Chapter context comes from the token claim, never from a local pick.
@@ -402,11 +480,13 @@ export function AuthSessionProvider({
     };
   }, [supabase]);
 
-  // Magic-link callback: the link opens the app with tokens attached.
+  // Magic-link and OAuth callbacks: the link opens the app with tokens attached.
   useEffect(() => {
     if (!supabase || !url) return;
+    if (lastHandledCallbackUrl.current === url) return;
 
     let cancelled = false;
+    lastHandledCallbackUrl.current = url;
     void createSessionFromUrl(supabase, url).then((message) => {
       if (!cancelled && message) setCallbackError(message);
     });
@@ -449,6 +529,62 @@ export function AuthSessionProvider({
     [supabase],
   );
 
+  const signInWithOAuthProvider = useCallback(
+    async (provider: OAuthProvider) => {
+      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      setCallbackError(null);
+
+      if (provider === "apple") {
+        const native = await signInWithNativeApple(supabase);
+        if (native === "completed" || native === "cancelled") return;
+      }
+
+      const redirectTo = oauthRedirectTo();
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams:
+            provider === "google" ? { prompt: "select_account" } : undefined,
+        },
+      });
+      if (error) {
+        throw Object.assign(new Error(describeOAuthKickoffError(error)), {
+          code: error.code,
+        });
+      }
+      if (!data.url) {
+        throw new Error("Unable to start sign-in. Retry in a moment.");
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectTo,
+      );
+      if (result.type === "cancel" || result.type === "dismiss") return;
+      if (result.type !== "success") {
+        throw new Error("Unable to finish sign-in. Retry in a moment.");
+      }
+
+      // `openAuthSessionAsync` returning success and `Linking.useURL`
+      // delivering the same URL are the same event on iOS. Claim the URL
+      // synchronously before any await so the Linking effect cannot start a
+      // second exchange of a single-use `code`. If Linking already claimed it,
+      // the session (or callbackError) is already in flight — do not throw a
+      // stale "invalid code" over a sign-in that succeeded.
+      if (lastHandledCallbackUrl.current === result.url) {
+        return;
+      }
+      lastHandledCallbackUrl.current = result.url;
+      const message = await createSessionFromUrl(supabase, result.url);
+      if (message) {
+        throw new Error(message);
+      }
+    },
+    [supabase],
+  );
+
   const signOut = useCallback(async () => {
     try {
       if (supabase) {
@@ -478,12 +614,15 @@ export function AuthSessionProvider({
     // `(auth)/join.tsx`) and each had to remember the clear for itself; the
     // picker's landed only after the leak was noticed a second time. Owning it
     // at the single point every path already funnels through is what stops a
-    // fourth path from reintroducing it.
-    queryClient.clear();
+    // fourth path from reintroducing it. An in-place uid swap uses the same
+    // helper from `applySession` so it cannot forget the drop either.
+    clearProductQueryCache();
+    previousAuthUserIdRef.current = null;
     setSession(null);
     setClaimedChapter({ userId: null, chapterId: null });
     setClaimReadForUserId(null);
     setStatus("unauthenticated");
+    resetObservabilityOnLogout();
   }, [supabase]);
 
   // Only the first read blocks, and only while signed in — see the state's own
@@ -494,12 +633,14 @@ export function AuthSessionProvider({
     () => ({
       status,
       email: session?.user?.email ?? null,
+      userId,
       chapterId,
       isChapterResolving,
       isConfigured: configured,
       callbackError,
       signInWithPassword,
       sendMagicLink,
+      signInWithOAuthProvider,
       signOut,
     }),
     [
@@ -510,8 +651,10 @@ export function AuthSessionProvider({
       sendMagicLink,
       session?.user?.email,
       signInWithPassword,
+      signInWithOAuthProvider,
       signOut,
       status,
+      userId,
     ],
   );
 

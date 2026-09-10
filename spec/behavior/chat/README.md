@@ -259,7 +259,7 @@ Slash commands turn chat into the dispatcher for every ops module. The full comm
 
 ## Message Persistence
 
-Every message is written to `chat_messages` in Postgres **first**, and reaches connected clients only as a consequence of that write — Realtime replicates the row to the channel's Postgres Changes subscribers. The API performs no separate publish step (ADR-02; see `spec/ui/resilience.md` §3.2). If realtime delivery fails, the message is still persisted and will appear on the next history fetch or page refresh.
+Every message is written to `chat_messages` in Postgres **first**, and reaches connected clients only as a consequence of that write — Realtime replicates the row to the channel's Postgres Changes subscribers. The API performs no separate publish step (ADR-02; see `spec/ui/resilience/message-delivery.md#receiving-messages-realtime`). If realtime delivery fails, the message is still persisted and will appear on the next history fetch or page refresh.
 
 ## Read Receipts
 
@@ -493,8 +493,10 @@ What follows is the behaviour the archive has once it is in.
   not, and cannot be.** Both `message_reactions.user_id` and
   `chat_message_actions.user_id` are NOT NULL foreign keys to `users`, and
   minting a `users` row per Discord handle was rejected for the reasons above. No
-  count is lost and no identity is invented. Rendering the preserved summary is
-  not built yet — the data is stored ahead of the surface that will show it.
+  count is lost and no identity is invented. The web bubble draws that summary
+  as read-only chips (same geometry as live reactions, not buttons). Custom
+  emoji render as `:name:` — v1 does not resolve `--media` images. Mobile is a
+  separate surface.
 - **Pins are recorded, not applied.** A message Discord had pinned imports with
   `is_pinned = false` and `payload.was_pinned_at_source = true`. A channel's 50
   live pin slots are the chapter's to spend, and an archive with 200 pins would
@@ -521,7 +523,8 @@ What follows is the behaviour the archive has once it is in.
 | `poll` | Poll (inline vote) |
 | `dues` | Dues reminder card — in the enum, but still renders the placeholder `ComingSoonCard` |
 | `points` | Points award notification |
-| `hours` | Service hours log confirmation — in the enum, but still renders the placeholder `ComingSoonCard` |
+| `hours` | Service hours log confirmation (created by `/hours log`) |
+| `rush` | Recruitment candidate card (created by `/<vocab> add`; live vote/bid via GET) |
 | `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata — **specified, not yet in `CHAT_MESSAGE_KINDS`** |
 | `pulse` | Chapter-health catch-up card — see [catch-up.md](./catch-up.md) — **specified, not yet in `CHAT_MESSAGE_KINDS`** (#821) |
 | `system_audit` | System-generated audit message (posted to #chapter-audit, or to a DM on invite-accept) |
@@ -566,7 +569,7 @@ These are the user-observable guarantees of the chat client (web and mobile), in
 
 ## Web ↔ mobile parity
 
-The mobile (Expo) chat experience shares web's realtime transport and outbox, so **presence and the offline composer queue behave the same across platforms** — both run the same `@repo/chat-core` code. Reactions round-trip on both, but the affordance does not match: mobile draws a single quick reaction where web offers four plus a full picker. Inline rich-message cards are web-only apart from polls: web has a renderer registry (`apps/web/components/chat/renderers/`, two of its kinds still stubs), mobile branches on `poll` alone. Differences that are canonical:
+The mobile (Expo) chat experience shares web's realtime transport and outbox, so **presence and the offline composer queue behave the same across platforms** — both run the same `@repo/chat-core` code. Reactions round-trip on both, but the affordance does not match: mobile draws a single quick reaction where web offers four plus a full picker. Inline rich-message cards are web-only apart from polls: web has a renderer registry (`apps/web/components/chat/renderers/`, `dues` still a stub), mobile branches on `poll` alone. Differences that are canonical:
 
 - **Voice memos** would be mobile-native: recorded in the composer, uploaded to Storage, and sent as `kind="audio"` with waveform metadata, with web clients playing them back. **Specified, not built** — `audio` is not in `CHAT_MESSAGE_KINDS`, as the Message Kinds and Actions table above records, so this describes the intended behavior rather than a shipped one.
 - **Presence lifecycle on mobile** — **specified, not built.** The presence payload carries no status field: it is exactly `{ userId, ts }`, pinned by key-set equality in `presence-contract.spec.ts` because widening it silently breaks push suppression. Nothing binds `AppState` to presence. As designed it would map app state to presence: backgrounded → `idle`, force-quit → `offline` — statuses that today are derived from the age of `ts`, never written.

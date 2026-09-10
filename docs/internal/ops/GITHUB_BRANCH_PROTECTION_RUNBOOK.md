@@ -224,7 +224,7 @@ approval, not the merge.
 | Check name           | What it validates                                                                               |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
 | `packages-build`     | Shared packages compile                                                                         |
-| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests |
+| `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity); landing plus `@repo/validation`, `@repo/color`, `@repo/formatting`, `@repo/observability`, `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` unit tests |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                |
 | `api-tests`          | API Jest unit tests                                                                             |
 | `api-contract-check` | openapi.json + api-sdk freshness                                                                |
@@ -308,7 +308,7 @@ commit.
 > `ignoreCommand` pin in both `vercel.json` files**, they are the versioned form of settings that
 > are otherwise dashboard-only and would fall back to unversioned dashboard state if Git is
 > re-linked. The canonical record of the unlink, its per-project dates and every live breakage is
-> **ADR-21** in [`spec/architecture/README.md`](../../../spec/architecture/README.md); the guardrail
+> **ADR-21** in [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md); the guardrail
 > repair is [#1579](https://github.com/pdcarlson/Frapp/issues/1579) and the CI-driven replacement
 > [#1578](https://github.com/pdcarlson/Frapp/issues/1578). None of this changes the
 > branch-protection policy stated here: Vercel deploys are not required checks either way.
@@ -339,9 +339,10 @@ blocking `main` churn.
 ### AI review policy
 
 There is **no AI-review required check.** Code review is a **local pre-push gate**
-(`.claude/hooks/pre-push-review-gate.sh` requires `/diff-review` or `/code-review` before the branch is pushed) — the former
-`claude-review-gate` CI check was removed (2026-06-04, ADR-14 amendment). See
-[`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+(Cursor `.cursor/hooks.json` `beforeShellExecution` wrapping
+`.claude/hooks/pre-push-review-gate.sh`; requires `/diff-review` or `/code-review` before the
+branch is pushed) — the former `claude-review-gate` CI check was removed (2026-06-04, ADR-14
+amendment). See [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 

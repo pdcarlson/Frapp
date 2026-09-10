@@ -13,8 +13,10 @@
 import {
   parseAnnounceArgs,
   parseEventArgs,
+  parseHoursArgs,
   parsePollArgs,
   parsePointsArgs,
+  parseRushArgs,
   parseTaskArgs,
   type AnnouncementPayload,
   type PollPayload,
@@ -130,6 +132,10 @@ export async function dispatchSlashCommand(
       return dispatchTask(ctx, args, channelId, resolveMember);
     case "event":
       return dispatchEvent(ctx, args, channelId);
+    case "hours":
+      return dispatchHours(ctx, args, channelId);
+    case "rush":
+      return dispatchRush(ctx, args, channelId, resolveMember);
     default:
       return {
         ok: false,
@@ -512,6 +518,9 @@ const TASK_CARD_LOST_WARNING =
 const EVENT_CARD_LOST_WARNING =
   "Event was created, but the chat card couldn't be posted. Check the events calendar to confirm — don't run the command again.";
 
+const HOURS_CARD_LOST_WARNING =
+  "Hours were logged, but the chat card couldn't be posted. Check the service hours page to confirm — don't run the command again.";
+
 const POINTS_RECORDED_ROW_NOTE =
   "Points recorded — the chat card didn't post. Don't run this command again.";
 
@@ -520,6 +529,15 @@ const TASK_RECORDED_ROW_NOTE =
 
 const EVENT_RECORDED_ROW_NOTE =
   "Event created — the chat card didn't post. Don't run this command again.";
+
+const HOURS_RECORDED_ROW_NOTE =
+  "Hours logged — the chat card didn't post. Don't run this command again.";
+
+const RUSH_CARD_LOST_WARNING =
+  "Candidate was added, but the chat card couldn't be posted. Don't run the command again.";
+
+const RUSH_RECORDED_ROW_NOTE =
+  "Candidate added — the chat card didn't post. Don't run this command again.";
 
 const REPLAY_ACCEPTED_WARNING =
   "These points were already recorded — the retry didn't add a second entry. Whether the original chat card posted isn't something the server can tell us, so check the channel or the points ledger if you need to be sure.";
@@ -812,5 +830,227 @@ async function dispatchEvent(
 
   // Success: the server posts the `event` card (same client_message_id); the
   // Realtime echo reconciles the placeholder via mergeServerRow.
+  return { ok: true };
+}
+
+/**
+ * Today's date as `YYYY-MM-DD` in the browser's local timezone. `/hours log`
+ * has no date token — the entry is for today. `toISOString().slice(0, 10)`
+ * would be UTC and would stamp yesterday for anyone west of Greenwich in the
+ * evening.
+ */
+function localTodayIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Dispatch `/hours log <duration> <description>`. Like `/task` and `/event`, a
+ * "heavy" command: it creates a real service-entry row, so the hours card is
+ * server-originated (a client cannot post `kind:"hours"` directly). We show an
+ * optimistic `loading` placeholder, call `POST /v1/service-entries` (which
+ * creates the entry and posts the card with the same `client_message_id`), and
+ * let Realtime reconcile the placeholder in place. On failure we drop the
+ * placeholder and surface the server's message. No server-side dedupe — a
+ * replay would duplicate the entry, so there is no retry path.
+ *
+ * Chat cannot attach proof. When the chapter's `wf_hours_receipt` workflow is
+ * on, the API 400s with its existing receipt message; that is the correct UX,
+ * not a bypass.
+ */
+async function dispatchHours(
+  ctx: ChatActionContext,
+  args: string,
+  channelId: string,
+): Promise<DispatchResult> {
+  const parsed = parseHoursArgs(args);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  const clientMessageId = randomClientId();
+
+  const placeholderContent = `Logging ${parsed.value.durationMinutes} minutes of service…`;
+
+  insertLocalPlaceholder(ctx, {
+    channelId,
+    clientMessageId,
+    content: placeholderContent,
+  });
+
+  try {
+    const result = await ctx.apiClient.POST("/v1/service-entries", {
+      body: {
+        date: localTodayIsoDate(),
+        duration_minutes: parsed.value.durationMinutes,
+        description: parsed.value.description,
+        channel_id: channelId,
+        client_message_id: clientMessageId,
+      },
+    });
+    // Same status-without-`error` narrowing as `/task` / `/event`. Empty-body
+    // gateway 502/504 must not read as success: `/hours` has no server-side
+    // dedupe, so a stranded placeholder invites a duplicating retry.
+    const data = result.data as CardPostedResponse | undefined;
+    let status = result.response?.status;
+    if (result.error) status ??= 0;
+    const ok = typeof status === "number" && status >= 200 && status < 300;
+    if (!ok) {
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return {
+        ok: false,
+        error: apiErrorMessage(result.error, "Couldn't log hours"),
+      };
+    }
+    if (data?.card_posted === false) {
+      markLocalRecorded(ctx, {
+        channelId,
+        clientMessageId,
+        note: HOURS_RECORDED_ROW_NOTE,
+        content: placeholderContent,
+      });
+      return { ok: true, warning: HOURS_CARD_LOST_WARNING };
+    }
+  } catch {
+    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    return { ok: false, error: "Couldn't reach the hours service" };
+  }
+
+  return { ok: true };
+}
+
+async function resolveRushCandidateId(
+  ctx: ChatActionContext,
+  token: string,
+): Promise<string | null> {
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      token,
+    )
+  ) {
+    return token;
+  }
+  try {
+    const result = await ctx.apiClient.GET("/v1/rush/candidates", {
+      params: { query: { name: token } },
+    });
+    const status = result.response?.status;
+    const ok = typeof status === "number" && status >= 200 && status < 300;
+    const id = (result.data as { id?: string } | undefined)?.id;
+    if (!ok || typeof id !== "string") return null;
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Dispatch `/<vocab> add|vote|bid`. `add` is a heavy command (loading
+ * placeholder + `POST /v1/rush/candidates` + `card_posted`). `vote` and `bid`
+ * mutate in place with no placeholder — the existing card live-updates.
+ */
+async function dispatchRush(
+  ctx: ChatActionContext,
+  args: string,
+  channelId: string,
+  resolveMember: ResolveMember | undefined,
+): Promise<DispatchResult> {
+  const parsed = parseRushArgs(args);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  if (parsed.value.action === "add") {
+    return dispatchRushAdd(
+      ctx,
+      parsed.value.displayName,
+      channelId,
+      resolveMember,
+    );
+  }
+
+  const token =
+    parsed.value.action === "vote"
+      ? (parsed.value.candidateId ?? parsed.value.candidateToken ?? "")
+      : parsed.value.candidateToken;
+  const id = await resolveRushCandidateId(ctx, token);
+  if (!id) {
+    return { ok: false, error: "No candidate matches that name" };
+  }
+
+  const path =
+    parsed.value.action === "vote"
+      ? "/v1/rush/candidates/{id}/vote"
+      : "/v1/rush/candidates/{id}/bid";
+  const fallback =
+    parsed.value.action === "vote"
+      ? "Couldn't record that vote"
+      : "Couldn't extend that bid";
+
+  try {
+    const result = await ctx.apiClient.POST(path, {
+      params: { path: { id } },
+    });
+    let status = result.response?.status;
+    if (result.error) status ??= 0;
+    const ok = typeof status === "number" && status >= 200 && status < 300;
+    if (!ok) {
+      return { ok: false, error: apiErrorMessage(result.error, fallback) };
+    }
+  } catch {
+    return { ok: false, error: "Couldn't reach the recruitment service" };
+  }
+  return { ok: true };
+}
+
+async function dispatchRushAdd(
+  ctx: ChatActionContext,
+  displayName: string,
+  channelId: string,
+  resolveMember: ResolveMember | undefined,
+): Promise<DispatchResult> {
+  const clientMessageId = randomClientId();
+  const placeholderContent = `Adding candidate ${displayName}…`;
+  const member = resolveMember?.(displayName);
+
+  insertLocalPlaceholder(ctx, {
+    channelId,
+    clientMessageId,
+    content: placeholderContent,
+  });
+
+  try {
+    const result = await ctx.apiClient.POST("/v1/rush/candidates", {
+      body: {
+        display_name: displayName,
+        ...(member?.user_id ? { user_id: member.user_id } : {}),
+        channel_id: channelId,
+        client_message_id: clientMessageId,
+      },
+    });
+    const data = result.data as CardPostedResponse | undefined;
+    let status = result.response?.status;
+    if (result.error) status ??= 0;
+    const ok = typeof status === "number" && status >= 200 && status < 300;
+    if (!ok) {
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return {
+        ok: false,
+        error: apiErrorMessage(result.error, "Couldn't add that candidate"),
+      };
+    }
+    if (data?.card_posted === false) {
+      markLocalRecorded(ctx, {
+        channelId,
+        clientMessageId,
+        note: RUSH_RECORDED_ROW_NOTE,
+        content: placeholderContent,
+      });
+      return { ok: true, warning: RUSH_CARD_LOST_WARNING };
+    }
+  } catch {
+    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    return { ok: false, error: "Couldn't reach the recruitment service" };
+  }
+
   return { ok: true };
 }

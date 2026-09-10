@@ -1,17 +1,55 @@
-# Claude Code cloud sandbox (primary dev environment)
+# Cloud sandbox (Cursor Cloud and Claude Code)
 
-**Claude Code web sessions are the primary way Frapp is developed.** This is the single
-source of truth for how the sandbox is configured so the full local stack — Docker,
-local Supabase, and the NestJS API — comes up automatically each session. Laptop/local
-setup is the secondary path: [`LOCAL_DEV.md`](./LOCAL_DEV.md). Agent credentials live in
-[`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md); broader CI/agent infra is
-[`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md).
+**Cursor Cloud and Claude Code web are independent first-class ways Frapp is developed** (ADR-16 amendment 9). They share [`scripts/cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh). Neither is a fallback.
+
+**Cursor Cloud** public contract is
+[`.cursor/environment.json`](../../../.cursor/environment.json):
+`install` → [`scripts/cursor-agent-install.sh`](../../../scripts/cursor-agent-install.sh);
+`start` → [`scripts/cursor-cloud-up.sh`](../../../scripts/cursor-cloud-up.sh)
+(boot sysctls, then the shared bringup);
+app terminals wait on `.cloud-sandbox-up.done` via
+[`scripts/cursor-cloud-terminal.sh`](../../../scripts/cursor-cloud-terminal.sh)
+(#2043).
+
+**Claude Code web** public contract is the Setup script field
+(`bash scripts/cloud-sandbox-setup.sh || true`) plus SessionStart
+([`.claude/hooks/session-start.sh`](../../../.claude/hooks/session-start.sh)),
+which launches the same shared bringup.
+
+Laptop/local setup is the third path: [`LOCAL_DEV.md`](./LOCAL_DEV.md). Agent
+credentials live in [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md); broader
+CI/agent infra is [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md).
+
+## Cursor Cloud
+
+Cursor resolves environment configuration from `.cursor/environment.json` in the
+repository (schema: <https://cursor.com/schemas/environment.schema.json>; do not
+add `$schema`). `install` refreshes Docker/Node/npm and pre-pulls images.
+`start` (`scripts/cursor-cloud-up.sh`) applies runtime sysctls and runs
+`cloud-sandbox-up.sh`. App terminals (`scripts/cursor-cloud-terminal.sh`) wait
+for `.cloud-sandbox-up.done` or fail on `.cloud-sandbox-up.failed`. Agent
+instructions: [`AGENTS.md` § Cursor Cloud specific instructions](../../../AGENTS.md#cursor-cloud-specific-instructions).
+
+Do **not** put secrets in `environment.json`. User secrets are unavailable during
+Builds; `DOCKERHUB_*` must be environment/team secrets. Do not trigger a
+speculative environment Build unless `install`/`start` actually changed.
+
+**Egress** is a dashboard decision, not a guessed copy of this file into JSON
+(#2025). The host list to apply is the one in [What's configured in the web
+UI](#whats-configured-in-the-web-ui) below (Claude's production-withholding
+allowlist). Do not invent hosts. Omit `vercel.com` unless the owner decides it
+belongs — that entry is unexplained Claude-dashboard drift.
+
+Cursor `sessionStart` hooks are **not** available on cloud agents; `start`
+already does bringup. Cursor Automations are an optional scheduled path; do not
+dual-run the same routine as a Claude Code Routine ([`ROUTINES.md`](../ci-cd/ROUTINES.md)).
 
 ## How Claude Code web environments work
 
-A session runs in a fresh, ephemeral Anthropic VM (~4 vCPU / 16 GB / 30 GB disk). Key
+A Claude Code session runs in a fresh, ephemeral Anthropic VM (~4 vCPU / 16 GB / 30 GB disk). Key
 properties that shape everything below (see
-<https://code.claude.com/docs/en/claude-code-on-the-web>):
+<https://code.claude.com/docs/en/claude-code-on-the-web>). Agent instructions:
+[`AGENTS.md` § Claude Code web sandbox](../../../AGENTS.md#claude-code-web-sandbox).
 
 - **Environment variables** are set in the web UI and are **visible to anyone who can
   edit the environment** — use **test-mode** secrets only, never live keys.
@@ -27,9 +65,12 @@ properties that shape everything below (see
 
 ## What's configured in the web UI
 
-Open the environment settings dialog and set:
+The list below is the **canonical production-withholding allowlist**, recorded from the
+Claude Code environment. Apply the same hosts on the Cursor Cloud environment dashboard
+(#2025) — do not invent extras. Claude UI path: open the environment settings
+dialog and set:
 
-**1. Setup script** field:
+**1. Setup script** field (Claude Code web; Cursor uses `.cursor/environment.json` `install`):
 
 ```
 bash scripts/cloud-sandbox-setup.sh || true
@@ -261,6 +302,11 @@ landing either sentinel.
 
 ### Booting the API
 
+On **Cursor Cloud**, `environment.json` terminals already start the API (and web/landing)
+via `cursor-cloud-terminal.sh` after `.cloud-sandbox-up.done`. Do **not** start a second
+copy on `:3001`.
+
+On **Claude Code web**, or if `:3001` is not bound,
 `cloud-sandbox-up.sh` writes `apps/api/.env.local` (local Supabase keys from `supabase
 status` + the Stripe vars), which the API's `ConfigModule` loads directly — so **no
 Infisical is needed**:
@@ -307,8 +353,10 @@ If you hit that error, the file is missing rather than your change being wrong: 
 ## When bringup fails — STOP and report
 
 If `.cloud-sandbox-up.failed` is present, **do not work around it** — stop and tell the user
-exactly what to add or change in the Claude Code web environment, then wait. Most of these
-failures are environment config the agent cannot fix from inside the session.
+exactly what to add or change in **this session's environment dashboard** — the Cursor Cloud environment dashboard (network policy,
+env var, secrets), or the Claude Code web environment —
+then wait. Most of these failures are environment config the agent cannot fix from inside
+the session.
 
 **Read the sentinel first — then still read the log.** For the `supabase start` step,
 `.cloud-sandbox-up.failed` names the failure class and the remedy (`'supabase start' failed
@@ -353,7 +401,8 @@ session for them to take effect.
 **Not every row is a "stop and report".** Four kinds live in that table:
 
 - **Environment config** (allowlist, Docker Hub creds, missing setup script, absent marker) —
-  the user changes a setting in the Claude Code web environment, and only a **new** session
+  the user changes a setting in **this session's environment dashboard** (Cursor Cloud or
+  Claude Code web), and only a **new** session
   picks it up. This is the case the "stop and report" rule is about. Note the web UI has
   exactly three fields, so check the remedy is one of them before reporting: a sandbox
   privilege denial (`dockerd` exiting on one, the edge-runtime rlimit) has **no** setting and
@@ -510,7 +559,7 @@ configuration change apart. Staging is the blast radius we accept. **Enumerate.*
   (The unexplained bare `vercel.com` entry noted above is the dashboard apex and does not
   cover `*.vercel.app` either.) When the alias lags behind the
   latest `main` build — the known Vercel behaviour described in
-  [`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md) — you can reach what the alias currently
+  [`../ops/deployment/vercel.md`](../ops/deployment/vercel.md) — you can reach what the alias currently
   points at, not the newer deployment behind it. Check the alias state via the Vercel MCP
   tools rather than assuming the hostname is current.
 - **Writes being safe.** Nothing about egress makes a `POST` reversible. The skill's

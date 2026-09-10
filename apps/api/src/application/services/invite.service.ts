@@ -29,6 +29,7 @@ import { ChatService } from './chat.service';
 import { EMAIL_PROVIDER } from '#domain/adapters/email.interface';
 import type { IEmailProvider } from '#domain/adapters/email.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import type {
   FrappSupabaseClient,
   TablesInsert,
@@ -276,6 +277,11 @@ export class InviteService {
     return { invites, failed };
   }
 
+  /**
+   * Bind the *current* user to this token. Invite email is not matched against
+   * `users.email`, so Apple Hide My Email / `privaterelay.appleid.com` still
+   * joins when the member opens the invite after signing in.
+   */
   async redeem(
     token: string,
     userId: string,
@@ -354,7 +360,9 @@ export class InviteService {
           await this.memberRepo.findByUserAndChapter(userId, invite.chapter_id),
         );
       } catch (lookupError) {
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           'Failed to check membership after invite redeem insert error; leaving claim in place',
           lookupError,
         );
@@ -364,7 +372,9 @@ export class InviteService {
         try {
           await this.inviteRepo.releaseClaim(invite.id, claimedAt);
         } catch (releaseError) {
-          this.logger.warn(
+          logThrowable(
+            this.logger,
+            'warn',
             'Failed to release invite after membership insert failed',
             releaseError,
           );
@@ -437,13 +447,20 @@ export class InviteService {
         .from('chat_messages')
         .insert(message);
       if (error) {
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           'Invite-accept system_audit message insert failed',
           error,
         );
       }
     } catch (error) {
-      this.logger.warn('Failed to notify inviter of invite acceptance', error);
+      logThrowable(
+        this.logger,
+        'warn',
+        'Failed to notify inviter of invite acceptance',
+        error,
+      );
     }
   }
 

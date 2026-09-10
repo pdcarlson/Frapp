@@ -1,12 +1,30 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useClaimChapterSync } from "@/lib/auth/use-claim-chapter-sync";
+
+/**
+ * First value and same-value updates must not clear: those are hydrate /
+ * token-refresh, not a switch. A real change (chapter or auth uid) drops the
+ * whole cache because many keys are not scoped to that identity.
+ */
+function dropCacheWhenIdentityChanges(
+  previousRef: { current: string | null | undefined },
+  next: string | null,
+  queryClient: QueryClient,
+): void {
+  const previous = previousRef.current;
+  previousRef.current = next;
+  if (previous === undefined || previous === null) return;
+  if (previous === next) return;
+  queryClient.clear();
+}
 
 export function FrappProvider({ children }: { children: React.ReactNode }) {
   // The token's `active_chapter_id` claim seeds and corrects the store, so a
@@ -14,8 +32,10 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
   // hook for why the store follows the claim and not the other way round.
   useClaimChapterSync();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
+  const authUserId = useAuthUserId();
   const queryClient = useQueryClient();
   const previousChapterId = useRef<string | null | undefined>(undefined);
+  const previousAuthUserId = useRef<string | null | undefined>(undefined);
 
   const client = useMemo(
     () =>
@@ -61,12 +81,25 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
    * queries for no benefit.
    */
   useEffect(() => {
-    const previous = previousChapterId.current;
-    previousChapterId.current = activeChapterId;
-    if (previous === undefined || previous === null) return;
-    if (previous === activeChapterId) return;
-    queryClient.clear();
+    dropCacheWhenIdentityChanges(
+      previousChapterId,
+      activeChapterId,
+      queryClient,
+    );
   }, [activeChapterId, queryClient]);
+
+  /*
+   * Drop every cached query when the auth uid changes.
+   *
+   * A same-tab magic-link swap stays authenticated and can keep the same
+   * chapter, so the chapter-keyed effect above is a no-op. `["user","me"]` and
+   * `["settings"]` are not account-scoped. Subject is the JWT uid
+   * (`useAuthUserId`), not `useViewerUserId` — that row is the leftover this
+   * clear exists to drop. First uid (`null` → A) is a sign-in, not a swap.
+   */
+  useEffect(() => {
+    dropCacheWhenIdentityChanges(previousAuthUserId, authUserId, queryClient);
+  }, [authUserId, queryClient]);
 
   return (
     <FrappClientProvider client={client} chapterId={activeChapterId}>

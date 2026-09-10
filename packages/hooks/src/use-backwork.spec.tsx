@@ -242,7 +242,11 @@ const CHAPTER_ID = "chapter-abc";
 
   describe("useRequestBackworkUploadUrl", () => {
     it("requests an upload URL", async () => {
-      const mockData = { url: "https://upload.url", filename: "test.pdf" };
+      const mockData = {
+        upload_url: "https://upload.url",
+        storage_path: "chapters/c/backwork/r/test.pdf",
+        resource_id: "r",
+      };
       const mockPost = vi.fn().mockResolvedValue({ data: mockData, error: null });
       const mockClient = { POST: mockPost };
 

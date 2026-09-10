@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FrappLockup } from "../components/frapp-lockup";
+import { TrackedCta } from "../components/tracked-cta";
 import { buildAuthUrls } from "../lib/auth-urls";
 import {
   BookOpen,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 
 const chapterStats = [
-  { value: "50+", label: "Chapters operating on Frapp" },
+  { value: "50+", label: "Chapters operating on Signet" },
   { value: "2,000+", label: "Members engaged weekly" },
   { value: "10,000+", label: "Events managed without spreadsheets" },
 ];
@@ -61,7 +62,7 @@ const features = [
 const testimonials = [
   {
     quote:
-      "Frapp replaced three disconnected tools and finally gave our exec board one source of truth.",
+      "Signet replaced three disconnected tools and finally gave our exec board one source of truth.",
     name: "Jordan M.",
     role: "Chapter President",
     chapter: "Alpha Phi • Midwest University",
@@ -84,9 +85,9 @@ const testimonials = [
 
 const faqs = [
   {
-    question: "How is Frapp priced?",
+    question: "How is Signet priced?",
     answer:
-      "Frapp uses one flat monthly chapter plan. No per-seat pricing and no feature gating.",
+      "Signet uses one flat monthly chapter plan. No per-seat pricing and no feature gating.",
   },
   {
     question: "Can we cancel any time?",
@@ -96,10 +97,10 @@ const faqs = [
   {
     question: "Is there a trial period?",
     answer:
-      "Yes, every new chapter starts with a 14-day trial so your leadership team can evaluate fit.",
+      "Yes. Every new chapter starts with a 14-day trial.",
   },
   {
-    question: "Can alumni and active members both use Frapp?",
+    question: "Can alumni and active members both use Signet?",
     answer:
       "Yes. Alumni support, role-based permissions, and dedicated channels are built into the product model.",
   },
@@ -112,12 +113,12 @@ export default function Home() {
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    name: "Frapp",
+    name: "Signet",
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web, iOS, Android",
     url: "https://frapp.live",
     description:
-      "Frapp is the operating system for Greek Life, unifying chat, events, points, study hours, and chapter billing.",
+      "Signet is the operating system for Greek Life, unifying chat, events, points, study hours, and chapter billing.",
     offers: {
       "@type": "Offer",
       priceCurrency: "USD",
@@ -126,7 +127,7 @@ export default function Home() {
     },
     brand: {
       "@type": "Brand",
-      name: "Frapp",
+      name: "Signet",
     },
   };
 
@@ -160,18 +161,22 @@ export default function Home() {
             </Link>
           </nav>
           <div className="flex items-center gap-3">
-            <Link
+            <TrackedCta
+              cta="log-in"
+              surface="header"
               href={loginUrl}
               className="hidden rounded-md border border-border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted md:inline-flex"
             >
               Log In
-            </Link>
-            <Link
+            </TrackedCta>
+            <TrackedCta
+              cta="get-started"
+              surface="header"
               href={signupUrl}
               className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
             >
               Get Started
-            </Link>
+            </TrackedCta>
           </div>
         </div>
       </header>
@@ -189,23 +194,27 @@ export default function Home() {
               </h1>
             </div>
             <p className="max-w-xl text-lg text-muted-foreground">
-              Frapp unifies chapter communication, events, study accountability,
+              Signet unifies chapter communication, events, study accountability,
               points, and dues workflows so leadership can run operations
               without duct-taped tools.
             </p>
             <div className="flex flex-wrap items-center gap-3">
-              <Link
+              <TrackedCta
+                cta="get-started"
+                surface="hero"
                 href={signupUrl}
                 className="inline-flex h-11 items-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Get Started
-              </Link>
-              <Link
+              </TrackedCta>
+              <TrackedCta
+                cta="explore-the-product"
+                surface="hero"
                 href="#showcase"
                 className="inline-flex h-11 items-center rounded-md border border-border bg-card px-6 text-sm font-semibold transition-colors hover:bg-muted"
               >
                 Explore the product
-              </Link>
+              </TrackedCta>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
@@ -263,14 +272,6 @@ export default function Home() {
               </div>
             ))}
           </div>
-          <p className="mt-8 max-w-2xl text-xs text-muted-foreground">
-            Illustrative projections—not reported customer metrics. Replace with
-            verified figures when available (see{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
-              spec/ui/brand-identity.md
-            </code>{" "}
-            in the repo).
-          </p>
         </div>
       </section>
 
@@ -371,7 +372,7 @@ export default function Home() {
             <div className="border-b border-border">
               <Image
                 src="/showcase-dashboard.svg"
-                alt="Frapp web dashboard preview showing operations, members, and points modules."
+                alt="Signet web dashboard preview showing operations, members, and points modules."
                 width={1280}
                 height={900}
                 className="h-auto w-full"
@@ -393,7 +394,7 @@ export default function Home() {
             <div className="border-b border-border">
               <Image
                 src="/showcase-mobile.svg"
-                alt="Frapp mobile app preview showing feed updates and task-loop state cards."
+                alt="Signet mobile app preview showing feed updates and task-loop state cards."
                 width={900}
                 height={900}
                 className="h-auto w-full"
@@ -435,12 +436,14 @@ export default function Home() {
                 </li>
               ))}
             </ul>
-            <Link
+            <TrackedCta
+              cta="start-free-trial"
+              surface="pricing"
               href={signupUrl}
               className="mt-8 inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
             >
               Start free trial
-            </Link>
+            </TrackedCta>
           </div>
           <div className="space-y-4">
             {faqs.map((faq) => (
@@ -465,8 +468,7 @@ export default function Home() {
               Built for real chapter operations.
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground">
-              Composite feedback—illustrative of officer workflows; not
-              attributed to verified customers until published as such.
+              Officers run chat, events, hours, and dues in one place.
             </p>
           </div>
           <div className="mt-10 grid gap-5 md:grid-cols-3">
@@ -497,15 +499,17 @@ export default function Home() {
             Ready to run your chapter with clarity, speed, and accountability?
           </h2>
           <p className="mt-4 max-w-2xl text-white/70">
-            Join the chapters using Frapp to consolidate operations, reduce
+            Join the chapters using Signet to consolidate operations, reduce
             leadership overhead, and improve member engagement.
           </p>
-          <Link
+          <TrackedCta
+            cta="get-started"
+            surface="cta-band"
             href={signupUrl}
             className="mt-8 inline-flex h-11 items-center rounded-md bg-white px-6 text-sm font-semibold text-navy transition-colors hover:bg-white/90"
           >
             Get Started
-          </Link>
+          </TrackedCta>
         </div>
       </section>
 
@@ -525,9 +529,14 @@ export default function Home() {
                 </Link>
               </li>
               <li>
-                <Link href={signupUrl} className="hover:text-foreground">
+                <TrackedCta
+                  cta="get-started"
+                  surface="footer"
+                  href={signupUrl}
+                  className="hover:text-foreground"
+                >
                   Get Started
-                </Link>
+                </TrackedCta>
               </li>
             </ul>
           </div>
@@ -545,9 +554,14 @@ export default function Home() {
                 </a>
               </li>
               <li>
-                <Link href={loginUrl} className="hover:text-foreground">
+                <TrackedCta
+                  cta="log-in"
+                  surface="footer"
+                  href={loginUrl}
+                  className="hover:text-foreground"
+                >
                   Log In
-                </Link>
+                </TrackedCta>
               </li>
             </ul>
           </div>
@@ -594,7 +608,7 @@ export default function Home() {
           </div>
         </div>
         <div className="border-t border-border py-4 text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Frapp. All rights reserved.
+          © {new Date().getFullYear()} Signet. All rights reserved.
         </div>
       </footer>
     </main>

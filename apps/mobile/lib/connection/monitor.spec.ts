@@ -1,3 +1,4 @@
+import { REQUEST_ID_HEADER } from "@repo/api-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createConnectionMonitor,
@@ -82,6 +83,18 @@ describe("connection monitor", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("mints x-request-id on the health probe, not a sentry-trace id", async () => {
+    const { monitor, fetchMock } = harness();
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    await Promise.resolve();
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = new Headers(init?.headers);
+    expect(headers.get(REQUEST_ID_HEADER)).toMatch(/^req_[0-9a-f-]{36}$/i);
+    expect(headers.get("sentry-trace")).toBeNull();
+    expect(headers.get("baggage")).toBeNull();
+  });
+
   it("goes OFFLINE the moment the link drops", async () => {
     const { monitor, seen, link } = harness();
     monitor.start();
@@ -91,11 +104,9 @@ describe("connection monitor", () => {
   });
 
   it("treats an unreachable internet as suspicion, not proof", () => {
-    // `isOfflineFromExpoState` folds this into "offline" for the chat outbox,
-    // where a false offline only means "queue instead of send". Here the value
-    // gates writes, so folding it in would disable the check-in field at the
-    // door for a captive-portal-ish network whose API is perfectly reachable —
-    // and with no recovery, since a down link also suppresses the probe. One
+    // The chat outbox now reads this same monitor (#1072), so this value is
+    // DEGRADED for both the banner and the queue: a false offline would
+    // disable check-in at the door, and `DEGRADED` must still send. One
     // failure's worth of suspicion, and `/health` settles it.
     const { monitor, link } = harness();
     monitor.start();

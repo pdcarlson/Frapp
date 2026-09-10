@@ -1,8 +1,10 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
-export const alt = "Frapp — The Operating System for Greek Life";
+export const alt = "Signet. Ask your chapter anything.";
 
 export const size = {
   width: 1200,
@@ -12,10 +14,15 @@ export const size = {
 export const contentType = "image/png";
 
 /**
- * Social preview card (Open Graph / Twitter). Keeps palette aligned with app icon:
- * navy field, sky accent — no missing static /og-image.png.
+ * Social preview card (Open Graph / Twitter). Locked emblem B from
+ * Design's raster, not the reconstructed crest SVG.
  */
-export default function OpenGraphImage() {
+export default async function OpenGraphImage() {
+  const emblemBytes = await readFile(
+    join(process.cwd(), "app/opengraph-emblem.png"),
+  );
+  const emblem = `data:image/png;base64,${emblemBytes.toString("base64")}`;
+
   return new ImageResponse(
     <div
       style={{
@@ -25,7 +32,7 @@ export default function OpenGraphImage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#0F172A",
+        backgroundColor: "#1A1A1A",
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
       }}
     >
@@ -36,23 +43,12 @@ export default function OpenGraphImage() {
           gap: 28,
         }}
       >
-        <div
-          style={{
-            width: 120,
-            height: 120,
-            borderRadius: 28,
-            backgroundColor: "#0F172A",
-            border: "4px solid #60A5FA",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#60A5FA",
-            fontSize: 72,
-            fontWeight: 800,
-          }}
-        >
-          F
-        </div>
+        <img
+          src={emblem}
+          width={120}
+          height={120}
+          style={{ borderRadius: 28 }}
+        />
         <div
           style={{
             display: "flex",
@@ -64,22 +60,22 @@ export default function OpenGraphImage() {
             style={{
               fontSize: 96,
               fontWeight: 800,
-              color: "#60A5FA",
+              color: "#DDB844",
               letterSpacing: "-0.04em",
             }}
           >
-            frapp
+            Signet
           </span>
           <span
             style={{
               fontSize: 28,
               fontWeight: 600,
-              color: "#94A3B8",
+              color: "#A89B7A",
               letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}
           >
-            The operating system for Greek life
+            Ask your chapter anything.
           </span>
         </div>
       </div>

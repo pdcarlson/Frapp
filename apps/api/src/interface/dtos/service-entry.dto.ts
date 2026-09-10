@@ -3,12 +3,14 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 
 export class CreateServiceEntryDto {
   @ApiProperty({ description: 'Date of service (YYYY-MM-DD)' })
@@ -41,6 +43,80 @@ export class CreateServiceEntryDto {
   @IsOptional()
   @IsString()
   proof_path?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`.',
+  })
+  @IsOptional()
+  @IsUUID()
+  channel_id?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry.',
+  })
+  @IsOptional()
+  @IsUUID()
+  client_message_id?: string;
+}
+
+/**
+ * Response contract for `POST /v1/service-entries`.
+ *
+ * This route previously declared no response schema, which openapi-typescript
+ * renders as `content?: never` — so `data` reached the SDK typed `never` and
+ * `/hours` could not read `card_posted` without an unchecked cast (same
+ * defect as `/task`, #1717). The entry fields are flattened at the top level
+ * exactly as the route already returned them.
+ *
+ * Drift between this class and the service-entry row is caught the same way
+ * as `CreateTaskResponseDto`: `implements ServiceEntry` for type drift, and
+ * the `Assert<Exclude<…>>` aliases below for key drift. `card_posted` is the
+ * one deliberate extra field.
+ */
+export class CreateServiceEntryResponseDto implements ServiceEntry {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  chapter_id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  user_id: string;
+
+  @ApiProperty({ format: 'date' })
+  date: string;
+
+  @ApiProperty()
+  duration_minutes: number;
+
+  @ApiProperty()
+  description: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  proof_path: string | null;
+
+  @ApiProperty({ enum: ['PENDING', 'APPROVED', 'REJECTED'] })
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  reviewed_by: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  review_comment: string | null;
+
+  @ApiProperty()
+  points_awarded: boolean;
+
+  @ApiProperty({ format: 'date-time' })
+  created_at: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the entry row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch.',
+  })
+  card_posted?: boolean;
 }
 
 export class RequestProofUploadUrlDto {
@@ -136,3 +212,28 @@ export class ReviewServiceEntryDto {
   @MaxLength(1000)
   review_comment?: string;
 }
+
+/**
+ * Compile-time key-drift guards between {@link CreateServiceEntryResponseDto}
+ * and the service-entry row it publishes. Each resolves to `never` while the
+ * two agree; when they diverge the alias stops satisfying `Assert`'s
+ * constraint and the build fails naming the field.
+ */
+type Assert<T extends never> = T;
+
+/** Entry fields {@link CreateServiceEntryResponseDto} forgot to declare. Must be `never`. */
+export type CreateServiceEntryResponseDtoMissingFields = Assert<
+  Exclude<keyof ServiceEntry, keyof CreateServiceEntryResponseDto>
+>;
+
+/**
+ * Fields {@link CreateServiceEntryResponseDto} declares that the entry row
+ * does not carry. Must be `never`. `card_posted` is excluded because it is
+ * this route's own outcome flag, not a column — the one deliberate addition.
+ */
+export type CreateServiceEntryResponseDtoExtraFields = Assert<
+  Exclude<
+    keyof CreateServiceEntryResponseDto,
+    keyof ServiceEntry | 'card_posted'
+  >
+>;

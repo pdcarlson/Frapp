@@ -40,7 +40,43 @@
 > (`development` / `staging` / `production`), not a dashboard value — an EAS profile exposes no
 > `VERCEL_ENV` equivalent to the bundle.
 
-> **Sentry alert rules are dashboard-only.** Sentry's issue-alert-rule API answers `HTTP 410 {"message":"This API no longer exists."}`, so no agent or script can create, read, or verify a rule. Every rule below has to be created by a human in the Sentry UI, and its existence cannot be asserted in CI — treat the dashboard as the source of truth and re-check it by hand when routing changes.
+> **Sentry *issue-alert* read works; *metric-alert* read still 410s; *create* is human-only.**
+> Observed **2026-09-09** via Sentry MCP `find_alert_rules` / `get_alert_rule` (org
+> `frapp-live`, region `https://us.sentry.io`):
+>
+> - Each of `frapp-api`, `frapp-web`, and `frapp-mobile` has one enabled issue rule named
+>   “Send a notification for high priority issues” (ids `3133192` / `3855503` / `3914865`).
+>   Action is Email (`target type: issue_owners`, fallthrough `ActiveMembers`).
+>   `environment` is null — not scoped to production. None is named or tagged for
+>   `security_event: auth_failure_spike` or `billing_event: checkout_unknown_chapter`.
+>   `frapp-api` `3133192` last triggered 2026-09-07T22:09:12Z; the web and mobile defaults
+>   have `lastTriggered: null`.
+> - `find_alert_rules(kind=metric)` against the org still answers
+>   `HTTP 410 {"message":"This API no longer exists."}` — metric rules were **not**
+>   verified this session. Do not read an empty issue-alert list as “no metric alerts”.
+>
+> The 2026-08-era claim that *every* Sentry alert-rule API is 410 is therefore **stale for
+> issue alerts only** (read recovered, noted on #863 on 2026-09-07, reconfirmed this date).
+> Creating or scoping a rule is still unreachable from an agent session (MCP catalog has
+> `find_alert_rules` / `get_alert_rule`, not create). Every *intended* rule below still has
+> to be created by a human in the Sentry UI, and its existence cannot be asserted in CI.
+> Re-check by reading live rules, not by assuming this paragraph.
+>
+> **Render paging rules were not verified this session** (Render MCP `list_workspaces`
+> unauthorized). **PostHog alerts** (org Signet, project `569878`, same date): no insight
+> alerts, no error-tracking alerts, no workflows — which is also the live proof that #709
+> is still missing. GitHub-issue watchdogs in the table below are not evidence of
+> provider-side Render or PostHog paging.
+>
+> **PostHog project settings** (org Signet, project `569878`), live-verified **2026-09-09
+> ~21:32Z** via PostHog MCP `project-get` (`updated_at` 2026-09-09T21:32:34Z):
+> `autocapture_exceptions_opt_in=false`, `anonymize_ips=true`,
+> `capture_console_log_opt_in=false`. `session_recording_opt_in` may still be true at
+> **project** level; that is not production replay. Production replay stays off until
+> the approval gate in
+> [`observability.md` § Privacy and replay](../../../spec/behavior/observability.md#privacy-and-replay)
+> (and a production PostHog project exists — #1173). Do not claim production replay is
+> on from the project-level flag.
 
 ## Automated GitHub-issue alerts
 
@@ -61,12 +97,14 @@ tree held five, because a count is a second copy of a fact the rows already stat
 | *Deploy API is failing — pushes are not reaching the environment* | `deploy-outcome` job, `deploy-api.yml` | the last `Deploy API` run that tried to deploy did not succeed | a later run deploys successfully |
 | *Deploy Vercel staging is failing — web and landing are not reaching staging* | `deploy-outcome` job, `deploy-vercel-staging.yml` | the last `Deploy Vercel staging` run that tried to deploy did not succeed, so at least one of `app.staging.frapp.live` / `staging.frapp.live` is serving an older commit. The job builds and aliases **web first, landing second**, so a late failure can leave web current and landing stale — the alert is per-run, not per-host, and does not say which. Check the run before assuming both. **P2, not P1:** staging only — the production frontends deploy through `deploy-production.yml`, which reports separately in its own `report` job | a later run deploys successfully |
 | *Staging conformance is failing — frapp-staging has drifted* | `staging-conformance.yml` (daily 07:30 UTC) | at least one assertion about live `frapp-staging` **failed** — paused project, disabled auth hook, Auth SMTP reverted to the hosted 2/hour cap, Magic Link template lost `token_hash`, empty or non-`/health` `healthCheckPath` on `frapp-api-staging`, auto-deploy off or not tracking `main` on `frapp-api-staging`, or a failing secret sync | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
-| *Production Auth settings have drifted* | `production-auth-conformance.yml` (daily 07:45 UTC) | at least one assertion about live `frapp-prod` Auth **failed** — paused project, disabled auth hook, missing `https://app.frapp.live/**` / `frapp://**`, Site URL pointed at the staging origin, or Auth SMTP on with a From other than `no-reply@mail.frapp.live` / send cap under 300/hour, or SMTP on with a Magic Link template that still uses ConfirmationURL. Empty SMTP is SKIPPED, not a fail (hosted 2/hour cap until [#1824](https://github.com/[REDACTED]/Frapp/issues/1824)). **P1.** Does not name `environment: production` (#1435) | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
+| *Production Auth settings have drifted* | `production-auth-conformance.yml` (daily 07:45 UTC) | at least one assertion about live `frapp-prod` Auth **failed** — paused project, disabled auth hook, missing `https://app.frapp.live/**` / `frapp://**`, Site URL pointed at the staging origin, or Auth SMTP on with a From other than `Signet <no-reply@mail.frapp.live>` / send cap under 300/hour, or SMTP on with a Magic Link template that still uses ConfirmationURL. Empty SMTP is SKIPPED, not a fail (hosted 2/hour cap until [#1824](https://github.com/[REDACTED]/Frapp/issues/1824)). **P1.** Does not name `environment: production` (#1435) | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
 | *Database schema drift — a deployed database no longer matches supabase/migrations/* | `check-migration-drift.yml` (daily 07:00 UTC) | a deployed database's `schema_migrations` does not match `supabase/migrations/` — behind, or carrying a version that exists nowhere in the repo | every environment is back in sync |
 | *PR base sync cannot auto-update PR branches* | `pr-base-sync.yml` (every push to `main`) | at least one open PR was behind `main` and none could be updated automatically — no App token minted, the token rejected, or the update-branch API failing. **P2, not P1:** PRs still merge, they just need `Update branch` by hand, so this is degraded rather than down | a later sweep updates a branch, or runs with a working token and blocks on nothing |
 | *Production deploy guardrails have drifted — auto-deploy or production branch is wrong* | `production-guardrails.yml` (daily 07:15 UTC) | a provider-side production setting no longer matches what the guardrails assert — auto-deploy on, wrong branch, empty or non-`/health` `healthCheckPath`, or a Vercel Git link. **P1.** The title is the lookup key and was not renamed when `healthCheckPath` was added. Listed here as of #1674 — it has raised alerts since it shipped, but the roster above it said "four" and never included it, which is the drift the removed count caused | a later guardrail run finds nothing drifted |
 | *Production /health/ready is failing* | `production-uptime.yml` (every 15 minutes) | live `GET https://api.frapp.live/health/ready` was not HTTP 200 with JSON `status: "ok"`. **P1.** Watches `/health/ready`, not `/health` — `/health` always 2xxes while the process is up. Does not name `environment: production` (#1435). Not a Sentry 60s monitor | a later probe returns 200 `status: "ok"` |
 | *Production hosts are not on the same tagged commit* | `production-release-pin.yml` (daily 08:00 UTC) | live Render `frapp-api-prod` commit, Vercel `frapp-web` / `frapp-landing` READY production `githubCommitSha`, and a peeled `vX.Y.Z` tag do not name the same SHA — split-brain, or a named-SHA Deploy that skipped Release. Matching `main` is not required. `/health` `commit` is corroboration only. **P1.** Does not name `environment: production` (#1435) | a later run finds the three hosts on one `vX.Y.Z` |
+| *production-backup has required reviewers — nightly dumps will expire* | `production-backup-env.yml` (daily 06:15 UTC) | GitHub environment `production-backup` gained `required_reviewers` or a `wait_timer`, or the GET was unreadable / the env is missing. **P1.** A `schedule:` job that hits that gate suspends and expires, so nightly dumps look covered and write nothing (#1435). Does not name `environment: production` or `environment: production-backup`. `deployment_branch_policy: null` is not this alert | a later run finds empty `protection_rules` |
+| *Nightly production dump is stale or failed — recoverability is unproven* | `production-backup-freshness.yml` (daily 13:15 UTC) | the latest `db-backup.yml` `backup-production` job is missing, not success, hung more than 3h, or last success older than 36h, or the Actions GET was unreadable. **P1.** In-flight under 3h is not this alert and does not close an open one. Does not name `environment: production` or `environment: production-backup` (#1435). The hosted restore leftover stays on its own issue (1861); the reviewer watch stays on its own issue (1956) | a later run finds `backup-production` succeeded within 36h |
 
 Unlike the others, two alerts comment only on a state *change*, not on every run: the base-sync alert (per-merge) and the production `/health/ready` probe (every 15 minutes). An already-open one is never re-commented. An
 open one that has gone quiet is still live, not stale. Setup for the App the base-sync alert depends on is human-only
@@ -87,11 +125,13 @@ raised it: the early exit is gated on the `--preflight` flag, not on the trigger
 `workflow_dispatch` of the workflow raises and clears exactly as the cron does. Read the alert's run
 link rather than assuming the 07:15 window.
 
-**The scheduled watchdogs own disjoint concerns, and are staggered.** `check-migration-drift.yml`
+**The scheduled watchdogs own disjoint concerns, and are staggered.** `production-backup-env.yml`
+(06:15 UTC) owns that GitHub environment `production-backup` has no required reviewers or wait
+timer, fifteen minutes before `db-backup.yml` (06:30) tries to run under it; `check-migration-drift.yml`
 (07:00 UTC) owns migration parity for *every* environment; `production-guardrails.yml` (07:15) owns
 provider-side production settings; `staging-conformance.yml` (07:30) owns everything else about
 staging and deliberately does **not** re-run the drift comparison; `production-auth-conformance.yml`
-(07:45) owns Auth hook + redirect allow list + skip-until-on SMTP + skip-until-SMTP-on Magic Link on `frapp-prod`; `production-release-pin.yml` (08:00) owns the three production hosts sharing a peeled `vX.Y.Z`. One real drift still raises exactly
+(07:45) owns Auth hook + redirect allow list + skip-until-on SMTP + skip-until-SMTP-on Magic Link on `frapp-prod`; `production-release-pin.yml` (08:00) owns the three production hosts sharing a peeled `vX.Y.Z`; `production-backup-freshness.yml` (13:15) owns that the latest `backup-production` dump succeeded within 36h. One real drift still raises exactly
 one alert. If several of these alerts are open at once they are telling you about different
 problems. The staggering has more than one reason — the full schedule and its rationale are
 [`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance, which owns that fact.
@@ -170,7 +210,18 @@ The event carries a pseudonymized `chapter` tag when `ANALYTICS_HMAC_SALT` is se
 
 The API's cooldown reduces duplicates but **does not guarantee one event per occurrence** — the map is in-memory, so it is per-instance, reset by every deploy, and bounded, so a busy period can evict an entry early. Tune thresholds on "at least one", never on an exact count.
 
-Per the note above, Sentry alert rules are dashboard-only and cannot be asserted in CI, so **the row above describes a rule a human still has to create**; until then the event lands in the default unresolved stream. Do not add a second rule for the subscription case — see the paragraph above for why it would page on an expected flow.
+Per the note above, Sentry alert-rule *create* is still dashboard-only and cannot be asserted in CI, so **the row above describes a rule a human still has to create**; until then the event lands in the default unresolved stream. Observed 2026-09-09: that rule is absent (see the Sentry issue-alert callout). Do not add a second rule for the subscription case — see the paragraph above for why it would page on an expected flow.
+
+### Thresholds that exist only as intended lists
+
+[`spec/behavior/observability.md`](../../../spec/behavior/observability.md) § Alerting names
+API downtime, 5xx rate, database pool exhaustion, Stripe webhook failures, and the
+authorization-denial / throttle-saturation rows. This file records **implemented or
+human-create** thresholds for push delivery, the in-process auth-failure spike, and the
+billing unknown-chapter event. The rest have **no recorded provider rule**. Observed
+2026-09-09: Sentry *issue* alerts are only the default high-priority notification per
+project; Sentry *metric* alerts were unread (`HTTP 410`); PostHog has none; Render was
+unread. Treat a missing threshold as a gap, not as a pointer to follow in a dashboard.
 
 ## Escalation
 

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomUUID } from 'node:crypto';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import {
   DISCORD_IMPORT_REPOSITORY,
   type IDiscordImportRepository,
@@ -143,10 +144,14 @@ export class DiscordImportWorkerService {
         this.logger.log(`Reaped ${reaped} expired Discord OAuth handshakes.`);
       }
     } catch (error) {
-      // Same reasoning as the import sweep's catch: an unhandled rejection out
-      // of a `@Cron` takes the API process down under Node's default
-      // `--unhandled-rejections=throw`. A failed reap must cost one tick.
-      this.logger.error('Discord OAuth state sweep failed', error);
+      // Same reasoning as the import sweep: an unhandled rejection out of a
+      // `@Cron` takes the process down. A failed reap must cost one tick.
+      logThrowable(
+        this.logger,
+        'error',
+        'Discord OAuth state sweep failed',
+        error,
+      );
     }
   }
 
@@ -163,7 +168,9 @@ export class DiscordImportWorkerService {
     try {
       await this.sweepImports(new Date());
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         'Discord import sweep failed; skipping this tick',
         error,
       );

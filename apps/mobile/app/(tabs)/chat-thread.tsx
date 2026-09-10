@@ -14,12 +14,18 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   useChannel,
+  useChannelNotificationPreferences,
   useMarkChannelRead,
   useMemberDisplayNames,
+  useSetChannelNotificationLevel,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { MessageBubble } from "@/components/chat/message-bubble";
+import {
+  NotificationLevelControl,
+  selectChannelNotificationLevel,
+} from "@/components/chat/notification-level-control";
 import { PollCard } from "@/components/chat/poll-card";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { selectPostCapability } from "@/lib/chat/channel-list";
@@ -148,8 +154,19 @@ export default function ChatThreadScreen() {
   // Inverted list wants newest first; the cache hands back oldest first.
   const inverted = useMemo(() => [...messages].reverse(), [messages]);
 
+  // Parent lookup for reply quotes (#1727), built once per window rather
+  // than scanned per row — same map web's timeline uses.
+  const byId = useMemo(() => {
+    const index = new Map<string, ChatMessage>();
+    for (const message of messages) index.set(message.id, message);
+    return index;
+  }, [messages]);
+
   const renderItem = useCallback(
     ({ item }: { item: ChatMessage }) => {
+      const replyParent = item.reply_to_id
+        ? (byId.get(item.reply_to_id) ?? null)
+        : undefined;
       // Cards render unsided, full-width — not wrapped in `MessageBubble` —
       // matching web's `rendersAsBubble` exclusion for every card kind.
       if (item.kind === "poll") {
@@ -157,6 +174,8 @@ export default function ChatThreadScreen() {
           <PollCard
             message={item}
             viewerId={viewerId}
+            nameFor={nameFor}
+            replyParent={replyParent}
             isConfirmed={item._status === "confirmed"}
             onVote={(id, actionType, payload) =>
               void act(id, actionType, payload)
@@ -173,6 +192,7 @@ export default function ChatThreadScreen() {
           message={item}
           viewerId={viewerId}
           nameFor={nameFor}
+          replyParent={replyParent}
           onRetry={(id) => void retry(id)}
           onDiscard={(id) => void discard(id)}
           onReact={(id, emoji) => void react(id, emoji)}
@@ -183,11 +203,24 @@ export default function ChatThreadScreen() {
     // `nameFor` belongs here: it changes identity when the roster resolves, and
     // omitting it leaves a stale closure rendering truncated ids until some
     // other dep happens to change.
-    [viewerId, nameFor, retry, discard, react, unreact, act],
+    [viewerId, nameFor, retry, discard, react, unreact, act, byId],
   );
 
   const isOffline = connection === "offline";
-  const { isOffline: appOffline } = useConnection();
+  const { isOffline: appOffline, writeBlockedReason } = useConnection();
+
+  const notificationPrefsQuery = useChannelNotificationPreferences();
+  const setNotificationLevel = useSetChannelNotificationLevel();
+  const notificationLevel = useMemo(
+    () =>
+      selectChannelNotificationLevel(notificationPrefsQuery.data, channelId),
+    [notificationPrefsQuery.data, channelId],
+  );
+  const failedChannelId = setNotificationLevel.isError
+    ? setNotificationLevel.variables?.channelId
+    : undefined;
+  // Scoped to the channel the failed write was for. Do not `reset()` when
+  // `isError` flips true — that hid this alert on the channel that failed.
 
   /**
    * What the in-thread pill says, or `null` when it has nothing to add.
@@ -204,7 +237,7 @@ export default function ChatThreadScreen() {
           ? null
           : "Offline — messages will send when you reconnect"
         : connection === "polling"
-          ? // Verbatim from spec/ui/resilience.md § 3.2, which declares this
+          ? // Verbatim from spec/ui/resilience/message-delivery.md#receiving-messages-realtime, which declares this
             // string normative; `apps/web`'s reconnect pill carries the same
             // one. Polling is a working degraded mode, so calling it
             // "reconnecting" would report a live surface as broken.
@@ -241,7 +274,23 @@ export default function ChatThreadScreen() {
           <Text numberOfLines={1} style={styles.headerTitle}>
             Thread
           </Text>
+          {channelId ? (
+            <NotificationLevelControl
+              level={notificationLevel}
+              disabled={!channelId}
+              isSaving={setNotificationLevel.isPending}
+              writeBlockedReason={writeBlockedReason}
+              onChange={(level) => {
+                setNotificationLevel.mutate({ channelId, level });
+              }}
+            />
+          ) : null}
         </View>
+        {channelId && failedChannelId === channelId ? (
+          <Text accessibilityRole="alert" style={styles.saveError}>
+            Notification level not saved
+          </Text>
+        ) : null}
 
         {/*
           Reconciled with the global banner rather than duplicating it (#998).
@@ -251,7 +300,7 @@ export default function ChatThreadScreen() {
           on the same screen in two different sentences. So the pill yields its
           offline branch to the banner and keeps the two it alone can report.
           `polling` in particular must survive: it is a working degraded mode,
-          and `spec/ui/resilience.md` § 3.2 declares its string normative.
+          and `spec/ui/resilience/message-delivery.md#receiving-messages-realtime` declares its string normative.
         */}
         {pillMessage ? (
           <View style={styles.connectionPill}>
@@ -403,6 +452,11 @@ function createStyles(tokens: SignetTokens) {
       paddingBottom: tokens.spacing.md,
       borderBottomWidth: 1,
       borderBottomColor: tokens.color.border.hairline,
+      // The mute menu is `position: "absolute"` just below the trigger. Keep
+      // the header above the thread and do not clip that overflow — otherwise
+      // the menu draws under the message list (or vanishes on Android).
+      zIndex: 1,
+      overflow: "visible",
     },
     backChevron: {
       ...typeRole(tokens.typography.role.title),
@@ -413,6 +467,12 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
+    },
+    saveError: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.sm,
     },
     pressed: {
       opacity: 0.6,

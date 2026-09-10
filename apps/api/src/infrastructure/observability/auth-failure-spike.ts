@@ -4,13 +4,15 @@
  * The work plan offered two ways to approximate "20+ auth failures from one
  * origin in 5 minutes" and said to pick the simpler and document the choice.
  *
- * **Chosen: the API-side counter.** The Sentry-side alternative is not
- * reachable by any agent — Sentry's issue-alert-rule API answers
- * `HTTP 410 {"message":"This API no longer exists."}`, so a rule can only be
- * created by a human in the dashboard. A counter here is code: it ships, it is
- * unit-tested, and it works the moment a DSN exists. The Sentry-side rule
- * remains worth adding as a second layer (tracked separately as a human
- * action), because this one has two limits a server-side rule does not:
+ * **Chosen: the API-side counter.** A Sentry *issue-alert create* path is still
+ * unreachable from an agent session (MCP has no create-alert tool; #863). The
+ * old REST issue-alert-rule API's HTTP 410 is no longer the whole story:
+ * issue-alert *read* works again as of 2026-09-07/#863 and was reconfirmed
+ * 2026-09-09 — `frapp-api` has the default high-priority notification, not a
+ * `security_event: auth_failure_spike` rule. A counter here is code: it ships,
+ * it is unit-tested, and it works the moment a DSN exists. The Sentry-side
+ * rule remains worth adding as a second layer (human, #863), because this one
+ * has three limits a server-side rule does not:
  *
  *  1. **In-memory, so per-instance.** Two API instances each see half the
  *     traffic and each count half the failures. On a single Render instance

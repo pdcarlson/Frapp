@@ -17,7 +17,7 @@ them against the section whose wording matches.
 
 ## Where things go
 
-Two rules make the table decidable, because rows nest and a directory is not a filename. **Take the most specific row that matches** — chat behavior goes to `spec/behavior/chat/`, not to the broader `spec/behavior/` row above it, and design-system work goes to `spec/ui/design-system/`, not to `spec/ui/`. **Inside the directory a row names, a topic is one file, `<topic>.md`**, and earns its own `<topic>/` folder with a `README.md` routing to its files only once it has 2+ of them; `spec/behavior/chat/` and `spec/behavior/settings/` are the two that crossed that line.
+Two rules make the table decidable, because rows nest and a directory is not a filename. **Take the most specific row that matches** — chat behavior goes to `spec/behavior/chat/`, not to the broader `spec/behavior/` row above it, and design-system work goes to `spec/ui/design-system/`, not to `spec/ui/`. **Inside the directory a row names, a topic is one file, `<topic>.md`**, and earns its own `<topic>/` folder with a `README.md` routing to its files only once it has 2+ of them; `spec/behavior/chat/`, `spec/behavior/settings/`, `spec/architecture/adr/`, `spec/ui/resilience/`, and `docs/internal/ops/deployment/` are the ones that crossed that line.
 
 | Kind of change | Canonical home |
 | -------------- | -------------- |
@@ -25,10 +25,12 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Chat behavior (a topic with 2+ files) | `spec/behavior/chat/` |
 | Settings behavior (a topic with 2+ files) | `spec/behavior/settings/` |
 | Product features, surfaces, positioning, module catalog | `spec/product/` |
-| Architecture, data model, API patterns, ADRs | `spec/architecture/README.md` |
+| Architecture, data model, API patterns | `spec/architecture/README.md` |
+| Architecture Decision Records | `spec/architecture/adr/` |
 | Engineering principles | `spec/engineering.md` |
 | Environments, CI/CD model | `spec/environments/README.md` |
 | UI requirements (brand, assets, resilience) | `spec/ui/` |
+| Resilience (connection, delivery, retry, Realtime, uploads, cache, budgets) | `spec/ui/resilience/` — folder-as-index; cite a named leaf and heading, never `§N` |
 | Web-dashboard UI requirements | `spec/ui/web-dashboard/` |
 | Mobile UI requirements | `spec/ui/mobile/` |
 | Landing-site UI requirements | `spec/ui/landing/` |
@@ -36,8 +38,9 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 | Visual design reference (committed design exports) | `spec/ui/design-system/reference/` |
 | How to run locally / test / contribute | `docs/guides/` |
 | Documentation conventions and internal reference that is not a runbook | `docs/internal/` |
-| CI / agent infra / automations | `docs/internal/ci-cd/` |
-| Ops runbooks (DB, incidents, branch protection, deploy) | `docs/internal/ops/` |
+| CI / agent infra / automations | `docs/internal/ci-cd/` — wake/babysit facts: [`pr-babysitting.md`](ci-cd/pr-babysitting.md) |
+| Ops runbooks (DB, incidents, branch protection) | `docs/internal/ops/` |
+| Deploy runbook (providers, CI/CD gate, launch) | `docs/internal/ops/deployment/` — folder-as-index; cite a named leaf and heading, never `§N` |
 | Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |
 | Security implementation notes / fixes log | `docs/internal/security/` |
 | Accessibility / PR-review process | `docs/internal/quality/` |
@@ -70,4 +73,4 @@ Two rules make the table decidable, because rows nest and a directory is not a f
 
 - Tree indexes: [`docs/README.md`](../README.md) · [`spec/README.md`](../../spec/README.md) — they
   route to files; the directory map is the table above, and they point back here for it
-- Work tracking: [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) · ADR-16 in [`spec/architecture/README.md`](../../spec/architecture/README.md)
+- Work tracking: [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) · ADR-16 in [`spec/architecture/adr/adr-16.md`](../../spec/architecture/adr/adr-16.md)

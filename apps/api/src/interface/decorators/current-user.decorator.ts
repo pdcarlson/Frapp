@@ -1,7 +1,8 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import type {
-  AppUserContext,
-  RequestContext,
+import {
+  getOptionalChapterId,
+  type AppUserContext,
+  type RequestContext,
 } from '../types/request-context.types';
 
 export const CurrentUser = createParamDecorator(
@@ -18,6 +19,19 @@ export const CurrentUser = createParamDecorator(
 export const CurrentChapterId = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext) => {
     return ctx.switchToHttp().getRequest<RequestContext>().chapterId;
+  },
+);
+
+/**
+ * Chapter id when one is in context, without requiring ChapterGuard.
+ * Used by `GET /v1/analytics/identity` so a missing chapter yields
+ * `chapter_group_id: null` instead of 400.
+ */
+export const OptionalChapterId = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): string | undefined => {
+    return getOptionalChapterId(
+      ctx.switchToHttp().getRequest<RequestContext>(),
+    );
   },
 );
 

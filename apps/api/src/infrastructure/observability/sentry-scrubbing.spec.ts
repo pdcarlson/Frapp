@@ -84,8 +84,9 @@ describe('scrubSentryEvent', () => {
     // `userinfo` — which `redactFreeText` never had a rule for, and which this
     // boundary was shipping to a third party.
     expect(scrubbed?.request?.url).toBe('/v1/reports');
-    // A transaction name is `<METHOD> <path>`, not a target, so it has no
-    // authority to strip and is unchanged by the same call.
+    // Origin-form transaction names keep the method and lose the query.
+    // Outbound `POST https://host/path` names are reduced by the same
+    // HTTP-shaped parser as span descriptions (#2080).
     expect(scrubbed?.transaction).toBe('GET /v1/reports');
     expect(serialize(scrubbed)).not.toContain('super-secret');
     expect(serialize(scrubbed)).not.toContain('api.frapp.live');
@@ -147,6 +148,7 @@ describe('scrubSentryEvent', () => {
           category: 'http',
           message: 'GET /v1/me?token=abc',
           data: { url: 'https://api.frapp.live/v1/me?token=abc' },
+          payload: { email: 'treasurer@chapter.example.edu' },
         },
       ],
       exception: {
@@ -154,6 +156,13 @@ describe('scrubSentryEvent', () => {
           {
             type: 'Error',
             value: 'boom',
+            mechanism: {
+              type: 'generic',
+              data: { email: 'treasurer@chapter.example.edu' },
+            },
+            raw_stacktrace: {
+              frames: [{ vars: { password: 'hunter2' } }],
+            },
             stacktrace: {
               frames: [
                 {
@@ -172,7 +181,16 @@ describe('scrubSentryEvent', () => {
     const out = serialize(scrubbed);
     expect(out).not.toContain('hunter2');
     expect(out).not.toContain('token=abc');
+    expect(out).not.toContain('treasurer@chapter.example.edu');
+    expect(out).not.toContain('raw_stacktrace');
     expect(scrubbed?.breadcrumbs?.[0]).not.toHaveProperty('data');
+    expect(scrubbed?.breadcrumbs?.[0]).not.toHaveProperty('payload');
+    expect(scrubbed?.exception?.values?.[0]).not.toHaveProperty(
+      'raw_stacktrace',
+    );
+    expect(scrubbed?.exception?.values?.[0]?.mechanism).not.toHaveProperty(
+      'data',
+    );
     expect(
       scrubbed?.exception?.values?.[0]?.stacktrace?.frames?.[0],
     ).not.toHaveProperty('vars');
@@ -481,6 +499,35 @@ describe('scrubSentryTransaction', () => {
     );
     expect(scrubbed?.tags?.note).toBe('escalate to [redacted:email]');
     expect(scrubbed?.spans).toHaveLength(1);
+  });
+
+  it('reduces an outbound PostHog Logs ingest span to method + path (#2080)', () => {
+    const ingest = 'https://us.i.posthog.com/i/v1/logs';
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        transaction: `POST ${ingest}`,
+        spans: [
+          {
+            span_id: 'aaaa1111',
+            op: 'http.client',
+            description: `POST ${ingest}`,
+            data: { 'http.request.method': 'POST' },
+          },
+        ],
+        contexts: {
+          trace: { description: `POST ${ingest}`, op: 'http.client' },
+        },
+      }),
+    );
+
+    const out = JSON.stringify(scrubbed);
+    expect(out).not.toContain('us.i.posthog.com');
+    expect(out).not.toContain(ingest);
+    expect(out).toContain('POST /i/v1/logs');
+    expect(scrubbed?.spans).toHaveLength(1);
+    expect(scrubbed?.spans?.[0]).toMatchObject({
+      description: 'POST /i/v1/logs',
+    });
   });
 
   it('keeps the root span attributes that live only on contexts.trace', () => {

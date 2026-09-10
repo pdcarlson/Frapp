@@ -203,19 +203,20 @@ export class ChapterService {
       return [];
     }
 
-    const chapters = await Promise.all(
-      memberships.map(async (member) => {
-        const chapter = await this.chapterRepo.findById(member.chapter_id);
-        return chapter ? { member, chapter } : null;
-      }),
+    const chapters = await this.chapterRepo.findByIds(
+      memberships.map((member) => member.chapter_id),
+    );
+    const chaptersById = new Map(
+      chapters.map((chapter) => [chapter.id, chapter]),
     );
 
-    return chapters.flatMap((entry) => {
-      if (!entry) {
+    return memberships.flatMap((member) => {
+      const chapter = chaptersById.get(member.chapter_id);
+      if (!chapter) {
         return [];
       }
 
-      return [this.mapMembershipSummary(entry.member, entry.chapter)];
+      return [this.mapMembershipSummary(member, chapter)];
     });
   }
 

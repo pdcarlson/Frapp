@@ -4,7 +4,7 @@
 
 - Displayed on the landing site (frapp.live/terms) and linked from the app footer.
 - Accepted during chapter creation (onboarding step): the admin must check a "I agree to the Terms of Service and Privacy Policy" checkbox before the **Create chapter** submit — there is no payment step in the wizard, whose steps are `find → archetype → identity → invite`.
-- Covers: acceptable use policy, data ownership (chapters own their data; Frapp has a license to host and process it), limitation of liability, subscription terms and auto-renewal, account termination conditions.
+- Covers: acceptable use policy, data ownership (chapters own their data; Signet has a license to host and process it), limitation of liability, subscription terms and auto-renewal, account termination conditions.
 - **Known gap:** [`data-retention.md` § Inactive Chapter Cleanup](data-retention.md#inactive-chapter-cleanup) reserves the right to delete data from chapters inactive for more than 2 years, and now flags itself that the Terms do not yet carry it. The shipped terms page carries no such clause — no inactivity reservation, no 2-year window, no 30-day warning. Nothing implements the cleanup, so there is no live exposure, but the two must be reconciled before anything does (#1562). Do not describe the ToS as covering inactivity deletion until the page itself does.
 
 ## Privacy Policy
@@ -15,7 +15,7 @@
 ## FERPA Notice
 
 - A specific callout (frapp.live/ferpa) that Backwork materials are shared voluntarily by members.
-- Frapp is not an educational institution and does not access student education records.
+- Signet is not an educational institution and does not access student education records.
 - Members are responsible for ensuring they have the right to share uploaded materials.
 - Members are encouraged to use the redaction feature to remove personal information before uploading.
 

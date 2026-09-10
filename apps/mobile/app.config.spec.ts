@@ -219,6 +219,35 @@ describe("applyMobileConfig", () => {
     ).toBeUndefined();
   });
 
+  it("parks the EAS git SHA in extra.gitSha and never uses it as a Sentry release name", () => {
+    const { applyMobileConfig } = loadConfig();
+    const sha = "deadbeefcafebabe0123456789abcdef01234567";
+    const result = applyMobileConfig(
+      { ...androidConfig, extra: { existing: true } },
+      {
+        env: { EAS_BUILD_GIT_COMMIT_HASH: sha },
+        existsSync: missing,
+      },
+    );
+    const extra = result.extra as { gitSha?: string; existing?: boolean };
+    expect(extra.gitSha).toBe(sha);
+    expect(extra.existing).toBe(true);
+    expect(JSON.stringify(result)).not.toContain(
+      `"release":"${sha}"`,
+    );
+  });
+
+  it("omits extra.gitSha when EAS_BUILD_GIT_COMMIT_HASH is unset", () => {
+    const { applyMobileConfig } = loadConfig();
+    const result = applyMobileConfig(androidConfig, {
+      env: {},
+      existsSync: missing,
+    });
+    expect(
+      (result.extra as { gitSha?: string } | undefined)?.gitSha,
+    ).toBeUndefined();
+  });
+
   it("wires googleServicesFile on a production Android EAS build when the file exists", () => {
     const { applyMobileConfig } = loadConfig();
     const result = applyMobileConfig(androidConfig, {

@@ -473,6 +473,63 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-09: Subscription webhook RPC returns pre-UPDATE status (#1979)
+
+One function replacement. Drops and recreates `apply_subscription_webhook`
+with a two-column return (`applied chapters`, `previous_subscription_status`)
+so president-notify keys off the committed row, not the handler snapshot.
+**Not safe to apply ahead of the API**: the currently-deployed handler reads
+the RPC as `setof chapters`. Ship with a full deploy (migrate then API in
+the same run). Hosted projects are not applied from a cloud-agent session.
+
+### 20260909180000_apply_subscription_webhook_previous_status.sql
+* **Purpose**: `CREATE OR REPLACE` cannot change a return type, so this DROPs
+  the #731 function and recreates it. SELECT FOR UPDATE captures the live
+  `subscription_status` before the same CAS UPDATE; a win returns that value
+  alongside the chapter row. UPDATE body is otherwise unchanged (`activate_if`,
+  clock-keep when already `past_due`, same-second `<=`). `EXECUTE` remains
+  revoked from PUBLIC / anon / authenticated and granted to `service_role`
+  only.
+* **Checks**: After `db push`,
+  `select pg_get_function_result(p.oid) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = 'apply_subscription_webhook'`
+  contains `previous_subscription_status`, and
+  `select has_function_privilege('anon', 'apply_subscription_webhook(uuid, timestamptz, jsonb)', 'EXECUTE')`
+  is `false`. Two into-`past_due` applies against one chapter reporting
+  `previous=active` then `previous=past_due` are asserted by
+  `scripts/check-pglite-migrations.mjs`.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the Stripe subscription webhook previous-status return.
+
+## 2026-09-10: Rush candidates + ballots (#494)
+
+### 20260910020000_rush_candidates.sql
+* **Purpose**: Additive tables `rush_candidates` and `rush_candidate_votes` for the `/<vocab> add|vote|bid` slash command. RLS enabled, no policies (API service role). Unique `(chapter_id, name_key)` on candidates; unique `(candidate_id, voter_id)` on votes. `name_key` is a generated `lower(trim(display_name))` column.
+* **Checks**: After `db push`,
+  `select tablename from pg_tables where tablename in ('rush_candidates','rush_candidate_votes');` returns 2 rows;
+  `select relrowsecurity from pg_class where relname in ('rush_candidates','rush_candidate_votes');` is `true` for both;
+  `select indexname from pg_indexes where indexname = 'rush_candidates_chapter_name_key';` returns 1 row.
+* **Promoter notes**: Additive only. Ship with the API that writes them (`RushModule`). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-rush-candidates-20260910020000) § Rollback rush candidates.
+
+## 2026-09-09: System actor display_name becomes Signet System (#1935)
+
+* **Migration**: `20260909120000_rename_system_user_display_name.sql`
+* **Purpose**: The well-known system actor
+  (`users.id = 00000000-0000-0000-0000-000000000000`) was seeded as
+  `display_name = 'Frapp System'`. Chat cards do not print that name today, but
+  the row is still live on hosted projects and any later surface that reads
+  `users.display_name` for the system sender would show the old product name.
+  This is a one-row `UPDATE` matched on id; the historical seed is left as the
+  record of what was inserted. Email (`system@frapp.local`),
+  `SYSTEM_SENDER_ID`, and `frapp://` identifiers are untouched.
+* **Checks**: After `db push`,
+  `select display_name from users where id = '00000000-0000-0000-0000-000000000000'`
+  returns `Signet System`. Re-running the migration changes nothing.
+* **Promoter notes**: Data only — no schema change, no lock beyond the single
+  row, no client dependency. Staging applies on merge to `main`. Production
+  waits for Deploy production; do not dispatch that workflow from this change.
+
 ## 2026-09-09: Atomic Stripe subscription webhook application (#731)
 
 One additive migration. Adds `apply_subscription_webhook(uuid, timestamptz, jsonb)`
@@ -708,7 +765,7 @@ enabled with no client policies).
 ### 20260831220000_chapter_documents_metadata.sql
 * **Purpose**: Adds `content_type`, `byte_size`, `document_type`, `effective_date`
   to `chapter_documents`, prerequisite work for the AI corpus retrieval design
-  (`spec/architecture/README.md` § 13 AI Corpus Architecture — not ADR-13, which is Repository visibility; #720) which needs a currency signal distinct from upload time and
+  (`spec/architecture/README.md` § 13 AI Corpus Architecture — not ADR-13 in `spec/architecture/adr/adr-13.md`, which is Repository visibility; #720) which needs a currency signal distinct from upload time and
   provenance metadata beyond a title. `content_type`/`byte_size` are populated
   from what the client already knows about the file (`file.type` / `file.size`);
   `document_type`/`effective_date` are optional form fields, user-supplied and
@@ -1290,7 +1347,7 @@ something a watchdog should do on its own.
 * **Purpose**: Adds `users.active_chapter_id uuid references chapters(id) on delete set null` and the `public.custom_access_token_hook(event jsonb)` auth hook that stamps it into every issued access token as the top-level `active_chapter_id` claim. This is the authoritative chapter context `ChapterGuard` reconciles against per `spec/behavior/multi-tenancy.md`; before it, the client-supplied `x-chapter-id` header was the only source.
 * **Safety**: Additive — one nullable column (`ADD COLUMN IF NOT EXISTS`, no default, no backfill) plus `create or replace function`. The hook body is wrapped in `exception when others then return event`, so a failure degrades to an unmodified token rather than blocking sign-in. Role grants are guarded on `pg_roles` existence, so the file also applies on bare Postgres / PGlite. Two SELECT policies scoped **to `supabase_auth_admin` only** are added on `users` and `members` (both have RLS enabled with no policies); the API uses the service-role key and bypasses RLS, so no other caller's visibility changes.
 * **⚠️ Required manual step per hosted environment**: applying the migration does **not** enable the hook. Enable it in the Supabase dashboard (**Authentication → Hooks** → Custom Access Token → `public.custom_access_token_hook`), or via the Management API `PATCH /v1/projects/{ref}/config/auth` with `hook_custom_access_token_enabled: true` and `hook_custom_access_token_uri: "pg-functions://postgres/public/custom_access_token_hook"`. Local is already wired through `[auth.hook.custom_access_token]` in `supabase/config.toml`. **Order does not matter**: until the hook is enabled the claim is simply absent and the `x-chapter-id` fallback carries context, so the migration is safe to promote ahead of the toggle.
-* **Status**: enabled on **`frapp-staging`** as of 2026-08-10 (Postgres function, schema `public`, function `custom_access_token_hook`) and verified with a live password-grant sign-in — the decoded access token carried a top-level `active_chapter_id`. **Enabled on `frapp-prod` as of 2026-09-07** (correction; the 2026-08-10 status said it was not). Checked with `GET /v1/projects/unttyvyfezddlyafcydh/config/auth`: `hook_custom_access_token_enabled: true`, URI `pg-functions://postgres/public/custom_access_token_hook`. The function exists; `supabase_auth_admin` has `EXECUTE`; `anon`/`authenticated` do not. Prod still has `chapters=0` / `members=0`, so a correctly-working hook still issues a token with no claim until the first membership exists — that is the runbook check below, not a sign the hook is off. The dashboard toggle that was #805 is done. The live observation of the rest of Auth (SMTP still unset, email rate limit still 2/hour) is the dated table in [`DEPLOYMENT.md`](DEPLOYMENT.md) § Auth settings.
+* **Status**: enabled on **`frapp-staging`** as of 2026-08-10 (Postgres function, schema `public`, function `custom_access_token_hook`) and verified with a live password-grant sign-in — the decoded access token carried a top-level `active_chapter_id`. **Enabled on `frapp-prod` as of 2026-09-07** (correction; the 2026-08-10 status said it was not). Checked with `GET /v1/projects/unttyvyfezddlyafcydh/config/auth`: `hook_custom_access_token_enabled: true`, URI `pg-functions://postgres/public/custom_access_token_hook`. The function exists; `supabase_auth_admin` has `EXECUTE`; `anon`/`authenticated` do not. Prod still has `chapters=0` / `members=0`, so a correctly-working hook still issues a token with no claim until the first membership exists — that is the runbook check below, not a sign the hook is off. The dashboard toggle that was #805 is done. Live Auth SMTP and send-cap observations live in the dated table in [`supabase.md`](deployment/supabase.md#auth-settings-hosted-dashboard-or-management-api) (Auth settings) — do not restate them here.
 * **Checks**: After `db push`, `select proname from pg_proc where proname = 'custom_access_token_hook';` returns 1 row; `select has_function_privilege('supabase_auth_admin', 'public.custom_access_token_hook(jsonb)', 'execute');` returns `true` and the same for `anon`/`authenticated` returns `false`. After enabling the hook, sign in as a single-chapter user and decode the access token — `active_chapter_id` must be present. If sign-in breaks, disable the hook in the dashboard first (instant mitigation, no deploy needed), then investigate.
 
 **Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback active-chapter JWT claim.

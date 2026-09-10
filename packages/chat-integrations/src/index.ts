@@ -38,6 +38,12 @@ export * from "./payloads";
 export interface SlashCommand {
   /** Invocation token without the leading slash, e.g. "event". */
   name: string;
+  /**
+   * Palette label when it differs from `name`. Rush renders the chapter's
+   * recruitment vocabulary (`intake`, `recruitment`, …) here; dispatch still
+   * keys on canonical `name: "rush"`.
+   */
+  displayName?: string;
   /** One-line description shown in the palette. */
   description: string;
   /** Hint text for the argument string, e.g. "<title> <date>". */
@@ -93,10 +99,17 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
   },
   {
     name: "hours",
-    description: "Log or review service hours",
-    usage: "log <amount>",
+    description: "Log service hours",
+    usage: "log <duration> <description>",
     requiredModule: "hours",
-    implemented: false,
+    implemented: true,
+  },
+  {
+    name: "rush",
+    description: "Add a candidate, vote, or extend a bid",
+    usage: "add @candidate | vote <candidate-id> | bid @candidate",
+    requiredModule: "rush",
+    implemented: true,
   },
   {
     name: "announce",
@@ -107,13 +120,64 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
   },
 ]);
 
+/** Vocab aliases that dispatch as the canonical `rush` command. */
+export const RUSH_COMMAND_ALIASES = [
+  "recruitment",
+  "intake",
+  "induction",
+] as const;
+
+/**
+ * Slash token for the chapter's recruitment vocabulary. `"Intake"` →
+ * `"intake"`; empty / punctuation-only falls back to `"rush"`.
+ */
+export function recruitmentCommandSlug(label?: string | null): string {
+  const slug = (label ?? "rush")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug.length > 0 ? slug : "rush";
+}
+
+export function isRushCommandToken(
+  token: string,
+  recruitment?: string | null,
+): boolean {
+  const needle = token.trim().toLowerCase();
+  if (needle === "rush") return true;
+  if ((RUSH_COMMAND_ALIASES as readonly string[]).includes(needle)) {
+    return true;
+  }
+  return needle === recruitmentCommandSlug(recruitment);
+}
+
 /**
  * Guarded lookup by command name. Returns `undefined` for unknown names so
  * callers handle the missing case explicitly (no bare map subscript).
+ * Rush also matches {@link RUSH_COMMAND_ALIASES} and the chapter vocab slug.
  */
-export function getSlashCommand(name: string): SlashCommand | undefined {
+export function getSlashCommand(
+  name: string,
+  options?: { recruitment?: string },
+): SlashCommand | undefined {
   const needle = name.trim().toLowerCase();
-  return SLASH_COMMANDS.find((command) => command.name === needle);
+  const found = SLASH_COMMANDS.find((command) => command.name === needle);
+  const command =
+    found ??
+    (isRushCommandToken(needle, options?.recruitment)
+      ? SLASH_COMMANDS.find((entry) => entry.name === "rush")
+      : undefined);
+  if (!command) return undefined;
+  if (command.name !== "rush") return command;
+  const chapterSlug = recruitmentCommandSlug(options?.recruitment);
+  const displayName =
+    needle !== "rush"
+      ? needle
+      : chapterSlug !== "rush"
+        ? chapterSlug
+        : undefined;
+  return displayName ? { ...command, displayName } : command;
 }
 
 /**
@@ -122,22 +186,41 @@ export function getSlashCommand(name: string): SlashCommand | undefined {
  * disabled are excluded via the supplied predicate (wire it to
  * `useOrgConfig().isModuleEnabled`). Commands with no `requiredModule` are
  * always included.
+ *
+ * Pass `options.recruitment` so the rush row matches and displays the chapter's
+ * vocabulary token (`/intake`, `/recruitment`, …) without changing `name`.
  */
 export function filterSlashCommands(
   query: string,
   isModuleEnabled: (moduleKey: string) => boolean,
+  options?: { recruitment?: string },
 ): SlashCommand[] {
   const needle = query.trim().toLowerCase();
+  const displayName = recruitmentCommandSlug(options?.recruitment);
   return SLASH_COMMANDS.filter((command) => {
     if (command.requiredModule && !isModuleEnabled(command.requiredModule)) {
       return false;
     }
     if (needle.length === 0) return true;
+    if (command.name === "rush") {
+      return (
+        command.name.includes(needle) ||
+        displayName.includes(needle) ||
+        (RUSH_COMMAND_ALIASES as readonly string[]).some((alias) =>
+          alias.includes(needle),
+        ) ||
+        command.description.toLowerCase().includes(needle)
+      );
+    }
     return (
       command.name.includes(needle) ||
       command.description.toLowerCase().includes(needle)
     );
-  });
+  }).map((command) =>
+    command.name === "rush" && displayName !== "rush"
+      ? { ...command, displayName }
+      : command,
+  );
 }
 
 /** Result of parsing composer text for a slash command. */
@@ -177,7 +260,9 @@ export function parseSlashInput(raw: string): ParsedSlashInput {
  * isn't a finite number so callers never propagate `NaN` (master-plan
  * input-handling rule). Chunk 05 commands that take counts/amounts use this.
  */
-export function parseNumericArg(token: string | undefined | null): number | null {
+export function parseNumericArg(
+  token: string | undefined | null,
+): number | null {
   if (token == null) return null;
   const trimmed = token.trim();
   if (trimmed.length === 0) return null;

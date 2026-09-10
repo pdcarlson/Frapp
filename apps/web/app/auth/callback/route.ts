@@ -3,7 +3,8 @@ import { isEmailOtpType, resolveRedirectPath } from "@/lib/auth/redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
- * Where every Supabase email link lands: sign-up confirmation and magic link.
+ * Where every Supabase email link *and* OAuth return lands: sign-up
+ * confirmation, magic link, Google, and Apple.
  *
  * Two arrivals, same route:
  *

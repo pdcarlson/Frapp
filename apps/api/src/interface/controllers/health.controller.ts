@@ -7,7 +7,7 @@ import {
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
-import { readDeployedCommit } from './deployed-commit';
+import { readDeployedCommit } from '../../infrastructure/observability/deployed-commit';
 import { HealthPayloadDto, type DependencyStatus } from '../dtos/health.dto';
 
 // The Supabase client (apps/api/src/infrastructure/supabase/supabase.provider.ts)

@@ -2,10 +2,11 @@
 
 This guide walks you through setting up the Frapp monorepo and running the full stack locally with Supabase.
 
-> **Using the Claude Code web sandbox?** That's the primary dev environment and it sets
-> itself up automatically — skip this guide and see
-> [`../internal/environment/CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md).
-> The steps below are for local/laptop development.
+> **Using Cursor Cloud or Claude Code web?** Those are independent first-class agent
+> environments and they set themselves up — skip this guide and see
+> [`../internal/environment/CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md)
+> plus [`AGENTS.md`](../../AGENTS.md). The steps below are for
+> local/laptop development.
 
 ## Prerequisites
 
@@ -87,7 +88,7 @@ You can open Supabase Studio at:
 - `http://127.0.0.1:54323`
 
 > **Note:** The `supabase/` directory in the repo is the single source of truth for the database schema and seed data. Never edit tables manually in Studio without also adding a migration.
-> **Note:** Frapp icons and the marketing lockup are synced from `packages/brand-assets/` into each Next app on **`next build`** (`prebuild`). After changing those SVGs, run `npm run sync:brand-assets` from the repo root (or build once). See `spec/ui/assets.md`.
+> **Note:** Signet icons and the marketing lockup are synced from `packages/brand-assets/` into each Next app on **`next build`** (`prebuild`). After replacing Design's `signet-emblem-B-locked.png`, run `npm run rasterize:brand-assets` then `npm run sync:brand-assets` from the repo root (or build once). See `spec/ui/assets.md`.
 
 ## 4. Configure environment variables
 

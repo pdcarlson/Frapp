@@ -22,6 +22,7 @@ import {
   type SweepPollRow,
   type SweepUpcomingEventRow,
 } from './scheduled-jobs.repository';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * How far back the hourly auto-absent sweep reaches. Comfortably longer than
@@ -268,9 +269,11 @@ export class ScheduledJobsService {
           );
           processed += 1;
         } catch (error) {
-          this.logger.error(
+          logThrowable(
+            this.logger,
+            'error',
             `auto-absent sweep: event ${event.id} failed`,
-            error as Error,
+            error,
           );
           // Release so the next tick retries rather than leaving the event
           // permanently unprocessed.
@@ -283,9 +286,11 @@ export class ScheduledJobsService {
           );
         }
       } catch (error) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           `auto-absent sweep: event ${event.id} could not be claimed`,
-          error as Error,
+          error,
         );
       }
     }
@@ -322,9 +327,11 @@ export class ScheduledJobsService {
       try {
         if (await this.notifyPollExpired(poll)) announced += 1;
       } catch (error) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           `poll-expiry sweep: poll ${poll.id} failed`,
-          error as Error,
+          error,
         );
       }
     }
@@ -375,9 +382,11 @@ export class ScheduledJobsService {
       );
       return true;
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `poll-expiry sweep: announcement for poll ${poll.id} failed`,
-        error as Error,
+        error,
       );
       await this.repository.releaseDispatch(
         poll.chapter_id,
@@ -419,9 +428,11 @@ export class ScheduledJobsService {
       try {
         if (await this.notifyEventStartingSoon(event, now)) sent += 1;
       } catch (error) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           `event-reminder sweep: event ${event.id} failed`,
-          error as Error,
+          error,
         );
       }
     }
@@ -555,9 +566,11 @@ export class ScheduledJobsService {
           if (await this.notifyInvoiceOverdue(invoice)) sent += 1;
         }
       } catch (error) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           `invoice sweep: invoice ${invoice.id} failed`,
-          error as Error,
+          error,
         );
       }
     }
@@ -589,7 +602,12 @@ export class ScheduledJobsService {
           sent += 1;
         }
       } catch (error) {
-        this.logger.error(`task sweep: task ${task.id} failed`, error as Error);
+        logThrowable(
+          this.logger,
+          'error',
+          `task sweep: task ${task.id} failed`,
+          error,
+        );
       }
     }
 
@@ -774,9 +792,11 @@ export class ScheduledJobsService {
           ? await params.recipients()
           : params.recipients;
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `${params.entityType} ${params.entityId} (${params.threshold}): could not resolve recipients`,
-        error as Error,
+        error,
       );
       resolved = [];
     }
@@ -794,9 +814,11 @@ export class ScheduledJobsService {
         });
         delivered += 1;
       } catch (error) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           `${params.entityType} ${params.entityId} (${params.threshold}): delivery to ${userId} failed`,
-          error as Error,
+          error,
         );
       }
     }

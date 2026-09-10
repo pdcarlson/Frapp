@@ -247,7 +247,7 @@ type CachedRead = {
  *
  * ## Why a predicate and not `isOffline` alone
  *
- * `spec/ui/resilience.md` § 2 puts OFFLINE's Read Actions at "Enabled (from
+ * `spec/ui/resilience/connection-state.md` puts OFFLINE's Read Actions at "Enabled (from
  * cache)", and Principle 1.2 at "stale data is better than no data". A bare
  * `if (isOffline) return <OfflineState/>` throws away rows TanStack is still
  * holding — an officer taking attendance loses the roster on screen to a

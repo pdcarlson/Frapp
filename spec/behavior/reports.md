@@ -149,7 +149,8 @@ the `json`/`csv` warnings read in ASCII; the PDF carries the note in its
 envelope instead and keeps the original typography in both the document and
 its download toast.
 
-All three headers are named in the API's CORS `exposedHeaders`, and the
+All three headers are named in the API's CORS `exposedHeaders`
+(`apps/api/src/interface/http/cors.options.ts`), and the
 dashboard reads them: the report hooks return the truncation flags alongside
 the rows, the preview toast says the report is incomplete instead of quoting a
 row count, and downloading the CSV — which is serialized from that preview —

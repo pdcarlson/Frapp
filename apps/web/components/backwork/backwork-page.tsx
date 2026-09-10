@@ -48,6 +48,7 @@ import {
 import { BackworkGlyph } from "@/components/documents/resources-glyphs";
 import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-drawer";
 import { Can } from "@/components/shared/can";
+import { readSignedUpload } from "@/lib/signed-upload";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -286,19 +287,7 @@ export function BackworkPage() {
         filename: file.name,
         content_type: contentType,
       });
-      const signedUrl =
-        signed && typeof signed === "object" && "upload_url" in signed
-          ? (signed as { upload_url?: string }).upload_url
-          : null;
-      const storagePath =
-        signed && typeof signed === "object" && "storage_path" in signed
-          ? (signed as { storage_path?: string }).storage_path
-          : null;
-      if (!signedUrl || !storagePath) {
-        throw new Error(
-          "Upload URL response missing signed URL or storage path.",
-        );
-      }
+      const { signedUrl, storagePath } = readSignedUpload(signed);
 
       const response = await fetch(signedUrl, {
         method: "PUT",

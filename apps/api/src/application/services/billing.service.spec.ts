@@ -26,6 +26,34 @@ function restoreSalt(priorSalt: string | undefined): void {
   }
 }
 
+const POSTGREST_DETAILS =
+  'Key (email)=(alice@example.com) is not present in table "users".';
+
+function postgrestBody(): {
+  code: string;
+  message: string;
+  hint: string;
+  details: string;
+} {
+  return {
+    code: '23505',
+    message:
+      'duplicate key value violates unique constraint "chapters_stripe_customer_id_key"',
+    hint: 'Use a different customer.',
+    details: POSTGREST_DETAILS,
+  };
+}
+
+function loggerPrinted(spy: jest.SpyInstance): string {
+  return spy.mock.calls
+    .map((args) =>
+      args
+        .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
+        .join('\n'),
+    )
+    .join('\n');
+}
+
 import { BillingService } from './billing.service';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { BILLING_PROVIDER } from '#domain/adapters/billing.interface';
@@ -196,6 +224,7 @@ describe('BillingService', () => {
 
     mockChapterRepo = {
       findById: jest.fn(),
+      findByIds: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
@@ -222,6 +251,7 @@ describe('BillingService', () => {
             ...(patch.stripe_customer_id !== undefined
               ? { stripe_customer_id: patch.stripe_customer_id }
               : {}),
+            previous_subscription_status: baseChapter.subscription_status,
           }),
         ),
       create: jest.fn(),
@@ -430,6 +460,41 @@ describe('BillingService', () => {
       );
     });
 
+    it('does not log PostgREST details when persisting the Stripe customer fails', async () => {
+      const chapterNoCustomer = {
+        ...baseChapter,
+        stripe_customer_id: null,
+      };
+      mockChapterRepo.findById.mockResolvedValue(chapterNoCustomer);
+      mockBillingProvider.createCustomer.mockResolvedValue('cus_new');
+      mockChapterRepo.update.mockRejectedValue(postgrestBody());
+      const errorSpy = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+
+      try {
+        await expect(
+          service.createCheckoutSession({
+            chapterId: 'ch-1',
+            customerEmail: 'admin@example.com',
+            successUrl: 'http://localhost:3000/success',
+            cancelUrl: 'http://localhost:3000/cancel',
+          }),
+        ).rejects.toThrow(ServiceUnavailableException);
+
+        expect(errorSpy).toHaveBeenCalled();
+        const printed = loggerPrinted(errorSpy);
+        expect(printed).toContain('Failed to create checkout session');
+        expect(printed).toContain('23505');
+        expect(printed).not.toContain('alice@example.com');
+        expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(
+          true,
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
     it('refuses checkout for a past_due chapter and points at the portal (#929)', async () => {
       // The double-subscription hole. `past_due` is a *live* subscription in
       // dunning, so a second checkout bills the chapter twice and orphans the
@@ -574,8 +639,7 @@ describe('BillingService', () => {
     ).rejects.toThrow(ServiceUnavailableException);
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      'Failed to create checkout session for chapter ch-1',
-      stripeError,
+      'Failed to create checkout session for chapter ch-1: Some string error',
     );
 
     loggerErrorSpy.mockRestore();
@@ -646,7 +710,7 @@ describe('BillingService', () => {
       ).rejects.toThrow(ServiceUnavailableException);
 
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Failed to create portal session for chapter ch-1',
+        'Failed to create portal session for chapter ch-1: Stripe is down',
         stripeError.stack,
       );
 
@@ -672,11 +736,38 @@ describe('BillingService', () => {
     ).rejects.toThrow(ServiceUnavailableException);
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      'Failed to create portal session for chapter ch-1',
-      stripeError,
+      'Failed to create portal session for chapter ch-1: Some string error',
     );
 
     loggerErrorSpy.mockRestore();
+  });
+
+  it('does not log PostgREST details when the portal provider throws a plain object', async () => {
+    mockChapterRepo.findById.mockResolvedValue(baseChapter);
+    mockBillingProvider.createCustomerPortalSession.mockRejectedValue(
+      postgrestBody(),
+    );
+    const errorSpy = jest
+      .spyOn(service['logger'], 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      await expect(
+        service.createPortalSession({
+          chapterId: 'ch-1',
+          returnUrl: 'http://localhost:3000/billing',
+        }),
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      expect(errorSpy).toHaveBeenCalled();
+      const printed = loggerPrinted(errorSpy);
+      expect(printed).toContain('Failed to create portal session');
+      expect(printed).toContain('23505');
+      expect(printed).not.toContain('alice@example.com');
+      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   describe('handleWebhookEvent', () => {
@@ -979,6 +1070,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -1516,6 +1608,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
 
       await service.handleWebhookEvent(event);
@@ -1551,6 +1644,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
 
       await service.handleWebhookEvent(event);
@@ -1706,7 +1800,7 @@ describe('BillingService', () => {
         );
       });
 
-      it('does not reset past_due_since on a repeated past_due event', async () => {
+      it('still sends past_due_since on a repeated past_due; the RPC keeps the clock', async () => {
         const pastDueChapter = {
           ...baseChapter,
           subscription_status: 'past_due' as const,
@@ -1714,19 +1808,21 @@ describe('BillingService', () => {
           past_due_since: '2026-05-30T12:00:00.000Z',
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(pastDueChapter);
-        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(
-          pastDueChapter,
-        );
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+          ...pastDueChapter,
+          previous_subscription_status: 'past_due',
+        });
 
         await service.handleWebhookEvent(pastDueEvent('evt_pd_repeat'));
 
-        // No past_due_since key in the payload -> the grace clock is untouched,
-        // but the ordering high-water mark still advances (FRA-242).
+        // The handler always sends a stamp; the RPC no-ops it when the live
+        // row is already past_due, so the grace clock is untouched.
         expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
           'ch-1',
           new Date(CREATED_SECONDS * 1000).toISOString(),
           {
             subscription_status: 'past_due',
+            past_due_since: new Date(CREATED_SECONDS * 1000).toISOString(),
           },
         );
       });
@@ -1820,7 +1916,11 @@ describe('BillingService', () => {
           last_stripe_webhook_at: OLD_ISO,
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
-        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(chapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+          ...chapter,
+          subscription_status: 'past_due',
+          previous_subscription_status: 'active',
+        });
         mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
         mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
@@ -1868,21 +1968,25 @@ describe('BillingService', () => {
           last_stripe_webhook_at: OLD_ISO,
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
-        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(chapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+          ...chapter,
+          previous_subscription_status: 'past_due',
+        });
         // Mock a reachable president so the no-notify assertion below actually
-        // exercises the statusChanged gate (not just a missing-role early return).
+        // exercises the committed-row gate (not just a missing-role early return).
         mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
         mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
         await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
 
-        // Still past_due: the grace clock is untouched and the president is not
-        // re-notified — only the ordering mark moves forward.
+        // Still past_due: the RPC keeps the clock (already past_due) and the
+        // president is not re-notified — only the ordering mark moves forward.
         expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
           'ch-1',
           NEW_ISO,
           {
             subscription_status: 'past_due',
+            past_due_since: NEW_ISO,
           },
         );
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
@@ -2036,13 +2140,17 @@ describe('BillingService', () => {
           last_stripe_webhook_at: null,
         };
 
-        const casApply = (stored: { at: string | null; status: string }) => {
+        const casApply = (stored: {
+          at: string | null;
+          status: Chapter['subscription_status'];
+        }) => {
           mockChapterRepo.findBySubscriptionId.mockResolvedValue({ ...start });
           mockChapterRepo.applySubscriptionWebhook.mockImplementation(
             async (_id, eventAt, patch) => {
               if (stored.at && Date.parse(stored.at) > Date.parse(eventAt)) {
                 return null;
               }
+              const previous = stored.status;
               stored.at = eventAt;
               if (patch.subscription_status !== undefined) {
                 stored.status = patch.subscription_status;
@@ -2051,13 +2159,17 @@ describe('BillingService', () => {
                 ...start,
                 subscription_status: stored.status,
                 last_stripe_webhook_at: eventAt,
+                previous_subscription_status: previous,
               };
             },
           );
         };
 
         const run = async (order: 'old-first' | 'new-first') => {
-          const stored: { at: string | null; status: string } = {
+          const stored: {
+            at: string | null;
+            status: Chapter['subscription_status'];
+          } = {
             at: null,
             status: start.subscription_status,
           };
@@ -2122,6 +2234,75 @@ describe('BillingService', () => {
 
         expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalled();
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('notifies the president once when two concurrent past_due events both read active (#1979)', async () => {
+        // Both handlers snapshot the chapter as active. The first write is the
+        // into-past_due transition; the second wins the time CAS (newer or
+        // same-second) but the committed row is already past_due, so it must
+        // not send a second URGENT alert.
+        const start = {
+          ...baseChapter,
+          subscription_status: 'active' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: null,
+        };
+
+        const run = async (secondCreated: number) => {
+          const stored: {
+            at: string | null;
+            status: Chapter['subscription_status'];
+          } = {
+            at: null,
+            status: start.subscription_status,
+          };
+          mockChapterRepo.findBySubscriptionId.mockResolvedValue({ ...start });
+          mockChapterRepo.applySubscriptionWebhook.mockImplementation(
+            async (_id, eventAt, patch) => {
+              if (stored.at && Date.parse(stored.at) > Date.parse(eventAt)) {
+                return null;
+              }
+              const previous = stored.status;
+              stored.at = eventAt;
+              if (patch.subscription_status !== undefined) {
+                stored.status = patch.subscription_status;
+              }
+              return {
+                ...start,
+                subscription_status: stored.status,
+                last_stripe_webhook_at: eventAt,
+                previous_subscription_status: previous,
+              };
+            },
+          );
+          mockNotificationService.notifyUser.mockClear();
+          mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+            presidentRole,
+          );
+          mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
+
+          await service.handleWebhookEvent({
+            ...subUpdated('past_due', T_OLD),
+            id: `evt_cas_pd_first_${secondCreated}`,
+          });
+          await service.handleWebhookEvent({
+            ...subUpdated('past_due', secondCreated),
+            id: `evt_cas_pd_second_${secondCreated}`,
+          });
+
+          expect(stored.status).toBe('past_due');
+          expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
+          expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+            'user-pres',
+            'ch-1',
+            expect.objectContaining({
+              body: 'Your chapter subscription is now past_due',
+            }),
+          );
+        };
+
+        await run(T_NEW);
+        await run(T_OLD);
       });
     });
 
@@ -3024,6 +3205,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -3085,6 +3267,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -3146,6 +3329,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockRejectedValue(
         new Error('Database error'),
@@ -3185,6 +3369,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -3295,6 +3480,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...subChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
@@ -3321,6 +3507,7 @@ describe('BillingService', () => {
       mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...subChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 

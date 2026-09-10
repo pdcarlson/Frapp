@@ -156,6 +156,7 @@ describe('Chat hot path (e2e)', () => {
   const channelRepoMock: jest.Mocked<IChatChannelRepository> = {
     findById: jest.fn(),
     findByChapter: jest.fn(),
+    findByIds: jest.fn(),
     findDm: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),

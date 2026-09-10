@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { SentryModule } from '@sentry/nestjs/setup';
 import { CustomThrottlerGuard } from './interface/guards/custom-throttler.guard';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -21,6 +22,7 @@ import { BackworkModule } from './modules/backwork/backwork.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ServiceEntryModule } from './modules/service-entry/service-entry.module';
 import { TaskModule } from './modules/task/task.module';
+import { RushModule } from './modules/rush/rush.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { StudyModule } from './modules/study/study.module';
 import { ChapterDocumentModule } from './modules/chapter-document/chapter-document.module';
@@ -40,6 +42,11 @@ import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
+    // Transaction names on HTTP spans. Does not replace AllExceptionsFilter —
+    // 5xx still go through toReportableError, and 401/403/429 stay
+    // security_event records. SentryGlobalFilter is deliberately not
+    // registered (it would capture raw PostgREST objects and double-report).
+    SentryModule.forRoot(),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
@@ -67,6 +74,7 @@ import { validateEnv } from './config/env.validation';
     ChatModule,
     ServiceEntryModule,
     TaskModule,
+    RushModule,
     NotificationModule,
     StudyModule,
     ChapterDocumentModule,

@@ -10,8 +10,9 @@ COPY packages/org-archetypes/package.json ./packages/org-archetypes/
 COPY packages/chapter-theme/package.json ./packages/chapter-theme/
 COPY packages/color/package.json ./packages/color/
 COPY packages/formatting/package.json ./packages/formatting/
+COPY packages/observability/package.json ./packages/observability/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
-RUN npm ci --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/color --workspace=packages/formatting --workspace=packages/typescript-config --include-workspace-root
+RUN npm ci --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/color --workspace=packages/formatting --workspace=packages/observability --workspace=packages/typescript-config --include-workspace-root
 
 # Stage 2: Compile TypeScript
 FROM node:20-alpine AS builder
@@ -28,6 +29,8 @@ COPY packages/color/src/ ./packages/color/src/
 COPY packages/color/tsconfig.json ./packages/color/
 COPY packages/formatting/src/ ./packages/formatting/src/
 COPY packages/formatting/tsconfig.json ./packages/formatting/
+COPY packages/observability/src/ ./packages/observability/src/
+COPY packages/observability/tsconfig.json ./packages/observability/
 COPY apps/api/src/ ./apps/api/src/
 COPY apps/api/tsconfig.json apps/api/tsconfig.build.json apps/api/nest-cli.json ./apps/api/
 RUN npm run build --workspace=packages/validation
@@ -38,9 +41,28 @@ RUN npm run build --workspace=packages/org-archetypes
 # and fail on a dist that does not exist yet.
 RUN npm run build --workspace=packages/color
 RUN npm run build --workspace=packages/chapter-theme
-# @repo/formatting has no @repo dependencies, so it only has to precede apps/api.
+# @repo/formatting and @repo/observability have no @repo dependencies, so they
+# only have to precede apps/api.
 RUN npm run build --workspace=packages/formatting
+RUN npm run build --workspace=packages/observability
 RUN npm run build --workspace=apps/api
+
+# Source maps: nest emits `dist/*.js.map` (`sourceMap: true`). ContextLines
+# then shows on-disk JS, which is what live FRAPP-API-1 / FRAPP-API-3 look
+# like — that is not TypeScript symbolication. Upload belongs on THIS image
+# (the one Render runs), not on CI `api-docker-build` (discarded, and a
+# second inject would mint debug IDs that never execute).
+#
+# ARG, not ENV: do not bake `SENTRY_AUTH_TOKEN` into later layers. Render
+# passes service env vars matching these ARG names at build time. Unset
+# (CI, laptops, Render until Infisical carries the name) → the script
+# skips sentry-cli and still strips `*.map` so the runner does not ship
+# TypeScript. `gcompat` is Alpine's glibc shim for the linux-x64 CLI
+# binary; only needed when a token is present.
+ARG SENTRY_AUTH_TOKEN
+ARG RENDER_GIT_COMMIT
+RUN if [ -n "$SENTRY_AUTH_TOKEN" ]; then apk add --no-cache gcompat; fi \
+    && node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js
 
 # Stage 3: Production-only dependencies (clean install, no dev deps)
 FROM node:20-alpine AS prod-deps
@@ -52,6 +74,7 @@ COPY packages/org-archetypes/package.json ./packages/org-archetypes/
 COPY packages/chapter-theme/package.json ./packages/chapter-theme/
 COPY packages/color/package.json ./packages/color/
 COPY packages/formatting/package.json ./packages/formatting/
+COPY packages/observability/package.json ./packages/observability/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
 # mkdir guards the runner-stage COPYs. Hoisting decides where every dependency
 # lands, and BOTH directions break a COPY that assumes the other:
@@ -62,13 +85,14 @@ COPY packages/typescript-config/package.json ./packages/typescript-config/
 # packages/validation/node_modules, neither of which the runner copied, so the
 # image built cleanly and then died on its first require(). Every tree the
 # runner stage copies is created here so no COPY can fail with "not found".
-RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/color --workspace=packages/formatting --workspace=packages/typescript-config --include-workspace-root \
+RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/color --workspace=packages/formatting --workspace=packages/observability --workspace=packages/typescript-config --include-workspace-root \
     && mkdir -p apps/api/node_modules \
        packages/validation/node_modules \
        packages/org-archetypes/node_modules \
        packages/chapter-theme/node_modules \
        packages/color/node_modules \
-       packages/formatting/node_modules
+       packages/formatting/node_modules \
+       packages/observability/node_modules
 
 # Stage 4: Minimal production image
 FROM node:20-alpine AS runner
@@ -95,6 +119,9 @@ COPY --from=prod-deps --chown=frapp:frapp /app/packages/color/node_modules/ ./pa
 COPY --from=builder --chown=frapp:frapp /app/packages/formatting/dist/ ./packages/formatting/dist/
 COPY --from=builder --chown=frapp:frapp /app/packages/formatting/package.json ./packages/formatting/
 COPY --from=prod-deps --chown=frapp:frapp /app/packages/formatting/node_modules/ ./packages/formatting/node_modules/
+COPY --from=builder --chown=frapp:frapp /app/packages/observability/dist/ ./packages/observability/dist/
+COPY --from=builder --chown=frapp:frapp /app/packages/observability/package.json ./packages/observability/
+COPY --from=prod-deps --chown=frapp:frapp /app/packages/observability/node_modules/ ./packages/observability/node_modules/
 
 USER frapp
 WORKDIR /app/apps/api

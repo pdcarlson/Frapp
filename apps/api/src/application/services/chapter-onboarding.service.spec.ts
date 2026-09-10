@@ -455,8 +455,7 @@ describe('ChapterOnboardingService', () => {
       ).resolves.toMatchObject({ id: 'ch-1' });
 
       expect(logged).toHaveBeenCalledWith(
-        'chapter_custom_fields seed insert failed',
-        { message: 'boom' },
+        'chapter_custom_fields seed insert failed: boom',
       );
     });
 
@@ -519,8 +518,8 @@ describe('ChapterOnboardingService', () => {
       // error, so it must log at the same level; asserting only that onboard()
       // resolves would pass at any level, or at none.
       expect(logged).toHaveBeenCalledWith(
-        'Failed to provision archetype custom fields',
-        expect.any(Error),
+        'Failed to provision archetype custom fields: network down',
+        expect.stringMatching(/\n\s+at /),
       );
     });
   });

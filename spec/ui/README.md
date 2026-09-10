@@ -32,14 +32,14 @@ not by the Governs column here. No CI check asserts this table is complete or it
 | [`design-system/`](design-system/README.md) | Tokens and rules shared by every Signet surface: foundations (color, type, radius, spacing), components, iconography, writing, chapter accent engine | Active |
 | [`mobile/`](mobile/README.md) | Mobile app: screen inventory, navigation, interaction patterns | Active |
 | [`web-dashboard/`](web-dashboard/README.md) | Admin web app: shell, nav, screens, state | Active (Signet since the #920 shell slice) |
-| [`landing/`](landing/README.md) | Marketing site | **Frozen** (pre-Signet) |
+| [`landing/`](landing/README.md) | Marketing site | **Visual freeze** (bone/bronze/Geist); copy and mark are Signet |
 | [`brand-identity.md`](brand-identity.md) | Signet identity: name, tagline, mark/logo rules, house gold | Active |
 | [`assets.md`](assets.md) | Logos, icons, asset sync | Active |
-| [`resilience.md`](resilience.md) | Network resilience, loading/empty/error delivery guarantees, message delivery | Active |
+| [`resilience/`](resilience/README.md) | Network resilience, loading/empty/error delivery guarantees, message delivery | Active |
 
 ### Frozen surfaces
 
-`landing/` documents the pre-Signet (Frapp-era) implementation as built. It remains normative for that surface until its own reskin session, but it MUST NOT be extended with new design decisions — new visual rules belong in [`design-system/`](design-system/README.md). The web dashboard left this list with the #920 shell slice; its per-screen-family truing-up is tracked on #920.
+`landing/` documents the storefront as built. Product copy and the locked crest are Signet; Geist + bone/bronze tokens stay until the visual reskin. It MUST NOT be extended with new visual design decisions — those belong in [`design-system/`](design-system/README.md). The web dashboard left this list with the #920 shell slice; its per-screen-family truing-up is tracked on #920.
 
 ## Related trees
 

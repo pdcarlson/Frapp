@@ -451,6 +451,7 @@ export const CHAT_MESSAGE_KINDS = [
   "dues",
   "points",
   "hours",
+  "rush",
   "system_audit",
   "imported",
   "loading",
@@ -785,23 +786,6 @@ export {
 } from "./mentions";
 export type { MentionCandidate } from "./mentions";
 
-// ── Sentry PII scrubbing (issues #481, #896, #865) ───────────────────────────
-// Shared rather than API-local because a browser bundle holds strictly more PII
-// than the server does, so `apps/web` must scrub to the *same* rules rather than
-// a second, looser copy of them. Parameterized by a pseudonymizer because the
-// HMAC salt is API-only on purpose and must never reach a client bundle.
-export {
-  createSentryScrubber,
-  NO_PSEUDONYMS,
-  // Exported so the API's request-log helper consumes this exact parser
-  // rather than keeping a second copy (#1388).
-  stripAuthority,
-} from "./sentry-scrubbing";
-export type {
-  ScrubbableEvent,
-  SentryPseudonymizer,
-} from "./sentry-scrubbing";
-
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export {
   isSupportedTimeZone,
@@ -956,7 +940,7 @@ export {
 // `isModuleEnabled`, and `subscriptionWriteState`.
 export { isAnalyticsOptedOut } from "./analytics-opt-out";
 
-// Connection state machine (`spec/ui/resilience.md` § 2). Shared so web and
+// Connection state machine (`spec/ui/resilience/connection-state.md`). Shared so web and
 // mobile cannot disagree about ONLINE / DEGRADED / OFFLINE. Each app owns
 // the effects that feed it; this package owns the rule.
 export {

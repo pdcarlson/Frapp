@@ -1,6 +1,6 @@
 /**
  * Mobile UI copy and write-gating on top of the shared connection state
- * machine (`@repo/validation`, `spec/ui/resilience.md` § 2).
+ * machine (`@repo/validation`, `spec/ui/resilience/connection-state.md`).
  *
  * `deriveConnectionState` lives in the shared package so web and mobile
  * cannot disagree about when a member is ONLINE / DEGRADED / OFFLINE.
@@ -8,7 +8,7 @@
  *
  * ## The spec is written against a browser
  *
- * § 2 spells its detection rules with `navigator.onLine`, which React Native
+ * Detection Logic spells its rules with `navigator.onLine`, which React Native
  * does not define — reading it returns `undefined`, and `undefined === false`
  * is `false`, so a naive port reports permanently online. `lib/chat/network-state.ts`
  * documents that failure at length, having already been bitten by it. The link
@@ -27,7 +27,7 @@ export {
 export type { ConnectionInput, ConnectionState } from "@repo/validation";
 
 /**
- * Banner copy, verbatim from `spec/ui/resilience.md` § 2 — minus the leading
+ * Banner copy, verbatim from `spec/ui/resilience/connection-state.md` — minus the leading
  * ⚡ / 📡.
  *
  * Those emoji are a web-era artifact of a spec written before Signet had an
@@ -53,13 +53,13 @@ export function connectionBannerCopy(state: ConnectionState): string | null {
 /**
  * Why a write control is disabled, or `null` when it is not.
  *
- * § 2's table says write actions are "Disabled with tooltip: 'Reconnect to make
+ * The UI Indicators table says write actions are "Disabled with tooltip: 'Reconnect to make
  * changes'" when OFFLINE. That rule holds only where a failed write is *lost*.
  * It must not be applied to the chat composer: `sendMessage` enqueues to the
  * outbox and returns before touching the network, so gating it would defeat the
  * queue built to make composing-while-offline work (see the comment above the
  * composer in `app/(tabs)/chat-thread.tsx`). Surfaces with a queue label; the
- * rest disable. `spec/ui/resilience.md` records the split.
+ * rest disable. `spec/ui/resilience/connection-state.md` records the split.
  */
 export function writeBlockedReason(state: ConnectionState): string | null {
   return state === "OFFLINE" ? "Reconnect to make changes." : null;

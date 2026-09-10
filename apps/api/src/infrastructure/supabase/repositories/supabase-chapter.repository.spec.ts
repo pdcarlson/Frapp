@@ -79,6 +79,29 @@ describe('SupabaseChapterRepository — tenant scope', () => {
     expect(chapter?.id).toBe(CHAPTER_B);
   });
 
+  describe('findByIds', () => {
+    it('returns only the requested chapter ids', async () => {
+      // PK batch, not `.eq('id', one chapter)` — `expectTenantScoped` requires
+      // that eq filter, so this asserts the returned ids directly.
+      const chapters = await repo.findByIds([CHAPTER_B]);
+
+      expect(chapters.map((c) => c.id)).toEqual([CHAPTER_B]);
+    });
+
+    it('returns every requested tenant-root row', async () => {
+      const chapters = await repo.findByIds([CHAPTER_A, CHAPTER_B]);
+
+      expect(chapters.map((c) => c.id).sort()).toEqual(
+        [CHAPTER_A, CHAPTER_B].sort(),
+      );
+    });
+
+    it('returns [] without querying when ids is empty', async () => {
+      await expect(repo.findByIds([])).resolves.toEqual([]);
+      expect(harness.ops).toEqual([]);
+    });
+  });
+
   it('update writes only the requested chapter', async () => {
     await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.update(CHAPTER_B, { accent_color: '#123456' }),
@@ -99,7 +122,12 @@ describe('SupabaseChapterRepository — tenant scope', () => {
         },
         rpc: {
           apply_subscription_webhook: {
-            data: [{ id: CHAPTER_B, subscription_status: 'active' }],
+            data: [
+              {
+                applied: { id: CHAPTER_B, subscription_status: 'active' },
+                previous_subscription_status: 'active',
+              },
+            ],
           },
         },
       });
@@ -112,6 +140,7 @@ describe('SupabaseChapterRepository — tenant scope', () => {
       );
 
       expect(applied?.id).toBe(CHAPTER_B);
+      expect(applied?.previous_subscription_status).toBe('active');
       expect(harness.rpcCalls[0].args).toMatchObject({
         p_chapter_id: CHAPTER_B,
         p_event_at: '2026-06-02T12:00:00.000Z',
