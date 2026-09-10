@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  InternalServerErrorException,
   Param,
   Patch,
   Post,
@@ -11,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -29,6 +31,7 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   RequestDocumentUploadUrlDto,
+  DocumentUploadUrlResponseDto,
   ConfirmDocumentUploadDto,
   CreateDocumentFolderDto,
   UpdateDocumentFolderDto,
@@ -49,16 +52,30 @@ export class ChapterDocumentController {
   @ThrottleFanOutWrite()
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
   @ApiOperation({ summary: 'Get signed upload URL' })
+  @ApiCreatedResponse({ type: DocumentUploadUrlResponseDto })
   async requestUploadUrl(
     @CurrentChapterId() chapterId: string,
     @Body() dto: RequestDocumentUploadUrlDto,
-  ) {
-    return this.chapterDocumentService.requestUploadUrl({
+  ): Promise<DocumentUploadUrlResponseDto> {
+    // Same mapping as BackworkController.requestUploadUrl — the service
+    // returns camelCase; the dashboard reads snake_case. Passthrough made a
+    // successful mint look like a missing ticket.
+    const ticket = await this.chapterDocumentService.requestUploadUrl({
       chapterId,
       filename: dto.filename,
       contentType: dto.content_type,
       sizeBytes: dto.size_bytes,
     });
+    if (!ticket.signedUrl || !ticket.storagePath) {
+      throw new InternalServerErrorException(
+        'Storage did not return a signed upload URL or storage path.',
+      );
+    }
+    return {
+      upload_url: ticket.signedUrl,
+      storage_path: ticket.storagePath,
+      document_id: ticket.documentId,
+    };
   }
 
   @Post()
