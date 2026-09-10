@@ -3,6 +3,7 @@ import type {
   IEmailProvider,
   SendInviteEmailParams,
 } from '#domain/adapters/email.interface';
+import { logThrowable } from '../observability/log-throwable';
 
 export interface ResendProviderOptions {
   apiKey: string;
@@ -81,7 +82,12 @@ export class ResendEmailProvider implements IEmailProvider {
       }
       return true;
     } catch (error) {
-      this.logger.warn('Resend invite email send failed', error as Error);
+      logThrowable(
+        this.logger,
+        'warn',
+        'Resend invite email send failed',
+        error,
+      );
       return false;
     } finally {
       clearTimeout(timeout);

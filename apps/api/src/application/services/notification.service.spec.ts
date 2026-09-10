@@ -434,12 +434,21 @@ describe('NotificationService', () => {
         ).resolves.toBeUndefined();
 
         expect(warnSpy).toHaveBeenCalledWith(
-          'Failed to prune invalid push token',
-          expect.any(Error),
+          expect.stringContaining('Failed to prune invalid push token'),
         );
+        expect(
+          warnSpy.mock.calls.every((args) =>
+            String(args[0]).includes('Failed to prune invalid push token')
+              ? args.length === 1
+              : true,
+          ),
+        ).toBe(true);
         expect(warnSpy).not.toHaveBeenCalledWith(
           expect.stringContaining('Push delivery failed'),
           expect.anything(),
+        );
+        expect(warnSpy).not.toHaveBeenCalledWith(
+          expect.stringContaining('Push delivery failed'),
         );
         warnSpy.mockRestore();
       });

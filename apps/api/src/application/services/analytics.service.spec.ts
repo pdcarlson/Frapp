@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, Logger } from '@nestjs/common';
 import {
   ContentFreePropertyError,
   hashChapterIdForAnalytics,
@@ -672,6 +672,58 @@ describe('AnalyticsService', () => {
         }),
       ).resolves.toBeUndefined();
       expect(provider.capture).not.toHaveBeenCalled();
+    });
+
+    it('does not log PostgREST details when membership check throws a plain object', async () => {
+      const details =
+        'Key (email)=(alice@example.com) is not present in table "users".';
+      const members = makeMemberRepo();
+      members.findByUserAndChapter.mockRejectedValue({
+        code: 'PGRST116',
+        message: 'JSON object requested, multiple (or no) rows returned',
+        details,
+        hint: 'Check the membership.',
+      });
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+        members,
+      });
+
+      try {
+        await expect(
+          service.trackFromClient('opened-channel', USER_ID, {
+            chapterId: 'chapter-1',
+          }),
+        ).resolves.toBeUndefined();
+        expect(provider.capture).not.toHaveBeenCalled();
+        expect(warnSpy).toHaveBeenCalled();
+        const printed = warnSpy.mock.calls
+          .map((args) =>
+            args.map((arg) =>
+              typeof arg === 'string' ? arg : JSON.stringify(arg),
+            ),
+          )
+          .flat()
+          .join('\n');
+        expect(printed).toContain('analytics membership check failed');
+        expect(printed).toContain('PGRST116');
+        expect(printed).not.toContain('alice@example.com');
+        expect(
+          warnSpy.mock.calls
+            .filter((args) =>
+              String(args[0]).includes('analytics membership check failed'),
+            )
+            .every((args) => args.length === 1),
+        ).toBe(true);
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it('is a no-op when analytics is unconfigured (no salt), without touching the DB', async () => {

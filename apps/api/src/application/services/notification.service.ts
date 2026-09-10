@@ -25,6 +25,7 @@ import type {
 } from '#domain/entities/notification.entity';
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** Cap on how much of an offending value reaches a log line. */
 const LOGGED_VALUE_MAX_LENGTH = 64;
@@ -156,7 +157,12 @@ export class NotificationService {
         category,
       );
     } catch (err) {
-      this.logger.warn(`Push delivery failed for user ${userId}`, err);
+      logThrowable(
+        this.logger,
+        'warn',
+        `Push delivery failed for user ${userId}`,
+        err,
+      );
     }
   }
 
@@ -243,7 +249,9 @@ export class NotificationService {
         created.push(...result.value);
       } else {
         insertFailures += chunk.length;
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           `Chapter notify insert failed for ${chunk.length} recipients in ${chapterId}`,
           result.reason,
         );
@@ -342,7 +350,12 @@ export class NotificationService {
     await Promise.all(
       invalidTokens.map((token) =>
         this.pushTokenRepo.deleteByToken(token).catch((err) => {
-          this.logger.warn(`Failed to prune invalid push token`, err);
+          logThrowable(
+            this.logger,
+            'warn',
+            'Failed to prune invalid push token',
+            err,
+          );
         }),
       ),
     );
@@ -375,7 +388,9 @@ export class NotificationService {
         rows.push(...result.value);
       } else {
         failedIds.push(...chunk);
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           `Chapter notify ${label} failed for ${chunk.length} recipients in ${chapterId}`,
           result.reason,
         );
