@@ -211,10 +211,7 @@ export class AttendanceService {
         throw new ForbiddenException('You are not a member of this chapter');
       }
 
-      const hasRequiredRole = event.required_role_ids!.some((roleId) =>
-        member.role_ids.includes(roleId),
-      );
-      if (!hasRequiredRole) {
+      if (!hasRequiredRole(event.required_role_ids, member.role_ids)) {
         throw new ForbiddenException(
           'You are not eligible to check in for this event',
         );

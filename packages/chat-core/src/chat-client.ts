@@ -36,6 +36,7 @@ import {
   emptyCache,
   locateRow,
   markFailed,
+  markRecorded,
   markUnconfirmed,
   type RowPlacement,
   mergeServerRow,
@@ -45,11 +46,17 @@ import {
 } from "./cache";
 import {
   browserNetworkState,
+  type KeyValueStore,
   type NetworkState,
   type OutboxAttachment,
   type OutboxRow,
   type OutboxStore,
 } from "./adapters";
+import {
+  mergePersistedRecorded,
+  persistRecordedNotice,
+  readRecordedNotices,
+} from "./recorded-notices";
 import { randomClientId } from "./random-id";
 import { OUTBOX_ANALYTICS_EVENTS } from "./outbox-analytics";
 import type { AnalyticsProperties } from "@repo/validation";
@@ -100,6 +107,13 @@ export interface ChatActionContext {
   outbox: OutboxStore;
   /** Connectivity probe. Omitted → the browser implementation. */
   net?: NetworkState;
+  /**
+   * Small string store for `_status: "recorded"` notices (#1789). Omitted →
+   * `browserKeyValueStore`. Web and mobile already inject a store into the
+   * realtime manager; this is the same shape so a reload can restore a
+   * committed-but-uncarded row the REST backfill will never return.
+   */
+  kv?: KeyValueStore;
   toast?: ToastFn;
   /**
    * Fires alongside `toast` (never instead of it) on a rejected `react` or
@@ -128,6 +142,19 @@ function patchCache(
   qc.setQueryData<ChannelCache>(chatMessagesKey(channelId), (prev) =>
     updater(prev ?? emptyCache()),
   );
+}
+
+/** Analytics must not fail a send or turn a committed write into `{ ok: false }`. */
+function emitOutboxEvent(
+  ctx: ChatActionContext,
+  event: string,
+  properties?: AnalyticsProperties,
+): void {
+  try {
+    ctx.track?.(event, properties);
+  } catch {
+    // Swallow — `track` is fire-and-forget by contract.
+  }
 }
 
 interface FunctionsErrorWithStatus extends Error {
@@ -258,22 +285,67 @@ export interface SendMessageArgs {
 }
 
 /**
+ * Outcome of {@link sendMessage} after the optimistic row is in the cache.
+ *
+ * Empty on the usual path (queued, posted, or a handled POST failure). A
+ * `warning` means the server accepted the message and the cache already shows
+ * it; only local outbox bookkeeping failed. Callers must not treat that as
+ * `{ ok: false }` — a destructive toast invites a fresh `client_message_id`
+ * and a duplicate card (#1718).
+ */
+export interface SendMessageResult {
+  warning?: string;
+}
+
+/**
+ * The server accepted the send; IndexedDB (or the outbox port) then failed
+ * while dequeuing. Distinct from a never-sent fault, which still throws.
+ */
+export const POSTED_OUTBOX_WARNING =
+  "The message was sent, but this device couldn't finish saving it. Don't send it again — check the channel first.";
+
+/**
  * Optimistic send + idempotent invoke. Identity is sourced from `ctx.userId`
  * (the authenticated session) — never the client payload.
+ *
+ * Throws only when the message was **never sent** (`enqueue` failed after the
+ * optimistic upsert). POST failures are handled here and resolve. A
+ * post-commit `dequeue` fault resolves with {@link POSTED_OUTBOX_WARNING}
+ * and does not `markFailed` the visible row.
  */
 export async function sendMessage(
   ctx: ChatActionContext,
   args: SendMessageArgs,
-): Promise<void> {
+): Promise<SendMessageResult> {
   if (!ctx.userId) {
     ctx.toast?.({
       title: "You're signed out",
       description: "Sign back in to send messages.",
       variant: "destructive",
     });
-    return;
+    return {};
   }
   const clientId = args.clientMessageId ?? randomClientId();
+
+  // A prior attempt already merged the server row (POST ok, `dequeue` failed).
+  // Do not upsert a second pending card; just finish bookkeeping. Flush and
+  // hydrate would otherwise sit a client-keyed twin next to the real card.
+  if (
+    locateRow(
+      ctx.queryClient.getQueryData<ChannelCache>(
+        chatMessagesKey(args.channelId),
+      ),
+      clientId,
+    ) === "confirmed"
+  ) {
+    try {
+      await ctx.outbox.dequeue(clientId);
+    } catch {
+      return { warning: POSTED_OUTBOX_WARNING };
+    }
+    return {};
+  }
+
   const optimistic = optimisticMessage({
     clientMessageId: clientId,
     channelId: args.channelId,
@@ -288,7 +360,6 @@ export async function sendMessage(
   patchCache(ctx.queryClient, args.channelId, (cache) =>
     upsertOptimistic(cache, optimistic),
   );
-  await ctx.outbox.clearDraft(args.channelId);
 
   const intent = {
     kind: args.kind ?? "text",
@@ -297,19 +368,39 @@ export async function sendMessage(
     attachments: args.attachments ?? null,
   } as const;
 
-  const enqueued = await ctx.outbox.enqueue({
-    clientId,
-    channelId: args.channelId,
-    body: args.content,
-    ...intent,
-  });
+  // Draft clear is a Dexie drafts-table op that happens to sit on this
+  // path. Failing it must not fail a send that can still enqueue — a flush
+  // of an already-queued row would otherwise abandon a message that was
+  // never this attempt's to drop.
+  try {
+    await ctx.outbox.clearDraft(args.channelId);
+  } catch {
+    // Best-effort.
+  }
+
+  let enqueued: OutboxRow;
+  try {
+    enqueued = await ctx.outbox.enqueue({
+      clientId,
+      channelId: args.channelId,
+      body: args.content,
+      ...intent,
+    });
+  } catch (err) {
+    // No outbox row exists, so Retry/Discard would be no-ops. Remove the
+    // optimistic card rather than leaving a failed phantom (#1718).
+    patchCache(ctx.queryClient, args.channelId, (cache) =>
+      removeMessage(cache, clientId),
+    );
+    throw err;
+  }
   const attempts = args.priorAttempts ?? 0;
-  ctx.track?.(OUTBOX_ANALYTICS_EVENTS.queued, {
+  emitOutboxEvent(ctx, OUTBOX_ANALYTICS_EVENTS.queued, {
     channel_id: args.channelId,
     attempts,
   });
   // Offline: the row is safely queued; the reconnect flush will POST it.
-  if ((ctx.net ?? browserNetworkState).isOffline()) return;
+  if ((ctx.net ?? browserNetworkState).isOffline()) return {};
 
   try {
     const { data, error, response } = await ctx.apiClient.POST(
@@ -347,39 +438,61 @@ export async function sendMessage(
     patchCache(ctx.queryClient, args.channelId, (cache) =>
       mergeServerRow(cache, message),
     );
-    await ctx.outbox.dequeue(clientId);
-    ctx.track?.(OUTBOX_ANALYTICS_EVENTS.confirmed, {
-      channel_id: args.channelId,
-      elapsed_ms: Date.now() - enqueued.queuedAt,
-      attempts,
-    });
   } catch (err) {
     const { terminal, status, message } = classify(err);
     if (terminal) {
       patchCache(ctx.queryClient, args.channelId, (cache) =>
         markFailed(cache, clientId, message),
       );
-      await ctx.outbox.markFailed(clientId, message);
-      ctx.track?.(OUTBOX_ANALYTICS_EVENTS.failedTerminal, {
-        channel_id: args.channelId,
-        elapsed_ms: Date.now() - enqueued.queuedAt,
-        attempts,
-        status: status ?? null,
-      });
+      // Toast before the Dexie write: a `markFailed` throw used to skip the
+      // toast and then, once swallowed, look like success to slash dispatch.
       ctx.toast?.({
         title: "Message rejected",
         description: message,
         variant: "destructive",
       });
+      try {
+        await ctx.outbox.markFailed(clientId, message);
+        emitOutboxEvent(ctx, OUTBOX_ANALYTICS_EVENTS.failedTerminal, {
+          channel_id: args.channelId,
+          elapsed_ms: Date.now() - enqueued.queuedAt,
+          attempts,
+          status: status ?? null,
+        });
+      } catch {
+        // Cache already shows failed. Do not rethrow.
+      }
     } else {
-      await ctx.outbox.bumpAttempt(clientId, message);
-      ctx.track?.(OUTBOX_ANALYTICS_EVENTS.failedTransient, {
-        channel_id: args.channelId,
-        elapsed_ms: Date.now() - enqueued.queuedAt,
-        attempts,
-      });
+      try {
+        await ctx.outbox.bumpAttempt(clientId, message);
+        emitOutboxEvent(ctx, OUTBOX_ANALYTICS_EVENTS.failedTransient, {
+          channel_id: args.channelId,
+          elapsed_ms: Date.now() - enqueued.queuedAt,
+          attempts,
+        });
+      } catch {
+        // Still pending in the cache; the row stays queued if bump failed.
+      }
     }
+    return {};
   }
+
+  try {
+    await ctx.outbox.dequeue(clientId);
+  } catch {
+    // The server row is already in the cache. `markFailed` would invite a
+    // retry that mints a fresh id; leaving the outbox queued lets flush
+    // replay the same `client_message_id` (server dedupes). `sendMessage`
+    // short-circuits when that row is already `confirmed`, so the replay
+    // does not upsert a twin.
+    return { warning: POSTED_OUTBOX_WARNING };
+  }
+  emitOutboxEvent(ctx, OUTBOX_ANALYTICS_EVENTS.confirmed, {
+    channel_id: args.channelId,
+    elapsed_ms: Date.now() - enqueued.queuedAt,
+    attempts,
+  });
+  return {};
 }
 
 /**
@@ -455,6 +568,65 @@ export function markLocalUnconfirmed(
   return placement;
 }
 
+/**
+ * Leave a heavy-command placeholder in place, flipped to `recorded` — the
+ * write committed, the chat card did not (#1789).
+ *
+ * The counterpart to {@link removeLocalPlaceholder} on `card_posted: false`.
+ * Removing the row there left only an evictable toast as evidence of an
+ * append-only write, which is how a second `/points` / `/task` / `/event`
+ * command gets typed. No `_replay`: Retry is the dangerous action.
+ */
+export function markLocalRecorded(
+  ctx: ChatActionContext,
+  args: {
+    channelId: string;
+    clientMessageId: string;
+    note: string;
+    /** Used when the in-flight REST backfill already clobbered the placeholder. */
+    content?: string;
+  },
+): void {
+  const existing = ctx.queryClient.getQueryData<ChannelCache>(
+    chatMessagesKey(args.channelId),
+  );
+  const current = existing?.byId[args.clientMessageId];
+  const content = current?.content || args.content || "";
+  const senderId = current?.sender_id || ctx.userId || "";
+  const createdAt = current?.created_at ?? new Date().toISOString();
+  patchCache(ctx.queryClient, args.channelId, (cache) => {
+    let next = cache;
+    if (!cache.byId[args.clientMessageId] && senderId) {
+      const row = optimisticMessage({
+        clientMessageId: args.clientMessageId,
+        channelId: args.channelId,
+        senderId,
+        content,
+        kind: "loading",
+        payload: null,
+        replyToId: null,
+      });
+      row.created_at = createdAt;
+      next = upsertOptimistic(next, row);
+    }
+    return markRecorded(next, args.clientMessageId, args.note);
+  });
+  if (!ctx.userId) return;
+  persistRecordedNotice(
+    {
+      clientMessageId: args.clientMessageId,
+      channelId: args.channelId,
+      senderId: senderId || ctx.userId,
+      content,
+      note: args.note,
+      createdAt,
+    },
+    ctx.kv,
+  );
+}
+
+export { mergePersistedRecorded };
+
 function coerceKind(kind: string | undefined): ChatMessageKind {
   return (CHAT_MESSAGE_KINDS.find((k) => k === kind) ??
     "text") as ChatMessageKind;
@@ -479,7 +651,7 @@ export async function retryOutboxRow(
   ctx: ChatActionContext,
   row: OutboxRow,
 ): Promise<void> {
-  ctx.track?.(OUTBOX_ANALYTICS_EVENTS.retried, {
+  emitOutboxEvent(ctx, OUTBOX_ANALYTICS_EVENTS.retried, {
     channel_id: row.channelId,
     attempts: row.attempts,
   });
@@ -496,7 +668,7 @@ export async function discardOutboxRow(
     removeMessage(cache, row.clientId),
   );
   await ctx.outbox.dequeue(row.clientId);
-  ctx.track?.(OUTBOX_ANALYTICS_EVENTS.discarded, {
+  emitOutboxEvent(ctx, OUTBOX_ANALYTICS_EVENTS.discarded, {
     channel_id: row.channelId,
     attempts: row.attempts,
   });
@@ -526,10 +698,14 @@ export async function hydrateOutboxIntoCache(
 ): Promise<void> {
   if (!ctx.userId) return;
   const rows = await ctx.outbox.listForChannel(channelId);
-  if (rows.length === 0) return;
+  const notices = readRecordedNotices(channelId, ctx.kv);
+  if (rows.length === 0 && notices.length === 0) return;
   patchCache(ctx.queryClient, channelId, (cache) => {
     let next = cache;
     for (const row of rows) {
+      if (locateRow(next, row.clientId) === "confirmed") {
+        continue;
+      }
       const optimistic = optimisticMessage({
         clientMessageId: row.clientId,
         channelId: row.channelId,
@@ -544,7 +720,11 @@ export async function hydrateOutboxIntoCache(
         next = markFailed(next, row.clientId, row.lastError ?? "Send failed");
       }
     }
-    return next;
+    return mergePersistedRecorded(next, {
+      channelId,
+      userId: ctx.userId!,
+      kv: ctx.kv,
+    });
   });
 }
 

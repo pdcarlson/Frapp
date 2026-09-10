@@ -7,6 +7,7 @@ import type {
 // Aliased: the private method below wraps this one to swallow errors, and the
 // alias keeps which of the two is which readable at the call site.
 import { fetchAllPages as fetchAllPagesOrThrow } from '../../infrastructure/supabase/supabase.utils';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { TaskStatus } from '#domain/entities';
 
 // Re-exported from the entity so the sweep signatures and the typed
@@ -345,7 +346,9 @@ export class ScheduledJobsRepository {
     if (!error) return true;
     if (error.code === UNIQUE_VIOLATION) return false;
 
-    this.logger.error(
+    logThrowable(
+      this.logger,
+      'error',
       `dispatch claim failed for ${entityType} ${entityId} (${threshold})`,
       error,
     );
@@ -383,7 +386,9 @@ export class ScheduledJobsRepository {
       .eq('due_date', dueDate);
 
     if (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `dispatch release failed for ${entityType} ${entityId} (${threshold}) — this reminder will not be retried`,
         error,
       );
@@ -410,7 +415,7 @@ export class ScheduledJobsRepository {
     try {
       return await fetchAllPagesOrThrow<T>(page, { pageSize: SWEEP_PAGE_SIZE });
     } catch (error) {
-      this.logger.error(errorMessage, error);
+      logThrowable(this.logger, 'error', errorMessage, error);
       return [];
     }
   }

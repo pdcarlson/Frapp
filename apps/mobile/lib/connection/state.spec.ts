@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
+  deriveConnectionState as sharedDerive,
+  DEGRADED_THRESHOLD as sharedThreshold,
+} from "@repo/validation";
+import {
   connectionBannerCopy,
   deriveConnectionState,
   DEGRADED_THRESHOLD,
   writeBlockedReason,
 } from "./state";
+
+describe("shared connection state", () => {
+  it("re-exports the @repo/validation rule, not a local copy", () => {
+    // A prior attempt's "agrees with mobile" test never imported the other
+    // surface and stayed green when this threshold was changed to 5. Identity
+    // is the agreement proof — a transcribed copy is not.
+    expect(deriveConnectionState).toBe(sharedDerive);
+    expect(DEGRADED_THRESHOLD).toBe(sharedThreshold);
+  });
+});
 
 describe("deriveConnectionState", () => {
   it("is ONLINE with a link and no failures", () => {
@@ -28,10 +42,9 @@ describe("deriveConnectionState", () => {
   });
 
   it("is OFFLINE at the threshold, as the spec states", () => {
-    // `spec/ui/resilience.md` § 2: "'OFFLINE': !navigator.onLine OR health
-    // check to /health fails 3 times". `apps/web`'s provider maps this same
-    // threshold to DEGRADED and never reaches OFFLINE from probing — a real
-    // divergence, filed rather than fixed from a mobile slice.
+    // `spec/ui/resilience/connection-state.md`: "'OFFLINE': !navigator.onLine OR health
+    // check to /health fails 3 times". Web and mobile both call the shared
+    // `deriveConnectionState` — identity is asserted above.
     expect(
       deriveConnectionState({
         linkOffline: false,
@@ -65,7 +78,7 @@ describe("connectionBannerCopy", () => {
 describe("writeBlockedReason", () => {
   it("blocks only when offline", () => {
     expect(writeBlockedReason("ONLINE")).toBeNull();
-    // DEGRADED explicitly does not block: § 2's table keeps write actions
+    // DEGRADED explicitly does not block: the UI Indicators table keeps write actions
     // "Enabled (with extended timeouts)" there.
     expect(writeBlockedReason("DEGRADED")).toBeNull();
     expect(writeBlockedReason("OFFLINE")).toBe("Reconnect to make changes.");

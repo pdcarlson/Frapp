@@ -191,7 +191,7 @@
             "bearer": []
           }
         ],
-        "summary": "Get the caller's pseudonymous analytics id (HMAC of user id). Lets the client attribute events without ever holding the salt.",
+        "summary": "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter is in context). Lets the client attribute events without ever holding the salt.",
         "tags": [
           "Analytics"
         ]
@@ -1729,10 +1729,15 @@
         "parameters": [
           {
             "name": "limit",
-            "required": true,
+            "required": false,
             "in": "query",
+            "description": "Max notifications to return. Integers outside 1–200 are rejected; omitted defaults to 50 after clamp.",
             "schema": {
-              "type": "string"
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50,
+              "type": "number"
             }
           }
         ],
@@ -1789,7 +1794,9 @@
             "name": "chapterId",
             "required": true,
             "in": "query",
+            "description": "Chapter to read preferences for",
             "schema": {
+              "format": "uuid",
               "type": "string"
             }
           }
@@ -2418,7 +2425,12 @@
             "name": "limit",
             "required": false,
             "in": "query",
+            "description": "Max messages to return. Integers outside 1–200 are rejected; omitted defaults to 50 after clamp.",
             "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50,
               "type": "number"
             }
           },
@@ -2426,8 +2438,10 @@
             "name": "before",
             "required": false,
             "in": "query",
-            "description": "Cursor for pagination (ISO timestamp)",
+            "description": "Cursor — return messages created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received.",
             "schema": {
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$",
+              "example": "2026-01-31T23:59:59.999Z",
               "type": "string"
             }
           },
@@ -2437,6 +2451,7 @@
             "in": "query",
             "description": "Message UUID — returns messages created after this message (reconnect replay)",
             "schema": {
+              "format": "uuid",
               "type": "string"
             }
           }
@@ -3782,7 +3797,9 @@
             "name": "user_id",
             "required": false,
             "in": "query",
+            "description": "Restrict the list to one member. Billing officers may pass any member; everyone else may only pass themselves.",
             "schema": {
+              "format": "uuid",
               "type": "string"
             }
           }
@@ -4030,7 +4047,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackworkUploadUrlResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4555,7 +4579,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateServiceEntryResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4983,6 +5014,186 @@
         ]
       }
     },
+    "/v1/rush/candidates": {
+      "get": {
+        "operationId": "RushController_lookup_v1",
+        "parameters": [
+          {
+            "name": "name",
+            "required": true,
+            "in": "query",
+            "description": "Candidate display name (case-insensitive)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RushCandidateViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Look up a candidate by display name",
+        "tags": [
+          "Rush"
+        ]
+      },
+      "post": {
+        "operationId": "RushController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRushCandidateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateRushCandidateResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Add a recruitment candidate",
+        "tags": [
+          "Rush"
+        ]
+      }
+    },
+    "/v1/rush/candidates/{id}": {
+      "get": {
+        "operationId": "RushController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RushCandidateViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get a candidate with live vote and bid status",
+        "tags": [
+          "Rush"
+        ]
+      }
+    },
+    "/v1/rush/candidates/{id}/vote": {
+      "post": {
+        "operationId": "RushController_vote_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RushCandidateViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cast a vote on a candidate (idempotent; already-voted is 200)",
+        "tags": [
+          "Rush"
+        ]
+      }
+    },
+    "/v1/rush/candidates/{id}/bid": {
+      "post": {
+        "operationId": "RushController_bid_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RushCandidateViewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Extend a bid (idempotent; already-extended is 200)",
+        "tags": [
+          "Rush"
+        ]
+      }
+    },
     "/v1/geofences": {
       "get": {
         "operationId": "StudyGeofenceController_list_v1",
@@ -5265,7 +5476,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUploadUrlResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6782,7 +7000,7 @@
     }
   },
   "info": {
-    "title": "Frapp API",
+    "title": "Signet API",
     "description": "The Operating System for Greek Life",
     "version": "1.0",
     "contact": {}
@@ -6911,16 +7129,22 @@
           "distinct_id": {
             "type": "string",
             "nullable": true,
-            "description": "Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured."
+            "description": "Pseudonymous analytics id: 64 lowercase hex HMAC of the user id, or null when analytics is unconfigured. Clients must not compute this; the salt is API-only."
           },
           "enabled": {
             "type": "boolean",
             "description": "Whether analytics is enabled for this caller."
+          },
+          "chapter_group_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`), otherwise null. Same helper as analytics events. Clients must not compute this."
           }
         },
         "required": [
           "distinct_id",
-          "enabled"
+          "enabled",
+          "chapter_group_id"
         ]
       },
       "TrackEventDto": {
@@ -8270,6 +8494,7 @@
               "dues",
               "points",
               "hours",
+              "rush",
               "system_audit",
               "announcement"
             ],
@@ -8321,6 +8546,7 @@
               "dues",
               "points",
               "hours",
+              "rush",
               "system_audit",
               "imported",
               "loading",
@@ -8514,6 +8740,7 @@
               "dues",
               "points",
               "hours",
+              "rush",
               "system_audit",
               "imported",
               "loading",
@@ -9050,7 +9277,7 @@
           },
           "client_message_id": {
             "type": "string",
-            "description": "Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud."
+            "description": "Client-generated idempotency key (UUIDv4) for this adjustment. It dedupes the ledger row as well as the chat card: replaying it returns the original transaction rather than granting again, so a request whose response was lost is safe to retry **verbatim** — reusing this id, not a fresh one. Reusing it for a different adjustment, or naming a different `channel_id` than the stored origin, answers 409. Required alongside `channel_id`; omit both for dashboard adjustments. Full contract: `spec/behavior/points.md` § Anti-Fraud."
           }
         },
         "required": [
@@ -9103,9 +9330,15 @@
             "nullable": true,
             "description": "The idempotency key this row was written under, echoed back. `null` for dashboard adjustments, which send no key and are not deduplicated."
           },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Origin chat channel this row was written under. A replay re-attempts the points card only into this channel. `null` for dashboard adjustments and for rows committed before the column existed."
+          },
           "card_posted": {
             "type": "boolean",
-            "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the ledger row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the adjustment failed. Absent means the server reported no outcome (a dashboard adjustment, or a deduplicated replay) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
+            "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the ledger row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — keep a recorded row and warn, without implying the adjustment failed. Absent means the server reported no outcome (a dashboard adjustment, or a replay of a row with no stored origin channel). A replay whose origin is stored reports this field like a first attempt. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
           }
         },
         "required": [
@@ -9245,6 +9478,28 @@
         "required": [
           "filename",
           "content_type"
+        ]
+      },
+      "BackworkUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send on the confirm-upload call."
+          },
+          "resource_id": {
+            "type": "string",
+            "description": "Server-allocated resource id embedded in storage_path."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path",
+          "resource_id"
         ]
       },
       "ConfirmBackworkUploadDto": {
@@ -9410,12 +9665,93 @@
           "proof_path": {
             "type": "string",
             "description": "Storage path to proof file (e.g. from upload)"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. Chat cannot attach proof — when `wf_hours_receipt` is on, this route still 400s without `proof_path`."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry."
           }
         },
         "required": [
           "date",
           "duration_minutes",
           "description"
+        ]
+      },
+      "CreateServiceEntryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "duration_minutes": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "proof_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "reviewed_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "review_comment": {
+            "type": "string",
+            "nullable": true
+          },
+          "points_awarded": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "card_posted": {
+            "type": "boolean",
+            "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the entry row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "user_id",
+          "date",
+          "duration_minutes",
+          "description",
+          "proof_path",
+          "status",
+          "reviewed_by",
+          "review_comment",
+          "points_awarded",
+          "created_at"
         ]
       },
       "ReviewServiceEntryDto": {
@@ -9580,6 +9916,150 @@
           }
         }
       },
+      "RushCandidateViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "name_key": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "stage": {
+            "type": "string"
+          },
+          "bid_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "extended"
+            ]
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vote_count": {
+            "type": "number",
+            "description": "Ballot count. Voter names are never returned."
+          },
+          "viewer_has_voted": {
+            "type": "boolean",
+            "description": "Whether the authenticated caller has already voted."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "display_name",
+          "name_key",
+          "user_id",
+          "stage",
+          "bid_status",
+          "created_by",
+          "created_at",
+          "vote_count",
+          "viewer_has_voted"
+        ]
+      },
+      "CreateRushCandidateDto": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "user_id": {
+            "type": "string",
+            "description": "When the candidate is already a chapter member, the resolved user id. Omit for an external prospect."
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts a rush candidate card to this chat channel after the row is created (the vocab-aware slash command). Omit for non-chat creates."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate candidate."
+          }
+        },
+        "required": [
+          "display_name"
+        ]
+      },
+      "CreateRushCandidateResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "name_key": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "stage": {
+            "type": "string"
+          },
+          "bid_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "extended"
+            ]
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "card_posted": {
+            "type": "boolean",
+            "description": "Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the candidate row committed and the card did not. Absent means no card was attempted. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "display_name",
+          "name_key",
+          "user_id",
+          "stage",
+          "bid_status",
+          "created_by",
+          "created_at"
+        ]
+      },
       "CreateGeofenceDto": {
         "type": "object",
         "properties": {
@@ -9722,6 +10202,28 @@
         "required": [
           "filename",
           "content_type"
+        ]
+      },
+      "DocumentUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send on the confirm-upload call."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "Server-allocated document id embedded in storage_path."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path",
+          "document_id"
         ]
       },
       "ConfirmDocumentUploadDto": {

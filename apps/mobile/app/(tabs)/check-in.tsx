@@ -88,7 +88,7 @@ export default function CheckInScreen() {
   /**
    * Check-in has **no outbox** — a submit with no network is lost, and a member
    * standing at the door would believe they had checked in. That is why
-   * `spec/ui/resilience.md` § 2's "Disabled with tooltip: 'Reconnect to make
+   * `spec/ui/resilience/connection-state.md`'s "Disabled with tooltip: 'Reconnect to make
    * changes'" applies here (#501) while the chat composer does the opposite:
    * chat has a queue, this does not.
    *

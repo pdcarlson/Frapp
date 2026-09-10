@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -14,10 +13,20 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { NotificationService } from '../../application/services/notification.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
+import { ChapterGuard } from '../guards/chapter.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { RequirePermissions } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
-import { CurrentUser } from '../decorators/current-user.decorator';
+import {
+  CurrentChapterId,
+  CurrentUser,
+} from '../decorators/current-user.decorator';
+import { SystemPermissions } from '#domain/constants/permissions';
 import {
   RegisterPushTokenDto,
+  ListNotificationPreferencesQueryDto,
+  ListNotificationsQueryDto,
   UpdateNotificationPreferenceDto,
   UpdateUserSettingsDto,
 } from '../dtos/notification.dto';
@@ -54,31 +63,40 @@ export class NotificationController {
   }
 
   @Get('notifications')
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @FreeTier()
   @ApiOperation({ summary: 'List in-app notifications for current user' })
   async listNotifications(
     @CurrentUser('id') userId: string,
-    @Query('limit') limit?: string,
+    @CurrentChapterId() chapterId: string,
+    @Query() query: ListNotificationsQueryDto,
   ) {
-    const options = limit ? { limit: parseInt(limit, 10) } : undefined;
-    return this.notificationService.listNotifications(userId, options);
+    return this.notificationService.listNotifications(userId, chapterId, {
+      limit: query.limit,
+    });
   }
 
   @Patch('notifications/:id/read')
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @FreeTier()
   @ApiOperation({ summary: 'Mark notification as read' })
-  async markRead(@CurrentUser('id') userId: string, @Param('id') id: string) {
-    return this.notificationService.markNotificationRead(id, userId);
+  async markRead(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.notificationService.markNotificationRead(id, userId, chapterId);
   }
 
   @Get('notifications/preferences')
   @ApiOperation({ summary: 'Get notification preferences' })
   async getPreferences(
     @CurrentUser('id') userId: string,
-    @Query('chapterId') chapterId: string,
+    @Query() query: ListNotificationPreferencesQueryDto,
   ) {
-    if (!chapterId) {
-      throw new BadRequestException('chapterId query parameter is required');
-    }
-    return this.notificationService.getPreferences(userId, chapterId);
+    return this.notificationService.getPreferences(userId, query.chapterId);
   }
 
   @Patch('notifications/preferences')

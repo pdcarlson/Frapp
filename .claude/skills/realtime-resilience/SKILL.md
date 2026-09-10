@@ -4,12 +4,12 @@ description: >
   Rules for chat realtime, connection state, topic teardown, and message delivery — the invariants
   that prevent the same disconnect/reopen bug from being "fixed" twice. Use when touching
   packages/chat-core, realtime subscriptions, offline/outbox behavior, network banners,
-  useRealtimeTable, or spec/ui/resilience.md.
+  useRealtimeTable, or spec/ui/resilience/.
 ---
 
 # Realtime resilience
 
-> Substance lives in [`spec/ui/resilience.md`](../../../spec/ui/resilience.md). This skill is the
+> Substance lives in [`spec/ui/resilience/`](../../../spec/ui/resilience/README.md). This skill is the
 > short list of rules that, if skipped, reproduce a bug already paid for. Read the spec section
 > named in each rule before changing the code.
 
@@ -20,7 +20,7 @@ Implementation homes (do not fork a third):
 | Topic attach/release | `packages/chat-core/src/topic-registry.ts` (`releaseTopic`) |
 | Realtime + polling fallback | `packages/chat-core/src/realtime-manager.ts` |
 | Mobile connection banner / write gating | `apps/mobile/lib/connection/` |
-| Chat outbox network port | `@repo/chat-core` `NetworkState` (more conservative than the banner) |
+| Chat outbox network port | Mobile: `createMonitorNetworkState(connectionMonitor)`. Web: chat-core `NetworkState`. `DEGRADED` must not queue. |
 | Web dashboard ping subscriptions | `apps/web/lib/realtime/supabase-realtime.ts` — imports `@repo/chat-core/topic-registry` (the #937 web shim is gone) |
 
 ## 1. Reopening a topic requires a completed teardown
@@ -49,14 +49,14 @@ is not — serialize attach and release per topic through a queue, or a cleanup'
 The topic string stays `chat:channel:<id>`. The push worker reads presence on the same topic
 (ADR-10). Re-keying it silently disables push suppression.
 
-## 3. Two connection models, on purpose — do not "unify" them casually
+## 3. One mobile monitor; do not re-split the outbox
 
 | Model | Failure mode it optimizes | Offline signal |
 | --- | --- | --- |
 | **Banner / write gating** (`apps/mobile/lib/connection/`) | Disabled control the member can disprove | Link down, or `/health` failing three times. `isInternetReachable === false` is **one probe failure**, not OFFLINE. |
-| **Chat outbox** (`NetworkState` in chat-core) | Lost message | More conservative: `isInternetReachable === false` counts as offline so a doubtful network queues rather than sends. |
+| **Chat outbox** (`NetworkState` in chat-core) | Lost message | Same monitor. `isOffline()` is OFFLINE only — `DEGRADED` still sends. Inject `createMonitorNetworkState(connectionMonitor)`; do not add a second `expo-network` subscription. |
 
-Asymmetry is correct. Unifying them without naming that tradeoff re-breaks one of the two.
+The remaining asymmetry is the banner's write gate, not a second connectivity definition. Folding `isInternetReachable === false` into OFFLINE for the banner re-breaks check-in. Leaving the outbox on a link-only `expo-network` read re-breaks the dead-API send (#1072).
 
 ## 4. `navigator.onLine` is web-only
 
@@ -64,7 +64,7 @@ React Native defines `navigator` but never sets `onLine`, so `!navigator.onLine`
 false. Mobile uses `expo-network` for the **link** half (`isConnected === false`). Do not port the
 web clause literally.
 
-## 5. Polling fallback is §3.2, not the reconnect-budget sketch
+## 5. Polling fallback is Receiving messages, not the reconnect-budget sketch
 
 Degrade when a channel is non-live for **>10s** (not an exhausted reconnect-attempt budget).
 Copy: *"Real-time updates paused. Polling for new messages."* On reconnect: fetch after the last
@@ -80,18 +80,24 @@ Optimistic send is required. Failed sends stay in the list with Retry/Delete. Cr
 may be optimistic; deleting/paying is pessimistic. Queued composers stay enabled offline and say
 so; queueless writes disable and say why.
 
-## 7. Do not "fix" the spec to match web drift
+## 7. One `deriveConnectionState` — do not fork a third
 
-`apps/web/lib/providers/network-provider.tsx` maps three consecutive health failures to `DEGRADED`
-and never reaches `OFFLINE` from probing. The spec says three failures is `OFFLINE`. Mobile
-follows the spec. Record web as drift; do not rewrite `resilience.md` to match it from a chat or
-mobile change.
+`@repo/validation` owns `deriveConnectionState` and `healthProbeIsReachable`
+(`spec/ui/resilience/connection-state.md`). Web's `NetworkProvider` and mobile's
+`lib/connection` feed that function; they do not each keep a copy. Three
+consecutive `/health` failures are `OFFLINE` on both surfaces. A 429 is
+reachability, not a failure. Presence gates on the *link*, not on
+`isOffline` — Realtime is a different service from `/health`.
+
+Do not "fix" the spec to match a local fork. If the rule is wrong, change
+the shared function and the spec together.
 
 ## Before you change realtime or connection code
 
-1. Read the spec section this change touches (`resilience.md` §2, §3.2, or §6).
+1. Read the spec leaf this change touches (`connection-state.md`, `message-delivery.md`, or `realtime-connection.md`).
 2. Grep for every attach/subscribe on that topic — chat-core, web realtime, mobile connection.
 3. Confirm teardown is complete before re-attach (rule 1).
-4. Confirm you have not mixed banner rules into the outbox, or the reverse (rule 3).
+4. Confirm the outbox still reads the monitor (OFFLINE queues, DEGRADED sends)
+   and that `isInternetReachable === false` is not treated as banner OFFLINE (rule 3).
 5. Add a test that would have failed on the last incident: reopen-the-same-topic, overlapping
    attach, or StrictMode remount — not only the happy-path subscribe.

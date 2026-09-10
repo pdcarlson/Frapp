@@ -1,6 +1,7 @@
 "use client";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { resetObservabilityOnLogout } from "@/lib/observability/reset";
 
 export async function getSessionUser() {
   const supabase = createSupabaseBrowserClient();
@@ -11,4 +12,5 @@ export async function getSessionUser() {
 export async function signOutCurrentSession() {
   const supabase = createSupabaseBrowserClient();
   await supabase.auth.signOut();
+  resetObservabilityOnLogout();
 }

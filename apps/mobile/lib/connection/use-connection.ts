@@ -28,7 +28,7 @@ export interface Connection {
    * Read this only on surfaces that lose a failed write. The chat composer must
    * not: `sendMessage` enqueues to the outbox and returns before touching the
    * network, so gating it would defeat the queue built to make
-   * composing-while-offline work. `spec/ui/resilience.md` records the split.
+   * composing-while-offline work. `spec/ui/resilience/` records the split.
    */
   writeBlockedReason: string | null;
 }

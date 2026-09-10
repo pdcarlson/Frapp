@@ -44,6 +44,11 @@ import {
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { CHAT_ARCHIVE_BUCKET } from '#domain/constants/storage';
+import { clampListLimit } from '#domain/constants/list-query-limits';
+import {
+  ISO_INSTANT_MESSAGE,
+  parseIsoInstant,
+} from '#domain/constants/iso-instant';
 import type {
   ChatChannel,
   ChatChannelView,
@@ -156,16 +161,18 @@ export interface SendMessageInput {
 }
 
 /**
- * Kinds that assert a server-side side effect (a ledger write, a created task
- * or event, an audit row). A client must never post these directly — only a
- * trusted server caller may, via `SendMessageInput.system_originated`. `loading`
- * stays client-postable: it is the optimistic placeholder for the heavy-command
- * pattern.
+ * Kinds that assert a server-side side effect (a ledger write, a created task,
+ * event, service entry, or rush candidate, an audit row). A client must never
+ * post these directly — only a trusted server caller may, via
+ * `SendMessageInput.system_originated`. `loading` stays client-postable: it is
+ * the optimistic placeholder for the heavy-command pattern.
  */
 const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
   'event',
   'points',
   'task',
+  'hours',
+  'rush',
   'system_audit',
   // `imported` asserts "this is archived history from another system". It is
   // written only by the archive importer on the service-role path, and it is
@@ -562,7 +569,18 @@ export class ChatService {
     options?: { limit?: number; before?: string; since?: string },
   ): Promise<ChatMessage[]> {
     await this.assertChannelAccess(channelId, chapterId, userId);
-    return this.messageRepo.findByChannel(channelId, options);
+    // Parsed ONLY to validate. The timestamp reaches the repository as the
+    // caller's original string: re-serializing would truncate timestamptz
+    // microseconds (#1832; same pin as chapter-audit-log / points).
+    if (options?.before !== undefined) {
+      if (parseIsoInstant(options.before) === null) {
+        throw new BadRequestException(`before ${ISO_INSTANT_MESSAGE}`);
+      }
+    }
+    return this.messageRepo.findByChannel(channelId, {
+      ...options,
+      limit: clampListLimit(options?.limit),
+    });
   }
 
   /**
@@ -579,7 +597,7 @@ export class ChatService {
    *   existing row with `deduplicated: true` instead of inserting again
    *   (partial unique index `idx_chat_messages_dedupe`).
    * - Emits no Realtime broadcast. Delivery is the Postgres Changes
-   *   subscription on `chat_messages` (`spec/ui/resilience.md` §3.2), which
+   *   subscription on `chat_messages` (`spec/ui/resilience/message-delivery.md#receiving-messages-realtime`), which
    *   clients hold on `chat:channel:<id>`. A `new_message` broadcast used to
    *   be emitted here on a bespoke `chapter:<id>` topic, left over from the
    *   `chat-send` Edge Function ADR-11 retired; no client ever subscribed to

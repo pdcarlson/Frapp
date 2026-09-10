@@ -26,7 +26,7 @@
  * §10 state family's `FolderOpen` / `AlertTriangle` / `WifiOff`, which §6.2.3
  * records is `components/shared/**`'s to move and not a screen family's.
  *
- * **`SignetMark` is deliberately not here.** The gold "S" tile is a brand
+ * **`SignetMark` is deliberately not here.** Locked emblem B is a brand
  * composition governed by `brand-identity.md` §2, not an icon drawn to the
  * duotone recipe — the same carve-out §6.2.2 makes for the ✦ text glyph and
  * s04's `#` channel sigil. It lives in `components/auth/signet-mark.tsx`.

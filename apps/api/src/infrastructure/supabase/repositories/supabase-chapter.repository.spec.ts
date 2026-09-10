@@ -22,6 +22,7 @@ import {
  * to look like an oversight, and the Stripe distinguishing columns are
  * declared `collisionExempt` so the fixture states that decision out loud.
  * `claimSubscriptionId` is scoped by primary key — the tenant root.
+ * `applySubscriptionWebhook` is an RPC; `p_chapter_id` is the whole control.
  */
 
 const STRIPE_CUSTOMER_B = 'cus_chapter_b';
@@ -78,6 +79,29 @@ describe('SupabaseChapterRepository — tenant scope', () => {
     expect(chapter?.id).toBe(CHAPTER_B);
   });
 
+  describe('findByIds', () => {
+    it('returns only the requested chapter ids', async () => {
+      // PK batch, not `.eq('id', one chapter)` — `expectTenantScoped` requires
+      // that eq filter, so this asserts the returned ids directly.
+      const chapters = await repo.findByIds([CHAPTER_B]);
+
+      expect(chapters.map((c) => c.id)).toEqual([CHAPTER_B]);
+    });
+
+    it('returns every requested tenant-root row', async () => {
+      const chapters = await repo.findByIds([CHAPTER_A, CHAPTER_B]);
+
+      expect(chapters.map((c) => c.id).sort()).toEqual(
+        [CHAPTER_A, CHAPTER_B].sort(),
+      );
+    });
+
+    it('returns [] without querying when ids is empty', async () => {
+      await expect(repo.findByIds([])).resolves.toEqual([]);
+      expect(harness.ops).toEqual([]);
+    });
+  });
+
   it('update writes only the requested chapter', async () => {
     await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.update(CHAPTER_B, { accent_color: '#123456' }),
@@ -86,6 +110,63 @@ describe('SupabaseChapterRepository — tenant scope', () => {
     const rows = harness.rows('chapters');
     expect(rows.find((r) => r.id === CHAPTER_B)?.accent_color).toBe('#123456');
     expect(rows.find((r) => r.id === CHAPTER_A)?.accent_color).toBeNull();
+  });
+
+  describe('applySubscriptionWebhook', () => {
+    it('passes the chapter to the RPC', async () => {
+      harness = createTenantHarness({
+        tables: seed(),
+        tenantColumns: { chapters: 'id' },
+        collisionExempt: {
+          chapters: ['stripe_customer_id', 'subscription_id'],
+        },
+        rpc: {
+          apply_subscription_webhook: {
+            data: [
+              {
+                applied: { id: CHAPTER_B, subscription_status: 'active' },
+                previous_subscription_status: 'active',
+              },
+            ],
+          },
+        },
+      });
+      repo = new SupabaseChapterRepository(harness.client);
+
+      const applied = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.applySubscriptionWebhook(CHAPTER_B, '2026-06-02T12:00:00.000Z', {
+          subscription_status: 'active',
+        }),
+      );
+
+      expect(applied?.id).toBe(CHAPTER_B);
+      expect(applied?.previous_subscription_status).toBe('active');
+      expect(harness.rpcCalls[0].args).toMatchObject({
+        p_chapter_id: CHAPTER_B,
+        p_event_at: '2026-06-02T12:00:00.000Z',
+        p_patch: { subscription_status: 'active' },
+      });
+    });
+
+    it('returns null when the RPC updates zero rows', async () => {
+      harness = createTenantHarness({
+        tables: seed(),
+        tenantColumns: { chapters: 'id' },
+        collisionExempt: {
+          chapters: ['stripe_customer_id', 'subscription_id'],
+        },
+        rpc: { apply_subscription_webhook: { data: [] } },
+      });
+      repo = new SupabaseChapterRepository(harness.client);
+
+      const applied = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.applySubscriptionWebhook(CHAPTER_B, '2026-06-01T12:00:00.000Z', {
+          subscription_status: 'past_due',
+        }),
+      );
+
+      expect(applied).toBeNull();
+    });
   });
 
   describe('claimSubscriptionId', () => {

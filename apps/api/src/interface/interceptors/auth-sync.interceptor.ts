@@ -24,6 +24,7 @@ export class AuthSyncInterceptor implements NestInterceptor {
       const { id } = await this.authService.syncUser(
         supabaseUser.id,
         supabaseUser.email ?? '',
+        supabaseUser.user_metadata,
       );
       request.appUser = { id };
     }

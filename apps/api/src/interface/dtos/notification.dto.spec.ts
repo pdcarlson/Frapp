@@ -1,8 +1,15 @@
 import 'reflect-metadata';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { isSupportedTimeZone } from '@repo/validation';
-import { UpdateUserSettingsDto } from './notification.dto';
+import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
+import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
+import {
+  ListNotificationPreferencesQueryDto,
+  ListNotificationsQueryDto,
+  UpdateUserSettingsDto,
+} from './notification.dto';
 
 /** Validate a plain payload through the DTO and return the failing property names. */
 async function failingProps(
@@ -108,5 +115,88 @@ describe('UpdateUserSettingsDto — quiet_hours_tz zone validation (#687)', () =
     expect(await failingProps({ quiet_hours_tz: 'A'.repeat(101) })).toContain(
       'quiet_hours_tz',
     );
+  });
+});
+
+describe('ListNotificationPreferencesQueryDto', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+
+  async function transform(
+    query: Record<string, unknown>,
+  ): Promise<ListNotificationPreferencesQueryDto> {
+    return pipe.transform(query, {
+      type: 'query',
+      metatype: ListNotificationPreferencesQueryDto,
+    });
+  }
+
+  const VALID_UUID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  it('accepts a UUID chapterId', async () => {
+    await expect(transform({ chapterId: VALID_UUID })).resolves.toEqual({
+      chapterId: VALID_UUID,
+    });
+  });
+
+  it('rejects a missing chapterId', async () => {
+    await expect(transform({})).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects an empty chapterId', async () => {
+    await expect(transform({ chapterId: '' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a non-UUID chapterId', async () => {
+    await expect(transform({ chapterId: 'not-a-uuid' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});
+
+describe('ListNotificationsQueryDto (#1627)', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+
+  async function transform(
+    query: Record<string, unknown>,
+  ): Promise<ListNotificationsQueryDto> {
+    return pipe.transform(query, {
+      type: 'query',
+      metatype: ListNotificationsQueryDto,
+    });
+  }
+
+  it('accepts an omitted limit (default is applied in the service)', async () => {
+    const result = await transform({});
+    expect(result.limit).toBeUndefined();
+  });
+
+  it('accepts a valid limit', async () => {
+    await expect(transform({ limit: '10' })).resolves.toEqual({ limit: 10 });
+  });
+
+  it('rejects a non-numeric limit', async () => {
+    await expect(transform({ limit: 'abc' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a zero limit', async () => {
+    await expect(transform({ limit: '0' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a negative limit', async () => {
+    await expect(transform({ limit: '-1' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a limit above the list-query ceiling', async () => {
+    await expect(
+      transform({ limit: String(LIST_QUERY_LIMIT_MAX + 1) }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

@@ -1,8 +1,13 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
+import { DELETED_MESSAGE_PLACEHOLDER } from "@repo/chat-core/reply-preview";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import {
+  deliveryChrome,
+  type DeliveryChrome,
+} from "@/lib/chat/delivery-status";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   authorInitialsFallback,
@@ -11,6 +16,7 @@ import {
 } from "@repo/hooks";
 import { initialsFor } from "@/lib/chat/display-name";
 import { MessageAttachments } from "./message-attachments";
+import { ReplyQuote } from "./reply-quote";
 
 /**
  * One message row in the s05 thread.
@@ -27,11 +33,13 @@ import { MessageAttachments } from "./message-attachments";
  *
  * Three TODO-DESIGN gaps are officially open in `components.md:216-218`, and
  * this follows the fallback each one names rather than inventing a treatment:
- * consecutive-message grouping renders full chrome per message; the pending and
- * failed send states ride the self-bubble meta line, failed in
- * `semantic.destructive` with a retry path; and an in-bubble mention highlight
- * falls back to the list-level badge, which is also all the client can do today
- * — `chat_messages.mentions` is resolved server-side but `normalizeRow` does not
+ * consecutive-message grouping renders full chrome per message; the pending,
+ * failed, unconfirmed, and recorded send states ride the self-bubble meta
+ * line (`deliveryChrome` is exhaustive over `MessageStatus` — #1910), failed
+ * in `semantic.destructive` with a retry path, unconfirmed/recorded as a
+ * muted note with no discard; and an in-bubble mention highlight falls back
+ * to the list-level badge, which is also all the client can do today —
+ * `chat_messages.mentions` is resolved server-side but `normalizeRow` does not
  * carry it onto `ChatMessage`, so the thread has no per-message mention signal
  * to render even if the design existed.
  */
@@ -51,6 +59,13 @@ export interface MessageBubbleProps {
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
+  /**
+   * The replied-to message when it is in the loaded window, or `null` when
+   * `message.reply_to_id` is set and the parent is not. `MessageBubble`
+   * decides whether to draw a quote from `reply_to_id`, not from this prop
+   * — `null` vs `undefined` is "looked up and absent" vs "not a reply".
+   */
+  replyParent?: ChatMessage | null;
 }
 
 /** The drawn quick reaction. A fuller picker is not in this slice. */
@@ -101,6 +116,7 @@ export function MessageBubble({
   onDiscard,
   onReact,
   onUnreact,
+  replyParent,
 }: MessageBubbleProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -123,6 +139,9 @@ export function MessageBubble({
     return (
       <MineMessageBubble
         message={message}
+        replyParent={replyParent}
+        viewerId={viewerId}
+        nameFor={nameFor}
         time={time}
         isConfirmed={isConfirmed}
         reactions={reactions}
@@ -164,7 +183,7 @@ export function MessageBubble({
     ) : null;
 
   const body = message.is_deleted ? (
-    <Text style={styles.deleted}>Message deleted</Text>
+    <Text style={styles.deleted}>{DELETED_MESSAGE_PLACEHOLDER}</Text>
   ) : (
     <>
       {message.content.length > 0 ? (
@@ -186,7 +205,19 @@ export function MessageBubble({
 
       <View style={styles.theirsColumn}>
         <Text style={styles.metaText}>{`${authorLabel} · ${time}`}</Text>
-        <View style={styles.bubbleTheirs}>{body}</View>
+        <View style={styles.bubbleTheirs}>
+          {message.reply_to_id && !message.is_deleted ? (
+            <ReplyQuote
+              message={message}
+              replyParent={replyParent}
+              nameFor={nameFor}
+              viewerId={viewerId}
+              borderColor={tokens.color.border.hairline}
+              textColor={tokens.color.text.muted}
+            />
+          ) : null}
+          {body}
+        </View>
 
         <ReactionRow
           reactions={reactions}
@@ -209,6 +240,9 @@ export function MessageBubble({
  */
 function MineMessageBubble({
   message,
+  replyParent,
+  viewerId,
+  nameFor,
   time,
   isConfirmed,
   reactions,
@@ -219,6 +253,9 @@ function MineMessageBubble({
   styles,
 }: {
   message: ChatMessage;
+  replyParent: ChatMessage | null | undefined;
+  viewerId: string | null;
+  nameFor: (userId: string) => string | null;
   time: string;
   isConfirmed: boolean;
   reactions: ReactionGroup[];
@@ -251,7 +288,7 @@ function MineMessageBubble({
 
   const body = message.is_deleted ? (
     <Text style={[styles.deleted, { color: accentOnPrimary }]}>
-      Message deleted
+      {DELETED_MESSAGE_PLACEHOLDER}
     </Text>
   ) : (
     <>
@@ -264,25 +301,29 @@ function MineMessageBubble({
     </>
   );
 
+  const chrome = deliveryChrome(message);
+
   return (
     <View style={styles.rowMine}>
       <View style={[styles.bubbleMine, { backgroundColor: accentPrimary }]}>
+        {message.reply_to_id && !message.is_deleted ? (
+          <ReplyQuote
+            message={message}
+            replyParent={replyParent}
+            nameFor={nameFor}
+            viewerId={viewerId}
+            borderColor={accentOnPrimary}
+            textColor={accentOnPrimary}
+          />
+        ) : null}
         {body}
       </View>
 
       <View style={styles.metaMine}>
-        {message._status === "pending" ? (
-          <Text style={styles.metaText}>{`${time} · sending`}</Text>
-        ) : message._status === "failed" ? (
-          <Text style={styles.metaFailed}>
-            {message._error ?? "Send failed"}
-          </Text>
-        ) : (
-          <Text style={styles.metaText}>{time}</Text>
-        )}
+        <MineDeliveryMeta chrome={chrome} time={time} styles={styles} />
       </View>
 
-      {message._status === "failed" ? (
+      {chrome.status === "failed" ? (
         <View style={styles.failedActions}>
           <Pressable
             accessibilityRole="button"
@@ -314,6 +355,47 @@ function MineMessageBubble({
       />
     </View>
   );
+}
+
+/**
+ * Self-bubble delivery caption. Exhaustive over `DeliveryChrome` so a new
+ * `MessageStatus` cannot silently render as the confirmed time-only line.
+ *
+ * `unconfirmed` / `recorded` are muted notes, never destructive, and never
+ * paired with Retry/Discard in the caller. Mobile has no slash replay path,
+ * so `unconfirmed` is read-only — do not add a Retry here.
+ */
+function MineDeliveryMeta({
+  chrome,
+  time,
+  styles,
+}: {
+  chrome: DeliveryChrome;
+  time: string;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  switch (chrome.status) {
+    case "pending":
+      return <Text style={styles.metaText}>{`${time} · sending`}</Text>;
+    case "failed":
+      return <Text style={styles.metaFailed}>{chrome.error}</Text>;
+    case "unconfirmed":
+    case "recorded":
+      return (
+        <>
+          <Text style={styles.metaText}>{time}</Text>
+          <Text style={styles.metaText} accessibilityLiveRegion="polite">
+            {chrome.note}
+          </Text>
+        </>
+      );
+    case "confirmed":
+      return <Text style={styles.metaText}>{time}</Text>;
+    default: {
+      const _never: never = chrome;
+      return _never;
+    }
+  }
 }
 
 /**

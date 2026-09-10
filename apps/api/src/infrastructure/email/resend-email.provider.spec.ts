@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ResendEmailProvider } from './resend-email.provider';
 
 describe('ResendEmailProvider', () => {
@@ -62,6 +63,9 @@ describe('ResendEmailProvider', () => {
 
   it('reports failure and swallows a network error', async () => {
     jest.spyOn(global, 'fetch').mockRejectedValue(new Error('network down'));
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
 
     const provider = new ResendEmailProvider({
       apiKey: 're_test',
@@ -69,6 +73,14 @@ describe('ResendEmailProvider', () => {
     });
 
     await expect(provider.sendInviteEmail(params)).resolves.toBe(false);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]).toHaveLength(1);
+    expect(String(warnSpy.mock.calls[0][0])).toContain(
+      'Resend invite email send failed',
+    );
+    expect(String(warnSpy.mock.calls[0][0])).toContain('network down');
+    expect(String(warnSpy.mock.calls[0][0])).not.toContain(params.joinUrl);
+    expect(String(warnSpy.mock.calls[0][0])).not.toContain(params.to);
   });
 
   it('escapes HTML in the role name', async () => {

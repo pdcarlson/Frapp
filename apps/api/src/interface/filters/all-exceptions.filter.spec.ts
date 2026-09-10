@@ -11,10 +11,18 @@ import type { ArgumentsHost } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
+import { runWithRequestLogStore } from '../../infrastructure/observability/request-als';
+import {
+  captureSentryErrorCorrelated,
+  enqueueSanitizedLog,
+} from '../../infrastructure/analytics/posthog-runtime';
 
 jest.mock('@sentry/nestjs', () => ({
-  captureException: jest.fn(),
+  captureException: jest.fn(() => 'sentry-event-1'),
   captureMessage: jest.fn(),
+  getTraceData: jest.fn(() => ({
+    'sentry-trace': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-1',
+  })),
   withScope: jest.fn((callback: (scope: unknown) => void) =>
     callback({
       setLevel: jest.fn(),
@@ -22,6 +30,11 @@ jest.mock('@sentry/nestjs', () => ({
       setUser: jest.fn(),
     }),
   ),
+}));
+
+jest.mock('../../infrastructure/analytics/posthog-runtime', () => ({
+  captureSentryErrorCorrelated: jest.fn(),
+  enqueueSanitizedLog: jest.fn(),
 }));
 
 const SALT = 'filter-spec-salt';
@@ -32,6 +45,7 @@ const CLIENT_IP = '203.0.113.42';
 interface Captured {
   warn: string[];
   error: string[];
+  log: string[];
   json: unknown;
   status: number | undefined;
 }
@@ -48,7 +62,13 @@ describe('AllExceptionsFilter', () => {
   beforeEach(() => {
     process.env.ANALYTICS_HMAC_SALT = SALT;
     jest.clearAllMocks();
-    captured = { warn: [], error: [], json: undefined, status: undefined };
+    captured = {
+      warn: [],
+      error: [],
+      log: [],
+      json: undefined,
+      status: undefined,
+    };
     jest
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation((message: unknown) => {
@@ -58,6 +78,11 @@ describe('AllExceptionsFilter', () => {
       .spyOn(Logger.prototype, 'error')
       .mockImplementation((message: unknown) => {
         captured.error.push(String(message));
+      });
+    jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation((message: unknown) => {
+        captured.log.push(String(message));
       });
   });
 
@@ -122,6 +147,28 @@ describe('AllExceptionsFilter', () => {
       requestId: 'req-abc',
     });
     expect(captured.status).toBe(status);
+  });
+
+  it('falls back to unknown when requestId is missing and ALS is empty', () => {
+    new AllExceptionsFilter().catch(
+      new Error('Missing ID'),
+      host({ requestId: undefined }),
+    );
+
+    expect((captured.json as { requestId: string }).requestId).toBe('unknown');
+  });
+
+  it('falls back to the ALS request id when the request object is unbound', () => {
+    runWithRequestLogStore({ requestId: 'req_from_als' }, () => {
+      new AllExceptionsFilter().catch(
+        new Error('ALS fallback'),
+        host({ requestId: undefined }),
+      );
+    });
+
+    expect((captured.json as { requestId: string }).requestId).toBe(
+      'req_from_als',
+    );
   });
 
   it('never writes the client address, and strips the query string', () => {
@@ -293,6 +340,25 @@ describe('AllExceptionsFilter', () => {
     expect(reported.message).not.toContain('alice@example.com');
   });
 
+  it('keeps row values out of Sentry on the opaque fallback too (#1762)', () => {
+    // No `code`/`message`/`hint`, so the helper cannot take the described path
+    // and must serialize. That path used to JSON.stringify the whole record.
+    new AllExceptionsFilter().catch(
+      {
+        details: 'Key (email)=(alice@example.com) already exists.',
+        statusCode: 502,
+      },
+      host(),
+    );
+
+    const [reported] = jest.mocked(Sentry.captureException).mock.calls[0] as [
+      Error,
+    ];
+    expect(reported.message).toContain('502');
+    expect(reported.message).not.toContain('alice@example.com');
+    expect(captured.error[0]).not.toContain('alice@example.com');
+  });
+
   it('names a bare object throw so the missing stack is explainable', () => {
     new AllExceptionsFilter().catch({ message: 'no stack here' }, host());
 
@@ -441,6 +507,107 @@ describe('AllExceptionsFilter', () => {
       expect((captured.json as Record<string, unknown>).message).toBe(
         'No such chapter',
       );
+    });
+  });
+
+  describe('PostHog correlation marker and sanitized logs', () => {
+    it('emits sentry-error-correlated on 5xx with allowlisted fields only', () => {
+      process.env.RENDER_GIT_COMMIT = '0ca478e91051abcd';
+      new AllExceptionsFilter().catch(
+        new Error('database exploded'),
+        host({ appUser: { id: USER_ID }, chapterId: CHAPTER_ID }),
+      );
+
+      expect(captureSentryErrorCorrelated).toHaveBeenCalledTimes(1);
+      const [distinctId, properties] = jest.mocked(captureSentryErrorCorrelated)
+        .mock.calls[0] as [string, Record<string, unknown>];
+      expect(distinctId).toMatch(/^[0-9a-f]{64}$/);
+      expect(distinctId).not.toBe(USER_ID);
+      expect(properties).toEqual({
+        sentry_event_id: 'sentry-event-1',
+        trace_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        request_id: 'req-abc',
+        route: '/v1/chapters/join',
+        status_class: '5xx',
+        release: '0ca478e91051abcd',
+      });
+      expect(JSON.stringify(properties)).not.toContain('database exploded');
+      expect(JSON.stringify(properties)).not.toContain(USER_ID);
+      expect(JSON.stringify(properties)).not.toContain('secret-code');
+      delete process.env.RENDER_GIT_COMMIT;
+
+      expect(enqueueSanitizedLog).toHaveBeenCalled();
+      const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0] as [
+        { attributes: Record<string, unknown> },
+      ];
+      expect(record.attributes.user_hash).toMatch(/^[0-9a-f]{64}$/);
+      expect(record.attributes.user_hash).not.toBe(USER_ID);
+      expect(JSON.stringify(record)).not.toContain('database exploded');
+    });
+
+    it('does not emit the marker on 4xx', () => {
+      new AllExceptionsFilter().catch(new ForbiddenException(), host());
+      expect(captureSentryErrorCorrelated).not.toHaveBeenCalled();
+    });
+
+    it('emits a sanitized request log for an unmatched 404 (#2078)', () => {
+      new AllExceptionsFilter().catch(
+        new NotFoundException('Cannot GET /v1/ws8-synthetic-no-content'),
+        host({
+          method: 'GET',
+          url: '/v1/ws8-synthetic-no-content?email=member@example.com',
+        }),
+      );
+
+      expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);
+      const [record, sampleKey] = jest.mocked(enqueueSanitizedLog).mock
+        .calls[0] as [
+        { body: string; attributes: Record<string, unknown> },
+        string,
+      ];
+      expect(record.body).toBe('request');
+      expect(record.attributes).toMatchObject({
+        request_id: 'req-abc',
+        method: 'GET',
+        path: '/v1/ws8-synthetic-no-content',
+        status_code: 404,
+        status_class: '4xx',
+      });
+      expect(sampleKey).toBe('req-abc');
+      const serialized = JSON.stringify(record);
+      expect(serialized).not.toContain('member@example.com');
+      expect(serialized).not.toContain('Cannot GET');
+      expect(serialized).not.toContain('?');
+      expect(serialized).not.toContain(CLIENT_IP);
+      expect(captured.log[0]).toContain('/v1/ws8-synthetic-no-content');
+      expect(captured.log[0]).not.toContain('member@example.com');
+    });
+
+    it('does not emit a second request log for a matched-route 404', () => {
+      new AllExceptionsFilter().catch(
+        new NotFoundException('No such chapter'),
+        host({ route: { path: '/v1/chapters/:id' } }),
+      );
+
+      expect(enqueueSanitizedLog).not.toHaveBeenCalled();
+    });
+
+    it('does not emit a request log for a security 4xx (security_event already covers it)', () => {
+      new AllExceptionsFilter().catch(new ForbiddenException(), host());
+
+      expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);
+      const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0] as [
+        { body: string },
+      ];
+      expect(record.body).toBe('security_event');
+    });
+
+    it('keeps raw user ids on the internal 5xx log', () => {
+      new AllExceptionsFilter().catch(
+        new Error('boom'),
+        host({ appUser: { id: USER_ID } }),
+      );
+      expect(captured.error[0]).toContain(USER_ID);
     });
   });
 });

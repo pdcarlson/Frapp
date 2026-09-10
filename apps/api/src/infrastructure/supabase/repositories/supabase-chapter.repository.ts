@@ -5,7 +5,11 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import {
+  IChapterRepository,
+  type AppliedSubscriptionWebhook,
+  type SubscriptionWebhookPatch,
+} from '#domain/repositories/chapter.repository.interface';
 import { Chapter } from '#domain/entities/chapter.entity';
 
 @Injectable()
@@ -23,6 +27,16 @@ export class SupabaseChapterRepository implements IChapterRepository {
       .maybeSingle();
     if (error) throw error;
     return data;
+  }
+
+  async findByIds(ids: string[]): Promise<Chapter[]> {
+    if (!ids.length) return [];
+    const { data, error } = await this.supabase
+      .from('chapters')
+      .select('*')
+      .in('id', ids);
+    if (error) throw error;
+    return data ?? [];
   }
 
   async findBySubscriptionId(subscriptionId: string): Promise<Chapter | null> {
@@ -75,6 +89,34 @@ export class SupabaseChapterRepository implements IChapterRepository {
     const { data, error } = await query.select('*');
     if (error) throw error;
     return Array.isArray(data) && data.length > 0 ? data[0] : null;
+  }
+
+  async applySubscriptionWebhook(
+    chapterId: string,
+    eventAt: string,
+    patch: SubscriptionWebhookPatch,
+  ): Promise<AppliedSubscriptionWebhook | null> {
+    const { data, error } = await this.supabase.rpc(
+      'apply_subscription_webhook',
+      {
+        p_chapter_id: chapterId,
+        p_event_at: eventAt,
+        p_patch: patch,
+      },
+    );
+    if (error) throw error;
+    const rows = data ?? [];
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    if (!row.applied || typeof row.applied !== 'object') {
+      throw new Error(
+        'apply_subscription_webhook returned a row without an applied chapter',
+      );
+    }
+    return {
+      ...row.applied,
+      previous_subscription_status: row.previous_subscription_status,
+    };
   }
 
   async create(chapterData: TablesInsert<'chapters'>): Promise<Chapter> {

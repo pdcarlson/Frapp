@@ -10,7 +10,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ServiceEntryService } from '../../application/services/service-entry.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -28,6 +33,7 @@ import {
 } from '../decorators/current-user.decorator';
 import {
   CreateServiceEntryDto,
+  CreateServiceEntryResponseDto,
   ListServiceEntriesQueryDto,
   RequestProofUploadUrlDto,
   ReviewServiceEntryDto,
@@ -161,6 +167,7 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SERVICE_LOG)
   @ApiOperation({ summary: 'Log a service entry' })
+  @ApiCreatedResponse({ type: CreateServiceEntryResponseDto })
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -173,6 +180,8 @@ export class ServiceEntryController {
       duration_minutes: dto.duration_minutes,
       description: dto.description,
       proof_path: dto.proof_path ?? null,
+      channel_id: dto.channel_id,
+      client_message_id: dto.client_message_id,
     });
   }
 

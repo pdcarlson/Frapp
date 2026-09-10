@@ -51,6 +51,8 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  RushCandidate,
+  RushCandidateVote,
   User,
   UserSettings,
 } from '#domain/entities';
@@ -130,6 +132,8 @@ export interface Database {
       financial_transactions: TableDefinition<FinancialTransaction>;
       service_entries: TableDefinition<ServiceEntry>;
       tasks: TableDefinition<Task>;
+      rush_candidates: TableDefinition<RushCandidate>;
+      rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;
       chapter_document_folders: TableDefinition<ChapterDocumentFolder>;
       semester_archives: TableDefinition<SemesterArchive>;
@@ -355,6 +359,23 @@ export interface Database {
           p_member_role_id: string;
         };
         Returns: SemesterArchive;
+      };
+      /**
+       * `20260909180000` (#1979) — `returns table (applied chapters,
+       * previous_subscription_status text)`. Empty when the event is older
+       * than `last_stripe_webhook_at` (lost CAS / stale). Replaced
+       * `20260909050000`'s `setof chapters`.
+       */
+      apply_subscription_webhook: {
+        Args: {
+          p_chapter_id: string;
+          p_event_at: string;
+          p_patch: Record<string, string | string[] | null | undefined>;
+        };
+        Returns: {
+          applied: { [K in keyof Chapter]: Chapter[K] };
+          previous_subscription_status: Chapter['subscription_status'];
+        }[];
       };
       /** `20260803120000` — `returns setof financial_invoices`. */
       apply_invoice_payment: {

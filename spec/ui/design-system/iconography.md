@@ -34,9 +34,15 @@ Rules:
    family.
 2. Tab bar active state = accent duotone glyph + 700-weight label. No pill or
    container shape behind the glyph.
-3. The rounded-square "S" mark is a brand asset, not an icon — it never takes
+3. Locked emblem B is a brand asset, not an icon — it never takes
    the duotone treatment or the chapter accent (see
    [brand identity](../brand-identity.md)).
+4. Third-party OAuth marks (Apple silhouette, Google four-color G) are
+   trademarks, not Signet icons. They MUST use the official artwork and MUST NOT
+   take the duotone recipe, the chapter accent, or a recolor of Google's four
+   colors. Size is 20px (§2 action-button size). They sit beside the
+   "Continue with …" label and are decorative (`aria-hidden` /
+   `accessible={false}`).
 
 ---
 
@@ -213,7 +219,7 @@ One pick worth pinning meanwhile:
 Since the #920 chat slice the chat family draws the duotone recipe (§1). The
 glyphs live in
 [`apps/web/components/chat/chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx),
-which composes the shared recipe module and re-exports the four silhouettes the
+which composes the shared recipe module and re-exports the five silhouettes the
 shell already draws rather than redrawing them. Rendered at 20px in headers and
 composer controls, 16px in card eyebrows and inline metadata (§2).
 
@@ -236,6 +242,8 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Event card | `EventsGlyph` (shared with the nav intent) |
 | Task card | `TasksGlyph` (shared) |
 | Points card | `PointsGlyph` (shared) |
+| Hours card | `ServiceGlyph` (shared with the nav intent) |
+| Rush / recruitment card | `RushGlyph` |
 | Channel search | `SearchGlyph` (shared) |
 
 Three things this table deliberately does not contain:
@@ -476,7 +484,7 @@ a lens-shaped wedge across the break that makes the two halves read as links.
   its label already names the intent, which is how the points adjustment
   dialog resolved the same question (§6.2.3); and the tutorial's welcome slide
   takes the **mark**, because the slide is literally a welcome to Signet.
-- **`SignetMark`.** The gold "S" tile
+- **`SignetMark`.** Locked emblem B (gold crest on charcoal)
   ([`components/auth/signet-mark.tsx`](../../../apps/web/components/auth/signet-mark.tsx))
   is a brand composition governed by [`../brand-identity.md`](../brand-identity.md)
   §2, not an icon drawn to §1's duotone recipe — the same carve-out §6.2.2

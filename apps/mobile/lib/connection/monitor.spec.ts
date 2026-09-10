@@ -1,3 +1,4 @@
+import { REQUEST_ID_HEADER } from "@repo/api-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createConnectionMonitor,
@@ -36,8 +37,9 @@ function harness(overrides: Partial<MonitorDeps> = {}) {
   return { monitor, deps, fetchMock, seen, link: () => listener };
 }
 
-const OK = { ok: true } as Response;
-const SERVER_ERROR = { ok: false } as Response;
+const OK = { ok: true, status: 200 } as Response;
+const SERVER_ERROR = { ok: false, status: 503 } as Response;
+const RATE_LIMITED = { ok: false, status: 429 } as Response;
 
 describe("healthUrl", () => {
   beforeEach(() => {
@@ -81,6 +83,18 @@ describe("connection monitor", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("mints x-request-id on the health probe, not a sentry-trace id", async () => {
+    const { monitor, fetchMock } = harness();
+    fetchMock.mockResolvedValue(OK);
+    monitor.start();
+    await Promise.resolve();
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const headers = new Headers(init?.headers);
+    expect(headers.get(REQUEST_ID_HEADER)).toMatch(/^req_[0-9a-f-]{36}$/i);
+    expect(headers.get("sentry-trace")).toBeNull();
+    expect(headers.get("baggage")).toBeNull();
+  });
+
   it("goes OFFLINE the moment the link drops", async () => {
     const { monitor, seen, link } = harness();
     monitor.start();
@@ -90,11 +104,9 @@ describe("connection monitor", () => {
   });
 
   it("treats an unreachable internet as suspicion, not proof", () => {
-    // `isOfflineFromExpoState` folds this into "offline" for the chat outbox,
-    // where a false offline only means "queue instead of send". Here the value
-    // gates writes, so folding it in would disable the check-in field at the
-    // door for a captive-portal-ish network whose API is perfectly reachable —
-    // and with no recovery, since a down link also suppresses the probe. One
+    // The chat outbox now reads this same monitor (#1072), so this value is
+    // DEGRADED for both the banner and the queue: a false offline would
+    // disable check-in at the door, and `DEGRADED` must still send. One
     // failure's worth of suspicion, and `/health` settles it.
     const { monitor, link } = harness();
     monitor.start();
@@ -149,6 +161,17 @@ describe("connection monitor", () => {
     expect(monitor.get()).toBe("DEGRADED");
   });
 
+  it("does not count a 429 as a failure — the API is up and throttling", async () => {
+    const { monitor, fetchMock } = harness();
+    fetchMock.mockResolvedValue(RATE_LIMITED);
+    monitor.start();
+    await Promise.resolve();
+    expect(monitor.get()).toBe("ONLINE");
+    await monitor.probeOnce();
+    await monitor.probeOnce();
+    expect(monitor.get()).toBe("ONLINE");
+  });
+
   it("recovers to ONLINE on the first success", async () => {
     const { monitor, fetchMock } = harness();
     fetchMock.mockRejectedValue(new Error("timeout"));
@@ -161,7 +184,7 @@ describe("connection monitor", () => {
     expect(monitor.get()).toBe("ONLINE");
   });
 
-  it("clears accumulated failures only on a real offline → online transition", async () => {
+  it("does not reset the failure count on a link event; a successful probe does", async () => {
     const { monitor, fetchMock, link } = harness();
     fetchMock.mockRejectedValue(new Error("timeout"));
     monitor.start();
@@ -169,15 +192,20 @@ describe("connection monitor", () => {
     expect(monitor.get()).toBe("DEGRADED");
 
     // `expo-network` fires on every path update — a cell handoff, a VPN toggle,
-    // a Wi-Fi↔LTE switch. Resetting on each of those meant a moving device
-    // could never accumulate three failures, so an API outage never reached the
-    // banner at all.
+    // a Wi-Fi↔LTE switch. Resetting on those (or on a genuine reconnect)
+    // meant a moving device could never accumulate three failures, or would
+    // flash ONLINE while `/health` was still dead.
     link()?.({ isConnected: true, isInternetReachable: true });
     expect(monitor.get()).toBe("DEGRADED");
 
     link()?.({ isConnected: false });
     expect(monitor.get()).toBe("OFFLINE");
+
+    fetchMock.mockResolvedValue(OK);
     link()?.({ isConnected: true, isInternetReachable: true });
+    // A link is not a reachable API — stay off ONLINE until the probe lands.
+    expect(monitor.get()).not.toBe("ONLINE");
+    await Promise.resolve();
     expect(monitor.get()).toBe("ONLINE");
   });
 

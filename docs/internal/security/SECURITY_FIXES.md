@@ -93,7 +93,7 @@ One pass over everything fixable without a tracked breaking upgrade, then a bloc
 Starting point (measured 2026-08-13 on `main`): **61 total — 4 critical, 19 high, 38 moderate**.
 
 - **`npm audit fix`** (in-range, lockfile-only): cleared the critical `@xhmikosr/decompress` chain and `concurrently`/`shell-quote` (9.2.1 → 9.2.4 / 1.8.3 → 1.9.0, the #730 dup), plus high `brace-expansion`, `fast-uri`, `form-data`, `piscina`, `vite` (8.0.14 → 8.2.1) and assorted moderates. 50 lockfile entries moved, no semver-major hops.
-- **`js-yaml` highs** needed two extra steps because `@nestjs/swagger@11.4.4` pins `js-yaml@4.1.1` **exactly**: the `apps/api` floor moved to `^11.4.6` (records intent, same as the `@nestjs/*` `^11.1.28` floor above), and because 11.4.6 pins `js-yaml@5.2.1` — itself flagged (GHSA-pm4m-ph32-ghv5, fixed 5.2.2) — a **scoped** root override (`"@nestjs/swagger": { "js-yaml": "^5.2.2" }`) forces only swagger's nested copy to 5.2.3. The hoisted `4.3.1` still serves `@eslint/eslintrc`, `cosmiconfig`, and `@expo/xcpretty`, which declare `^4.x`. Note a scoped override does not move an already-locked nested copy either — `npm update <parent>` (here `@nestjs/swagger`) is what re-resolves the subtree.
+- **`js-yaml` highs** needed two extra steps because `@nestjs/swagger@11.4.4` pins `js-yaml@4.1.1` **exactly**: the `apps/api` floor moved to `^11.4.6` (records intent, same as the `@nestjs/*` `^11.1.28` floor above), and because 11.4.6 pins `js-yaml@5.2.1` — itself flagged (GHSA-pm4m-ph32-ghv5, fixed 5.2.2) — a **scoped** root override (`"@nestjs/swagger": { "js-yaml": "^5.2.2" }`) forces only swagger's nested copy to 5.2.3. The hoisted `4.3.1` still serves `@eslint/eslintrc`, `cosmiconfig`, and `@expo/xcpretty`, which declare `^4.x`. Note a scoped override does not move an already-locked nested copy either — `npm update <parent>` (here `@nestjs/swagger`) is what re-resolves the subtree. **Corrected 2026-09-08 (#1923):** hoisted 4.x is 4.3.2 and the swagger override is `^5.4.1` — see the 2026-09-08 note below.
 - **`@swc/cli` 0.7.10 → 0.8.1** in `apps/api` (#290): cleared its moderate plus the `@xhmikosr/*` archive-extraction chain. `@nestjs/cli`'s *optional peer* on `@swc/cli` kept a second hoisted `0.7.10` alive after the workspace bump — the same trap as #684's `platform-express` — collapsed with `npm update @swc/cli`.
 - **`@infisical/cli` 0.43.40 → 0.43.121**: lifts the #245-era dev-only exception. The old blocker (preinstall tar extraction failing on `node:20-alpine`) no longer reproduces — 0.43.121's preinstall extracts with node-tar `7.5.22`, and a full Dockerfile deps-stage `npm ci` inside `node:20-alpine` was verified to complete with a working binary. Clears the last **critical** (`GHSA-23hp-3jrh-7fpw`) and seven high node-tar advisories.
 
@@ -132,7 +132,11 @@ Two gotchas worth not re-learning:
 
 When the gate goes red on a PR that did not touch dependencies, read the **exit code** before anything else. **Exit 2 means no report was obtained** — nothing has been established about the lockfile either way, and the gate's own message says whether re-running can help. **Only exit 1 is a finding.** (Before #1638 both were exit 1, so a registry outage read as an advisory report — twice, blocking two merges.) On exit 1, a new advisory was published upstream against the existing lockfile: fix it in-range if `npm audit fix`/`npm update <pkg>` can (see the #245/#684/#291 playbooks above), otherwise file or link the tracking issue and add a time-boxed allowlist entry in the same PR. Never widen an entry beyond the single GHSA id, and never land an entry without a tracking issue. The gate only fires on PR/push activity, so advisories against an untouched lockfile surface on the next PR — Dependabot (#848) is the tracked complement for proactive detection and bumps.
 
-> **2026-09-08.** Two new highs against an untouched lockfile: `js-yaml` 4.3.1 (`GHSA-2883-xcg3-v3hh`, patched 4.3.2) and `sharp` `<0.35.4` (`GHSA-rgj7-g3m4-5g8c`, patched 0.35.4). Cleared with a targeted lockfile bump — hoisted `js-yaml` 4.3.2, swagger-nested `js-yaml` 5.4.1, `sharp` 0.35.4 and its `@img/sharp-*` / libvips 1.3.3 optional binaries. No full lockfile rebuild. `@next/swc-*` stayed at 8 platform entries.
+> **2026-09-08 (#1921).** Two new highs against an untouched lockfile: `js-yaml` 4.3.1 (`GHSA-2883-xcg3-v3hh`, patched 4.3.2) and `sharp` `<0.35.4` (`GHSA-rgj7-g3m4-5g8c`, patched 0.35.4). Cleared with a targeted lockfile bump — hoisted `js-yaml` 4.3.2, swagger-nested `js-yaml` 5.4.1, `sharp` 0.35.4 and its `@img/sharp-*` / libvips 1.3.3 optional binaries. No full lockfile rebuild. `@next/swc-*` stayed at 8 platform entries.
+
+The lockfile versions alone do not hold after a later `npm install`: `@redocly/openapi-core@1.34.19` still *declares* `js-yaml@4.3.1` exactly, and Next's optional `sharp` range is `^0.35.3`. Root overrides keep the hoisted 4.3.2 / 0.35.4 copies (swagger nest `^5.4.1`). GHSA-2883 lists only the 3.x / 4.x lines; istanbul was already on 3.15.2.
+
+> **2026-09-08 (later).** Three new multer highs (`GHSA-wc9g-mqfw-jrwm`, `GHSA-qfvm-cv95-jqjf`, `GHSA-535w-7cp7-47q4`) against `@nestjs/platform-express@11.2.1`'s exact pin `multer@2.2.0`. Patched at **2.3.0**. Latest `@nestjs/platform-express` (12.0.1) still declares 2.2.0, so a root override is the lever — not a Nest bump. Targeted `npm update multer --package-lock-only`. No FileInterceptor / multer config in this repo; no allowlist.
 
 ## `@sentry/nestjs` v9 → v10 (issue #682)
 
@@ -144,7 +148,7 @@ The one advisory chain the #831 sweep above could not clear in-range: `@sentry/n
 
 v10's headline change is *"bump to OpenTelemetry v2"*, with `@sentry/nestjs` switching to OTel core instrumentation. Its removals — `BaseClient`, `hasTracingEnabled`, the `Logger` *type* and the debug logger (now `debug`, exported from `@sentry/core`, not `@sentry/nestjs`), the `_experiments.enableLogs`/`beforeSendLog`/`autoFlushOnFeedback` options, and browser-side FID collection — are **none of them reachable from this repo**. One correction for anyone grepping this list: **`logger` is still exported** in 10.70.0 — it is the Logs API (`fmt`/`debug`/`info`/`warn`/`error`/`fatal`/`trace`), a different thing from the removed debug logger, so a live `Sentry.logger` call site is not dead code. The Sentry surface at the time of the bump was five files: `Sentry.init` in `main.ts`, the `ErrorEvent` type in `sentry-scrubbing.ts` and its spec, and `withScope`/`captureException`/`captureMessage` in `all-exceptions.filter.ts` and its spec. This PR added two more — `sentry-options.ts` (which now holds the `init` options and imports `NodeOptions`) and `sentry-integration.spec.ts` — so anyone reusing this paragraph as the reachability checklist for the *next* major should audit **seven**. Peer ranges (`@nestjs/* ^8 || ^9 || ^10 || ^11` against this repo's 11.1.28) and `engines.node >= 18` both already held.
 
-> **That seven-file checklist is out of date as of #865, and the shape of the audit changed with it.** The scrubbing rules moved to `packages/validation/src/sentry-scrubbing.ts`, which names **no** `@sentry/*` type at all — it cannot, because `apps/mobile` depends on `@repo/validation` and has no Sentry installed, so a type-only import would land in the emitted `.d.ts` and fail to resolve there. The SDK-typed surface is therefore now exactly the two thin app bindings (`apps/api/.../sentry-scrubbing.ts` and `apps/web/lib/sentry/options.ts`) plus the init sites, and `apps/web` added a second SDK — `@sentry/nextjs@^10`, deliberately the same major as `@sentry/nestjs` — with three initialized runtimes (browser, Node server, edge) rather than one. A next-major audit should start from `grep -rl "@sentry/" apps packages --include=*.ts --include=*.tsx` rather than from this paragraph's file count.
+> **That seven-file checklist is out of date as of #865, and the shape of the audit changed with it.** The scrubbing rules live in `packages/observability/src/sentry-scrubbing.ts` (moved from `packages/validation` when `@repo/observability` landed), which names **no** `@sentry/*` type at all — a type-only import would land in the emitted `.d.ts` and fail to resolve for any consumer that does not install Sentry. The SDK-typed surface is therefore the thin app bindings (`apps/api/.../sentry-scrubbing.ts`, `apps/web/lib/sentry/options.ts`, `apps/mobile/lib/sentry/options.ts`) plus the init sites, and `apps/web` added a second SDK — `@sentry/nextjs@^10`, deliberately the same major as `@sentry/nestjs` — with three initialized runtimes (browser, Node server, edge) rather than one. A next-major audit should start from `grep -rl "@sentry/" apps packages --include=*.ts --include=*.tsx` rather than from this paragraph's file count.
 
 Reachability is only half a major-bump argument, so for completeness on the supply-chain half: v10 pulls a genuinely new vendor subtree — `@sentry/server-utils` → `@apm-js-collab/tracing-hooks` → `@apm-js-collab/code-transformer`, which brings `meriyah` (a JS parser) and `astring` (a code generator) into the API image. It is audit-clean and only reachable through the opt-in `experimentalUseDiagnosticsChannelInjection` loader, which this repo does not enable, but a parser and codegen arriving in a backend image is worth naming rather than leaving for someone to discover in a lockfile diff.
 
@@ -453,16 +457,23 @@ bare setting keep it in their text permanently, and only the end state is meanin
 public internet-facing service whose only HTML surface is the self-hosted Swagger UI at `/docs`.
 
 ### Details
-`helmet(HELMET_OPTIONS)` is registered as the first `app.use()` in `configureApp()`
+`helmet(HELMET_OPTIONS)` is registered in `configureApp()`
 (`apps/api/src/bootstrap.ts`) — the shared function both `main.ts` and every e2e spec call — so
 production and the test suite can never drift apart on this the way the exception filter drifted
 before #1020, and a `supertest` assertion against the in-memory app is a real assertion about
-production's headers.
+production's headers. **Correction (2026-09-09):** `enableCors(CORS_OPTIONS)` now runs at the
+top of `configureApp` as well (the list lives in
+`apps/api/src/interface/http/cors.options.ts`), so Helmet is no longer the first middleware
+in that function. Production order is unchanged — CORS already ran in `main.ts` immediately
+before `configureApp`. Putting CORS in the shared function is what lets the suite assert
+`Access-Control-Expose-Headers` the same way it asserts Helmet.
 
-**Why `configureApp()` and not `main.ts`.** That file's own docstring carves out CORS and Swagger as
-deliberately *not* shared, because neither is "meaningful against an in-memory test app." Helmet's
-headers are the opposite: they're set the same way for every response regardless of caller, exactly
-like the `trust proxy` hop count already tested there.
+**Why `configureApp()` and not `main.ts`.** That file's own docstring originally carved out CORS
+and Swagger as deliberately *not* shared, on the claim that neither is "meaningful against an
+in-memory test app." Helmet's headers are the opposite: they're set the same way for every
+response regardless of caller, exactly like the `trust proxy` hop count already tested there.
+**Correction (2026-09-09):** CORS `exposedHeaders` *is* part of the browser-visible response
+(`x-request-id`, report/search truncation flags). The carve-out that remains is Swagger only.
 
 **CSP is left at Helmet's unmodified default — no exception was needed.** The first draft of this
 change added `'unsafe-inline'` to `script-src` on the assumption that Swagger UI's self-hosted
@@ -478,8 +489,8 @@ protection on every route in the API, not just `/docs`, for a Swagger requiremen
 `Cross-Origin-Resource-Policy` to `same-origin`, which Chrome and Firefox enforce **independently of
 CORS** — a second review pass caught that this would have silently broken every dashboard `fetch()`
 to this API even with a matching `Access-Control-Allow-Origin`, because `app.frapp.live` and
-`api.frapp.live` are different origins (`main.ts`'s `enableCors()`, called just before
-`configureApp()`, explicitly allowlists `*.frapp.live` plus the local dev ports with
+`api.frapp.live` are different origins (`CORS_OPTIONS` / `enableCors()` in
+`configureApp()`, which allowlists `*.frapp.live` plus the local dev ports with
 `credentials: true` — this API is cross-origin by design, not by accident). `supertest` never enforces
 CORP, so nothing in the test suite would have caught this before a real browser did. `HELMET_OPTIONS`
 sets `crossOriginResourcePolicy: { policy: 'cross-origin' }`; the actual authorization boundary stays

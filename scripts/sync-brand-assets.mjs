@@ -1,40 +1,68 @@
 #!/usr/bin/env node
 /**
- * Copies canonical Frapp SVGs from @repo/brand-assets into Next app routes and public dirs.
- * Run from repo root after editing packages/brand-assets/assets/*.
+ * Copies canonical Signet rasters from @repo/brand-assets into Next app
+ * routes and public dirs. Run from repo root after rasterize.
  */
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
-const canonicalIcon = join(root, "packages/brand-assets/assets/app-icon.svg");
-const canonicalLockup = join(
+const canonicalIcon = join(root, "packages/brand-assets/assets/icon.png");
+const canonicalTile = join(
   root,
-  "packages/brand-assets/assets/frapp-lockup.svg",
+  "packages/brand-assets/assets/signet-emblem-B-tile.png",
+);
+const canonicalApple = join(
+  root,
+  "packages/brand-assets/assets/apple-icon.png",
 );
 
 const iconTargets = [
+  join(root, "apps/landing/app/icon.png"),
+  join(root, "apps/web/app/icon.png"),
+];
+
+const staleSvgIcons = [
   join(root, "apps/landing/app/icon.svg"),
   join(root, "apps/web/app/icon.svg"),
 ];
 
-const lockupPublic = join(root, "apps/landing/public/frapp-lockup.svg");
+const appleTargets = [
+  join(root, "apps/landing/app/apple-icon.png"),
+  join(root, "apps/web/app/apple-icon.png"),
+];
+
+const tileTargets = [
+  join(root, "apps/landing/public/brand/signet-emblem-B.png"),
+  join(root, "apps/web/public/brand/signet-emblem-B.png"),
+  join(root, "apps/landing/app/opengraph-emblem.png"),
+];
+
+function copy(src, dest, label) {
+  mkdirSync(dirname(dest), { recursive: true });
+  writeFileSync(dest, readFileSync(src));
+  console.log(`synced ${label} -> ${dest.replace(root + "/", "")}`);
+}
 
 function main() {
-  const iconSource = readFileSync(canonicalIcon);
-  for (const dest of iconTargets) {
-    mkdirSync(dirname(dest), { recursive: true });
-    writeFileSync(dest, iconSource);
-    console.log(`synced app-icon.svg -> ${dest.replace(root + "/", "")}`);
+  for (const dest of iconTargets) copy(canonicalIcon, dest, "icon.png");
+  for (const dest of appleTargets) copy(canonicalApple, dest, "apple-icon.png");
+  for (const dest of tileTargets) {
+    copy(canonicalTile, dest, "signet-emblem-B-tile.png");
   }
-
-  mkdirSync(dirname(lockupPublic), { recursive: true });
-  copyFileSync(canonicalLockup, lockupPublic);
-  console.log(
-    `synced frapp-lockup.svg -> ${lockupPublic.replace(root + "/", "")}`,
-  );
+  for (const stale of staleSvgIcons) {
+    if (existsSync(stale)) {
+      unlinkSync(stale);
+      console.log(`removed superseded ${stale.replace(root + "/", "")}`);
+    }
+  }
+  const staleLockup = join(root, "apps/landing/public/frapp-lockup.svg");
+  if (existsSync(staleLockup)) {
+    unlinkSync(staleLockup);
+    console.log("removed superseded apps/landing/public/frapp-lockup.svg");
+  }
 }
 
 main();

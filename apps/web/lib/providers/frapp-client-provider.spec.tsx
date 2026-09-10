@@ -30,6 +30,11 @@ vi.mock("@/lib/auth/use-claim-chapter-sync", () => ({
   useClaimChapterSync: () => undefined,
 }));
 
+let authUserId: string | null = "test-auth-user";
+vi.mock("@/lib/auth/use-auth-user-id", () => ({
+  useAuthUserId: () => authUserId,
+}));
+
 vi.mock("@/lib/supabase/client", () => ({
   createSupabaseBrowserClient: () => ({
     auth: { getSession: async () => ({ data: { session: null } }) },
@@ -69,6 +74,7 @@ describe("FrappProvider chapter-change cache drop", () => {
   beforeEach(() => {
     seen.length = 0;
     activeChapterId = null;
+    authUserId = "test-auth-user";
   });
 
   it("drops cached data when the active chapter changes", async () => {
@@ -185,5 +191,51 @@ describe("FrappProvider chapter-change cache drop", () => {
 
     expect(qc.getQueryData(["channels"])).toBeUndefined();
     expect(qc.getQueryData(["user", "me"])).toBeUndefined();
+  });
+
+  it("drops the cache when the auth uid changes and the chapter does not", async () => {
+    activeChapterId = "shared-chapter";
+    authUserId = "auth-user-a";
+    const qc = makeClient();
+    const { rerender } = setup(qc);
+    qc.setQueryData(["user", "me"], { id: "user-a-row" });
+    qc.setQueryData(["settings"], { theme: "dark" });
+    qc.setQueryData(["members", "shared-chapter"], [{ id: "member-a" }]);
+
+    authUserId = "auth-user-b";
+    await act(async () => {
+      rerender(
+        <QueryClientProvider client={qc}>
+          <FrappProvider>
+            <div />
+          </FrappProvider>
+        </QueryClientProvider>,
+      );
+    });
+
+    expect(qc.getQueryData(["user", "me"])).toBeUndefined();
+    expect(qc.getQueryData(["settings"])).toBeUndefined();
+    expect(qc.getQueryData(["members", "shared-chapter"])).toBeUndefined();
+  });
+
+  it("does not drop the cache when the first auth uid hydrates from null", async () => {
+    activeChapterId = "chap-1";
+    authUserId = null;
+    const qc = makeClient();
+    const { rerender } = setup(qc);
+    qc.setQueryData(["user", "me"], { id: "bootstrap" });
+
+    authUserId = "auth-user-a";
+    await act(async () => {
+      rerender(
+        <QueryClientProvider client={qc}>
+          <FrappProvider>
+            <div />
+          </FrappProvider>
+        </QueryClientProvider>,
+      );
+    });
+
+    expect(qc.getQueryData(["user", "me"])).toEqual({ id: "bootstrap" });
   });
 });

@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 import { MessageItem, type MessageItemProps } from "./message-item";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
+import { reducer } from "@/hooks/use-toast";
 
 /**
  * `spec/ui/design-system/components.md` specifies the incoming meta line as
@@ -646,6 +647,65 @@ describe("MessageItem edit and delete", () => {
     expect(screen.queryByText("👍")).not.toBeInTheDocument();
   });
 
+  it("draws imported Discord reaction totals as read-only chips", () => {
+    const onReact = vi.fn();
+    renderItemWithProps({
+      onReact,
+      message: message({
+        kind: "imported",
+        sender_id: null,
+        author_name: "archive-bot",
+        payload: {
+          source: "discord",
+          reactions: [
+            { emoji: "🔥", name: null, count: 4 },
+            { emoji: "party_blob", name: "party_blob", count: 2 },
+          ],
+        },
+      }),
+    });
+
+    expect(
+      screen.getByLabelText(/🔥 reaction, 4\. From the imported archive/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/:party_blob: reaction, 2\. From the imported archive/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /from the imported archive/i }),
+    ).not.toBeInTheDocument();
+    expect(onReact).not.toHaveBeenCalled();
+  });
+
+  it("does not draw payload.reactions on a live message", () => {
+    renderItemWithProps({
+      message: message({
+        kind: "text",
+        payload: {
+          source: "discord",
+          reactions: [{ emoji: "🔥", name: null, count: 4 }],
+        },
+      }),
+    });
+    expect(screen.queryByLabelText(/imported archive/)).not.toBeInTheDocument();
+  });
+
+  it("hides the imported summary on a deleted archive row", () => {
+    renderItemWithProps({
+      message: message({
+        kind: "imported",
+        is_deleted: true,
+        sender_id: null,
+        author_name: "archive-bot",
+        payload: {
+          source: "discord",
+          reactions: [{ emoji: "🔥", name: null, count: 4 }],
+        },
+      }),
+    });
+    expect(screen.queryByLabelText(/imported archive/)).not.toBeInTheDocument();
+  });
+
   it("closes an open editor rather than leaving a stale draft when the message is deleted out from under it", async () => {
     const user = userEvent.setup();
     const onEdit = vi.fn();
@@ -954,5 +1014,103 @@ describe("MessageItem unconfirmed live regions (#1733 review)", () => {
 
     expect(screen.queryByText(/if the message is gone/i)).toBeNull();
     expect(screen.queryByText(/use retry on the message/i)).toBeNull();
+  });
+});
+
+/**
+ * #1789 — `card_posted: false`: the write committed, the chat card did not.
+ *
+ * Distinct from `unconfirmed` on purpose. Retry is the dangerous action here
+ * (a fresh command mints a new key and doubles an append-only write), so the
+ * row must not offer one. The sticky warning toast is secondary and evictable
+ * (`TOAST_LIMIT = 1`); this row is the trace that has to survive that.
+ */
+function recordedMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  return message({
+    sender_id: VIEWER,
+    kind: "loading",
+    content: "Granting 5 points…",
+    _status: "recorded",
+    _error:
+      "Points recorded — the chat card didn't post. Don't run this command again.",
+    ...overrides,
+  } as Partial<ChatMessage>);
+}
+
+describe("MessageItem recorded rows (#1789)", () => {
+  it("offers neither Retry nor Discard, even when those handlers are wired", () => {
+    renderItemWithProps({
+      message: recordedMessage(),
+      onRetry: vi.fn(),
+      onDiscard: vi.fn(),
+      onRetryUnconfirmed: vi.fn(),
+    });
+
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /discard/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/granting 5 points/i)).toBeInTheDocument();
+  });
+
+  it("does not render the row as busy", () => {
+    const { container } = renderItemWithProps({
+      message: recordedMessage(),
+    });
+
+    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+
+  it("announces the recorded note in a live region, not as a failure", () => {
+    const { container } = renderItemWithProps({
+      message: recordedMessage(),
+    });
+
+    const note = screen.getByText(/don't run this command again/i);
+    expect(note.closest("[aria-live]")).not.toBeNull();
+    expect(note.className).not.toMatch(/destructive/);
+    expect(container.querySelector(".text-destructive-text")).toBeNull();
+  });
+
+  it("keeps the recorded row after the next toast evicts the warning", () => {
+    renderItemWithProps({
+      message: recordedMessage(),
+      onRetry: vi.fn(),
+      onDiscard: vi.fn(),
+    });
+
+    expect(screen.getByText(/don't run this command again/i)).toBeInTheDocument();
+
+    // MessageItem does not subscribe to toast state — that independence is
+    // the architecture (#1789). This half pins the eviction path itself:
+    // `ADD_TOAST` slices to `TOAST_LIMIT = 1`. Raising that limit is not
+    // this issue's fix.
+    const after = reducer(
+      {
+        toasts: [
+          {
+            id: "warning",
+            title: "/points partly succeeded",
+            description:
+              "Points were recorded, but the chat card couldn't be posted.",
+            open: true,
+          },
+        ],
+      },
+      {
+        type: "ADD_TOAST",
+        toast: {
+          id: "next",
+          title: "Messages can't carry attachments",
+          open: true,
+        },
+      },
+    );
+    expect(after.toasts).toHaveLength(1);
+    expect(after.toasts[0]?.id).toBe("next");
+    expect(after.toasts.some((t) => t.id === "warning")).toBe(false);
+
+    expect(screen.getByText(/don't run this command again/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
   });
 });

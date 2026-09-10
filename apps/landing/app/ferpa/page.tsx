@@ -4,21 +4,21 @@ const sections = [
   {
     heading: "1. Purpose of This Notice",
     paragraphs: [
-      "Frapp supports chapter collaboration and organization. This notice clarifies Frapp’s position regarding FERPA-related responsibilities.",
+      "Signet supports chapter collaboration and organization. This notice clarifies Signet’s position regarding FERPA-related responsibilities.",
     ],
   },
   {
-    heading: "2. Frapp Is Not an Educational Institution",
+    heading: "2. Signet Is Not an Educational Institution",
     paragraphs: [
-      "Frapp is a software provider, not a school or university. Frapp does not act as an educational institution under FERPA.",
-      "Chapters and members are responsible for ensuring they have rights to share materials uploaded to Frapp.",
+      "Signet is a software provider, not a school or university. Signet does not act as an educational institution under FERPA.",
+      "Chapters and members are responsible for ensuring they have rights to share materials uploaded to Signet.",
     ],
   },
   {
     heading: "3. Backwork and Uploaded Content",
     paragraphs: [
       "Backwork files are submitted voluntarily by chapter members. Uploaders must avoid sharing restricted educational records or sensitive personal information without authorization.",
-      "Frapp encourages use of redaction workflows to remove identifying details before sharing academic materials.",
+      "Signet encourages use of redaction workflows to remove identifying details before sharing academic materials.",
     ],
   },
   {

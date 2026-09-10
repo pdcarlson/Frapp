@@ -8,7 +8,7 @@ The branch model — `main` as the only long-lived branch and what a merge to it
 `feature/*` and `hotfix/*` off it, the `production` branch retired in #1340, and the flow
 from feature PR to a named-commit production deploy — lives in
 [`CONTRIBUTING.md`](../../CONTRIBUTING.md) § Branch Model. The gates that deploy passes
-through: [`docs/internal/ops/DEPLOYMENT.md`](../internal/ops/DEPLOYMENT.md) § How Deployments Are Gated.
+through: [`docs/internal/ops/deployment/ci-cd.md`](../internal/ops/deployment/ci-cd.md#how-deployments-are-gated) § How Deployments Are Gated.
 
 Example feature branch names:
 
@@ -73,7 +73,7 @@ PR targets:
 - Production: no PR. Dispatch **Deploy production** with a SHA that is already on `main`.
 - **Never** another feature branch. `pull_request.branches` is only `[main]`, so a
   stacked PR skips CI and a squash-merge can show MERGED while `origin/main` never receives the
-  work. Playbook: [`docs/internal/ci-cd/AGENT_INFRA.md`](../internal/ci-cd/AGENT_INFRA.md#ci-branch-filters-never-target-a-feature-branch)
+  work. Playbook: [`docs/internal/ci-cd/pr-babysitting.md`](../internal/ci-cd/pr-babysitting.md#ci-branch-filters-never-target-a-feature-branch)
   (incidents #1120, #1123–#1125). Re-land by cherry-pick onto `origin/main`.
 
 ## 5. Linting, types, and tests

@@ -25,6 +25,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { actionStatus } from "@/lib/task-action-status";
 import { getErrorMessage } from "@/lib/utils";
 
 interface TaskCardProps {
@@ -117,16 +118,6 @@ function coerceLiveTask(data: unknown): LiveTask | null {
   };
 }
 
-/** Which status this row's *actions* are decided by — see the board's twin. */
-function actionStatusOf(live: LiveTask): TaskStatus | undefined {
-  if (live.stored_status === undefined) {
-    // Derivation only ever produces `OVERDUE`, so any other rendered value is
-    // also the stored one; `OVERDUE` alone is ambiguous and offers nothing.
-    return live.status === "OVERDUE" ? undefined : live.status;
-  }
-  return live.stored_status === "OVERDUE" ? "TODO" : live.stored_status;
-}
-
 function formatDate(value: string): string {
   // due_date is a date-only `YYYY-MM-DD`; parse at local midnight so the
   // rendered day matches the server-formatted `content` string instead of
@@ -200,7 +191,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // Start makes. `undefined` means a pre-#1051 API left the stored value
   // ambiguous, and no branch below matches it, so no action is offered.
   const storedStatus: TaskStatus | undefined = live
-    ? actionStatusOf(live)
+    ? actionStatus(live)
     : payload.status;
   const pointsAwarded = live?.points_awarded ?? false;
   const isAssignee = viewerId != null && viewerId === payload.assignee_user_id;

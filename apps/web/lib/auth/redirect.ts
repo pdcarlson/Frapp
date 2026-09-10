@@ -157,6 +157,10 @@ export function describeAuthError(code: string): string {
       return "The link could not be used. Request a new one below, or sign in with your password.";
     case "missing_code":
       return "The link was incomplete. Request a new one below.";
+    case "identity_already_exists":
+    case "user_already_exists":
+    case "email_exists":
+      return "An account with this email already exists. Sign in with your password or a magic link. Google or Apple can attach to that same account on later visits.";
     default:
       return "Request a new link below, or sign in with your password.";
   }

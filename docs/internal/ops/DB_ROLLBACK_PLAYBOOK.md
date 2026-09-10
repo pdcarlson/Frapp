@@ -430,6 +430,15 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the Signet System display_name
+
+* **Migration**: `20260909120000_rename_system_user_display_name.sql`
+* **Action**: `update public.users set display_name = 'Frapp System' where id = '00000000-0000-0000-0000-000000000000';` — restores the name the historical seed inserted. Nothing else on the row changes.
+* **Note**: Data only, one row, idempotent. There is rarely a reason to roll it
+  back — the old name is the leftover this change removes. Chat cards do not
+  print `users.display_name` for the system sender today, so a rollback is
+  invisible on those surfaces. Do not edit the historical seed to undo this.
+
 ## Rollback the chapter directory seed rows
 
 * **Migration**: `20260907011500_chapter_directory_seed_rows.sql`
@@ -611,6 +620,66 @@ After any rollback event:
   written to `chapter_audit_log` under `action = 'chapter_config_updated'` with a
   `points` key in its `diff`, so the last known value per chapter can be read back
   out of the audit trail.
+
+## Rollback the Stripe subscription webhook previous-status return
+
+* **Migration**: `20260909180000_apply_subscription_webhook_previous_status.sql`
+* **Action**:
+  ```sql
+  DROP FUNCTION IF EXISTS apply_subscription_webhook(uuid, timestamptz, jsonb);
+  ```
+  Then re-run the `CREATE FUNCTION` from
+  `20260909050000_apply_subscription_webhook_rpc.sql` (`returns setof chapters`).
+  Args stay `(uuid, timestamptz, jsonb)`; only the return shape changes.
+* **Order**: **roll the API back first, then this migration.** A build from
+  after this migration unwraps `applied` / `previous_subscription_status` from
+  the RPC result, so it errors once the function is again `setof chapters`.
+  An older build (post-#731, pre-#1979) reads the result as a chapter row and
+  is unaffected by restoring that shape. Reverting the function first breaks
+  every subscription webhook until the deploy catches up.
+* **Data caveat**: rolling back does not rewrite chapter rows. Notify again
+  keys off the handler snapshot, which restores the duplicate-URGENT-alert
+  exposure of #1979 for as long as it is off.
+
+## Rollback the Stripe subscription webhook CAS
+
+* **Migration**: `20260909050000_apply_subscription_webhook_rpc.sql`
+* **Action**:
+  ```sql
+  DROP FUNCTION IF EXISTS apply_subscription_webhook(uuid, timestamptz, jsonb);
+  ```
+* **Order**: **roll the API back first, then the migration.** A build from
+  after this migration calls `apply_subscription_webhook` from
+  `BillingService`'s subscription webhook handlers, so it errors once the
+  function is gone. An older build writes `chapters` through `update()` and is
+  unaffected. Reverting the schema first breaks every subscription webhook
+  until the deploy catches up — checkout activation, dunning, and cancel
+  included.
+* **Data caveat**: rolling back does not rewrite chapter rows. The
+  `last_stripe_webhook_at` column stays; only the atomic apply path is
+  removed, which restores the FRA-242 concurrent-overwrite exposure of #731
+  for as long as it is off.
+
+## Rollback the points ledger origin channel
+
+* **Migration**: `20260909040000_point_transactions_channel_id.sql`
+* **Action**:
+  ```sql
+  ALTER TABLE point_transactions
+    DROP CONSTRAINT IF EXISTS point_transactions_channel_id_requires_key;
+  ALTER TABLE point_transactions DROP COLUMN IF EXISTS channel_id;
+  ```
+  Dropping the column also drops the FK to `chat_channels`.
+* **Order**: **roll the API back first, then the migration.** A build from
+  after this migration names `channel_id` in the `adjustPoints` insert payload,
+  so it errors once the column is gone. An older build never mentions the
+  column and is unaffected. Reverting the schema first breaks every manual
+  point adjustment until the deploy catches up — dashboard included — because
+  the insert carries the column name whether or not a channel was supplied.
+* **Data caveat**: rolling back does not corrupt the ledger — the column is
+  metadata about *where* a chat card was meant to land, never part of the
+  balance — but it restores the unhealable-lost-card exposure of #1734 for as
+  long as it is off. Origin channels recorded in the meantime are lost.
 
 ## Rollback the points ledger idempotency key
 
@@ -1803,3 +1872,25 @@ Only roll back alongside dropping `chat_message_bookmarks` itself.
 **Re-applying is safe** and idempotent; the extra delete is a no-op on a user
 with no bookmarks, and re-running the whole function on an already-tombstoned
 user is the documented retry path.
+
+## Rollback rush candidates (20260910020000)
+
+* **Migration**: `20260910020000_rush_candidates.sql`
+
+Purely additive DDL — two tables, generated column, unique indexes, RLS on with no policies (#494). Nothing existing is altered.
+
+```sql
+DROP TABLE IF EXISTS rush_candidate_votes;
+DROP TABLE IF EXISTS rush_candidates;
+```
+
+Drop votes first (FK to `rush_candidates`). **Redeploy the API first** to a build without `RushModule`: `POST /v1/rush/candidates` 500s if the tables are gone while that build is serving.
+
+**Data caveat**: rolling back deletes every candidate and ballot. Capture if you intend to restore:
+
+```sql
+SELECT * FROM rush_candidates;
+SELECT candidate_id, chapter_id, voter_id, created_at FROM rush_candidate_votes;
+```
+
+`voter_id` is stored for uniqueness and is never listed on the card; dumping the vote table still contains who voted. Treat that dump as restricted.

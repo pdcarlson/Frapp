@@ -8,6 +8,8 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -21,6 +23,16 @@ import {
   SETTABLE_NOTIFICATION_KINDS,
 } from '#domain/entities/chat.entity';
 import type { SettableNotificationKind } from '#domain/entities/chat.entity';
+import {
+  ISO_INSTANT_MESSAGE,
+  ISO_INSTANT_PATTERN,
+  ISO_INSTANT_REGEX,
+} from '#domain/constants/iso-instant';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '#domain/constants/list-query-limits';
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
 
@@ -543,4 +555,42 @@ export class BookmarkRefDto {
 
   @ApiProperty()
   created_at: string;
+}
+
+export class GetChannelMessagesQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Max messages to return. Integers outside 1–200 are rejected; omitted defaults to 50 after clamp.',
+    minimum: LIST_QUERY_LIMIT_MIN,
+    maximum: LIST_QUERY_LIMIT_MAX,
+    default: LIST_QUERY_LIMIT_DEFAULT,
+    example: LIST_QUERY_LIMIT_DEFAULT,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(LIST_QUERY_LIMIT_MIN)
+  @Max(LIST_QUERY_LIMIT_MAX)
+  limit?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Cursor — return messages created strictly before this timestamp. Full ISO 8601 with an explicit UTC offset; feed back the `created_at` of the oldest row you received.',
+    example: '2026-01-31T23:59:59.999Z',
+    pattern: ISO_INSTANT_PATTERN,
+  })
+  @IsOptional()
+  @Matches(ISO_INSTANT_REGEX, { message: `$property ${ISO_INSTANT_MESSAGE}` })
+  before?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Message UUID — returns messages created after this message (reconnect replay)',
+    format: 'uuid',
+  })
+  @IsOptional()
+  // Reaches `.eq('id', …)` on a uuid column; an unvalidated string fails in
+  // Postgres as a 500 rather than here as a 400.
+  @IsUUID()
+  since?: string;
 }

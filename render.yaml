@@ -2,7 +2,7 @@ services:
   # ─── Production API ───────────────────────────────────────────
   # `autoDeploy: false` and `branch: main` record INTENT, not live state. Blueprint
   # edits do not reach an already-created service (see the staging note below and
-  # DEPLOYMENT.md), so both of these still have to be set by hand in the Render
+  # docs/internal/ops/deployment/render.md), so both of these still have to be set by hand in the Render
   # dashboard. `scripts/ci/production-guardrails.mjs` asserts the live values, on
   # a schedule and again as a preflight inside `deploy-production.yml` — note it
   # compares against the Render API's string form (`"no"`), not this boolean.
@@ -53,7 +53,7 @@ services:
         # Deployed staging runs NODE_ENV=staging (its Sentry events carry
         # environment=staging, checked 2026-08-27) and Infisical staging holds
         # the same value; this placeholder is aligned to match. Blueprint edits
-        # do not reach the already-created service (DEPLOYMENT.md records the
+        # do not reach the already-created service (docs/internal/ops/deployment/render.md records the
         # blueprint as not applied to the live services).
         value: staging
       - key: PORT

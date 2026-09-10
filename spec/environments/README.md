@@ -56,7 +56,7 @@ bash scripts/local-dev-setup.sh
 # bash scripts/local-dev-setup.sh --reset-supabase-data
 ```
 
-The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, the local Postgres default-ACL repair (fatal if it fails; `FRAPP_SKIP_ACL_REPAIR=1` overrides), optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (the Claude Code cloud sandbox does — see below). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
+The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, the local Postgres default-ACL repair (fatal if it fails; `FRAPP_SKIP_ACL_REPAIR=1` overrides), optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (Cursor Cloud and the Claude Code cloud sandbox do — see [`CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md)). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
 
 **Manual sequence** (equivalent):
 
@@ -144,7 +144,7 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
 - **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
 - **Monitoring:** Error tracking (Sentry or equivalent), structured logging, uptime checks.
 
-> **Full setup walkthrough:** See [`docs/internal/ops/DEPLOYMENT.md`](../../docs/internal/ops/DEPLOYMENT.md) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
+> **Full setup walkthrough:** See [`docs/internal/ops/deployment/`](../../docs/internal/ops/deployment/) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
 
 ---
 
@@ -165,7 +165,7 @@ docs gates, so the roster now stays true only because whoever edits the arrays r
 runbook in the same change. Where they disagree, `required-checks.mjs` is the source and the runbook
 is the stale one. What follows is the CI *model* those checks implement.
 
-`web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/README.md`](../architecture/README.md) and the comments in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
+`web-tests` and `web-responsive-floor` are **path-gated and still required**, which is only a contradiction if you assume a skip blocks. It does not: GitHub reports a job skipped by a *job-level* conditional as *Success*, and `success` / `skipped` / `neutral` all satisfy a required check. `changes` is required for a different and less obvious reason — a required check whose `needs:` parent fails is skipped and *may not block merging*, so a non-required parent would leave both satisfiable without ever running. See the ADR-15 amendment in [`../architecture/adr/adr-15.md`](../architecture/adr/adr-15.md) and the comments in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs).
 
 The runbook's roster states the *intended* set — every entry in it is a line in `CI_CHECKS` /
 `DOCS_CHECKS` / `DRIFT_CHECKS` in [`scripts/ci/lib/required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs),
@@ -226,8 +226,7 @@ angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus fo
 defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
 `.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
-**Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
-`.claude/hooks/pre-push-review-gate.sh` hook gates `git push` on *evidence* that a review ran for the
+**Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment; Cursor adapter ADR-16 amendments 8–9). Frapp's gate is **`/diff-review`** — not Bugbot. Cursor Cloud: [`.cursor/hooks.json`](../../.cursor/hooks.json) `beforeShellExecution` (`failClosed: true`). Claude Code: `.claude/hooks/pre-push-review-gate.sh`. Both gate `git push` on *evidence* that a review ran for the
 current HEAD — evidence, not an attempt, so retrying a denied push does not satisfy it. A push that
 publishes no objects (a dry run, or a `--delete` ref deletion) is exempt, having no diff to review.
 Which review to run, how the evidence is recorded, and the livelock release are the runbook's to
@@ -260,7 +259,7 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 > **#1578** (2026-09-04) built the replacement deploys — `vercel build` on the runner, then
 > `vercel deploy --prebuilt`, for both staging and production. Render **staging** (the
 > `deploy-api.yml` push path) and EAS were unaffected throughout. **ADR-21** in
-> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the freeze points and the repairs.
 
 Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-api.yml` runs database migrations and triggers the Render staging deploy, and `deploy-vercel-staging.yml` builds and uploads web and landing. Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for a commit a human named.
@@ -288,7 +287,7 @@ secrets.
 
 > **Current state (2026-09-04) — both projects are unlinked from Git** (Vercel reports
 > `link: null` for both) and **all deploys come from CI**. **ADR-21** in
-> [`../architecture/README.md`](../architecture/README.md) is the canonical record of the unlink,
+> [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the per-project freeze points and the repairs; **#1579** (2026-09-02) fixed the guardrails half
 > and **#1578** (2026-09-04) built the deploys described below.
 
@@ -452,12 +451,12 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Filenames must match pattern: `YYYYMMDDHHMMSS_snake_case_name.sql`.
 - Breaking schema changes require a migration plan (backward-compatible where possible; coordinate with API deploys).
 - Every migration should have a documented rollback strategy in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.
-- See `docs/internal/ops/DEPLOYMENT.md` for the full migration deployment workflow.
+- See `docs/internal/ops/deployment/` for the full migration deployment workflow.
 
-## Claude Code cloud sandbox (primary dev environment)
+## Cursor Cloud and Claude Code
 
-Frapp is primarily developed in Claude Code web sessions. Each runs in a fresh, ephemeral VM; a setup script pre-caches Docker images and the SessionStart hook brings up Docker + local Supabase + the API in the background, generating `apps/api/.env.local` so the API boots without Infisical. Full configuration (setup script, env vars, network policy) and failure troubleshooting are in [`docs/internal/environment/CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md).
+Frapp is developed in **Cursor Cloud** and **Claude Code web** independently (ADR-16 amendment 9). Cursor public contract: [`.cursor/environment.json`](../../.cursor/environment.json) (`start` is `scripts/cursor-cloud-up.sh`, which runs shared `scripts/cloud-sandbox-up.sh`). Claude public contract: Setup script `scripts/cloud-sandbox-setup.sh` plus SessionStart, which launches the same bringup. Full configuration and failure troubleshooting: [`docs/internal/environment/CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md). Agent instructions: [`AGENTS.md`](../../AGENTS.md).
 
-## Claude Code Routines environment
+## Scheduled backlog agents
 
-The scheduled backlog agents run as **Claude Code Routines**: each firing starts a fresh Claude Code web session in the same environment as interactive cloud sessions (repo cloned from `main`, the SessionStart hook and injected MCP servers included), so no separate sandbox config exists. The routines are configured in the Claude Code UI (config-as-code isn't supported), so the canonical prompts and every setting are version-controlled in [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). There are **five** routines — three daily, two weekly. Three write to **GitHub Issues** via the **GitHub MCP** the environment pre-approves (keyless; Linear was retired 2026-08-08, see ADR-16 amendment 5); the fourth writes docs; the fifth writes product code. None write to Linear, and only the fifth edits product code (per `ROUTINES.md`): the **Issue Curator** ([`.claude/skills/issue-curator/SKILL.md`](../../.claude/skills/issue-curator/SKILL.md)) maintains + files `suggestion` issues into the `triage` inbox, **Issue Triage** ([`.claude/skills/issue-triage/SKILL.md`](../../.claude/skills/issue-triage/SKILL.md)) prioritizes/buckets/promotes ~1h later, and the weekly **PR Follow-ups** harvester ([`.claude/skills/pr-followups/SKILL.md`](../../.claude/skills/pr-followups/SKILL.md)) sweeps human-action/deferred items from PR threads into the inbox. Weekly on Wednesday, **Docs Upkeep** ([`.claude/skills/docs-upkeep/SKILL.md`](../../.claude/skills/docs-upkeep/SKILL.md)) sweeps a rotating fifth of the docs corpus and fixes stale claims in a docs-only PR — the first routine that repairs rather than files (ADR-16 amendment 6). Daily at 06:00 ET, before the others, **Hygiene Scan** ([`.claude/skills/hygiene-scan/SKILL.md`](../../.claude/skills/hygiene-scan/SKILL.md)) grounds itself in the engineering standards and gates, reads a rotating fifth of the codebase whole, and fixes one verified hygiene theme in a product-code PR a human merges — the only routine allowed to edit product code (ADR-16 amendment 7).
+**Claude Code Routines** are a live scheduled path. **Cursor Automations** are an optional Cursor scheduled path — do not dual-run the same routine on both. Canonical prompts, cron, and enable notes: [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). Do not restate liveness here. Linear stays retired (ADR-16 amendment 5).

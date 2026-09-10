@@ -5,7 +5,7 @@ import type {
   TablesInsert,
 } from '../../infrastructure/supabase/database.types';
 import { chunkIds } from '#domain/utils/chunk-ids';
-import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { fetchAllPages } from '../../infrastructure/supabase/supabase.utils';
 
 /**
@@ -142,20 +142,16 @@ export class ChatNotificationPreferenceRepository {
    * into the worker's outer handler, which reports them, and only a real query
    * error degrades.
    *
-   * `toReportableError` is the repo's own normalizer for a thrown PostgREST
-   * shape: it rebuilds `{ code, message, details, hint }` into an `Error`
-   * messaged `code: message: hint`, leaving out `details` — the field Postgres
-   * fills with the offending row values (`spec/behavior/observability.md`, and
-   * #1669). Logging its `message` is what keeps row data out of plaintext logs.
+   * `logThrowable` interpolates `toReportableError(error).message` so a
+   * PostgREST `{ code, message, details, hint }` body never reaches Nest's
+   * `util.inspect` (which would print `details` — the field Postgres fills
+   * with row values). See `spec/behavior/observability.md` § Error Tracking
+   * and #1669.
    *
-   * That exclusion is **not** unconditional in the helper: an object carrying
-   * none of `code`, `message` or `hint` falls through to `describeOpaque`,
-   * which serializes the whole record, `details` included. Harmless here — not
-   * because the client always fills `message` (an empty response body yields
-   * `{ message: '' }`, which reads as absent), but because no producer of that
-   * object emits `details` without `message`, so the opaque branch has no row
-   * values to leak. #1762 tracks closing it in the shared helper rather than
-   * here: it is shared with Sentry reporting and the global exception filter.
+   * The opaque fallback used to reintroduce `details` by serializing the whole
+   * record. #1762 closed that: `describeOpaque` strips the key before it
+   * stringifies, so this call site no longer depends on PostgREST always
+   * populating `message`.
    *
    * All-or-nothing per chunk, deliberately, **for a query error**. Failing one
    * chunk that way costs at most `ID_CHUNK_SIZE` members their preferences for
@@ -204,29 +200,31 @@ export class ChatNotificationPreferenceRepository {
       );
     } catch (error) {
       if (error instanceof Error) throw error;
-      this.logger.warn(
-        // Position and scale, NOT member identity — and the distinction is the
-        // whole reason this says `chunk i/n` rather than an id.
-        //
-        // This degradation is silent by design: its members read as "no stored
-        // preferences", which `decidePush` treats as *not muted*, so the only
-        // symptom is a member pushed despite an explicit `off`. A bare
-        // `for 100 users` line left a 1000-member chapter emitting ten
-        // identical warnings per message, which tells an operator holding such
-        // a report nothing at all — hence a handle of some kind.
-        //
-        // But it cannot be a member handle. `findByChapter`
-        // (`supabase-member.repository.ts`) reads the roster with no `.order()`,
-        // so chunk membership is heap order and reshuffles between calls:
-        // logging one id would identify one member of the hundred and imply,
-        // falsely, that the other ninety-nine were unaffected. Position answers
-        // the question this line can actually answer — how much of this
-        // message's audience degraded, and whether it was one chunk or all of
-        // them. Member-level correlation needs that read to carry a total
-        // order, which is #1772.
+      // Position and scale, NOT member identity — and the distinction is
+      // the whole reason this says `chunk i/n` rather than an id.
+      //
+      // This degradation is silent by design: its members read as "no stored
+      // preferences", which `decidePush` treats as *not muted*, so the only
+      // symptom is a member pushed despite an explicit `off`. A bare
+      // `for 100 users` line left a 1000-member chapter emitting ten
+      // identical warnings per message, which tells an operator holding such
+      // a report nothing at all — hence a handle of some kind.
+      //
+      // But it cannot be a member handle. `findByChapter`
+      // (`supabase-member.repository.ts`) reads the roster with no `.order()`,
+      // so chunk membership is heap order and reshuffles between calls:
+      // logging one id would identify one member of the hundred and imply,
+      // falsely, that the other ninety-nine were unaffected. Position answers
+      // the question this line can actually answer — how much of this
+      // message's audience degraded, and whether it was one chunk or all of
+      // them. Member-level correlation needs that read to carry a total
+      // order, which is #1772.
+      logThrowable(
+        this.logger,
+        'warn',
         `chat-prefs: batch lookup failed for chunk ${chunkIndex + 1}/${chunkCount}` +
-          ` (${chunk.length} users) in chapter ${chapterId}` +
-          ` (${toReportableError(error).message})`,
+          ` (${chunk.length} users) in chapter ${chapterId}`,
+        error,
       );
       return null;
     }

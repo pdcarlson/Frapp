@@ -48,16 +48,23 @@ export function emojiFromActionType(actionType: string): string | null {
  *   only trace) and neither is a fresh attempt (it would double the write).
  *   The only correct action is replaying the **same** `client_message_id`, so
  *   the server's idempotency index can recognise it.
+ * - `recorded` asserts the write **did** happen and the chat card did not.
+ *   Reached on an explicit `card_posted: false` (#1789). Retry is the dangerous
+ *   action here (a fresh command mints a new key and doubles an append-only
+ *   write); there is no `_replay` and the UI must not offer one. Distinct from
+ *   `unconfirmed` on purpose: collapsing them would put a Retry in front of a
+ *   committed row that `/task` and `/event` cannot dedupe.
  *
- * Collapsing the two would put a discard control in front of a committed
- * ledger row, which is the append-only double-grant `points.md` § Anti-Fraud
- * exists to prevent.
+ * Collapsing `failed` and `unconfirmed` would put a discard control in front
+ * of a committed ledger row, which is the append-only double-grant
+ * `points.md` § Anti-Fraud exists to prevent.
  */
 export type MessageStatus =
   | "pending"
   | "confirmed"
   | "failed"
-  | "unconfirmed";
+  | "unconfirmed"
+  | "recorded";
 
 export const CHAT_MESSAGE_KINDS = [
   "text",
@@ -67,6 +74,7 @@ export const CHAT_MESSAGE_KINDS = [
   "dues",
   "points",
   "hours",
+  "rush",
   "system_audit",
   "imported",
   "loading",

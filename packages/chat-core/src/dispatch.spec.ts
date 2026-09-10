@@ -3,9 +3,12 @@ import { QueryClient } from "@tanstack/react-query";
 import type { SlashCommand } from "@repo/chat-integrations";
 import { dispatchSlashCommand, retryPointsDispatch } from "./dispatch";
 import type { ChatActionContext } from "./chat-client";
-import type { OutboxStore } from "./adapters";
+import type { KeyValueStore, OutboxStore } from "./adapters";
 import { chatMessagesKey, type ChannelCache, type ChatMessage } from "./types";
 import { selectMessages, mergeServerRow } from "./cache";
+import { readRecordedNotices } from "./recorded-notices";
+import { memoryStore } from "./test/memory-store";
+import { stubOutbox } from "./test/outbox-stub";
 
 /**
  * #544 — a `/points` grant whose ledger row commits but whose chat card fails to
@@ -27,13 +30,17 @@ const POINTS_COMMAND: SlashCommand = {
   implemented: true,
 };
 
-function buildCtx(post: ReturnType<typeof vi.fn>): ChatActionContext {
+function buildCtx(
+  post: ReturnType<typeof vi.fn>,
+  kv?: KeyValueStore,
+): ChatActionContext {
   return {
     queryClient: new QueryClient(),
     apiClient: { POST: post } as unknown as ChatActionContext["apiClient"],
     supabase: { from: vi.fn() } as unknown as ChatActionContext["supabase"],
     userId: "user-1",
     outbox: {} as OutboxStore,
+    kv,
   };
 }
 
@@ -85,7 +92,7 @@ describe("dispatchPoints — card_posted (#544)", () => {
     expect(placeholderCount(ctx)).toBe(1);
   });
 
-  it("drops the placeholder and warns when the card did not post", async () => {
+  it("keeps a recorded row and warns when the card did not post", async () => {
     const post = vi
       .fn()
       .mockResolvedValue({
@@ -93,14 +100,26 @@ describe("dispatchPoints — card_posted (#544)", () => {
         error: null,
         response: { status: 200 },
       });
-    const ctx = buildCtx(post);
+    const kv = memoryStore();
+    const ctx = buildCtx(post, kv);
 
     const result = await dispatchGrant(ctx);
 
     expect(result.ok).toBe(true);
     expect(result.error).toBeUndefined();
     expect(result.warning).toMatch(/recorded/i);
-    expect(placeholderCount(ctx)).toBe(0);
+    expect(placeholderCount(ctx)).toBe(1);
+    const row = onlyRow(ctx);
+    expect(row._status).toBe("recorded");
+    expect(row._replay).toBeUndefined();
+    expect(result.warning).toMatch(/don't run the command again/i);
+    expect(row._error).toMatch(/don't run this command again/i);
+    expect(readRecordedNotices(CHANNEL_ID, kv)).toEqual([
+      expect.objectContaining({
+        clientMessageId: row.client_message_id,
+        note: row._error,
+      }),
+    ]);
   });
 
   // The warning must never read as a failure. `ok:false` would make the composer
@@ -293,16 +312,15 @@ describe("dispatchPoints — unconfirmed outcomes (#1733)", () => {
       first![1].body.client_message_id,
     );
     // Same key AND same content — `resolveReplay` compares target, amount,
-    // category, reason and acting admin before treating a request as a replay,
-    // and answers 409 on any mismatch.
+    // category, reason, acting admin, and origin channel before treating a
+    // request as a replay, and answers 409 on any mismatch.
     expect(second![1].body).toEqual(first![1].body);
   });
 
   // The guard the #1733 coupling comment required before key reuse could ship.
-  // On a replay, `completeReplay` returns the stored row with `card_posted`
-  // ABSENT — the ledger row exists but nothing is known about the original
-  // attempt's card. Falling through to `{ok:true}` would leave the placeholder
-  // waiting for an echo that is never coming: #544's bug via the replay branch.
+  // On a replay of a row with no stored origin, `completeReplay` returns the
+  // stored row with `card_posted` ABSENT. Falling through to `{ok:true}` would
+  // leave the placeholder waiting for an echo that is never coming.
   it("does not strand the row when a replay reports no card outcome", async () => {
     const post = vi.fn().mockResolvedValue(LOST_RESPONSE);
     const ctx = buildCtx(post);
@@ -581,6 +599,13 @@ const EVENT_COMMAND: SlashCommand = {
   implemented: true,
 };
 
+const HOURS_COMMAND: SlashCommand = {
+  name: "hours",
+  description: "Log service hours",
+  requiredModule: "hours",
+  implemented: true,
+};
+
 function dispatchTaskCmd(ctx: ChatActionContext) {
   return dispatchSlashCommand(ctx, {
     command: TASK_COMMAND,
@@ -600,219 +625,480 @@ function dispatchEventCmd(ctx: ChatActionContext) {
   });
 }
 
-describe("dispatchTask — card_posted (#1717)", () => {
-  it("leaves the placeholder for the Realtime echo when the card posted", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: true },
-        error: null,
-        response: { status: 201 },
-      });
-    const ctx = buildCtx(post);
-
-    const result = await dispatchTaskCmd(ctx);
-
-    expect(result).toEqual({ ok: true });
-    expect(placeholderCount(ctx)).toBe(1);
+function dispatchHoursCmd(ctx: ChatActionContext) {
+  return dispatchSlashCommand(ctx, {
+    command: HOURS_COMMAND,
+    args: "log 2h Community cleanup",
+    channelId: CHANNEL_ID,
+    announcementsChannelId: null,
   });
+}
 
-  it("drops the placeholder and warns when the card did not post", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 201 },
-      });
-    const ctx = buildCtx(post);
+const RUSH_COMMAND: SlashCommand = {
+  name: "rush",
+  description: "Add a candidate, vote, or extend a bid",
+  requiredModule: "rush",
+  implemented: true,
+};
 
-    const result = await dispatchTaskCmd(ctx);
-
-    expect(result.ok).toBe(true);
-    expect(result.error).toBeUndefined();
-    expect(result.warning).toMatch(/created/i);
-    expect(result.warning).toMatch(/don't run the command again/i);
-    expect(placeholderCount(ctx)).toBe(0);
+function dispatchRushAddCmd(ctx: ChatActionContext) {
+  return dispatchSlashCommand(ctx, {
+    command: RUSH_COMMAND,
+    args: "add @Jane Doe",
+    channelId: CHANNEL_ID,
+    announcementsChannelId: null,
   });
+}
 
-  it("does not report the committed create as a failure", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 201 },
-      });
-
-    const result = await dispatchTaskCmd(buildCtx(post));
-
-    expect(result.ok).toBe(true);
-    expect(post).toHaveBeenCalledTimes(1);
+function dispatchRushVoteCmd(ctx: ChatActionContext, args: string) {
+  return dispatchSlashCommand(ctx, {
+    command: RUSH_COMMAND,
+    args,
+    channelId: CHANNEL_ID,
+    announcementsChannelId: null,
   });
+}
 
-  it("treats an absent card_posted as success", async () => {
-    const post = vi
+type CreateDispatch = (
+  ctx: ChatActionContext,
+) => ReturnType<typeof dispatchSlashCommand>;
+
+function posted201(cardPosted: boolean | "absent") {
+  if (cardPosted === "absent") {
+    return vi
       .fn()
       .mockResolvedValue({ data: {}, error: null, response: { status: 201 } });
-    const ctx = buildCtx(post);
-
-    const result = await dispatchTaskCmd(ctx);
-
-    expect(result).toEqual({ ok: true });
-    expect(placeholderCount(ctx)).toBe(1);
+  }
+  return vi.fn().mockResolvedValue({
+    data: { card_posted: cardPosted },
+    error: null,
+    response: { status: 201 },
   });
+}
 
-  it("still removes the placeholder and fails on a definitive 4xx", async () => {
-    const post = vi.fn().mockResolvedValue({
-      data: undefined,
-      error: { message: "nope" },
-      response: { status: 400 },
+/**
+ * Shared `/task` `/event` `/hours` `/rush add` card_posted cases. Empty-body
+ * gateway 502
+ * (`error: undefined` from openapi-fetch) must drop the placeholder — these
+ * creates have no server-side dedupe, so a stranded row invites a retry.
+ */
+function describeCreateCardPosted(
+  title: string,
+  dispatch: CreateDispatch,
+  copy: {
+    recordedVerb: RegExp;
+    fourXxMessage: string;
+    gatewayError: RegExp;
+    transportError: string;
+    onPosted?: (post: ReturnType<typeof vi.fn>) => void;
+  },
+) {
+  describe(title, () => {
+    it("leaves the placeholder for the Realtime echo when the card posted", async () => {
+      const post = posted201(true);
+      const ctx = buildCtx(post);
+      const result = await dispatch(ctx);
+      expect(result).toEqual({ ok: true });
+      expect(placeholderCount(ctx)).toBe(1);
+      copy.onPosted?.(post);
     });
-    const ctx = buildCtx(post);
 
-    const result = await dispatchTaskCmd(ctx);
-
-    expect(result).toEqual({ ok: false, error: "nope" });
-    expect(placeholderCount(ctx)).toBe(0);
-  });
-
-  // Empty-body gateway 502: openapi-fetch returns `{ error: undefined, response }`.
-  // `/task` has no server-side dedupe, so a stranded placeholder invites a
-  // duplicating retry. Drop it and fail — never park it as `unconfirmed`.
-  it("drops the placeholder on an empty-body gateway 502", async () => {
-    const post = vi.fn().mockResolvedValue({
-      data: undefined,
-      error: undefined,
-      response: { status: 502 },
+    it("keeps a recorded row and warns when the card did not post", async () => {
+      const post = posted201(false);
+      const ctx = buildCtx(post);
+      const result = await dispatch(ctx);
+      expect(result.ok).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.warning).toMatch(copy.recordedVerb);
+      expect(result.warning).toMatch(/don't run the command again/i);
+      expect(placeholderCount(ctx)).toBe(1);
+      expect(onlyRow(ctx)._status).toBe("recorded");
+      expect(onlyRow(ctx)._replay).toBeUndefined();
     });
-    const ctx = buildCtx(post);
 
-    const result = await dispatchTaskCmd(ctx);
-
-    expect(result.ok).toBe(false);
-    expect(result.unconfirmed).toBeUndefined();
-    expect(result.error).toMatch(/Couldn't create task/i);
-    expect(placeholderCount(ctx)).toBe(0);
-  });
-
-  it("drops the placeholder on a transport failure", async () => {
-    const post = vi.fn().mockRejectedValue(new Error("network down"));
-    const ctx = buildCtx(post);
-
-    const result = await dispatchTaskCmd(ctx);
-
-    expect(result).toEqual({
-      ok: false,
-      error: "Couldn't reach the tasks service",
+    it("does not report the committed create as a failure", async () => {
+      const post = posted201(false);
+      const result = await dispatch(buildCtx(post));
+      expect(result.ok).toBe(true);
+      expect(post).toHaveBeenCalledTimes(1);
     });
-    expect(placeholderCount(ctx)).toBe(0);
+
+    it("treats an absent card_posted as success", async () => {
+      const post = posted201("absent");
+      const ctx = buildCtx(post);
+      const result = await dispatch(ctx);
+      expect(result).toEqual({ ok: true });
+      expect(placeholderCount(ctx)).toBe(1);
+    });
+
+    it("still removes the placeholder and fails on a definitive 4xx", async () => {
+      const post = vi.fn().mockResolvedValue({
+        data: undefined,
+        error: { message: copy.fourXxMessage },
+        response: { status: 400 },
+      });
+      const ctx = buildCtx(post);
+      const result = await dispatch(ctx);
+      expect(result).toEqual({ ok: false, error: copy.fourXxMessage });
+      expect(placeholderCount(ctx)).toBe(0);
+    });
+
+    it("drops the placeholder on an empty-body gateway 502", async () => {
+      const post = vi.fn().mockResolvedValue({
+        data: undefined,
+        error: undefined,
+        response: { status: 502 },
+      });
+      const ctx = buildCtx(post);
+      const result = await dispatch(ctx);
+      expect(result.ok).toBe(false);
+      expect(result.unconfirmed).toBeUndefined();
+      expect(result.error).toMatch(copy.gatewayError);
+      expect(placeholderCount(ctx)).toBe(0);
+    });
+
+    it("drops the placeholder on a transport failure", async () => {
+      const post = vi.fn().mockRejectedValue(new Error("network down"));
+      const ctx = buildCtx(post);
+      const result = await dispatch(ctx);
+      expect(result).toEqual({
+        ok: false,
+        error: copy.transportError,
+      });
+      expect(placeholderCount(ctx)).toBe(0);
+    });
   });
+}
+
+describeCreateCardPosted("dispatchTask — card_posted (#1717)", dispatchTaskCmd, {
+  recordedVerb: /created/i,
+  fourXxMessage: "nope",
+  gatewayError: /Couldn't create task/i,
+  transportError: "Couldn't reach the tasks service",
 });
 
-describe("dispatchEvent — card_posted (#1717)", () => {
-  it("leaves the placeholder for the Realtime echo when the card posted", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: true },
-        error: null,
-        response: { status: 201 },
+describeCreateCardPosted(
+  "dispatchEvent — card_posted (#1717)",
+  dispatchEventCmd,
+  {
+    recordedVerb: /created/i,
+    fourXxMessage: "nope",
+    gatewayError: /Couldn't create event/i,
+    transportError: "Couldn't reach the events service",
+  },
+);
+
+describeCreateCardPosted("dispatchHours — card_posted", dispatchHoursCmd, {
+  recordedVerb: /logged/i,
+  fourXxMessage: "This chapter requires a receipt",
+  gatewayError: /Couldn't log hours/i,
+  transportError: "Couldn't reach the hours service",
+  onPosted: (post) => {
+    expect(post).toHaveBeenCalledWith(
+      "/v1/service-entries",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          duration_minutes: 120,
+          description: "Community cleanup",
+          channel_id: CHANNEL_ID,
+        }),
+      }),
+    );
+  },
+});
+
+describeCreateCardPosted("dispatchRush — add card_posted", dispatchRushAddCmd, {
+  recordedVerb: /added/i,
+  fourXxMessage: "A candidate with that name already exists in this chapter",
+  gatewayError: /Couldn't add that candidate/i,
+  transportError: "Couldn't reach the recruitment service",
+  onPosted: (post) => {
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          display_name: "Jane Doe",
+          channel_id: CHANNEL_ID,
+        }),
+      }),
+    );
+  },
+});
+
+/**
+ * #1718 — `/poll` and `/announce` used to `await sendMessage` with no try, so
+ * a Dexie fault escaped `dispatchSlashCommand`. The composer net maps that
+ * to a destructive `{ ok: false }` toast and cannot touch the optimistic
+ * row. Two faults, two outcomes:
+ *
+ * - never sent (`enqueue`) → `{ ok: false }`, optimistic row removed
+ * - sent, `dequeue` failed → `{ ok: true, warning }`, row confirmed
+ */
+
+const POLL_COMMAND: SlashCommand = {
+  name: "poll",
+  description: "Start a poll",
+  requiredModule: "polls",
+  implemented: true,
+};
+
+const ANNOUNCE_COMMAND: SlashCommand = {
+  name: "announce",
+  description: "Post an announcement",
+  requiredModule: null,
+  implemented: true,
+};
+
+const SIMPLE_CASES = [
+  {
+    name: "poll" as const,
+    command: POLL_COMMAND,
+    args: `"Who's in?" Yes No`,
+    announcementsChannelId: null as string | null,
+    kind: "poll",
+  },
+  {
+    name: "announce" as const,
+    command: ANNOUNCE_COMMAND,
+    args: "House meeting at 7",
+    announcementsChannelId: CHANNEL_ID,
+    kind: "announcement",
+  },
+];
+
+function buildSimpleCtx(
+  post: ReturnType<typeof vi.fn>,
+  outbox: OutboxStore,
+): ChatActionContext {
+  return {
+    queryClient: new QueryClient(),
+    apiClient: { POST: post } as unknown as ChatActionContext["apiClient"],
+    supabase: { from: vi.fn() } as unknown as ChatActionContext["supabase"],
+    userId: "user-1",
+    outbox,
+  };
+}
+
+function dispatchSimple(
+  ctx: ChatActionContext,
+  which: (typeof SIMPLE_CASES)[number],
+) {
+  return dispatchSlashCommand(ctx, {
+    command: which.command,
+    args: which.args,
+    channelId: CHANNEL_ID,
+    announcementsChannelId: which.announcementsChannelId,
+  });
+}
+
+function echoPostedMessage(body: {
+  client_message_id: string;
+  content: string;
+  kind: string;
+}) {
+  return {
+    id: "server-1",
+    channel_id: CHANNEL_ID,
+    sender_id: "user-1",
+    content: body.content,
+    kind: body.kind,
+    client_message_id: body.client_message_id,
+    created_at: new Date().toISOString(),
+  };
+}
+
+function postingApi() {
+  return vi.fn().mockImplementation(
+    async (
+      _path: string,
+      init: {
+        body: { client_message_id: string; content: string; kind: string };
+      },
+    ) => ({
+      data: { message: echoPostedMessage(init.body) },
+      error: null,
+      response: { status: 201 },
+    }),
+  );
+}
+
+describe("dispatchPoll / dispatchAnnounce — sendMessage faults (#1718)", () => {
+  it.each(SIMPLE_CASES)(
+    "/$name returns a failure instead of throwing when enqueue rejects",
+    async (which) => {
+      const post = postingApi();
+      const outbox = stubOutbox({
+        enqueue: vi.fn().mockRejectedValue(new Error("QuotaExceededError")),
       });
-    const ctx = buildCtx(post);
+      const ctx = buildSimpleCtx(post, outbox);
 
-    const result = await dispatchEventCmd(ctx);
+      const result = await dispatchSimple(ctx, which);
 
-    expect(result).toEqual({ ok: true });
-    expect(placeholderCount(ctx)).toBe(1);
-  });
-
-  it("drops the placeholder and warns when the card did not post", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 201 },
+      expect(result).toEqual({
+        ok: false,
+        error: "Couldn't run that command.",
       });
-    const ctx = buildCtx(post);
+      expect(post).not.toHaveBeenCalled();
+      expect(
+        selectMessages(
+          ctx.queryClient.getQueryData(chatMessagesKey(CHANNEL_ID)),
+        ),
+      ).toHaveLength(0);
+    },
+  );
 
-    const result = await dispatchEventCmd(ctx);
-
-    expect(result.ok).toBe(true);
-    expect(result.error).toBeUndefined();
-    expect(result.warning).toMatch(/created/i);
-    expect(result.warning).toMatch(/don't run the command again/i);
-    expect(placeholderCount(ctx)).toBe(0);
-  });
-
-  it("does not report the committed create as a failure", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({
-        data: { card_posted: false },
-        error: null,
-        response: { status: 201 },
+  it.each(SIMPLE_CASES)(
+    "/$name still posts when clearDraft rejects (draft clear is best-effort)",
+    async (which) => {
+      const post = postingApi();
+      const outbox = stubOutbox({
+        clearDraft: vi
+          .fn()
+          .mockRejectedValue(new Error("DatabaseClosedError")),
       });
+      const ctx = buildSimpleCtx(post, outbox);
 
-    const result = await dispatchEventCmd(buildCtx(post));
+      const result = await dispatchSimple(ctx, which);
 
-    expect(result.ok).toBe(true);
-    expect(post).toHaveBeenCalledTimes(1);
-  });
+      expect(result).toEqual({ ok: true });
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(onlyRow(ctx)._status).toBe("confirmed");
+    },
+  );
 
-  it("treats an absent card_posted as success", async () => {
-    const post = vi
-      .fn()
-      .mockResolvedValue({ data: {}, error: null, response: { status: 201 } });
-    const ctx = buildCtx(post);
+  // The composer net cannot tell this from a never-sent reject, so it would
+  // toast "/poll failed" while the card is visible and invite a re-type that
+  // misses the dedupe index. `{ ok: true, warning }` is the #544 channel.
+  it.each(SIMPLE_CASES)(
+    "/$name does not report failure when POST succeeded and dequeue rejects",
+    async (which) => {
+      const post = postingApi();
+      const outbox = stubOutbox({
+        dequeue: vi.fn().mockRejectedValue(new Error("DatabaseClosedError")),
+      });
+      const ctx = buildSimpleCtx(post, outbox);
 
-    const result = await dispatchEventCmd(ctx);
+      const result = await dispatchSimple(ctx, which);
 
-    expect(result).toEqual({ ok: true });
-    expect(placeholderCount(ctx)).toBe(1);
-  });
+      expect(result.ok).toBe(true);
+      expect(result.error).toBeUndefined();
+      expect(result.warning).toMatch(/don't send it again/i);
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(onlyRow(ctx)._status).toBe("confirmed");
+      expect(onlyRow(ctx).kind).toBe(which.kind);
+    },
+  );
+});
 
-  it("still removes the placeholder and fails on a definitive 4xx", async () => {
+describe("dispatchRush — vote and bid", () => {
+  it("votes by UUID without a placeholder", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
     const post = vi.fn().mockResolvedValue({
-      data: undefined,
-      error: { message: "nope" },
-      response: { status: 400 },
+      data: { viewer_has_voted: true },
+      error: null,
+      response: { status: 200 },
     });
     const ctx = buildCtx(post);
 
-    const result = await dispatchEventCmd(ctx);
+    const result = await dispatchRushVoteCmd(ctx, `vote ${id}`);
 
-    expect(result).toEqual({ ok: false, error: "nope" });
+    expect(result).toEqual({ ok: true });
     expect(placeholderCount(ctx)).toBe(0);
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates/{id}/vote",
+      expect.objectContaining({ params: { path: { id } } }),
+    );
   });
 
-  it("drops the placeholder on an empty-body gateway 502", async () => {
-    const post = vi.fn().mockResolvedValue({
-      data: undefined,
-      error: undefined,
-      response: { status: 502 },
+  it("looks up a candidate by name before voting", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: { id: "cand-1" },
+      error: null,
+      response: { status: 200 },
     });
-    const ctx = buildCtx(post);
+    const post = vi.fn().mockResolvedValue({
+      data: {},
+      error: null,
+      response: { status: 200 },
+    });
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
 
-    const result = await dispatchEventCmd(ctx);
+    const result = await dispatchRushVoteCmd(ctx, "vote Jane");
 
-    expect(result.ok).toBe(false);
-    expect(result.unconfirmed).toBeUndefined();
-    expect(result.error).toMatch(/Couldn't create event/i);
-    expect(placeholderCount(ctx)).toBe(0);
+    expect(result).toEqual({ ok: true });
+    expect(get).toHaveBeenCalledWith(
+      "/v1/rush/candidates",
+      expect.objectContaining({
+        params: { query: { name: "Jane" } },
+      }),
+    );
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates/{id}/vote",
+      expect.objectContaining({ params: { path: { id: "cand-1" } } }),
+    );
   });
 
-  it("drops the placeholder on a transport failure", async () => {
-    const post = vi.fn().mockRejectedValue(new Error("network down"));
-    const ctx = buildCtx(post);
+  it("fails closed when the name lookup misses", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: { message: "Candidate not found" },
+      response: { status: 404 },
+    });
+    const post = vi.fn();
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
 
-    const result = await dispatchEventCmd(ctx);
+    const result = await dispatchRushVoteCmd(ctx, "vote Nobody");
 
     expect(result).toEqual({
       ok: false,
-      error: "Couldn't reach the events service",
+      error: "No candidate matches that name",
     });
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("extends a bid by name without a placeholder", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: { id: "cand-1" },
+      error: null,
+      response: { status: 200 },
+    });
+    const post = vi.fn().mockResolvedValue({
+      data: { bid_status: "extended" },
+      error: null,
+      response: { status: 200 },
+    });
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
+
+    const result = await dispatchSlashCommand(ctx, {
+      command: RUSH_COMMAND,
+      args: "bid Jane",
+      channelId: CHANNEL_ID,
+      announcementsChannelId: null,
+    });
+
+    expect(result).toEqual({ ok: true });
     expect(placeholderCount(ctx)).toBe(0);
+    expect(post).toHaveBeenCalledWith(
+      "/v1/rush/candidates/{id}/bid",
+      expect.objectContaining({ params: { path: { id: "cand-1" } } }),
+    );
   });
 });

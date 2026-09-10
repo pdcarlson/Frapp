@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
-const { replace, refresh, searchParams } = vi.hoisted(() => ({
+const { replace, refresh, searchParams, signInWithOAuth } = vi.hoisted(() => ({
   replace: vi.fn(),
   refresh: vi.fn(),
   searchParams: { value: new URLSearchParams() },
+  signInWithOAuth: vi.fn(async () => ({ error: null })),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -12,7 +14,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParams.value,
 }));
 vi.mock("@/lib/supabase/client", () => ({
-  createSupabaseBrowserClient: () => ({ auth: {} }),
+  createSupabaseBrowserClient: () => ({ auth: { signInWithOAuth } }),
 }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
@@ -53,9 +55,13 @@ describe("the mark", () => {
     // and pre-auth renders outside it — so the two look identical today and
     // would diverge the moment anything mounted the bridge higher.
     const { container } = render(<SignInPage />);
-    const mark = container.querySelector(".bg-gold-house");
+    const mark = container.querySelector(".signet-mark");
     expect(mark).not.toBeNull();
-    expect(mark!.className).toMatch(/\btext-gold-on-house\b/);
+    expect(mark!.getAttribute("data-field")).toBe("#1A1A1A");
+    expect(mark!.getAttribute("data-gold")).toBe("#DDB844");
+    expect(mark!.querySelector("img")?.getAttribute("src")).toContain(
+      "signet-emblem-B.png",
+    );
     expect(mark!.getAttribute("aria-hidden")).toBe("true");
     expect(mark!.className).not.toMatch(/\bbg-primary\b/);
   });
@@ -73,7 +79,7 @@ describe("the mark", () => {
   it("is omitted on a screen reached from the entry screen", () => {
     // s02 draws no mark. It belongs to the screen a member arrives on.
     const { container } = render(<SignUpPage />);
-    expect(container.querySelector(".bg-gold-house")).toBeNull();
+    expect(container.querySelector(".signet-mark")).toBeNull();
   });
 });
 
@@ -88,6 +94,34 @@ describe("the redirect chain survives the rebuild", () => {
     expect(
       screen.getByRole("link", { name: "Create an account" }).getAttribute("href"),
     ).toBe("/sign-up?redirectTo=%2Fevents");
+    searchParams.value = new URLSearchParams();
+  });
+
+  it("offers Apple, Google, and magic-link as equal secondary methods", () => {
+    render(<SignInPage />);
+    const apple = screen.getByRole("button", { name: "Continue with Apple" });
+    const google = screen.getByRole("button", { name: "Continue with Google" });
+    const magic = screen.getByRole("button", { name: "Email me a magic link" });
+    expect(apple.className).toMatch(/\bw-full\b/);
+    expect(google.className).toMatch(/\bw-full\b/);
+    expect(magic.className).toMatch(/\bw-full\b/);
+  });
+
+  it("kicks off Apple OAuth toward the callback with redirectTo intact", async () => {
+    const user = userEvent.setup();
+    signInWithOAuth.mockClear();
+    searchParams.value = new URLSearchParams("redirectTo=%2Fjoin%3Ftoken%3Dinv-1");
+    render(<SignInPage />);
+    await user.click(screen.getByRole("button", { name: "Continue with Apple" }));
+    expect(signInWithOAuth).toHaveBeenCalledWith({
+      provider: "apple",
+      options: {
+        redirectTo: expect.stringMatching(
+          /\/auth\/callback\?next=%2Fjoin%3Ftoken%3Dinv-1$/,
+        ),
+        queryParams: undefined,
+      },
+    });
     searchParams.value = new URLSearchParams();
   });
 

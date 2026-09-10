@@ -1,3 +1,5 @@
+import { withSentryConfig } from "@sentry/nextjs";
+import { getAnonymousSentryBuildConfig } from "@repo/observability/next/sentry-build-config.js";
 import { assertProductionLandingAppEnv } from "./lib/assert-production-app-env.js";
 
 // Vercel Production (`VERCEL_ENV=production`) inlines NEXT_PUBLIC_APP_URL
@@ -12,7 +14,7 @@ assertProductionLandingAppEnv({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: ["@repo/theme", "@repo/validation"],
+  transpilePackages: ["@repo/theme", "@repo/validation", "@repo/observability"],
   experimental: {
     // Next 16 defaults this to true and then looks for `typescript/bin/tsc`.
     // The `typescript` package here is `@typescript/typescript6` (compiler API
@@ -58,6 +60,46 @@ const nextConfig = {
   typescript: {
     tsconfigPath: "tsconfig.build.json",
   },
+  env: {
+    /**
+     * Sentry environment tag, **derived** from Vercel's `VERCEL_ENV` rather
+     * than configured. Do not add `NEXT_PUBLIC_SENTRY_ENVIRONMENT` to Infisical.
+     */
+    NEXT_PUBLIC_SENTRY_ENVIRONMENT: process.env.VERCEL_ENV ?? "development",
+    /**
+     * Sentry `release`, **derived** from `VERCEL_GIT_COMMIT_SHA`. Empty
+     * locally/CI when that SHA is unset. Do not add `NEXT_PUBLIC_SENTRY_RELEASE`
+     * to Infisical.
+     */
+    NEXT_PUBLIC_SENTRY_RELEASE:
+      process.env.VERCEL_GIT_COMMIT_SHA ||
+      process.env.NEXT_PUBLIC_SENTRY_RELEASE ||
+      "",
+  },
 };
 
-export default nextConfig;
+/**
+ * Sentry build-time wiring (issue #2041).
+ *
+ * Runtime ingest uses `NEXT_PUBLIC_LANDING_SENTRY_DSN` (`frapp-landing`), never
+ * `NEXT_PUBLIC_SENTRY_DSN` (that is `frapp-web`; Infisical path `/` dumps both).
+ * `withSentryConfig` injects debug IDs even without `SENTRY_AUTH_TOKEN`.
+ * Upload is skipped without a token. Live symbolication is not claimed here.
+ *
+ * The wrapper applies regardless of whether a DSN is configured. The runtime
+ * no-op is in `instrumentation.ts` / `instrumentation-client.ts`.
+ */
+export default withSentryConfig(
+  nextConfig,
+  getAnonymousSentryBuildConfig({
+    project: "frapp-landing",
+    authToken: process.env.SENTRY_AUTH_TOKEN,
+    errorHandler(err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        "[landing sentry] source map upload skipped; debug IDs remain in the bundle:",
+        message,
+      );
+    },
+  }),
+);

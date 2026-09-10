@@ -1,7 +1,7 @@
 # GitHub Issues as the canonical PM system
 
 Canonical, version-controlled design + policy for Frapp's project management on **GitHub Issues**
-(`pdcarlson/Frapp`), per **ADR-16** and its GitHub-migration amendment (`spec/architecture/README.md`).
+(`pdcarlson/Frapp`), per **ADR-16** and its GitHub-migration amendment ([`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md)).
 GitHub Issues is the source of truth for planning and work status. Linear is **retired** — the
 decision record, viability probes, and the FRA-→#N migration mapping live in
 [issue #680](https://github.com/pdcarlson/Frapp/issues/680).
@@ -25,11 +25,10 @@ decision record, viability probes, and the FRA-→#N migration mapping live in
 
 ```
 GitHub Issues (canonical: planning, status, Triage intake)
-   ▲ Claude Code (web) via the GitHub MCP — the path /next uses
-   ▲ Claude Code Routines (scheduled: curator + triage + PR follow-ups) via the same GitHub MCP
-     (a fourth, Docs Upkeep, writes docs rather than issues — it files nothing here except a
-      proven human-only blocker; a fifth, Hygiene Scan, writes product code and files its
-      follow-ups here under a per-run cap)
+   ▲ Cursor Cloud (interactive `/next` path) via the GitHub MCP
+   ▲ Claude Code (web, interactive `/next` path) via the GitHub MCP
+   ▲ Claude Code Routines (live scheduled path)
+   ▲ Cursor Automations (optional Cursor scheduled path — do not dual-run the same routine as Claude Routines; see [`ROUTINES.md`](ROUTINES.md))
    ▲ PRs close work natively (Fixes #N on merge)
 ```
 
@@ -53,7 +52,7 @@ GitHub Issues (canonical: planning, status, Triage intake)
   semantics when the code still reaches `main` via a parent. Squash-merging a PR whose base is
   a feature branch is a **different, worse bug**: CI never runs (`pull_request.branches` is
   `[main]`) and the work never reaches `main` even though GitHub shows MERGED.
-  Playbook: [`AGENT_INFRA.md`](AGENT_INFRA.md#ci-branch-filters-never-target-a-feature-branch)
+  Playbook: [`pr-babysitting.md`](pr-babysitting.md#ci-branch-filters-never-target-a-feature-branch)
   (incidents #1120, #1123–#1125). Agents may also close an issue directly when it's done,
   obsolete, or a duplicate — see the state table below.
 - **Epics are parent issues with native sub-issues** (`sub_issue_write` /
@@ -69,8 +68,10 @@ GitHub Issues (canonical: planning, status, Triage intake)
 
 | Actor | Reaches GitHub Issues via | Notes |
 | --- | --- | --- |
-| **Claude Code** (web, interactive) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only sanctioned path for tracker work — reads and writes alike.** The MCP is auditable, and writes through it are lossless. Shell access to `api.github.com` is **route-dependent, not session-dependent** (corrected 2026-09-02; the 2026-08-08 observation of both a 403 and a success is explained by route, not by session): the proxied route 403s on every repo-scoped path, the direct one returns 200 from GitHub. **That direct route is never a substitute for the MCP.** If the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP: a verification read of an issue's raw `body` when you need to see what the MCP's read mangled, plus the provider-*settings* paths the MCP exposes no tool for. Never to create, edit, label, close or comment. Procedure and measurements: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). `gh` is not installed. No fallback tracker. |
-| **Claude Code Routines** (scheduled) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep and Hygiene Scan excepted — they write a PR, not issues, and push the branch and report its name when the MCP is down). See [`ROUTINES.md`](ROUTINES.md). |
+| **Cursor Cloud** (interactive `/next` path) | **GitHub MCP** (`issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | Same stop rule as Claude: if the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP for the raw-body verification read and provider-*settings* paths. Procedure: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). PR babysit uses this harness's subscription tools — do not freeze a catalog here; see [`AGENTS.md`](../../../AGENTS.md). |
+| **Cursor Automations** (optional Cursor scheduled path) | The **same GitHub MCP** once Automations exist | Paste-ready specs: [`ROUTINES.md`](ROUTINES.md). Do not enable the same routine that already runs as a Claude Code Routine (they would double-file). Cron defaults to no repository — attach **this GitHub repository**. Do not enable Hygiene Scan without a healthy repo-backed stack. |
+| **Claude Code** (web) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only sanctioned path for tracker work — reads and writes alike.** The MCP is auditable, and writes through it are lossless. Shell access to `api.github.com` is **route-dependent, not session-dependent** (corrected 2026-09-02; the 2026-08-08 observation of both a 403 and a success is explained by route, not by session): the proxied route 403s on every repo-scoped path, the direct one returns 200 from GitHub. **That direct route is never a substitute for the MCP.** If the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP: a verification read of an issue's raw `body` when you need to see what the MCP's read mangled, plus the provider-*settings* paths the MCP exposes no tool for. Never to create, edit, label, close or comment. Procedure and measurements: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). `gh` is not installed. No fallback tracker. |
+| **Claude Code Routines** (scheduled, live) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Docs Upkeep and Hygiene Scan excepted — they write a PR, not issues, and push the branch and report its name when the MCP is down). See [`ROUTINES.md`](ROUTINES.md). |
 | **CI / scripts** | `GITHUB_TOKEN` / `GITHUB_PAT` — tracker writes inside GitHub Actions only | The PAT works in Actions and on laptops. Corrected 2026-09-02: it is not dead in a cloud sandbox either — it fails only on the proxied route (403 on repo-scoped paths) and works on the direct one. That is a read channel, not a licence to do tracker work outside the MCP. **Branch protection, from an agent session: run `npm run configure:branch-protection:verify` (read-only) and nothing else.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. *Applying* stays a human step with an admin PAT — policy, not lack of capability. PAT policy: [`AGENT_INFRA.md`](AGENT_INFRA.md). |
 
 ---
@@ -116,9 +117,9 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
   deployment are intentional states, not findings. Revisit when production becomes a goal; see #814
   for the decision record. **Caveat (2026-08-30):** this bullet's premise — that production does not
   yet exist — no longer holds. `frapp-prod` is live and `deploy-production.yml` deploys to it
-  (`spec/architecture/README.md` ADR-20). Its provider-guardrail preflight briefly failed on the
+  ([`spec/architecture/adr/adr-20.md`](../../../spec/architecture/adr/adr-20.md)). Its provider-guardrail preflight briefly failed on the
   retired Vercel Git integration and blocked production deploys; #1579 inverted that assertion on
-  2026-09-02 (canonical record: ADR-21 in `spec/architecture/README.md`, with its 2026-09-02
+  2026-09-02 (canonical record: ADR-21 in [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md), with its 2026-09-02
   amendment; the CI-driven Vercel deploy that replaces the integration is still #1578). The label's scope is the
   owner's to redefine, so nothing here changes on an agent's initiative; but do not read this
   bullet as evidence that a production-shaped risk is theoretical. Tracked in #1381.

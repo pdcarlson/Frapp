@@ -23,6 +23,12 @@ import type {
   NotificationPreference,
   UserSettings,
 } from '#domain/entities/notification.entity';
+import type { Member } from '#domain/entities/member.entity';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '#domain/constants/list-query-limits';
 
 describe('NotificationService', () => {
   let service: NotificationService;
@@ -36,6 +42,7 @@ describe('NotificationService', () => {
   beforeEach(async () => {
     mockNotificationRepo = {
       create: jest.fn(),
+      createMany: jest.fn(),
       findByUser: jest.fn(),
       findById: jest.fn(),
       markRead: jest.fn(),
@@ -43,6 +50,7 @@ describe('NotificationService', () => {
     mockPushTokenRepo = {
       create: jest.fn(),
       findByUser: jest.fn(),
+      findByUserIds: jest.fn(),
       findById: jest.fn(),
       findByToken: jest.fn(),
       delete: jest.fn(),
@@ -52,9 +60,11 @@ describe('NotificationService', () => {
       findByUserAndChapter: jest.fn(),
       upsert: jest.fn(),
       findByUserChapterCategory: jest.fn(),
+      findByUsersChapterCategory: jest.fn(),
     };
     mockSettingsRepo = {
       findByUser: jest.fn(),
+      findByUserIds: jest.fn(),
       upsert: jest.fn(),
     };
     mockMemberRepo = {
@@ -125,6 +135,90 @@ describe('NotificationService', () => {
     updated_at: '2026-02-27T00:00:00.000Z',
   };
 
+  const chapterMember = (
+    userId: string,
+    overrides: Partial<Member> = {},
+  ): Member => ({
+    id: `m-${userId}`,
+    user_id: userId,
+    chapter_id: 'ch-1',
+    role_ids: [],
+    custom_role_ids: [],
+    has_completed_onboarding: false,
+    dismissed_ops_nudges: [],
+    created_at: '',
+    updated_at: '',
+    ...overrides,
+  });
+
+  const notificationsFor = (userIds: string[]): Notification[] =>
+    userIds.map((userId, index) => ({
+      ...baseNotification,
+      id: index === 0 && userId === 'u-1' ? baseNotification.id : `n-${userId}`,
+      user_id: userId,
+    }));
+
+  const tokensFor = (userIds: string[]): PushToken[] =>
+    userIds.map((userId, index) =>
+      index === 0 && userId === 'u-1'
+        ? basePushToken
+        : { ...basePushToken, id: `pt-${userId}`, user_id: userId },
+    );
+
+  const echoCreateMany = async (
+    rows: Partial<Notification>[],
+  ): Promise<Notification[]> =>
+    rows.map((row, index) => ({
+      ...baseNotification,
+      id: `n-${row.user_id ?? index}`,
+      user_id: row.user_id ?? `missing-${index}`,
+    }));
+
+  const spyWarn = () =>
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+  const expectSilentPush = () => {
+    expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+      [basePushToken.token],
+      expect.objectContaining({ priority: 'SILENT' }),
+    );
+  };
+
+  const stubChapterNotify = ({
+    userIds = ['u-1'],
+    members,
+    prefs = [],
+    settings = [],
+    created,
+    tokens,
+    createManyImpl,
+  }: {
+    userIds?: string[];
+    members?: Member[];
+    prefs?: NotificationPreference[];
+    settings?: UserSettings[];
+    created?: Notification[];
+    tokens?: PushToken[];
+    createManyImpl?: (rows: Partial<Notification>[]) => Promise<Notification[]>;
+  } = {}): string[] => {
+    mockMemberRepo.findByChapter.mockResolvedValue(
+      members ?? userIds.map((id) => chapterMember(id)),
+    );
+    mockPreferenceRepo.findByUsersChapterCategory.mockResolvedValue(prefs);
+    mockSettingsRepo.findByUserIds.mockResolvedValue(settings);
+    if (createManyImpl) {
+      mockNotificationRepo.createMany.mockImplementation(createManyImpl);
+    } else {
+      mockNotificationRepo.createMany.mockResolvedValue(
+        created ?? notificationsFor(userIds),
+      );
+    }
+    mockPushTokenRepo.findByUserIds.mockResolvedValue(
+      tokens ?? tokensFor(userIds),
+    );
+    return userIds;
+  };
+
   describe('notifyUser', () => {
     it('should skip when preference is disabled for category', async () => {
       mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue({
@@ -184,7 +278,8 @@ describe('NotificationService', () => {
     // it, so an URGENT payload never reads the preference at all. Pinned
     // because a later refactor back to "read, then check priority" would be
     // behaviourally identical but cost every emergency broadcast one query per
-    // recipient — `notifyChapter` fans this out across the whole chapter.
+    // recipient on `notifyUser` — `notifyChapter` skips the batched preference
+    // read entirely for URGENT.
     it('should not read the category preference at all for URGENT', async () => {
       mockSettingsRepo.findByUser.mockResolvedValue(null);
       mockNotificationRepo.create.mockResolvedValue(baseNotification);
@@ -254,12 +349,7 @@ describe('NotificationService', () => {
         priority: 'NORMAL',
       });
 
-      expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
-        [basePushToken.token],
-        expect.objectContaining({
-          priority: 'SILENT',
-        }),
-      );
+      expectSilentPush();
 
       jest.useRealTimers();
     });
@@ -344,12 +434,21 @@ describe('NotificationService', () => {
         ).resolves.toBeUndefined();
 
         expect(warnSpy).toHaveBeenCalledWith(
-          'Failed to prune invalid push token',
-          expect.any(Error),
+          expect.stringContaining('Failed to prune invalid push token'),
         );
+        expect(
+          warnSpy.mock.calls.every((args) =>
+            String(args[0]).includes('Failed to prune invalid push token')
+              ? args.length === 1
+              : true,
+          ),
+        ).toBe(true);
         expect(warnSpy).not.toHaveBeenCalledWith(
           expect.stringContaining('Push delivery failed'),
           expect.anything(),
+        );
+        expect(warnSpy).not.toHaveBeenCalledWith(
+          expect.stringContaining('Push delivery failed'),
         );
         warnSpy.mockRestore();
       });
@@ -358,7 +457,8 @@ describe('NotificationService', () => {
     // #687: `quiet_hours_tz` predates server-side validation, so stored rows can
     // still hold a zone `Intl.DateTimeFormat` throws on. That throw happened
     // before `notificationRepo.create`, so the member silently lost the push AND
-    // the in-app row — and `notifyChapter`'s `Promise.allSettled` hid it.
+    // the in-app row. The chapter-wide path used to hide that throw behind
+    // `Promise.allSettled`; it now evaluates the same helper in memory.
     describe('invalid quiet_hours_tz', () => {
       const invalidSettings: UserSettings = {
         ...baseSettings,
@@ -431,10 +531,7 @@ describe('NotificationService', () => {
           priority: 'NORMAL',
         });
 
-        expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
-          [basePushToken.token],
-          expect.objectContaining({ priority: 'SILENT' }),
-        );
+        expectSilentPush();
 
         jest.useRealTimers();
       });
@@ -524,17 +621,15 @@ describe('NotificationService', () => {
       });
 
       it('does not drop the member from a chapter-wide notify', async () => {
-        mockMemberRepo.findByChapter.mockResolvedValue([{ user_id: 'u-1' }]);
-        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
-          basePreference,
-        );
-        mockSettingsRepo.findByUser.mockResolvedValue(invalidSettings);
-        mockNotificationRepo.create.mockResolvedValue(baseNotification);
-        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+        stubChapterNotify({
+          prefs: [basePreference],
+          settings: [invalidSettings],
+        });
 
         await service.notifyChapter('ch-1', { title: 'Test', body: 'Body' });
 
-        expect(mockNotificationRepo.create).toHaveBeenCalledTimes(1);
+        expect(mockNotificationRepo.createMany).toHaveBeenCalledTimes(1);
+        expect(mockNotificationRepo.create).not.toHaveBeenCalled();
       });
     });
 
@@ -557,41 +652,10 @@ describe('NotificationService', () => {
   });
 
   describe('notifyChapter', () => {
+    const roster = (n: number) => Array.from({ length: n }, (_, i) => `u-${i}`);
+
     it('should notify all chapter members', async () => {
-      mockMemberRepo.findByChapter.mockResolvedValue([
-        {
-          id: 'm-1',
-          user_id: 'u-1',
-          chapter_id: 'ch-1',
-          role_ids: [],
-          custom_role_ids: [],
-          has_completed_onboarding: false,
-          created_at: '',
-          updated_at: '',
-        },
-        {
-          id: 'm-2',
-          user_id: 'u-2',
-          chapter_id: 'ch-1',
-          role_ids: [],
-          custom_role_ids: [],
-          has_completed_onboarding: false,
-          created_at: '',
-          updated_at: '',
-        },
-      ]);
-      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
-        basePreference,
-      );
-      mockSettingsRepo.findByUser.mockResolvedValue(null);
-      mockNotificationRepo.create
-        .mockResolvedValueOnce({ ...baseNotification, user_id: 'u-1' })
-        .mockResolvedValueOnce({ ...baseNotification, user_id: 'u-2' });
-      mockPushTokenRepo.findByUser
-        .mockResolvedValueOnce([basePushToken])
-        .mockResolvedValueOnce([
-          { ...basePushToken, id: 'pt-2', user_id: 'u-2' },
-        ]);
+      stubChapterNotify({ userIds: ['u-1', 'u-2'] });
 
       await service.notifyChapter('ch-1', {
         title: 'Chapter Announcement',
@@ -599,8 +663,173 @@ describe('NotificationService', () => {
       });
 
       expect(mockMemberRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-      expect(mockNotificationRepo.create).toHaveBeenCalledTimes(2);
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'u-1' }),
+        expect.objectContaining({ user_id: 'u-2' }),
+      ]);
+      expect(mockNotificationRepo.create).not.toHaveBeenCalled();
       expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips members who disabled the category and still delivers the rest', async () => {
+      stubChapterNotify({
+        userIds: ['u-1', 'u-2'],
+        prefs: [{ ...basePreference, user_id: 'u-1', is_enabled: false }],
+        created: notificationsFor(['u-2']),
+        tokens: tokensFor(['u-2']),
+      });
+
+      await service.notifyChapter('ch-1', {
+        title: 'Chapter Announcement',
+        body: 'Hello everyone',
+        category: 'chat',
+      });
+
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'u-2' }),
+      ]);
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not read category preferences for an URGENT chapter broadcast', async () => {
+      stubChapterNotify();
+
+      await service.notifyChapter('ch-1', {
+        title: 'Emergency',
+        body: 'Evacuate',
+        priority: 'URGENT',
+        category: 'announcements',
+      });
+
+      expect(
+        mockPreferenceRepo.findByUsersChapterCategory,
+      ).not.toHaveBeenCalled();
+      expect(mockSettingsRepo.findByUserIds).not.toHaveBeenCalled();
+      expect(mockNotificationRepo.createMany).toHaveBeenCalled();
+    });
+
+    it('deduplicates roster rows that share a user_id', async () => {
+      stubChapterNotify({
+        members: [chapterMember('u-1'), chapterMember('u-1', { id: 'm-dup' })],
+      });
+
+      await service.notifyChapter('ch-1', { title: 'Test', body: 'Body' });
+
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'u-1' }),
+      ]);
+    });
+
+    it('downgrades NORMAL to SILENT during quiet hours on the batched path', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-06-15T15:00:00Z'));
+
+      stubChapterNotify({
+        settings: [
+          {
+            ...baseSettings,
+            quiet_hours_start: '00:00:00',
+            quiet_hours_end: '23:59:00',
+          },
+        ],
+      });
+
+      await service.notifyChapter('ch-1', {
+        title: 'Test',
+        body: 'Body',
+        priority: 'NORMAL',
+      });
+
+      expectSilentPush();
+
+      jest.useRealTimers();
+    });
+
+    it('logs aggregate insert failures and still delivers the surviving chunk', async () => {
+      const warn = spyWarn();
+      const users = roster(150);
+      stubChapterNotify({
+        userIds: users,
+        createManyImpl: echoCreateMany,
+        tokens: tokensFor(users.slice(100)),
+      });
+      mockNotificationRepo.createMany.mockRejectedValueOnce(
+        new Error('insert failed'),
+      );
+
+      await service.notifyChapter('ch-1', { title: 'Test', body: 'Body' });
+
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledTimes(2);
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(50);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('insert failed for 100 of 150'),
+      );
+
+      warn.mockRestore();
+    });
+
+    it('skips a failed preference chunk and still delivers the rest', async () => {
+      const warn = spyWarn();
+      const users = roster(150);
+      stubChapterNotify({
+        userIds: users,
+        createManyImpl: echoCreateMany,
+        tokens: tokensFor(users.slice(100)),
+      });
+      mockPreferenceRepo.findByUsersChapterCategory
+        .mockRejectedValueOnce(new Error('prefs failed'))
+        .mockResolvedValue([]);
+
+      await service.notifyChapter('ch-1', {
+        title: 'Test',
+        body: 'Body',
+        category: 'chat',
+      });
+
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledWith(
+        users
+          .slice(100)
+          .map((userId) => expect.objectContaining({ user_id: userId })),
+      );
+      expect(mockPushProvider.sendToUser).toHaveBeenCalledTimes(50);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('preference lookup failed for 100 of 150'),
+      );
+
+      warn.mockRestore();
+    });
+
+    it('keeps query count bounded for a 200-member chapter', async () => {
+      const users = roster(200);
+      stubChapterNotify({
+        userIds: users,
+        createManyImpl: echoCreateMany,
+        tokens: tokensFor(users),
+      });
+
+      await service.notifyChapter('ch-1', {
+        title: 'Chapter Announcement',
+        body: 'Hello everyone',
+        category: 'chat',
+      });
+
+      expect(mockMemberRepo.findByChapter).toHaveBeenCalledTimes(1);
+      expect(
+        mockPreferenceRepo.findByUsersChapterCategory,
+      ).toHaveBeenCalledTimes(2);
+      expect(
+        mockPreferenceRepo.findByUsersChapterCategory,
+      ).toHaveBeenCalledWith(users.slice(0, 100), 'ch-1', 'chat');
+      expect(mockSettingsRepo.findByUserIds).toHaveBeenCalledTimes(2);
+      expect(mockNotificationRepo.createMany).toHaveBeenCalledTimes(2);
+      expect(mockPushTokenRepo.findByUserIds).toHaveBeenCalledTimes(2);
+      expect(mockNotificationRepo.create).not.toHaveBeenCalled();
+      expect(
+        mockPreferenceRepo.findByUserChapterCategory,
+      ).not.toHaveBeenCalled();
+      expect(mockSettingsRepo.findByUser).not.toHaveBeenCalled();
+      expect(mockPushTokenRepo.findByUser).not.toHaveBeenCalled();
     });
   });
 
@@ -667,9 +896,14 @@ describe('NotificationService', () => {
         read_at: '2026-02-27T01:00:00.000Z',
       });
 
-      const result = await service.markNotificationRead('n-1', 'u-1');
+      const result = await service.markNotificationRead('n-1', 'u-1', 'ch-1');
 
-      expect(mockNotificationRepo.markRead).toHaveBeenCalledWith('n-1', 'u-1');
+      expect(mockNotificationRepo.findById).toHaveBeenCalledWith('n-1', 'ch-1');
+      expect(mockNotificationRepo.markRead).toHaveBeenCalledWith(
+        'n-1',
+        'u-1',
+        'ch-1',
+      );
       expect(result.read_at).toBe('2026-02-27T01:00:00.000Z');
     });
 
@@ -677,8 +911,9 @@ describe('NotificationService', () => {
       mockNotificationRepo.findById.mockResolvedValue(null);
 
       await expect(
-        service.markNotificationRead('n-999', 'u-1'),
+        service.markNotificationRead('n-999', 'u-1', 'ch-1'),
       ).rejects.toThrow(NotFoundException);
+      expect(mockNotificationRepo.markRead).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when notification belongs to another user', async () => {
@@ -687,9 +922,23 @@ describe('NotificationService', () => {
         user_id: 'u-2',
       });
 
-      await expect(service.markNotificationRead('n-1', 'u-1')).rejects.toThrow(
-        NotFoundException,
+      await expect(
+        service.markNotificationRead('n-1', 'u-1', 'ch-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockNotificationRepo.markRead).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when the row is in another chapter', async () => {
+      mockNotificationRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.markNotificationRead('n-1', 'u-1', 'ch-other'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockNotificationRepo.findById).toHaveBeenCalledWith(
+        'n-1',
+        'ch-other',
       );
+      expect(mockNotificationRepo.markRead).not.toHaveBeenCalled();
     });
   });
 
@@ -893,27 +1142,58 @@ describe('NotificationService', () => {
   });
 
   describe('listNotifications', () => {
-    it('should list notifications for user without limit option', async () => {
+    it('should clamp an omitted limit to the default page rather than an unbounded read', async () => {
       mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
 
-      const result = await service.listNotifications('u-1');
+      const result = await service.listNotifications('u-1', 'ch-1');
 
       expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
         'u-1',
-        undefined,
+        'ch-1',
+        {
+          limit: LIST_QUERY_LIMIT_DEFAULT,
+        },
       );
       expect(result).toEqual([baseNotification]);
     });
 
-    it('should list notifications for user', async () => {
+    it('should list notifications for user in the given chapter', async () => {
       mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
 
-      const result = await service.listNotifications('u-1', { limit: 20 });
-
-      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith('u-1', {
+      const result = await service.listNotifications('u-1', 'ch-1', {
         limit: 20,
       });
+
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+        {
+          limit: 20,
+        },
+      );
       expect(result).toEqual([baseNotification]);
+    });
+
+    it('should clamp a zero or oversized limit before the repository', async () => {
+      mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
+
+      await service.listNotifications('u-1', 'ch-1', { limit: 0 });
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+        {
+          limit: LIST_QUERY_LIMIT_MIN,
+        },
+      );
+
+      await service.listNotifications('u-1', 'ch-1', { limit: 999 });
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+        {
+          limit: LIST_QUERY_LIMIT_MAX,
+        },
+      );
     });
   });
 });

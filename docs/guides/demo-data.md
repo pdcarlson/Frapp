@@ -67,7 +67,7 @@ over `next dev` — the dev overlay badge otherwise sits in the corner of every 
 ### Seven things that will waste your afternoon
 
 **Browse `localhost`, never `127.0.0.1`.** The API's CORS allowlist
-(`apps/api/src/main.ts`) names `http://localhost:3000` and `http://localhost:3002`.
+(`apps/api/src/interface/http/cors.options.ts`) names `http://localhost:3000` and `http://localhost:3002`.
 From the numeric origin every browser call fails preflight, and the dashboard
 renders its empty states — which looks exactly like "the seed didn't work" rather
 than a CORS failure.

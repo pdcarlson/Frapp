@@ -7,8 +7,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
+import { isPseudonymHex } from '@repo/observability';
 import type { RequestContext } from '../types/request-context.types';
 import { pathOnly } from '../utils/path-only';
+import {
+  emitSanitizedHttpRequestLog,
+  hasMatchedExpressRoute,
+} from '../utils/http-request-log';
+import { getRequestId } from '../../infrastructure/observability/request-als';
 import {
   pseudonymizeChapterId,
   pseudonymizeIp,
@@ -20,6 +26,12 @@ import {
 } from '../../infrastructure/observability/security-events';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
+import { httpStatusClass } from '../../infrastructure/analytics/http-status-class';
+import {
+  captureSentryErrorCorrelated,
+  enqueueSanitizedLog,
+} from '../../infrastructure/analytics/posthog-runtime';
+import { readDeployedCommit } from '../../infrastructure/observability/deployed-commit';
 
 /**
  * The single seam for error-shaped observability (issues #846, #481).
@@ -32,14 +44,24 @@ import { toReportableError } from '../../infrastructure/observability/reportable
  * success; adding the branch there would mean re-deriving status semantics in a
  * place that already has them flattened.
  *
- * Three behaviors, by status class:
+ * Four behaviors, by status class:
  *
  *  - **401 / 403 / 429** → a `warn`-level `security_event` record, plus (401
  *    only) the sliding-window spike detector.
  *  - **>= 500** → the existing `error` log, and now `Sentry.captureException`,
- *    which nothing previously called. `initializeSentry`'s `beforeSend` does the
- *    PII scrubbing; the scope set here carries only pre-pseudonymized ids.
- *  - Everything else → response only, as before.
+ *    which nothing previously called. `instrument.ts`'s `beforeSend` does
+ *    the PII scrubbing; the scope set here carries only pre-pseudonymized ids.
+ *    `@SentryExceptionCaptured` / `SentryGlobalFilter` are deliberately not
+ *    used: they would `captureException` the raw value (PostgREST `{code,
+ *    message, details}` objects become `[object Object]`) and double-report
+ *    every 5xx this filter already sends through `toReportableError`.
+ *  - **Unmatched 4xx** (no Express `request.route`) → the same sanitized
+ *    `request` log the interceptor emits for matched routes. Unmatched
+ *    `/v1/…` 404s never enter `LoggingInterceptor`, so without this they would
+ *    never reach PostHog Logs (#2078). Exception messages stay off that row.
+ *    401 / 403 / 429 already have `security_event` and are not double-logged
+ *    as `request` here. Matched 4xx keep the interceptor as the request-log
+ *    seam so a controller `NotFoundException` is not emitted twice.
  */
 /**
  * The message a client should see, preserving whatever Nest actually built.
@@ -110,7 +132,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? extractMessage(exception)
         : 'Internal server error';
 
-    const requestId = request.requestId ?? 'unknown';
+    const requestId = request.requestId ?? getRequestId() ?? 'unknown';
 
     if (status >= 500) {
       this.logger.error(
@@ -126,8 +148,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         }),
       );
       this.reportToSentry(exception, request, status, requestId);
+      this.enqueueSanitizedErrorLog(request, status, requestId);
     } else {
       this.recordSecurityEvent(request, status, requestId);
+      this.enqueueUnmatchedClientErrorLog(request, status);
     }
 
     response.status(status).json({
@@ -170,6 +194,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
             originHash,
           }),
         ),
+      );
+
+      this.enqueueSanitizedSecurityLog(
+        request,
+        kind,
+        status,
+        requestId,
+        originHash,
       );
 
       if (kind !== 'auth_failure') return;
@@ -219,6 +251,28 @@ export class AllExceptionsFilter implements ExceptionFilter {
   }
 
   /**
+   * Unmatched 4xx never reach `LoggingInterceptor`. Emit the sanitized request
+   * log from here so PostHog Logs still sees `status_class=4xx` with a
+   * path-only path. Skip security denials (already a `security_event` row)
+   * and matched routes (the interceptor already logged).
+   */
+  private enqueueUnmatchedClientErrorLog(
+    request: RequestContext,
+    status: number,
+  ): void {
+    if (status < 400 || status >= 500) return;
+    if (securityEventKind(status)) return;
+    if (hasMatchedExpressRoute(request)) return;
+    try {
+      emitSanitizedHttpRequestLog(new Logger('HTTP'), request, status);
+    } catch (error) {
+      this.logger.warn(
+        `unmatched-request log emission failed: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  /**
    * Report a 5xx to Sentry with pseudonymous identity only.
    *
    * The ids are hashed *here* rather than left for `beforeSend` because the
@@ -247,11 +301,98 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const path = pathOnly(request.url);
         if (path) scope.setTag('route', path);
 
-        Sentry.captureException(toReportableError(exception));
+        const eventId = Sentry.captureException(toReportableError(exception));
+        this.emitSentryErrorCorrelated(
+          request,
+          status,
+          requestId,
+          typeof eventId === 'string' ? eventId : undefined,
+        );
       });
     } catch (error) {
       this.logger.warn(`Sentry capture failed: ${(error as Error).message}`);
     }
+  }
+
+  /**
+   * Content-free PostHog timeline marker. Never the exception, stack, body,
+   * query, or message. Errors are counted only in Sentry.
+   */
+  private emitSentryErrorCorrelated(
+    request: RequestContext,
+    status: number,
+    requestId: string,
+    sentryEventId: string | undefined,
+  ): void {
+    if (!sentryEventId) return;
+    const userHash = pseudonymizeUserId(request.appUser?.id);
+    const chapterHash = pseudonymizeChapterId(request.chapterId);
+    const distinctId =
+      (isPseudonymHex(userHash) ? userHash : undefined) ??
+      (isPseudonymHex(chapterHash) ? chapterHash : undefined) ??
+      `req:${requestId}`;
+    captureSentryErrorCorrelated(distinctId, {
+      sentry_event_id: sentryEventId,
+      trace_id: sentryTraceId(),
+      request_id: requestId,
+      route: pathOnly(request.url),
+      status_class: httpStatusClass(status),
+      release: readDeployedCommit(),
+    });
+  }
+
+  private enqueueSanitizedErrorLog(
+    request: RequestContext,
+    status: number,
+    requestId: string,
+  ): void {
+    const userHash = pseudonymizeUserId(request.appUser?.id);
+    const chapterHash = pseudonymizeChapterId(request.chapterId);
+    enqueueSanitizedLog(
+      {
+        body: 'error',
+        severity: 'ERROR',
+        attributes: {
+          request_id: requestId,
+          method: request.method ?? 'UNKNOWN',
+          path: pathOnly(request.url) ?? '/',
+          status_code: status,
+          status_class: httpStatusClass(status),
+          ...(userHash ? { user_hash: userHash } : {}),
+          ...(chapterHash ? { chapter_hash: chapterHash } : {}),
+        },
+      },
+      requestId,
+    );
+  }
+
+  private enqueueSanitizedSecurityLog(
+    request: RequestContext,
+    kind: string,
+    status: number,
+    requestId: string,
+    originHash: string | undefined,
+  ): void {
+    const userHash = pseudonymizeUserId(request.appUser?.id);
+    const chapterHash = pseudonymizeChapterId(request.chapterId);
+    enqueueSanitizedLog(
+      {
+        body: 'security_event',
+        severity: 'WARN',
+        attributes: {
+          kind,
+          request_id: requestId,
+          method: request.method ?? 'UNKNOWN',
+          path: pathOnly(request.url) ?? '/',
+          status_code: status,
+          status_class: httpStatusClass(status),
+          ...(originHash ? { origin_hash: originHash } : {}),
+          ...(userHash ? { user_hash: userHash } : {}),
+          ...(chapterHash ? { chapter_hash: chapterHash } : {}),
+        },
+      },
+      requestId,
+    );
   }
 }
 
@@ -259,4 +400,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
 function clientIp(request: RequestContext): string | undefined {
   const forwarded = Array.isArray(request.ips) ? request.ips[0] : undefined;
   return forwarded ?? request.ip;
+}
+
+function sentryTraceId(): string | undefined {
+  const getTraceData = (
+    Sentry as typeof Sentry & {
+      getTraceData?: () => Record<string, string> | undefined;
+    }
+  ).getTraceData;
+  const header = getTraceData?.()?.['sentry-trace'];
+  if (typeof header !== 'string' || header.length === 0) return undefined;
+  const traceId = header.split('-')[0];
+  return /^[0-9a-f]{16,32}$/i.test(traceId) ? traceId.toLowerCase() : undefined;
 }

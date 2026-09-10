@@ -13,16 +13,14 @@
  * 1. **The link signal is `expo-network`, not `navigator.onLine`.** React Native
  *    defines `navigator` but never sets `onLine`, so the browser probe reports
  *    permanently online on device. `lib/chat/network-state.ts` documents that
- *    trap at length; `isOfflineFromExpoState` is the single reading of
- *    `expo-network` the chat outbox already trusts, and reusing it means the
- *    banner and the outbox cannot disagree about what "offline" means.
- * 2. **Three failed probes mean OFFLINE, not DEGRADED.** `spec/ui/resilience.md`
- *    § 2 is explicit: "'OFFLINE': !navigator.onLine OR health check to /health
- *    fails 3 times", with DEGRADED reserved for slow or intermittent. The web
- *    provider maps that same threshold to DEGRADED and never reaches OFFLINE
- *    from probing at all, so the two surfaces genuinely disagree today. This
- *    follows the spec; the web divergence is filed rather than fixed from a
- *    mobile slice.
+ *    trap at length. The chat outbox is a `NetworkState` adapter over this
+ *    monitor (#1072): one `expo-network` subscription, one `/health` poll.
+ *    `DEGRADED` still sends; only OFFLINE queues.
+ * 2. **Three failed probes mean OFFLINE, not DEGRADED.** `spec/ui/resilience/connection-state.md`
+ *    is explicit: "'OFFLINE': !navigator.onLine OR health check to /health
+ *    fails 3 times", with DEGRADED reserved for slow or intermittent. Both
+ *    surfaces call the same `deriveConnectionState` in `@repo/validation`; a
+ *    429 is reachability, not a failure (`healthProbeIsReachable`).
  *
  * ## `/health` is not under `/v1`
  *
@@ -38,7 +36,8 @@ import {
   getNetworkStateAsync,
   type NetworkState as ExpoNetworkState,
 } from "expo-network";
-import { normalizeApiBaseUrl } from "@repo/api-sdk";
+import { normalizeApiBaseUrl, withRequestIdInit } from "@repo/api-sdk";
+import { healthProbeIsReachable } from "@repo/validation";
 import { deriveConnectionState, type ConnectionState } from "./state";
 
 export const HEALTH_POLL_INTERVAL_MS = 30_000;
@@ -85,6 +84,7 @@ export function createConnectionMonitor(
   // "unknown counts as online" contract: a false offline strands writes.
   let linkOffline = false;
   let consecutiveFailures = 0;
+  let probeGeneration = 0;
   let state: ConnectionState = "ONLINE";
 
   let started = false;
@@ -113,38 +113,33 @@ export function createConnectionMonitor(
   /**
    * Only a **missing link** is definitive.
    *
-   * `lib/chat/network-state.ts`'s `isOfflineFromExpoState` ORs `isConnected ===
-   * false` with `isInternetReachable === false`, and that is right *for the
-   * outbox*: a false "offline" there only means "queue instead of send", which
-   * costs nothing. It is wrong here, because this value gates writes. A chapter
-   * house whose captive-portal validation probe is blocked reports
-   * `{isConnected: true, isInternetReachable: false}` while the API is perfectly
-   * reachable — folding that into OFFLINE would disable the check-in code field
-   * at the door with no way to recover, since the early return below also stops
-   * `/health` from ever proving otherwise.
-   *
-   * So a false `isInternetReachable` is treated as *suspicion*, not proof: it
-   * counts as one probe failure, and `/health` gets to settle it. That is also
-   * what `spec/ui/resilience.md` § 2 actually says — `!navigator.onLine` is the
+   * `isInternetReachable === false` is suspicion, not proof — the same rule
+   * the chat outbox now inherits, because it reads this monitor (#1072).
+   * Folding it into OFFLINE would disable the check-in code field at the door
+   * for a captive-portal-ish network whose API is perfectly reachable, and
+   * `DEGRADED` must still send. A down link also suppresses the probe. One
+   * failure's worth of suspicion, and `/health` settles it. That is also what
+   * `spec/ui/resilience/connection-state.md` actually says — `!navigator.onLine` is the
    * OFFLINE clause; "intermittently failing" is DEGRADED.
    */
   function applyLink(next: ExpoNetworkState) {
     const nextOffline = next.isConnected === false;
     const unreachable = next.isInternetReachable === false;
 
-    // Reset only on a genuine offline → online **transition**. `expo-network`
-    // fires on every path update — a cell handoff, a VPN toggle, a Wi-Fi↔LTE
-    // switch — so resetting on each event meant a moving device could never
-    // accumulate three failures, and an API outage would never reach the
-    // banner at all.
+    // Do not reset the failure count on a link event. `expo-network` fires
+    // on every path update — a cell handoff, a VPN toggle, a Wi-Fi↔LTE
+    // switch — so resetting on each of those meant a moving device could
+    // never accumulate three failures. Resetting on a genuine
+    // offline→online transition is the same class of bug the web provider
+    // dropped: a link is not a reachable API, and flashing ONLINE while
+    // `/health` is still dead re-enables writes. Probe; a reachable
+    // response is what clears the count (`spec/ui/resilience/connection-state.md`).
     const cameBack = linkOffline && !nextOffline;
     linkOffline = nextOffline;
     linkFromListener = true;
-    if (cameBack) consecutiveFailures = 0;
     if (!nextOffline && unreachable) consecutiveFailures += 1;
 
     publish();
-    // A transition is exactly when the answer is most likely stale.
     if (cameBack) void probeOnce();
   }
 
@@ -162,20 +157,27 @@ export function createConnectionMonitor(
       return;
     }
 
+    const generation = ++probeGeneration;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
     try {
-      const response = await deps.fetch(url, {
-        method: "GET",
-        signal: controller.signal,
-      });
-      if (response.ok) consecutiveFailures = 0;
+      const response = await deps.fetch(
+        url,
+        withRequestIdInit({
+          method: "GET",
+          signal: controller.signal,
+        }),
+      );
+      if (generation !== probeGeneration) return;
+      if (healthProbeIsReachable(response)) consecutiveFailures = 0;
       else consecutiveFailures += 1;
     } catch {
+      if (generation !== probeGeneration) return;
       consecutiveFailures += 1;
     } finally {
       clearTimeout(timeout);
     }
+    if (generation !== probeGeneration) return;
     publish();
   }
 

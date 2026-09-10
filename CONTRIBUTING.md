@@ -13,7 +13,7 @@ feature/xyz ──PR──▶ main (staging) ──manual dispatch──▶ prod
 
 | Branch      | Purpose                    | Deployment                                                     |
 | ----------- | -------------------------- | -------------------------------------------------------------- |
-| `main`      | Integration + staging      | Every merge deploys to **Render staging**. The **Vercel half ended 2026-09-02** — `frapp-landing` unlinked from Git 2026-09-01, `frapp-web` 2026-09-02, so no merge deploys web or landing and both hosts serve frozen builds (ADR-21 in [`spec/architecture/README.md`](spec/architecture/README.md)) |
+| `main`      | Integration + staging      | Every merge deploys to **Render staging**. The **Vercel half ended 2026-09-02** — `frapp-landing` unlinked from Git 2026-09-01, `frapp-web` 2026-09-02, so no merge deploys web or landing and both hosts serve frozen builds (ADR-21 in [`spec/architecture/adr/adr-21.md`](spec/architecture/adr/adr-21.md)) |
 | `feature/*` | Short-lived feature work   | No automatic Vercel deploys; merged into `main`                 |
 | `hotfix/*`  | Emergency production fixes | Branch from `main`, PR to `main`, then deploy that commit       |
 
@@ -35,7 +35,7 @@ auto-deploy on commit, so a push to `production` deployed *without waiting for C
 workflow's green-CI gate governed only its own deploy hook, and what shipped was whatever
 happened to be at a branch tip. The dispatch takes a SHA, so the deployed artifact is an
 input rather than a race. See
-[`docs/internal/ops/DEPLOYMENT.md`](docs/internal/ops/DEPLOYMENT.md).
+[`docs/internal/ops/deployment/`](docs/internal/ops/deployment/).
 
 ---
 
@@ -72,13 +72,13 @@ else.
 
 ### Vercel deployment policy
 
-**Not live since 2026-09-02 — no push deploys either Vercel app.** Both projects are unlinked from Git (`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so `git.deploymentEnabled` governs nothing today and staging web and landing serve frozen builds. **ADR-21** in [`spec/architecture/README.md`](spec/architecture/README.md) is the canonical record; the CI-driven replacement is designed, not built ([#1578](https://github.com/pdcarlson/Frapp/issues/1578)). The rest of this section describes the settings as they remain committed.
+**Not live since 2026-09-02 — no push deploys either Vercel app.** Both projects are unlinked from Git (`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02), so `git.deploymentEnabled` governs nothing today and staging web and landing serve frozen builds. **ADR-21** in [`spec/architecture/adr/adr-21.md`](spec/architecture/adr/adr-21.md) is the canonical record; the CI-driven replacement is built ([#1578](https://github.com/pdcarlson/Frapp/issues/1578)). The rest of this section describes the settings as they remain committed.
 
 Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled` in each app's `vercel.json`. The catch-all disable rule uses `"**": false` so feature branch names containing `/` are matched correctly and skipped. **Keep both `git.deploymentEnabled` and the `ignoreCommand: "exit 1"` pin — do not delete them as dead config:** they are the versioned form of settings that revert to unversioned dashboard state if Git is ever re-linked. Production deployments are not branch-driven at all: `deploy-production.yml` creates them through the Vercel API with `target: production` for a named commit.
 
 ### AI review coverage
 
-- Code review is a **local pre-push gate**, not CI: `.claude/hooks/pre-push-review-gate.sh` blocks
+- Code review is a **local pre-push gate**, not CI. Frapp's gate is **`/diff-review`** (not Bugbot). **Cursor Cloud:** [`.cursor/hooks.json`](.cursor/hooks.json) `beforeShellExecution` with `failClosed: true` wrapping `.claude/hooks/pre-push-review-gate.sh`. **Claude Code:** `.claude/hooks/pre-push-review-gate.sh` via `.claude/settings.json`. Both block
   `git push` for a branch HEAD until that HEAD has been reviewed; agents run **`/diff-review`**,
   which writes the marker it looks for. The CI Claude review and the `claude-review-gate` required
   check were removed (2026-06-04, ADR-14 amendment). Which skill, when the bundled `/code-review`

@@ -15,7 +15,7 @@
  * These assertions are deliberately exact (key-set equality, not subset):
  * renaming, adding, or dropping a field here silently breaks push
  * suppression in production, so the test must fail loudly instead. See
- * `spec/architecture/README.md` ADR-10.
+ * `spec/architecture/adr/adr-10.md`.
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";

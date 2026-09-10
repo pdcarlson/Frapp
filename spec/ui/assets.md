@@ -1,19 +1,16 @@
 # Signet UI assets — logos, icons, Open Graph
 
-> Normative companion to [brand-identity.md](brand-identity.md). Defines the **product-owned** raster/SVG assets, where they live, how apps consume them without drift, and what is pending the Signet asset regeneration.
+> Normative companion to [brand-identity.md](brand-identity.md). Defines the **product-owned** raster/SVG assets, where they live, how apps consume them without drift, and how the locked emblem regenerates.
 
 ---
 
-## 1. Status: Signet regeneration is PENDING
+## 1. Status: locked emblem B
 
-The committed assets described below still ship the **legacy Frapp look** — the inline landing lockup follows the bone/bronze theme vars, and the static SVGs and the OG route carry older hardcoded fills. This is expected, not drift:
+The committed assets ship **locked emblem B** — gold `#DDB844` on charcoal `#1A1A1A`, neck break, treated as an abstract crest. `frapp-*` filenames, `@repo/brand-assets`, and `frapp.live` domains stay as-is in code. Prose says Signet; code cites real current names.
 
-- The Signet logo's final form is **TBD pending trademark search**; [brand-identity.md](brand-identity.md) owns the placeholder "S" mark spec.
-- Raster + OG + icon regeneration is **blocked on the final logo** and lands as one Signet asset pass once the mark clears; any tracking for it lives in GitHub Issues, not in this spec.
-- Until then, `frapp-*` filenames, `@repo/brand-assets`, and `frapp.live` domains stay as-is in code. Prose says Signet; code cites real current names.
-- Teams MUST NOT restyle the legacy assets toward Signet piecemeal — the whole set regenerates together from the final mark.
-
-The regenerated Signet app icon MUST ship with iOS **Light / Dark / Tinted** variants and an Android **monochrome** adaptive-icon layer; [brand-identity.md](brand-identity.md) owns those requirements.
+- The animal mascot (a seal, the animal) remains **not commissioned** and MUST NOT ship until the USPTO search clears; [brand-identity.md](brand-identity.md) owns that ban.
+- Teams MUST NOT restyle the locked emblem piecemeal. Replace `packages/brand-assets/assets/signet-emblem-B-locked.png`, then rasterize and sync.
+- iOS **Light / Dark / Tinted** store variants and a Play Console feature graphic are still an Ops / EAS step; this package produces the in-repo Expo rasters and Next favicons.
 
 ---
 
@@ -34,18 +31,22 @@ The product mark NEVER takes the chapter accent, and chapter accent applies insi
 
 All canonical files live in **`@repo/brand-assets`** (`packages/brand-assets/assets/`):
 
-| File               | Format            | Use                                                                    |
-| ------------------ | ----------------- | ---------------------------------------------------------------------- |
-| `app-icon.svg`     | SVG 64×64 viewBox | Favicon / app icon; **source** for synced `app/icon.svg` and Expo rasters |
-| `frapp-lockup.svg` | SVG               | Email embeds, download links, parity reference for the inline React lockup |
-
-Both files currently draw the legacy "F" mark; they are replaced in place (same filenames) by the Signet mark in the Signet asset pass (§1).
+| File                         | Format            | Use                                                                    |
+| ---------------------------- | ----------------- | ---------------------------------------------------------------------- |
+| `signet-emblem-B-locked.png` | PNG (Design lock) | **Source of truth.** Letterboxed Design raster; never regenerated from SVG |
+| `signet-emblem-B-tile.png`    | PNG 1024²        | Center-square crop used for Expo `icon.png` and in-app tiles               |
+| `icon.png`                   | PNG 32²          | Next App Router favicon source (`app/icon.png`)                           |
+| `favicon-16.png` / `32` / `48` | PNG            | Favicon sizes for Ops                                                     |
+| `apple-icon.png`             | PNG 180²         | Apple touch icon, synced into both Next apps                               |
+| `app-icon.svg`               | SVG 64×64        | Superseded reconstruction. Not the shipping mark.                         |
+| `app-icon-glyph.svg`         | SVG 64×64        | Superseded. Adaptive/splash now derive from the Design PNG.               |
+| `frapp-lockup.svg`           | SVG               | Wordmark reference only; the crest in this file is not the shipping mark.  |
 
 Requirements:
 
 - App icon MUST stay legible at 16px favicon scale.
-- Lockup MUST stay readable at ~120px width; the word uses `fill="currentColor"` when inlined so theme text colors apply.
-- Consumers MUST NOT hand-edit synced copies (`apps/*/app/icon.svg`) — edit the canonical file and re-run sync.
+- Lockup MUST stay readable at ~120px width; the word uses `fill="currentColor"` when inlined so theme text colors apply. The tile and crest stay `#1A1A1A` / `#DDB844`.
+- Consumers MUST NOT hand-edit synced copies (`apps/*/app/icon.png`) — replace the canonical PNG and re-run rasterize + sync.
 
 ---
 
@@ -53,29 +54,30 @@ Requirements:
 
 | What                                  | Path                                                                                                   |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Source SVGs                           | `packages/brand-assets/assets/app-icon.svg`, `frapp-lockup.svg`                                        |
-| Synced tab icons                      | `apps/landing/app/icon.svg`, `apps/web/app/icon.svg`                                                   |
-| Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — inline SVG; keep visually aligned with `frapp-lockup.svg`. Fills use theme CSS vars (`--brand-lockup-bg` in `@repo/theme` `globals.css`, `hsl(var(--primary))` for the mark). |
-| Landing public copy (optional embeds) | `apps/landing/public/frapp-lockup.svg` (synced for "right-click save" / docs)                          |
+| Source rasters                        | `packages/brand-assets/assets/signet-emblem-B-locked.png` (master), `signet-emblem-B-tile.png`, `icon.png`, `apple-icon.png` |
+| Synced tab icons                      | `apps/landing/app/icon.png`, `apps/web/app/icon.png`                                                   |
+| Synced Apple touch icons              | `apps/landing/app/apple-icon.png`, `apps/web/app/apple-icon.png`                                       |
+| In-app / lockup tile                | `apps/landing/public/brand/signet-emblem-B.png`, `apps/web/public/brand/signet-emblem-B.png`           |
+| Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — Design raster + Signet word. Tile/crest are `#1A1A1A` / `#DDB844`. |
 | OG image                              | `apps/landing/app/opengraph-image.tsx`                                                                 |
 
 | Command | Effect |
 | ------- | ------ |
-| `npm run sync:brand-assets` (root; runs `scripts/sync-brand-assets.mjs`) | Copies `app-icon.svg` into both Next apps' `app/icon.svg` and `frapp-lockup.svg` into `apps/landing/public/` |
-| `npm run check:brand-assets` (root; runs `scripts/check-brand-assets.mjs`) | Fails if either synced `app/icon.svg` is not byte-identical to the canonical file. Runs in CI (`.github/workflows/ci.yml`) |
+| `npm run rasterize:brand-assets` (root; runs `scripts/rasterize-brand-assets.mjs`) | Reads the Design master PNG (never overwrites it). Writes Expo rasters, favicon 16/32/48, Next `icon.png`, and `apple-icon.png`. |
+| `npm run sync:brand-assets` (root; runs `scripts/sync-brand-assets.mjs`) | Copies `icon.png`, `apple-icon.png`, and the emblem tile into both Next apps |
+| `npm run check:brand-assets` (root; runs `scripts/check-brand-assets.mjs`) | Fails if synced `app/icon.png`, `apple-icon.png`, or the emblem tile is not byte-identical to the canonical file. Runs in CI (`.github/workflows/ci.yml`) |
 
-The check covers tab icons only. The React lockup component and the public lockup copy are aligned manually via the checklist in §8.
+The check covers tab icons and Apple touch icons. The React lockup component and the public lockup copy are aligned manually via the checklist in §8.
 
 ---
 
 ## 5. Next.js behavior
 
-- **`app/icon.svg`:** App Router [file convention](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/app-icons); emitted per deployment (immutable URL with build id).
+- **`app/icon.png`:** App Router [file convention](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/app-icons); emitted per deployment (immutable URL with build id). Derived from the Design PNG.
+- **`app/apple-icon.png`:** Apple touch icon, synced from the canonical 180² raster.
 - **`opengraph-image.tsx`:** [Open Graph image](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/opengraph-image) route generating the 1200×630 card; avoids shipping a broken static `/og-image.png`.
 - Landing `metadata` in `apps/landing/app/layout.tsx` MUST reference the App Router OG route (`openGraph.images` / `twitter.images` resolve against `metadataBase`), not a static `/og-image.png`, unless that file actually exists in `public/`.
 - **OG cache:** social platforms cache preview images aggressively. After replacing the OG route, redeploy and use the platform's debugger (e.g. Slack, X card validator) to refresh.
-
-The OG route's current styling and copy are legacy Frapp; the Signet card is produced in the Signet asset pass (§1), not by editing the current route's colors.
 
 ---
 
@@ -84,7 +86,7 @@ The OG route's current styling and copy are legacy Frapp; the Signet card is pro
 No transactional email templates exist in-repo yet; this binds the first ones built.
 
 - Prefer embedding **`frapp-lockup.svg`** (from `node_modules/@repo/brand-assets/assets/` after install, or copied at build time).
-- When inlined in HTML that supports CSS, the word uses `currentColor`. A fixed word fill for clients that ignore `currentColor` is chosen with the Signet asset pass (§1) — do not carry legacy hex fills forward.
+- When inlined in HTML that supports CSS, the word uses `currentColor`. A fixed word fill for clients that ignore `currentColor` is `#1A1A1A` on light and `#DDB844` is the crest, not the word.
 - Product marks are **not** interchangeable with chapter logos from Storage.
 
 ---
@@ -93,30 +95,29 @@ No transactional email templates exist in-repo yet; this binds the first ones bu
 
 Expo requires **raster** launcher icons: `apps/mobile/app.json` references PNGs under `apps/mobile/assets/images/` (`icon.png`, `adaptive-icon.png`, `adaptive-icon-monochrome.png`, `splash-icon.png`, `favicon.png`); SVG cannot be the store icon.
 
-**State as of 2026-09-06:** the PNGs are rasters of the *current* `app-icon.svg` (the legacy Frapp "F" mark on `#0F172A`), exported with `sharp` — until then they were Expo's keyline-grid placeholders, which no store accepts. This is not the Signet pass and is not a piecemeal restyle (§1): it is the committed legacy mark made shippable. Shapes: `icon.png` 1024² opaque RGB (Apple rejects alpha); `adaptive-icon.png` and `adaptive-icon-monochrome.png` 1024² glyph-only on transparent, with the glyph well inside the 66% safe zone so launcher masks never clip it (the monochrome layer is white, for Android themed icons); `splash-icon.png` glyph-only on transparent over the `expo-splash-screen` plugin's `backgroundColor` (the top-level `splash` key is gone from the SDK 57 schema); `favicon.png` 96² for `expo start --web`. `android.adaptiveIcon.backgroundColor` is `#0F172A`, the mark's own field — it was `#ffffff`, which put a navy tile on a white disc.
+Shapes: `icon.png` 1024² opaque RGB (Apple rejects alpha); `adaptive-icon.png` and `adaptive-icon-monochrome.png` 1024² glyph-only on transparent, with the glyph well inside the 66% safe zone so launcher masks never clip it (the monochrome layer is white, for Android themed icons); `splash-icon.png` glyph-only on transparent over the `expo-splash-screen` plugin's `backgroundColor`; `favicon.png` 96² for `expo start --web`. `android.adaptiveIcon.backgroundColor` is `#1A1A1A`, the mark's own field.
 
-After the master mark changes (the Signet pass):
+After the master PNG changes:
 
-1. Export PNGs at the required sizes from `app-icon.svg` (design tool or CLI rasterizer — `sharp` is already a dependency and was what produced the current set).
-2. Replace `icon.png`, `adaptive-icon.png`, `adaptive-icon-monochrome.png`, `splash-icon.png`, `favicon.png` as needed.
-3. Keep the `expo-splash-screen` plugin's `backgroundColor` and `android.adaptiveIcon.backgroundColor` in `app.json` consistent with product surfaces, and add the iOS Light/Dark/Tinted variants (§1).
+1. Run `npm run rasterize:brand-assets` then `npm run sync:brand-assets`.
+2. Keep the `expo-splash-screen` plugin's `backgroundColor` and `android.adaptiveIcon.backgroundColor` in `app.json` consistent with the mark field.
+3. iOS Light / Dark / Tinted store variants remain an Ops / EAS upload.
 
 ---
 
 ## 8. Update procedure
 
-1. Edit SVGs only under `packages/brand-assets/assets/`.
-2. Run `npm run sync:brand-assets` from the repo root.
-3. Align `apps/landing/components/frapp-lockup.tsx` with `frapp-lockup.svg` if the lockup geometry changed.
-4. Regenerate Expo rasters if the mark changed (§7).
-5. Run `npm run check:brand-assets` (root) before PR.
+1. Replace `packages/brand-assets/assets/signet-emblem-B-locked.png` with Design's lock (do not regenerate it from SVG).
+2. Run `npm run rasterize:brand-assets` then `npm run sync:brand-assets` from the repo root.
+3. Align `apps/landing/components/frapp-lockup.tsx` and `apps/web/components/auth/signet-mark.tsx` if the in-app tile path changed.
+4. Run `npm run check:brand-assets` (root) before PR.
 
 ---
 
 ## 9. Anti-patterns
 
-- Hand-editing `apps/*/app/icon.svg` — CI check fails on drift.
+- Hand-editing `apps/*/app/icon.png` — CI check fails on drift.
 - Duplicated "slightly different" icons per app.
 - Chapter logo on the marketing homepage header, or the product mark painted with a chapter accent ([brand-identity.md](brand-identity.md)).
 - `og:image` pointing at a missing file (404 hurts crawlers and previews).
-- Restyling individual legacy assets toward Signet ahead of the final logo (§1).
+- Restyling the locked emblem toward a new mark without replacing the canonical PNG first (§1).

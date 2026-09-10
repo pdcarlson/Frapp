@@ -255,7 +255,8 @@ writing a screen. The constraints below are the ones most often violated by web 
   `@repo/theme/signet` — there is no light/dark preference, no `resolvedTheme`, and no
   `useColorScheme` in the theme layer. Provider chain (outer→inner): `GestureHandlerRootView` >
   `SafeAreaProvider` > `FrappThemeProvider` > `AuthSessionProvider` > `FrappProvider` >
-  `AnalyticsProvider` > `KeyboardProviderGuarded` > `BottomSheetModalProvider`.
+  `ObservabilityIdentityProvider` > `AnalyticsProvider` > `KeyboardProviderGuarded` >
+  `BottomSheetModalProvider`.
 - **No raw hex in screen code, no hand-set type.** Colors come from the Signet tokens; type is set
   only through `typeRole(tokens.typography.role.X)` (which carries the per-weight Figtree family —
   `fontSize`/`fontWeight` literals or arithmetic on a role token are defects). Semantic fills use
@@ -312,7 +313,7 @@ Pattern:
 ```text
 QueryProvider (TanStack Query)
   └─ FrappProvider (API client with Supabase auth token + chapter ID)
-       └─ SentryIdentityProvider (Sentry user identity — renders no UI)
+       └─ ObservabilityIdentityProvider (PostHog identify/groups + Sentry user — renders no UI)
             └─ AnalyticsProvider (product analytics)
                  └─ NetworkProvider (online/offline state)
                       └─ App content

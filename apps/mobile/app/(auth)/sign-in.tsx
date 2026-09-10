@@ -1,7 +1,13 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { AuthMethod, useAuthSession } from "@/lib/auth-session";
+import {
+  describeOAuthKickoffError,
+  OAUTH_MEMBERSHIP_HINT,
+  type OAuthProvider,
+} from "@/lib/auth-providers";
+import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -19,13 +25,14 @@ function toAuthErrorMessage(error: unknown): string {
 export default function SignIn() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const { callbackError, isConfigured, sendMagicLink, signInWithPassword, status } =
+  const { callbackError, isConfigured, sendMagicLink, signInWithOAuthProvider, signInWithPassword, status } =
     useAuthSession();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authMode, setAuthMode] = useState<AuthMethod>("password");
   const [submitting, setSubmitting] = useState(false);
+  const [oauthPending, setOauthPending] = useState<OAuthProvider | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [magicLinkSentTo, setMagicLinkSentTo] = useState<string | null>(null);
 
@@ -74,15 +81,33 @@ export default function SignIn() {
     }
   }
 
+  async function handleOAuth(provider: OAuthProvider) {
+    setSubmitting(true);
+    setOauthPending(provider);
+    setAuthError(null);
+    setMagicLinkSentTo(null);
+
+    try {
+      await signInWithOAuthProvider(provider);
+    } catch (error) {
+      setAuthError(describeOAuthKickoffError(error));
+    } finally {
+      setSubmitting(false);
+      setOauthPending(null);
+    }
+  }
+
   return (
     <View style={styles.container}>
-      <View
+      <Image
+        // Metro asset id. This app has no `*.png` module declaration, so a
+        // static ESM import fails `tsc` (TS2307) even though Metro is fine.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source={require("../../assets/images/icon.png")}
         style={styles.mark}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-      >
-        <Text style={styles.markGlyph}>S</Text>
-      </View>
+      />
       <Text style={styles.title}>Signet</Text>
       <Text style={styles.subtitle}>Ask your chapter anything.</Text>
       <View style={styles.card}>
@@ -92,6 +117,56 @@ export default function SignIn() {
           automatically; if yours belongs to more than one, you will pick after
           signing in.
         </Text>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: submitting }}
+          disabled={submitting}
+          onPress={() => {
+            void handleOAuth("apple");
+          }}
+          style={[
+            styles.oauthButton,
+            submitting ? styles.primaryButtonDisabled : null,
+          ]}
+        >
+          {oauthPending === "apple" ? (
+            <ActivityIndicator color={tokens.color.text.foreground} size="small" />
+          ) : (
+            <AppleMark color={tokens.color.text.foreground} />
+          )}
+          <Text style={styles.oauthButtonText}>
+            {oauthPending === "apple" ? "Signing in..." : "Continue with Apple"}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: submitting }}
+          disabled={submitting}
+          onPress={() => {
+            void handleOAuth("google");
+          }}
+          style={[
+            styles.oauthButton,
+            submitting ? styles.primaryButtonDisabled : null,
+          ]}
+        >
+          {oauthPending === "google" ? (
+            <ActivityIndicator color={tokens.color.text.foreground} size="small" />
+          ) : (
+            <GoogleMark />
+          )}
+          <Text style={styles.oauthButtonText}>
+            {oauthPending === "google" ? "Signing in..." : "Continue with Google"}
+          </Text>
+        </Pressable>
+        <Text style={styles.helperText}>{OAUTH_MEMBERSHIP_HINT}</Text>
+
+        <View style={styles.orRow}>
+          <View style={styles.orRule} />
+          <Text style={styles.orLabel}>or</Text>
+          <View style={styles.orRule} />
+        </View>
 
         <Text style={styles.inputLabel}>Chapter email</Text>
         <TextInput
@@ -221,24 +296,14 @@ function createStyles(tokens: SignetTokens) {
       padding: tokens.spacing.xl,
       backgroundColor: tokens.color.surface.background,
     },
-    // brand-identity.md §2: the placeholder mark is a house-gold rounded-square
-    // tile carrying a bold "S". s01 draws it at 52px on radius 14 — `radius.card`
-    // is exactly 14, so this stays token-only. House gold, never the chapter
-    // accent: the mark MUST NOT take a chapter's colour.
+    // brand-identity.md §2: locked emblem B, 52px on radius 14 (`radius.card`).
+    // Raster of the canonical tile — never chapter accent.
     mark: {
       width: 52,
       height: 52,
       borderRadius: tokens.radius.card,
-      backgroundColor: tokens.color.gold.house,
-      alignItems: "center",
-      justifyContent: "center",
+      overflow: "hidden",
       marginBottom: tokens.spacing.lg,
-    },
-    markGlyph: {
-      // Sized off the tile, not the type ladder: this is a drawn mark, not text.
-      fontSize: 27,
-      fontWeight: "700",
-      color: tokens.color.gold.onHouse,
     },
     title: {
       ...typeRole(tokens.typography.role.display),
@@ -269,6 +334,38 @@ function createStyles(tokens: SignetTokens) {
       marginTop: tokens.spacing.sm,
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
+    },
+    oauthButton: {
+      marginTop: tokens.spacing.md,
+      borderRadius: tokens.radius.control,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingVertical: tokens.spacing.md,
+      minHeight: tokens.touch.button,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: tokens.spacing.sm,
+    },
+    oauthButtonText: {
+      color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.label),
+    },
+    orRow: {
+      marginTop: tokens.spacing.lg,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
+    orRule: {
+      flex: 1,
+      height: 1,
+      backgroundColor: tokens.color.border.hairline,
+    },
+    orLabel: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
     },
     inputLabel: {
       marginTop: tokens.spacing.md,

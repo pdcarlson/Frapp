@@ -18,8 +18,8 @@
  * `DashboardShell` (`components/layout/dashboard-shell.tsx`) and every route
  * here renders outside it, so the accent engine never runs and `--primary`
  * holds `signet.css`'s baked default seed. That is fine for `Button`, whose
- * default variant is the same gold s01 draws — but the *mark* takes
- * `--gold-house` explicitly, per `signet-mark.tsx`.
+ * default variant is the same gold s01 draws — but the *mark* paints locked
+ * emblem B (`#1A1A1A` / `#DDB844`) rather than `--primary`, per `signet-mark.tsx`.
  *
  * Type roles, mapped from the drawings onto `foundations.md` §7's ladder rather
  * than transcribed as pixel values (§7 locks the scale and calls an off-scale

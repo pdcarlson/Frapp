@@ -26,6 +26,34 @@ function restoreSalt(priorSalt: string | undefined): void {
   }
 }
 
+const POSTGREST_DETAILS =
+  'Key (email)=(alice@example.com) is not present in table "users".';
+
+function postgrestBody(): {
+  code: string;
+  message: string;
+  hint: string;
+  details: string;
+} {
+  return {
+    code: '23505',
+    message:
+      'duplicate key value violates unique constraint "chapters_stripe_customer_id_key"',
+    hint: 'Use a different customer.',
+    details: POSTGREST_DETAILS,
+  };
+}
+
+function loggerPrinted(spy: jest.SpyInstance): string {
+  return spy.mock.calls
+    .map((args) =>
+      args
+        .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
+        .join('\n'),
+    )
+    .join('\n');
+}
+
 import { BillingService } from './billing.service';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { BILLING_PROVIDER } from '#domain/adapters/billing.interface';
@@ -34,7 +62,10 @@ import type {
   WebhookEvent,
 } from '#domain/adapters/billing.interface';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
+import type {
+  IChapterRepository,
+  SubscriptionWebhookPatch,
+} from '#domain/repositories/chapter.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
@@ -136,7 +167,10 @@ describe('BillingService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
   let mockFinancialInvoiceService: jest.Mocked<
-    Pick<FinancialInvoiceService, 'applyStripePaymentSuccess'>
+    Pick<
+      FinancialInvoiceService,
+      'applyStripePaymentSuccess' | 'notifyStripePaymentFailure'
+    >
   >;
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let webhookEventStore: Map<string, WebhookEventRow>;
@@ -190,9 +224,36 @@ describe('BillingService', () => {
 
     mockChapterRepo = {
       findById: jest.fn(),
+      findByIds: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
+      applySubscriptionWebhook: jest
+        .fn()
+        .mockImplementation(
+          async (
+            id: string,
+            eventAt: string,
+            patch: SubscriptionWebhookPatch,
+          ) => ({
+            ...baseChapter,
+            id,
+            last_stripe_webhook_at: eventAt,
+            ...(patch.subscription_status !== undefined
+              ? { subscription_status: patch.subscription_status }
+              : {}),
+            ...(patch.past_due_since !== undefined
+              ? { past_due_since: patch.past_due_since }
+              : {}),
+            ...(patch.subscription_id !== undefined
+              ? { subscription_id: patch.subscription_id }
+              : {}),
+            ...(patch.stripe_customer_id !== undefined
+              ? { stripe_customer_id: patch.stripe_customer_id }
+              : {}),
+            previous_subscription_status: baseChapter.subscription_status,
+          }),
+        ),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -227,6 +288,7 @@ describe('BillingService', () => {
 
     mockFinancialInvoiceService = {
       applyStripePaymentSuccess: jest.fn().mockResolvedValue(undefined),
+      notifyStripePaymentFailure: jest.fn().mockResolvedValue(undefined),
     };
 
     mockActivation = { record: jest.fn().mockResolvedValue(true) };
@@ -398,6 +460,41 @@ describe('BillingService', () => {
       );
     });
 
+    it('does not log PostgREST details when persisting the Stripe customer fails', async () => {
+      const chapterNoCustomer = {
+        ...baseChapter,
+        stripe_customer_id: null,
+      };
+      mockChapterRepo.findById.mockResolvedValue(chapterNoCustomer);
+      mockBillingProvider.createCustomer.mockResolvedValue('cus_new');
+      mockChapterRepo.update.mockRejectedValue(postgrestBody());
+      const errorSpy = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+
+      try {
+        await expect(
+          service.createCheckoutSession({
+            chapterId: 'ch-1',
+            customerEmail: 'admin@example.com',
+            successUrl: 'http://localhost:3000/success',
+            cancelUrl: 'http://localhost:3000/cancel',
+          }),
+        ).rejects.toThrow(ServiceUnavailableException);
+
+        expect(errorSpy).toHaveBeenCalled();
+        const printed = loggerPrinted(errorSpy);
+        expect(printed).toContain('Failed to create checkout session');
+        expect(printed).toContain('23505');
+        expect(printed).not.toContain('alice@example.com');
+        expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(
+          true,
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
     it('refuses checkout for a past_due chapter and points at the portal (#929)', async () => {
       // The double-subscription hole. `past_due` is a *live* subscription in
       // dunning, so a second checkout bills the chapter twice and orphans the
@@ -542,8 +639,7 @@ describe('BillingService', () => {
     ).rejects.toThrow(ServiceUnavailableException);
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      'Failed to create checkout session for chapter ch-1',
-      stripeError,
+      'Failed to create checkout session for chapter ch-1: Some string error',
     );
 
     loggerErrorSpy.mockRestore();
@@ -614,7 +710,7 @@ describe('BillingService', () => {
       ).rejects.toThrow(ServiceUnavailableException);
 
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Failed to create portal session for chapter ch-1',
+        'Failed to create portal session for chapter ch-1: Stripe is down',
         stripeError.stack,
       );
 
@@ -640,11 +736,38 @@ describe('BillingService', () => {
     ).rejects.toThrow(ServiceUnavailableException);
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      'Failed to create portal session for chapter ch-1',
-      stripeError,
+      'Failed to create portal session for chapter ch-1: Some string error',
     );
 
     loggerErrorSpy.mockRestore();
+  });
+
+  it('does not log PostgREST details when the portal provider throws a plain object', async () => {
+    mockChapterRepo.findById.mockResolvedValue(baseChapter);
+    mockBillingProvider.createCustomerPortalSession.mockRejectedValue(
+      postgrestBody(),
+    );
+    const errorSpy = jest
+      .spyOn(service['logger'], 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      await expect(
+        service.createPortalSession({
+          chapterId: 'ch-1',
+          returnUrl: 'http://localhost:3000/billing',
+        }),
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      expect(errorSpy).toHaveBeenCalled();
+      const printed = loggerPrinted(errorSpy);
+      expect(printed).toContain('Failed to create portal session');
+      expect(printed).toContain('23505');
+      expect(printed).not.toContain('alice@example.com');
+      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   describe('handleWebhookEvent', () => {
@@ -672,18 +795,21 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...chapter,
         subscription_status: 'incomplete',
       });
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-        subscription_status: 'incomplete',
-        past_due_since: null,
-        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
-      });
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+        'ch-1',
+        new Date(event.created * 1000).toISOString(),
+        {
+          subscription_status: 'incomplete',
+          past_due_since: null,
+        },
+      );
     });
 
     it('should map incomplete_expired to canceled', async () => {
@@ -705,18 +831,21 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...chapter,
         subscription_status: 'canceled',
       });
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-        subscription_status: 'canceled',
-        past_due_since: null,
-        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
-      });
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+        'ch-1',
+        new Date(event.created * 1000).toISOString(),
+        {
+          subscription_status: 'canceled',
+          past_due_since: null,
+        },
+      );
     });
 
     it('should map unpaid to past_due', async () => {
@@ -738,19 +867,19 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...chapter,
         subscription_status: 'past_due',
       });
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledWith(
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
         'ch-1',
+        expect.any(String),
         expect.objectContaining({
           subscription_status: 'past_due',
           past_due_since: expect.any(String),
-          last_stripe_webhook_at: expect.any(String),
         }),
       );
     });
@@ -826,7 +955,7 @@ describe('BillingService', () => {
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
       await service.handleWebhookEvent(event);
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
 
     // #1738. An unresolvable subscription stays at `warn` and raises no Sentry
@@ -868,7 +997,7 @@ describe('BillingService', () => {
         },
       };
       await service.handleWebhookEvent(event);
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
 
     it('should ignore invoice.paid for non-existent chapter', async () => {
@@ -884,10 +1013,10 @@ describe('BillingService', () => {
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
       await service.handleWebhookEvent(event);
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
 
-    it('should fall back to chapter properties if session properties are null', async () => {
+    it('omits checkout identity keys when the session has no subscription or customer (#731)', async () => {
       const event = {
         id: 'evt_null_properties',
         type: 'checkout.session.completed',
@@ -907,16 +1036,17 @@ describe('BillingService', () => {
         stripe_customer_id: 'cus_existing',
       };
       mockChapterRepo.findById.mockResolvedValue(chapter);
-      mockChapterRepo.update.mockResolvedValue(chapter);
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(chapter);
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledWith(CHECKOUT_CHAPTER_ID, {
-        subscription_status: 'active',
-        subscription_id: 'sub_existing',
-        stripe_customer_id: 'cus_existing',
-        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
-      });
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+        CHECKOUT_CHAPTER_ID,
+        new Date(event.created * 1000).toISOString(),
+        {
+          subscription_status: 'active',
+        },
+      );
     });
 
     it('should ignore notification error', async () => {
@@ -937,9 +1067,10 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -1011,7 +1142,7 @@ describe('BillingService', () => {
         expect(mockChapterRepo.findById).toHaveBeenCalledWith(
           MISSING_CHAPTER_ID,
         );
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
       });
 
       it('acks the event so Stripe stops redelivering it', async () => {
@@ -1194,7 +1325,7 @@ describe('BillingService', () => {
       ).resolves.not.toThrow();
 
       expect(mockChapterRepo.findById).not.toHaveBeenCalled();
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
       expect(loggerWarnSpy).toHaveBeenCalledWith(
         expect.stringContaining('non-UUID chapter_id'),
       );
@@ -1214,7 +1345,7 @@ describe('BillingService', () => {
         },
       };
       await service.handleWebhookEvent(event);
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
 
     it('should ignore customer.subscription.updated missing subscription status', async () => {
@@ -1230,7 +1361,7 @@ describe('BillingService', () => {
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(baseChapter);
       await service.handleWebhookEvent(event);
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
 
     it('should ignore customer.subscription.updated with unknown Stripe status', async () => {
@@ -1247,7 +1378,7 @@ describe('BillingService', () => {
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(baseChapter);
       await service.handleWebhookEvent(event);
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
 
     it('should ignore customer.subscription.deleted missing subscription id', async () => {
@@ -1260,7 +1391,7 @@ describe('BillingService', () => {
         },
       };
       await service.handleWebhookEvent(event);
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
 
     it('should activate chapter on checkout.session.completed', async () => {
@@ -1278,7 +1409,7 @@ describe('BillingService', () => {
       };
 
       mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...checkoutChapter,
         subscription_status: 'active',
         subscription_id: 'sub_123',
@@ -1286,12 +1417,15 @@ describe('BillingService', () => {
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledWith(CHECKOUT_CHAPTER_ID, {
-        subscription_status: 'active',
-        subscription_id: 'sub_123',
-        stripe_customer_id: 'cus_123',
-        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
-      });
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+        CHECKOUT_CHAPTER_ID,
+        new Date(event.created * 1000).toISOString(),
+        {
+          subscription_status: 'active',
+          subscription_id: 'sub_123',
+          stripe_customer_id: 'cus_123',
+        },
+      );
       // Activation funnel step 7 (#267) — the conversion itself.
       expect(mockActivation.record).toHaveBeenCalledWith(
         CHECKOUT_CHAPTER_ID,
@@ -1327,7 +1461,7 @@ describe('BillingService', () => {
         ...checkoutChapter,
         subscription_id: 'sub_old',
       });
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...checkoutChapter,
         subscription_status: 'active',
         subscription_id: 'sub_new',
@@ -1342,8 +1476,9 @@ describe('BillingService', () => {
       expect(logged).toContain('sub_new');
 
       // Still applied — the live subscription is the one that must be stored.
-      expect(mockChapterRepo.update).toHaveBeenCalledWith(
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
         CHECKOUT_CHAPTER_ID,
+        expect.any(String),
         expect.objectContaining({ subscription_id: 'sub_new' }),
       );
 
@@ -1374,7 +1509,7 @@ describe('BillingService', () => {
         ...checkoutChapter,
         subscription_id: 'sub_same',
       });
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...checkoutChapter,
         subscription_status: 'active',
         subscription_id: 'sub_same',
@@ -1422,7 +1557,7 @@ describe('BillingService', () => {
       };
 
       mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...checkoutChapter,
         subscription_status: 'active',
       });
@@ -1430,7 +1565,7 @@ describe('BillingService', () => {
       await service.handleWebhookEvent(event);
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(1);
     });
 
     it('should handle checkout with missing chapter_id gracefully', async () => {
@@ -1448,7 +1583,7 @@ describe('BillingService', () => {
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
 
     it('should update subscription status on customer.subscription.updated', async () => {
@@ -1470,19 +1605,20 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledWith(
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
         'ch-1',
+        expect.any(String),
         expect.objectContaining({
           subscription_status: 'past_due',
           past_due_since: expect.any(String),
-          last_stripe_webhook_at: expect.any(String),
         }),
       );
     });
@@ -1505,18 +1641,22 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-        subscription_status: 'canceled',
-        past_due_since: null,
-        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
-      });
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+        'ch-1',
+        new Date(event.created * 1000).toISOString(),
+        {
+          subscription_status: 'canceled',
+          past_due_since: null,
+        },
+      );
     });
 
     it('should reactivate past_due chapter on invoice.paid', async () => {
@@ -1537,18 +1677,58 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(pastDueChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...pastDueChapter,
         subscription_status: 'active',
       });
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-        subscription_status: 'active',
-        past_due_since: null,
-        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
-      });
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+        'ch-1',
+        new Date(event.created * 1000).toISOString(),
+        {
+          activate_if: ['past_due', 'incomplete'],
+        },
+      );
+    });
+
+    it('does not send an unconditional active patch on invoice.paid for a canceled chapter (#731)', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_invoice_paid_canceled',
+        type: 'invoice.paid',
+        created: Date.now(),
+        data: {
+          object: {
+            subscription: 'sub_123',
+          },
+        },
+      };
+
+      const canceledChapter = {
+        ...baseChapter,
+        subscription_status: 'canceled' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(canceledChapter);
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(
+        canceledChapter,
+      );
+
+      await service.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+        'ch-1',
+        new Date(event.created * 1000).toISOString(),
+        {
+          activate_if: ['past_due', 'incomplete'],
+        },
+      );
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalledWith(
+        'ch-1',
+        expect.any(String),
+        expect.objectContaining({ subscription_status: 'active' }),
+      );
     });
 
     it('advances the mark without changing status on invoice.paid for an active chapter', async () => {
@@ -1569,14 +1749,19 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockChapterRepo.update.mockResolvedValue(activeChapter);
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(activeChapter);
 
       await service.handleWebhookEvent(event);
 
       // FRA-242: a renewal payment advances the ordering mark but leaves status.
-      expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
-      });
+      // `activate_if` is a no-op on `active`; the RPC still stamps the mark.
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+        'ch-1',
+        new Date(event.created * 1000).toISOString(),
+        {
+          activate_if: ['past_due', 'incomplete'],
+        },
+      );
     });
 
     describe('past_due grace clock (FRA-109)', () => {
@@ -1598,21 +1783,24 @@ describe('BillingService', () => {
           subscription_id: 'sub_123',
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-        mockChapterRepo.update.mockResolvedValue(activeChapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(
+          activeChapter,
+        );
 
         await service.handleWebhookEvent(pastDueEvent('evt_pd_stamp'));
 
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'past_due',
-          // Anchored to event.created (seconds), not processing time.
-          past_due_since: new Date(CREATED_SECONDS * 1000).toISOString(),
-          last_stripe_webhook_at: new Date(
-            CREATED_SECONDS * 1000,
-          ).toISOString(),
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          new Date(CREATED_SECONDS * 1000).toISOString(),
+          {
+            subscription_status: 'past_due',
+            // Anchored to event.created (seconds), not processing time.
+            past_due_since: new Date(CREATED_SECONDS * 1000).toISOString(),
+          },
+        );
       });
 
-      it('does not reset past_due_since on a repeated past_due event', async () => {
+      it('still sends past_due_since on a repeated past_due; the RPC keeps the clock', async () => {
         const pastDueChapter = {
           ...baseChapter,
           subscription_status: 'past_due' as const,
@@ -1620,18 +1808,23 @@ describe('BillingService', () => {
           past_due_since: '2026-05-30T12:00:00.000Z',
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(pastDueChapter);
-        mockChapterRepo.update.mockResolvedValue(pastDueChapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+          ...pastDueChapter,
+          previous_subscription_status: 'past_due',
+        });
 
         await service.handleWebhookEvent(pastDueEvent('evt_pd_repeat'));
 
-        // No past_due_since key in the payload -> the grace clock is untouched,
-        // but the ordering high-water mark still advances (FRA-242).
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'past_due',
-          last_stripe_webhook_at: new Date(
-            CREATED_SECONDS * 1000,
-          ).toISOString(),
-        });
+        // The handler always sends a stamp; the RPC no-ops it when the live
+        // row is already past_due, so the grace clock is untouched.
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          new Date(CREATED_SECONDS * 1000).toISOString(),
+          {
+            subscription_status: 'past_due',
+            past_due_since: new Date(CREATED_SECONDS * 1000).toISOString(),
+          },
+        );
       });
 
       it('clears past_due_since when recovering to active via subscription.updated', async () => {
@@ -1648,15 +1841,20 @@ describe('BillingService', () => {
           past_due_since: '2026-05-30T12:00:00.000Z',
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(pastDueChapter);
-        mockChapterRepo.update.mockResolvedValue(pastDueChapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(
+          pastDueChapter,
+        );
 
         await service.handleWebhookEvent(event);
 
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'active',
-          past_due_since: null,
-          last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          new Date(event.created * 1000).toISOString(),
+          {
+            subscription_status: 'active',
+            past_due_since: null,
+          },
+        );
       });
     });
 
@@ -1706,7 +1904,7 @@ describe('BillingService', () => {
 
         await service.handleWebhookEvent(subUpdated('canceled', T_OLD));
 
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
       });
 
@@ -1718,17 +1916,24 @@ describe('BillingService', () => {
           last_stripe_webhook_at: OLD_ISO,
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
-        mockChapterRepo.update.mockResolvedValue(chapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+          ...chapter,
+          subscription_status: 'past_due',
+          previous_subscription_status: 'active',
+        });
         mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
         mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
         await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
 
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'past_due',
-          past_due_since: NEW_ISO,
-          last_stripe_webhook_at: NEW_ISO,
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          NEW_ISO,
+          {
+            subscription_status: 'past_due',
+            past_due_since: NEW_ISO,
+          },
+        );
         expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
       });
 
@@ -1740,15 +1945,18 @@ describe('BillingService', () => {
           last_stripe_webhook_at: null,
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
-        mockChapterRepo.update.mockResolvedValue(chapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(chapter);
 
         await service.handleWebhookEvent(subUpdated('canceled', T_NEW));
 
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'canceled',
-          past_due_since: null,
-          last_stripe_webhook_at: NEW_ISO,
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          NEW_ISO,
+          {
+            subscription_status: 'canceled',
+            past_due_since: null,
+          },
+        );
       });
 
       it('advances the mark but does not notify when status is unchanged (AC #4)', async () => {
@@ -1760,20 +1968,27 @@ describe('BillingService', () => {
           last_stripe_webhook_at: OLD_ISO,
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
-        mockChapterRepo.update.mockResolvedValue(chapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
+          ...chapter,
+          previous_subscription_status: 'past_due',
+        });
         // Mock a reachable president so the no-notify assertion below actually
-        // exercises the statusChanged gate (not just a missing-role early return).
+        // exercises the committed-row gate (not just a missing-role early return).
         mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
         mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
         await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
 
-        // Still past_due: the grace clock is untouched and the president is not
-        // re-notified — only the ordering mark moves forward.
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'past_due',
-          last_stripe_webhook_at: NEW_ISO,
-        });
+        // Still past_due: the RPC keeps the clock (already past_due) and the
+        // president is not re-notified — only the ordering mark moves forward.
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          NEW_ISO,
+          {
+            subscription_status: 'past_due',
+            past_due_since: NEW_ISO,
+          },
+        );
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
       });
 
@@ -1793,7 +2008,7 @@ describe('BillingService', () => {
           data: { object: { id: 'sub_123' } },
         });
 
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
       });
 
@@ -1813,13 +2028,13 @@ describe('BillingService', () => {
           data: { object: { subscription: 'sub_123' } },
         });
 
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
       });
 
       it('advances the high-water mark on checkout.session.completed', async () => {
         const chapter = { ...checkoutChapter, last_stripe_webhook_at: null };
         mockChapterRepo.findById.mockResolvedValue(chapter);
-        mockChapterRepo.update.mockResolvedValue(chapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(chapter);
 
         await service.handleWebhookEvent({
           id: 'evt_checkout_mark',
@@ -1834,13 +2049,13 @@ describe('BillingService', () => {
           },
         });
 
-        expect(mockChapterRepo.update).toHaveBeenCalledWith(
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
           CHECKOUT_CHAPTER_ID,
+          NEW_ISO,
           {
             subscription_status: 'active',
             subscription_id: 'sub_123',
             stripe_customer_id: 'cus_123',
-            last_stripe_webhook_at: NEW_ISO,
           },
         );
       });
@@ -1869,7 +2084,7 @@ describe('BillingService', () => {
 
         // A redelivered/late checkout must not re-activate a chapter Stripe has
         // since moved past — the drop path of the checkout guard.
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
       });
 
       it('drops a later-delivered, earlier-created dunning event after a renewal advanced the mark', async () => {
@@ -1887,7 +2102,9 @@ describe('BillingService', () => {
         mockChapterRepo.findBySubscriptionId
           .mockResolvedValueOnce(activeChapter)
           .mockResolvedValueOnce(afterRenewal);
-        mockChapterRepo.update.mockResolvedValue(activeChapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(
+          activeChapter,
+        );
 
         // 1) renewal invoice.paid at T_NEW advances the mark without changing status.
         await service.handleWebhookEvent({
@@ -1896,15 +2113,196 @@ describe('BillingService', () => {
           created: T_NEW,
           data: { object: { subscription: 'sub_123' } },
         });
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          last_stripe_webhook_at: NEW_ISO,
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          NEW_ISO,
+          {
+            activate_if: ['past_due', 'incomplete'],
+          },
+        );
 
         // 2) a past_due event CREATED before the payment but delivered after it
         //    must be dropped — this is the guarantee the renewal mark-advance buys.
-        mockChapterRepo.update.mockClear();
+        mockChapterRepo.applySubscriptionWebhook.mockClear();
         await service.handleWebhookEvent(subUpdated('past_due', T_OLD));
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
+      });
+
+      it('newer status wins when two deliveries interleave, regardless of commit order (#731)', async () => {
+        // Both handlers read the same starting chapter (null mark), so
+        // `isStaleWebhook` lets both through. The mock CAS is the in-process
+        // stand-in for `apply_subscription_webhook`: an older event that
+        // commits after a newer one updates zero rows.
+        const start = {
+          ...baseChapter,
+          subscription_status: 'active' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: null,
+        };
+
+        const casApply = (stored: {
+          at: string | null;
+          status: Chapter['subscription_status'];
+        }) => {
+          mockChapterRepo.findBySubscriptionId.mockResolvedValue({ ...start });
+          mockChapterRepo.applySubscriptionWebhook.mockImplementation(
+            async (_id, eventAt, patch) => {
+              if (stored.at && Date.parse(stored.at) > Date.parse(eventAt)) {
+                return null;
+              }
+              const previous = stored.status;
+              stored.at = eventAt;
+              if (patch.subscription_status !== undefined) {
+                stored.status = patch.subscription_status;
+              }
+              return {
+                ...start,
+                subscription_status: stored.status,
+                last_stripe_webhook_at: eventAt,
+                previous_subscription_status: previous,
+              };
+            },
+          );
+        };
+
+        const run = async (order: 'old-first' | 'new-first') => {
+          const stored: {
+            at: string | null;
+            status: Chapter['subscription_status'];
+          } = {
+            at: null,
+            status: start.subscription_status,
+          };
+          casApply(stored);
+          mockNotificationService.notifyUser.mockClear();
+          mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+            presidentRole,
+          );
+          mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
+
+          const older = {
+            ...subUpdated('past_due', T_OLD),
+            id: `evt_cas_old_${order}`,
+          };
+          const newer = {
+            ...subUpdated('canceled', T_NEW),
+            id: `evt_cas_new_${order}`,
+          };
+          if (order === 'old-first') {
+            await service.handleWebhookEvent(older);
+            await service.handleWebhookEvent(newer);
+          } else {
+            await service.handleWebhookEvent(newer);
+            await service.handleWebhookEvent(older);
+          }
+
+          expect(stored.status).toBe('canceled');
+          expect(stored.at).toBe(NEW_ISO);
+          if (order === 'new-first') {
+            // Older lost the CAS — must not notify for a status that did not land.
+            expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
+            expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+              'user-pres',
+              'ch-1',
+              expect.objectContaining({
+                body: 'Your chapter subscription is now canceled',
+              }),
+            );
+          }
+        };
+
+        await run('old-first');
+        await run('new-first');
+      });
+
+      it('does not notify the president when apply_subscription_webhook loses the CAS (#731)', async () => {
+        const chapter = {
+          ...baseChapter,
+          subscription_status: 'active' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: null,
+        };
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(null);
+        mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
+        mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
+
+        await service.handleWebhookEvent({
+          ...subUpdated('canceled', T_NEW),
+          id: 'evt_cas_lost_notify',
+        });
+
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('notifies the president once when two concurrent past_due events both read active (#1979)', async () => {
+        // Both handlers snapshot the chapter as active. The first write is the
+        // into-past_due transition; the second wins the time CAS (newer or
+        // same-second) but the committed row is already past_due, so it must
+        // not send a second URGENT alert.
+        const start = {
+          ...baseChapter,
+          subscription_status: 'active' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: null,
+        };
+
+        const run = async (secondCreated: number) => {
+          const stored: {
+            at: string | null;
+            status: Chapter['subscription_status'];
+          } = {
+            at: null,
+            status: start.subscription_status,
+          };
+          mockChapterRepo.findBySubscriptionId.mockResolvedValue({ ...start });
+          mockChapterRepo.applySubscriptionWebhook.mockImplementation(
+            async (_id, eventAt, patch) => {
+              if (stored.at && Date.parse(stored.at) > Date.parse(eventAt)) {
+                return null;
+              }
+              const previous = stored.status;
+              stored.at = eventAt;
+              if (patch.subscription_status !== undefined) {
+                stored.status = patch.subscription_status;
+              }
+              return {
+                ...start,
+                subscription_status: stored.status,
+                last_stripe_webhook_at: eventAt,
+                previous_subscription_status: previous,
+              };
+            },
+          );
+          mockNotificationService.notifyUser.mockClear();
+          mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+            presidentRole,
+          );
+          mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
+
+          await service.handleWebhookEvent({
+            ...subUpdated('past_due', T_OLD),
+            id: `evt_cas_pd_first_${secondCreated}`,
+          });
+          await service.handleWebhookEvent({
+            ...subUpdated('past_due', secondCreated),
+            id: `evt_cas_pd_second_${secondCreated}`,
+          });
+
+          expect(stored.status).toBe('past_due');
+          expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
+          expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+            'user-pres',
+            'ch-1',
+            expect.objectContaining({
+              body: 'Your chapter subscription is now past_due',
+            }),
+          );
+        };
+
+        await run(T_NEW);
+        await run(T_OLD);
       });
     });
 
@@ -1958,7 +2356,7 @@ describe('BillingService', () => {
         mockChapterRepo.findByCustomerId.mockResolvedValue(preCheckoutChapter);
         const claimed = { ...preCheckoutChapter, subscription_id: 'sub_race' };
         mockChapterRepo.claimSubscriptionId.mockResolvedValue(claimed);
-        mockChapterRepo.update.mockResolvedValue({
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
           ...claimed,
           subscription_status: 'active',
         });
@@ -1979,15 +2377,22 @@ describe('BillingService', () => {
           'sub_race',
           null,
         );
-        expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'active',
-          last_stripe_webhook_at: LATER_ISO,
-          past_due_since: null,
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(
+          1,
+        );
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          LATER_ISO,
+          {
+            subscription_status: 'active',
+            past_due_since: null,
+          },
+        );
         expect(
           mockChapterRepo.claimSubscriptionId.mock.invocationCallOrder[0],
-        ).toBeLessThan(mockChapterRepo.update.mock.invocationCallOrder[0]);
+        ).toBeLessThan(
+          mockChapterRepo.applySubscriptionWebhook.mock.invocationCallOrder[0],
+        );
         expect(loggerWarnSpy).not.toHaveBeenCalledWith(
           expect.stringContaining('No chapter found for subscription'),
         );
@@ -2019,12 +2424,16 @@ describe('BillingService', () => {
           'sub_race',
           null,
         );
-        expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          last_stripe_webhook_at: LATER_ISO,
-          subscription_status: 'active',
-          past_due_since: null,
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(
+          1,
+        );
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          LATER_ISO,
+          {
+            activate_if: ['past_due', 'incomplete'],
+          },
+        );
       });
 
       it('leaves an active chapter active on a renewal invoice.paid (only the mark moves)', async () => {
@@ -2042,10 +2451,16 @@ describe('BillingService', () => {
         });
 
         expect(mockChapterRepo.findByCustomerId).not.toHaveBeenCalled();
-        expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          last_stripe_webhook_at: LATER_ISO,
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(
+          1,
+        );
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          LATER_ISO,
+          {
+            activate_if: ['past_due', 'incomplete'],
+          },
+        );
       });
 
       it('normalizes an expanded customer object to its id', async () => {
@@ -2081,7 +2496,7 @@ describe('BillingService', () => {
         );
 
         expect(mockChapterRepo.claimSubscriptionId).not.toHaveBeenCalled();
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
         expect(loggerWarnSpy).toHaveBeenCalledWith(
           expect.stringMatching(
             /No chapter found for subscription: sub_foreign.*foreign subscription, acked/,
@@ -2113,7 +2528,7 @@ describe('BillingService', () => {
           last_stripe_webhook_at: new Date(T_CHECKOUT * 1000).toISOString(),
         };
         mockChapterRepo.claimSubscriptionId.mockResolvedValue(claimed);
-        mockChapterRepo.update.mockResolvedValue({
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
           ...claimed,
           subscription_status: 'past_due',
         });
@@ -2132,17 +2547,24 @@ describe('BillingService', () => {
           'sub_new',
           'sub_old',
         );
-        expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(
+          1,
+        );
         // The transition the event carried is applied, not reconstructed by the
         // checkout later (which only ever writes `active`).
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'past_due',
-          past_due_since: LATER_ISO,
-          last_stripe_webhook_at: LATER_ISO,
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          LATER_ISO,
+          {
+            subscription_status: 'past_due',
+            past_due_since: LATER_ISO,
+          },
+        );
         expect(
           mockChapterRepo.claimSubscriptionId.mock.invocationCallOrder[0],
-        ).toBeLessThan(mockChapterRepo.update.mock.invocationCallOrder[0]);
+        ).toBeLessThan(
+          mockChapterRepo.applySubscriptionWebhook.mock.invocationCallOrder[0],
+        );
       });
 
       it('applies the event when checkout already wrote this subscription between the two lookups', async () => {
@@ -2156,7 +2578,7 @@ describe('BillingService', () => {
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
         mockChapterRepo.findByCustomerId.mockResolvedValue(liveOurs);
-        mockChapterRepo.update.mockResolvedValue(liveOurs);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(liveOurs);
 
         await service.handleWebhookEvent(
           subEvent('customer.subscription.updated', {
@@ -2167,11 +2589,14 @@ describe('BillingService', () => {
         );
 
         expect(mockChapterRepo.claimSubscriptionId).not.toHaveBeenCalled();
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'active',
-          last_stripe_webhook_at: LATER_ISO,
-          past_due_since: null,
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          LATER_ISO,
+          {
+            subscription_status: 'active',
+            past_due_since: null,
+          },
+        );
         expect(loggerWarnSpy).not.toHaveBeenCalledWith(
           expect.stringContaining('superseded reference'),
         );
@@ -2195,7 +2620,7 @@ describe('BillingService', () => {
         );
 
         expect(mockChapterRepo.claimSubscriptionId).not.toHaveBeenCalled();
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
         expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
         expect(loggerWarnSpy).toHaveBeenCalledWith(
           expect.stringMatching(
@@ -2221,7 +2646,7 @@ describe('BillingService', () => {
         );
 
         expect(mockChapterRepo.claimSubscriptionId).not.toHaveBeenCalled();
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
       });
 
       it('applies the transition when a concurrent claim for the same subscription won the compare-and-set', async () => {
@@ -2231,7 +2656,7 @@ describe('BillingService', () => {
           .mockResolvedValueOnce(claimed);
         mockChapterRepo.findByCustomerId.mockResolvedValue(preCheckoutChapter);
         mockChapterRepo.claimSubscriptionId.mockResolvedValue(null);
-        mockChapterRepo.update.mockResolvedValue({
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
           ...claimed,
           subscription_status: 'active',
         });
@@ -2254,11 +2679,14 @@ describe('BillingService', () => {
           'sub_race',
           null,
         );
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'active',
-          last_stripe_webhook_at: LATER_ISO,
-          past_due_since: null,
-        });
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledWith(
+          'ch-1',
+          LATER_ISO,
+          {
+            subscription_status: 'active',
+            past_due_since: null,
+          },
+        );
         expect(loggerWarnSpy).not.toHaveBeenCalledWith(
           expect.stringContaining('lost the subscription_id claim'),
         );
@@ -2286,7 +2714,7 @@ describe('BillingService', () => {
           2,
           'sub_race',
         );
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
         expect(loggerWarnSpy).toHaveBeenCalledWith(
           expect.stringMatching(
             /sub_race.*lost the subscription_id claim — superseded, acked/,
@@ -2306,7 +2734,7 @@ describe('BillingService', () => {
         );
 
         expect(mockChapterRepo.findByCustomerId).not.toHaveBeenCalled();
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
         expect(loggerWarnSpy).toHaveBeenCalledWith(
           expect.stringMatching(
             /No chapter found for subscription: sub_nocust.*no customer/,
@@ -2339,8 +2767,50 @@ describe('BillingService', () => {
         });
 
         // Nothing to rewrite — the race already wrote status and reference …
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
         // … but the funnel still learns the chapter converted.
+        expect(mockActivation.record).toHaveBeenCalledWith(
+          CHECKOUT_CHAPTER_ID,
+          'activation-checkout-completed',
+        );
+      });
+
+      it('records the conversion milestone when checkout loses the CAS after a rival claimed its subscription (#731)', async () => {
+        // Both handlers read the pre-claim row. The rival stamps the mark and
+        // `subscription_id`; checkout's in-memory snapshot still has null, so
+        // the lost-CAS tail must reload before the milestone comparison.
+        const starting = {
+          ...checkoutChapter,
+          stripe_customer_id: 'cus_race',
+          subscription_id: null,
+          subscription_status: 'incomplete' as const,
+          last_stripe_webhook_at: null,
+        };
+        const claimed = {
+          ...starting,
+          subscription_id: 'sub_race',
+          subscription_status: 'active' as const,
+          last_stripe_webhook_at: LATER_ISO,
+        };
+        mockChapterRepo.findById
+          .mockResolvedValueOnce(starting)
+          .mockResolvedValueOnce(claimed);
+        mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(null);
+
+        await service.handleWebhookEvent({
+          id: 'evt_checkout_lost_cas',
+          type: 'checkout.session.completed',
+          created: T_CHECKOUT,
+          data: {
+            object: {
+              metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
+              subscription: 'sub_race',
+              customer: 'cus_race',
+            },
+          },
+        });
+
+        expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalled();
         expect(mockActivation.record).toHaveBeenCalledWith(
           CHECKOUT_CHAPTER_ID,
           'activation-checkout-completed',
@@ -2368,7 +2838,7 @@ describe('BillingService', () => {
           },
         });
 
-        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
         expect(mockActivation.record).not.toHaveBeenCalled();
       });
     });
@@ -2562,6 +3032,127 @@ describe('BillingService', () => {
       });
     });
 
+    describe('payment_intent.payment_failed dispatch (#717)', () => {
+      const INVOICE_ID = '11111111-1111-4111-8111-111111111111';
+      const CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
+
+      const paymentFailedEvent = (
+        id: string,
+        object: Record<string, unknown>,
+      ): WebhookEvent => ({
+        id,
+        type: 'payment_intent.payment_failed',
+        created: Date.now(),
+        data: { object },
+      });
+
+      it('notifies the member and does not apply payment', async () => {
+        await service.handleWebhookEvent(
+          paymentFailedEvent('evt_pi_fail', {
+            id: 'pi_1',
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+            last_payment_error: { message: 'Your card was declined.' },
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).toHaveBeenCalledWith({
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
+          declineReason: 'Your card was declined.',
+        });
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('forwards a null declineReason when Stripe sent none', async () => {
+        await service.handleWebhookEvent(
+          paymentFailedEvent('evt_pi_fail_no_reason', {
+            id: 'pi_1',
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).toHaveBeenCalledWith({
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
+          declineReason: null,
+        });
+      });
+
+      it('prefers last_payment_error.message over decline_code', async () => {
+        await service.handleWebhookEvent(
+          paymentFailedEvent('evt_pi_fail_prefer_message', {
+            id: 'pi_1',
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+            last_payment_error: {
+              message: 'Your card has insufficient funds.',
+              decline_code: 'insufficient_funds',
+              code: 'card_declined',
+            },
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            declineReason: 'Your card has insufficient funds.',
+          }),
+        );
+      });
+
+      it('ignores an intent missing invoice metadata without throwing', async () => {
+        await expect(
+          service.handleWebhookEvent(
+            paymentFailedEvent('evt_pi_fail_no_meta', {
+              id: 'pi_1',
+              metadata: { chapter_id: CHAPTER_ID },
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('ignores a foreign intent whose invoice_id is not a UUID', async () => {
+        await expect(
+          service.handleWebhookEvent(
+            paymentFailedEvent('evt_pi_fail_foreign', {
+              id: 'pi_foreign',
+              metadata: { invoice_id: 'inv-1', chapter_id: CHAPTER_ID },
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('skips a duplicate delivery of the same event id (idempotency)', async () => {
+        const event = paymentFailedEvent('evt_pi_fail_dup', {
+          id: 'pi_1',
+          metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+          last_payment_error: { message: 'declined' },
+        });
+
+        await service.handleWebhookEvent(event);
+        await service.handleWebhookEvent(event);
+
+        expect(
+          mockFinancialInvoiceService.notifyStripePaymentFailure,
+        ).toHaveBeenCalledTimes(1);
+      });
+    });
+
     it('should handle unknown event types gracefully', async () => {
       const event: WebhookEvent = {
         id: 'evt_unknown',
@@ -2589,7 +3180,7 @@ describe('BillingService', () => {
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(null);
 
       await expect(service.handleWebhookEvent(event)).resolves.not.toThrow();
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
 
     it('should notify chapter president on subscription status change', async () => {
@@ -2611,9 +3202,10 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -2672,9 +3264,10 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -2733,9 +3326,10 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockRejectedValue(
         new Error('Database error'),
@@ -2772,9 +3366,10 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...activeChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
@@ -2861,11 +3456,13 @@ describe('BillingService', () => {
 
     it('skips a replayed checkout on a fresh service instance (restart)', async () => {
       mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
-      mockChapterRepo.update.mockResolvedValue(checkoutChapter);
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(
+        checkoutChapter,
+      );
       const event = checkoutEvent('evt_restart');
 
       await service.handleWebhookEvent(event);
-      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(1);
 
       // The API restarts: brand-new service, brand-new repository object, same
       // durable store. Stripe redelivers the identical event.
@@ -2874,15 +3471,16 @@ describe('BillingService', () => {
       );
       await afterRestart.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(1);
       expect(webhookEventStore.get('evt_restart')?.status).toBe('processed');
     });
 
     it('skips a replayed customer.subscription.updated across instances', async () => {
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(subChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...subChapter,
         subscription_status: 'past_due',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
@@ -2899,16 +3497,17 @@ describe('BillingService', () => {
       );
       await afterRestart.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(1);
       // The redelivery must not re-alert the president either.
       expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledTimes(1);
     });
 
     it('skips a replayed customer.subscription.deleted across instances', async () => {
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(subChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...subChapter,
         subscription_status: 'canceled',
+        previous_subscription_status: 'active',
       });
       mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
@@ -2925,7 +3524,7 @@ describe('BillingService', () => {
       );
       await afterRestart.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(1);
     });
 
     it('skips a replayed invoice.paid across instances', async () => {
@@ -2934,7 +3533,7 @@ describe('BillingService', () => {
         subscription_status: 'past_due' as const,
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(pastDueChapter);
-      mockChapterRepo.update.mockResolvedValue({
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue({
         ...pastDueChapter,
         subscription_status: 'active',
       });
@@ -2952,7 +3551,7 @@ describe('BillingService', () => {
       );
       await afterRestart.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(1);
     });
 
     it('skips a replayed payment_intent.succeeded across instances', async () => {
@@ -2985,7 +3584,9 @@ describe('BillingService', () => {
 
     it('records the failure and rethrows when a handler throws', async () => {
       mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
-      mockChapterRepo.update.mockRejectedValue(new Error('database exploded'));
+      mockChapterRepo.applySubscriptionWebhook.mockRejectedValue(
+        new Error('database exploded'),
+      );
 
       await expect(
         service.handleWebhookEvent(checkoutEvent('evt_fail')),
@@ -2998,8 +3599,12 @@ describe('BillingService', () => {
 
     it('reprocesses a failed event on the next delivery', async () => {
       mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
-      mockChapterRepo.update.mockRejectedValueOnce(new Error('transient'));
-      mockChapterRepo.update.mockResolvedValue(checkoutChapter);
+      mockChapterRepo.applySubscriptionWebhook.mockRejectedValueOnce(
+        new Error('transient'),
+      );
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(
+        checkoutChapter,
+      );
       const event = checkoutEvent('evt_retry');
 
       await expect(service.handleWebhookEvent(event)).rejects.toThrow(
@@ -3010,7 +3615,7 @@ describe('BillingService', () => {
       // Stripe retries; the failed claim is immediately re-claimable.
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledTimes(2);
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(2);
       const row = webhookEventStore.get('evt_retry');
       expect(row?.status).toBe('processed');
       expect(row?.attempts).toBe(2);
@@ -3032,14 +3637,16 @@ describe('BillingService', () => {
         service.handleWebhookEvent(checkoutEvent('evt_inflight')),
       ).rejects.toThrow(ServiceUnavailableException);
 
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
       expect(webhookEventStore.get('evt_inflight')?.attempts).toBe(1);
       expect(webhookEventStore.get('evt_inflight')?.status).toBe('processing');
     });
 
     it('takes over a claim abandoned by a crashed worker', async () => {
       mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
-      mockChapterRepo.update.mockResolvedValue(checkoutChapter);
+      mockChapterRepo.applySubscriptionWebhook.mockResolvedValue(
+        checkoutChapter,
+      );
 
       const now = Date.now();
       webhookEventStore.set('evt_abandoned', {
@@ -3055,7 +3662,7 @@ describe('BillingService', () => {
       );
       await survivor.handleWebhookEvent(checkoutEvent('evt_abandoned'));
 
-      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockChapterRepo.applySubscriptionWebhook).toHaveBeenCalledTimes(1);
       const row = webhookEventStore.get('evt_abandoned');
       expect(row?.status).toBe('processed');
       expect(row?.attempts).toBe(2);
@@ -3071,7 +3678,7 @@ describe('BillingService', () => {
 
       expect(webhookEventStore.size).toBe(0);
       expect(mockWebhookEventRepo.claim).not.toHaveBeenCalled();
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockChapterRepo.applySubscriptionWebhook).not.toHaveBeenCalled();
     });
   });
 });

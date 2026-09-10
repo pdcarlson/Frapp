@@ -73,9 +73,11 @@ describe('ChapterService', () => {
     };
     mockChapterRepo = {
       findById: jest.fn(),
+      findByIds: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
+      applySubscriptionWebhook: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -214,15 +216,16 @@ describe('ChapterService', () => {
         updated_at: '2024-01-02',
       },
     ]);
-    mockChapterRepo.findById
-      .mockResolvedValueOnce(chapters[0])
-      .mockResolvedValueOnce(chapters[1]);
+    // Returned reversed so the membership-order remap is the thing under
+    // test, not PostgREST's result order.
+    mockChapterRepo.findByIds.mockResolvedValue([chapters[1], chapters[0]]);
 
     const result = await service.listForUser('user-1');
 
     expect(mockMemberRepo.findByUser).toHaveBeenCalledWith('user-1');
-    expect(mockChapterRepo.findById).toHaveBeenNthCalledWith(1, 'ch-1');
-    expect(mockChapterRepo.findById).toHaveBeenNthCalledWith(2, 'ch-2');
+    expect(mockChapterRepo.findByIds).toHaveBeenCalledTimes(1);
+    expect(mockChapterRepo.findByIds).toHaveBeenCalledWith(['ch-1', 'ch-2']);
+    expect(mockChapterRepo.findById).not.toHaveBeenCalled();
     // Projected, not the raw row (#930). This assertion used to read
     // `chapter: chapters[0]`, which pinned the leak: `GET /v1/chapters` has no
     // billing permission, yet shipped `stripe_customer_id`, `subscription_id`
@@ -260,6 +263,63 @@ describe('ChapterService', () => {
       // Still present — the chapter picker and the subscription gate read it.
       expect(summary.chapter).toHaveProperty('subscription_status');
     }
+  });
+
+  it('returns [] without fetching chapters when the user has no memberships', async () => {
+    mockMemberRepo.findByUser.mockResolvedValue([]);
+
+    await expect(service.listForUser('user-1')).resolves.toEqual([]);
+
+    expect(mockChapterRepo.findByIds).not.toHaveBeenCalled();
+    expect(mockChapterRepo.findById).not.toHaveBeenCalled();
+  });
+
+  it('drops a membership whose chapter row is gone', async () => {
+    mockMemberRepo.findByUser.mockResolvedValue([
+      {
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        role_ids: ['role-president'],
+        custom_role_ids: [],
+        has_completed_onboarding: true,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      },
+      {
+        id: 'member-2',
+        user_id: 'user-1',
+        chapter_id: 'ch-missing',
+        role_ids: ['role-member'],
+        custom_role_ids: [],
+        has_completed_onboarding: false,
+        created_at: '2024-01-02',
+        updated_at: '2024-01-02',
+      },
+    ]);
+    mockChapterRepo.findByIds.mockResolvedValue([
+      {
+        id: 'ch-1',
+        name: 'Alpha',
+        university: 'State U',
+        stripe_customer_id: null,
+        subscription_status: 'active',
+        subscription_id: null,
+        past_due_since: null,
+        last_stripe_webhook_at: null,
+        accent_color: '#2563EB',
+        logo_path: null,
+        donation_url: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      },
+    ]);
+
+    const result = await service.listForUser('user-1');
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.chapter_id).toBe('ch-1');
+    expect(result[0]?.chapter).not.toHaveProperty('stripe_customer_id');
   });
 
   it('should throw NotFoundException when chapter not found', async () => {

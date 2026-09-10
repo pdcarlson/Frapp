@@ -3,6 +3,7 @@
 import { AlertTriangle, FolderOpen, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SkeletonText, StateTile } from "@/components/shared/async-states";
+import { useNetwork } from "@/lib/providers/network-provider";
 
 /**
  * The §10 state family for a state that renders **inside** a `<CardContent>`.
@@ -113,6 +114,7 @@ export function NestedEmpty({
   onAction?: () => void;
   actionProps?: {
     disabled?: boolean;
+    title?: string;
     "aria-describedby"?: string;
   };
 }) {
@@ -199,7 +201,7 @@ export function NestedError({
  * *inside* a card reached for `NestedError` and told a member with a dropped
  * connection that something had failed.
  *
- * Same tone as the error deliberately: `resilience.md` treats a lost
+ * Same tone as the error deliberately: `spec/ui/resilience/connection-state.md` treats a lost
  * connection as a degraded read, and §10 requires this family to differ in
  * colour rather than in shape. The glyph is what separates them, exactly as it
  * does at the top level.
@@ -216,6 +218,17 @@ export function NestedOffline({
   description: string;
   onRetry?: () => void;
 }) {
+  const { probeOnce } = useNetwork();
+  // Same as OfflineState: `isOffline` is now reachable from `/health`, so
+  // Retry has to probe as well as refetch or the banner and write gates
+  // stay OFFLINE until the next 30s poll.
+  const handleRetry = onRetry
+    ? () => {
+        void probeOnce();
+        onRetry();
+      }
+    : undefined;
+
   return (
     <div className={`${NESTED_BOX} border-destructive/[.28]`}>
       <StateTile tone="destructive">
@@ -229,8 +242,8 @@ export function NestedOffline({
       <p className="max-w-[220px] text-sm text-muted-foreground">
         {description}
       </p>
-      {onRetry ? (
-        <Button variant="secondary" size="sm" onClick={onRetry}>
+      {handleRetry ? (
+        <Button variant="secondary" size="sm" onClick={handleRetry}>
           Retry
         </Button>
       ) : null}

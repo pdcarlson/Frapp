@@ -1,16 +1,26 @@
-# Claude Code Routines
+# Scheduled backlog agents
 
-Canonical, version-controlled spec for Frapp's scheduled backlog agents, which run as **Claude Code
-Routines** (claude.ai/code → the Frapp environment → **Routines**). Routines are configured in the
-UI (config-as-code isn't supported), so this file is the source of truth you copy into the UI. Keep
-it in sync in both directions: editing a prompt block here changes nothing that runs until a human
-re-pastes it, so a prompt change lands as a `[human]` issue, never as a note parked in this file
-(open one: [#1685](https://github.com/pdcarlson/Frapp/issues/1685) is the pattern). History of how backlog automation got here: ADR-16 and its
-amendments in [`spec/architecture/README.md`](../../../spec/architecture/README.md); the
-Linear-to-GitHub migration record is [#680](https://github.com/pdcarlson/Frapp/issues/680).
+Canonical, version-controlled spec for Frapp's scheduled backlog agents.
 
-There are **five** routines — three daily, two weekly. Three write to **GitHub Issues** on
-`pdcarlson/Frapp` (Linear is retired); the fourth writes docs; the fifth writes product code:
+**Claude Code Routines** (claude.ai/code → the Frapp environment → **Routines**)
+are a live scheduled path. **Cursor Automations**
+(<https://cursor.com/docs/cloud-agent/automations>) are an optional Cursor
+scheduled path. Paste-ready specs are in
+[Cursor Automation specs](#cursor-automation-specs-paste-ready-not-live) below.
+Do **not** enable the same routine on both harnesses — Curator/Triage would
+double-file `suggestion` issues. This session cannot create or enable Automations
+(the Cursor Automations MCP is read-only).
+
+Routines are configured in the UI (config-as-code isn't supported), so this file
+is the source of truth you copy into either UI. Keep it in sync in both
+directions: editing a prompt block here changes nothing that runs until a human
+re-pastes it, so a prompt change lands as a `[human]` issue, never as a note
+parked in this file (open one: #1685 is the pattern). History:
+ADR-16 amendments 4–9 in [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md);
+Linear-to-GitHub migration: #680.
+
+There are **five** scheduled agents — three daily, two weekly. Three write to **GitHub Issues** on
+this repository (Linear is retired); the fourth writes docs; the fifth writes product code:
 
 | # | Routine | Skill (behavior contract) | When |
 | --- | --- | --- | --- |
@@ -130,8 +140,9 @@ is spelled in the triage skill; it does not widen destructive writes.
 
 ## Tracker access (shared by all routines)
 
-Routine sessions run in the Frapp Claude Code web environment, whose harness **pre-approves the
-GitHub MCP** (`mcp__github__*`) — the same path `/next` uses. No API key, no REST, no secrets to
+Routine sessions run in the Frapp **Claude Code web** environment (live Routines)
+or a **Cursor Cloud** Automation (optional; do not dual-run the same job). Both harnesses
+expose a **GitHub MCP** — the same path `/next` uses. No API key, no REST, no secrets to
 manage. (Direct REST to `api.github.com` *is* reachable from these sandboxes where the
 environment's network allowlist carries it — the 403 a proxied `curl` gets is the agent proxy's
 route answering, not GitHub; sent direct (`curl --noproxy '*'`, or node's built-in `fetch`, which
@@ -142,9 +153,9 @@ environments, rulesets, repo visibility, vulnerability alerts — and never a tr
 about it licenses listing, searching, filing, labelling, closing or commenting on issues or PRs
 over REST. Rule 4 above and the stop rule below are unchanged: if the MCP is unavailable the
 routine stops and reports, and REST is not the fallback.) Each run starts by loading the GitHub
-MCP tool schemas (via `ToolSearch`, e.g.
-`select:mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,mcp__github__add_issue_comment,mcp__github__search_issues`)
-and verifying access (e.g. `issue_read` on a known issue resolves). **If the MCP is unavailable,
+MCP tool schemas for **this harness** (Cursor-native names like `issue_read` / `issue_write`;
+Claude sessions use `mcp__github__*` prefixes — do not freeze a prefix) and verifying access
+(e.g. `issue_read` on a known issue resolves). **If the MCP is unavailable,
 the routine stops and reports — there is no fallback tracker.** Routine 4 writes no issues, and
 routine 5 only files follow-ups and opens its PR through it, so this section does not gate their
 sweep or scan; see rule 4 of the
@@ -210,18 +221,46 @@ Reads accept issue numbers (`issue_read`, `list_issues`, `search_issues`); write
 
 ---
 
-## Settings (per routine, set in the Routines UI)
+## Settings (per agent, set in the Cursor Automations UI or Claude Routines UI)
+
+Cursor Automations are an **optional** Cursor scheduled path. Claude Routines UI
+remains a **live** scheduled path. Do not run the same routine on both. Cron values below are UTC during EDT (shift +1h when ET returns to EST).
 
 | Setting | Value | Notes |
 |---|---|---|
-| Environment | the Frapp Claude Code web environment (`pdcarlson/Frapp`) | Routine sessions clone the repo and load `.claude/` skills from the default branch (`main`) at run time. |
-| Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET**; PR Follow-ups **weekly Mon 07:00 ET**; Docs Upkeep **weekly Wed 07:00 ET**; Hygiene Scan **daily 06:00 ET** | If the UI takes cron in UTC: `0 12 * * *`, `0 13 * * *`, `0 11 * * 1`, `0 11 * * 3`, and `0 10 * * *` during EDT (shift +1h when ET returns to EST). Docs Upkeep sits on Wednesday so it never shares a morning with the PR Follow-ups batch. Hygiene Scan runs first every morning so its PR and any follow-ups it files are on the board before the Curator and Triage passes, which then maintain and rank them the same day. Daily/weekly cadence — no per-PR trigger. Flip PR Follow-ups to twice weekly with `0 11 * * 1,4` if a week's batch runs long. |
-| Model | **Daily tracker routines: Opus 5** (`claude-opus-5`). **Weekly routines: Fable 5** (`claude-fable-5`). **Hygiene Scan: Fable 5.1** (`claude-fable-5-1`). | Cadence sets the tier for the tracker and docs routines. The dailies (Curator, Triage) carry the tracker and run often enough that a weaker judgement call compounds; the weeklies (PR Follow-ups, Docs Upkeep) do bounded, evidence-heavy passes. Owner convention, 2026-08-21. Hygiene Scan is the deliberate exception: it is the one routine that edits product code unattended, and the judgement it needs — is this shape wrong, is this code dead, is this fix a rebuild or a band-aid — is exactly where a weaker tier is most expensive, so it takes the top tier regardless of cadence. Owner decision, 2026-09-02. |
-| Autofix on PR create | **Off** for Curator, Triage and PR Follow-ups. **On** for Docs Upkeep and Hygiene Scan. | Not an inconsistency. The first three barely open PRs — only self-maintenance — so autofix would mostly be dormant, and a tracker routine repairing its own CI unattended is out of its lane. Docs Upkeep opens a docs-only PR every run, and the failures it is likeliest to hit (`link-check`, and `env-slugs` when the sweep touches a doc that names an Infisical environment) are docs problems in its own scope that its own sweep caused. Handing those back as a red PR would contradict the routine's premise, which is that it repairs rather than files. Hygiene Scan's PR is product code whose CI failures are, by construction, in code it just touched; its skill has it read the check runs once and fix its own failures before the run ends, and it deliberately does **not** subscribe the routine session — so autofix is the single driver after the run ends, and two drivers never push to one branch. |
-| Session | fresh session per run | Each run re-reads its skill from `main` — no state carried between runs; the tracker itself is the memory (markers, labels, comments). |
-| Access | **GitHub MCP** (pre-approved by the environment) | Plus the repo itself for the curator's engineering/spec lenses and for the Hygiene Scan's gates and test suites — the SessionStart hook installs dependencies and brings up the local stack, and the scan runs `npm run check-types`, `npm run lint`, the workspace tests and the root `check:*` gates in the sandbox. No secrets needed. |
-| Completion notification | Existing four: as configured in the UI (not copied here). **Hygiene Scan: push on**, if the UI exposes it. | A Hygiene Scan run that opened a PR needs a human within the day, and the run report is its only channel — the repo has no in-run notification mechanism, and the skill does not invent one. |
-| Connectors | Per-routine, set in the Routines UI. **GitHub is not one of them** — it comes from the environment, so it needs no connector and adding one is not the fix for a missing `mcp__github__*` tool. | Attach only what the routine actually verifies against — the provider connectors [`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md) uses. A routine can use every tool from an attached connector, **including writes, without prompting**, so an unrelated one is standing write access nothing in this runbook governs. The live per-routine list is in the UI; this file deliberately does not copy it. |
+| Environment / repository | Cursor: attach **this GitHub repository** (cron defaults to **no repository** — that cannot run Hygiene Scan or any code-writing agent). Claude Code: the Frapp Claude Code web environment | Sessions clone the repo and load `.claude/` skills from `main`. |
+| Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET**; PR Follow-ups **weekly Mon 07:00 ET**; Docs Upkeep **weekly Wed 07:00 ET**; Hygiene Scan **daily 06:00 ET** | UTC cron (EDT): `0 12 * * *`, `0 13 * * *`, `0 11 * * 1`, `0 11 * * 3`, and `0 10 * * *`. Docs Upkeep sits on Wednesday so it never shares a morning with PR Follow-ups. Hygiene Scan runs first every morning. Flip PR Follow-ups to twice weekly with `0 11 * * 1,4` if a week's batch runs long. |
+| Model | **Daily tracker agents: Opus 5** (`claude-opus-5`). **Weekly agents: Fable 5** (`claude-fable-5`). **Hygiene Scan: Fable 5.1** (`claude-fable-5-1`). | Cadence sets the tier for tracker and docs. Hygiene Scan is the exception: it edits product code unattended. Owner convention, 2026-08-21 / 2026-09-02. Pick the closest available Cursor Automation model; do not silently downgrade Hygiene Scan. |
+| Autofix on PR create | **Off** for Curator, Triage and PR Follow-ups. **On** for Docs Upkeep and Hygiene Scan. | Not an inconsistency. The first three barely open PRs — only self-maintenance. Docs Upkeep and Hygiene Scan open a PR every run that should. Cursor Automations expose PR creation as a tool (on by default for repo-backed automations). |
+| Session | fresh session per run | Each run re-reads its skill from `main`. |
+| Access | **GitHub MCP** | Plus the repo itself for Hygiene Scan's gates. No secrets in `environment.json`. |
+| Connectors | **None extra** | GitHub is the MCP / repository attachment, not a connector. Extra connectors are standing write access (Linear is retired). |
+| Completion notification | Hygiene Scan: **on** if the UI has it | Product-code PR the same day; Cursor Automations may not expose this field — use whatever notification exists. |
+| Hygiene Scan enable | **Claude Routines:** follow the skill (live path). **Cursor Automations:** **Off** until a Cursor Cloud session on this environment has a healthy full stack (`.cloud-sandbox-up.done`, API/web terminals). | An Automation with no repository, or a failed `start`, cannot run it. Do not enable it on Cursor while it already runs as a Claude Routine. |
+
+---
+
+## Cursor Automation specs (paste-ready; **not live**)
+
+Paste these at <https://cursor.com/automations> (or Agents Window → Automations). Optional — only if you want a Cursor scheduled path **instead of** (not in addition to) the matching Claude Routine. For every automation: **attach this GitHub repository**. Cron triggers default to no repository.
+
+Prompts are the same strings as [Routine prompts](#routine-prompts-copy-paste) — the skill files remain the behavior contract. Do not fork the skill text here.
+
+| Name | ET | UTC cron (EDT) | Enable |
+| --- | --- | --- | --- |
+| Hygiene Scan | daily 06:00 | `0 10 * * *` | **Do not enable** until the Cursor environment's full stack is observed healthy. |
+| Issue Curator | daily 08:00 | `0 12 * * *` | Enable after GitHub MCP works in Automations. |
+| Issue Triage | daily 09:00 | `0 13 * * *` | Enable after Curator, ~1h later on the clock. |
+| PR Follow-ups | Mon 07:00 | `0 11 * * 1` | Enable after GitHub MCP works. |
+| Docs Upkeep | Wed 07:00 | `0 11 * * 3` | Needs git push / PR creation. |
+
+**How to create (Cursor dashboard):**
+
+1. Open <https://cursor.com/automations> → New → scheduled trigger.
+2. Name it exactly as the table (e.g. **Issue Curator**).
+3. Set the cron; attach **this GitHub repository**.
+4. Paste the matching prompt from [Routine prompts](#routine-prompts-copy-paste).
+5. Leave Hygiene Scan disabled until stack health is proven. Do not enable a Cursor Automation for a routine that already runs as a Claude Code Routine.
 
 ---
 
@@ -341,10 +380,14 @@ the PR link (or "no PR" and why) and the "Needs you" list.
 
 ## How to create them (UI)
 
+**Cursor Automations (optional Cursor scheduled path):** follow [Cursor Automation specs](#cursor-automation-specs-paste-ready-not-live). Do not dual-run with Claude Routines.
+
+**Claude Code Routines (live scheduled path):**
+
 1. Open **claude.ai/code** → the Frapp environment → **Routines** → **New routine** → name it
    **"Issue Curator"**.
 2. Schedule daily **08:00 ET**; environment `pdcarlson/Frapp` (`main`). Take the model — and every
-   other per-routine setting — from the [Settings table](#settings-per-routine-set-in-the-routines-ui)
+   other per-routine setting — from the [Settings table](#settings-per-agent-set-in-the-cursor-automations-ui-or-claude-routines-ui)
    above, which is the single source of truth for them. **Cadence sets the tier**, so the two
    dailies and the two weeklies do not get the same model.
 3. Paste the **Curator** prompt from [Routine prompts](#routine-prompts-copy-paste) above.
@@ -459,4 +502,4 @@ both fold self-maintenance into that PR rather than opening a second one.
   advisory; the curator's Lens 1 named the latter until 2026-08-25. Self-maintenance's "dead
   commands" check covers commands that no longer *exist* — this one is about commands that still
   run but no longer mean what the routine assumes.
-- Environment notes: [`spec/environments/README.md`](../../../spec/environments/README.md#claude-code-routines-environment).
+- Environment notes: [`spec/environments/README.md`](../../../spec/environments/README.md#scheduled-backlog-agents).

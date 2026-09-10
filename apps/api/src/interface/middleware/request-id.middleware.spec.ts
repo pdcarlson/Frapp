@@ -1,13 +1,31 @@
 import type { NextFunction, Response } from 'express';
+import * as Sentry from '@sentry/nestjs';
+import {
+  BAGGAGE_HEADER,
+  REQUEST_ID_HEADER,
+  SENTRY_TRACE_HEADER,
+} from '../http/correlation-headers';
 import { requestIdMiddleware } from './request-id.middleware';
 import type { RequestContext } from '../types/request-context.types';
+import { getRequestId } from '../../infrastructure/observability/request-als';
+
+jest.mock('@sentry/nestjs', () => ({
+  getIsolationScope: jest.fn(() => ({ setTag: jest.fn() })),
+}));
 
 /**
  * The placement is the point: this runs before guards, so a denial still has a
- * trace id. `spec/behavior/observability.md` § Request Tracing requires the id
- * in every log entry and every error response, denials included.
+ * request id. `spec/behavior/observability.md` § Request Tracing requires the
+ * id in every log entry and every error response, denials included.
  */
 describe('requestIdMiddleware', () => {
+  const isolationScope = { setTag: jest.fn() };
+
+  beforeEach(() => {
+    jest.mocked(Sentry.getIsolationScope).mockReturnValue(isolationScope);
+    isolationScope.setTag.mockClear();
+  });
+
   function run(headers: Record<string, string> = {}) {
     const request = { headers } as unknown as RequestContext;
     const setHeader = jest.fn();
@@ -20,15 +38,60 @@ describe('requestIdMiddleware', () => {
     const { request, setHeader, next } = run();
 
     expect(request.requestId).toMatch(/^req_[0-9a-f-]{36}$/);
-    expect(setHeader).toHaveBeenCalledWith('x-request-id', request.requestId);
+    expect(setHeader).toHaveBeenCalledWith(
+      REQUEST_ID_HEADER,
+      request.requestId,
+    );
     expect(next).toHaveBeenCalledTimes(1);
+    expect(isolationScope.setTag).toHaveBeenCalledWith(
+      'request_id',
+      request.requestId,
+    );
   });
 
-  it('honours a caller-supplied trace id', () => {
-    const { request, setHeader } = run({ 'x-request-id': 'caller-trace-1' });
+  it('honours a caller-supplied request id', () => {
+    const { request, setHeader } = run({
+      [REQUEST_ID_HEADER]: 'caller-req-1',
+    });
 
-    expect(request.requestId).toBe('caller-trace-1');
-    expect(setHeader).toHaveBeenCalledWith('x-request-id', 'caller-trace-1');
+    expect(request.requestId).toBe('caller-req-1');
+    expect(setHeader).toHaveBeenCalledWith(REQUEST_ID_HEADER, 'caller-req-1');
+  });
+
+  it('does not treat sentry-trace or baggage as the request id', () => {
+    const { request, setHeader } = run({
+      [SENTRY_TRACE_HEADER]: '00-traceid-spanid-01',
+      [BAGGAGE_HEADER]: 'sentry-environment=staging',
+    });
+
+    expect(request.requestId).toMatch(/^req_[0-9a-f-]{36}$/);
+    expect(request.requestId).not.toBe('00-traceid-spanid-01');
+    expect(setHeader).toHaveBeenCalledWith(
+      REQUEST_ID_HEADER,
+      request.requestId,
+    );
+  });
+
+  it('keeps an inbound request id even when trace headers are also present', () => {
+    const { request } = run({
+      [REQUEST_ID_HEADER]: 'client-req-9',
+      [SENTRY_TRACE_HEADER]: '00-traceid-spanid-01',
+      [BAGGAGE_HEADER]: 'sentry-environment=staging',
+    });
+
+    expect(request.requestId).toBe('client-req-9');
+  });
+
+  it('binds the id on ALS so service loggers can read it', () => {
+    const request = { headers: {} } as unknown as RequestContext;
+    requestIdMiddleware(
+      request,
+      { setHeader: jest.fn() } as unknown as Response,
+      () => {
+        expect(getRequestId()).toBe(request.requestId);
+      },
+    );
+    expect(getRequestId()).toBeUndefined();
   });
 
   it('gives distinct ids to distinct requests', () => {

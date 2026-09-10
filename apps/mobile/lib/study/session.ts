@@ -110,7 +110,8 @@ export function selectSessions(data: unknown): StudySessionModel[] {
  * The server enforces at most one (`start` returns 409 otherwise) and settles
  * lapsed pauses on every read, so anything still `ACTIVE` in a fresh list is
  * genuinely live. This is what lets s10 recover a session across an app
- * relaunch, which the web screen never needed to do.
+ * relaunch. The web study screen does the same from `GET /v1/study-sessions`
+ * (#1747); the two copies of the arithmetic must not drift.
  */
 export function selectActiveSession(data: unknown): StudySessionModel | null {
   return selectSessions(data).find((row) => row.status === "ACTIVE") ?? null;

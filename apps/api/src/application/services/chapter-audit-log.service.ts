@@ -19,6 +19,7 @@ import {
   ISO_INSTANT_MESSAGE,
   parseIsoInstant,
 } from '#domain/constants/iso-instant';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 export interface RecordAuditEntryInput {
   chapterId: string;
@@ -115,9 +116,11 @@ export class ChapterAuditLogService {
         member_visible: entry.memberVisible ?? true,
       });
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `Failed to write chapter_audit_log entry (action=${entry.action}, chapter=${entry.chapterId})`,
-        error as Error,
+        error,
       );
       throw error;
     }

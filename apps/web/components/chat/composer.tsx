@@ -67,8 +67,9 @@ import {
  * Resolved rather than a `ChatMessage`, because the shell is the only place
  * that holds the viewer id and the name resolver the label needs, and because
  * the composer must not grow a second opinion about how a message is
- * summarised — `replyPreviewText` in `./reply-quote` is the one definition and
- * the timeline's quote uses it too.
+ * summarised — `replyPreviewText` in `@repo/chat-core/reply-preview` is the
+ * one definition (web re-exports it from `./reply-quote`) and the timeline's
+ * quote uses it too.
  *
  * `author: null` means the target is staged but outside the loaded window. The
  * strip still renders, in `QuotedMessage`'s unavailable variant, because the
@@ -135,6 +136,12 @@ interface ComposerBaseProps {
   onTyping: () => void;
   isModuleEnabled: (moduleKey: string) => boolean;
   /**
+   * Chapter recruitment vocabulary. Threaded to the palette so `/intake`
+   * displays when that is the chapter's term, and to `getSlashCommand` so a
+   * typed alias still dispatches as `rush`.
+   */
+  recruitmentVocab?: string;
+  /**
    * Status of the underlying chapter-config query. `"loading"` and `"error"`
    * surface explicit states inside the slash palette instead of an empty
    * filter; defaults to `"ready"` for callers that don't gate the catalog.
@@ -149,8 +156,8 @@ interface ComposerBaseProps {
    * row to the Dexie outbox and returns *before* it touches the network
    * (`packages/chat-core/src/chat-client.ts`, which has an explicit
    * "Offline: the row is safely queued" branch), so gating the composer defeated
-   * the queue built to make composing-while-offline work. `spec/ui/resilience.md`
-   * §2 states the rule directly — "labeled, never blocked, wherever an outbox
+   * the queue built to make composing-while-offline work. `spec/ui/resilience/connection-state.md`
+   * states the rule directly — "labeled, never blocked, wherever an outbox
    * exists" — and reserves disabling for surfaces where a failed write is lost.
    * Worse than the greyed Send: `submit()` returned early on the same flag, so
    * pressing Enter offline silently discarded what you had typed.
@@ -212,6 +219,10 @@ function buildDocFromPlainText(text: string): JSONContent {
 /** `#` only for an actual channel — a DM's name is a person's. */
 export function composerPlaceholder(channelName: string, isDirect?: boolean) {
   return isDirect ? `Message ${channelName}` : `Message #${channelName}`;
+}
+
+function slashToken(command: SlashCommand): string {
+  return command.displayName ?? command.name;
 }
 
 /**
@@ -304,13 +315,13 @@ export function notifyDispatchOutcome(
       // Sticky, like the committed-write warning below and for the same reason:
       // an outcome nobody can reconstruct must not disappear on a 5s timer.
       //
-      // Sticky is NOT durable, and the difference matters here. `use-toast`'s
-      // reducer is `[action.toast, ...state.toasts].slice(0, TOAST_LIMIT)` with
-      // a limit of 1, so the NEXT toast — any toast — evicts this one outright,
-      // with no dismissal and no animation. `duration: Infinity` survives time,
-      // not other toasts (#1789). So this notice cannot be the plan: the copy
-      // is written to stand alone and send the officer to the ledger, and the
-      // timeline row is the real trace where one survives (#1909).
+      // Sticky is NOT durable. `use-toast`'s reducer is
+      // `[action.toast, ...state.toasts].slice(0, TOAST_LIMIT)` with a limit
+      // of 1, so the NEXT toast — any toast — evicts this one outright, with
+      // no dismissal and no animation. `duration: Infinity` survives time,
+      // not other toasts. The durable trace here is the `unconfirmed` row
+      // (Retry under the original key), not a `recorded` row — that status
+      // is the `card_posted: false` path (#1789), where the write is known.
       duration: Infinity,
     });
     return;
@@ -319,13 +330,12 @@ export function notifyDispatchOutcome(
     toast({
       title: `/${commandName} partly succeeded`,
       description: result.warning,
-      // Sticky (Radix skips the close timer on `Infinity`) because this toast is
-      // the ONLY remaining trace of a committed write: the dispatcher has just
-      // removed the optimistic placeholder, and no card is coming. At the
-      // default 5s an officer who looked away sees an empty channel and re-runs
-      // the command — the double-grant this whole path exists to prevent. The
-      // failure branch above keeps the default: nothing committed there, so
-      // there is nothing to lose track of.
+      // Sticky (Radix skips the close timer on `Infinity`) because the
+      // committed write's durable trace is the timeline `recorded` row
+      // (#1789); this toast is the secondary notice and is still evictable
+      // by the next toast (`TOAST_LIMIT = 1`). At the default 5s an officer
+      // who looked away would only have the row — keep the toast long enough
+      // to be seen once.
       duration: Infinity,
     });
   }
@@ -348,6 +358,7 @@ export function Composer({
   onSlashDispatch,
   onTyping,
   isModuleEnabled,
+  recruitmentVocab,
   slashCommandsStatus = "ready",
   onRetrySlashCommands,
   isOffline,
@@ -429,7 +440,8 @@ export function Composer({
       onTyping();
       const parsed = parseSlashInput(text);
       const opensPalette =
-        parsed.isSlash && (parsed.command == null || parsed.command.length <= 24);
+        parsed.isSlash &&
+        (parsed.command == null || parsed.command.length <= 24);
       if (opensPalette) {
         setPalette((prev) =>
           prev.open && prev.query === (parsed.command ?? "")
@@ -440,9 +452,7 @@ export function Composer({
         // Composer text is no longer a slash invocation (user backspaced the
         // leading `/`, or typed a too-long token). Close the palette so it
         // doesn't trap the user behind a stale list.
-        setPalette((prev) =>
-          prev.open ? { open: false, query: "" } : prev,
-        );
+        setPalette((prev) => (prev.open ? { open: false, query: "" } : prev));
       }
     },
     immediatelyRender: false,
@@ -498,12 +508,12 @@ export function Composer({
       // A slash command is NOT a queued write. `/points`, `/task` and `/event`
       // POST straight to their controllers from
       // `packages/chat-core/src/dispatch.ts` with no outbox behind them, so
-      // resilience.md §2's split applies within this one control: the text path
+      // spec/ui/resilience/connection-state.md's split applies within this one control: the text path
       // is labelled and stays live because it queues, and the queueless path
       // refuses and says why.
       if (isOffline) {
         return {
-          title: `/${command.name} needs a connection`,
+          title: `/${slashToken(command)} needs a connection`,
           description:
             "Slash commands aren't queued. Your text is still here — send it when you're back online.",
         };
@@ -511,7 +521,7 @@ export function Composer({
       // A slash command posts a card, which has nowhere to hang a file.
       if (pending.length > 0) {
         return {
-          title: `/${command.name} can't carry attachments`,
+          title: `/${slashToken(command)} can't carry attachments`,
           description:
             "Remove the attached file, or send it as its own message first.",
         };
@@ -519,7 +529,7 @@ export function Composer({
       // Same shape, same reason, for a staged reply (#489).
       if (replyTo) {
         return {
-          title: `/${command.name} can't reply to a message`,
+          title: `/${slashToken(command)} can't reply to a message`,
           description:
             "Dismiss the reply first, or send your reply as an ordinary message.",
         };
@@ -541,7 +551,9 @@ export function Composer({
     // Enter on `/poll "Q?" A B` posts a poll card, not a text bubble.
     const parsed = parseSlashInput(text);
     if (parsed.isSlash && parsed.command && onSlashDispatch) {
-      const command = getSlashCommand(parsed.command);
+      const command = getSlashCommand(parsed.command, {
+        recruitment: recruitmentVocab,
+      });
       if (command?.implemented) {
         const refusal = slashRefusal(command);
         if (refusal) {
@@ -552,7 +564,7 @@ export function Composer({
         void (async () => {
           notifyDispatchOutcome(
             toast,
-            command.name,
+            slashToken(command),
             await runDispatch(onSlashDispatch, command, parsed.args),
           );
         })();
@@ -563,7 +575,15 @@ export function Composer({
     // Only clear when a send was actually issued.
     editor.commands.clearContent(true);
     setPending([]);
-  }, [editor, onSend, onSlashDispatch, pending, slashRefusal, toast]);
+  }, [
+    editor,
+    onSend,
+    onSlashDispatch,
+    pending,
+    recruitmentVocab,
+    slashRefusal,
+    toast,
+  ]);
   useLayoutEffect(() => {
     sendRef.current = submit;
   }, [submit]);
@@ -697,7 +717,7 @@ export function Composer({
       // the "coming soon" toast so the Chunk 10 stubs still surface intent.
       if (!command.implemented || !onSlashDispatch) {
         toast({
-          title: `/${command.name}`,
+          title: `/${slashToken(command)}`,
           description:
             "This command will ship in a later chunk. The catalog is gated by your chapter's enabled modules.",
         });
@@ -715,18 +735,21 @@ export function Composer({
       }
       const text = editor?.getText() ?? "";
       const parsed = parseSlashInput(text);
-      const args = parsed.command === command.name ? parsed.args : "";
+      const typed = parsed.command
+        ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
+        : undefined;
+      const args = typed?.name === command.name ? parsed.args : "";
       // Clear the composer optimistically — the dispatch enqueues the message
       // through the same hot path as `onSend`, so the optimistic card appears
       // immediately and a toast surfaces any parse / authz failure.
       if (editor) editor.commands.clearContent(true);
       notifyDispatchOutcome(
         toast,
-        command.name,
+        slashToken(command),
         await runDispatch(onSlashDispatch, command, args),
       );
     },
-    [editor, onSlashDispatch, slashRefusal, toast],
+    [editor, onSlashDispatch, recruitmentVocab, slashRefusal, toast],
   );
 
   // `canPost` is the single source of truth for whether *this caller* may
@@ -766,8 +789,7 @@ export function Composer({
     );
   }
 
-  const attachPending =
-    requestUploadUrl.isPending || uploadSignedUrl.isPending;
+  const attachPending = requestUploadUrl.isPending || uploadSignedUrl.isPending;
 
   return (
     <div className="border-t border-border p-3" onKeyDown={handleHostKey}>
@@ -920,7 +942,7 @@ export function Composer({
         the same header already announces the connection change from the same
         `channel.connection` source, and `OfflineBanner` announces it again from
         the root layout — three polite regions would read one event three times.
-        This is the label beside the control, which is what resilience.md §2 asks
+        This is the label beside the control, which is what spec/ui/resilience/connection-state.md asks
         the queued surface to carry.
       */}
       {isOffline ? (
@@ -932,15 +954,18 @@ export function Composer({
       <SlashPalette
         open={palette.open}
         initialQuery={palette.query}
-        onQueryChange={(query) =>
-          setPalette((prev) => ({ ...prev, query }))
-        }
+        onQueryChange={(query) => setPalette((prev) => ({ ...prev, query }))}
         isModuleEnabled={isModuleEnabled}
+        recruitmentVocab={recruitmentVocab}
         status={slashCommandsStatus}
         onRetry={onRetrySlashCommands}
         onSelect={onPaletteSelect}
         onOpenChange={(open) =>
-          setPalette((prev) => ({ ...prev, open, query: open ? prev.query : "" }))
+          setPalette((prev) => ({
+            ...prev,
+            open,
+            query: open ? prev.query : "",
+          }))
         }
       />
     </div>

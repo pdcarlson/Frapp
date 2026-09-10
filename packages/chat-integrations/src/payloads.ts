@@ -122,5 +122,54 @@ export interface EventPayload {
   created_at: string;
 }
 
+/**
+ * Payload for a `kind:"hours"` card. Built server-side after
+ * `ServiceEntryService.create` commits the row (the `/hours log` slash
+ * command), so the card can never assert an entry that does not exist. The
+ * member's display name is embedded at write time, keeping the snapshot
+ * correct even if they later leave the chapter.
+ *
+ * The snapshot is immutable: `status` is always the creation-time `"PENDING"`.
+ * Live review status is a later concern — the chat message row is never
+ * mutated. Server-originated: a client cannot forge `kind:"hours"` (see
+ * `ChatService.SERVER_ONLY_KINDS`).
+ */
+export interface HoursPayload {
+  /** `service_entries.id` of the committed row. */
+  entry_id: string;
+  /** Member who logged the hours (the message sender). */
+  user_id: string;
+  user_name: string;
+  duration_minutes: number;
+  description: string;
+  /** Service date as `YYYY-MM-DD`. */
+  date: string;
+  /** Creation-time status; always `"PENDING"`. */
+  status: "PENDING";
+  /** `service_entries.created_at`. */
+  created_at: string;
+}
+
+/**
+ * Payload for a `kind:"rush"` card. Built server-side after
+ * `RushService.create` commits the row (the `/<vocab> add` slash command),
+ * so the card can never assert a candidate that does not exist. The adder's
+ * display name is embedded at write time.
+ *
+ * Live vote count, `viewer_has_voted`, and bid status are read back through
+ * `GET /v1/rush/candidates/:id` — the chat message row is never mutated, and
+ * voter names are never on the wire. Server-originated: a client cannot forge
+ * `kind:"rush"` (see `ChatService.SERVER_ONLY_KINDS`).
+ */
+export interface RushPayload {
+  candidate_id: string;
+  display_name: string;
+  added_by_user_id: string;
+  added_by_name: string;
+  stage: string;
+  bid_status: "none" | "extended";
+  created_at: string;
+}
+
 /** Action type used for poll votes. Shared between the renderer and the API. */
 export const POLL_VOTE_ACTION_TYPE = "vote";

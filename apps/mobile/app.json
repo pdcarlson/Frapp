@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Frapp",
+    "name": "Signet",
     "slug": "frapp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,6 +10,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "live.frapp.mobile",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -18,7 +19,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "monochromeImage": "./assets/images/adaptive-icon-monochrome.png",
-        "backgroundColor": "#0F172A"
+        "backgroundColor": "#1A1A1A"
       },
       "predictiveBackGestureEnabled": false,
       "package": "live.frapp.mobile"
@@ -30,6 +31,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-apple-authentication",
       [
         "expo-secure-store",
         {

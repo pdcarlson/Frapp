@@ -1,8 +1,12 @@
 "use client";
 
-import React, { createContext, useCallback, useMemo } from "react";
+import React, { createContext, useCallback, useEffect, useMemo } from "react";
 import { useFrappClient, useActiveChapterId, useOrgConfig } from "@repo/hooks";
 import { isAnalyticsOptedOut, type AnalyticsProperties } from "@repo/validation";
+import {
+  applyAnalyticsOptOut,
+  namedAnalyticsEventBody,
+} from "@repo/observability/identified-posthog";
 
 /**
  * Pseudonymous analytics for the web app (issue #464).
@@ -19,6 +23,11 @@ import { isAnalyticsOptedOut, type AnalyticsProperties } from "@repo/validation"
  * `subscriptionWriteState`. Web reads the flag from `useOrgConfig()`
  * (`GET /v1/chapters/{id}/config`); mobile reads the same scalar from
  * `useCurrentChapter()`.
+ *
+ * `track` posts named product events to the API only. PostHog JS does **not**
+ * capture those names — the API adapter already forwards them, and a second
+ * `posthog.capture` would double-count. The JS SDK is identify / groups /
+ * flags / replay-gates / the `sentry-error-correlated` marker.
  *
  * `track` is fire-and-forget: a failed event must never disrupt the UI.
  *
@@ -41,17 +50,17 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   // before this client refetches is acceptable.
   const optedOut = isAnalyticsOptedOut(useOrgConfig().data?.analytics_opt_out);
 
+  useEffect(() => {
+    applyAnalyticsOptOut(optedOut);
+  }, [optedOut]);
+
   const track = useCallback<TrackFn>(
     (name, properties) => {
       if (optedOut) return;
+      const body = namedAnalyticsEventBody({ name, chapterId, properties });
+      if (!body) return;
       void client
-        .POST("/v1/analytics/events", {
-          body: {
-            name,
-            ...(chapterId ? { chapter_id: chapterId } : {}),
-            ...(properties ? { properties } : {}),
-          },
-        })
+        .POST("/v1/analytics/events", { body })
         .catch(() => {
           // Best-effort: analytics must never surface an error to the user.
         });

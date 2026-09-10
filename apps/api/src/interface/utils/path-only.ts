@@ -1,4 +1,4 @@
-import { stripAuthority } from '@repo/validation';
+import { stripAuthority } from '@repo/observability';
 
 /**
  * The request path with any query string and fragment removed.
@@ -25,10 +25,10 @@ import { stripAuthority } from '@repo/validation';
  * filtered. Route grouping and debugging read the path, which is preserved
  * exactly.
  *
- * The authority half is no longer implemented here. `stripAuthority` was
- * hoisted into `packages/validation` by #1388 and is imported below, so this
- * internal log sink and the external Sentry boundary now reduce a target the
- * same way. Before that they diverged, and backwards: the Sentry scrubber —
+ * The authority half is no longer implemented here. `stripAuthority` lives in
+ * `@repo/observability` (moved with the scrubber) and is imported below, so
+ * this internal log sink and the external Sentry boundary reduce a target
+ * the same way. Before that they diverged, and backwards: the Sentry scrubber —
  * the sink with the stricter threat model, because it ships to a third party —
  * was the one that kept scheme, host and `userinfo`.
  */

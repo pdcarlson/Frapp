@@ -6,9 +6,12 @@ truth) and **cloud-sandbox runtime vars** (make the local stack come up — see
 [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md)). Omit all of these on a normal laptop; use
 `npx infisical login` for local app secrets instead.
 
-**Never print secret values** — only names and presence/absence. All of these are stored
-in the Claude Code web environment config and are **visible to anyone who can edit it**,
-so use **test-mode / read-only** credentials only.
+**Never print secret values** — only names and presence/absence. On **Cursor Cloud**,
+store these as **environment or team secrets**, never in [`.cursor/environment.json`](../../../.cursor/environment.json).
+User secrets are unavailable during Builds; `DOCKERHUB_*` must be environment/team secrets for
+`install`/`start`. On **Claude Code web** they are stored in the Claude web environment
+config and are **visible to anyone who can edit it**, so use **test-mode / read-only** credentials
+only.
 
 ## Provider / research credentials
 
@@ -53,8 +56,10 @@ APIs before proposing changes. Usage policy for `GITHUB_PAT` lives in
 
 ## Cloud-sandbox runtime vars
 
-Set in the Claude Code web UI to make `scripts/cloud-sandbox-up.sh` bring up the stack.
+Set in the **Cursor Cloud environment dashboard** or the Claude Code web UI
+to make `scripts/cloud-sandbox-up.sh` bring up the stack.
 Full context, network policy, and troubleshooting: [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md).
+Do not put these values in `.cursor/environment.json`.
 
 | Env var | Purpose |
 | ------- | ------- |

@@ -185,10 +185,11 @@ export class ChannelAccessService {
    * list (e.g. `GET /v1/polls`) cannot become a side-channel that leaks the
    * content of private, DM, or role-gated channels the caller is not in.
    *
-   * Loads channels, membership, and effective permissions at most once each;
+   * Loads membership, then the requested channel rows (not the chapter's
+   * full channel list), and effective permissions at most once each;
    * permissions are only fetched when a ROLE_GATED channel is among the
    * candidates. Membership resolves *before* the channel load so a caller from
-   * outside the chapter never triggers a chapter-wide read.
+   * outside the chapter never queries `chat_channels`.
    */
   async filterAccessibleChannelIds(
     chapterId: string,
@@ -205,7 +206,7 @@ export class ChannelAccessService {
     );
     if (!member) return new Set();
 
-    const channels = await this.channelRepo.findByChapter(chapterId);
+    const channels = await this.channelRepo.findByIds(chapterId, [...wanted]);
     // Mirrors `filterAccessibleChannels`' archived exclusion (#348) — this is
     // the other batch predicate `getUnreadCounts` and the chapter-wide poll
     // list go through, and the two must not drift on what counts as active.
@@ -248,12 +249,13 @@ export class ChannelAccessService {
    * Filtering here is load-bearing, not defensive.
    *
    * Rows are re-scoped to `chapterId` before the predicate runs. The id-taking
-   * sibling gets that for free by loading its own candidates; here the rows come
-   * from the caller, and `applyReadPredicate` asserts `isChapterMember: true` on
-   * the strength of a membership check against `chapterId` alone — which proves
-   * the *caller* belongs to the chapter, not the *channels*. Without this filter
-   * a caller passing rows from anywhere else (a by-id resolver, a join over
-   * messages) would have every foreign `PUBLIC` row returned as accessible.
+   * sibling gets that from `findByIds(chapterId, ids)`, which is scoped to
+   * `chapter_id`; here the rows come from the caller, and `applyReadPredicate`
+   * asserts `isChapterMember: true` on the strength of a membership check against
+   * `chapterId` alone — which proves the *caller* belongs to the chapter, not
+   * the *channels*. Without this filter a caller passing rows from anywhere else
+   * (a by-id resolver, a join over messages) would have every foreign `PUBLIC`
+   * row returned as accessible.
    */
   async filterAccessibleChannels(
     chapterId: string,

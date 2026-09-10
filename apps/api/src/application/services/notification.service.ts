@@ -23,6 +23,9 @@ import type {
   NotificationPreference,
   UserSettings,
 } from '#domain/entities/notification.entity';
+import { clampListLimit } from '#domain/constants/list-query-limits';
+import { ID_CHUNK_SIZE, chunkIds } from '#domain/utils/chunk-ids';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /** Cap on how much of an offending value reaches a log line. */
 const LOGGED_VALUE_MAX_LENGTH = 64;
@@ -52,6 +55,21 @@ export type NotifyPayload = {
   priority?: 'URGENT' | 'NORMAL' | 'SILENT';
   category?: string;
 };
+
+/** In-app insert shape shared by `notifyUser` and the batched chapter path. */
+function inAppRow(
+  userId: string,
+  chapterId: string,
+  payload: NotifyPayload,
+): Pick<Notification, 'chapter_id' | 'user_id' | 'title' | 'body' | 'data'> {
+  return {
+    chapter_id: chapterId,
+    user_id: userId,
+    title: payload.title,
+    body: payload.body,
+    data: payload.data ?? {},
+  };
+}
 
 @Injectable()
 export class NotificationService {
@@ -118,13 +136,9 @@ export class NotificationService {
       effectivePriority = 'SILENT';
     }
 
-    const notification = await this.notificationRepo.create({
-      chapter_id: chapterId,
-      user_id: userId,
-      title: payload.title,
-      body: payload.body,
-      data: payload.data ?? {},
-    });
+    const notification = await this.notificationRepo.create(
+      inAppRow(userId, chapterId, payload),
+    );
 
     // Push is best-effort, and the token lookup is part of it. Once the
     // notification row above is committed the user *has* been notified in
@@ -135,36 +149,20 @@ export class NotificationService {
     // delivery reports failure.
     try {
       const pushTokens = await this.pushTokenRepo.findByUser(userId);
-      if (pushTokens.length === 0) return;
-
-      const { invalidTokens } = await this.pushProvider.sendToUser(
-        pushTokens.map((t) => t.token),
-        {
-          title: payload.title,
-          body: payload.body,
-          data: { ...payload.data, notificationId: notification.id },
-          priority: effectivePriority,
-          // Forwarded for delivery telemetry only — lets `push_delivery`
-          // records be sliced by category (see the Expo provider).
-          category,
-        },
-      );
-
-      // Pruning stays in the application layer — the provider only classifies
-      // Expo's response, it never touches `push_tokens` itself. Best-effort
-      // and outside the outer catch's concern: a delete failure here must
-      // never read as "push delivery failed" in the log line below. Each
-      // deletion catches its own rejection, so nothing here can actually
-      // reject — `Promise.all` (not `allSettled`) says that plainly.
-      await Promise.all(
-        invalidTokens.map((token) =>
-          this.pushTokenRepo.deleteByToken(token).catch((err) => {
-            this.logger.warn(`Failed to prune invalid push token`, err);
-          }),
-        ),
+      await this.sendPushAndPrune(
+        pushTokens,
+        notification.id,
+        payload,
+        effectivePriority,
+        category,
       );
     } catch (err) {
-      this.logger.warn(`Push delivery failed for user ${userId}`, err);
+      logThrowable(
+        this.logger,
+        'warn',
+        `Push delivery failed for user ${userId}`,
+        err,
+      );
     }
   }
 
@@ -173,11 +171,237 @@ export class NotificationService {
     payload: NotifyPayload,
   ): Promise<void> {
     const members = await this.memberRepo.findByChapter(chapterId);
-    await Promise.allSettled(
-      members.map((member) =>
-        this.notifyUser(member.user_id, chapterId, payload),
+    const userIds = [...new Set(members.map((member) => member.user_id))];
+    if (userIds.length === 0) return;
+
+    const category = payload.category ?? 'default';
+    const priority = payload.priority ?? 'NORMAL';
+
+    let eligible = userIds;
+    if (priority !== 'URGENT') {
+      const { rows: prefs, failedIds } = await this.loadInChunks(
+        userIds,
+        (chunk) =>
+          this.preferenceRepo.findByUsersChapterCategory(
+            chunk,
+            chapterId,
+            category,
+          ),
+        'preference lookup',
+        chapterId,
+      );
+      const skipped = new Set(failedIds);
+      const disabled = new Set(
+        prefs.filter((pref) => !pref.is_enabled).map((pref) => pref.user_id),
+      );
+      eligible = userIds.filter((id) => !disabled.has(id) && !skipped.has(id));
+      if (eligible.length === 0) return;
+    }
+
+    // URGENT ignores quiet hours, so the settings read is only for NORMAL /
+    // SILENT payloads. `notifyUser` still reads settings for URGENT and then
+    // skips the window — this path just does not pay for that lookup.
+    let settingsByUser = new Map<string, UserSettings>();
+    if (priority !== 'URGENT') {
+      const { rows: settingsRows, failedIds } = await this.loadInChunks(
+        eligible,
+        (chunk) => this.settingsRepo.findByUserIds(chunk),
+        'settings lookup',
+        chapterId,
+      );
+      const skipped = new Set(failedIds);
+      eligible = eligible.filter((id) => !skipped.has(id));
+      if (eligible.length === 0) return;
+      settingsByUser = new Map(settingsRows.map((row) => [row.user_id, row]));
+    }
+
+    const recipients: {
+      userId: string;
+      effectivePriority: NotifyPayload['priority'];
+    }[] = eligible.map((userId) => {
+      let effectivePriority = priority;
+      if (
+        effectivePriority !== 'URGENT' &&
+        this.isInQuietHours(settingsByUser.get(userId) ?? null, userId)
+      ) {
+        effectivePriority = 'SILENT';
+      }
+      return { userId, effectivePriority };
+    });
+
+    const created: Notification[] = [];
+    let insertFailures = 0;
+    const recipientChunks: (typeof recipients)[] = [];
+    for (let i = 0; i < recipients.length; i += ID_CHUNK_SIZE) {
+      recipientChunks.push(recipients.slice(i, i + ID_CHUNK_SIZE));
+    }
+    const insertResults = await Promise.allSettled(
+      recipientChunks.map((chunk) =>
+        this.notificationRepo.createMany(
+          chunk.map(({ userId }) => inAppRow(userId, chapterId, payload)),
+        ),
       ),
     );
+    for (let i = 0; i < insertResults.length; i++) {
+      const result = insertResults[i];
+      const chunk = recipientChunks[i];
+      if (result.status === 'fulfilled') {
+        created.push(...result.value);
+      } else {
+        insertFailures += chunk.length;
+        logThrowable(
+          this.logger,
+          'warn',
+          `Chapter notify insert failed for ${chunk.length} recipients in ${chapterId}`,
+          result.reason,
+        );
+      }
+    }
+
+    if (insertFailures > 0) {
+      this.logger.warn(
+        `Chapter notify insert failed for ${insertFailures} of ${recipients.length} recipients in ${chapterId}`,
+      );
+    }
+
+    if (created.length === 0) return;
+
+    const createdUserIds = [
+      ...new Set(created.map((notification) => notification.user_id)),
+    ];
+    const { rows: tokens } = await this.loadInChunks(
+      createdUserIds,
+      (chunk) => this.pushTokenRepo.findByUserIds(chunk),
+      'token lookup',
+      chapterId,
+    );
+
+    const tokensByUser = new Map<string, PushToken[]>();
+    for (const token of tokens) {
+      const list = tokensByUser.get(token.user_id);
+      if (list) list.push(token);
+      else tokensByUser.set(token.user_id, [token]);
+    }
+
+    const priorityByUser = new Map(
+      recipients.map((recipient) => [
+        recipient.userId,
+        recipient.effectivePriority,
+      ]),
+    );
+
+    const pushResults = await Promise.allSettled(
+      created.map(async (notification) => {
+        const userTokens = tokensByUser.get(notification.user_id) ?? [];
+        await this.sendPushAndPrune(
+          userTokens,
+          notification.id,
+          payload,
+          priorityByUser.get(notification.user_id) ?? 'NORMAL',
+          category,
+        );
+      }),
+    );
+
+    const pushFailures = pushResults.filter(
+      (result) => result.status === 'rejected',
+    ).length;
+    if (pushFailures > 0) {
+      this.logger.warn(
+        `Chapter notify push failed for ${pushFailures} of ${created.length} recipients in ${chapterId}`,
+      );
+    }
+  }
+
+  /**
+   * Expo send plus invalid-token prune. Shared by `notifyUser` and the
+   * chapter-wide path so the payload shape (including `notificationId`) cannot
+   * drift. Callers own the "push is best-effort" boundary: `notifyUser`
+   * catches, `notifyChapter` counts rejections.
+   *
+   * Pruning stays in the application layer — the provider only classifies
+   * Expo's response, it never touches `push_tokens` itself. Best-effort:
+   * a delete failure must never read as "push delivery failed". Each
+   * deletion catches its own rejection, so nothing here can actually reject
+   * — `Promise.all` (not `allSettled`) says that plainly.
+   */
+  private async sendPushAndPrune(
+    tokens: PushToken[],
+    notificationId: string,
+    payload: NotifyPayload,
+    priority: NotifyPayload['priority'],
+    category: string,
+  ): Promise<void> {
+    if (tokens.length === 0) return;
+
+    const { invalidTokens } = await this.pushProvider.sendToUser(
+      tokens.map((token) => token.token),
+      {
+        title: payload.title,
+        body: payload.body,
+        data: { ...payload.data, notificationId },
+        priority,
+        // Forwarded for delivery telemetry only — lets `push_delivery`
+        // records be sliced by category (see the Expo provider).
+        category,
+      },
+    );
+
+    await Promise.all(
+      invalidTokens.map((token) =>
+        this.pushTokenRepo.deleteByToken(token).catch((err) => {
+          logThrowable(
+            this.logger,
+            'warn',
+            'Failed to prune invalid push token',
+            err,
+          );
+        }),
+      ),
+    );
+  }
+
+  /**
+   * One chunked `in (...)` lookup that isolates a failed 100-id page so the
+   * rest of a chapter-wide send still runs. A rejection used to be per member
+   * (and `notifyChapter` swallowed it); failing the whole roster because one
+   * page 414'd or timed out would be a step backwards.
+   */
+  private async loadInChunks<T>(
+    ids: string[],
+    load: (chunk: string[]) => Promise<T[]>,
+    label: string,
+    chapterId: string,
+  ): Promise<{ rows: T[]; failedIds: string[] }> {
+    if (ids.length === 0) return { rows: [], failedIds: [] };
+
+    const rows: T[] = [];
+    const failedIds: string[] = [];
+    const chunks = chunkIds(ids);
+    const results = await Promise.allSettled(
+      chunks.map((chunk) => load(chunk)),
+    );
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const chunk = chunks[i];
+      if (result.status === 'fulfilled') {
+        rows.push(...result.value);
+      } else {
+        failedIds.push(...chunk);
+        logThrowable(
+          this.logger,
+          'warn',
+          `Chapter notify ${label} failed for ${chunk.length} recipients in ${chapterId}`,
+          result.reason,
+        );
+      }
+    }
+    if (failedIds.length > 0) {
+      this.logger.warn(
+        `Chapter notify ${label} failed for ${failedIds.length} of ${ids.length} recipients in ${chapterId}`,
+      );
+    }
+    return { rows, failedIds };
   }
 
   private isInQuietHours(
@@ -223,12 +447,14 @@ export class NotificationService {
 
   /**
    * `Intl.DateTimeFormat` throws `RangeError` on an unknown IANA zone, and this
-   * runs *before* `notificationRepo.create` — so an uncaught throw costs the
-   * member the push **and** the in-app row, silently, since `notifyChapter`
-   * swallows the rejection through `Promise.allSettled`. Rows predating the
-   * `quiet_hours_tz` DTO validation can still carry such a zone, so degrade
-   * instead of throwing: a time-shifted quiet window is a far smaller failure
-   * than a member whose notifications simply stop.
+   * runs *before* the notification row is written — so an uncaught throw costs
+   * the member the push **and** the in-app row. `notifyUser` would surface that
+   * as a thrown delivery; the chapter-wide path evaluates the same helper in
+   * memory over batched `user_settings` rows, and used to hide the same throw
+   * behind `Promise.allSettled`. Rows predating the `quiet_hours_tz` DTO
+   * validation can still carry such a zone, so degrade instead of throwing: a
+   * time-shifted quiet window is a far smaller failure than a member whose
+   * notifications simply stop.
    *
    * Returns `null` only when the runtime cannot resolve `UTC` either — an ICU
    * build that can't do zones at all. Quiet hours are then skipped rather than
@@ -266,10 +492,10 @@ export class NotificationService {
       fallback = null;
     }
 
-    // The offending row cannot repair itself, and this runs per delivery — for a
-    // chapter-wide send that is one line per affected member, every time. Warn
-    // once per (user, zone) per process so the signal survives without becoming
-    // the noise that hides the next problem.
+    // The offending row cannot repair itself, and this runs per recipient. A
+    // chapter-wide send still evaluates it in memory once per affected member.
+    // Warn once per (user, zone) per process so the signal survives without
+    // becoming the noise that hides the next problem.
     const warnKey = `${userId}:${tz}`;
     if (!this.warnedQuietHoursZones.has(warnKey)) {
       this.warnedQuietHoursZones.add(warnKey);
@@ -286,20 +512,24 @@ export class NotificationService {
 
   async listNotifications(
     userId: string,
+    chapterId: string,
     options?: { limit?: number },
   ): Promise<Notification[]> {
-    return this.notificationRepo.findByUser(userId, options);
+    return this.notificationRepo.findByUser(userId, chapterId, {
+      limit: clampListLimit(options?.limit),
+    });
   }
 
   async markNotificationRead(
     id: string,
     userId: string,
+    chapterId: string,
   ): Promise<Notification> {
-    const existing = await this.notificationRepo.findById(id);
+    const existing = await this.notificationRepo.findById(id, chapterId);
     if (!existing || existing.user_id !== userId) {
       throw new NotFoundException('Notification not found');
     }
-    return this.notificationRepo.markRead(id, userId);
+    return this.notificationRepo.markRead(id, userId, chapterId);
   }
 
   async registerPushToken(

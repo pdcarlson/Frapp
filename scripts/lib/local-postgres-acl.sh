@@ -4,8 +4,8 @@
 # their own error policy; these helpers signal failure via return codes.
 #
 # Sourced by BOTH bootstrap paths, which is the whole point of the file:
-#   * scripts/cloud-sandbox-up.sh  — Claude Code web sandbox (primary dev env)
-#   * scripts/local-dev-setup.sh   — laptop / WSL (secondary dev env)
+#   * scripts/cloud-sandbox-up.sh  — Cursor Cloud and Claude Code web (shared bringup)
+#   * scripts/local-dev-setup.sh   — laptop / WSL (third path)
 #
 # This lib deliberately does NOT source scripts/lib/cloud-sandbox-common.sh and has no
 # `cs_*` dependencies. That lib is not side-effect-free at source time (it exports the
@@ -47,12 +47,12 @@ frapp_acl_log() {
 #     that adds a migration does not have to re-run this by hand.
 #
 # Function EXECUTE is deliberately NOT granted, and this is the one line here that must not be
-# "tidied" into symmetry with the table grants. Ten migrations under supabase/migrations/
+# "tidied" into symmetry with the table grants. Eleven migrations under supabase/migrations/
 # (confirm_task_completion, approve_service_entry, check_in_event, transfer_presidency,
 # active_chapter_jwt_claim, apply_invoice_payment, anonymize_user, chat_message_actions RLS,
-# stripe_webhook_events, role_gated_required_permissions) revoke EXECUTE from `public` and
-# `anon` — eight of them from `authenticated` as well — and then re-grant it only to named
-# roles: `service_role` in nine, `supabase_auth_admin` in one, and `authenticated` in the two
+# stripe_webhook_events, role_gated_required_permissions, apply_subscription_webhook) revoke EXECUTE from `public` and
+# `anon` — nine of them from `authenticated` as well — and then re-grant it only to named
+# roles: `service_role` in ten, `supabase_auth_admin` in one, and `authenticated` in the two
 # that deliberately allow a direct client call. A blanket
 # `GRANT EXECUTE ON ALL FUNCTIONS … TO anon, authenticated, service_role` would undo every one
 # of those revokes at once. (Enumerated by grep against supabase/migrations/; re-check if you

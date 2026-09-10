@@ -4,7 +4,8 @@ import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { AuthScreen } from "@/components/auth/auth-screen";
+import { AuthDivider, AuthScreen } from "@/components/auth/auth-screen";
+import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,11 @@ import { getErrorMessage } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
 import { buildAuthCallbackUrl, resolveRedirectPath } from "@/lib/auth/redirect";
+import {
+  describeOAuthKickoffError,
+  startWebOAuth,
+  type OAuthProvider,
+} from "@/lib/auth/oauth";
 
 /**
  * Create an account — s01's grammar, one step along.
@@ -42,6 +48,7 @@ function SignUpPageContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingOAuth, setPendingOAuth] = useState<OAuthProvider | null>(null);
   const redirectTo = resolveRedirectPath(searchParams.get("redirectTo"));
 
   async function handleSignUp(event: React.FormEvent<HTMLFormElement>) {
@@ -83,6 +90,30 @@ function SignUpPageContent() {
       setIsSubmitting(false);
     }
   }
+
+  async function handleOAuth(provider: OAuthProvider) {
+    setPendingOAuth(provider);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { error } = await startWebOAuth(
+        supabase,
+        provider,
+        window.location.origin,
+        redirectTo,
+      );
+      if (error) throw error;
+    } catch (error) {
+      toast({
+        title: "Unable to create account",
+        description: describeOAuthKickoffError(error),
+        variant: "destructive",
+      });
+    } finally {
+      setPendingOAuth(null);
+    }
+  }
+
+  const oauthBusy = pendingOAuth !== null;
 
   return (
     <AuthScreen
@@ -126,11 +157,21 @@ function SignUpPageContent() {
             required
           />
         </div>
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
+        <Button type="submit" className="w-full" disabled={isSubmitting || oauthBusy}>
           {isSubmitting ? <Loader2 className="animate-spin" /> : null}
           Create account
         </Button>
       </form>
+
+      <AuthDivider label="or" />
+
+      <OAuthButtons
+        onSelect={(provider) => {
+          void handleOAuth(provider);
+        }}
+        pending={pendingOAuth}
+        disabled={isSubmitting}
+      />
     </AuthScreen>
   );
 }

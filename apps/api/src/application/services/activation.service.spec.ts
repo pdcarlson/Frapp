@@ -109,4 +109,40 @@ describe('ActivationService', () => {
     // which is the durable half of the funnel.
     expect(mockRepo.recordFirst).toHaveBeenCalled();
   });
+
+  it('does not log PostgREST details when recordFirst throws a plain object', async () => {
+    const details =
+      'Key (email)=(alice@example.com) is not present in table "users".';
+    mockRepo.recordFirst.mockRejectedValue({
+      code: '23505',
+      message:
+        'duplicate key value violates unique constraint "chapter_activation_milestones_chapter_id_milestone_key"',
+      hint: 'The milestone was already recorded.',
+      details,
+    });
+    const errorSpy = jest
+      .spyOn(service['logger'], 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      await expect(
+        service.record('ch-1', 'activation-checkout-completed'),
+      ).resolves.toBe(false);
+      expect(mockAnalytics.trackForChapter).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalled();
+      const printed = errorSpy.mock.calls
+        .map((args) =>
+          args
+            .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
+            .join('\n'),
+        )
+        .join('\n');
+      expect(printed).toContain('Failed to record activation milestone');
+      expect(printed).toContain('23505');
+      expect(printed).not.toContain('alice@example.com');
+      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });

@@ -51,7 +51,7 @@ jest.mock('@repo/chapter-theme', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { ChapterConfigService } from './chapter-config.service';
 import { SERVICE_CONFIG_DEFAULTS } from './chapter-service-config.service';
 import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
@@ -82,6 +82,12 @@ function makeSupabase(
   options: {
     defaultInviteRoleId?: string | null;
     roleLookupRow?: { id: string } | null;
+    roleLookupError?: {
+      code?: string;
+      message: string;
+      details?: string;
+      hint?: string;
+    };
     // #1626: inject a transient read failure on any of getConfig's reads. The harness pinned `error: null` on all of them,
     // which is why nothing caught that a swallowed error was substituting
     // defaults for the chapter's real config and then writing them back.
@@ -101,12 +107,48 @@ function makeSupabase(
       // error log, no security event and no Sentry capture.
       chapters?: { message: string } | null;
     };
+    // 1-based select index that should fail. Static `readErrors` cannot
+    // express "leading getConfig ok, trailing getConfig fail" (#1670).
+    readErrorOnCall?: {
+      chapters?: number;
+      workflows?: number;
+      dues?: number;
+      service?: number;
+      points?: number;
+    };
+    trailingReadError?: { message: string };
     // Model a chapter id that resolves to no row at all — the legitimate 404,
     // which must stay distinguishable from a failed read.
     chapterRowOverride?: null;
   } = {},
 ) {
   const readErrors = options.readErrors ?? {};
+  const readCallCount = {
+    chapters: 0,
+    workflows: 0,
+    dues: 0,
+    service: 0,
+    points: 0,
+  };
+  const trailingReadError = options.trailingReadError ?? {
+    message: 'trailing read failed',
+  };
+
+  const resolveSelect = (
+    table: keyof typeof readCallCount,
+    data: unknown,
+  ): { data: unknown; error: { message: string } | null } => {
+    readCallCount[table] += 1;
+    const staticError = readErrors[table];
+    if (staticError) {
+      return { data: null, error: staticError };
+    }
+    const nth = options.readErrorOnCall?.[table];
+    if (nth != null && readCallCount[table] === nth) {
+      return { data: null, error: trailingReadError };
+    }
+    return { data, error: null };
+  };
   const chapterRow = {
     id: CHAPTER_ID,
     org_archetype: 'ifc',
@@ -137,13 +179,16 @@ function makeSupabase(
       // `eq` is the terminal for updates (awaited) and a passthrough for selects.
       builder.eq = jest.fn().mockReturnValue(
         Object.assign(Promise.resolve({ error: null }), {
-          maybeSingle: jest.fn().mockResolvedValue({
-            data:
-              readErrors.chapters || options.chapterRowOverride === null
-                ? null
-                : chapterRow,
-            error: readErrors.chapters ?? null,
-          }),
+          maybeSingle: jest
+            .fn()
+            .mockImplementation(() =>
+              Promise.resolve(
+                resolveSelect(
+                  'chapters',
+                  options.chapterRowOverride === null ? null : chapterRow,
+                ),
+              ),
+            ),
         }),
       );
       return builder;
@@ -151,10 +196,11 @@ function makeSupabase(
     if (table === 'chapter_workflows') {
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn().mockReturnValue(builder);
-      builder.eq = jest.fn().mockResolvedValue({
-        data: readErrors.workflows ? null : workflowRows,
-        error: readErrors.workflows ?? null,
-      });
+      builder.eq = jest
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(resolveSelect('workflows', workflowRows)),
+        );
       builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
         workflowUpsert(rows, opts),
       );
@@ -164,10 +210,11 @@ function makeSupabase(
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn().mockReturnValue(builder);
       builder.eq = jest.fn().mockReturnValue({
-        maybeSingle: jest.fn().mockResolvedValue({
-          data: readErrors.dues ? null : duesRow,
-          error: readErrors.dues ?? null,
-        }),
+        maybeSingle: jest
+          .fn()
+          .mockImplementation(() =>
+            Promise.resolve(resolveSelect('dues', duesRow)),
+          ),
       });
       builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
         duesUpsert(rows, opts),
@@ -178,10 +225,11 @@ function makeSupabase(
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn().mockReturnValue(builder);
       builder.eq = jest.fn().mockReturnValue({
-        maybeSingle: jest.fn().mockResolvedValue({
-          data: readErrors.service ? null : serviceRow,
-          error: readErrors.service ?? null,
-        }),
+        maybeSingle: jest
+          .fn()
+          .mockImplementation(() =>
+            Promise.resolve(resolveSelect('service', serviceRow)),
+          ),
       });
       builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
         serviceUpsert(rows, opts),
@@ -192,10 +240,11 @@ function makeSupabase(
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn().mockReturnValue(builder);
       builder.eq = jest.fn().mockReturnValue({
-        maybeSingle: jest.fn().mockResolvedValue({
-          data: readErrors.points ? null : pointsRow,
-          error: readErrors.points ?? null,
-        }),
+        maybeSingle: jest
+          .fn()
+          .mockImplementation(() =>
+            Promise.resolve(resolveSelect('points', pointsRow)),
+          ),
       });
       builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
         pointsUpsert(rows, opts),
@@ -224,6 +273,12 @@ function makeSupabase(
         return builder;
       });
       builder.maybeSingle = jest.fn(() => {
+        if (options.roleLookupError) {
+          return Promise.resolve({
+            data: null,
+            error: options.roleLookupError,
+          });
+        }
         const row = options.roleLookupRow ?? null;
         const scoped =
           filters.chapter_id === CHAPTER_ID && filters.id !== undefined;
@@ -997,6 +1052,47 @@ describe('ChapterConfigService default invite role (#422)', () => {
 
     expect(supabase.chapterUpdate).not.toHaveBeenCalled();
   });
+
+  it('does not log PostgREST details when the default-invite-role lookup fails (#1669)', async () => {
+    const details =
+      'Key (email)=(alice@example.com) is not present in table "users".';
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    const supabase = makeSupabase([], null, {}, null, null, {
+      roleLookupError: {
+        code: 'PGRST116',
+        message: 'JSON object requested, multiple (or no) rows returned',
+        details,
+        hint: 'Check the role id.',
+      },
+    });
+    const service = await buildService(supabase);
+
+    try {
+      await expect(
+        service.patchConfig(CHAPTER_ID, 'user-1', {
+          default_invite_role_id: 'role-pledge',
+        }),
+      ).rejects.toEqual(expect.objectContaining({ details }));
+
+      expect(errorSpy).toHaveBeenCalled();
+      const printed = errorSpy.mock.calls
+        .map((args) =>
+          args.map((arg) =>
+            typeof arg === 'string' ? arg : JSON.stringify(arg),
+          ),
+        )
+        .flat()
+        .join('\n');
+      expect(printed).toContain('Failed to validate default invite role');
+      expect(printed).toContain('PGRST116');
+      expect(printed).not.toContain('alice@example.com');
+      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });
 
 // ── Read errors must not become defaults (#1626) ─────────────────────────────
@@ -1205,5 +1301,137 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
         scholarship_pool_cents: 10000,
       });
     });
+  });
+});
+
+// ── Trailing getConfig cannot fail a committed PATCH (#1670) ─────────────────
+//
+// patchConfig used to `return this.getConfig(chapterId)` after the writes and
+// the audit row. getConfig fails closed (#1626), so a transient trailing
+// read turned a durable PATCH into HTTP 500. The client then rolled the
+// optimistic cache back while `#chapter-audit` showed a change the officer
+// believed had not happened.
+//
+// Static `readErrors` fail every select of that table, so they can only
+// pin the leading read. `readErrorOnCall` is 1-based: 1 = leading (must
+// still fail closed), 2 = trailing (must not fail the request).
+
+describe('ChapterConfigService — trailing getConfig cannot fail a committed PATCH (#1670)', () => {
+  const TRAILING = { message: 'trailing connection terminated' };
+  const CONFIGURED_DUES = {
+    cadence: 'semester',
+    active_amount_cents: 75000,
+    new_member_amount_cents: 90000,
+    alumni_amount_cents: 5000,
+    late_fee_cents: 2500,
+    scholarship_pool_cents: 10000,
+    installment_count: 2,
+  };
+
+  it('returns the merged dues row when only the trailing dues read fails', async () => {
+    const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+      readErrorOnCall: { dues: 2 },
+      trailingReadError: TRAILING,
+    });
+    const service = await buildService(supabase);
+
+    const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
+      dues: { cadence: 'monthly' },
+    });
+
+    expect(supabase.duesUpsert).toHaveBeenCalledTimes(1);
+    expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+    expect(result.dues).toMatchObject({
+      cadence: 'monthly',
+      active_amount_cents: 75000,
+      new_member_amount_cents: 90000,
+      alumni_amount_cents: 5000,
+      late_fee_cents: 2500,
+      scholarship_pool_cents: 10000,
+    });
+  });
+
+  it('returns the merged service row when only the trailing service read fails', async () => {
+    const supabase = makeSupabase(
+      [],
+      CONFIGURED_DUES,
+      {},
+      { minutes_per_point: 45 },
+      null,
+      {
+        readErrorOnCall: { service: 2 },
+        trailingReadError: TRAILING,
+      },
+    );
+    const service = await buildService(supabase);
+
+    const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
+      service: { minutes_per_point: 30 },
+    });
+
+    expect(supabase.serviceUpsert).toHaveBeenCalledTimes(1);
+    expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+    expect(result.service).toMatchObject({ minutes_per_point: 30 });
+  });
+
+  it('returns the overlayed workflow when only the trailing workflows read fails', async () => {
+    const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+      readErrorOnCall: { workflows: 2 },
+      trailingReadError: TRAILING,
+    });
+    const service = await buildService(supabase);
+
+    const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
+      workflows: [{ key: 'wf_budget_approval', enabled: false }],
+    });
+
+    expect(supabase.workflowUpsert).toHaveBeenCalledTimes(1);
+    expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+    expect(result.workflows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'wf_budget_approval',
+          enabled: false,
+          threshold: 500,
+          units: 'USD',
+        }),
+      ]),
+    );
+  });
+
+  it('returns the persisted theme palette when the trailing chapters read fails', async () => {
+    const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+      readErrorOnCall: { chapters: 2 },
+      trailingReadError: TRAILING,
+    });
+    const service = await buildService(supabase);
+
+    const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
+      branding: { colors: { accent: '#8B0000' } },
+    });
+
+    expect(supabase.chapterUpdate).toHaveBeenCalled();
+    expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+    expect(result.branding).toMatchObject({ colors: { accent: '#8B0000' } });
+    expect(result.theme_palette).toMatchObject({
+      '--signet-accent-primary': '#C49A3A',
+    });
+  });
+
+  it('still fails closed when the first dues read fails (call 1)', async () => {
+    const supabase = makeSupabase([], CONFIGURED_DUES, {}, null, null, {
+      readErrorOnCall: { dues: 1 },
+      trailingReadError: TRAILING,
+    });
+    const service = await buildService(supabase);
+
+    await expect(
+      service.patchConfig(CHAPTER_ID, 'user-1', {
+        dues: { cadence: 'monthly' },
+      }),
+    ).rejects.toMatchObject({ message: TRAILING.message });
+
+    expect(supabase.duesUpsert).not.toHaveBeenCalled();
+    expect(supabase.auditInsert).not.toHaveBeenCalled();
   });
 });

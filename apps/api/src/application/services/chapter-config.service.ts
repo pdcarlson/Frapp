@@ -35,6 +35,7 @@ import {
   type PointsConfig,
 } from './chapter-points-config.service';
 import { ActivationService } from './activation.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
  * Paid module keys, read from the catalog rather than a second hand-kept list —
@@ -123,6 +124,48 @@ const DUES_DEFAULTS: DuesConfig = {
   grace_days: 7,
   scholarship_pool_cents: 0,
 };
+
+function duesConfigFromUpsert(
+  row: TablesInsert<'chapter_dues_config'>,
+  fallback: DuesConfig,
+): DuesConfig {
+  const next: DuesConfig = { ...fallback };
+  for (const key of DUES_FIELDS) {
+    const value = row[key];
+    if (value !== undefined) {
+      (next as unknown as Record<string, unknown>)[key] = value;
+    }
+  }
+  return next;
+}
+
+function serviceConfigFromUpsert(
+  row: TablesInsert<'chapter_service_config'>,
+  fallback: ServiceConfig,
+): ServiceConfig {
+  const next: ServiceConfig = { ...fallback };
+  for (const key of SERVICE_CONFIG_FIELDS) {
+    const value = row[key];
+    if (value !== undefined) {
+      (next as unknown as Record<string, unknown>)[key] = value;
+    }
+  }
+  return next;
+}
+
+function pointsConfigFromUpsert(
+  row: TablesInsert<'chapter_points_config'>,
+  fallback: PointsConfig,
+): PointsConfig {
+  const next: PointsConfig = { ...fallback };
+  for (const key of POINTS_CONFIG_FIELDS) {
+    const value = row[key];
+    if (value !== undefined) {
+      (next as unknown as Record<string, unknown>)[key] = value;
+    }
+  }
+  return next;
+}
 
 /** One incoming workflow toggle in a config PATCH. */
 export type ChapterWorkflowPatch = {
@@ -379,7 +422,12 @@ export class ChapterConfigService {
       .maybeSingle();
 
     if (error) {
-      this.logger.error('Failed to validate default invite role', error);
+      logThrowable(
+        this.logger,
+        'error',
+        'Failed to validate default invite role',
+        error,
+      );
       throw error;
     }
     if (!data) {
@@ -636,7 +684,12 @@ export class ChapterConfigService {
         .eq('id', chapterId);
 
       if (updateError) {
-        this.logger.error('Failed to update chapter config', updateError);
+        logThrowable(
+          this.logger,
+          'error',
+          'Failed to update chapter config',
+          updateError,
+        );
         throw updateError;
       }
     }
@@ -647,7 +700,12 @@ export class ChapterConfigService {
         .upsert(workflowUpserts, { onConflict: 'chapter_id,key' });
 
       if (workflowError) {
-        this.logger.error('Failed to update chapter workflows', workflowError);
+        logThrowable(
+          this.logger,
+          'error',
+          'Failed to update chapter workflows',
+          workflowError,
+        );
         throw workflowError;
       }
     }
@@ -658,7 +716,12 @@ export class ChapterConfigService {
         .upsert(duesUpsert, { onConflict: 'chapter_id' });
 
       if (duesError) {
-        this.logger.error('Failed to update chapter dues config', duesError);
+        logThrowable(
+          this.logger,
+          'error',
+          'Failed to update chapter dues config',
+          duesError,
+        );
         throw duesError;
       }
     }
@@ -669,7 +732,9 @@ export class ChapterConfigService {
         .upsert(serviceUpsert, { onConflict: 'chapter_id' });
 
       if (serviceError) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           'Failed to update chapter service config',
           serviceError,
         );
@@ -683,7 +748,9 @@ export class ChapterConfigService {
         .upsert(pointsUpsert, { onConflict: 'chapter_id' });
 
       if (pointsError) {
-        this.logger.error(
+        logThrowable(
+          this.logger,
+          'error',
           'Failed to update chapter points config',
           pointsError,
         );
@@ -708,7 +775,12 @@ export class ChapterConfigService {
       .insert(audit);
 
     if (auditError) {
-      this.logger.error('Failed to write chapter audit log', auditError);
+      logThrowable(
+        this.logger,
+        'error',
+        'Failed to write chapter audit log',
+        auditError,
+      );
       throw auditError;
     }
 
@@ -735,16 +807,150 @@ export class ChapterConfigService {
     // Recompute the theme palette whenever the PATCH carries `branding.colors` —
     // presence, not change. Use the merged
     // branding colors so a partial color patch keeps the untouched channel.
+    // Capture the derived map so a trailing `getConfig` failure can still
+    // return the tokens we just persisted (#1670 fallback).
+    let committedThemePalette:
+      | Awaited<ReturnType<ChapterConfigService['getConfig']>>['theme_palette']
+      | undefined;
     if (dto.branding?.colors) {
       const mergedColors =
         (mergedBranding as { colors?: { accent?: string } })?.colors ??
         dto.branding.colors;
-      await this.recomputePalette(chapterId, mergedColors).catch((err) =>
-        this.logger.warn('Failed to recompute palette', err),
-      );
+      try {
+        const build = await this.recomputePalette(chapterId, mergedColors);
+        committedThemePalette = build.palette;
+      } catch (err) {
+        logThrowable(this.logger, 'warn', 'Failed to recompute palette', err);
+      }
     }
 
-    return this.getConfig(chapterId);
+    // Trailing re-read is best-effort freshness, not part of the write.
+    // The leading `getConfig` above *must* fail closed (#1626): it is the
+    // prior state this method merges onto and upserts as a whole row. This
+    // one runs after the chapters update, the singleton upserts, the audit
+    // insert, and activation.record have already committed. Letting it throw
+    // turns a durable PATCH into HTTP 500; `usePatchOrgConfig.onError` then
+    // restores the pre-mutation cache, so the officer sees a snap-back while
+    // `#chapter-audit` shows a change they believe did not happen (#1670).
+    try {
+      return await this.getConfig(chapterId);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `trailing getConfig after committed patch failed for chapter ${chapterId}; returning locally-merged state: ${detail}`,
+      );
+      return this.configAfterCommittedPatch(existing, {
+        update,
+        workflowUpserts,
+        duesUpsert,
+        serviceUpsert,
+        pointsUpsert,
+        themePalette: committedThemePalette,
+      });
+    }
+  }
+
+  /**
+   * In-memory view of a PATCH that already wrote. Used only when the trailing
+   * `getConfig` fails; the response is then best-effort-fresh rather than
+   * round-trip-verified (palette recompute is already fire-and-forget).
+   */
+  private configAfterCommittedPatch(
+    existing: Awaited<ReturnType<ChapterConfigService['getConfig']>>,
+    committed: {
+      update: TablesUpdate<'chapters'>;
+      workflowUpserts: TablesInsert<'chapter_workflows'>[];
+      duesUpsert: TablesInsert<'chapter_dues_config'> | null;
+      serviceUpsert: TablesInsert<'chapter_service_config'> | null;
+      pointsUpsert: TablesInsert<'chapter_points_config'> | null;
+      themePalette?: Awaited<
+        ReturnType<ChapterConfigService['getConfig']>
+      >['theme_palette'];
+    },
+  ): Awaited<ReturnType<ChapterConfigService['getConfig']>> {
+    const {
+      update,
+      workflowUpserts,
+      duesUpsert,
+      serviceUpsert,
+      pointsUpsert,
+      themePalette,
+    } = committed;
+
+    let orgArchetype = existing.org_archetype;
+    let archetypeMeta = existing.archetype_meta;
+    let rolePack = existing.role_pack;
+    if (update.org_archetype !== undefined) {
+      orgArchetype = update.org_archetype;
+      const archetype = getArchetype(orgArchetype);
+      archetypeMeta = {
+        label: archetype.label,
+        short: archetype.short,
+        description: archetype.description,
+        council: archetype.council,
+      };
+      rolePack = archetype.rolePack;
+    }
+
+    const workflowByKey = new Map(
+      workflowUpserts.map((row) => [row.key, row] as const),
+    );
+    // Same shape as `getConfig`: every key is always present. Spreading `wf`
+    // and overlaying optional upsert fields would drop `units` from the
+    // required-key type (`threshold?:` vs `threshold: number | undefined`).
+    const workflows = existing.workflows.map((wf) => {
+      const next = workflowByKey.get(wf.key);
+      if (!next) return wf;
+      const threshold: number | undefined =
+        next.threshold == null ? wf.threshold : next.threshold;
+      return {
+        key: wf.key,
+        label: wf.label,
+        enabled: next.enabled ?? wf.enabled,
+        threshold,
+        units: wf.units,
+      };
+    });
+
+    return {
+      ...existing,
+      org_archetype: orgArchetype,
+      archetype_meta: archetypeMeta,
+      role_pack: rolePack,
+      enabled_modules:
+        update.enabled_modules !== undefined
+          ? update.enabled_modules
+          : existing.enabled_modules,
+      vocabulary:
+        update.vocabulary !== undefined
+          ? (update.vocabulary as typeof existing.vocabulary)
+          : existing.vocabulary,
+      branding:
+        update.branding !== undefined ? update.branding : existing.branding,
+      theme_palette: themePalette ?? existing.theme_palette,
+      beta_config:
+        update.beta_config !== undefined
+          ? update.beta_config
+          : existing.beta_config,
+      analytics_opt_out:
+        update.analytics_opt_out !== undefined
+          ? update.analytics_opt_out
+          : existing.analytics_opt_out,
+      default_invite_role_id:
+        'default_invite_role_id' in update
+          ? (update.default_invite_role_id ?? null)
+          : existing.default_invite_role_id,
+      workflows,
+      dues: duesUpsert
+        ? duesConfigFromUpsert(duesUpsert, existing.dues)
+        : existing.dues,
+      service: serviceUpsert
+        ? serviceConfigFromUpsert(serviceUpsert, existing.service)
+        : existing.service,
+      points: pointsUpsert
+        ? pointsConfigFromUpsert(pointsUpsert, existing.points)
+        : existing.points,
+    };
   }
 
   async recomputeAndPersistPalette(chapterId: string) {
@@ -795,7 +1001,12 @@ export class ChapterConfigService {
       .eq('id', chapterId);
 
     if (error) {
-      this.logger.error('Failed to persist theme palette', error);
+      logThrowable(
+        this.logger,
+        'error',
+        'Failed to persist theme palette',
+        error,
+      );
       throw error;
     }
 

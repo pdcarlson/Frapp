@@ -36,9 +36,11 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - Include a rollback note for infra changes.
 2. **Automation pass**
    - Required checks pass.
-   - Code review happens **before the push**, locally: the pre-push review-gate hook
-     (`.claude/hooks/pre-push-review-gate.sh`) requires one review pass on the branch HEAD before it
-     is pushed. There is no CI Claude review or `claude-review-gate` check (removed 2026-06-04).
+   - Code review happens **before the push**, locally: Cursor Cloud's
+     [`.cursor/hooks.json`](../../../.cursor/hooks.json) `beforeShellExecution` adapter
+     (`.cursor/hooks/pre-push-review-gate.sh`) wraps `.claude/hooks/pre-push-review-gate.sh`
+     and requires one review pass on the branch HEAD before it is pushed. There is no CI Claude
+     review or `claude-review-gate` check (removed 2026-06-04).
      Which skill, and the rules for each: [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md) § Which review skill.
 3. **Human review pass** — a convention, **not a merge gate**. Branch protection sets
    `required_pull_request_reviews: null` and `required_conversation_resolution: false`
@@ -47,10 +49,10 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    `npm run configure:branch-protection:verify` — use that script name, not the `-- --verify` form:
    one dropped separator turns it into a live `PUT` of the whole protection payload.
    Seek an approval and resolve your threads because the work is better for it — nothing downstream
-   will stop you. Step 2's local gate is **not** a backstop for this: it is a Claude Code
-   `PreToolUse` hook, so it sees agent tool calls only and never a plain terminal `git push`, it
-   releases the push after 4 blocked attempts with a stderr warning, and `FRAPP_SKIP_REVIEW_GATE=1`
-   bypasses it. A diff can reach `main` with no review pass of any kind.
+   will stop you. Step 2's local gate is **not** a backstop for this: it sees **agent** shell
+   (Cursor `beforeShellExecution`) or Claude `PreToolUse` tool calls, not a human's own terminal
+   `git push`. It releases the push after 4 blocked attempts with a stderr warning, and
+   `FRAPP_SKIP_REVIEW_GATE=1` bypasses it. A diff can reach `main` with no review pass of any kind.
 4. **Merge**
    - Feature work: squash merge into `main`.
    - Production: no PR. Dispatch **Deploy production** with the SHA you want live (#1340).

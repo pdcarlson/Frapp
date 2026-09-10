@@ -3,6 +3,16 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type { INotificationPreferenceRepository } from '#domain/repositories/notification.repository.interface';
 import type { NotificationPreference } from '#domain/entities/notification.entity';
+import { chunkIds } from '#domain/utils/chunk-ids';
+import { fetchAllPages } from '../supabase.utils';
+
+/**
+ * Request size for a batched preference read. One row per (user, chapter,
+ * category), so a 100-id chunk is well under a typical `max_rows` — paging
+ * is still required because the hosted cap is a dashboard setting this
+ * code cannot read. See `fetchAllPages`.
+ */
+const PREFERENCE_PAGE_SIZE = 500;
 
 @Injectable()
 export class SupabaseNotificationPreferenceRepository implements INotificationPreferenceRepository {
@@ -40,6 +50,32 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
 
     if (error) throw error;
     return data;
+  }
+
+  async findByUsersChapterCategory(
+    userIds: string[],
+    chapterId: string,
+    category: string,
+  ): Promise<NotificationPreference[]> {
+    if (userIds.length === 0) return [];
+
+    const pages = await Promise.all(
+      chunkIds(userIds).map((chunk) =>
+        fetchAllPages<NotificationPreference>(
+          (from, to) =>
+            this.supabase
+              .from('notification_preferences')
+              .select('*')
+              .in('user_id', chunk)
+              .eq('chapter_id', chapterId)
+              .eq('category', category)
+              .order('id', { ascending: true })
+              .range(from, to),
+          { pageSize: PREFERENCE_PAGE_SIZE },
+        ),
+      ),
+    );
+    return pages.flat();
   }
 
   async upsert(

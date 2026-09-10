@@ -8,7 +8,10 @@
  * rule (no NaN propagation) holds.
  */
 
-import { POINTS_REASON_MAX_LENGTH } from "@repo/validation";
+import {
+  POINTS_ADJUSTMENT_MAX,
+  POINTS_REASON_MAX_LENGTH,
+} from "@repo/validation";
 
 /** Result of a successful parse for `/poll`. */
 export interface PollArgs {
@@ -45,6 +48,13 @@ export interface PointsArgs {
   reason: string;
   /** grant → MANUAL (reward), deduct → FINE (penalty). Matches `point_transactions.category`. */
   category: "MANUAL" | "FINE";
+}
+
+/** Result of a successful parse for `/hours log`. */
+export interface HoursArgs {
+  /** Duration in whole minutes (≥ 1), matching `CreateServiceEntryDto`. */
+  durationMinutes: number;
+  description: string;
 }
 
 /** Result of a successful parse for `/event`. */
@@ -424,6 +434,176 @@ export function parseEventArgs(args: string): ParseResult<EventArgs> {
       location,
       pointValue,
     },
+  };
+}
+
+const HOURS_DESCRIPTION_MAX = 2000;
+const HOURS_USAGE = "Usage: /hours log <duration> <description>";
+
+/**
+ * Parse a duration token into whole minutes.
+ *
+ * Accepted forms:
+ * - `2h` / `2.5h` — hours (fractional hours round to the nearest minute)
+ * - `90m` / `90min` — minutes
+ * - a bare number — hours, matching the catalog hint `log <amount>`
+ *
+ * Returns `null` for anything that is not a finite positive duration so
+ * callers never propagate `NaN`. Values above {@link POINTS_ADJUSTMENT_MAX}
+ * minutes (the same ceiling as `CreateServiceEntryDto`) are `null` too.
+ */
+function parseDurationToMinutes(token: string | undefined): number | null {
+  if (!token) return null;
+  const t = token.trim().toLowerCase();
+  let minutes: number | null = null;
+  const hourMatch = /^(\d+(?:\.\d+)?)h$/.exec(t);
+  if (hourMatch) {
+    minutes = Math.round(Number(hourMatch[1]) * 60);
+  } else {
+    const minMatch = /^(\d+(?:\.\d+)?)(?:m|min)$/.exec(t);
+    if (minMatch) {
+      minutes = Math.round(Number(minMatch[1]));
+    } else if (/^\d+(?:\.\d+)?$/.test(t)) {
+      minutes = Math.round(Number(t) * 60);
+    }
+  }
+  if (
+    minutes === null ||
+    !Number.isInteger(minutes) ||
+    minutes < 1 ||
+    minutes > POINTS_ADJUSTMENT_MAX
+  ) {
+    return null;
+  }
+  return minutes;
+}
+
+/**
+ * Parse `/hours log <duration> <description>`. The only implemented action is
+ * `log`; `/hours review` is dashboard-only and is not a slash surface. Duration
+ * accepts `2h`, `90m`/`90min`, or a bare number of hours. Description is
+ * everything after the duration (quoted spans allowed, same tokenizer as
+ * `/poll`). Date is not parsed here — dispatch stamps today's local
+ * `YYYY-MM-DD`. Chat cannot attach proof; when `wf_hours_receipt` is on, the
+ * API 400s and that is the correct UX.
+ */
+export function parseHoursArgs(args: string): ParseResult<HoursArgs> {
+  const tokens = tokenizeQuotedArgs(args.trim());
+  if (tokens === null) {
+    return { ok: false, error: "Unterminated quote in /hours arguments" };
+  }
+  if (tokens.length === 0) {
+    return { ok: false, error: HOURS_USAGE };
+  }
+
+  const action = tokens[0]!.toLowerCase();
+  if (action !== "log") {
+    return {
+      ok: false,
+      error: `Unknown /hours action "${tokens[0]}". ${HOURS_USAGE}`,
+    };
+  }
+
+  const durationMinutes = parseDurationToMinutes(tokens[1]);
+  if (durationMinutes === null) {
+    return {
+      ok: false,
+      error:
+        "Duration must be a positive amount (e.g. 2h, 90m, or 2 for two hours)",
+    };
+  }
+
+  const description = tokens.slice(2).join(" ").trim();
+  if (description.length === 0) {
+    return { ok: false, error: "A description of the service is required" };
+  }
+  if (description.length > HOURS_DESCRIPTION_MAX) {
+    return {
+      ok: false,
+      error: `Description is too long (max ${HOURS_DESCRIPTION_MAX} chars)`,
+    };
+  }
+
+  return { ok: true, value: { durationMinutes, description } };
+}
+
+const RUSH_DISPLAY_NAME_MAX = 200;
+const RUSH_USAGE = "Usage: add @candidate | vote <candidate-id> | bid @candidate";
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Result of a successful parse for `/rush` (and vocab aliases). */
+export type RushArgs =
+  | { action: "add"; displayName: string }
+  | { action: "vote"; candidateId?: string; candidateToken?: string }
+  | { action: "bid"; candidateToken: string };
+
+function stripMention(token: string): string {
+  return token.startsWith("@") ? token.slice(1).trim() : token.trim();
+}
+
+/**
+ * Parse `/<vocab> add|vote|bid`. Member-facing errors omit the hardcoded
+ * `/rush` token so a chapter that says "intake" is not toasted "rush".
+ *
+ * - `add` takes `@Name`, a quoted name, or the rest of the line.
+ * - `vote` takes a candidate UUID, or a name token resolved at dispatch.
+ * - `bid` takes `@Name` or a UUID (resolved at dispatch when not a UUID).
+ */
+export function parseRushArgs(args: string): ParseResult<RushArgs> {
+  const tokens = tokenizeQuotedArgs(args.trim());
+  if (tokens === null) {
+    return { ok: false, error: "Unterminated quote in arguments" };
+  }
+  if (tokens.length === 0) {
+    return { ok: false, error: RUSH_USAGE };
+  }
+
+  const action = tokens[0]!.toLowerCase();
+  if (action === "add") {
+    const displayName = stripMention(tokens.slice(1).join(" ").trim());
+    if (displayName.length === 0) {
+      return { ok: false, error: "A candidate name is required. " + RUSH_USAGE };
+    }
+    if (displayName.length > RUSH_DISPLAY_NAME_MAX) {
+      return {
+        ok: false,
+        error: `Candidate name is too long (max ${RUSH_DISPLAY_NAME_MAX} chars)`,
+      };
+    }
+    return { ok: true, value: { action: "add", displayName } };
+  }
+
+  if (action === "vote") {
+    const rest = tokens.slice(1).join(" ").trim();
+    const token = stripMention(rest);
+    if (token.length === 0) {
+      return {
+        ok: false,
+        error: "A candidate id or name is required. " + RUSH_USAGE,
+      };
+    }
+    if (UUID_RE.test(token)) {
+      return { ok: true, value: { action: "vote", candidateId: token } };
+    }
+    return { ok: true, value: { action: "vote", candidateToken: token } };
+  }
+
+  if (action === "bid") {
+    const rest = tokens.slice(1).join(" ").trim();
+    const candidateToken = stripMention(rest);
+    if (candidateToken.length === 0) {
+      return {
+        ok: false,
+        error: "A candidate name or id is required. " + RUSH_USAGE,
+      };
+    }
+    return { ok: true, value: { action: "bid", candidateToken } };
+  }
+
+  return {
+    ok: false,
+    error: `Unknown action "${tokens[0]}". ${RUSH_USAGE}`,
   };
 }
 
