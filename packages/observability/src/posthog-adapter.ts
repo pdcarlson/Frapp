@@ -183,10 +183,19 @@ export function applyFetchedObservabilityIdentity(
   applyObservabilityIdentity(identity, setSentryUser);
 }
 
+/**
+ * Same scalar map as `TrackEventDto.properties` / `AnalyticsProperties`.
+ * `unknown` is not assignable to the generated SDK body (mobile `tsc` and
+ * `next build` both reject it).
+ */
+export type NamedAnalyticsEventProperties = {
+  [key: string]: string | number | boolean | null;
+};
+
 export type NamedAnalyticsEventBody = {
   name: string;
   chapter_id?: string;
-  properties?: Record<string, unknown>;
+  properties?: NamedAnalyticsEventProperties;
 };
 
 /**
@@ -196,7 +205,7 @@ export type NamedAnalyticsEventBody = {
 export function namedAnalyticsEventBody(input: {
   name: string;
   chapterId?: string | null;
-  properties?: Record<string, unknown>;
+  properties?: NamedAnalyticsEventProperties;
   requireChapter?: boolean;
 }): NamedAnalyticsEventBody | null {
   if (input.requireChapter && !input.chapterId) return null;

@@ -38,6 +38,7 @@ export type {
   PostHogAdapter,
   MemoryPostHogCall,
   NamedAnalyticsEventBody,
+  NamedAnalyticsEventProperties,
 } from "./posthog-adapter";
 
 export {

@@ -12,7 +12,17 @@ import {
   getPostHogReplayId,
   isProductFlagEnabled,
   resetPostHog,
+  type NamedAnalyticsEventBody,
 } from "./posthog-adapter";
+
+/** Structural clone of `TrackEventDto` so a `unknown` properties map fails here. */
+function asTrackEventDto(body: NamedAnalyticsEventBody): {
+  name: string;
+  chapter_id?: string;
+  properties?: { [key: string]: (string | number | boolean) | null };
+} {
+  return body;
+}
 
 const HEX = "a".repeat(64);
 const OTHER = "b".repeat(64);
@@ -129,9 +139,21 @@ describe("identity, groups, logout, opt-out", () => {
 
 describe("namedAnalyticsEventBody", () => {
   it("omits chapter and properties when they are absent", () => {
-    expect(namedAnalyticsEventBody({ name: "opened-channel" })).toEqual({
+    expect(
+      asTrackEventDto(namedAnalyticsEventBody({ name: "opened-channel" })!),
+    ).toEqual({
       name: "opened-channel",
     });
+  });
+
+  it("types properties as SDK scalar values, not unknown", () => {
+    const body = namedAnalyticsEventBody({
+      name: "opened-channel",
+      properties: { minutes: 60, opted_in: true, note: null },
+    });
+    const properties: { [key: string]: string | number | boolean | null } =
+      body?.properties ?? {};
+    expect(properties).toEqual({ minutes: 60, opted_in: true, note: null });
   });
 
   it("requires a chapter when asked, then includes it", () => {
