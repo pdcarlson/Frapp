@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
 import type {
@@ -121,7 +126,24 @@ export class SupabaseStorageService implements IStorageProvider {
         options?.upsert ? { upsert: true } : undefined,
       );
 
-    if (error) throw error;
+    if (error) {
+      const detail =
+        typeof error === 'object' && error && 'message' in error
+          ? String((error as { message: unknown }).message)
+          : String(error);
+      throw new InternalServerErrorException(
+        `Failed to mint a signed upload URL for bucket "${bucket}": ${detail}. Confirm the bucket exists and the service role can mint signed URLs.`,
+      );
+    }
+    if (!data?.signedUrl) {
+      // A 201 with an empty URL is how the dashboard used to toast
+      // "missing signed URL" with no API exception. Fail closed here so
+      // a missing bucket / service-role grant is a 500 with a readable
+      // reason instead of a successful-looking empty ticket.
+      throw new InternalServerErrorException(
+        `Storage did not return a signed upload URL for bucket "${bucket}". Confirm the bucket exists and the service role can mint signed URLs.`,
+      );
+    }
     return data.signedUrl;
   }
 

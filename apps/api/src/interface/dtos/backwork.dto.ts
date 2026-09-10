@@ -46,6 +46,23 @@ export class RequestBackworkUploadUrlDto {
   size_bytes?: number;
 }
 
+export class BackworkUploadUrlResponseDto {
+  @ApiProperty({
+    description: 'Short-lived signed URL; PUT the bytes to it.',
+  })
+  upload_url: string;
+
+  @ApiProperty({
+    description: 'Storage path to send on the confirm-upload call.',
+  })
+  storage_path: string;
+
+  @ApiProperty({
+    description: 'Server-allocated resource id embedded in storage_path.',
+  })
+  resource_id: string;
+}
+
 export class ConfirmBackworkUploadDto {
   @ApiProperty({ description: 'Storage path returned from upload-url' })
   @IsString()
