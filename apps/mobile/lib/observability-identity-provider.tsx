@@ -6,6 +6,7 @@ import { useAuthSession } from "@/lib/auth-session";
 import { mobileSentryDsn } from "@/lib/sentry/options";
 import {
   applyFetchedObservabilityIdentity,
+  isObservabilityIdentitySubjectReady,
   observabilityIdentityQueryOptions,
 } from "@repo/observability/identified-posthog";
 import { isPostHogConfigured } from "@/lib/posthog/config";
@@ -31,7 +32,10 @@ export function ObservabilityIdentityProvider({
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const vendorsOn = Boolean(mobileSentryDsn()) || isPostHogConfigured();
-  const canFetch = session.status === "authenticated" && vendorsOn;
+  const canFetch =
+    session.status === "authenticated" &&
+    isObservabilityIdentitySubjectReady(session.userId) &&
+    vendorsOn;
   const query = useQuery(
     observabilityIdentityQueryOptions(
       session.userId,
@@ -42,7 +46,11 @@ export function ObservabilityIdentityProvider({
   );
 
   useEffect(() => {
-    applyFetchedObservabilityIdentity(canFetch, query.data, Sentry.setUser);
+    applyFetchedObservabilityIdentity(
+      canFetch,
+      canFetch ? query.data : undefined,
+      Sentry.setUser,
+    );
   }, [canFetch, query.data]);
 
   return <>{children}</>;

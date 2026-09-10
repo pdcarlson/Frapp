@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bindPostHogAdapterForTests,
   createMemoryPostHogAdapter,
+  observabilityIdentityQueryKey,
 } from "@repo/observability/identified-posthog";
 
 const HEX = "a".repeat(64);
@@ -208,4 +209,42 @@ describe("ObservabilityIdentityProvider", () => {
     );
     expect(memory.adapter.getDistinctId()).toBe(otherHex);
   });
+
+  it("does not re-identify from a leftover none-key cache after logout", async () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    state.get.mockResolvedValue({
+      data: { enabled: true, distinct_id: HEX, chapter_group_id: OTHER },
+      error: undefined,
+    });
+
+    const view = render(identityTree(qc));
+    await waitFor(() => {
+      expect(memory.adapter.getDistinctId()).toBe(HEX);
+    });
+
+    qc.setQueryData(observabilityIdentityQueryKey(null, "chap-1"), {
+      enabled: true,
+      distinct_id: HEX,
+      chapter_group_id: OTHER,
+    });
+
+    memory.adapter.reset();
+    setUser.mockClear();
+    state.authUserId = null;
+    view.rerender(identityTree(qc));
+
+    await waitFor(() => {
+      expect(state.get).toHaveBeenCalledTimes(1);
+    });
+    expect(memory.adapter.getDistinctId()).toBeUndefined();
+    expect(setUser).not.toHaveBeenCalledWith({ id: HEX });
+    expect(memory.calls.filter((c) => c.type === "identify")).toEqual([
+      { type: "identify", distinctId: HEX },
+    ]);
+  });
+
 });

@@ -55,6 +55,22 @@ export function observabilityIdentityQueryKey(
 }
 
 /**
+ * Whether `GET /v1/analytics/identity` may run for this subject.
+ *
+ * `"none"` is the query-key placeholder for a missing uid — it is never a
+ * live cache slot. Passing it (or `""`) as `subjectId` must not fetch.
+ */
+export function isObservabilityIdentitySubjectReady(
+  subjectId: string | null | undefined,
+): boolean {
+  return (
+    typeof subjectId === "string" &&
+    subjectId.length > 0 &&
+    subjectId !== "none"
+  );
+}
+
+/**
  * Shared `useQuery` options for the identity providers. Apps still own the
  * vendor/auth predicate (web: vendor DSNs; mobile: authenticated + vendors).
  * A missing subject always disables the query: `subjectId ?? "none"` must
@@ -69,7 +85,7 @@ export function observabilityIdentityQueryOptions(
   return {
     queryKey: observabilityIdentityQueryKey(subjectId, chapterId),
     queryFn: () => fetchAnalyticsIdentity(get),
-    enabled: enabled && Boolean(subjectId),
+    enabled: enabled && isObservabilityIdentitySubjectReady(subjectId),
     staleTime: Infinity,
     retry: false as const,
   };

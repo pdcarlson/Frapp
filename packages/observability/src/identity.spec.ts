@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   fetchAnalyticsIdentity,
+  isObservabilityIdentitySubjectReady,
   observabilityIdentityQueryKey,
   observabilityIdentityQueryOptions,
   validatedChapterGroupId,
@@ -90,18 +91,21 @@ describe("observabilityIdentityQueryKey / options", () => {
     ]);
   });
 
-  it("does not fetch under the none subject even when the app asks to", () => {
-    const options = observabilityIdentityQueryOptions(
-      null,
-      "chap-1",
-      async () => ({}),
-      true,
-    );
-    expect(options.enabled).toBe(false);
-    expect(options.queryKey).toEqual([
-      "observability-identity",
-      "none",
-      "chap-1",
-    ]);
+  it("does not fetch under a missing subject even when the app asks to", () => {
+    for (const subject of [null, "", "none"] as const) {
+      const options = observabilityIdentityQueryOptions(
+        subject,
+        "chap-1",
+        async () => ({}),
+        true,
+      );
+      expect(isObservabilityIdentitySubjectReady(subject)).toBe(false);
+      expect(options.enabled).toBe(false);
+      expect(options.queryKey).toEqual([
+        "observability-identity",
+        subject ?? "none",
+        "chap-1",
+      ]);
+    }
   });
 });

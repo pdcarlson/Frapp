@@ -8,6 +8,7 @@ import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { webSentryDsn } from "@/lib/sentry/options";
 import {
   applyFetchedObservabilityIdentity,
+  isObservabilityIdentitySubjectReady,
   observabilityIdentityQueryOptions,
 } from "@repo/observability/identified-posthog";
 import { isPostHogConfigured } from "@/lib/posthog/config";
@@ -37,7 +38,7 @@ export function ObservabilityIdentityProvider({
   const chapterId = useActiveChapterId();
   const authUserId = useAuthUserId();
   const fetchEnabled =
-    Boolean(authUserId) &&
+    isObservabilityIdentitySubjectReady(authUserId) &&
     (Boolean(webSentryDsn()) || isPostHogConfigured());
   const { data } = useQuery(
     observabilityIdentityQueryOptions(
@@ -49,7 +50,13 @@ export function ObservabilityIdentityProvider({
   );
 
   useEffect(() => {
-    applyFetchedObservabilityIdentity(fetchEnabled, data, Sentry.setUser);
+    // Disabled queries still return cached `data` for that key. Logout
+    // maps the subject to `"none"` — never apply a leftover HMAC from that slot.
+    applyFetchedObservabilityIdentity(
+      fetchEnabled,
+      fetchEnabled ? data : undefined,
+      Sentry.setUser,
+    );
   }, [data, fetchEnabled]);
 
   return <>{children}</>;
