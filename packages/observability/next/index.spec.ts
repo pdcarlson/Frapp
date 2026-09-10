@@ -16,6 +16,13 @@ describe("@repo/observability/next public API", () => {
     expect(typeof next.shouldEnablePostHogReplay).toBe("function");
     expect(next).not.toHaveProperty("getAnonymousSentryBuildConfig");
     expect(typeof next.sanitizeAnonymousPostHogProperties).toBe("function");
+    expect(typeof next.sanitizeIdentifiedPostHogCapture).toBe("function");
+    expect(next.POSTHOG_PROPERTY_DENYLIST).toEqual([
+      "$ip",
+      "ip",
+      "email",
+      "$email",
+    ]);
 
     expect(next).not.toHaveProperty("identify");
     expect(next).not.toHaveProperty("alias");
