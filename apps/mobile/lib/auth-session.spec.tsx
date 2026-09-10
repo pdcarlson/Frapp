@@ -133,7 +133,7 @@ vi.mock("./supabase", async () => {
 });
 
 import { AuthSessionProvider, useAuthSession } from "./auth-session";
-import { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
+import { AUTH_TOKEN_STORAGE_KEY, readAuthToken } from "./auth-token";
 import { useIsApiAuthenticated } from "./use-is-api-authenticated";
 import { sessionStorageAdapter, getSupabaseClient } from "./supabase";
 import { queryClient } from "./query-client";
@@ -561,6 +561,50 @@ describe("AuthSessionProvider — chapter context", () => {
 
     await waitFor(() => expect(result.current.chapterId).toBeNull());
     expect(result.current.userId).toBe("user-2");
+  });
+
+  it("exposes the new Bearer to child effects on the same turn as a swap", async () => {
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+    const seen: Array<{ userId: string | null; token: string | null }> = [];
+
+    function Probe() {
+      const { userId } = useAuthSession();
+      React.useEffect(() => {
+        void readAuthToken().then((token) => {
+          seen.push({ userId, token });
+        });
+      }, [userId]);
+      return null;
+    }
+
+    const { result } = renderHook(() => useAuthSession(), {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <AuthSessionProvider>
+          <Probe />
+          {children}
+        </AuthSessionProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.userId).toBe("user-1"));
+    await waitFor(() =>
+      expect(seen).toContainEqual({ userId: "user-1", token: "access-token-1" }),
+    );
+
+    await act(async () => {
+      emitAuthChange({
+        access_token: "access-token-2",
+        user: { email: "other@university.edu", id: "user-2" },
+      });
+    });
+
+    // Child effects run before the parent token-mirror effect. If the
+    // Bearer were only written in that parent effect, this sample would
+    // still be User A's token.
+    expect(seen).toContainEqual({ userId: "user-2", token: "access-token-2" });
   });
 });
 
