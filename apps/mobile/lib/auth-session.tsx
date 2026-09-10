@@ -8,12 +8,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { AppState } from "react-native";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
 import { resetObservabilityOnLogout } from "./observability/reset";
-import { queryClient } from "./query-client";
+import { clearProductQueryCache } from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
 /**
@@ -229,6 +230,18 @@ export function AuthSessionProvider({
     null,
   );
   const [callbackError, setCallbackError] = useState<string | null>(null);
+  /**
+   * Last auth uid observed in `applySession`.
+   *
+   * A magic-link swap stays `authenticated` and can keep the same chapter, so
+   * the chapter-keyed `FrappProvider` clear is not the product-cache owner.
+   * Comparing uid here — after the in-process Bearer write, before
+   * `setSession` — drops `["user","me"]` / `["settings"]` before the next
+   * session is treated as settled, while observers that refetch on the clear
+   * already see User B's token. Token refresh keeps the same uid and must not
+   * clear. A first uid (`null` → A) is a sign-in, not a swap.
+   */
+  const previousAuthUserIdRef = useRef<string | null>(null);
 
   const url = Linking.useURL();
   const accessToken = session?.access_token ?? null;
@@ -271,6 +284,15 @@ export function AuthSessionProvider({
       } else {
         void clearAuthToken();
       }
+      // Product cache next, still on this turn: observers that refetch on
+      // `queryClient.clear()` must already see User B's Bearer. Clearing
+      // before the write would refill `["user","me"]` with User A's token.
+      const nextUserId = nextSession?.user?.id ?? null;
+      const previousUserId = previousAuthUserIdRef.current;
+      if (previousUserId && previousUserId !== nextUserId) {
+        clearProductQueryCache();
+      }
+      previousAuthUserIdRef.current = nextUserId;
       setSession(nextSession ?? null);
       setStatus(nextSession ? "authenticated" : "unauthenticated");
       if (opts.clearCallbackError && nextSession) setCallbackError(null);
@@ -501,8 +523,10 @@ export function AuthSessionProvider({
     // `(auth)/join.tsx`) and each had to remember the clear for itself; the
     // picker's landed only after the leak was noticed a second time. Owning it
     // at the single point every path already funnels through is what stops a
-    // fourth path from reintroducing it.
-    queryClient.clear();
+    // fourth path from reintroducing it. An in-place uid swap uses the same
+    // helper from `applySession` so it cannot forget the drop either.
+    clearProductQueryCache();
+    previousAuthUserIdRef.current = null;
     setSession(null);
     setClaimedChapter({ userId: null, chapterId: null });
     setClaimReadForUserId(null);

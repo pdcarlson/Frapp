@@ -28,11 +28,11 @@ import { QueryClient } from "@tanstack/react-query";
  * The app's single `QueryClient`.
  *
  * It lives here, rather than beside `FrappProvider`, so that
- * `lib/auth-session.tsx` can clear it on sign-out without importing from
- * `lib/frapp-client.tsx` — which already imports `useAuthSession` and would
- * therefore form an import cycle. `app/_layout.tsx` nests
- * `AuthSessionProvider` *outside* `FrappProvider` (the API client reads the
- * session's token), so `useQueryClient()` is not reachable from the auth
+ * `lib/auth-session.tsx` can clear it on sign-out **and** on auth-uid swap
+ * without importing from `lib/frapp-client.tsx` — which already imports
+ * `useAuthSession` and would therefore form an import cycle. `app/_layout.tsx`
+ * nests `AuthSessionProvider` *outside* `FrappProvider` (the API client reads
+ * the session's token), so `useQueryClient()` is not reachable from the auth
  * provider and the module singleton is the only seam available. That layout
  * file is one of #937's frozen seven, so this module is what keeps the fix off
  * it.
@@ -51,3 +51,14 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Drop every cached query for the current product session.
+ *
+ * `signOut` and an in-place auth-uid change both call this. Several keys are
+ * not account-scoped (`["settings"]`, `["user","me"]`), so a magic-link swap
+ * that stays `authenticated` would otherwise keep the previous member's rows.
+ */
+export function clearProductQueryCache(): void {
+  queryClient.clear();
+}

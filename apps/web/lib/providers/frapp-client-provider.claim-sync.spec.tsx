@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 
-type AuthCallback = (event: string, session: { access_token: string } | null) => void;
+type AuthCallback = (
+  event: string,
+  session: { access_token: string; user?: { id: string } } | null,
+) => void;
 
 const { listeners } = vi.hoisted(() => ({
   listeners: [] as AuthCallback[],
@@ -39,9 +42,17 @@ const b64url = (obj: Record<string, unknown>) =>
 const tokenFor = (chapter?: string) =>
   `${b64url({ alg: "ES256" })}.${b64url(chapter ? { active_chapter_id: chapter } : { sub: "u" })}.sig`;
 
-const emit = (event: string, chapter?: string | null) =>
+const emit = (event: string, chapter?: string | null, userId?: string) =>
   listeners.forEach((cb) =>
-    cb(event, chapter === null ? null : { access_token: tokenFor(chapter) }),
+    cb(
+      event,
+      chapter === null
+        ? null
+        : {
+            access_token: tokenFor(chapter),
+            ...(userId ? { user: { id: userId } } : {}),
+          },
+    ),
   );
 
 function makeClient() {
@@ -53,9 +64,10 @@ function makeClient() {
 /**
  * Account-boundary composition: a claim-less SIGNED_IN must clear the
  * previous account's persisted chapter and drop the query cache that still
- * holds that account's rows. The hook suite covers the store write; this
- * wires the real hook to FrappProvider so the cache drop (keyed on the store
- * change) is observed, not assumed.
+ * holds that account's rows. A same-chapter SIGNED_IN with a new auth uid
+ * must also drop the cache — the store does not move, so the chapter-keyed
+ * drop would miss it. The hook suite covers the store write; this wires the
+ * real hook to FrappProvider so the cache drop is observed, not assumed.
  */
 describe("FrappProvider + useClaimChapterSync account boundary", () => {
   beforeEach(() => {
@@ -118,5 +130,42 @@ describe("FrappProvider + useClaimChapterSync account boundary", () => {
 
     expect(useChapterStore.getState().activeChapterId).toBe("chap-1");
     expect(qc.getQueryData(["channels"])).toEqual([{ id: "ch-1" }]);
+  });
+
+  it("drops the cache when SIGNED_IN keeps the chapter but the auth uid changes", async () => {
+    useChapterStore.setState({
+      activeChapterId: "shared-chapter",
+      hasHydrated: true,
+    });
+    const qc = makeClient();
+    qc.setQueryData(["user", "me"], { id: "user-a-row" });
+    qc.setQueryData(["settings"], { theme: "dark" });
+    qc.setQueryData(["members", "shared-chapter"], [{ id: "member-a" }]);
+
+    render(
+      <QueryClientProvider client={qc}>
+        <FrappProvider>
+          <div />
+        </FrappProvider>
+      </QueryClientProvider>,
+    );
+
+    await act(async () => {});
+    await act(async () => {
+      emit("SIGNED_IN", "shared-chapter", "user-a");
+    });
+    expect(qc.getQueryData(["user", "me"])).toEqual({ id: "user-a-row" });
+    expect(useChapterStore.getState().activeChapterId).toBe("shared-chapter");
+
+    await act(async () => {
+      emit("SIGNED_IN", "shared-chapter", "user-b");
+    });
+
+    await waitFor(() => {
+      expect(useChapterStore.getState().activeChapterId).toBe("shared-chapter");
+      expect(qc.getQueryData(["user", "me"])).toBeUndefined();
+      expect(qc.getQueryData(["settings"])).toBeUndefined();
+      expect(qc.getQueryData(["members", "shared-chapter"])).toBeUndefined();
+    });
   });
 });

@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 /**
- * Supabase auth uid for observability identity cache keys.
+ * Supabase auth uid (JWT subject).
  *
- * Not `useViewerUserId`: `["user","me"]` is not account-scoped, so a
- * same-tab magic-link swap can keep the previous Frapp user row after the
+ * Used to key observability identity and to drop the product QueryClient on
+ * account swap. Not `useViewerUserId`: `["user","me"]` is not account-scoped,
+ * so a same-tab magic-link swap can keep the previous Frapp user row after the
  * JWT has already changed.
  */
 export function useAuthUserId(): string | null {
@@ -18,11 +19,11 @@ export function useAuthUserId(): string | null {
     let cancelled = false;
 
     void supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) setUserId(data.session?.user.id ?? null);
+      if (!cancelled) setUserId(data.session?.user?.id ?? null);
     });
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserId(session?.user.id ?? null);
+      setUserId(session?.user?.id ?? null);
     });
 
     return () => {
