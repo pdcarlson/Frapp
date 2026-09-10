@@ -17,10 +17,14 @@ import { AppRuntime } from "@/components/app-runtime";
 import { NetworkBanner } from "@/components/network-banner";
 import { FrappProvider } from "@/lib/frapp-client";
 import { AnalyticsProvider } from "@/lib/analytics-provider";
+import { ObservabilityIdentityProvider } from "@/lib/observability-identity-provider";
 import { AuthSessionProvider } from "@/lib/auth-session";
 import { KeyboardProviderGuarded } from "@/lib/keyboard";
 import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
+import { withPostHogSentryCorrelation } from "@repo/observability/identified-posthog";
+import { initMobilePostHog } from "@/lib/posthog/client";
 import { buildMobileSentryOptions, mobileSentryDsn } from "@/lib/sentry/options";
+import { readMobileSentryReleaseExtras } from "@/lib/sentry/release.runtime";
 
 /**
  * Error reporting for the mobile app (issue #1299), reporting to the
@@ -38,10 +42,22 @@ import { buildMobileSentryOptions, mobileSentryDsn } from "@/lib/sentry/options"
  *
  * `EXPO_PUBLIC_SENTRY_DSN` is set per build profile in the EAS dashboard —
  * there is no Infisical→EAS sync, so it does not arrive by itself.
+ *
+ * PostHog is initialized first so a Sentry `beforeSend` can attach session
+ * ids. No key means `initMobilePostHog` is a no-op, matching web.
  */
+initMobilePostHog();
+
 const sentryDsn = mobileSentryDsn();
 if (sentryDsn) {
-  Sentry.init(buildMobileSentryOptions(sentryDsn));
+  const options = buildMobileSentryOptions(
+    sentryDsn,
+    readMobileSentryReleaseExtras(),
+  );
+  Sentry.init({
+    ...options,
+    beforeSend: withPostHogSentryCorrelation(options.beforeSend),
+  });
 }
 
 // Hold the splash until Figtree is registered, so no screen ever paints in the
@@ -106,13 +122,15 @@ function RootLayout() {
           */}
           <AuthSessionProvider>
             <FrappProvider>
-              <AnalyticsProvider>
-                <KeyboardProviderGuarded>
-                  <BottomSheetModalProvider>
-                    <RootLayoutContent />
-                  </BottomSheetModalProvider>
-                </KeyboardProviderGuarded>
-              </AnalyticsProvider>
+              <ObservabilityIdentityProvider>
+                <AnalyticsProvider>
+                  <KeyboardProviderGuarded>
+                    <BottomSheetModalProvider>
+                      <RootLayoutContent />
+                    </BottomSheetModalProvider>
+                  </KeyboardProviderGuarded>
+                </AnalyticsProvider>
+              </ObservabilityIdentityProvider>
             </FrappProvider>
           </AuthSessionProvider>
         </FrappThemeProvider>

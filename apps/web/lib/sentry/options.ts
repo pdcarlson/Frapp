@@ -9,8 +9,9 @@ import { webTracePropagationTargets } from "./trace-targets";
  * Web Sentry DSN + first-party trace targets (issue #865).
  *
  * Anonymous option construction lives in `@repo/observability/next`.
- * Identity does **not**: `observability-identity-provider.tsx` reads
- * `GET /v1/analytics/identity` and calls `Sentry.setUser` with the
+ * Identity does **not**: `observability-identity-provider.tsx` uses
+ * `@repo/observability/identified-posthog` to read
+ * `GET /v1/analytics/identity` and call `Sentry.setUser` with the
  * server-derived hex. This module never imports `posthog-js`.
  *
  * Direct `process.env.NEXT_PUBLIC_SENTRY_DSN` so Next inlines it.

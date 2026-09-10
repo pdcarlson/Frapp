@@ -5,9 +5,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import { webSentryDsn } from "@/lib/sentry/options";
+import {
+  applyFetchedObservabilityIdentity,
+  observabilityIdentityQueryOptions,
+} from "@repo/observability/identified-posthog";
 import { isPostHogConfigured } from "@/lib/posthog/config";
-import { applyAnalyticsIdentity } from "@/lib/posthog/client";
-import { validatedDistinctId } from "@/lib/posthog/identity";
 
 /**
  * Attaches the caller's **server-derived** pseudonym to PostHog and Sentry.
@@ -30,25 +32,16 @@ export function ObservabilityIdentityProvider({
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const fetchEnabled = Boolean(webSentryDsn()) || isPostHogConfigured();
-
-  const { data } = useQuery({
-    queryKey: ["observability-identity", chapterId ?? "none"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/analytics/identity");
-      if (error) throw error;
-      return data ?? null;
-    },
-    enabled: fetchEnabled,
-    staleTime: Infinity,
-    retry: false,
-  });
+  const { data } = useQuery(
+    observabilityIdentityQueryOptions(
+      chapterId,
+      () => client.GET("/v1/analytics/identity"),
+      fetchEnabled,
+    ),
+  );
 
   useEffect(() => {
-    if (!fetchEnabled) return;
-    if (data === undefined) return;
-    applyAnalyticsIdentity(data);
-    const distinctId = validatedDistinctId(data);
-    Sentry.setUser(distinctId ? { id: distinctId } : null);
+    applyFetchedObservabilityIdentity(fetchEnabled, data, Sentry.setUser);
   }, [data, fetchEnabled]);
 
   return <>{children}</>;

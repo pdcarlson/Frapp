@@ -23,6 +23,10 @@ describe("@repo/observability/next public API", () => {
     expect(next).not.toHaveProperty("setUser");
     expect(next).not.toHaveProperty("applyAnalyticsIdentity");
     expect(next).not.toHaveProperty("getPostHogDistinctId");
+    expect(next).not.toHaveProperty("captureAnalyticsEvent");
+    expect(next).not.toHaveProperty("canStartLivePostHogInit");
+    expect(next).not.toHaveProperty("setLivePostHogAdapter");
+    expect(next).not.toHaveProperty("createMemoryPostHogAdapter");
   });
 });
 
@@ -50,6 +54,9 @@ describe("identity firewall", () => {
       expect(source, file).not.toContain("/v1/analytics/identity");
       expect(source, file).not.toContain("process.env.ANALYTICS_HMAC_SALT");
       expect(source, file).not.toContain("process.env.NEXT_PUBLIC_SENTRY_DSN");
+      expect(source, file).not.toMatch(
+        /from ['"]@repo\/observability\/identified-posthog['"]/,
+      );
     }
   });
 });
