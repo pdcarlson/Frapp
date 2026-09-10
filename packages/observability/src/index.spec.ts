@@ -7,10 +7,13 @@ import {
   REQUEST_ID_HEADER,
   SENTRY_TRACE_HEADER,
   SENTRY_ERROR_CORRELATED_EVENT,
+  SENTRY_ERROR_CORRELATED_PROPERTY_KEYS,
   SENTRY_REPLAY_ENABLED,
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
   createSentryScrubber,
   parseSampleRate,
+  pathOnlyAnalyticsPath,
+  pickSentryErrorCorrelatedProperties,
   stripAuthority,
 } from "./index";
 
@@ -26,6 +29,16 @@ describe("public API", () => {
     expect(SENTRY_REPLAY_ENABLED).toBe(false);
     expect(POSTHOG_EXCEPTION_AUTOCAPTURE).toBe(false);
     expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
+    expect(SENTRY_ERROR_CORRELATED_PROPERTY_KEYS).toEqual([
+      "sentry_event_id",
+      "trace_id",
+      "request_id",
+      "route",
+      "status_class",
+      "release",
+    ]);
+    expect(typeof pickSentryErrorCorrelatedProperties).toBe("function");
+    expect(typeof pathOnlyAnalyticsPath).toBe("function");
     expect(DEFAULT_POSTHOG_LOGS_SAMPLE_RATE).toBe(1);
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
   });

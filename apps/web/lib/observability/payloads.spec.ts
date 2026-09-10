@@ -41,7 +41,18 @@ describe("no secrets or PII in web observability sources", () => {
       join(process.cwd(), "lib/posthog/config.ts"),
       "utf8",
     );
-    expect(posthog).toContain("capture_exceptions: POSTHOG_EXCEPTION_AUTOCAPTURE");
+    expect(posthog).toContain("buildAnonymousPostHogBrowserOptions");
+    expect(posthog).not.toMatch(/capture_exceptions:\s*true/);
+    const sharedPosthog = readFileSync(
+      join(
+        process.cwd(),
+        "../../packages/observability/next/posthog-options.ts",
+      ),
+      "utf8",
+    );
+    expect(sharedPosthog).toContain(
+      "capture_exceptions: POSTHOG_EXCEPTION_AUTOCAPTURE",
+    );
     const client = readFileSync(
       join(process.cwd(), "instrumentation-client.ts"),
       "utf8",

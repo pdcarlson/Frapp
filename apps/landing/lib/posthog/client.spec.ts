@@ -107,38 +107,23 @@ describe("anonymous capture", () => {
 });
 
 describe("sentry-error-correlated marker", () => {
-  it("emits only allowlisted content-free properties", () => {
+  it("drops exception type, stack, and query from the marker", () => {
     const memory = createMemoryPostHogAdapter();
     bindPostHogAdapterForTests(memory.adapter);
     captureSentryErrorCorrelated({
-      sentry_event_id: "evt_1",
-      trace_id: "trace_1",
-      request_id: "req_abc",
-      route: "/",
-      status_class: "5xx",
-      release: "deadbeef",
+      sentry_event_id: "evt_landing",
       exception: "Error: secret",
       stack: `at ${EMAIL}`,
-      message: "invite failed",
-      body: `{"email":"${EMAIL}"}`,
       query: "?token=abc",
     });
     const capture = memory.calls.find((c) => c.type === "capture");
-    expect(capture).toEqual({
-      type: "capture",
-      event: SENTRY_ERROR_CORRELATED_EVENT,
-      properties: {
-        sentry_event_id: "evt_1",
-        trace_id: "trace_1",
-        request_id: "req_abc",
-        route: "/",
-        status_class: "5xx",
-        release: "deadbeef",
-      },
-    });
-    const json = JSON.stringify(capture);
-    expect(json).not.toContain("secret");
-    expect(json).not.toContain(EMAIL);
-    expect(json).not.toContain("token=");
+    expect(capture?.type === "capture" && capture.event).toBe(
+      SENTRY_ERROR_CORRELATED_EVENT,
+    );
+    expect(
+      capture && capture.type === "capture" && capture.properties,
+    ).toEqual({ sentry_event_id: "evt_landing" });
+    expect(JSON.stringify(capture)).not.toContain("secret");
+    expect(JSON.stringify(capture)).not.toContain(EMAIL);
   });
 });

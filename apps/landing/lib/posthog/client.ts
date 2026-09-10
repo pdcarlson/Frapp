@@ -1,16 +1,18 @@
 import posthog from "posthog-js";
-import { SENTRY_ERROR_CORRELATED_EVENT } from "@repo/observability";
+import {
+  pathOnlyAnalyticsPath,
+  pickSentryErrorCorrelatedProperties,
+  SENTRY_ERROR_CORRELATED_EVENT,
+} from "@repo/observability";
+import { sanitizeAnonymousPostHogProperties } from "@repo/observability/next";
 import {
   buildLandingPostHogInitOptions,
   landingPostHogKey,
-  pathOnlyForLandingAnalytics,
-  sanitizeLandingPostHogProperties,
 } from "./config";
 import {
   LANDING_CTA_EVENT,
   LANDING_CTA_SET,
   LANDING_CTA_SURFACE_SET,
-  SENTRY_CORRELATION_MARKER_ALLOWLIST,
   type LandingCta,
   type LandingCtaSurface,
 } from "./events";
@@ -100,7 +102,7 @@ function capture(
 ): void {
   const adapter = currentAdapter();
   if (!adapter) return;
-  adapter.capture(event, sanitizeLandingPostHogProperties(properties));
+  adapter.capture(event, sanitizeAnonymousPostHogProperties(properties));
 }
 
 /**
@@ -109,7 +111,7 @@ function capture(
  */
 export function captureLandingPageview(pathname: string): void {
   if (pathname.includes("?") || pathname.includes("#")) return;
-  const path = pathOnlyForLandingAnalytics(pathname);
+  const path = pathOnlyAnalyticsPath(pathname);
   if (!path || path !== pathname) return;
   capture("$pageview", { $pathname: path, $current_url: path });
 }
@@ -132,13 +134,10 @@ export function captureSentryErrorCorrelated(
 ): void {
   const adapter = currentAdapter();
   if (!adapter) return;
-  const sanitized: Record<string, string> = {};
-  for (const [key, value] of Object.entries(properties)) {
-    if (!SENTRY_CORRELATION_MARKER_ALLOWLIST.has(key)) continue;
-    if (typeof value !== "string" || value.length === 0) continue;
-    sanitized[key] = value;
-  }
-  adapter.capture(SENTRY_ERROR_CORRELATED_EVENT, sanitized);
+  adapter.capture(
+    SENTRY_ERROR_CORRELATED_EVENT,
+    pickSentryErrorCorrelatedProperties(properties),
+  );
 }
 
 /**

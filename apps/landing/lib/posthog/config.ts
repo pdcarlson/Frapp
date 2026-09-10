@@ -1,9 +1,8 @@
 import {
-  POSTHOG_EXCEPTION_AUTOCAPTURE,
-  POSTHOG_PRODUCTION_REPLAY_ENABLED,
-  stripAuthority,
-} from "@repo/observability";
-import type { CaptureResult, PostHogConfig } from "posthog-js";
+  buildAnonymousPostHogBrowserOptions,
+  sanitizeAnonymousPostHogCapture,
+} from "@repo/observability/next";
+import type { PostHogConfig } from "posthog-js";
 
 /**
  * Write-only PostHog project token (`phc_…`). Same Infisical
@@ -20,98 +19,6 @@ export function landingPostHogHost(): string {
 
 export function isPostHogConfigured(): boolean {
   return Boolean(landingPostHogKey());
-}
-
-/**
- * Session replay stays off in every environment until Paul approves
- * production replay (#2038). Same helper as web: production cannot turn on
- * while {@link POSTHOG_PRODUCTION_REPLAY_ENABLED} is false, and non-production
- * is off until chat/document DOM is proven masked.
- */
-export function shouldEnablePostHogReplay(opts: {
-  environment: string;
-}): boolean {
-  if (opts.environment === "production") {
-    return POSTHOG_PRODUCTION_REPLAY_ENABLED;
-  }
-  return false;
-}
-
-/**
- * Path-only URL for analytics. Query, fragment, and authority never leave.
- * `/join?token=` is recorded as `/join` or dropped by the capture helper.
- */
-export function pathOnlyForLandingAnalytics(
-  value: string,
-): string | undefined {
-  const withoutHash = value.split("#")[0] ?? "";
-  const withoutQuery = withoutHash.split("?")[0] ?? "";
-  if (!withoutQuery) return undefined;
-  const path = stripAuthority(withoutQuery);
-  if (!path.startsWith("/")) return undefined;
-  if (path.includes("?") || path.includes("#")) return undefined;
-  return path;
-}
-
-const EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/;
-
-function looksLikeUrlOrPath(value: string): boolean {
-  return (
-    value.startsWith("/") ||
-    /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(value)
-  );
-}
-
-/**
- * Last-line property filter the SDK runs on every capture, including automatic
- * `$current_url` / `$ip` the library would otherwise attach from `window`.
- */
-export function sanitizeLandingPostHogProperties(
-  properties: Record<string, unknown>,
-): Record<string, unknown> {
-  const next: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(properties)) {
-    if (
-      key === "$ip" ||
-      key === "ip" ||
-      key === "email" ||
-      key === "$email" ||
-      key === "$set" ||
-      key === "$set_once"
-    ) {
-      continue;
-    }
-    if (value !== null && typeof value === "object") {
-      continue;
-    }
-    if (typeof value === "string") {
-      if (looksLikeUrlOrPath(value)) {
-        const path = pathOnlyForLandingAnalytics(value);
-        if (path) next[key] = path;
-        continue;
-      }
-      if (EMAIL_RE.test(value)) continue;
-      const cut = value.split("#")[0]?.split("?")[0] ?? value;
-      next[key] = cut;
-      continue;
-    }
-    next[key] = value;
-  }
-  return next;
-}
-
-export function sanitizeLandingCapture(
-  cr: CaptureResult | null,
-): CaptureResult | null {
-  if (!cr) return null;
-  return {
-    ...cr,
-    properties: sanitizeLandingPostHogProperties(
-      (cr.properties ?? {}) as Record<string, unknown>,
-    ),
-    $set: undefined,
-    $set_once: undefined,
-  };
 }
 
 export type LandingPostHogInitOptions = Pick<
@@ -132,15 +39,11 @@ export type LandingPostHogInitOptions = Pick<
 >;
 
 /**
- * Options the app actually passes to `posthog.init`. Specs assert against
- * this object rather than a copy of the literals.
- *
- * Pageviews are captured manually with a path-only `$pathname` so the SDK's
- * default `$pageview` cannot ship `/join?token=`. Feature flags are disabled:
- * landing has no product flags and flags are not authorization.
+ * Landing-only extras on the anonymous Next PostHog options.
  *
  * `person_profiles: "never"` and `cross_subdomain_cookie: false` keep this
- * visitor out of `app.frapp.live`'s identified person (ADR-22).
+ * visitor out of `app.frapp.live`'s identified person (ADR-22). Feature flags
+ * stay off: landing has no product flags and flags are not authorization.
  *
  * Do not pass PostHog `defaults: '2026-01-30'` — that pack can enable
  * exception autocapture.
@@ -152,25 +55,16 @@ export function buildLandingPostHogInitOptions(opts?: {
     opts?.environment ??
     process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ??
     "development";
-  const replayOn = shouldEnablePostHogReplay({ environment });
 
   return {
-    api_host: landingPostHogHost(),
-    autocapture: false,
-    capture_pageview: false,
-    capture_pageleave: false,
-    capture_exceptions: POSTHOG_EXCEPTION_AUTOCAPTURE,
-    capture_heatmaps: false,
-    disable_session_recording: !replayOn,
+    ...buildAnonymousPostHogBrowserOptions({
+      apiHost: landingPostHogHost(),
+      environment,
+    }),
     person_profiles: "never",
     cross_subdomain_cookie: false,
     advanced_disable_feature_flags: true,
     property_denylist: ["$ip", "ip", "email", "$email"],
-    before_send: sanitizeLandingCapture,
-    session_recording: {
-      maskAllInputs: true,
-      maskTextSelector: "*",
-      blockClass: "ph-no-capture",
-    },
+    before_send: sanitizeAnonymousPostHogCapture,
   };
 }
