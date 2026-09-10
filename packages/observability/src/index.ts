@@ -1,12 +1,15 @@
 /**
  * `@repo/observability` — browser-safe shared policy for Sentry/PostHog.
  *
- * This package owns scrubbing, correlation types, sample-rate parsing, the
- * constants that describe the intended split, hex identity validation, the
- * PostHog adapter surface (identify / groups / opt-out / marker), and
- * Sentry↔PostHog correlation attach. It does **not** call `Sentry.init` or
- * construct a vendor PostHog client. Those stay runtime-local to NestJS,
- * Next.js, and React Native.
+ * This package owns scrubbing, correlation types, sample-rate parsing, and
+ * the constants that describe the intended split. It does **not** call
+ * `Sentry.init` or construct a PostHog client. Those stay runtime-local to
+ * NestJS, Next.js, and React Native.
+ *
+ * Identified-client helpers (identify / groups / hex `posthog_distinct_id`)
+ * are **not** on this barrel. Import `@repo/observability/identified-posthog`
+ * from web or mobile. Landing must not import that entry — anonymous Next.js
+ * wiring is a separate extract on `@repo/observability/next` (PR #2070).
  *
  * No DOM, no `node:*`, no `process.env`. The API is a CommonJS consumer, so
  * this package does not declare `"type": "module"` and its `dist` is CJS.
@@ -59,36 +62,3 @@ export {
   SENTRY_ERROR_CORRELATED_EVENT,
   DEFAULT_POSTHOG_LOGS_SAMPLE_RATE,
 } from "./policy";
-
-export {
-  validatedDistinctId,
-  validatedChapterGroupId,
-  fetchAnalyticsIdentity,
-} from "./identity";
-
-export {
-  createMemoryPostHogAdapter,
-  bindPostHogAdapterForTests,
-  canStartLivePostHogInit,
-  setLivePostHogAdapter,
-  isPostHogReady,
-  isAnalyticsCaptureOptedOut,
-  applyAnalyticsOptOut,
-  applyAnalyticsIdentity,
-  applyObservabilityIdentity,
-  resetPostHog,
-  getPostHogDistinctId,
-  getPostHogSessionId,
-  getPostHogReplayId,
-  isProductFlagEnabled,
-  captureSentryErrorCorrelated,
-} from "./posthog-adapter";
-export type { PostHogAdapter, MemoryPostHogCall } from "./posthog-adapter";
-
-export {
-  attachPostHogCorrelation,
-  withPostHogSentryCorrelation,
-  headerValue,
-  httpStatusClass,
-} from "./sentry-posthog-correlation";
-export type { CorrelatableSentryEvent } from "./sentry-posthog-correlation";

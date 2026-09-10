@@ -21,7 +21,7 @@ import { ObservabilityIdentityProvider } from "@/lib/observability-identity-prov
 import { AuthSessionProvider } from "@/lib/auth-session";
 import { KeyboardProviderGuarded } from "@/lib/keyboard";
 import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
-import { withPostHogSentryCorrelation } from "@repo/observability";
+import { withPostHogSentryCorrelation } from "@repo/observability/identified-posthog";
 import { initMobilePostHog } from "@/lib/posthog/client";
 import { buildMobileSentryOptions, mobileSentryDsn } from "@/lib/sentry/options";
 import { readMobileSentryReleaseExtras } from "@/lib/sentry/release.runtime";

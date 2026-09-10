@@ -12,17 +12,16 @@ import {
   createSentryScrubber,
   parseSampleRate,
   stripAuthority,
-  validatedDistinctId,
   shouldEnablePostHogReplay,
-  createMemoryPostHogAdapter,
-  attachPostHogCorrelation,
 } from "./index";
+import * as barrel from "./index";
 
 describe("public API", () => {
   it("exports the scrubber, parser, and policy constants from the barrel", () => {
     expect(typeof createSentryScrubber).toBe("function");
     expect(typeof parseSampleRate).toBe("function");
     expect(typeof stripAuthority).toBe("function");
+    expect(typeof shouldEnablePostHogReplay).toBe("function");
     expect(NO_PSEUDONYMS.pseudonymizeUserId("x")).toBeUndefined();
     expect(REQUEST_ID_HEADER).toBe("x-request-id");
     expect(SENTRY_TRACE_HEADER).toBe("sentry-trace");
@@ -32,9 +31,14 @@ describe("public API", () => {
     expect(SENTRY_ERROR_CORRELATED_EVENT).toBe("sentry-error-correlated");
     expect(DEFAULT_POSTHOG_LOGS_SAMPLE_RATE).toBe(1);
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
-    expect(typeof validatedDistinctId).toBe("function");
-    expect(typeof shouldEnablePostHogReplay).toBe("function");
-    expect(typeof createMemoryPostHogAdapter).toBe("function");
-    expect(typeof attachPostHogCorrelation).toBe("function");
+  });
+
+  it("does not export identify / groups / correlation attach from the barrel", () => {
+    expect("validatedDistinctId" in barrel).toBe(false);
+    expect("applyAnalyticsIdentity" in barrel).toBe(false);
+    expect("applyObservabilityIdentity" in barrel).toBe(false);
+    expect("createMemoryPostHogAdapter" in barrel).toBe(false);
+    expect("attachPostHogCorrelation" in barrel).toBe(false);
+    expect("withPostHogSentryCorrelation" in barrel).toBe(false);
   });
 });

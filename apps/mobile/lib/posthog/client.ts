@@ -3,7 +3,7 @@ import {
   canStartLivePostHogInit,
   isAnalyticsCaptureOptedOut,
   setLivePostHogAdapter,
-} from "@repo/observability";
+} from "@repo/observability/identified-posthog";
 import { buildMobilePostHogInitOptions, mobilePostHogKey } from "./config";
 
 /**
@@ -19,7 +19,7 @@ function resetLiveGroups(client: PostHog): void {
  * Init exactly once. No-op without `EXPO_PUBLIC_POSTHOG_KEY`. Tests bind a
  * memory adapter (or mock `posthog-react-native`) so they never open a
  * transport. Identify / groups / opt-out / the marker live in
- * `@repo/observability`.
+ * `@repo/observability/identified-posthog`.
  */
 export function initMobilePostHog(): void {
   if (!canStartLivePostHogInit()) return;

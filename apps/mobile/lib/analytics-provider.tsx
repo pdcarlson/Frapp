@@ -9,7 +9,7 @@ import {
   type AnalyticsProperties,
   type CurrentChapterPayload,
 } from "@repo/validation";
-import { applyAnalyticsOptOut } from "@repo/observability";
+import { applyAnalyticsOptOut } from "@repo/observability/identified-posthog";
 
 /**
  * Pseudonymous analytics for the mobile app (issue #464) — the Expo mirror of

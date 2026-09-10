@@ -17,7 +17,7 @@ vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockUseCurrentChapter(),
 }));
 
-vi.mock("@repo/observability", () => ({
+vi.mock("@repo/observability/identified-posthog", () => ({
   applyAnalyticsOptOut: (...args: unknown[]) => applyAnalyticsOptOut(...args),
 }));
 

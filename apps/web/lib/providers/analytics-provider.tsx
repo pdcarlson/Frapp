@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useEffect, useMemo } from "react";
 import { useFrappClient, useActiveChapterId, useOrgConfig } from "@repo/hooks";
 import { isAnalyticsOptedOut, type AnalyticsProperties } from "@repo/validation";
-import { applyAnalyticsOptOut } from "@repo/observability";
+import { applyAnalyticsOptOut } from "@repo/observability/identified-posthog";
 
 /**
  * Pseudonymous analytics for the web app (issue #464).

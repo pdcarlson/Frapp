@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bindPostHogAdapterForTests,
   isPostHogReady,
-} from "@repo/observability";
+} from "@repo/observability/identified-posthog";
 import { initMobilePostHog } from "./client";
 
 afterEach(() => {
