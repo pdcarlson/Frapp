@@ -7,7 +7,7 @@ import { mobileSentryDsn } from "@/lib/sentry/options";
 import {
   applyObservabilityIdentity,
   fetchAnalyticsIdentity,
-} from "@repo/observability";
+} from "@repo/observability/identified-posthog";
 import { isPostHogConfigured } from "@/lib/posthog/config";
 
 /**

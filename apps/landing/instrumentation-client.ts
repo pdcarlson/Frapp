@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
-import { withAnonymousPostHogSentryCorrelation } from "@repo/observability";
+import { withAnonymousPostHogSentryCorrelation } from "@repo/observability/next";
 import { initLandingPostHog } from "./lib/posthog/client";
 import {
   buildLandingSentryOptions,

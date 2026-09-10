@@ -4,4 +4,4 @@
  * prompt, or a rollout; it must not substitute for `chapter-config:manage`
  * or any other grant.
  */
-export { isProductFlagEnabled } from "@repo/observability";
+export { isProductFlagEnabled } from "@repo/observability/identified-posthog";

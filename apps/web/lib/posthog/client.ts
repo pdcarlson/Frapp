@@ -3,7 +3,7 @@ import {
   canStartLivePostHogInit,
   isAnalyticsCaptureOptedOut,
   setLivePostHogAdapter,
-} from "@repo/observability";
+} from "@repo/observability/identified-posthog";
 import { buildWebPostHogInitOptions, webPostHogKey } from "./config";
 
 /**
@@ -12,7 +12,8 @@ import { buildWebPostHogInitOptions, webPostHogKey } from "./config";
  *
  * Synchronous on purpose: `instrumentation-client.ts` must finish before
  * React hydration, the same reason Sentry.init is not dynamically imported.
- * Identify / groups / opt-out / the marker live in `@repo/observability`.
+ * Identify / groups / opt-out / the marker live in
+ * `@repo/observability/identified-posthog`.
  */
 export function initWebPostHog(): void {
   if (!canStartLivePostHogInit()) return;

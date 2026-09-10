@@ -28,6 +28,7 @@ describe("no secrets or PII in landing observability sources", () => {
       expect(source, file).not.toContain("POSTHOG_PERSONAL_API_KEY");
       expect(source, file).not.toContain("process.env.NEXT_PUBLIC_SENTRY_DSN");
       expect(source, file).not.toContain("/v1/analytics/identity");
+      expect(source, file).not.toContain("@repo/observability/identified-posthog");
     }
   });
 

@@ -3,7 +3,7 @@ import {
   canStartLivePostHogInit,
   captureAnalyticsEvent,
   setLivePostHogAdapter,
-} from "@repo/observability";
+} from "@repo/observability/next";
 import {
   buildLandingPostHogInitOptions,
   landingPostHogKey,

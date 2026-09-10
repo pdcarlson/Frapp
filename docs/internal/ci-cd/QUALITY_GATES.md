@@ -274,9 +274,9 @@ no way to grandfather individual clones. The only lever is a repo-wide duplicati
 that fails when exceeded. So the ratchet is:
 
 - **Current measurement: 4.29%** duplicated lines (999 clones, 12,157 duplicated lines, across
-  1,280 files analysed) — measured 2026-09-10 with `npm run check:duplication` after merging
-  landing WS6 (#2070) and moving landing's copied adapter/correlation/scrub hooks into
-  `@repo/observability`. The raw ratio is 12,157 / 283,156 = 4.293%, under the 4.3% threshold.
+  1,281 files analysed) — measured 2026-09-10 with `npm run check:duplication` after merging
+  landing WS6 (#2070) and extracting landing clones onto `@repo/observability/next`.
+  The raw ratio is 12,157 / 283,177 = 4.293%, under the 4.3% threshold.
 - **Threshold: 4.3%**, just above it. Not ratcheted down: headroom is a few dozen lines.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
   make a red run green. Set the new value from a *measured* run, never from a guess, and leave

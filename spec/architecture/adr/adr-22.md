@@ -17,9 +17,11 @@
   `chapters.analytics_opt_out`, and **production-disabled until Paul approves** privacy
   disclosure, consent, and retention.
 - **Vendor SDK init stays runtime-local.** Shared policy (scrubber, correlation types, safe env
-  parsing, PII redaction, hex identity validation, the PostHog adapter surface, and
-  Sentry↔PostHog correlation attach) lives in the browser-safe `@repo/observability` package
-  (`packages/observability`). Vendor SDK init stays in NestJS, Next.js, and React Native.
+  parsing, PII redaction) lives in the browser-safe `@repo/observability` package
+  (`packages/observability`). Identify / groups / hex validation / Sentry correlation attach live
+  on `@repo/observability/identified-posthog` so landing cannot inherit them from the barrel.
+  Landing's anonymous page/CTA helpers live on `@repo/observability/next`.
+  Vendor SDK init stays in NestJS, Next.js, and React Native.
   **Correction (2026-09-09):** the original decision named this as a later slice and still
   pointed at `packages/validation/src/sentry-scrubbing.ts`. That module was **moved**, not
   copied. The package is listed under [`spec/architecture/README.md` §4](../README.md#4-shared-packages).
@@ -74,12 +76,14 @@ both vendors. The `frapp-landing` Sentry project may still need to be
 created (org disables member create).
 **Correction (2026-09-10):** identify / groups / opt-out / the
 `sentry-error-correlated` marker / hex identity validation / Sentry tag
-attach are no longer copied per app. They live in `@repo/observability`.
-Each app still constructs its own vendor client (`posthog-js` /
-`posthog-react-native`) and calls `Sentry.init`. Landing uses the same
-package for anonymous correlation (no distinct id, no Sentry user). The
-WS7 copy of the web adapter was the clone that breached the jscpd ratchet;
-the package is the cutover, not a second copy.
+attach are no longer copied per app. They live on
+`@repo/observability/identified-posthog`, not the package barrel, so
+landing cannot inherit identify APIs. Landing uses
+`@repo/observability/next` for anonymous page/CTA capture and correlation
+(no distinct id, no Sentry user). Each app still constructs its own
+vendor client (`posthog-js` / `posthog-react-native`) and calls
+`Sentry.init`. The WS7 copy of the web adapter was the clone that
+breached the jscpd ratchet; the package is the cutover, not a second copy.
 
 **Alternatives rejected.**
 

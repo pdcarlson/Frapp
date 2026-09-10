@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 import { buildWebSentryOptions, webSentryDsn } from "@/lib/sentry/options";
-import { withPostHogSentryCorrelation } from "@repo/observability";
+import { withPostHogSentryCorrelation } from "@repo/observability/identified-posthog";
 import { initWebPostHog } from "@/lib/posthog/client";
 
 /**

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bindPostHogAdapterForTests } from "@repo/observability";
+import { bindPostHogAdapterForTests } from "@repo/observability/identified-posthog";
 import { initWebPostHog } from "./client";
 
 const posthogInit = vi.hoisted(() => vi.fn());

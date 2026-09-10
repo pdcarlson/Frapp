@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   bindPostHogAdapterForTests,
   createMemoryPostHogAdapter,
-} from "@repo/observability";
+} from "@repo/observability/next";
 import { captureLandingCta, captureLandingPageview, initLandingPostHog } from "./client";
 import { LANDING_CTA_EVENT } from "./events";
 
