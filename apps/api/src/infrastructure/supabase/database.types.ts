@@ -51,6 +51,8 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  RushCandidate,
+  RushCandidateVote,
   User,
   UserSettings,
 } from '#domain/entities';
@@ -130,6 +132,8 @@ export interface Database {
       financial_transactions: TableDefinition<FinancialTransaction>;
       service_entries: TableDefinition<ServiceEntry>;
       tasks: TableDefinition<Task>;
+      rush_candidates: TableDefinition<RushCandidate>;
+      rush_candidate_votes: TableDefinition<RushCandidateVote>;
       chapter_documents: TableDefinition<ChapterDocument>;
       chapter_document_folders: TableDefinition<ChapterDocumentFolder>;
       semester_archives: TableDefinition<SemesterArchive>;

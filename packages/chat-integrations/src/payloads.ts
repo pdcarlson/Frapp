@@ -150,5 +150,26 @@ export interface HoursPayload {
   created_at: string;
 }
 
+/**
+ * Payload for a `kind:"rush"` card. Built server-side after
+ * `RushService.create` commits the row (the `/<vocab> add` slash command),
+ * so the card can never assert a candidate that does not exist. The adder's
+ * display name is embedded at write time.
+ *
+ * Live vote count, `viewer_has_voted`, and bid status are read back through
+ * `GET /v1/rush/candidates/:id` — the chat message row is never mutated, and
+ * voter names are never on the wire. Server-originated: a client cannot forge
+ * `kind:"rush"` (see `ChatService.SERVER_ONLY_KINDS`).
+ */
+export interface RushPayload {
+  candidate_id: string;
+  display_name: string;
+  added_by_user_id: string;
+  added_by_name: string;
+  stage: string;
+  bid_status: "none" | "extended";
+  created_at: string;
+}
+
 /** Action type used for poll votes. Shared between the renderer and the API. */
 export const POLL_VOTE_ACTION_TYPE = "vote";

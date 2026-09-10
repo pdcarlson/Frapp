@@ -19,6 +19,20 @@ describe("getSlashCommand", () => {
   it("returns undefined for an unknown name", () => {
     expect(getSlashCommand("nope")).toBeUndefined();
   });
+
+  it("resolves rush aliases and a chapter vocab slug to the canonical command", () => {
+    expect(getSlashCommand("intake")?.name).toBe("rush");
+    expect(getSlashCommand("recruitment")?.name).toBe("rush");
+    expect(getSlashCommand("induction")?.name).toBe("rush");
+    expect(getSlashCommand("pledging", { recruitment: "Pledging" })?.name).toBe(
+      "rush",
+    );
+    expect(getSlashCommand("intake")?.displayName).toBe("intake");
+    expect(
+      getSlashCommand("rush", { recruitment: "Intake" })?.displayName,
+    ).toBe("intake");
+    expect(getSlashCommand("rush")?.displayName).toBeUndefined();
+  });
 });
 
 describe("filterSlashCommands", () => {
@@ -66,6 +80,20 @@ describe("filterSlashCommands", () => {
     // "event" matches the query but its module is disabled.
     const result = filterSlashCommands("event", (moduleKey) => moduleKey !== "events");
     expect(result).toEqual([]);
+  });
+
+  it("hides rush when the rush module is disabled", () => {
+    const result = filterSlashCommands("", (moduleKey) => moduleKey !== "rush");
+    expect(result.some((command) => command.name === "rush")).toBe(false);
+  });
+
+  it("matches rush aliases and surfaces the chapter vocab as displayName", () => {
+    const result = filterSlashCommands("intake", allEnabled, {
+      recruitment: "Intake",
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.name).toBe("rush");
+    expect(result[0]?.displayName).toBe("intake");
   });
 });
 

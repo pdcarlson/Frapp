@@ -1,6 +1,6 @@
 import { POINTS_REASON_MAX_LENGTH } from "@repo/validation";
 import { describe, expect, it } from "vitest";
-import { parseHoursArgs, parsePointsArgs } from "./parsers";
+import { parseHoursArgs, parsePointsArgs, parseRushArgs } from "./parsers";
 
 describe("parsePointsArgs reason cap", () => {
   it("imports POINTS_REASON_MAX_LENGTH from @repo/validation at the 500-char pin", () => {
@@ -104,5 +104,58 @@ describe("parseHoursArgs", () => {
   it("rejects a duration above the service-entry ceiling", () => {
     const parsed = parseHoursArgs("log 100001m Cleanup");
     expect(parsed.ok).toBe(false);
+  });
+});
+
+describe("parseRushArgs", () => {
+  it("parses add with an @name spanning spaces", () => {
+    expect(parseRushArgs("add @Jane Doe")).toEqual({
+      ok: true,
+      value: { action: "add", displayName: "Jane Doe" },
+    });
+  });
+
+  it("parses a quoted add name", () => {
+    expect(parseRushArgs('add "Jane Doe"')).toEqual({
+      ok: true,
+      value: { action: "add", displayName: "Jane Doe" },
+    });
+  });
+
+  it("parses vote with a UUID", () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    expect(parseRushArgs(`vote ${id}`)).toEqual({
+      ok: true,
+      value: { action: "vote", candidateId: id },
+    });
+  });
+
+  it("parses vote with a name token", () => {
+    expect(parseRushArgs("vote @Jane")).toEqual({
+      ok: true,
+      value: { action: "vote", candidateToken: "Jane" },
+    });
+  });
+
+  it("parses bid with a name", () => {
+    expect(parseRushArgs("bid @Jane Doe")).toEqual({
+      ok: true,
+      value: { action: "bid", candidateToken: "Jane Doe" },
+    });
+  });
+
+  it("rejects a missing add name", () => {
+    const parsed = parseRushArgs("add");
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toMatch(/candidate name/i);
+  });
+
+  it("rejects an unknown action without hardcoding /rush", () => {
+    const parsed = parseRushArgs("review pending");
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toMatch(/Unknown action/i);
+    expect(parsed.error).not.toMatch(/\/rush/i);
   });
 });

@@ -237,6 +237,7 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 | Task card | `TasksGlyph` (shared) |
 | Points card | `PointsGlyph` (shared) |
 | Hours card | `ServiceGlyph` (shared with the nav intent) |
+| Rush / recruitment card | `RushGlyph` |
 | Channel search | `SearchGlyph` (shared) |
 
 Three things this table deliberately does not contain:
