@@ -350,7 +350,8 @@ CS_RETRY_LOG_LOCATION="${CS_RETRY_LOG_LOCATION:-the cloud-sandbox log}"
 # Classify a captured failure log, echoing exactly one token on stdout:
 #
 #   policy        Network policy blocked a container registry. FATAL — an allowlist does not
-#                 heal on retry, and the fix is a setting in the Claude Code web environment.
+#                 heal on retry, and the fix is a setting in this session's environment
+#                 dashboard (Cursor Cloud or Claude Code web).
 #   ratelimit     Docker Hub refused the pull. FATAL for the same reason (it needs credentials).
 #   deterministic A local, repeatable failure (denied ulimit, port in use, dockerd down, poisoned
 #                 data volume). FATAL — retrying reruns a ~90s start to reach the same error.
@@ -429,10 +430,10 @@ cs_failure_hint() {
   local class="${1:-}" where="${2:-the cloud-sandbox log}"
   case "$class" in
     policy)
-      printf 'the sandbox network policy blocked a container registry. Set Network = Full, or Custom + public.ecr.aws + *.cloudfront.net, in the Claude Code web environment. Applies to NEW sessions only.'
+      printf 'the sandbox network policy blocked a container registry. Set Network = Full, or Custom + public.ecr.aws + *.cloudfront.net, in this session'\''s environment dashboard (Cursor Cloud or Claude Code web). Applies to NEW sessions only.'
       ;;
     ratelimit)
-      printf 'Docker Hub refused the pull (anonymous rate limit). Add DOCKERHUB_USERNAME and a read-only DOCKERHUB_TOKEN to the Claude Code web environment. Applies to NEW sessions only.'
+      printf 'Docker Hub refused the pull (anonymous rate limit). Add DOCKERHUB_USERNAME and a read-only DOCKERHUB_TOKEN to this session'\''s environment dashboard (Cursor Cloud or Claude Code web). Applies to NEW sessions only.'
       ;;
     deterministic)
       printf 'a local, repeatable failure (denied ulimit, port already in use, Docker daemon down, or an incompatible Postgres data volume) — retrying cannot help. Match the exact error in %s against the symptom table in docs/internal/environment/CLOUD_SANDBOX.md ("When bringup fails").' "$where"
