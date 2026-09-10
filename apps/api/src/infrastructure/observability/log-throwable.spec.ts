@@ -69,6 +69,41 @@ describe('logThrowable', () => {
     expect(chunks.join('')).toContain('alice@example.com');
   });
 
+  it('passes a real Error stack as Nest error stack, never the object', () => {
+    const error = jest.fn();
+    const warn = jest.fn();
+    const thrown = new Error('palette recompute exploded');
+
+    logThrowable(
+      { error, warn },
+      'error',
+      'Failed to persist theme palette',
+      thrown,
+    );
+
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error.mock.calls[0][0]).toContain('palette recompute exploded');
+    expect(error.mock.calls[0][1]).toBe(thrown.stack);
+  });
+
+  it('does not pass a stack string on warn (Nest would treat it as context)', () => {
+    const error = jest.fn();
+    const warn = jest.fn();
+    const thrown = new Error('opt-out lookup exploded');
+
+    logThrowable(
+      { error, warn },
+      'warn',
+      'analytics opt-out lookup failed',
+      thrown,
+    );
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]).toHaveLength(1);
+    expect(String(warn.mock.calls[0][0])).toContain('opt-out lookup exploded');
+    expect(String(warn.mock.calls[0][0])).not.toContain(thrown.stack ?? '');
+  });
+
   it('Nest ConsoleLogger does not print details when logThrowable interpolates', () => {
     const chunks: string[] = [];
     const write = jest

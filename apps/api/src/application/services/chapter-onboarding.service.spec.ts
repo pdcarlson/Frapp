@@ -519,6 +519,7 @@ describe('ChapterOnboardingService', () => {
       // resolves would pass at any level, or at none.
       expect(logged).toHaveBeenCalledWith(
         'Failed to provision archetype custom fields: network down',
+        expect.stringMatching(/\n\s+at /),
       );
     });
   });

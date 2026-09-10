@@ -9,6 +9,11 @@ export type ThrowableLogger = {
   warn(message: unknown, ...optionalParams: unknown[]): unknown;
 };
 
+/** Same predicate ConsoleLogger uses before treating a second string as stack. */
+function isNestErrorStack(stack: string): boolean {
+  return /^(.)+\n\s+at .+:\d+:\d+/.test(stack);
+}
+
 /**
  * Log a throwable without handing Nest's ConsoleLogger the object.
  *
@@ -20,8 +25,11 @@ export type ThrowableLogger = {
  * Sentry; this is the same decision on the plaintext log path
  * (`spec/behavior/observability.md` § Error Tracking, #1669).
  *
- * Always interpolate into a **single** string. Do not pass the throwable as a
- * second argument — that is the leak.
+ * Interpolate into a string. Do not pass the throwable as a second argument
+ * — that is the leak. A real `Error` may still pass `error.stack` as Nest's
+ * stack slot on `error`, and only when the string matches Nest's stack
+ * predicate (`at file:line:col`). Never do that on `warn`: ConsoleLogger
+ * treats a trailing string as context, not a stack.
  */
 export function logThrowable(
   logger: ThrowableLogger,
@@ -29,5 +37,15 @@ export function logThrowable(
   message: string,
   error: unknown,
 ): void {
-  logger[level](`${message}: ${toReportableError(error).message}`);
+  const line = `${message}: ${toReportableError(error).message}`;
+  if (
+    level === 'error' &&
+    error instanceof Error &&
+    typeof error.stack === 'string' &&
+    isNestErrorStack(error.stack)
+  ) {
+    logger.error(line, error.stack);
+    return;
+  }
+  logger[level](line);
 }
