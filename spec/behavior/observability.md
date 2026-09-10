@@ -66,6 +66,8 @@ Identity, opt-out, and the forget path are owned by [`data-retention.md`](data-r
 
 Unset DSN still means `Sentry.init` is never called.
 
+**Correction (2026-09-10):** API `Sentry.init` plus `sourceMap: true` is not TypeScript symbolication. Live `frapp-api` issues FRAPP-API-1 (`environment: staging`) and FRAPP-API-3 (`environment: production`) show compiled `/app/apps/api/dist/*.js` frames with ContextLines on-disk JS. The Node SDK reads the running `.js`; nothing in the image build invoked `sentry-cli`. Upload runs in `apps/api/Dockerfile` after `nest build` when `SENTRY_AUTH_TOKEN` is present (org `frapp-live`, project `frapp-api`, `--release` = `RENDER_GIT_COMMIT`). Without the token the build succeeds and skips upload — the same skip as Next.js `withSentryConfig`. ContextLines JS context is not a passing maps check. Human remaining: put `SENTRY_AUTH_TOKEN` in Infisical Staging + Production (path `/`) so the existing Render syncs pass it as a Docker ARG; live Render API env names on 2026-09-10 did not include it. That token work is the source-map half of #970 (same name as web), not a second issue.
+
 ## Logging sinks
 
 Internal Render/stdout logs and PostHog logs are **independent transforms** of the same facts, not a pipe from one into the other.
@@ -100,6 +102,7 @@ A slice is done when **intended** behavior above is true in code **and** the mat
 | Pseudonyms | Salt API-only (bundle grep); identity HMAC matches server events |
 | Landing anonymous | No identity call, no `alias` onto an authenticated id |
 | Releases | Sentry event `release`/`dist` match the table above |
+| API TypeScript stacks | A `frapp-api` issue after a Render deploy that uploaded maps shows `*.ts` frames. Compiled `dist/*.js` with ContextLines is not that. |
 | Alerts | Live Sentry/PostHog/Render rules, dated, in [`ALERT_ROUTING.md`](../../docs/internal/ops/ALERT_ROUTING.md) |
 | Forget | #709 verified in the production PostHog project before production ingest |
 
