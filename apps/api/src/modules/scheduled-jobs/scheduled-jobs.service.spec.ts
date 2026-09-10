@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
 import { AttendanceService } from '../../application/services/attendance.service';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
@@ -169,6 +170,55 @@ describe('ScheduledJobsService', () => {
       );
       // The sweep keeps going after the failure.
       expect(markAutoAbsent).toHaveBeenCalledWith('evt-ok', 'chap-1');
+    });
+
+    it('does not log PostgREST details when marking throws a plain object', async () => {
+      const details =
+        'Key (email)=(alice@example.com) is not present in table "users".';
+      findEventsPendingAutoAbsent.mockResolvedValue([
+        {
+          id: 'evt-bad',
+          chapter_id: 'chap-1',
+          end_time: '2026-08-05T10:00:00Z',
+        },
+      ]);
+      markAutoAbsent.mockRejectedValue({
+        code: '23505',
+        message: 'duplicate key value violates unique constraint',
+        details,
+        hint: 'Use a different email.',
+      });
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      try {
+        const result = await service.sweepAutoAbsent(NOW);
+        expect(result).toEqual({ events: 0 });
+        expect(releaseDispatch).toHaveBeenCalled();
+        const printed = errorSpy.mock.calls
+          .map((args) =>
+            args.map((arg) =>
+              typeof arg === 'string' ? arg : JSON.stringify(arg),
+            ),
+          )
+          .flat()
+          .join('\n');
+        expect(printed).toContain('auto-absent sweep: event evt-bad failed');
+        expect(printed).toContain('23505');
+        expect(printed).not.toContain('alice@example.com');
+        expect(
+          errorSpy.mock.calls
+            .filter((args) =>
+              String(args[0]).includes(
+                'auto-absent sweep: event evt-bad failed',
+              ),
+            )
+            .every((args) => args.length === 1),
+        ).toBe(true);
+      } finally {
+        errorSpy.mockRestore();
+      }
     });
   });
 

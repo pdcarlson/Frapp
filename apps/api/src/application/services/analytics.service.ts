@@ -139,9 +139,11 @@ export class AnalyticsService {
       }
       await this.provider.capture(event);
     } catch (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `Failed to capture analytics event "${eventName}"`,
-        error as Error,
+        error,
       );
     }
   }
@@ -204,9 +206,11 @@ export class AnalyticsService {
           options.chapterId,
         );
       } catch (error) {
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           'analytics membership check failed; suppressing event',
-          error as Error,
+          error,
         );
         return;
       }
@@ -235,9 +239,11 @@ export class AnalyticsService {
       // Membership resolution is best-effort like the rest of the cold path: a
       // DB blip suppresses (fail closed) rather than 500-ing a fire-and-forget
       // telemetry call.
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         'analytics membership resolution failed; suppressing event',
-        error as Error,
+        error,
       );
       return;
     }
@@ -284,9 +290,11 @@ export class AnalyticsService {
       if (!(await this.isChapterAnalyticsEnabled(chapterId))) return;
       await this.provider.capture(event);
     } catch (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `Failed to capture chapter analytics event "${eventName}"`,
-        error as Error,
+        error,
       );
     }
   }
@@ -310,9 +318,11 @@ export class AnalyticsService {
         this.getChapterGroupId(chapterId),
       );
     } catch (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `Failed to evaluate product flag "${flagKey}"`,
-        error as Error,
+        error,
       );
       return false;
     }
@@ -334,7 +344,12 @@ export class AnalyticsService {
     try {
       return await this.provider.forget(distinctId);
     } catch (error) {
-      this.logger.warn('Failed to forget analytics user', error as Error);
+      logThrowable(
+        this.logger,
+        'warn',
+        'Failed to forget analytics user',
+        error,
+      );
       return false;
     }
   }

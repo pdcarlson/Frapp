@@ -83,9 +83,11 @@ export class ChatBridgeWorkerService
           }
         });
     } catch (err) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         'chat-bridge failed to start; audit messages will not mirror',
-        err as Error,
+        err,
       );
     }
   }
@@ -95,7 +97,9 @@ export class ChatBridgeWorkerService
       try {
         await this.supabase.removeChannel(this.channel);
       } catch (err) {
-        this.logger.warn(
+        logThrowable(
+          this.logger,
+          'warn',
           'chat-bridge: error removing channel on shutdown',
           err,
         );
@@ -162,7 +166,9 @@ export class ChatBridgeWorkerService
         );
       }
     } catch (err) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `chat-bridge: unexpected error mirroring audit ${row.id}`,
         err,
       );
