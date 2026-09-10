@@ -29,6 +29,16 @@ export class SupabaseChapterRepository implements IChapterRepository {
     return data;
   }
 
+  async findByIds(ids: string[]): Promise<Chapter[]> {
+    if (!ids.length) return [];
+    const { data, error } = await this.supabase
+      .from('chapters')
+      .select('*')
+      .in('id', ids);
+    if (error) throw error;
+    return data ?? [];
+  }
+
   async findBySubscriptionId(subscriptionId: string): Promise<Chapter | null> {
     const { data, error } = await this.supabase
       .from('chapters')
