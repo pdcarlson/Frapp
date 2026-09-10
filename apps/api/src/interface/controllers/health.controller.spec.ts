@@ -3,6 +3,8 @@ import { Logger, ServiceUnavailableException } from '@nestjs/common';
 import { HealthController } from './health.controller';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { AllExceptionsFilter } from '../filters/all-exceptions.filter';
+import { StripePriceConsistencyService } from '../../infrastructure/billing/stripe-price-consistency.service';
+import { StripePriceAccountMismatchError } from '../../infrastructure/billing/stripe-price-consistency';
 
 jest.mock('@sentry/nestjs', () => ({
   captureException: jest.fn(),
@@ -32,13 +34,25 @@ describe('HealthController', () => {
     },
   };
 
+  const stripePriceConsistency = {
+    assertConfiguredPrice: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
     dbError = null;
     storageError = null;
+    stripePriceConsistency.assertConfiguredPrice.mockReset();
+    stripePriceConsistency.assertConfiguredPrice.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [HealthController],
-      providers: [{ provide: SUPABASE_CLIENT, useValue: supabase }],
+      providers: [
+        { provide: SUPABASE_CLIENT, useValue: supabase },
+        {
+          provide: StripePriceConsistencyService,
+          useValue: stripePriceConsistency,
+        },
+      ],
     }).compile();
 
     controller = module.get<HealthController>(HealthController);
@@ -54,6 +68,9 @@ describe('HealthController', () => {
         storage: 'connected',
       });
       expect(result).not.toHaveProperty('commit');
+      expect(
+        stripePriceConsistency.assertConfiguredPrice,
+      ).not.toHaveBeenCalled();
     });
 
     it('includes commit when Render injected a git SHA', async () => {
@@ -139,6 +156,30 @@ describe('HealthController', () => {
         storage: 'connected',
       });
       expect(result).not.toHaveProperty('commit');
+      expect(stripePriceConsistency.assertConfiguredPrice).toHaveBeenCalled();
+    });
+
+    it('throws ServiceUnavailableException when the configured Stripe Price is missing', async () => {
+      stripePriceConsistency.assertConfiguredPrice.mockRejectedValue(
+        new StripePriceAccountMismatchError(
+          'price_missing',
+          'resource_missing: No such price',
+        ),
+      );
+
+      try {
+        await controller.ready();
+        throw new Error('expected ready() to throw');
+      } catch (err) {
+        expect(err).toBeInstanceOf(ServiceUnavailableException);
+        const response = (err as ServiceUnavailableException).getResponse();
+        expect(response).toMatchObject({
+          code: 'DEGRADED',
+        });
+        expect((response as { message: string }).message).toMatch(
+          /billing:.*STRIPE_SECRET_KEY's Stripe account and STRIPE_PRICE_ID must match/,
+        );
+      }
     });
 
     it('throws ServiceUnavailableException when the database is unreachable', async () => {

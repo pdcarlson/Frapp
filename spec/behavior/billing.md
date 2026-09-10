@@ -58,6 +58,12 @@ This also repairs a case that was never a duplicate at all: on a **first** check
 
 Application logic talks to an `IBillingProvider` interface, never directly to the Stripe SDK. This allows future provider changes (e.g. LemonSqueezy) without touching business logic.
 
+## Price / account consistency at boot
+
+`validateEnv` only requires a non-empty `STRIPE_PRICE_ID`. A Price id from another Stripe account therefore used to boot, then 503 at checkout (FRAPP-API-4). `StripePriceConsistencyService` retrieves that id with `STRIPE_SECRET_KEY` on `onModuleInit` and again from `GET /health/ready`. `resource_missing` or an inactive Price refuses boot and 503s ready (`message` includes `billing: …`) so a staging/prod deploy cannot stay healthy. `/health` liveness never calls Stripe — it is Render's `healthCheckPath` and must stay 2xx through a Stripe blip. Transient Stripe errors (network, 5xx) warn and do not refuse boot.
+
+Placeholder secrets (`sk_test_dummy`, `sk_test_ci_not_real`, `sk_test_placeholder_cloud_sandbox`, `placeholder_value`, and other documented non-live fixtures) skip the retrieve — the same places this repo already skipped real Stripe. A real-looking `sk_test_` / `sk_live_` is validated even in development. Mocked billing unit tests cannot catch a cross-account Infisical mismatch; this runtime check is the gate. The account/price pairing itself: [`ENV_REFERENCE.md` § Core App Secrets](../../docs/internal/environment/ENV_REFERENCE.md#core-app-secrets).
+
 ## Member Invoices (Dues)
 
 - Admins with `billing:manage` create invoices for individual members (e.g. semester dues).
