@@ -89,4 +89,19 @@ describe("observabilityIdentityQueryKey / options", () => {
       "chap-1",
     ]);
   });
+
+  it("does not fetch under the none subject even when the app asks to", () => {
+    const options = observabilityIdentityQueryOptions(
+      null,
+      "chap-1",
+      async () => ({}),
+      true,
+    );
+    expect(options.enabled).toBe(false);
+    expect(options.queryKey).toEqual([
+      "observability-identity",
+      "none",
+      "chap-1",
+    ]);
+  });
 });

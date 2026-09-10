@@ -157,4 +157,11 @@ describe("ObservabilityIdentityProvider", () => {
     renderProvider();
     expect(state.get).not.toHaveBeenCalled();
   });
+
+  it("does not fetch under the none subject before the auth uid is known", () => {
+    state.authUserId = null;
+    renderProvider();
+    expect(state.get).not.toHaveBeenCalled();
+    expect(setUser).not.toHaveBeenCalled();
+  });
 });

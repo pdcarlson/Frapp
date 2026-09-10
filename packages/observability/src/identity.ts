@@ -56,7 +56,9 @@ export function observabilityIdentityQueryKey(
 
 /**
  * Shared `useQuery` options for the identity providers. Apps still own the
- * `enabled` predicate (web: vendor DSNs; mobile: authenticated + vendors).
+ * vendor/auth predicate (web: vendor DSNs; mobile: authenticated + vendors).
+ * A missing subject always disables the query: `subjectId ?? "none"` must
+ * not become a live `staleTime: Infinity` slot that a later logout reuses.
  */
 export function observabilityIdentityQueryOptions(
   subjectId: string | null | undefined,
@@ -67,7 +69,7 @@ export function observabilityIdentityQueryOptions(
   return {
     queryKey: observabilityIdentityQueryKey(subjectId, chapterId),
     queryFn: () => fetchAnalyticsIdentity(get),
-    enabled,
+    enabled: enabled && Boolean(subjectId),
     staleTime: Infinity,
     retry: false as const,
   };

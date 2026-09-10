@@ -21,6 +21,8 @@ import { isPostHogConfigured } from "@/lib/posthog/config";
  * lowercase hex. Auth-subject + chapter switches refetch: `chapter_group_id`
  * is a function of the active chapter, and a same-tab account swap must not
  * reuse another member's hex (`useViewerUserId` can lag on `["user","me"]`).
+ * The query stays off until the auth uid is known — a first paint with
+ * `useAuthUserId() === null` must not cache a JWT identity under `"none"`.
  *
  * Opt-out still identifies (so opt-in does not need a refetch) and still sets
  * Sentry `user.id` — it only stops capturing. `enabled: false` from the API
@@ -34,7 +36,9 @@ export function ObservabilityIdentityProvider({
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const authUserId = useAuthUserId();
-  const fetchEnabled = Boolean(webSentryDsn()) || isPostHogConfigured();
+  const fetchEnabled =
+    Boolean(authUserId) &&
+    (Boolean(webSentryDsn()) || isPostHogConfigured());
   const { data } = useQuery(
     observabilityIdentityQueryOptions(
       authUserId,
