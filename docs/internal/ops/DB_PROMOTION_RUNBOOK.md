@@ -510,7 +510,7 @@ the same run). Hosted projects are not applied from a cloud-agent session.
   `select indexname from pg_indexes where indexname = 'rush_candidates_chapter_name_key';` returns 1 row.
 * **Promoter notes**: Additive only. Ship with the API that writes them (`RushModule`). Hosted projects are not applied from a cloud-agent session.
 
-**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback rush candidates.
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-rush-candidates-20260910020000) § Rollback rush candidates.
 
 ## 2026-09-09: System actor display_name becomes Signet System (#1935)
 
