@@ -144,6 +144,8 @@ import { queryClient } from "./query-client";
  * survive into the next member's session on a shared device.
  */
 const ACCOUNT_AGNOSTIC_KEY = ["settings"];
+const USER_ME_KEY = ["user", "me"];
+const CHAPTER_KEY = ["members", "chapter-uuid-1"];
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <AuthSessionProvider>{children}</AuthSessionProvider>;
@@ -605,6 +607,81 @@ describe("AuthSessionProvider — chapter context", () => {
     // Bearer were only written in that parent effect, this sample would
     // still be User A's token.
     expect(seen).toContainEqual({ userId: "user-2", token: "access-token-2" });
+  });
+
+  it("drops unscoped product cache after writing the new Bearer on a same-chapter swap", async () => {
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    queryClient.setQueryData(ACCOUNT_AGNOSTIC_KEY, ["outgoing-settings"]);
+    queryClient.setQueryData(USER_ME_KEY, { id: "user-a-row" });
+    queryClient.setQueryData(CHAPTER_KEY, [{ id: "member-a" }]);
+
+    const realClear = queryClient.clear.bind(queryClient);
+    let tokenWhenCleared: Promise<string | null> | undefined;
+    queryClient.clear = () => {
+      tokenWhenCleared = readAuthToken();
+      realClear();
+    };
+
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-2" };
+    try {
+      await act(async () => {
+        emitAuthChange({
+          access_token: "access-token-2",
+          user: { email: "other@university.edu", id: "user-2" },
+        });
+      });
+
+      expect(tokenWhenCleared).toBeDefined();
+      await expect(tokenWhenCleared).resolves.toBe("access-token-2");
+      expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
+      expect(queryClient.getQueryData(USER_ME_KEY)).toBeUndefined();
+      expect(queryClient.getQueryData(CHAPTER_KEY)).toBeUndefined();
+      expect(result.current.userId).toBe("user-2");
+    } finally {
+      queryClient.clear = realClear;
+    }
+
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+  });
+
+  it("keeps the product cache when the same account refreshes its token", async () => {
+    mockState.initialSession = {
+      ...SESSION,
+      user: { ...SESSION.user, id: "user-1" },
+    };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    queryClient.setQueryData(ACCOUNT_AGNOSTIC_KEY, ["keep-me"]);
+    queryClient.setQueryData(USER_ME_KEY, { id: "user-a-row" });
+
+    await act(async () => {
+      emitAuthChange({
+        access_token: "access-token-2",
+        user: { email: "officer@university.edu", id: "user-1" },
+      });
+    });
+
+    expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toEqual(["keep-me"]);
+    expect(queryClient.getQueryData(USER_ME_KEY)).toEqual({ id: "user-a-row" });
+    expect(result.current.userId).toBe("user-1");
+    expect(result.current.chapterId).toBe("chapter-uuid-1");
   });
 });
 

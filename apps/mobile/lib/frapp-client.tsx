@@ -44,9 +44,12 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
    * refetches out under the *outgoing* chapter and repopulates the cache it just
    * emptied. An effect runs after commit, so `chapterIdRef` above already
    * carries the new chapter and every refetch this triggers is correctly scoped.
-   * Keying the effect on the chapter id also covers every path that changes
-   * chapters — `lib/select-chapter.ts`, the picker, a magic-link account swap —
-   * rather than one helper.
+   * Keying the effect on the chapter id covers `lib/select-chapter.ts` and the
+   * picker. A magic-link account swap also derives `chapterId` to null, which
+   * hits this path — but that is not the product-cache owner. Two accounts can
+   * share a chapter, and both-null chapters skip this effect; unscoped keys
+   * (`["user","me"]`, `["settings"]`) are dropped in `auth-session.tsx`
+   * `applySession` when the auth uid changes.
    *
    * Skipped when there was no previous chapter (first paint, the claim read
    * settling, a first selection from the picker): nothing chapter-scoped can be
