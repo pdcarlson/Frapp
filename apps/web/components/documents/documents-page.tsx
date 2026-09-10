@@ -65,6 +65,7 @@ import {
 import { useNetwork } from "@/lib/providers/network-provider";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import { readSignedUpload } from "@/lib/signed-upload";
 import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
@@ -543,19 +544,7 @@ export function DocumentsPage() {
         filename: file.name,
         content_type: contentType,
       });
-      const signedUrl =
-        signed && typeof signed === "object" && "upload_url" in signed
-          ? (signed as { upload_url?: string }).upload_url
-          : null;
-      const storagePath =
-        signed && typeof signed === "object" && "storage_path" in signed
-          ? (signed as { storage_path?: string }).storage_path
-          : null;
-      if (!signedUrl || !storagePath) {
-        throw new Error(
-          "Upload URL response missing signed URL or storage path.",
-        );
-      }
+      const { signedUrl, storagePath } = readSignedUpload(signed);
 
       const response = await fetch(signedUrl, {
         method: "PUT",
