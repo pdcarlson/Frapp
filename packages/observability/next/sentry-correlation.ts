@@ -1,15 +1,20 @@
 import {
   REQUEST_ID_HEADER,
+  headerValue,
+  httpStatusClass,
   pickSentryErrorCorrelatedProperties,
 } from "../src/index";
+
+export { headerValue, httpStatusClass } from "../src/index";
 
 /**
  * Anonymous PostHog ↔ Sentry correlation: session/replay tags and the
  * content-free `sentry-error-correlated` marker.
  *
  * Does **not** attach `posthog_distinct_id`, call `identify`, or set
- * `Sentry.setUser`. Web adds the hex distinct id in `apps/web`. Landing
- * strips `user` and any distinct-id tag before calling this.
+ * `Sentry.setUser`. Identified web/mobile add the hex distinct id via
+ * `@repo/observability/identified-posthog`. Landing strips `user` and
+ * any distinct-id tag before calling this.
  */
 
 export interface AnonymousSentryEvent {
@@ -26,24 +31,6 @@ export interface AnonymousPostHogCorrelationSource {
   getSessionId(): string | undefined;
   getReplayId(): string | undefined;
   captureSentryErrorCorrelated(properties: Record<string, unknown>): void;
-}
-
-export function httpStatusClass(status: unknown): string | undefined {
-  if (typeof status !== "number" || !Number.isFinite(status)) return undefined;
-  if (status >= 200 && status < 300) return "2xx";
-  if (status >= 400 && status < 500) return "4xx";
-  if (status >= 500 && status < 600) return "5xx";
-  return undefined;
-}
-
-export function headerValue(
-  headers: unknown,
-  name: string,
-): string | undefined {
-  if (!headers || typeof headers !== "object") return undefined;
-  const record = headers as Record<string, unknown>;
-  const direct = record[name] ?? record[name.toLowerCase()];
-  return typeof direct === "string" && direct.length > 0 ? direct : undefined;
 }
 
 function asAnonymousEvent(event: object): AnonymousSentryEvent {

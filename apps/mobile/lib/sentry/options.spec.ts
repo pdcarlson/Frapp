@@ -82,6 +82,47 @@ describe("shipped options", () => {
     expect(buildMobileSentryOptions(DSN).sendDefaultPii).toBe(false);
   });
 
+  it("does not send Sentry Replay or a lowered error sample rate", async () => {
+    const { buildMobileSentryOptions } = await loadOptions();
+    const options = buildMobileSentryOptions(DSN);
+    expect(options.replaysSessionSampleRate).toBe(0);
+    expect(options.replaysOnErrorSampleRate).toBe(0);
+    expect(options.sampleRate).toBeUndefined();
+    expect(options.tracePropagationTargets).toEqual(
+      expect.arrayContaining([
+        "http://localhost:3001",
+        "https://api-staging.frapp.live",
+        "https://api.frapp.live",
+      ]),
+    );
+    expect(JSON.stringify(options)).not.toMatch(/mobileReplayIntegration/);
+  });
+
+  it("sets release/dist from extras and git SHA only as metadata", async () => {
+    const gitSha = "deadbeefcafebabe0123456789abcdef01234567";
+    const { buildMobileSentryOptions } = await loadOptions();
+    const options = buildMobileSentryOptions(DSN, {
+      release: "live.frapp.mobile@1.0.0+12",
+      dist: "12",
+      gitSha,
+    });
+    expect(options.release).toBe("live.frapp.mobile@1.0.0+12");
+    expect(options.dist).toBe("12");
+    expect(options.release).not.toBe(gitSha);
+    expect(options.dist).not.toBe(gitSha);
+    expect(
+      (options.initialScope as { tags?: { git_sha?: string } } | undefined)
+        ?.tags?.git_sha,
+    ).toBe(gitSha);
+  });
+
+  it("omits release when extras are missing rather than inventing a git SHA", async () => {
+    const { buildMobileSentryOptions } = await loadOptions();
+    const options = buildMobileSentryOptions(DSN);
+    expect(options.release).toBeUndefined();
+    expect(options.dist).toBeUndefined();
+  });
+
   it("carries a finite sample rate, so tracing cannot be enabled by NaN", async () => {
     // #904: a malformed rate parses to NaN, which the SDK treats as enabled.
     // Mobile hardcodes the value, so this asserts the property that choice buys.

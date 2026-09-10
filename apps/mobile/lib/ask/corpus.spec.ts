@@ -150,3 +150,14 @@ describe("keyword specificity", () => {
     );
   });
 });
+
+describe("Ask corpus is not an analytics surface", () => {
+  it("does not import PostHog or Sentry", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const source = readFileSync(join(process.cwd(), "lib/ask/corpus.ts"), "utf8");
+    expect(source).not.toMatch(/posthog/i);
+    expect(source).not.toMatch(/from ["']@sentry/);
+    expect(source).not.toContain("captureException");
+  });
+});

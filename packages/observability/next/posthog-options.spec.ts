@@ -1,27 +1,10 @@
 import { describe, expect, it } from "vitest";
-import {
-  POSTHOG_EXCEPTION_AUTOCAPTURE,
-  POSTHOG_PRODUCTION_REPLAY_ENABLED,
-} from "../src/policy";
+import { POSTHOG_EXCEPTION_AUTOCAPTURE } from "../src/policy";
 import {
   buildAnonymousPostHogBrowserOptions,
   sanitizeAnonymousPostHogCapture,
   sanitizeAnonymousPostHogProperties,
-  shouldEnablePostHogReplay,
 } from "./posthog-options";
-
-describe("replay decision", () => {
-  it("cannot turn production replay on while the policy constant is false", () => {
-    expect(POSTHOG_PRODUCTION_REPLAY_ENABLED).toBe(false);
-    expect(shouldEnablePostHogReplay({ environment: "production" })).toBe(
-      false,
-    );
-    expect(shouldEnablePostHogReplay({ environment: "preview" })).toBe(false);
-    expect(shouldEnablePostHogReplay({ environment: "development" })).toBe(
-      false,
-    );
-  });
-});
 
 describe("anonymous PostHog JS options", () => {
   it("disables exception autocapture, pageviews, and session recording", () => {

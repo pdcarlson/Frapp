@@ -68,8 +68,12 @@ for ENV in preview production; do
     --name EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY --value "<pk_test_… for preview, pk_live_… for production>"
   npx eas env:create --environment $ENV --scope project --visibility plaintext \
     --name EXPO_PUBLIC_SENTRY_DSN --value "<frapp-mobile DSN>"
+  npx eas env:create --environment $ENV --scope project --visibility plaintext \
+    --name EXPO_PUBLIC_POSTHOG_KEY --value "<write-only phc_ project token>"
 done
 ```
+
+Optional: `EXPO_PUBLIC_POSTHOG_HOST` (defaults to `https://us.i.posthog.com` in `lib/posthog/config.ts`). Neither PostHog name is Infisical-synced — EAS dashboard only, like the DSN.
 
 The refs are in [`.github/environments.json`](../../../../.github/environments.json); the anon keys
 come from each project's dashboard → Settings → API (or `GET /v1/projects/<ref>/api-keys`).

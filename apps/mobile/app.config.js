@@ -3,7 +3,8 @@
 // `expo-doctor`'s schema check and #1801 validate). This file exists for the
 // fields that cannot be static: Firebase's Android client config path, and
 // the EAS production fences on public env that is inlined into the store
-// binary.
+// binary. `extra.gitSha` is the EAS git SHA (`EAS_BUILD_GIT_COMMIT_HASH`)
+// for Sentry metadata — it is never the Sentry `release` name.
 //
 // Push on Android goes through FCM, and `expo-notifications` reads FCM's
 // client config from `android.googleServicesFile` at prebuild. Without it a
@@ -235,8 +236,15 @@ function applyMobileConfig(
     easBuildProfile: env.EAS_BUILD_PROFILE,
     appUrl: env.EXPO_PUBLIC_APP_URL,
   });
+  const gitSha = env.EAS_BUILD_GIT_COMMIT_HASH;
   return {
     ...config,
+    extra: {
+      ...(config.extra && typeof config.extra === "object" ? config.extra : {}),
+      ...(typeof gitSha === "string" && gitSha.trim()
+        ? { gitSha: gitSha.trim() }
+        : {}),
+    },
     android: {
       ...config.android,
       ...(googleServicesFile ? { googleServicesFile } : {}),
