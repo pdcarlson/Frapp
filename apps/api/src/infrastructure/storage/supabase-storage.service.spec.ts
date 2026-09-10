@@ -1,4 +1,7 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseStorageService } from './supabase-storage.service';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
@@ -527,6 +530,45 @@ describe('SupabaseStorageService', () => {
       await expect(
         service.listFiles('reports', '../other'),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('getSignedUploadUrl fail-closed', () => {
+    const path = 'chapters/a/backwork/r/notes.pdf';
+
+    it('throws when the signed URL is missing from a successful response', async () => {
+      createSignedUploadUrl.mockResolvedValueOnce({
+        data: { signedUrl: '' },
+        error: null,
+      });
+
+      await expect(
+        service.getSignedUploadUrl('backwork', path, 'application/pdf'),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+
+    it('throws when data is null without an error', async () => {
+      createSignedUploadUrl.mockResolvedValueOnce({
+        data: null,
+        error: null,
+      });
+
+      await expect(
+        service.getSignedUploadUrl('backwork', path, 'application/pdf'),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+
+    it('wraps a Storage API error as a readable 500', async () => {
+      createSignedUploadUrl.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'Bucket not found' },
+      });
+
+      await expect(
+        service.getSignedUploadUrl('backwork', path, 'application/pdf'),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining('Bucket not found'),
+      });
     });
   });
 

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { InternalServerErrorException } from '@nestjs/common';
 import { BackworkController } from './backwork.controller';
 import { BackworkService } from '../../application/services/backwork.service';
 import {
@@ -57,14 +58,18 @@ describe('BackworkController', () => {
   });
 
   describe('requestUploadUrl', () => {
-    it('should call backworkService.requestUploadUrl with correct parameters', async () => {
-      const chapterId = 'chapter-123';
-      const dto: RequestBackworkUploadUrlDto = {
-        filename: 'test.pdf',
-        content_type: 'application/pdf',
-      };
-      const expectedResult = { url: 'http://test.url' };
-      mockBackworkService.requestUploadUrl.mockResolvedValue(expectedResult);
+    const chapterId = 'chapter-123';
+    const dto: RequestBackworkUploadUrlDto = {
+      filename: 'test.pdf',
+      content_type: 'application/pdf',
+    };
+
+    it('maps the camelCase service ticket onto the snake_case wire contract', async () => {
+      mockBackworkService.requestUploadUrl.mockResolvedValue({
+        signedUrl: 'https://storage.example/put',
+        storagePath: 'chapters/chapter-123/backwork/res-1/test.pdf',
+        resourceId: 'res-1',
+      });
 
       const result = await controller.requestUploadUrl(chapterId, dto);
 
@@ -73,7 +78,35 @@ describe('BackworkController', () => {
         filename: dto.filename,
         contentType: dto.content_type,
       });
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        upload_url: 'https://storage.example/put',
+        storage_path: 'chapters/chapter-123/backwork/res-1/test.pdf',
+        resource_id: 'res-1',
+      });
+    });
+
+    it('fails closed when the service omits the signed URL', async () => {
+      mockBackworkService.requestUploadUrl.mockResolvedValue({
+        signedUrl: '',
+        storagePath: 'chapters/chapter-123/backwork/res-1/test.pdf',
+        resourceId: 'res-1',
+      });
+
+      await expect(
+        controller.requestUploadUrl(chapterId, dto),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+
+    it('fails closed when the service omits the storage path', async () => {
+      mockBackworkService.requestUploadUrl.mockResolvedValue({
+        signedUrl: 'https://storage.example/put',
+        storagePath: '',
+        resourceId: 'res-1',
+      });
+
+      await expect(
+        controller.requestUploadUrl(chapterId, dto),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
     });
   });
 
