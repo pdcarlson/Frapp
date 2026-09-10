@@ -93,10 +93,10 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
   },
   {
     name: "hours",
-    description: "Log or review service hours",
-    usage: "log <amount>",
+    description: "Log service hours",
+    usage: "log <duration> <description>",
     requiredModule: "hours",
-    implemented: false,
+    implemented: true,
   },
   {
     name: "announce",

@@ -19,6 +19,9 @@ import {
   WORKFLOW_HOURS_RECEIPT,
 } from './chapter-workflows.service';
 import { ChapterServiceConfigService } from './chapter-service-config.service';
+import { ChatService } from './chat.service';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
+import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 
 describe('ServiceEntryService', () => {
   let service: ServiceEntryService;
@@ -33,6 +36,8 @@ describe('ServiceEntryService', () => {
   let mockChapterServiceConfig: jest.Mocked<
     Pick<ChapterServiceConfigService, 'getMinutesPerPoint'>
   >;
+  let mockChatService: jest.Mocked<Pick<ChatService, 'sendMessage'>>;
+  let mockUserRepo: jest.Mocked<Pick<IUserRepository, 'findByIds'>>;
 
   const receiptWorkflow = (enabled: boolean) => ({
     key: WORKFLOW_HOURS_RECEIPT,
@@ -98,6 +103,17 @@ describe('ServiceEntryService', () => {
       getMinutesPerPoint: jest.fn().mockResolvedValue(60),
     };
 
+    mockUserRepo = {
+      findByIds: jest.fn().mockResolvedValue([]),
+    };
+
+    mockChatService = {
+      sendMessage: jest.fn().mockResolvedValue({
+        message: { id: 'msg-1' },
+        deduplicated: false,
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ServiceEntryService,
@@ -109,6 +125,8 @@ describe('ServiceEntryService', () => {
           provide: ChapterServiceConfigService,
           useValue: mockChapterServiceConfig,
         },
+        { provide: USER_REPOSITORY, useValue: mockUserRepo },
+        { provide: ChatService, useValue: mockChatService },
       ],
     }).compile();
 
@@ -466,6 +484,141 @@ describe('ServiceEntryService', () => {
         }),
       ).rejects.toThrow('description is required');
       expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('posts a server-originated hours card when channel + client_message_id are set', async () => {
+      mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+      mockUserRepo.findByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Alice Member' },
+      ]);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        user_id: 'user-1',
+        date: '2026-02-26',
+        duration_minutes: 60,
+        description: 'Community cleanup',
+        channel_id: 'channel-1',
+        client_message_id: 'cmid-1',
+      });
+
+      expect(mockChatService.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chapter_id: 'ch-1',
+          channel_id: 'channel-1',
+          sender_id: 'user-1',
+          kind: 'hours',
+          system_originated: true,
+          client_message_id: 'cmid-1',
+          payload: expect.objectContaining({
+            entry_id: 'se-1',
+            user_name: 'Alice Member',
+            duration_minutes: 60,
+            description: 'Community cleanup',
+            date: '2026-02-26',
+            status: 'PENDING',
+          }),
+        }),
+      );
+    });
+
+    it('does not post a card for a dashboard create (no channel)', async () => {
+      mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        user_id: 'user-1',
+        date: '2026-02-26',
+        duration_minutes: 60,
+        description: 'Community cleanup',
+      });
+
+      expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does not post a card when receipt policy rejects the create', async () => {
+      mockChapterWorkflows.getWorkflow.mockResolvedValue(receiptWorkflow(true));
+
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          user_id: 'user-1',
+          date: '2026-02-26',
+          duration_minutes: 60,
+          description: 'Community cleanup',
+          channel_id: 'channel-1',
+          client_message_id: 'cmid-1',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+      expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+    });
+
+    describe('card_posted', () => {
+      const chatInput = {
+        chapter_id: 'ch-1',
+        user_id: 'user-1',
+        date: '2026-02-26',
+        duration_minutes: 60,
+        description: 'Community cleanup',
+        channel_id: 'channel-1',
+        client_message_id: 'cmid-1',
+      };
+
+      it('reports card_posted: true when the card posts', async () => {
+        mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+        mockUserRepo.findByIds.mockResolvedValue([
+          { id: 'user-1', display_name: 'Alice Member' },
+        ]);
+
+        const result = await service.create(chatInput);
+
+        expect(result).toEqual({ ...baseEntry, card_posted: true });
+      });
+
+      it('reports card_posted: false when the card post throws without rolling back', async () => {
+        mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+        mockChatService.sendMessage.mockRejectedValue(new Error('chat down'));
+
+        const result = await service.create(chatInput);
+
+        expect(result).toEqual({ ...baseEntry, card_posted: false });
+        expect(mockServiceEntryRepo.create).toHaveBeenCalledTimes(1);
+      });
+
+      it('omits card_posted entirely for a dashboard create', async () => {
+        mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+
+        const result = await service.create({
+          chapter_id: 'ch-1',
+          user_id: 'user-1',
+          date: '2026-02-26',
+          duration_minutes: 60,
+          description: 'Community cleanup',
+        });
+
+        expect(result).toEqual(baseEntry);
+        expect('card_posted' in result).toBe(false);
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
+
+      it('omits card_posted when only one half of the chat context is given', async () => {
+        mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+
+        const result = await service.create({
+          chapter_id: 'ch-1',
+          user_id: 'user-1',
+          date: '2026-02-26',
+          duration_minutes: 60,
+          description: 'Community cleanup',
+          channel_id: 'channel-1',
+        });
+
+        expect(result).toEqual(baseEntry);
+        expect('card_posted' in result).toBe(false);
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
     });
   });
 

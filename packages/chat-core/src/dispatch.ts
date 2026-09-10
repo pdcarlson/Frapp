@@ -13,6 +13,7 @@
 import {
   parseAnnounceArgs,
   parseEventArgs,
+  parseHoursArgs,
   parsePollArgs,
   parsePointsArgs,
   parseTaskArgs,
@@ -130,6 +131,8 @@ export async function dispatchSlashCommand(
       return dispatchTask(ctx, args, channelId, resolveMember);
     case "event":
       return dispatchEvent(ctx, args, channelId);
+    case "hours":
+      return dispatchHours(ctx, args, channelId);
     default:
       return {
         ok: false,
@@ -512,6 +515,9 @@ const TASK_CARD_LOST_WARNING =
 const EVENT_CARD_LOST_WARNING =
   "Event was created, but the chat card couldn't be posted. Check the events calendar to confirm — don't run the command again.";
 
+const HOURS_CARD_LOST_WARNING =
+  "Hours were logged, but the chat card couldn't be posted. Check the service hours page to confirm — don't run the command again.";
+
 const POINTS_RECORDED_ROW_NOTE =
   "Points recorded — the chat card didn't post. Don't run this command again.";
 
@@ -520,6 +526,9 @@ const TASK_RECORDED_ROW_NOTE =
 
 const EVENT_RECORDED_ROW_NOTE =
   "Event created — the chat card didn't post. Don't run this command again.";
+
+const HOURS_RECORDED_ROW_NOTE =
+  "Hours logged — the chat card didn't post. Don't run this command again.";
 
 const REPLAY_ACCEPTED_WARNING =
   "These points were already recorded — the retry didn't add a second entry. Whether the original chat card posted isn't something the server can tell us, so check the channel or the points ledger if you need to be sure.";
@@ -812,5 +821,92 @@ async function dispatchEvent(
 
   // Success: the server posts the `event` card (same client_message_id); the
   // Realtime echo reconciles the placeholder via mergeServerRow.
+  return { ok: true };
+}
+
+/**
+ * Today's date as `YYYY-MM-DD` in the browser's local timezone. `/hours log`
+ * has no date token — the entry is for today. `toISOString().slice(0, 10)`
+ * would be UTC and would stamp yesterday for anyone west of Greenwich in the
+ * evening.
+ */
+function localTodayIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Dispatch `/hours log <duration> <description>`. Like `/task` and `/event`, a
+ * "heavy" command: it creates a real service-entry row, so the hours card is
+ * server-originated (a client cannot post `kind:"hours"` directly). We show an
+ * optimistic `loading` placeholder, call `POST /v1/service-entries` (which
+ * creates the entry and posts the card with the same `client_message_id`), and
+ * let Realtime reconcile the placeholder in place. On failure we drop the
+ * placeholder and surface the server's message. No server-side dedupe — a
+ * replay would duplicate the entry, so there is no retry path.
+ *
+ * Chat cannot attach proof. When the chapter's `wf_hours_receipt` workflow is
+ * on, the API 400s with its existing receipt message; that is the correct UX,
+ * not a bypass.
+ */
+async function dispatchHours(
+  ctx: ChatActionContext,
+  args: string,
+  channelId: string,
+): Promise<DispatchResult> {
+  const parsed = parseHoursArgs(args);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  const clientMessageId = randomClientId();
+
+  const placeholderContent = `Logging ${parsed.value.durationMinutes} minutes of service…`;
+
+  insertLocalPlaceholder(ctx, {
+    channelId,
+    clientMessageId,
+    content: placeholderContent,
+  });
+
+  try {
+    const result = await ctx.apiClient.POST("/v1/service-entries", {
+      body: {
+        date: localTodayIsoDate(),
+        duration_minutes: parsed.value.durationMinutes,
+        description: parsed.value.description,
+        channel_id: channelId,
+        client_message_id: clientMessageId,
+      },
+    });
+    // Same status-without-`error` narrowing as `/task` / `/event`. Empty-body
+    // gateway 502/504 must not read as success: `/hours` has no server-side
+    // dedupe, so a stranded placeholder invites a duplicating retry.
+    const data = result.data as CardPostedResponse | undefined;
+    let status = result.response?.status;
+    if (result.error) status ??= 0;
+    const ok = typeof status === "number" && status >= 200 && status < 300;
+    if (!ok) {
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return {
+        ok: false,
+        error: apiErrorMessage(result.error, "Couldn't log hours"),
+      };
+    }
+    if (data?.card_posted === false) {
+      markLocalRecorded(ctx, {
+        channelId,
+        clientMessageId,
+        note: HOURS_RECORDED_ROW_NOTE,
+        content: placeholderContent,
+      });
+      return { ok: true, warning: HOURS_CARD_LOST_WARNING };
+    }
+  } catch {
+    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    return { ok: false, error: "Couldn't reach the hours service" };
+  }
+
   return { ok: true };
 }
