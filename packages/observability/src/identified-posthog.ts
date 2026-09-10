@@ -2,8 +2,8 @@
  * Identified PostHog / Sentry-correlation helpers for web and React Native.
  *
  * This module is **not** on the package barrel. Landing must not import it —
- * it has identify / group / opt-out / hex `posthog_distinct_id`. Anonymous
- * Next.js wiring lives on `@repo/observability/next`.
+ * it has identify / group / opt-out / hex `posthog_distinct_id` / product
+ * flags. Anonymous Next.js wiring lives on `@repo/observability/next`.
  */
 
 export {
