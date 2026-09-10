@@ -45,6 +45,7 @@ const CLIENT_IP = '203.0.113.42';
 interface Captured {
   warn: string[];
   error: string[];
+  log: string[];
   json: unknown;
   status: number | undefined;
 }
@@ -61,7 +62,13 @@ describe('AllExceptionsFilter', () => {
   beforeEach(() => {
     process.env.ANALYTICS_HMAC_SALT = SALT;
     jest.clearAllMocks();
-    captured = { warn: [], error: [], json: undefined, status: undefined };
+    captured = {
+      warn: [],
+      error: [],
+      log: [],
+      json: undefined,
+      status: undefined,
+    };
     jest
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation((message: unknown) => {
@@ -71,6 +78,11 @@ describe('AllExceptionsFilter', () => {
       .spyOn(Logger.prototype, 'error')
       .mockImplementation((message: unknown) => {
         captured.error.push(String(message));
+      });
+    jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation((message: unknown) => {
+        captured.log.push(String(message));
       });
   });
 
@@ -536,6 +548,58 @@ describe('AllExceptionsFilter', () => {
     it('does not emit the marker on 4xx', () => {
       new AllExceptionsFilter().catch(new ForbiddenException(), host());
       expect(captureSentryErrorCorrelated).not.toHaveBeenCalled();
+    });
+
+    it('emits a sanitized request log for an unmatched 404 (#2078)', () => {
+      new AllExceptionsFilter().catch(
+        new NotFoundException('Cannot GET /v1/ws8-synthetic-no-content'),
+        host({
+          method: 'GET',
+          url: '/v1/ws8-synthetic-no-content?email=member@example.com',
+        }),
+      );
+
+      expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);
+      const [record, sampleKey] = jest.mocked(enqueueSanitizedLog).mock
+        .calls[0] as [
+        { body: string; attributes: Record<string, unknown> },
+        string,
+      ];
+      expect(record.body).toBe('request');
+      expect(record.attributes).toMatchObject({
+        request_id: 'req-abc',
+        method: 'GET',
+        path: '/v1/ws8-synthetic-no-content',
+        status_code: 404,
+        status_class: '4xx',
+      });
+      expect(sampleKey).toBe('req-abc');
+      const serialized = JSON.stringify(record);
+      expect(serialized).not.toContain('member@example.com');
+      expect(serialized).not.toContain('Cannot GET');
+      expect(serialized).not.toContain('?');
+      expect(serialized).not.toContain(CLIENT_IP);
+      expect(captured.log[0]).toContain('/v1/ws8-synthetic-no-content');
+      expect(captured.log[0]).not.toContain('member@example.com');
+    });
+
+    it('does not emit a second request log for a matched-route 404', () => {
+      new AllExceptionsFilter().catch(
+        new NotFoundException('No such chapter'),
+        host({ route: { path: '/v1/chapters/:id' } }),
+      );
+
+      expect(enqueueSanitizedLog).not.toHaveBeenCalled();
+    });
+
+    it('does not emit a request log for a security 4xx (security_event already covers it)', () => {
+      new AllExceptionsFilter().catch(new ForbiddenException(), host());
+
+      expect(enqueueSanitizedLog).toHaveBeenCalledTimes(1);
+      const [record] = jest.mocked(enqueueSanitizedLog).mock.calls[0] as [
+        { body: string },
+      ];
+      expect(record.body).toBe('security_event');
     });
 
     it('keeps raw user ids on the internal 5xx log', () => {
