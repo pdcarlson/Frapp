@@ -17,8 +17,8 @@ vi.mock("@/lib/chapter-branding", () => ({
 import { LocationPrimerSheet } from "./location-primer-sheet";
 
 /**
- * Pins the product name on the study-zone primer. iOS Settings still lists the
- * store display name, so the recovery path must keep `Settings → Frapp`.
+ * Pins the product name on the study-zone primer. iOS Settings lists
+ * `expo.name` (Signet), so the recovery path must keep `Settings → Signet`.
  */
 
 function render(node: React.ReactElement): ReactTestRenderer {
@@ -59,7 +59,7 @@ describe("LocationPrimerSheet", () => {
     expect(rendered.some((line) => /\bFrapp\b/.test(line))).toBe(false);
   });
 
-  it("keeps Settings → Frapp when iOS will not ask again", () => {
+  it("keeps Settings → Signet when iOS will not ask again", () => {
     const rendered = texts(
       render(
         <LocationPrimerSheet
@@ -73,7 +73,7 @@ describe("LocationPrimerSheet", () => {
       rendered.some((line) => line.includes("Location is turned off for Signet")),
     ).toBe(true);
     expect(
-      rendered.some((line) => line.includes("Settings → Frapp → Location")),
+      rendered.some((line) => line.includes("Settings → Signet → Location")),
     ).toBe(true);
   });
 });

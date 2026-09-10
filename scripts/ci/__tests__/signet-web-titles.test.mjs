@@ -1,15 +1,15 @@
 // Locks customer-facing web document titles on Signet.
 //
 // WHY THIS EXISTS. Live production already serves
-// `Signet — Admin Dashboard`. Every metadata title under apps/web/app
+// `Signet Admin Dashboard`. Every metadata title under apps/web/app
 // already says Signet. A leftover sweep can put Frapp back in the
 // browser tab, switch the title to single quotes the walker used to
 // miss, drop the floor so a deleted title passes, or walk landing
-// (frozen Frapp) and treat those titles as in-scope.
+// (visual freeze; copy is Signet) and treat those titles as in-scope.
 //
 // SCOPE. `export const metadata` titles under apps/web/app, plus the
-// root layout description. Do not walk apps/landing (frozen Frapp,
-// leftover 1961 / asset pass 1901). Do not assert live staging titles
+// root layout description. Do not walk apps/landing (its own copy lock).
+// Do not assert live staging titles
 // (Vercel SSO, 1951). generateMetadata is absent; adding one without
 // teaching the walker must fail.
 
@@ -27,7 +27,7 @@ const LOCK = fileURLToPath(import.meta.url);
 /** Current metadata title count. A deleted title must fail, not pass. */
 const MIN_METADATA_TITLES = 17;
 
-const ROOT_TITLE = "Signet — Admin Dashboard";
+const ROOT_TITLE = "Signet Admin Dashboard";
 const ROOT_DESCRIPTION = "Ask your chapter anything.";
 
 function walk(dir) {

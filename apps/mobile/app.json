@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Frapp",
+    "name": "Signet",
     "slug": "frapp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -19,7 +19,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "monochromeImage": "./assets/images/adaptive-icon-monochrome.png",
-        "backgroundColor": "#0F172A"
+        "backgroundColor": "#1A1A1A"
       },
       "predictiveBackGestureEnabled": false,
       "package": "live.frapp.mobile"

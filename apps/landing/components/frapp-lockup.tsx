@@ -1,45 +1,30 @@
+import Image from "next/image";
 import Link from "next/link";
 
 /**
- * Frapp wordmark + app mark, wrapped in a Link to `/`. Inline SVG so `currentColor`
- * follows `text-navy` / `dark:text-white`.
- * Geometry aligns with `packages/brand-assets/assets/frapp-lockup.svg` — update both when changing the lockup.
+ * Signet wordmark + locked emblem B, wrapped in a Link to `/`. The word
+ * follows `text-navy` / `dark:text-white`. The tile is Design's locked
+ * raster (`#1A1A1A` / `#DDB844`); the mark never takes theme or chapter accent.
  */
 export function FrappLockup() {
   return (
     <Link
       href="/"
+      aria-label="Signet"
       className="inline-flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
-      <span className="inline-flex items-center text-navy dark:text-white [&>svg]:h-8 [&>svg]:w-auto">
-        <svg
-          viewBox="0 0 184 64"
-          width={184}
-          height={64}
-          role="img"
-          aria-label="Frapp"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <rect width="64" height="64" rx="16" fill="var(--brand-lockup-bg)" />
-          <path
-            d="M20 18H46V25H27V31H43V38H27V52H20V18Z"
-            fill="var(--primary)"
-            aria-hidden="true"
-          />
-          <text
-            x="76"
-            y="44"
-            fill="currentColor"
-            style={{
-              fontFamily:
-                "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
-              fontSize: "32px",
-              fontWeight: 700,
-            }}
-          >
-            frapp
-          </text>
-        </svg>
+      <span
+        className="inline-flex items-center gap-3 text-navy dark:text-white"
+        aria-hidden="true"
+      >
+        <Image
+          src="/brand/signet-emblem-B.png"
+          alt=""
+          width={32}
+          height={32}
+          className="h-8 w-8 rounded-lg"
+        />
+        <span className="text-xl font-bold leading-none">Signet</span>
       </span>
     </Link>
   );

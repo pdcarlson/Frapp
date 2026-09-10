@@ -19,14 +19,16 @@
 
 ## 2. The mark
 
-The shipping mark is a **placeholder**: a rounded-square tile in house gold carrying a bold "S" glyph. The committed visual truth is the reference boards — [design-system/reference/signet-design-system.dc.html](design-system/reference/signet-design-system.dc.html) (identity panel) and [design-system/reference/canvas-screens.dc.html](design-system/reference/canvas-screens.dc.html) (mark in context).
+The shipping mark is **locked emblem B**: an abstract crest with a neck break, gold on charcoal. Treat it as a crest, never as a dog, seal, or mascot in marketing copy. Canonical master is Design's raster in [`assets.md`](assets.md) (`packages/brand-assets/assets/signet-emblem-B-locked.png`). House UI accent stays `#EFB63B`; the mark itself is not that token.
 
 | Fact             | Value                                                                                                                        |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | House gold       | `#EFB63B` — Signet's own accent. Gold/amber, never brown-bronze.                                                             |
 | Accent seed      | `#F2B72E` — the default chapter accent seed; see [design-system/accent-engine.md](design-system/accent-engine.md)            |
-| Placeholder mark | Rounded-square "S" tile on house gold                                                                                        |
-| Final logo       | **TBD** — blocked on a USPTO trademark search for "Signet" (a human action). Do not commission or ship a final mark before it clears. |
+| Mark field       | `#1A1A1A`                                                                                                                    |
+| Mark gold        | `#DDB844`                                                                                                                    |
+| Shipping mark    | Locked emblem B — abstract crest, neck break, gold on charcoal                                                                |
+| Mascot / extras  | Still **TBD** — the animal mascot stays blocked on the USPTO search for "Signet" (a human action). Do not commission mascot art before it clears. |
 
 The mark and logo **MUST NOT** take the chapter accent — ever. Chapter theming recolors product UI through the accent engine; the brand itself never retints.
 
@@ -42,7 +44,7 @@ Binding constraints (research-derived) for any future mark exploration:
 
 ### The mascot
 
-Signet's mascot is a **seal (the animal)**. It is not a wax seal, a signet ring, or a stamp — those are banned mark vocabulary above. It is **not commissioned** and MUST NOT ship until the USPTO search that blocks the final mark clears. Do not generate or restyle assets toward this mascot piecemeal; the mascot lands in the same Signet asset pass as the mark ([assets.md](assets.md) §1).
+Signet's mascot is a **seal (the animal)**. It is not a wax seal, a signet ring, or a stamp — those are banned mark vocabulary above. It is **not commissioned** and MUST NOT ship until the USPTO search that blocks the final mark clears. Do not generate or restyle assets toward this mascot piecemeal; the shipping crest is not the mascot ([assets.md](assets.md) §1).
 
 ### Platform requirements when the real mark lands
 

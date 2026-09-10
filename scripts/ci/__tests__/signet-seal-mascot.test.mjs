@@ -6,8 +6,8 @@
 // sweep can put Frapp in the mascot line, drop the heading, drop the animal
 // wording, drop the USPTO ban, treat a wax seal as the mascot, or add a
 // third spec site the hardcoded paths would miss. It can also point the
-// walker at landing (frozen Frapp) or apps (no commissioned art this slice).
-// Leftover 1959. USPTO stay on 1901. Leave landing Frapp on 1954. Leave
+// walker at landing (visual freeze) or apps (no commissioned mascot this slice).
+// Leftover 1959. USPTO stay on 1901. Landing copy is Signet (1954). Leave
 // store-name on 1829. Do not restyle icons in this leftover.
 //
 // SCOPE. Markdown under spec/. Do not walk apps/ or docs/. No raster/SVG
@@ -92,10 +92,13 @@ export function brandMascotProblems(brand) {
 
 export function assetsMascotProblems(assets) {
   const problems = [];
-  if (!/intended mascot \(a seal, the animal\)/.test(assets)) {
+  if (!/intended mascot \(a seal, the animal\)/.test(assets) && !/animal mascot \(a seal, the animal\)/.test(assets)) {
     problems.push("assets must point at the animal mascot");
   }
-  if (!/MUST NOT restyle the legacy assets toward Signet piecemeal/.test(assets)) {
+  if (
+    !/MUST NOT restyle the locked emblem piecemeal/.test(assets) &&
+    !/MUST NOT restyle the legacy assets toward Signet piecemeal/.test(assets)
+  ) {
     problems.push("assets must forbid a piecemeal restyle");
   }
   return problems;
@@ -253,7 +256,7 @@ test("calling the mascot a wax seal fails", () => {
 test("dropping the assets animal pointer fails", () => {
   const problems = assetsMascotProblems(
     readRepo(ASSETS).replace(
-      "intended mascot (a seal, the animal)",
+      "animal mascot (a seal, the animal)",
       "intended mascot (a beaver)",
     ),
   );
@@ -266,8 +269,8 @@ test("dropping the assets animal pointer fails", () => {
 test("dropping the piecemeal restyle ban fails", () => {
   const problems = assetsMascotProblems(
     readRepo(ASSETS).replace(
-      "MUST NOT restyle the legacy assets toward Signet piecemeal",
-      "MAY restyle the legacy assets toward Signet piecemeal",
+      "MUST NOT restyle the locked emblem piecemeal",
+      "MAY restyle the locked emblem piecemeal",
     ),
   );
   assert.ok(

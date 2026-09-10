@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { AuthMethod, useAuthSession } from "@/lib/auth-session";
 import {
@@ -99,13 +99,15 @@ export default function SignIn() {
 
   return (
     <View style={styles.container}>
-      <View
+      <Image
+        // Metro asset id. This app has no `*.png` module declaration, so a
+        // static ESM import fails `tsc` (TS2307) even though Metro is fine.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source={require("../../assets/images/icon.png")}
         style={styles.mark}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
-      >
-        <Text style={styles.markGlyph}>S</Text>
-      </View>
+      />
       <Text style={styles.title}>Signet</Text>
       <Text style={styles.subtitle}>Ask your chapter anything.</Text>
       <View style={styles.card}>
@@ -294,24 +296,14 @@ function createStyles(tokens: SignetTokens) {
       padding: tokens.spacing.xl,
       backgroundColor: tokens.color.surface.background,
     },
-    // brand-identity.md §2: the placeholder mark is a house-gold rounded-square
-    // tile carrying a bold "S". s01 draws it at 52px on radius 14 — `radius.card`
-    // is exactly 14, so this stays token-only. House gold, never the chapter
-    // accent: the mark MUST NOT take a chapter's colour.
+    // brand-identity.md §2: locked emblem B, 52px on radius 14 (`radius.card`).
+    // Raster of the canonical tile — never chapter accent.
     mark: {
       width: 52,
       height: 52,
       borderRadius: tokens.radius.card,
-      backgroundColor: tokens.color.gold.house,
-      alignItems: "center",
-      justifyContent: "center",
+      overflow: "hidden",
       marginBottom: tokens.spacing.lg,
-    },
-    markGlyph: {
-      // Sized off the tile, not the type ladder: this is a drawn mark, not text.
-      fontSize: 27,
-      fontWeight: "700",
-      color: tokens.color.gold.onHouse,
     },
     title: {
       ...typeRole(tokens.typography.role.display),

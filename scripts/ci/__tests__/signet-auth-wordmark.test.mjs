@@ -5,13 +5,13 @@
 // A leftover sweep can put Frapp back in the visible wordmark, switch the
 // title to single quotes the first lock used to miss, add a third
 // AuthScreen title=Signet site the hardcoded paths would miss, or walk
-// landing (frozen Frapp). #1955.
+// landing (copy is Signet; visual tokens still frozen). #1955.
 //
 // SCOPE. Rendered title/subtitle props (web) and title/subtitle Text
 // nodes (mobile). Do not scan whole web auth files for Frapp — those files
 // keep historical Frapp comments. Mobile sign-in has none, so a file-wide
-// Frapp ban is safe there. Leave app.json name / Settings → Frapp on 1829.
-// Leave landing Frapp copy on 1954. Do not lock join / sign-up / no-access
+// Frapp ban is safe there. Leave app.json slug / scheme / bundle id on the
+// deferred rename. Landing copy is Signet (1954). Do not lock join / sign-up / no-access
 // titles (those are not the product wordmark).
 
 import { test } from "node:test";
