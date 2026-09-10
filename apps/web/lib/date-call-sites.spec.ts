@@ -97,9 +97,26 @@ const HAND_ROLLED =
  * | --- | --- | --- |
  * | `due_date` | `financial_invoices` | `initial_schema.sql:356` |
  * | `due_date` | `tasks` | `initial_schema.sql:407` |
+ * | `date` | `service_entries` | `initial_schema.sql:383` |
+ * | `start_date` / `end_date` | `semester_archives` | `initial_schema.sql:442` |
  * | `effective_date` | `chapter_documents` | `20260831220000_chapter_documents_metadata.sql:24` |
+ *
+ * The last three have no formatter call today — `service-page.tsx` and
+ * `settings-page.tsx` interpolate them raw, which is a cosmetic
+ * inconsistency rather than this defect. They are listed anyway, because the
+ * obvious future tidy-up is to wrap them in the shared helper, and reaching
+ * for `formatLocaleDate` is exactly how the two fixed sites got it wrong.
+ *
+ * `\b` boundaries make the bare `date` entry safe next to `due_date`: the
+ * `date` in `due_date` is preceded by a word character, so it does not match.
  */
-const BARE_DATE_COLUMNS = ["due_date", "effective_date"] as const;
+const BARE_DATE_COLUMNS = [
+  "due_date",
+  "effective_date",
+  "date",
+  "start_date",
+  "end_date",
+] as const;
 
 /**
  * Resolves what `formatLocaleDate` is called locally in a file — both call
@@ -208,12 +225,21 @@ describe("date display goes through the right @repo/formatting member", () => {
       "formatLocaleDate(doc.effective_date)",
     ]);
 
-    // Rule 2 must not fire on the correct member, nor on a timestamptz column.
+    // Rule 2 must not fire on the correct member, nor on a timestamptz column
+    // — `member-detail-sheet.tsx` legitimately reads `created_at` this way.
     const correct = `
       import { formatBareDate as formatDate, formatLocaleDate } from "@repo/formatting";
       formatDate(invoice.due_date);
       formatLocaleDate(doc.created_at);
+      formatLocaleDate(invite.expires_at);
     `;
     expect(wrongMemberCalls(correct)).toEqual([]);
+
+    // The bare `date` entry must not be triggered by `due_date`'s tail.
+    const boundary = `
+      import { formatLocaleDate } from "@repo/formatting";
+      formatLocaleDate(entry.date)
+    `;
+    expect(wrongMemberCalls(boundary)).toEqual(["formatLocaleDate(entry.date)"]);
   });
 });
