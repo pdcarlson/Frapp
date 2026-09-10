@@ -18,7 +18,7 @@ const figtree = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Signet — Admin Dashboard",
+  title: "Signet Admin Dashboard",
   description: "Ask your chapter anything.",
 };
 

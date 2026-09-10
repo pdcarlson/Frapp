@@ -14,12 +14,12 @@ const ogDescription =
   "One platform for chat, events, study hours, points, backwork, and billing.";
 
 export const metadata: Metadata = {
-  title: "Signet — Ask your chapter anything.",
+  title: "Signet. Ask your chapter anything.",
   description:
     "Replace Discord, OmegaFi, and Life360 with one app. Chat, events, study hours, points, and billing for fraternity chapters.",
   metadataBase: new URL("https://frapp.live"),
   openGraph: {
-    title: "Signet — Ask your chapter anything.",
+    title: "Signet. Ask your chapter anything.",
     description: ogDescription,
     type: "website",
     url: "https://frapp.live",
@@ -28,13 +28,13 @@ export const metadata: Metadata = {
         url: "/opengraph-image",
         width: 1200,
         height: 630,
-        alt: "Signet — Ask your chapter anything.",
+        alt: "Signet. Ask your chapter anything.",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Signet — Ask your chapter anything.",
+    title: "Signet. Ask your chapter anything.",
     description: ogDescription,
     images: ["/opengraph-image"],
   },

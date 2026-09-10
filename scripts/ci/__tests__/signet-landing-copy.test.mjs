@@ -28,8 +28,8 @@ const HOME = "apps/landing/app/page.tsx";
 const LOCKUP = "apps/landing/components/frapp-lockup.tsx";
 const SPEC = "spec/ui/landing/README.md";
 
-const HOME_TITLE = "Signet — Ask your chapter anything.";
-const SUPPORT_TITLE = "Support — Signet";
+const HOME_TITLE = "Signet. Ask your chapter anything.";
+const SUPPORT_TITLE = "Support · Signet";
 
 /** Root + OG + Twitter + /support. Deleting a title must fail, not pass. */
 const MIN_METADATA_TITLES = 4;

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { LegalDocument } from "../components/legal-document";
 
 export const metadata: Metadata = {
-  title: "Support — Signet",
+  title: "Support · Signet",
   description:
     "How to get help with the Signet mobile app and web dashboard, report a problem, or request account deletion.",
 };

@@ -272,14 +272,6 @@ export default function Home() {
               </div>
             ))}
           </div>
-          <p className="mt-8 max-w-2xl text-xs text-muted-foreground">
-            Illustrative projections—not reported customer metrics. Replace with
-            verified figures when available (see{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
-              spec/ui/brand-identity.md
-            </code>{" "}
-            in the repo).
-          </p>
         </div>
       </section>
 
@@ -476,8 +468,7 @@ export default function Home() {
               Built for real chapter operations.
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-sm text-muted-foreground">
-              Composite feedback—illustrative of officer workflows; not
-              attributed to verified customers until published as such.
+              Officers run chat, events, hours, and dues in one place.
             </p>
           </div>
           <div className="mt-10 grid gap-5 md:grid-cols-3">

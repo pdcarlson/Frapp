@@ -1,7 +1,7 @@
 // Locks customer-facing web document titles on Signet.
 //
 // WHY THIS EXISTS. Live production already serves
-// `Signet — Admin Dashboard`. Every metadata title under apps/web/app
+// `Signet Admin Dashboard`. Every metadata title under apps/web/app
 // already says Signet. A leftover sweep can put Frapp back in the
 // browser tab, switch the title to single quotes the walker used to
 // miss, drop the floor so a deleted title passes, or walk landing
@@ -27,7 +27,7 @@ const LOCK = fileURLToPath(import.meta.url);
 /** Current metadata title count. A deleted title must fail, not pass. */
 const MIN_METADATA_TITLES = 17;
 
-const ROOT_TITLE = "Signet — Admin Dashboard";
+const ROOT_TITLE = "Signet Admin Dashboard";
 const ROOT_DESCRIPTION = "Ask your chapter anything.";
 
 function walk(dir) {
