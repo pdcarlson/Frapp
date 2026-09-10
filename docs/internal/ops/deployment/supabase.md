@@ -166,7 +166,7 @@ Did **not** Deploy production. A present env-var **name** is not proof the runni
 process has left the no-op provider — that would take a restart/Deploy, which
 this observation did not do.
 
-### Auth OAuth providers (Google + Apple)
+### Auth OAuth providers (Google and Apple)
 
 Provider client ids and secrets live in the **Supabase dashboard** (Authentication → Providers), not Infisical. Do not invent values here. The web and mobile clients call `signInWithOAuth` / native SIWA against whatever the hosted project has enabled; until Ops ticks the boxes, the UI maps `provider is not enabled` to member-facing copy and magic-link still works.
 
