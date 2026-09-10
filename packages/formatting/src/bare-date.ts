@@ -1,9 +1,12 @@
 /**
  * Protected cluster 2 — bare-date timezone parsing.
  *
- * A `YYYY-MM-DD` string has no time or offset. `new Date(value)` (what
- * {@link formatLocaleDate} uses) reads it as **UTC midnight**, which renders
- * as the previous calendar day west of Greenwich.
+ * A `YYYY-MM-DD` string has no time or offset. `new Date(value)` reads it as
+ * **UTC midnight**, which renders as the previous calendar day west of
+ * Greenwich. That is not one member's quirk: `formatLocaleDate`,
+ * `formatLocaleDateTime` and `formatClock` all parse through the single
+ * `parseInstant` helper in `locale.ts`, so **all three** carry it. A bare
+ * `date` column takes {@link formatBareDate}, never any of the three.
  *
  * Two *parsers* stay distinct on purpose — and {@link formatBareDate} at the
  * foot of this file is the cluster's formatter over them:

@@ -119,34 +119,55 @@ const BARE_DATE_COLUMNS = [
 ] as const;
 
 /**
- * Resolves what `formatLocaleDate` is called locally in a file — both call
- * sites that shipped the bug imported it as `formatLocaleDate as formatDate`,
- * so a rule keyed on the exported name would have matched neither.
+ * The members that parse with `new Date(value)` and therefore read a bare
+ * `YYYY-MM-DD` as UTC midnight.
+ *
+ * All three share one `parseInstant` helper in `packages/formatting/src/locale.ts`,
+ * so all three carry the defect — confirmed under `TZ=America/Los_Angeles`:
+ * `formatLocaleDateTime("2026-08-12")` is `"8/11/2026, 5:00:00 PM"` and
+ * `formatClock("2026-08-12")` is `"Aug 11, 5:00 PM"`. No `apps/web` call site
+ * passes a bare-date column to the latter two today; they are watched because
+ * a rule narrower than the defect is how this guard was wrong the first time.
  */
-function localNameForFormatLocaleDate(source: string): string | null {
+const UTC_MIDNIGHT_MEMBERS = [
+  "formatLocaleDate",
+  "formatLocaleDateTime",
+  "formatClock",
+] as const;
+
+/**
+ * Resolves what those members are called locally in a file — both call sites
+ * that shipped the bug imported one as `formatLocaleDate as formatDate`, so a
+ * rule keyed on the exported name would have matched neither.
+ */
+function localNamesForUtcMidnightMembers(source: string): string[] {
   // `[^{}]` and not `[\s\S]*?`: a lazy match still *starts* at the first
   // `import {` in the file and runs to the first `} from "@repo/formatting"`,
   // swallowing every import in between — so the clause split then sees
   // `import { formatLocaleDate` rather than `formatLocaleDate`, and the rule
   // silently resolves nothing. That draft was green against both files that
   // had actually shipped the bug.
+  const names: string[] = [];
   const imports = source.matchAll(
     /import\s*\{([^{}]*)\}\s*from\s*["']@repo\/formatting["']/g,
   );
   for (const block of imports) {
     for (const clause of (block[1] ?? "").split(",")) {
       const [exported, alias] = clause.split(/\bas\b/).map((s) => s.trim());
-      if (exported === "formatLocaleDate") return alias || exported;
+      if (!exported) continue;
+      if ((UTC_MIDNIGHT_MEMBERS as readonly string[]).includes(exported)) {
+        names.push(alias || exported);
+      }
     }
   }
-  return null;
+  return names;
 }
 
 function wrongMemberCalls(source: string): string[] {
-  const local = localNameForFormatLocaleDate(source);
-  if (!local) return [];
+  const locals = localNamesForUtcMidnightMembers(source);
+  if (locals.length === 0) return [];
   const call = new RegExp(
-    `\\b${local}\\(\\s*[^)]*\\b(?:${BARE_DATE_COLUMNS.join("|")})\\b[^)]*\\)`,
+    `\\b(?:${locals.join("|")})\\(\\s*[^)]*\\b(?:${BARE_DATE_COLUMNS.join("|")})\\b[^)]*\\)`,
     "g",
   );
   return source.match(call) ?? [];
@@ -241,5 +262,17 @@ describe("date display goes through the right @repo/formatting member", () => {
       formatLocaleDate(entry.date)
     `;
     expect(wrongMemberCalls(boundary)).toEqual(["formatLocaleDate(entry.date)"]);
+
+    // The other two members share `locale.ts`'s `parseInstant`, so they carry
+    // the identical bare-date defect and are watched too.
+    const siblings = `
+      import { formatClock, formatLocaleDateTime as stamp } from "@repo/formatting";
+      formatClock(task.due_date);
+      stamp(archive.start_date);
+    `;
+    expect(wrongMemberCalls(siblings)).toEqual([
+      "formatClock(task.due_date)",
+      "stamp(archive.start_date)",
+    ]);
   });
 });
