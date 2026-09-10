@@ -210,6 +210,12 @@ Member invoice payments are applied by the `apply_invoice_payment` RPC — compa
 
 **tasks** — `id`, `chapter_id` (FK chapters), `title` (text), `description` (text, nullable), `assignee_id` (FK users), `created_by` (FK users), `due_date` (date), `status` (TODO | IN_PROGRESS | COMPLETED | OVERDUE), `point_reward` (int, nullable), `points_awarded` (bool, default false), `completed_at` (timestamp, nullable), `confirmed_at` (timestamp, nullable), `created_at`.
 
+### Rush / Recruitment
+
+**rush_candidates** — `id`, `chapter_id` (FK chapters), `display_name` (text, 1–200 after trim), generated `name_key` (`lower(trim(display_name))` stored), `user_id` (FK users, nullable, ON DELETE SET NULL), `stage` (text, default `'new'`), `bid_status` (`none` | `extended`), `created_by` (FK users, ON DELETE RESTRICT), `created_at`. Unique on `(chapter_id, name_key)`. RLS enabled, no policies — the API holds the service-role key. Behavior: [`../behavior/rush.md`](../behavior/rush.md).
+
+**rush_candidate_votes** — `id`, `candidate_id` (FK rush_candidates, ON DELETE CASCADE), `chapter_id` (FK chapters), `voter_id` (FK users, ON DELETE CASCADE), `created_at`. Unique on `(candidate_id, voter_id)`. `voter_id` is stored so a member can vote once and is never listed on the card.
+
 ### Chapter Documents
 
 **chapter_documents** — `id`, `chapter_id` (FK chapters), `title` (text), `description` (text, nullable), `folder` (text, nullable — single-level folder name), `storage_path` (text — Supabase Storage path), `uploaded_by` (FK users), `created_at`.

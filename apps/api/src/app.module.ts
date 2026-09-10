@@ -22,6 +22,7 @@ import { BackworkModule } from './modules/backwork/backwork.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ServiceEntryModule } from './modules/service-entry/service-entry.module';
 import { TaskModule } from './modules/task/task.module';
+import { RushModule } from './modules/rush/rush.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { StudyModule } from './modules/study/study.module';
 import { ChapterDocumentModule } from './modules/chapter-document/chapter-document.module';
@@ -73,6 +74,7 @@ import { validateEnv } from './config/env.validation';
     ChatModule,
     ServiceEntryModule,
     TaskModule,
+    RushModule,
     NotificationModule,
     StudyModule,
     ChapterDocumentModule,

@@ -26,7 +26,7 @@ interface RepositoryFile {
  * how many of them are covered, which is a different fact and moves with the
  * spec you write.
  */
-export const EXPECTED_REPOSITORY_COUNT = 40;
+export const EXPECTED_REPOSITORY_COUNT = 41;
 
 /** `apps/api/src` — the one root both ledgers walk, and what paths report against. */
 export const REPOSITORY_SRC_ROOT = join(__dirname, '..', '..', 'src');

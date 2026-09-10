@@ -162,8 +162,8 @@ export interface SendMessageInput {
 
 /**
  * Kinds that assert a server-side side effect (a ledger write, a created task,
- * event, or service entry, an audit row). A client must never post these
- * directly — only a trusted server caller may, via
+ * event, service entry, or rush candidate, an audit row). A client must never
+ * post these directly — only a trusted server caller may, via
  * `SendMessageInput.system_originated`. `loading` stays client-postable: it is
  * the optimistic placeholder for the heavy-command pattern.
  */
@@ -172,6 +172,7 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
   'points',
   'task',
   'hours',
+  'rush',
   'system_audit',
   // `imported` asserts "this is archived history from another system". It is
   // written only by the archive importer on the service-role path, and it is

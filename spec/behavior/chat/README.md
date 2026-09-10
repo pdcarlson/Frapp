@@ -524,6 +524,7 @@ What follows is the behaviour the archive has once it is in.
 | `dues` | Dues reminder card — in the enum, but still renders the placeholder `ComingSoonCard` |
 | `points` | Points award notification |
 | `hours` | Service hours log confirmation (created by `/hours log`) |
+| `rush` | Recruitment candidate card (created by `/<vocab> add`; live vote/bid via GET) |
 | `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata — **specified, not yet in `CHAT_MESSAGE_KINDS`** |
 | `pulse` | Chapter-health catch-up card — see [catch-up.md](./catch-up.md) — **specified, not yet in `CHAT_MESSAGE_KINDS`** (#821) |
 | `system_audit` | System-generated audit message (posted to #chapter-audit, or to a DM on invite-accept) |
