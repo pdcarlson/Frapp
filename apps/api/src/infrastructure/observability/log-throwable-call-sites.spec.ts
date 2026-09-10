@@ -11,6 +11,10 @@ import { REPOSITORY_SRC_ROOT as SRC_ROOT } from '#test/helpers/repository-corpus
  * `error as Error` is a different (still imperfect) convention used for
  * vendor SDK failures; those are not this ledger. Do not add a name here
  * unless it is a supabase `{ error }` / repository-throw site.
+ *
+ * A second-arg *ternary* that falls back to the throwable (`error instanceof
+ * Error ? error.stack : error`) is the same inspect leak: repositories throw
+ * `{ code, message, details, hint }`, and the false branch is that object.
  */
 const POSTGREST_LOG_ARG = new Set([
   'error',
@@ -106,10 +110,15 @@ describe('PostgREST errors are not a Nest Logger second argument (#1669)', () =>
         // Named PostgREST bodies (`error`, `duesError`, …) plus any *Error
         // identifier (`duesReadError`). Vendor SDK failures use `error as Error`
         // and are skipped above. Realtime `err` is not this ledger.
-        if (
-          !POSTGREST_LOG_ARG.has(second) &&
-          !/^[A-Za-z][A-Za-z0-9]*Error$/.test(second)
-        ) {
+        //
+        // Ternary fallback (`: error` / `: err` / `: reason`) is #2114: the
+        // false branch is the throwable object, which ConsoleLogger inspects.
+        // `: String(error)` does not match — that prints `[object Object]`.
+        const named =
+          POSTGREST_LOG_ARG.has(second) ||
+          /^[A-Za-z][A-Za-z0-9]*Error$/.test(second);
+        const ternaryFallback = /:\s*(?:error|err|e|reason)\s*$/.test(second);
+        if (!named && !ternaryFallback) {
           continue;
         }
         hits.push(
