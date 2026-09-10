@@ -42,8 +42,9 @@ export type WebPostHogInitOptions = Pick<
 
 /**
  * Web extras on the anonymous Next PostHog options. Identity is *not* in
- * this object — `applyAnalyticsIdentity` in `client.ts` calls `identify`
- * after `GET /v1/analytics/identity`. `person_profiles: "identified_only"`
+ * this object — `applyAnalyticsIdentity` on
+ * `@repo/observability/identified-posthog` calls `identify` after
+ * `GET /v1/analytics/identity`. `person_profiles: "identified_only"`
  * is the web-only person-profile mode.
  *
  * `before_send` is the identified sanitizer, not landing's anonymous one:
