@@ -10,7 +10,7 @@ export default [
     },
   },
   {
-    files: ["lib/assert-production-app-env.js", "lib/sentry/build-config.js"],
+    files: ["lib/assert-production-app-env.js"],
     languageOptions: {
       globals: { process: "readonly" },
     },

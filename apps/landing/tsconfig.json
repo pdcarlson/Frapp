@@ -9,7 +9,6 @@
     "**/*.tsx",
     "next.config.js",
     "lib/assert-production-app-env.js",
-    "lib/sentry/build-config.js",
     ".next/types/**/*.ts"
   ],
   "exclude": ["node_modules"]
