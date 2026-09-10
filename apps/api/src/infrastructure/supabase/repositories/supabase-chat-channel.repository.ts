@@ -36,6 +36,20 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
     return data || [];
   }
 
+  async findByIds(chapterId: string, ids: string[]): Promise<ChatChannel[]> {
+    if (!ids.length) return [];
+    // `chapter_id` is load-bearing, not defensive: `filterAccessibleChannelIds`
+    // asserts `isChapterMember` from membership on this chapter alone. An
+    // unscoped `.in('id', ids)` would return foreign PUBLIC channels as accessible.
+    const { data, error } = await this.supabase
+      .from('chat_channels')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .in('id', ids);
+    if (error) throw error;
+    return data || [];
+  }
+
   async findDm(
     chapterId: string,
     memberIds: string[],
