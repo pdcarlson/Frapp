@@ -31,4 +31,13 @@ describe("landing-only person profiles", () => {
     expect(options.property_denylist).toEqual(["$ip", "ip", "email", "$email"]);
     expect(typeof options.before_send).toBe("function");
   });
+
+  it("wires the anonymous sanitizer, not the identified keep-$set helper", async () => {
+    const { sanitizeAnonymousPostHogCapture, sanitizeIdentifiedPostHogCapture } =
+      await import("@repo/observability/next");
+    const { buildLandingPostHogInitOptions } = await import("./config");
+    const options = buildLandingPostHogInitOptions({ environment: "preview" });
+    expect(options.before_send).toBe(sanitizeAnonymousPostHogCapture);
+    expect(options.before_send).not.toBe(sanitizeIdentifiedPostHogCapture);
+  });
 });
