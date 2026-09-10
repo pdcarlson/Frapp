@@ -193,8 +193,9 @@ const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
 /**
  * `userinfo` in a URL that appears inside free text (#1388).
  *
- * {@link stripAuthority} covers the two *structural* URL fields — `request.url`
- * and the transaction name — but an exception message or a breadcrumb is prose,
+ * {@link stripAuthority} covers the *structural* URL fields — `request.url`,
+ * the transaction name, and HTTP-shaped span descriptions — but an exception
+ * message or a breadcrumb is prose,
  * and a connection string lands there routinely: a driver that cannot reach its
  * database puts the whole DSN in the error it throws. Nothing else in this
  * chain catches it. {@link EMAIL_RE} is the near-miss that makes it look
@@ -273,6 +274,21 @@ export function stripAuthority(path: string): string {
   const slash = authorityAndPath.indexOf('/');
   return slash === -1 ? '/' : authorityAndPath.slice(slash);
 }
+
+/**
+ * Origin-form path or an absolute-form URL. Used to decide whether a span
+ * description / transaction name is HTTP-shaped enough to run through
+ * {@link stripAuthority} rather than the free-text sweep (#2080).
+ *
+ * `//`-leading targets are origin-form (`path.startsWith('/')`) and are
+ * preserved by {@link stripAuthority}, not treated as protocol-relative.
+ */
+function isHttpUrlTarget(target: string): boolean {
+  return (
+    target.startsWith('/') || /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(target)
+  );
+}
+
 /** `Bearer <jwt|opaque>`, and bare three-segment JWTs wherever they appear. */
 const BEARER_RE = /\bBearer\s+[\w\-._~+/]+=*/gi;
 const JWT_RE = /\beyJ[\w-]*\.[\w-]+\.[\w-]+/g;
@@ -446,6 +462,35 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     const cut = url.search(/[?#]/);
     const trimmed = cut === -1 ? url : url.slice(0, cut);
     return redactFreeText(stripAuthority(trimmed));
+  }
+
+  /**
+   * HTTP-shaped names: span `description`, `contexts.trace.description`, and
+   * the transaction name.
+   *
+   * Sentry Node's HTTP instrumentation names an outbound span
+   * `POST https://us.i.posthog.com/i/v1/logs`. {@link pathOnly} only reduces a
+   * bare target, so a method prefix left scheme+host in `redactFreeText`,
+   * which keeps host by design (#2080). Peel the method, reduce the target
+   * with the same parser as `request.url`, then put the method back.
+   */
+  function pathOnlyHttpName(name: unknown): string | undefined {
+    if (typeof name !== 'string' || !name) return undefined;
+    const match = name.match(
+      /^(CONNECT|DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT|TRACE)(\s+)(.+)$/i,
+    );
+    if (match) {
+      const method = match[1] ?? '';
+      const space = match[2] ?? ' ';
+      const target = match[3] ?? '';
+      if (isHttpUrlTarget(target)) {
+        const reduced = pathOnly(target);
+        if (reduced === undefined) return redactFreeText(name);
+        return `${method}${space}${reduced}`;
+      }
+    }
+    if (isHttpUrlTarget(name)) return pathOnly(name);
+    return redactFreeText(name);
   }
 
   // ── Structural scrubbing ───────────────────────────────────────────────────
@@ -653,9 +698,9 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
     for (const [key, value] of Object.entries(trace)) {
       if (TRACE_FIELD_ALLOWLIST.has(key)) out[key] = value;
     }
-    // Kept, but swept — the route is genuinely useful for grouping.
+    // Kept, but reduced — HTTP-shaped names are structural URL fields (#2080).
     if (typeof trace.description === 'string') {
-      out.description = redactFreeText(trace.description);
+      out.description = pathOnlyHttpName(trace.description);
     }
     // On a transaction this context *is* the root span: the SDK omits the
     // segment span from `event.spans`, so these attributes exist nowhere else.
@@ -773,7 +818,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       }
       const dscTransaction = (dsc as Record<string, unknown>).transaction;
       if (typeof dscTransaction === 'string') {
-        kept.transaction = pathOnly(dscTransaction);
+        kept.transaction = pathOnlyHttpName(dscTransaction);
       }
       if (Object.keys(kept).length > 0) out.dynamicSamplingContext = kept;
     }
@@ -800,9 +845,9 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       out[key] = key === 'measurements' ? scrubMeasurements(value) : value;
     }
 
-    // Kept but swept — the route and operation are what make a span readable.
+    // Kept but reduced — HTTP-shaped names are structural URL fields (#2080).
     if (typeof source.description === 'string') {
-      out.description = redactFreeText(source.description);
+      out.description = pathOnlyHttpName(source.description);
     }
     if (typeof source.op === 'string') out.op = redactFreeText(source.op);
 
@@ -834,7 +879,7 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
 
       if (event.exception) scrubbed.exception = scrubException(event.exception);
       scrubMessageInto(scrubbed, event.message);
-      if (event.transaction) scrubbed.transaction = pathOnly(event.transaction);
+      if (event.transaction) scrubbed.transaction = pathOnlyHttpName(event.transaction);
       const transactionInfo = scrubTransactionInfo(event.transaction_info);
       if (transactionInfo) scrubbed.transaction_info = transactionInfo;
       if (event.tags) scrubbed.tags = scrubTags(event.tags);
@@ -907,13 +952,14 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
       if (event.exception) scrubbed.exception = scrubException(event.exception);
       scrubMessageInto(scrubbed, event.message);
 
-      // The transaction name is a route, so it loses its query string exactly
-      // as it does on the error path. Note the SDK downgrades
-      // `transaction_info.source` to `custom` whenever this hook changes the
-      // name, which it only does for names that contained an id or a query
-      // string — those are exactly the names that must not ship raw, so the
-      // lost URL clustering is accepted.
-      if (event.transaction) scrubbed.transaction = pathOnly(event.transaction);
+      // HTTP-shaped names (`GET /path`, `POST https://host/path`) reduce
+      // with the same parser as `request.url`. A method prefix may stay.
+      // Note the SDK downgrades `transaction_info.source` to `custom`
+      // whenever this hook changes the name, which it only does for names
+      // that contained an id, a query, or an authority — those are exactly
+      // the names that must not ship raw, so the lost URL clustering is
+      // accepted.
+      if (event.transaction) scrubbed.transaction = pathOnlyHttpName(event.transaction);
       const transactionInfo = scrubTransactionInfo(event.transaction_info);
       if (transactionInfo) scrubbed.transaction_info = transactionInfo;
       if (event.tags) scrubbed.tags = scrubTags(event.tags);
@@ -970,11 +1016,12 @@ export function createSentryScrubber(pseudonyms: SentryPseudonymizer): {
  * Fields of the `trace` context that may survive.
  *
  * The trace context is the one allowlisted context that is *not* pure infra
- * metadata. On an HTTP span the SDK sets `description` to the route — including
- * its query string — and `data` to span attributes such as `http.url` and
- * `url.query`. Passing the context through whole, as an allowlist of context
- * *names* alone would, reintroduces exactly the query-string leak that
- * `request.url` and the free-text sweep close everywhere else.
+ * metadata. On an HTTP span the SDK sets `description` to `METHOD <url>` —
+ * inbound routes and outbound targets alike — and `data` to span attributes
+ * such as `http.url` and `url.query`. Passing the context through whole, as an
+ * allowlist of context *names* alone would, reintroduces exactly the query-string
+ * leak that `request.url` and the free-text sweep close everywhere else. `description`
+ * is a structural URL field (path-only, method may stay), not free text.
  */
 const TRACE_FIELD_ALLOWLIST = new Set([
   'trace_id',
@@ -1001,7 +1048,8 @@ const TRANSACTION_KEY_ALLOWLIST = new Set([
 /**
  * Span fields that are pure identity, timing, or status — no user data.
  *
- * `description` and `op` are swept separately, `data` is rebuilt below, and
+ * `description` is reduced as a structural URL field, `op` is swept separately,
+ * `data` is rebuilt below, and
  * `links` is dropped by omission because span links carry their own free-form
  * attribute bags.
  */

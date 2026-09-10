@@ -10,6 +10,10 @@ import * as Sentry from '@sentry/nestjs';
 import { isPseudonymHex } from '@repo/observability';
 import type { RequestContext } from '../types/request-context.types';
 import { pathOnly } from '../utils/path-only';
+import {
+  emitSanitizedHttpRequestLog,
+  hasMatchedExpressRoute,
+} from '../utils/http-request-log';
 import { getRequestId } from '../../infrastructure/observability/request-als';
 import {
   pseudonymizeChapterId,
@@ -40,7 +44,7 @@ import { readDeployedCommit } from '../controllers/deployed-commit';
  * success; adding the branch there would mean re-deriving status semantics in a
  * place that already has them flattened.
  *
- * Three behaviors, by status class:
+ * Four behaviors, by status class:
  *
  *  - **401 / 403 / 429** → a `warn`-level `security_event` record, plus (401
  *    only) the sliding-window spike detector.
@@ -51,7 +55,13 @@ import { readDeployedCommit } from '../controllers/deployed-commit';
  *    used: they would `captureException` the raw value (PostgREST `{code,
  *    message, details}` objects become `[object Object]`) and double-report
  *    every 5xx this filter already sends through `toReportableError`.
- *  - Everything else → response only, as before.
+ *  - **Unmatched 4xx** (no Express `request.route`) → the same sanitized
+ *    `request` log the interceptor emits for matched routes. Unmatched
+ *    `/v1/…` 404s never enter `LoggingInterceptor`, so without this they would
+ *    never reach PostHog Logs (#2078). Exception messages stay off that row.
+ *    401 / 403 / 429 already have `security_event` and are not double-logged
+ *    as `request` here. Matched 4xx keep the interceptor as the request-log
+ *    seam so a controller `NotFoundException` is not emitted twice.
  */
 /**
  * The message a client should see, preserving whatever Nest actually built.
@@ -141,6 +151,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.enqueueSanitizedErrorLog(request, status, requestId);
     } else {
       this.recordSecurityEvent(request, status, requestId);
+      this.enqueueUnmatchedClientErrorLog(request, status);
     }
 
     response.status(status).json({
@@ -235,6 +246,28 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } catch (error) {
       this.logger.warn(
         `security-event emission failed: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  /**
+   * Unmatched 4xx never reach `LoggingInterceptor`. Emit the sanitized request
+   * log from here so PostHog Logs still sees `status_class=4xx` with a
+   * path-only path. Skip security denials (already a `security_event` row)
+   * and matched routes (the interceptor already logged).
+   */
+  private enqueueUnmatchedClientErrorLog(
+    request: RequestContext,
+    status: number,
+  ): void {
+    if (status < 400 || status >= 500) return;
+    if (securityEventKind(status)) return;
+    if (hasMatchedExpressRoute(request)) return;
+    try {
+      emitSanitizedHttpRequestLog(new Logger('HTTP'), request, status);
+    } catch (error) {
+      this.logger.warn(
+        `unmatched-request log emission failed: ${(error as Error).message}`,
       );
     }
   }
