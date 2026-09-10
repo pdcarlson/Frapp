@@ -257,3 +257,21 @@ export function MuteGlyph({ className, active }: ChatGlyphProps) {
     </Svg>
   );
 }
+
+/**
+ * Rush / recruitment candidate card. Funnel silhouette — the module catalog
+ * names this intent `funnel` (`packages/org-archetypes`). Not a nav intent, so
+ * it lives here rather than in `nav-glyphs.tsx`.
+ */
+export function RushGlyph({ className, active }: ChatGlyphProps) {
+  return (
+    <Svg className={className}>
+      <path
+        d="M4.5 4.5h15l-4.2 7.2v6.3l-6.6 1.5V11.7z"
+        {...stroke}
+        {...fillProps(active)}
+      />
+      <path d="M7.4 8.8h9.2" {...detail} />
+    </Svg>
+  );
+}
