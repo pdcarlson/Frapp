@@ -34,6 +34,7 @@ describe("@repo/observability/next public API", () => {
     expect(next).not.toHaveProperty("canStartLivePostHogInit");
     expect(next).not.toHaveProperty("setLivePostHogAdapter");
     expect(next).not.toHaveProperty("createMemoryPostHogAdapter");
+    expect(next).not.toHaveProperty("isProductFlagEnabled");
   });
 });
 

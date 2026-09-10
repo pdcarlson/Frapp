@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bindPostHogAdapterForTests } from "@repo/observability/identified-posthog";
+import {
+  applyAnalyticsIdentity,
+  bindPostHogAdapterForTests,
+} from "@repo/observability/identified-posthog";
 import { initWebPostHog } from "./client";
 
 const posthogInit = vi.hoisted(() => vi.fn());
+const reloadFeatureFlags = vi.hoisted(() => vi.fn());
 
 vi.mock("posthog-js", () => ({
   default: {
@@ -19,6 +23,7 @@ vi.mock("posthog-js", () => ({
     get_distinct_id: () => "",
     sessionRecordingStarted: () => false,
     isFeatureEnabled: () => false,
+    reloadFeatureFlags,
   },
 }));
 
@@ -26,6 +31,7 @@ afterEach(() => {
   bindPostHogAdapterForTests(null);
   vi.unstubAllEnvs();
   posthogInit.mockClear();
+  reloadFeatureFlags.mockClear();
 });
 
 describe("initWebPostHog", () => {
@@ -47,5 +53,16 @@ describe("initWebPostHog", () => {
     };
     expect(options.capture_exceptions).toBe(false);
     expect(options.disable_session_recording).toBe(true);
+  });
+
+  it("reloads vendor flags after a hex identify", () => {
+    vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
+    initWebPostHog();
+    applyAnalyticsIdentity({
+      enabled: true,
+      distinct_id: "a".repeat(64),
+      chapter_group_id: null,
+    });
+    expect(reloadFeatureFlags).toHaveBeenCalledTimes(1);
   });
 });

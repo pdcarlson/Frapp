@@ -59,5 +59,8 @@ export function initMobilePostHog(): void {
     getReplayId: () => undefined,
     getDistinctId: () => client.getDistinctId() || undefined,
     isFeatureEnabled: (flag) => client.isFeatureEnabled(flag) ?? undefined,
+    reloadFeatureFlags: () => {
+      client.reloadFeatureFlags();
+    },
   });
 }

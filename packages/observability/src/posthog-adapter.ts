@@ -2,8 +2,8 @@ import {
   pickSentryErrorCorrelatedProperties,
   SENTRY_ERROR_CORRELATED_EVENT,
 } from "./policy";
+import { isPseudonymHex, type AnalyticsIdentity } from "./correlation";
 import { validatedChapterGroupId, validatedDistinctId } from "./identity";
-import type { AnalyticsIdentity } from "./correlation";
 
 /**
  * The surface tests fake and production wraps. Specs bind a memory adapter
@@ -23,6 +23,12 @@ export interface PostHogAdapter {
   getReplayId(): string | undefined;
   getDistinctId(): string | undefined;
   isFeatureEnabled(flag: string): boolean | undefined;
+  /**
+   * Refetch flags for the current distinct id / groups. Memory no-ops
+   * (records the call). Vendor wrappers call the SDK so a hex identify
+   * does not keep anonymous-UUID flag values.
+   */
+  reloadFeatureFlags(): void;
 }
 
 export type MemoryPostHogCall =
@@ -33,6 +39,7 @@ export type MemoryPostHogCall =
   | { type: "optOut" }
   | { type: "optIn" }
   | { type: "stopSessionRecording" }
+  | { type: "reloadFeatureFlags" }
   | { type: "capture"; event: string; properties?: Record<string, unknown> };
 
 export function createMemoryPostHogAdapter(): {
@@ -76,6 +83,9 @@ export function createMemoryPostHogAdapter(): {
     getReplayId: () => (recording ? sessionId : undefined),
     getDistinctId: () => distinctId,
     isFeatureEnabled: () => false,
+    reloadFeatureFlags() {
+      calls.push({ type: "reloadFeatureFlags" });
+    },
   };
   return {
     adapter,
@@ -157,9 +167,12 @@ export function applyAnalyticsIdentity(
   const groupId = validatedChapterGroupId(identity);
   if (groupId) {
     adapter.group("chapter", groupId);
-    return;
+  } else {
+    adapter.resetGroups();
   }
-  adapter.resetGroups();
+  // Hex identify is not enough: the SDK still holds anonymous-UUID flags
+  // until this refetch. Evaluation is settled only after this returns.
+  adapter.reloadFeatureFlags();
 }
 
 /**
@@ -256,10 +269,18 @@ export function getPostHogReplayId(): string | undefined {
 /**
  * Product-only. Do not call this from a permission check — `can()` in
  * `@repo/validation` is the authorization input.
+ *
+ * Fail closed unless the bound adapter's distinct id is 64-char lowercase
+ * hex — the same bar as identify / API `isFeatureEnabled`. A UUID, email,
+ * or missing id must not call through as enabled even if the vendor would
+ * return true.
  */
 export function isProductFlagEnabled(flag: string): boolean {
   if (optedOut) return false;
-  return Boolean(currentAdapter()?.isFeatureEnabled(flag));
+  const adapter = currentAdapter();
+  if (!adapter) return false;
+  if (!isPseudonymHex(adapter.getDistinctId())) return false;
+  return adapter.isFeatureEnabled(flag) === true;
 }
 
 /**
