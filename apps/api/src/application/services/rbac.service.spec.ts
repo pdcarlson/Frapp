@@ -56,6 +56,7 @@ describe('RbacService', () => {
 
     mockChapterRepo = {
       findById: jest.fn(),
+      findByIds: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
