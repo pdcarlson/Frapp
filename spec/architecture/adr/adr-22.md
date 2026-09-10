@@ -59,8 +59,13 @@ the Node tracer; `@opentelemetry/sdk-node` is not a dependency. Request-correlat
 context is AsyncLocalStorage bound in `requestIdMiddleware`, not a second tracer.
 **Correction (2026-09-09):** `apps/web` initializes PostHog JS for identify /
 chapter groups / flags / replay-gates / `sentry-error-correlated`. Replay stays
-off in every environment in that slice. Landing still has no Sentry/PostHog SDK
-(WS6).
+off in every environment in that slice.
+**Correction (2026-09-09):** `apps/mobile` initializes PostHog RN the same way
+(identify / chapter groups / flags / replay-gates / the marker). Sentry Replay
+stays off. PostHog replay stays off in every environment. Release is
+`bundleId@version+nativeBuildNumber`; git SHA is a `git_sha` tag, not the
+release name. Native crash / EAS DSN proof remains #938 / #1361. Landing
+still has no Sentry/PostHog SDK (WS6).
 
 **Alternatives rejected.**
 
