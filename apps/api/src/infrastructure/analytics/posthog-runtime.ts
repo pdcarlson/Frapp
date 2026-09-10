@@ -152,17 +152,11 @@ export class PosthogRuntime {
     distinctId: string,
     properties: Record<string, unknown>,
   ): void {
-    const sanitized: Record<string, string> = {};
-    for (const [key, value] of Object.entries(properties)) {
-      if (!MARKER_ALLOWLIST.has(key)) continue;
-      if (typeof value !== 'string' || value.length === 0) continue;
-      sanitized[key] = value;
-    }
     this.client.capture({
       distinctId,
       event: SENTRY_ERROR_CORRELATED_EVENT,
       properties: {
-        ...sanitized,
+        ...pickSentryErrorCorrelatedProperties(properties),
         $process_person_profile: false,
       },
       sendFeatureFlags: false,
