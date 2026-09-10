@@ -115,7 +115,12 @@ export class AuthService {
       if (shouldAdoptSyncedEmail(existing.email, syncedEmail)) {
         patch.email = syncedEmail;
       }
-      if (!existing.display_name.trim()) {
+      // Schema is NOT NULL DEFAULT ''. An omitted column is not an empty
+      // name — skip the fill rather than 500 on `.trim()`.
+      if (
+        typeof existing.display_name === 'string' &&
+        !existing.display_name.trim()
+      ) {
         patch.display_name = displayName;
       }
       if (Object.keys(patch).length > 0) {

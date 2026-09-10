@@ -258,6 +258,27 @@ describe('AuthService', () => {
     expect(mockRepo.create).not.toHaveBeenCalled();
   });
 
+  it('does not throw when an existing row omits display_name', async () => {
+    mockRepo.findBySupabaseAuthId.mockResolvedValue({
+      id: 'user-10',
+      supabase_auth_id: 'auth-missing-name',
+      email: 'officer@university.edu',
+      display_name: undefined as unknown as string,
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    await expect(
+      service.syncUser('auth-missing-name', 'officer@university.edu'),
+    ).resolves.toEqual({ id: 'user-10' });
+    expect(mockRepo.update).not.toHaveBeenCalled();
+  });
+
   it('fills an empty display_name on a later request without touching email', async () => {
     mockRepo.findBySupabaseAuthId.mockResolvedValue({
       id: 'user-9',
