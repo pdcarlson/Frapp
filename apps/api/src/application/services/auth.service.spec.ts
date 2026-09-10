@@ -156,4 +156,163 @@ describe('AuthService', () => {
     ).rejects.toEqual(boom);
     expect(mockRepo.findBySupabaseAuthId).toHaveBeenCalledTimes(1);
   });
+
+  it('stores a placeholder email when Apple omits one', async () => {
+    mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
+    mockRepo.create.mockResolvedValue({
+      id: 'user-5',
+      supabase_auth_id: 'auth-apple',
+      email: 'noreply+auth-apple@users.invalid',
+      display_name: 'Ada Lovelace',
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    await service.syncUser('auth-apple', '', { full_name: 'Ada Lovelace' });
+
+    expect(mockRepo.create).toHaveBeenCalledWith({
+      supabase_auth_id: 'auth-apple',
+      email: 'noreply+auth-apple@users.invalid',
+      display_name: 'Ada Lovelace',
+    });
+  });
+
+  it('names a private-relay user Member when Auth sent no display name', async () => {
+    mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
+    mockRepo.create.mockResolvedValue({
+      id: 'user-6',
+      supabase_auth_id: 'auth-relay',
+      email: 'n@privaterelay.appleid.com',
+      display_name: 'Member',
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    await service.syncUser('auth-relay', 'n@privaterelay.appleid.com');
+
+    expect(mockRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'n@privaterelay.appleid.com',
+        display_name: 'Member',
+      }),
+    );
+  });
+
+  it('adopts a real email onto a placeholder row and never the reverse', async () => {
+    const placeholderUser = {
+      id: 'user-7',
+      supabase_auth_id: 'auth-adopt',
+      email: 'noreply+auth-adopt@users.invalid',
+      display_name: 'Member',
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    mockRepo.findBySupabaseAuthId.mockResolvedValue(placeholderUser);
+    mockRepo.update.mockResolvedValue({
+      ...placeholderUser,
+      email: 'officer@university.edu',
+    });
+
+    await service.syncUser('auth-adopt', 'officer@university.edu');
+
+    expect(mockRepo.update).toHaveBeenCalledWith('user-7', {
+      email: 'officer@university.edu',
+    });
+  });
+
+  it('does not replace a university email with Apple Hide My Email', async () => {
+    mockRepo.findBySupabaseAuthId.mockResolvedValue({
+      id: 'user-8',
+      supabase_auth_id: 'auth-keep',
+      email: 'officer@university.edu',
+      display_name: 'officer',
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    await service.syncUser('auth-keep', 'n@privaterelay.appleid.com', {
+      full_name: 'Ada Lovelace',
+    });
+
+    expect(mockRepo.update).not.toHaveBeenCalled();
+    expect(mockRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when an existing row omits display_name', async () => {
+    mockRepo.findBySupabaseAuthId.mockResolvedValue({
+      id: 'user-10',
+      supabase_auth_id: 'auth-missing-name',
+      email: 'officer@university.edu',
+      display_name: undefined as unknown as string,
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    await expect(
+      service.syncUser('auth-missing-name', 'officer@university.edu'),
+    ).resolves.toEqual({ id: 'user-10' });
+    expect(mockRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('fills an empty display_name on a later request without touching email', async () => {
+    mockRepo.findBySupabaseAuthId.mockResolvedValue({
+      id: 'user-9',
+      supabase_auth_id: 'auth-name',
+      email: 'officer@university.edu',
+      display_name: '',
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+    mockRepo.update.mockResolvedValue({
+      id: 'user-9',
+      supabase_auth_id: 'auth-name',
+      email: 'officer@university.edu',
+      display_name: 'Ada Lovelace',
+      avatar_url: null,
+      bio: null,
+      graduation_year: null,
+      current_city: null,
+      current_company: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    await service.syncUser('auth-name', 'officer@university.edu', {
+      full_name: 'Ada Lovelace',
+    });
+
+    expect(mockRepo.update).toHaveBeenCalledWith('user-9', {
+      display_name: 'Ada Lovelace',
+    });
+  });
 });

@@ -37,6 +37,12 @@ Rules:
 3. The rounded-square "S" mark is a brand asset, not an icon — it never takes
    the duotone treatment or the chapter accent (see
    [brand identity](../brand-identity.md)).
+4. Third-party OAuth marks (Apple silhouette, Google four-color G) are
+   trademarks, not Signet icons. They MUST use the official artwork and MUST NOT
+   take the duotone recipe, the chapter accent, or a recolor of Google's four
+   colors. Size is 20px (§2 action-button size). They sit beside the
+   "Continue with …" label and are decorative (`aria-hidden` /
+   `accessible={false}`).
 
 ---
 

@@ -13,7 +13,7 @@
 | Developer docs | Markdown in-repo                             | [`docs/guides/`](../../docs/guides/README.md) + `spec/`. No deployed docs web app; a public site may return post-launch. |
 | API            | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                 |
 | Database       | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                |
-| Auth           | Supabase Auth                                | Email/password, magic link, OAuth.                                                                                    |
+| Auth           | Supabase Auth                                | Email/password, magic link, Google, Apple.                                                                            |
 | Storage        | Supabase Storage                             | Eight private buckets (§7), all declared in migrations. Signed URLs only — no public access.                          |
 | Realtime       | Supabase Realtime                            | Postgres changes for chat + the audit-log worker (publication membership is required and was missing until #867). Private broadcast for dashboard change-pings. Broadcast for typing indicators. Presence for online status. |
 | Billing        | Stripe                                       | Subscriptions, checkout, webhooks, invoices.                                                                          |
@@ -287,9 +287,9 @@ The `InviteService.redeem` flow performs deterministic validation checks (invite
 
 ### Supabase Auth
 
-- **Methods:** Email/password, magic link, Google OAuth (expandable).
+- **Methods:** Email/password, magic link, Google, Apple. Web returns through `/auth/callback` (the same PKCE `code` exchange as email links). Mobile tries native Sign in with Apple (`signInWithIdToken`) then falls back to an Expo auth session; Google always uses the auth session. Redirect URLs reuse the magic-link allow list (`https://app.{staging.}frapp.live/**`, `frapp://**`).
 - **JWT:** Supabase issues a JWT on login. The JWT is sent as a Bearer token to the NestJS API.
-- **User sync:** On first API request (or via Supabase Auth webhook/trigger), the API ensures a corresponding `users` row exists with the `supabase_auth_id`.
+- **User sync:** On first API request (or via Supabase Auth webhook/trigger), the API ensures a corresponding `users` row exists with the `supabase_auth_id`. Apple may omit email on a later native grant: AuthSync then stores `noreply+<auth-id>@users.invalid` and adopts a later real address only when the stored one is that placeholder or an Apple private-relay address — never the reverse. Display name prefers `user_metadata.full_name` / `name`. A new OAuth identity colliding with an existing email/password user is GoTrue **Automatic linking** (hosted Auth setting), not a merge of `public.users` rows (`supabase_auth_id` is the unique key). Invite redeem binds the current user id, not the invite email: [`spec/behavior/onboarding.md`](../behavior/onboarding.md).
 - **Web:** Uses `@supabase/ssr` for server-side session handling in Next.js.
 - **Mobile:** Uses `@supabase/supabase-js` with `AsyncStorage` for session persistence.
 

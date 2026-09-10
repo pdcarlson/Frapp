@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
-const { replace, refresh, searchParams } = vi.hoisted(() => ({
+const { replace, refresh, searchParams, signInWithOAuth } = vi.hoisted(() => ({
   replace: vi.fn(),
   refresh: vi.fn(),
   searchParams: { value: new URLSearchParams() },
+  signInWithOAuth: vi.fn(async () => ({ error: null })),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -12,7 +14,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParams.value,
 }));
 vi.mock("@/lib/supabase/client", () => ({
-  createSupabaseBrowserClient: () => ({ auth: {} }),
+  createSupabaseBrowserClient: () => ({ auth: { signInWithOAuth } }),
 }));
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
@@ -88,6 +90,34 @@ describe("the redirect chain survives the rebuild", () => {
     expect(
       screen.getByRole("link", { name: "Create an account" }).getAttribute("href"),
     ).toBe("/sign-up?redirectTo=%2Fevents");
+    searchParams.value = new URLSearchParams();
+  });
+
+  it("offers Apple, Google, and magic-link as equal secondary methods", () => {
+    render(<SignInPage />);
+    const apple = screen.getByRole("button", { name: "Continue with Apple" });
+    const google = screen.getByRole("button", { name: "Continue with Google" });
+    const magic = screen.getByRole("button", { name: "Email me a magic link" });
+    expect(apple.className).toMatch(/\bw-full\b/);
+    expect(google.className).toMatch(/\bw-full\b/);
+    expect(magic.className).toMatch(/\bw-full\b/);
+  });
+
+  it("kicks off Apple OAuth toward the callback with redirectTo intact", async () => {
+    const user = userEvent.setup();
+    signInWithOAuth.mockClear();
+    searchParams.value = new URLSearchParams("redirectTo=%2Fjoin%3Ftoken%3Dinv-1");
+    render(<SignInPage />);
+    await user.click(screen.getByRole("button", { name: "Continue with Apple" }));
+    expect(signInWithOAuth).toHaveBeenCalledWith({
+      provider: "apple",
+      options: {
+        redirectTo: expect.stringMatching(
+          /\/auth\/callback\?next=%2Fjoin%3Ftoken%3Dinv-1$/,
+        ),
+        queryParams: undefined,
+      },
+    });
     searchParams.value = new URLSearchParams();
   });
 

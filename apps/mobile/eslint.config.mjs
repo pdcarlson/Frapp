@@ -35,9 +35,9 @@ export default [
         "error",
         {
           selector:
-            "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller|expo-notifications)($|\\/)/]",
+            "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller|expo-notifications|expo-apple-authentication)($|\\/)/]",
           message:
-            "Dynamic import() of a non-Expo-Go native module is still an import. Go through the isolation module (@/lib/payments/stripe, @/lib/keyboard, @/lib/notifications/push).",
+            "Dynamic import() of a non-Expo-Go native module is still an import. Go through the isolation module (@/lib/payments/stripe, @/lib/keyboard, @/lib/notifications/push, @/lib/apple-auth).",
         },
       ],
       "no-restricted-imports": [
@@ -64,6 +64,14 @@ export default [
               group: ["expo-notifications", "expo-notifications/*"],
               message:
                 "Import via @/lib/notifications/push — remote push does not run in Expo Go and the package links native modules at import.",
+            },
+            {
+              group: [
+                "expo-apple-authentication",
+                "expo-apple-authentication/*",
+              ],
+              message:
+                "Import via @/lib/apple-auth — a direct import kills expo export --platform web the same way Stripe does.",
             },
           ],
         },

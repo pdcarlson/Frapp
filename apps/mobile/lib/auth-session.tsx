@@ -2,6 +2,7 @@
 
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import {
   createContext,
   useCallback,
@@ -12,10 +13,17 @@ import {
   useState,
 } from "react";
 import { AppState } from "react-native";
+import { signInWithNativeApple } from "./apple-auth";
+import {
+  describeOAuthKickoffError,
+  type OAuthProvider,
+} from "./auth-providers";
 import { clearAuthToken, writeAuthToken } from "./auth-token";
 import { resetObservabilityOnLogout } from "./observability/reset";
 import { clearProductQueryCache } from "./query-client";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
+
+WebBrowser.maybeCompleteAuthSession();
 
 /**
  * The claim `custom_access_token_hook` stamps into every issued access token.
@@ -62,6 +70,11 @@ type AuthSessionContextValue = {
     password: string;
   }) => Promise<void>;
   sendMagicLink: (input: { email: string }) => Promise<void>;
+  /**
+   * Google, or Apple. Native SIWA is tried first on iOS; otherwise an Expo
+   * auth session opens the provider and the returned URL is exchanged here.
+   */
+  signInWithOAuthProvider: (provider: OAuthProvider) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -105,6 +118,7 @@ function readAuthParams(url: string): {
   tokenHash: string | null;
   otpType: string | null;
   errorDescription: string | null;
+  errorCode: string | null;
 } {
   const hashIndex = url.indexOf("#");
   const queryIndex = url.indexOf("?");
@@ -130,7 +144,13 @@ function readAuthParams(url: string): {
     // so no extra unescaping here — doing it again would turn an encoded plus
     // sign in the provider's message into a space.
     errorDescription: read("error_description") ?? read("error"),
+    errorCode: read("error_code"),
   };
+}
+
+function oauthRedirectTo(): string {
+  const redirectTo = Linking.createURL("/");
+  return redirectTo.includes("?") ? redirectTo : `${redirectTo}?`;
 }
 
 /**
@@ -152,9 +172,15 @@ async function createSessionFromUrl(
     tokenHash,
     otpType,
     errorDescription,
+    errorCode,
   } = readAuthParams(url);
 
-  if (errorDescription) return errorDescription;
+  if (errorDescription || errorCode) {
+    return describeOAuthKickoffError({
+      message: errorDescription ?? errorCode ?? undefined,
+      code: errorCode ?? undefined,
+    });
+  }
   if (!accessToken && !refreshToken && !code && !tokenHash) return null;
 
   try {
@@ -163,7 +189,7 @@ async function createSessionFromUrl(
         access_token: accessToken,
         refresh_token: refreshToken,
       });
-      return error ? error.message : null;
+      return error ? describeOAuthKickoffError(error) : null;
     }
     if (tokenHash) {
       if (!otpType || !isEmailOtpType(otpType)) {
@@ -173,16 +199,16 @@ async function createSessionFromUrl(
         token_hash: tokenHash,
         type: otpType,
       });
-      return error ? error.message : null;
+      return error ? describeOAuthKickoffError(error) : null;
     }
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
-      return error ? error.message : null;
+      return error ? describeOAuthKickoffError(error) : null;
     }
     return null;
   } catch (error) {
     return error instanceof Error
-      ? error.message
+      ? describeOAuthKickoffError(error)
       : "That sign-in link could not be used. Request a new one.";
   }
 }
@@ -242,6 +268,12 @@ export function AuthSessionProvider({
    * clear. A first uid (`null` → A) is a sign-in, not a swap.
    */
   const previousAuthUserIdRef = useRef<string | null>(null);
+  /**
+   * Last deep-link URL we already exchanged. OAuth `openAuthSessionAsync`
+   * returns the same URL that `Linking.useURL` then delivers; exchanging a
+   * single-use `code` twice would set callbackError on the winner.
+   */
+  const lastHandledCallbackUrl = useRef<string | null>(null);
 
   const url = Linking.useURL();
   const accessToken = session?.access_token ?? null;
@@ -263,7 +295,8 @@ export function AuthSessionProvider({
    * False with no token (do not treat the pre-`getSession()` mount as resolved)
    * and false the moment `claimKey` changes, even before the claim effect re-runs.
    */
-  const hasReadChapterClaim = Boolean(claimKey) && claimReadForUserId === claimKey;
+  const hasReadChapterClaim =
+    Boolean(claimKey) && claimReadForUserId === claimKey;
 
   // Hydrate from persisted storage, then follow every subsequent change.
   useEffect(() => {
@@ -447,11 +480,13 @@ export function AuthSessionProvider({
     };
   }, [supabase]);
 
-  // Magic-link callback: the link opens the app with tokens attached.
+  // Magic-link and OAuth callbacks: the link opens the app with tokens attached.
   useEffect(() => {
     if (!supabase || !url) return;
+    if (lastHandledCallbackUrl.current === url) return;
 
     let cancelled = false;
+    lastHandledCallbackUrl.current = url;
     void createSessionFromUrl(supabase, url).then((message) => {
       if (!cancelled && message) setCallbackError(message);
     });
@@ -490,6 +525,62 @@ export function AuthSessionProvider({
         options: { emailRedirectTo },
       });
       if (error) throw error;
+    },
+    [supabase],
+  );
+
+  const signInWithOAuthProvider = useCallback(
+    async (provider: OAuthProvider) => {
+      if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      setCallbackError(null);
+
+      if (provider === "apple") {
+        const native = await signInWithNativeApple(supabase);
+        if (native === "completed" || native === "cancelled") return;
+      }
+
+      const redirectTo = oauthRedirectTo();
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams:
+            provider === "google" ? { prompt: "select_account" } : undefined,
+        },
+      });
+      if (error) {
+        throw Object.assign(new Error(describeOAuthKickoffError(error)), {
+          code: error.code,
+        });
+      }
+      if (!data.url) {
+        throw new Error("Unable to start sign-in. Retry in a moment.");
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectTo,
+      );
+      if (result.type === "cancel" || result.type === "dismiss") return;
+      if (result.type !== "success") {
+        throw new Error("Unable to finish sign-in. Retry in a moment.");
+      }
+
+      // `openAuthSessionAsync` returning success and `Linking.useURL`
+      // delivering the same URL are the same event on iOS. Claim the URL
+      // synchronously before any await so the Linking effect cannot start a
+      // second exchange of a single-use `code`. If Linking already claimed it,
+      // the session (or callbackError) is already in flight — do not throw a
+      // stale "invalid code" over a sign-in that succeeded.
+      if (lastHandledCallbackUrl.current === result.url) {
+        return;
+      }
+      lastHandledCallbackUrl.current = result.url;
+      const message = await createSessionFromUrl(supabase, result.url);
+      if (message) {
+        throw new Error(message);
+      }
     },
     [supabase],
   );
@@ -549,6 +640,7 @@ export function AuthSessionProvider({
       callbackError,
       signInWithPassword,
       sendMagicLink,
+      signInWithOAuthProvider,
       signOut,
     }),
     [
@@ -559,6 +651,7 @@ export function AuthSessionProvider({
       sendMagicLink,
       session?.user?.email,
       signInWithPassword,
+      signInWithOAuthProvider,
       signOut,
       status,
       userId,
