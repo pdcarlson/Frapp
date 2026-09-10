@@ -73,9 +73,11 @@ export function useUpdateUser() {
  * belongs to an account that no longer exists, and several keys are not
  * user-scoped — `["settings"]` least of all — so a second member signing in on
  * the same device would be served the deleted member's rows until each entry
- * went stale. On mobile that is not hypothetical: the `QueryClient` is a module
- * singleton and `signOut` does not clear it. Invalidating from here would be
+ * went stale. On mobile the `QueryClient` is a module singleton; `signOut`
+ * and an in-place auth-uid swap both clear it. Invalidating from here would be
  * worse than useless, since a refetch on a deleted account cannot succeed.
+ * Callers still clear on success as defense in depth for web and for any path
+ * that does not go through those funnels.
  */
 export function useDeleteAccount() {
   const client = useFrappClient();
