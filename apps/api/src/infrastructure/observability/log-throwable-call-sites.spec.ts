@@ -8,13 +8,16 @@ import { REPOSITORY_SRC_ROOT as SRC_ROOT } from '#test/helpers/repository-corpus
  * ConsoleLogger `util.inspect`s a non-stack extra argument, so `details`
  * (row values) reached plaintext logs.
  *
- * `error as Error` is a different (still imperfect) convention used for
- * vendor SDK failures; those are not this ledger. Do not add a name here
- * unless it is a supabase `{ error }` / repository-throw site.
+ * `error as Error` is a type lie: repositories still throw plain objects,
+ * and inspect prints `details`. Catch bindings named `err` and
+ * `Promise.allSettled` `reason` are the same hole. Vendor SDK failures
+ * (PostHog, Resend) and Realtime `removeChannel` errors go through
+ * `logThrowable` as well so a non-Error extra never reaches inspect.
  *
  * A second-arg *ternary* that falls back to the throwable (`error instanceof
- * Error ? error.stack : error`) is the same inspect leak: repositories throw
- * `{ code, message, details, hint }`, and the false branch is that object.
+ * Error ? error.stack : error`) is the same inspect leak (#2114): the false
+ * branch is that object. `: String(error)` is not — that prints
+ * `[object Object]`.
  */
 const POSTGREST_LOG_ARG = new Set([
   'error',
@@ -94,10 +97,35 @@ function loggerCalls(
   return results;
 }
 
+/**
+ * True when the second Logger argument is a throwable (or a type-lied
+ * PostgREST body) rather than a string / structured context object.
+ */
+function isThrowableExtra(second: string): boolean {
+  if (!second) return false;
+  if (second.startsWith('{')) return false;
+  if (
+    second.startsWith('`') ||
+    second.startsWith("'") ||
+    second.startsWith('"')
+  ) {
+    return false;
+  }
+  if (second.startsWith('JSON.stringify')) return false;
+  if (/\.stack\s*$/.test(second)) return false;
+  if (/\bas\s+Error\b/.test(second)) return true;
+  if (/:\s*(?:error|err|e|reason)\s*$/.test(second)) return true;
+  if (second === 'result.reason' || /\.reason$/.test(second)) return true;
+  if (POSTGREST_LOG_ARG.has(second)) return true;
+  if (/^[A-Za-z][A-Za-z0-9]*Error$/.test(second)) return true;
+  if (/^(err|error|e|reason)$/.test(second)) return true;
+  return false;
+}
+
 describe('PostgREST errors are not a Nest Logger second argument (#1669)', () => {
   const files = collectSrcFiles(SRC_ROOT);
 
-  it('does not pass a supabase error object as logger.error/warn extra arg', () => {
+  it('does not pass a throwable object as logger.error/warn extra arg', () => {
     const hits: string[] = [];
     for (const fullPath of files) {
       const fileName = fullPath.split('/').pop() ?? fullPath;
@@ -106,21 +134,7 @@ describe('PostgREST errors are not a Nest Logger second argument (#1669)', () =>
       for (const call of loggerCalls(src)) {
         if (call.args.length < 2) continue;
         const second = call.args[1].replace(/\s+/g, ' ').trim();
-        if (second.includes(' as ')) continue;
-        // Named PostgREST bodies (`error`, `duesError`, …) plus any *Error
-        // identifier (`duesReadError`). Vendor SDK failures use `error as Error`
-        // and are skipped above. Realtime `err` is not this ledger.
-        //
-        // Ternary fallback (`: error` / `: err` / `: reason`) is #2114: the
-        // false branch is the throwable object, which ConsoleLogger inspects.
-        // `: String(error)` does not match — that prints `[object Object]`.
-        const named =
-          POSTGREST_LOG_ARG.has(second) ||
-          /^[A-Za-z][A-Za-z0-9]*Error$/.test(second);
-        const ternaryFallback = /:\s*(?:error|err|e|reason)\s*$/.test(second);
-        if (!named && !ternaryFallback) {
-          continue;
-        }
+        if (!isThrowableExtra(second)) continue;
         hits.push(
           `${relative(SRC_ROOT, fullPath)}:${call.line} logger.${call.level}(..., ${second})`,
         );

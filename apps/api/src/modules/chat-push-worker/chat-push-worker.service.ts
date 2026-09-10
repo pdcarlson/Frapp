@@ -115,9 +115,11 @@ export class ChatPushWorkerService
           }
         });
     } catch (err) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         'chat-push failed to start; chat pushes will not fire',
-        err as Error,
+        err,
       );
     }
   }
@@ -127,7 +129,12 @@ export class ChatPushWorkerService
       try {
         await this.supabase.removeChannel(this.messagesChannel);
       } catch (err) {
-        this.logger.warn('chat-push: error removing messages channel', err);
+        logThrowable(
+          this.logger,
+          'warn',
+          'chat-push: error removing messages channel',
+          err,
+        );
       }
       this.messagesChannel = null;
     }
@@ -135,7 +142,12 @@ export class ChatPushWorkerService
       try {
         await this.supabase.removeChannel(ch);
       } catch (err) {
-        this.logger.warn('chat-push: error removing presence channel', err);
+        logThrowable(
+          this.logger,
+          'warn',
+          'chat-push: error removing presence channel',
+          err,
+        );
       }
     }
     this.presenceChannels.clear();
@@ -242,14 +254,18 @@ export class ChatPushWorkerService
             payload,
           );
         } catch (err) {
-          this.logger.warn(
+          logThrowable(
+            this.logger,
+            'warn',
             `chat-push: notify failed for recipient ${recipientId}`,
             err,
           );
         }
       }
     } catch (err) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `chat-push: unexpected error for message ${row.id}`,
         err,
       );
@@ -297,7 +313,9 @@ export class ChatPushWorkerService
             ] as const;
           } catch (err) {
             // Fail closed: an unresolved permission set must not become a push.
-            this.logger.warn(
+            logThrowable(
+              this.logger,
+              'warn',
               `chat-push: permission lookup failed for ${userId}; skipping`,
               err,
             );
@@ -382,7 +400,9 @@ export class ChatPushWorkerService
       ch.subscribe();
       this.presenceChannels.set(channelId, ch);
     } catch (err) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `chat-push: failed to open presence channel for ${channelId}`,
         err,
       );

@@ -26,10 +26,16 @@ function isNestErrorStack(stack: string): boolean {
  * (`spec/behavior/observability.md` § Error Tracking, #1669).
  *
  * Interpolate into a string. Do not pass the throwable as a second argument
- * — that is the leak. A real `Error` may still pass `error.stack` as Nest's
- * stack slot on `error`, and only when the string matches Nest's stack
- * predicate (`at file:line:col`). Never do that on `warn`: ConsoleLogger
- * treats a trailing string as context, not a stack.
+ * — that is the leak. `error as Error` is a type lie: a repository still
+ * throws `{ code, message, details, hint }` at runtime, and ConsoleLogger
+ * inspects that object. Realtime `err` and `Promise.allSettled` `reason`
+ * are the same hole. Vendor SDK failures (PostHog, Resend) go through here
+ * too so a non-Error extra never reaches inspect.
+ *
+ * A real `Error` may still pass `error.stack` as Nest's stack slot on
+ * `error`, and only when the string matches Nest's stack predicate
+ * (`at file:line:col`). Never do that on `warn`: ConsoleLogger treats a
+ * trailing string as context, not a stack.
  */
 export function logThrowable(
   logger: ThrowableLogger,

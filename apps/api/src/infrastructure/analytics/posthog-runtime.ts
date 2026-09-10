@@ -18,6 +18,7 @@ import { NoopAnalyticsProvider } from './noop-analytics.provider';
 import { NoopFeatureFlagProvider } from './noop-feature-flags.provider';
 import { parsePosthogConfig, type PosthogConfig } from './posthog-config';
 import type { PosthogFetch } from './posthog-transport';
+import { logThrowable } from '../observability/log-throwable';
 
 export interface SanitizedLogRecord {
   body: string;
@@ -130,7 +131,7 @@ export class PosthogRuntime {
         this.lastBatchHttpStatus < 300
       );
     } catch (error) {
-      this.logger.warn('PostHog forget flush failed', error as Error);
+      logThrowable(this.logger, 'warn', 'PostHog forget flush failed', error);
       return false;
     }
   }
@@ -180,9 +181,11 @@ export class PosthogRuntime {
       });
       return enabled === true;
     } catch (error) {
-      this.logger.warn(
+      logThrowable(
+        this.logger,
+        'warn',
         `PostHog flag "${flagKey}" evaluation failed; failing closed`,
-        error as Error,
+        error,
       );
       return false;
     }
@@ -274,7 +277,12 @@ export class PosthogAnalyticsProvider implements IAnalyticsProvider {
     try {
       this.runtime.captureEvent(event);
     } catch (error) {
-      this.logger.warn('PostHog capture enqueue failed', error as Error);
+      logThrowable(
+        this.logger,
+        'warn',
+        'PostHog capture enqueue failed',
+        error,
+      );
     }
     return Promise.resolve();
   }
