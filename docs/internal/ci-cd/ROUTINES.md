@@ -2,21 +2,21 @@
 
 Canonical, version-controlled spec for Frapp's scheduled backlog agents.
 
-**Intended runtime is Cursor Automations**
-(<https://cursor.com/docs/cloud-agent/automations>). Paste-ready specs are in
+**Claude Code Routines** (claude.ai/code → the Frapp environment → **Routines**)
+are a live scheduled path. **Cursor Automations**
+(<https://cursor.com/docs/cloud-agent/automations>) are an optional Cursor
+scheduled path. Paste-ready specs are in
 [Cursor Automation specs](#cursor-automation-specs-paste-ready-not-live) below.
-They are **not live** until a human creates them in the dashboard (#2024) and a
-run is observed (#2027). This session cannot create or enable Automations (the
-Cursor Automations MCP is read-only).
+Do **not** enable the same routine on both harnesses — Curator/Triage would
+double-file `suggestion` issues. This session cannot create or enable Automations
+(the Cursor Automations MCP is read-only).
 
-**Current observed runtime is still Claude Code Routines** (claude.ai/code → the
-Frapp environment → **Routines**) until that observe. Routines are configured in
-the UI (config-as-code isn't supported), so this file is the source of truth you
-copy into either UI. Keep it in sync in both directions: editing a prompt block
-here changes nothing that runs until a human re-pastes it, so a prompt change
-lands as a `[human]` issue, never as a note parked in this file (open one:
-#1685 is the pattern). History:
-ADR-16 amendments 4–8 in [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md);
+Routines are configured in the UI (config-as-code isn't supported), so this file
+is the source of truth you copy into either UI. Keep it in sync in both
+directions: editing a prompt block here changes nothing that runs until a human
+re-pastes it, so a prompt change lands as a `[human]` issue, never as a note
+parked in this file (open one: #1685 is the pattern). History:
+ADR-16 amendments 4–9 in [`spec/architecture/adr/adr-16.md`](../../../spec/architecture/adr/adr-16.md);
 Linear-to-GitHub migration: #680.
 
 There are **five** scheduled agents — three daily, two weekly. Three write to **GitHub Issues** on
@@ -140,8 +140,8 @@ is spelled in the triage skill; it does not widen destructive writes.
 
 ## Tracker access (shared by all routines)
 
-Routine sessions run in the Frapp **Cursor Cloud** environment (intended) or the
-Claude Code web environment (current observed fallback). Both harnesses
+Routine sessions run in the Frapp **Claude Code web** environment (live Routines)
+or a **Cursor Cloud** Automation (optional; do not dual-run the same job). Both harnesses
 expose a **GitHub MCP** — the same path `/next` uses. No API key, no REST, no secrets to
 manage. (Direct REST to `api.github.com` *is* reachable from these sandboxes where the
 environment's network allowlist carries it — the 403 a proxied `curl` gets is the agent proxy's
@@ -223,12 +223,12 @@ Reads accept issue numbers (`issue_read`, `list_issues`, `search_issues`); write
 
 ## Settings (per agent, set in the Cursor Automations UI or Claude Routines UI)
 
-Cursor Automations are the **intended** home. Claude Routines UI remains the
-**observed** home until #2024/#2027. Cron values below are UTC during EDT (shift +1h when ET returns to EST).
+Cursor Automations are an **optional** Cursor scheduled path. Claude Routines UI
+remains a **live** scheduled path. Do not run the same routine on both. Cron values below are UTC during EDT (shift +1h when ET returns to EST).
 
 | Setting | Value | Notes |
 |---|---|---|
-| Environment / repository | Cursor: attach **this GitHub repository** (cron defaults to **no repository** — that cannot run Hygiene Scan or any code-writing agent). Claude fallback: the Frapp Claude Code web environment | Sessions clone the repo and load `.claude/` skills from `main`. |
+| Environment / repository | Cursor: attach **this GitHub repository** (cron defaults to **no repository** — that cannot run Hygiene Scan or any code-writing agent). Claude Code: the Frapp Claude Code web environment | Sessions clone the repo and load `.claude/` skills from `main`. |
 | Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET**; PR Follow-ups **weekly Mon 07:00 ET**; Docs Upkeep **weekly Wed 07:00 ET**; Hygiene Scan **daily 06:00 ET** | UTC cron (EDT): `0 12 * * *`, `0 13 * * *`, `0 11 * * 1`, `0 11 * * 3`, and `0 10 * * *`. Docs Upkeep sits on Wednesday so it never shares a morning with PR Follow-ups. Hygiene Scan runs first every morning. Flip PR Follow-ups to twice weekly with `0 11 * * 1,4` if a week's batch runs long. |
 | Model | **Daily tracker agents: Opus 5** (`claude-opus-5`). **Weekly agents: Fable 5** (`claude-fable-5`). **Hygiene Scan: Fable 5.1** (`claude-fable-5-1`). | Cadence sets the tier for tracker and docs. Hygiene Scan is the exception: it edits product code unattended. Owner convention, 2026-08-21 / 2026-09-02. Pick the closest available Cursor Automation model; do not silently downgrade Hygiene Scan. |
 | Autofix on PR create | **Off** for Curator, Triage and PR Follow-ups. **On** for Docs Upkeep and Hygiene Scan. | Not an inconsistency. The first three barely open PRs — only self-maintenance. Docs Upkeep and Hygiene Scan open a PR every run that should. Cursor Automations expose PR creation as a tool (on by default for repo-backed automations). |
@@ -236,13 +236,13 @@ Cursor Automations are the **intended** home. Claude Routines UI remains the
 | Access | **GitHub MCP** | Plus the repo itself for Hygiene Scan's gates. No secrets in `environment.json`. |
 | Connectors | **None extra** | GitHub is the MCP / repository attachment, not a connector. Extra connectors are standing write access (Linear is retired). |
 | Completion notification | Hygiene Scan: **on** if the UI has it | Product-code PR the same day; Cursor Automations may not expose this field — use whatever notification exists. |
-| Hygiene Scan enable | **Off until a Cursor Cloud session on this environment has a healthy full stack** (`.cloud-sandbox-up.done`, API/web terminals). | An Automation with no repository, or a failed `start`, cannot run it. |
+| Hygiene Scan enable | **Claude Routines:** follow the skill (live path). **Cursor Automations:** **Off** until a Cursor Cloud session on this environment has a healthy full stack (`.cloud-sandbox-up.done`, API/web terminals). | An Automation with no repository, or a failed `start`, cannot run it. Do not enable it on Cursor while it already runs as a Claude Routine. |
 
 ---
 
 ## Cursor Automation specs (paste-ready; **not live**)
 
-Paste these at <https://cursor.com/automations> (or Agents Window → Automations). Human action: #2024. **Do not claim these are running** until a run is observed (#2027). For every automation: **attach this GitHub repository**. Cron triggers default to no repository.
+Paste these at <https://cursor.com/automations> (or Agents Window → Automations). Optional — only if you want a Cursor scheduled path **instead of** (not in addition to) the matching Claude Routine. For every automation: **attach this GitHub repository**. Cron triggers default to no repository.
 
 Prompts are the same strings as [Routine prompts](#routine-prompts-copy-paste) — the skill files remain the behavior contract. Do not fork the skill text here.
 
@@ -260,7 +260,7 @@ Prompts are the same strings as [Routine prompts](#routine-prompts-copy-paste) �
 2. Name it exactly as the table (e.g. **Issue Curator**).
 3. Set the cron; attach **this GitHub repository**.
 4. Paste the matching prompt from [Routine prompts](#routine-prompts-copy-paste).
-5. Leave Hygiene Scan disabled until stack health is proven. Leave Claude Routines running until a Cursor run is observed (#2027).
+5. Leave Hygiene Scan disabled until stack health is proven. Do not enable a Cursor Automation for a routine that already runs as a Claude Code Routine.
 
 ---
 
@@ -380,9 +380,9 @@ the PR link (or "no PR" and why) and the "Needs you" list.
 
 ## How to create them (UI)
 
-**Cursor Automations (intended, not live):** follow [Cursor Automation specs](#cursor-automation-specs-paste-ready-not-live). Human paste: #2024.
+**Cursor Automations (optional Cursor scheduled path):** follow [Cursor Automation specs](#cursor-automation-specs-paste-ready-not-live). Do not dual-run with Claude Routines.
 
-**Claude Code Routines (current observed fallback):**
+**Claude Code Routines (live scheduled path):**
 
 1. Open **claude.ai/code** → the Frapp environment → **Routines** → **New routine** → name it
    **"Issue Curator"**.
