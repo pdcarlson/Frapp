@@ -3,7 +3,6 @@ import { Image, Pressable, StyleSheet, Text, TextInput, View } from "react-nativ
 import { SignetTokens } from "@repo/theme/signet";
 import { AuthMethod, useAuthSession } from "@/lib/auth-session";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-import emblemIcon from "../../assets/images/icon.png";
 
 /**
  * Supabase auth errors are safe to show verbatim — they are deliberately
@@ -78,7 +77,10 @@ export default function SignIn() {
   return (
     <View style={styles.container}>
       <Image
-        source={emblemIcon}
+        // Metro asset id. This app has no `*.png` module declaration, so a
+        // static ESM import fails `tsc` (TS2307) even though Metro is fine.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        source={require("../../assets/images/icon.png")}
         style={styles.mark}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
