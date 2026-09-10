@@ -2,9 +2,12 @@ import {
   createSentryScrubber,
   DEFAULT_TRACES_SAMPLE_RATE,
   NO_PSEUDONYMS,
+  SENTRY_ERROR_SAMPLE_RATE,
+  SENTRY_REPLAY_ENABLED,
   type ScrubbableEvent,
 } from "@repo/observability";
 import type { ReactNativeOptions } from "@sentry/react-native";
+import { mobileTracePropagationTargets } from "./trace-targets";
 
 /**
  * The single source of truth for how mobile Sentry is configured (issue #1299).
@@ -19,7 +22,9 @@ import type { ReactNativeOptions } from "@sentry/react-native";
  * The import of `@sentry/react-native` here is **type-only on purpose**. It
  * keeps this module free of any native binding, so the spec can exercise the
  * real shipped options under vitest — where `react-native` is aliased to
- * `react-native-web` and the SDK's native module does not exist.
+ * `react-native-web` and the SDK's native module does not exist. PostHog
+ * correlation is wrapped around `beforeSend` in `app/_layout.tsx` so this
+ * module never imports `posthog-react-native`.
  *
  * ## The bundle holds no salt, and that is the whole design
  *
@@ -32,12 +37,16 @@ import type { ReactNativeOptions } from "@sentry/react-native";
  * (`[id:<hmac>]`). That is the shared scrubber's existing fail-closed branch —
  * the one the API takes when its own salt is unset — not new behavior.
  *
- * Mobile currently sets no user on the Sentry scope at all, so unlike web there
- * is not even a server-derived pseudonym in play. If one is ever added it must
- * come from `GET /v1/analytics/identity` exactly as `observability-identity-provider`
- * does on web; the scrubber's `/^[0-9a-f]{64}$/` gate accepts that value and
- * rejects everything else, so a raw id put there by a stray `setUser` call is
- * still dropped.
+ * The one identifier that *does* survive is the user pseudonym, and it survives
+ * because the **server** derived it: `observability-identity-provider.tsx`
+ * reads it from `GET /v1/analytics/identity` and hands it to `Sentry.setUser`.
+ * The scrubber's `/^[0-9a-f]{64}$/` gate accepts that value and rejects
+ * everything else, so a raw id put there by a stray `setUser` call is still
+ * dropped.
+ *
+ * Sentry Replay stays off ({@link SENTRY_REPLAY_ENABLED}). Session replay is
+ * PostHog's, and production PostHog replay is itself off until #2038. Do not
+ * add `mobileReplayIntegration`.
  */
 
 const scrubber = createSentryScrubber(NO_PSEUDONYMS);
@@ -121,6 +130,15 @@ function environment(): string {
  */
 const TRACES_SAMPLE_RATE = DEFAULT_TRACES_SAMPLE_RATE;
 
+export type MobileSentryReleaseExtras = {
+  /** `bundleId@version+nativeBuildNumber`. Never a git SHA. */
+  release?: string;
+  /** Native build number only. */
+  dist?: string;
+  /** Git SHA as metadata, never as `release`. */
+  gitSha?: string;
+};
+
 /**
  * The options the app actually ships.
  *
@@ -130,13 +148,31 @@ const TRACES_SAMPLE_RATE = DEFAULT_TRACES_SAMPLE_RATE;
  *
  * Both hooks are wired. Setting only one leaves the other event class shipping
  * unscrubbed, which is the gap #896 closed on the API.
+ *
+ * `release` / `dist` are optional extras resolved at init from expo-application
+ * so this module stays free of native imports. Git SHA is a tag, not the
+ * release name.
  */
-export function buildMobileSentryOptions(dsn: string): ReactNativeOptions {
+export function buildMobileSentryOptions(
+  dsn: string,
+  extras: MobileSentryReleaseExtras = {},
+): ReactNativeOptions {
   return {
     dsn,
     environment: environment(),
     tracesSampleRate: TRACES_SAMPLE_RATE,
     sendDefaultPii: false,
+    replaysSessionSampleRate: SENTRY_REPLAY_ENABLED ? 0.1 : 0,
+    replaysOnErrorSampleRate: SENTRY_REPLAY_ENABLED ? 0.1 : 0,
+    tracePropagationTargets: mobileTracePropagationTargets(),
+    ...(SENTRY_ERROR_SAMPLE_RATE === 1
+      ? {}
+      : { sampleRate: SENTRY_ERROR_SAMPLE_RATE }),
+    ...(extras.release ? { release: extras.release } : {}),
+    ...(extras.dist ? { dist: extras.dist } : {}),
+    ...(extras.gitSha
+      ? { initialScope: { tags: { git_sha: extras.gitSha } } }
+      : {}),
     beforeSend: (event: ErrorEvent) => scrubError(event),
     beforeSendTransaction: (event: TransactionEvent) => scrubTransaction(event),
   };

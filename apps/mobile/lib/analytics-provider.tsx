@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useMemo } from "react";
+import React, { createContext, useCallback, useEffect, useMemo } from "react";
 import {
   useFrappClient,
   useActiveChapterId,
@@ -9,6 +9,7 @@ import {
   type AnalyticsProperties,
   type CurrentChapterPayload,
 } from "@repo/validation";
+import { applyAnalyticsOptOut } from "@/lib/posthog/client";
 
 /**
  * Pseudonymous analytics for the mobile app (issue #464) — the Expo mirror of
@@ -26,6 +27,11 @@ import {
  * `subscriptionWriteState`. The flag is read from `useCurrentChapter()` —
  * the same `GET /v1/chapters/current` payload mobile already uses for
  * `enabled_modules` — not a mobile-only one-off.
+ *
+ * `track` posts named product events to the API only. PostHog RN does **not**
+ * capture those names — the API adapter already forwards them, and a second
+ * `posthog.capture` would double-count. The SDK is identify / groups / flags /
+ * replay-gates / the `sentry-error-correlated` marker.
  *
  * `track` is fire-and-forget so a failed event never disrupts the UI.
  *
@@ -48,6 +54,10 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const optedOut = isAnalyticsOptedOut(
     (chapterQuery.data as CurrentChapterPayload | undefined)?.analytics_opt_out,
   );
+
+  useEffect(() => {
+    applyAnalyticsOptOut(optedOut);
+  }, [optedOut]);
 
   const track = useCallback<TrackFn>(
     (name, properties) => {

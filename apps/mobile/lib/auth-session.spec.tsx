@@ -44,6 +44,12 @@ const mockState = vi.hoisted(() => ({
   deepLinkUrl: null as string | null,
 }));
 
+const resetObservabilityOnLogout = vi.hoisted(() => vi.fn());
+
+vi.mock("./observability/reset", () => ({
+  resetObservabilityOnLogout,
+}));
+
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(
     async (key: string) => mockState.secureStore.get(key) ?? null,
@@ -290,6 +296,7 @@ beforeEach(async () => {
   mockState.configured = true;
   mockState.deepLinkUrl = null;
   queryClient.clear();
+  resetObservabilityOnLogout.mockReset();
 });
 
 afterEach(() => {
@@ -363,6 +370,7 @@ describe("AuthSessionProvider — token persistence", () => {
     // Owned here rather than in each screen: there are three sign-out paths and
     // the picker's clear landed only after the leak was noticed a second time.
     expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
+    expect(resetObservabilityOnLogout).toHaveBeenCalledTimes(1);
   });
 
   it("signs out locally, without throwing, when the remote revoke fails", async () => {
@@ -399,6 +407,7 @@ describe("AuthSessionProvider — token persistence", () => {
     // The cache drop is on the same always-run path as the token clear, so a
     // failed remote revoke must not leave the previous member's rows behind.
     expect(queryClient.getQueryData(ACCOUNT_AGNOSTIC_KEY)).toBeUndefined();
+    expect(resetObservabilityOnLogout).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -220,6 +220,39 @@ vi.mock("expo-notifications", () => ({
 // The stand-ins keep their props, so a spec can still assert on a glyph's
 // resolved `stroke`/`fill` — which is the whole point of the token reads in
 // `components/tab-glyphs.tsx` and `components/tasks/task-glyphs.tsx`.
+// Observability SDKs: native bindings do not exist under vitest. Specs that
+// need a live PostHog surface bind `createMemoryPostHogAdapter` instead.
+vi.mock("posthog-react-native", () => {
+  class PostHog {
+    identify() {}
+    reset() {}
+    group() {}
+    register() {}
+    resetGroupPropertiesForFlags() {}
+    optOut() {}
+    optIn() {}
+    stopSessionRecording() {}
+    capture() {}
+    getSessionId() {
+      return "";
+    }
+    getDistinctId() {
+      return "";
+    }
+    isFeatureEnabled() {
+      return false;
+    }
+  }
+  return { default: PostHog, PostHog };
+});
+
+vi.mock("@sentry/react-native", () => ({
+  init: vi.fn(),
+  wrap: (component: unknown) => component,
+  setUser: vi.fn(),
+  mobileReplayIntegration: vi.fn(),
+}));
+
 vi.mock("react-native-svg", () => ({
   default: "Svg",
   Svg: "Svg",
