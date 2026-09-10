@@ -1,4 +1,8 @@
-import { buildAnonymousPostHogBrowserOptions } from "@repo/observability/next";
+import {
+  POSTHOG_PROPERTY_DENYLIST,
+  buildAnonymousPostHogBrowserOptions,
+  sanitizeIdentifiedPostHogCapture,
+} from "@repo/observability/next";
 import type { PostHogConfig } from "posthog-js";
 
 /**
@@ -32,6 +36,8 @@ export type WebPostHogInitOptions = Pick<
   | "disable_session_recording"
   | "person_profiles"
   | "session_recording"
+  | "property_denylist"
+  | "before_send"
 >;
 
 /**
@@ -39,6 +45,10 @@ export type WebPostHogInitOptions = Pick<
  * this object — `applyAnalyticsIdentity` in `client.ts` calls `identify`
  * after `GET /v1/analytics/identity`. `person_profiles: "identified_only"`
  * is the web-only person-profile mode.
+ *
+ * `before_send` is the identified sanitizer, not landing's anonymous one:
+ * `$set` / hex `$groups` must survive. URL-shaped SDK properties still go
+ * path-only so `/join?token=` never leaves.
  */
 export function buildWebPostHogInitOptions(opts?: {
   environment?: string;
@@ -54,5 +64,7 @@ export function buildWebPostHogInitOptions(opts?: {
       environment,
     }),
     person_profiles: "identified_only",
+    property_denylist: [...POSTHOG_PROPERTY_DENYLIST],
+    before_send: sanitizeIdentifiedPostHogCapture,
   };
 }

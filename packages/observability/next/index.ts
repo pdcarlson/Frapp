@@ -38,8 +38,10 @@ export type {
 
 export {
   ANONYMOUS_POSTHOG_SESSION_RECORDING,
+  POSTHOG_PROPERTY_DENYLIST,
   buildAnonymousPostHogBrowserOptions,
   sanitizeAnonymousPostHogCapture,
   sanitizeAnonymousPostHogProperties,
+  sanitizeIdentifiedPostHogCapture,
   shouldEnablePostHogReplay,
 } from "./posthog-options";

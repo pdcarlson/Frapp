@@ -65,6 +65,10 @@ context is AsyncLocalStorage bound in `requestIdMiddleware`, not a second tracer
 **Correction (2026-09-09):** `apps/web` initializes PostHog JS for identify /
 chapter groups / flags / replay-gates / `sentry-error-correlated`. Replay stays
 off in every environment in that slice.
+**Correction (2026-09-10):** identified PostHog JS on web runs
+`sanitizeIdentifiedPostHogCapture` as `before_send` so SDK `$current_url`
+(and invite-token query strings) are path-only without dropping `$set` or
+hex `$groups`. Landing still uses the anonymous sanitizer that drops `$set`.
 **Correction (2026-09-09):** `apps/landing` initializes anonymous Sentry
 (`NEXT_PUBLIC_LANDING_SENTRY_DSN` → `frapp-landing`) and PostHog JS for
 path-only pageviews and CTA clicks. No identity call, no alias, no chapter
