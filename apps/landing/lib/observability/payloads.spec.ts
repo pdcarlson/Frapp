@@ -69,6 +69,7 @@ describe("no secrets or PII in landing observability sources", () => {
     );
     expect(nextConfig).toContain("getAnonymousSentryBuildConfig");
     expect(nextConfig).toContain('project: "frapp-landing"');
+    expect(nextConfig).toContain("release: sentryGitSha");
     expect(nextConfig).toContain("errorHandler");
     expect(nextConfig).toContain("NEXT_PUBLIC_LANDING_SENTRY_DSN");
     expect(nextConfig).not.toContain('project: "frapp-web"');

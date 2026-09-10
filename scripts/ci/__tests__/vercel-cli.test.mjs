@@ -7,6 +7,7 @@ import {
   buildAndDeployVercelProject,
   buildVercelProject,
   deployPrebuiltVercelProject,
+  normalizeGitSha,
   parseDeploymentHost,
   vercelBuildArgs,
   vercelCliEnv,
@@ -217,6 +218,46 @@ describe("vercelCliEnv", () => {
     vercelCliEnv({ token: TOKEN, orgId: TEAM_ID, projectId: PROJECT_ID, baseEnv: base });
     assert.equal(base.VERCEL_PROJECT_ID, undefined);
   });
+
+  it("injects a named git SHA as VERCEL_GIT_COMMIT_SHA so Next inlines Sentry release", () => {
+    const env = vercelCliEnv({
+      token: TOKEN,
+      orgId: TEAM_ID,
+      projectId: PROJECT_ID,
+      gitSha: SHA,
+      baseEnv: { PATH: "/usr/bin", VERCEL_GIT_COMMIT_SHA: "stale" },
+    });
+    assert.equal(env.VERCEL_GIT_COMMIT_SHA, SHA);
+  });
+
+  it("does not invent VERCEL_GIT_COMMIT_SHA when the named sha is missing or garbage", () => {
+    const without = vercelCliEnv({
+      token: TOKEN,
+      orgId: TEAM_ID,
+      projectId: PROJECT_ID,
+      baseEnv: { PATH: "/usr/bin" },
+    });
+    assert.equal(without.VERCEL_GIT_COMMIT_SHA, undefined);
+
+    const garbage = vercelCliEnv({
+      token: TOKEN,
+      orgId: TEAM_ID,
+      projectId: PROJECT_ID,
+      gitSha: "not-a-sha",
+      baseEnv: { PATH: "/usr/bin" },
+    });
+    assert.equal(garbage.VERCEL_GIT_COMMIT_SHA, undefined);
+  });
+});
+
+describe("normalizeGitSha", () => {
+  it("accepts 7–40 hex and rejects everything else", () => {
+    assert.equal(normalizeGitSha(SHA), SHA);
+    assert.equal(normalizeGitSha("  abcdef0  "), "abcdef0");
+    assert.equal(normalizeGitSha(""), undefined);
+    assert.equal(normalizeGitSha("not-a-sha"), undefined);
+    assert.equal(normalizeGitSha(undefined), undefined);
+  });
 });
 
 describe("buildAndDeployVercelProject", () => {
@@ -254,6 +295,11 @@ describe("buildAndDeployVercelProject", () => {
     for (const call of calls) {
       assert.equal(call.env.VERCEL_PROJECT_ID, PROJECT_ID);
       assert.equal(call.env.VERCEL_TOKEN, TOKEN);
+      assert.equal(
+        call.env.VERCEL_GIT_COMMIT_SHA,
+        SHA,
+        "pull/build must see the named SHA so Next inlines Sentry release",
+      );
     }
   });
 

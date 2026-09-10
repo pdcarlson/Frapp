@@ -14,6 +14,12 @@ assertProductionWebPublicEnv({
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
 });
 
+/**
+ * Git SHA used as Sentry `release` (runtime init AND source-map upload).
+ * ADR-21 `vercel build` injects `VERCEL_GIT_COMMIT_SHA` from `DEPLOY_SHA`.
+ */
+const sentryGitSha = process.env.VERCEL_GIT_COMMIT_SHA || "";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@repo/theme", "@repo/formatting", "@repo/observability"],
@@ -95,14 +101,15 @@ const nextConfig = {
     NEXT_PUBLIC_SENTRY_ENVIRONMENT: process.env.VERCEL_ENV ?? "development",
     /**
      * Sentry `release`, **derived** from Vercel's git SHA rather than configured.
-     * Empty locally/CI when `VERCEL_GIT_COMMIT_SHA` is unset. **Do not add
-     * `NEXT_PUBLIC_SENTRY_RELEASE` to Infisical** — this replacement would win
-     * over it silently, same as `NEXT_PUBLIC_SENTRY_ENVIRONMENT`.
+     * Empty locally and in non-deploy CI when `VERCEL_GIT_COMMIT_SHA` is
+     * unset. Staging/production `vercel build` (ADR-21) injects that system
+     * variable from the named `DEPLOY_SHA` in `scripts/ci/lib/vercel-cli.mjs`
+     * — Vercel's Git-linked builders used to set it; the runner path does not.
+     * **Do not add `NEXT_PUBLIC_SENTRY_RELEASE` to Infisical** — this
+     * replacement would win over it silently, same as
+     * `NEXT_PUBLIC_SENTRY_ENVIRONMENT`.
      */
-    NEXT_PUBLIC_SENTRY_RELEASE:
-      process.env.VERCEL_GIT_COMMIT_SHA ||
-      process.env.NEXT_PUBLIC_SENTRY_RELEASE ||
-      "",
+    NEXT_PUBLIC_SENTRY_RELEASE: sentryGitSha || "",
   },
 };
 
@@ -136,5 +143,6 @@ export default withSentryConfig(
   getAnonymousSentryBuildConfig({
     project: "frapp-web",
     authToken: process.env.SENTRY_AUTH_TOKEN,
+    release: sentryGitSha,
   }),
 );
