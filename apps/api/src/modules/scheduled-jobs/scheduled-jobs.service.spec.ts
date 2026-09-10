@@ -210,7 +210,9 @@ describe('ScheduledJobsService', () => {
         expect(
           errorSpy.mock.calls
             .filter((args) =>
-              String(args[0]).includes('auto-absent sweep: event evt-bad failed'),
+              String(args[0]).includes(
+                'auto-absent sweep: event evt-bad failed',
+              ),
             )
             .every((args) => args.length === 1),
         ).toBe(true);

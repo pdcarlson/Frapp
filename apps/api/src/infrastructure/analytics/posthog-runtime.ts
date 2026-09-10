@@ -131,12 +131,7 @@ export class PosthogRuntime {
         this.lastBatchHttpStatus < 300
       );
     } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        'PostHog forget flush failed',
-        error,
-      );
+      logThrowable(this.logger, 'warn', 'PostHog forget flush failed', error);
       return false;
     }
   }
