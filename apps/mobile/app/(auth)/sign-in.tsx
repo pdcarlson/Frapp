@@ -3,6 +3,7 @@ import { Image, Pressable, StyleSheet, Text, TextInput, View } from "react-nativ
 import { SignetTokens } from "@repo/theme/signet";
 import { AuthMethod, useAuthSession } from "@/lib/auth-session";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import emblemIcon from "../../assets/images/icon.png";
 
 /**
  * Supabase auth errors are safe to show verbatim — they are deliberately
@@ -77,7 +78,7 @@ export default function SignIn() {
   return (
     <View style={styles.container}>
       <Image
-        source={require("../../assets/images/icon.png")}
+        source={emblemIcon}
         style={styles.mark}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
