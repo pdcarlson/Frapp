@@ -78,7 +78,7 @@ Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled
 
 ### AI review coverage
 
-- Code review is a **local pre-push gate**, not CI. Frapp's gate is **`/diff-review`** (not Bugbot). **Cursor Cloud (primary):** [`.cursor/hooks.json`](.cursor/hooks.json) `beforeShellExecution` with `failClosed: true` wrapping `.claude/hooks/pre-push-review-gate.sh`. **Claude Code (fallback):** `.claude/hooks/pre-push-review-gate.sh` via `.claude/settings.json`. Both block
+- Code review is a **local pre-push gate**, not CI. Frapp's gate is **`/diff-review`** (not Bugbot). **Cursor Cloud:** [`.cursor/hooks.json`](.cursor/hooks.json) `beforeShellExecution` with `failClosed: true` wrapping `.claude/hooks/pre-push-review-gate.sh`. **Claude Code:** `.claude/hooks/pre-push-review-gate.sh` via `.claude/settings.json`. Both block
   `git push` for a branch HEAD until that HEAD has been reviewed; agents run **`/diff-review`**,
   which writes the marker it looks for. The CI Claude review and the `claude-review-gate` required
   check were removed (2026-06-04, ADR-14 amendment). Which skill, when the bundled `/code-review`

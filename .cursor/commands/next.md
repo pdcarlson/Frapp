@@ -9,6 +9,6 @@ argument-hint: "[123 ...] [--plan-only N]"
 
 Follow [`.claude/commands/next.md`](../../.claude/commands/next.md) **exactly**. That file is the procedure source of truth. Do not duplicate it here.
 
-Skills currently live under `.claude/skills/` (Cursor Cloud loads that tree). Moving them to `.cursor/skills/` is gated and is **not** this change.
+Skills live under `.claude/skills/` (Cursor Cloud loads that tree; Claude Code uses it natively). Keep one skill tree — do not copy into `.cursor/skills/`.
 
 Babysit, tracker, and PR tools: follow [`AGENTS.md`](../../AGENTS.md) — use this harness's GitHub MCP and PR/CI subscription tools. Do not freeze a catalog here. Review gate: `/diff-review` (fail-closed project hooks; not Bugbot).

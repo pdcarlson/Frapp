@@ -226,7 +226,7 @@ angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus fo
 defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
 `.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
-**Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment; Cursor adapter ADR-16 amendment 8). Frapp's gate is **`/diff-review`** — not Bugbot. Cursor Cloud: [`.cursor/hooks.json`](../../.cursor/hooks.json) `beforeShellExecution` (`failClosed: true`). Claude fallback: `.claude/hooks/pre-push-review-gate.sh`. Both gate `git push` on *evidence* that a review ran for the
+**Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment; Cursor adapter ADR-16 amendments 8–9). Frapp's gate is **`/diff-review`** — not Bugbot. Cursor Cloud: [`.cursor/hooks.json`](../../.cursor/hooks.json) `beforeShellExecution` (`failClosed: true`). Claude Code: `.claude/hooks/pre-push-review-gate.sh`. Both gate `git push` on *evidence* that a review ran for the
 current HEAD — evidence, not an attempt, so retrying a denied push does not satisfy it. A push that
 publishes no objects (a dry run, or a `--delete` ref deletion) is exempt, having no diff to review.
 Which review to run, how the evidence is recorded, and the livelock release are the runbook's to
@@ -453,19 +453,10 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Every migration should have a documented rollback strategy in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.
 - See `docs/internal/ops/deployment/` for the full migration deployment workflow.
 
-## Cursor Cloud (primary) and Claude Code fallback
+## Cursor Cloud and Claude Code
 
-Frapp is primarily developed in **Cursor Cloud**. The public contract is
-[`.cursor/environment.json`](../../.cursor/environment.json) (`start` is
-`scripts/cursor-cloud-up.sh`, which runs shared `scripts/cloud-sandbox-up.sh`).
-Claude Code web remains a fallback and shares that bringup script. Full
-configuration and failure troubleshooting:
-[`docs/internal/environment/CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md).
-Agent instructions: [`AGENTS.md`](../../AGENTS.md) § Cursor Cloud specific instructions.
+Frapp is developed in **Cursor Cloud** and **Claude Code web** independently (ADR-16 amendment 9). Cursor public contract: [`.cursor/environment.json`](../../.cursor/environment.json) (`start` is `scripts/cursor-cloud-up.sh`, which runs shared `scripts/cloud-sandbox-up.sh`). Claude public contract: Setup script `scripts/cloud-sandbox-setup.sh` plus SessionStart, which launches the same bringup. Full configuration and failure troubleshooting: [`docs/internal/environment/CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md). Agent instructions: [`AGENTS.md`](../../AGENTS.md).
 
 ## Scheduled backlog agents
 
-Intended runtime is **Cursor Automations**; they are **not live** until pasted and observed.
-Claude Code Routines remain the current observed scheduled path until then. Canonical
-prompts, cron, and enable notes: [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md).
-Do not restate liveness here. Linear stays retired (ADR-16 amendment 5).
+**Claude Code Routines** are a live scheduled path. **Cursor Automations** are an optional Cursor scheduled path — do not dual-run the same routine on both. Canonical prompts, cron, and enable notes: [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md). Do not restate liveness here. Linear stays retired (ADR-16 amendment 5).

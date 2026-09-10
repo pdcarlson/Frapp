@@ -388,7 +388,7 @@ for the rest.
 
 **Run the second verify (§0.6) now**, before the first file write.
 
-Branch from `main`. On **Cursor Cloud** (primary), use the session's assigned branch. On **Claude Code** (fallback), `claude/<slug>`. In a harness-managed cloud session, the assigned branch always wins. Either way, that branch is this file's **unit branch**. Focused commits. **Commit locally; do not push yet** — the
+Branch from `main`. On **Cursor Cloud**, use the session's assigned branch. On **Claude Code**, `claude/<slug>`. In a harness-managed cloud session, the assigned branch always wins. Either way, that branch is this file's **unit branch**. Focused commits. **Commit locally; do not push yet** — the
 pre-push gate owns the first push (Phase 3). Record the branch name in a heartbeat comment on the
 first commit: local work is invisible to the reclaim rules, and the claim comment stream, not a
 remote branch, is your liveness beacon.
@@ -575,7 +575,7 @@ Post literally, substituting bracketed values; the sentinel is always the first 
 ```text
 🤖 AGENT-CLAIM `claim:a3f19c2e`
 
-**Claimed by:** `/next` session `a3f19c2e` (acting as Paul Carlson; Cursor Cloud primary, Claude Code fallback)
+**Claimed by:** `/next` session `a3f19c2e` (acting as Paul Carlson; Cursor Cloud or Claude Code)
 **Branch:** `claude/fix-signup-redirect` (local until review passes)
 **Batch:** solo — or: #100 · #101 · #102 (one claim comment per member, same claim id; this lease renews on this issue's own comment stream)
 **Prior art:** none
