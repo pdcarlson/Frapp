@@ -168,7 +168,7 @@ this observation did not do.
 
 ### Auth OAuth providers (Google and Apple)
 
-Provider client ids and secrets live in the **Supabase dashboard** (Authentication → Providers), not Infisical. Do not invent values here. The web and mobile clients call `signInWithOAuth` / native SIWA against whatever the hosted project has enabled; until Ops ticks the boxes, the UI maps `provider is not enabled` to member-facing copy and magic-link still works.
+Provider client ids and secrets live in the **Supabase dashboard** (Authentication → Providers), not Infisical. Do not invent values here. The web and mobile clients call `signInWithOAuth` / native SIWA against whatever the hosted project has enabled. Until a provider is enabled, the UI maps `provider is not enabled` to member-facing copy and magic-link still works.
 
 **Redirect URLs the clients send** (must stay on the allow list in § Auth settings — the `/**` and `frapp://**` wildcards already cover them; confirm rather than adding a second copy of the origin):
 
@@ -181,17 +181,29 @@ Provider client ids and secrets live in the **Supabase dashboard** (Authenticati
 
 GoTrue's own provider callback (what you paste into Google Cloud / Apple, **not** the app URL) is `https://<project-ref>.supabase.co/auth/v1/callback` per hosted project.
 
-**Human console checklist (names only; no secrets):**
+#### Done / Not done
 
-1. Supabase → Authentication → Providers: enable **Google** and **Apple**. Turn **Automatic linking** on so a later Google/Apple identity can attach to an existing email/password or magic-link user. Do not merge `public.users` rows in the app — that table is unique on `supabase_auth_id` only.
-2. Google Cloud → APIs & Services → Credentials → OAuth 2.0 **Web** client (one per environment, or one client whose origins list both):
-   - Authorized JavaScript origins: `https://app.frapp.live`, `https://app.staging.frapp.live`
-   - Authorized redirect URIs: `https://<frapp-staging-ref>.supabase.co/auth/v1/callback` and `https://<frapp-prod-ref>.supabase.co/auth/v1/callback`
-   - Paste the Web client id + secret into each Supabase project's Google provider. Mobile uses this Web client through the browser auth session; there is no separate iOS/Android Google client in this change.
-3. Apple Developer:
+Observation 2026-09-10 (owner confirmation, **names only**; values not opened). Secrets stay in the Google Cloud / Supabase dashboards. Did **not** Deploy. Tracker: #2120.
+
+| Item | State |
+| --- | --- |
+| Google Cloud OAuth 2.0 **Web** client (JS origins `https://app.frapp.live`, `https://app.staging.frapp.live`; redirect URIs the two hosted `/auth/v1/callback` URLs; client id + secret pasted into each project's Google provider) | **Done** |
+| Google provider enabled on hosted `frapp-staging` and `frapp-prod` | **Done** |
+| Automatic linking | **On** (a later Google/Apple identity can attach to an existing email/password or magic-link user; do not merge `public.users` rows — unique on `supabase_auth_id` only) |
+| Skip nonce (Google provider) | **Off** |
+| Allow users without email | **Off** |
+| Magic Link templates | **Untouched** — do not change them |
+| Apple Developer: App ID `live.frapp.mobile` + Sign in with Apple; Services ID; `.p8` uploaded in each project's Apple provider (key id, team id, Services ID) | **Not done** — remaining human work on #2120 |
+| Custom Auth domain | **Later** — #2125 |
+| Native Google iOS/Android OAuth clients | **Later** — #2126. Mobile Google uses this Web client through the browser auth session. |
+
+**Remaining human console steps (Apple; names only; no secrets):**
+
+1. Apple Developer:
    - App ID `live.frapp.mobile` → enable **Sign in with Apple**
    - Services ID (web) with Return URL `https://<project-ref>.supabase.co/auth/v1/callback` for each hosted project
    - Key with Sign in with Apple enabled; upload the `.p8` in the Supabase Apple provider (key id, team id, Services ID). Native SIWA uses the app's bundle id; web/browser fallback uses the Services ID.
-4. Confirm the redirect allow list still includes `https://app.frapp.live/**`, `https://app.staging.frapp.live/**`, and `frapp://**`. Do not add failing conformance that the providers are enabled until this checklist is done.
+2. Confirm the redirect allow list still includes `https://app.frapp.live/**`, `https://app.staging.frapp.live/**`, and `frapp://**`.
+3. Do not add failing conformance that **Apple** is enabled until that list is done. Google kickoff can 2xx on hosted Auth now; Apple still maps to “This sign-in method isn't available yet.”
 
 ---
