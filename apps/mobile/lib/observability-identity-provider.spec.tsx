@@ -50,19 +50,23 @@ const { ObservabilityIdentityProvider } = await import(
   "./observability-identity-provider"
 );
 
+function identityTree(queryClient: QueryClient) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ObservabilityIdentityProvider>
+        <span>child</span>
+      </ObservabilityIdentityProvider>
+    </QueryClientProvider>
+  );
+}
+
 function mountIdentityTree(client?: QueryClient) {
   const queryClient =
     client ??
     new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <ObservabilityIdentityProvider>
-        <span>child</span>
-      </ObservabilityIdentityProvider>
-    </QueryClientProvider>,
-  );
+  return render(identityTree(queryClient));
 }
 
 describe("mobile ObservabilityIdentityProvider", () => {
@@ -213,15 +217,13 @@ describe("mobile ObservabilityIdentityProvider", () => {
       error: undefined,
     }));
 
-    const first = mountIdentityTree(queryClient);
+    const view = render(identityTree(queryClient));
     await waitFor(() => {
       expect(sentrySetUser).toHaveBeenCalledWith({ id: DISTINCT });
     });
-    first.unmount();
 
     session.userId = "mobile-user-b";
-    sentrySetUser.mockClear();
-    mountIdentityTree(queryClient);
+    view.rerender(identityTree(queryClient));
 
     await waitFor(() => {
       expect(sentrySetUser).toHaveBeenCalledWith({ id: otherHex });
@@ -234,5 +236,43 @@ describe("mobile ObservabilityIdentityProvider", () => {
         { type: "identify", distinctId: otherHex },
       ]),
     );
+    expect(memory.adapter.getDistinctId()).toBe(otherHex);
+  });
+
+  it("does not keep the previous hex if identity fetch fails after a user change", async () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    session.getIdentity.mockImplementation(async () => {
+      if (session.userId === "mobile-user-b") {
+        return { error: new Error("identity failed") };
+      }
+      return {
+        data: {
+          enabled: true,
+          distinct_id: DISTINCT,
+          chapter_group_id: CHAPTER_GROUP,
+        },
+        error: undefined,
+      };
+    });
+
+    const view = render(identityTree(queryClient));
+    await waitFor(() => {
+      expect(memory.adapter.getDistinctId()).toBe(DISTINCT);
+    });
+
+    session.userId = "mobile-user-b";
+    view.rerender(identityTree(queryClient));
+
+    await waitFor(() => {
+      expect(memory.adapter.getDistinctId()).toBeUndefined();
+    });
+    expect(sentrySetUser).toHaveBeenCalledWith(null);
+    expect(memory.calls.filter((c) => c.type === "identify")).toEqual([
+      { type: "identify", distinctId: DISTINCT },
+    ]);
   });
 });

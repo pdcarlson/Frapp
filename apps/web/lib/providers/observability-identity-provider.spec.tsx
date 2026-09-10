@@ -46,17 +46,23 @@ const { ObservabilityIdentityProvider } = await import(
   "./observability-identity-provider"
 );
 
-function renderProvider() {
-  const qc = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
+function identityTree(qc: QueryClient) {
+  return (
     <QueryClientProvider client={qc}>
       <ObservabilityIdentityProvider>
         <div />
       </ObservabilityIdentityProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+function renderProvider(client?: QueryClient) {
+  const qc =
+    client ??
+    new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+  return render(identityTree(qc));
 }
 
 describe("ObservabilityIdentityProvider", () => {
@@ -163,5 +169,43 @@ describe("ObservabilityIdentityProvider", () => {
     renderProvider();
     expect(state.get).not.toHaveBeenCalled();
     expect(setUser).not.toHaveBeenCalled();
+  });
+
+  it("does not keep the previous member's hex after a same-tab account swap", async () => {
+    const otherHex = "c".repeat(64);
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    state.get.mockImplementation(async () => ({
+      data: {
+        enabled: true,
+        distinct_id: state.authUserId === "web-user-b" ? otherHex : HEX,
+        chapter_group_id: OTHER,
+      },
+      error: undefined,
+    }));
+
+    const view = render(identityTree(qc));
+    await waitFor(() => {
+      expect(setUser).toHaveBeenCalledWith({ id: HEX });
+    });
+
+    state.authUserId = "web-user-b";
+    view.rerender(identityTree(qc));
+
+    await waitFor(() => {
+      expect(setUser).toHaveBeenCalledWith({ id: otherHex });
+    });
+    expect(state.get).toHaveBeenCalledTimes(2);
+    expect(memory.calls).toEqual(
+      expect.arrayContaining([
+        { type: "identify", distinctId: HEX },
+        { type: "reset" },
+        { type: "identify", distinctId: otherHex },
+      ]),
+    );
+    expect(memory.adapter.getDistinctId()).toBe(otherHex);
   });
 });

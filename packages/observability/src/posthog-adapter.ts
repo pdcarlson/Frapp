@@ -147,7 +147,12 @@ export function applyAnalyticsIdentity(
   const adapter = currentAdapter();
   if (!adapter) return;
   const distinct = validatedDistinctId(identity);
-  if (!distinct) return;
+  if (!distinct) {
+    // Missing/invalid hex must not keep a prior identify (magic-link swap
+    // whose next GET fails, or a settled `enabled: false` payload).
+    adapter.reset();
+    return;
+  }
   adapter.identify(distinct);
   const groupId = validatedChapterGroupId(identity);
   if (groupId) {
@@ -171,11 +176,10 @@ export function applyObservabilityIdentity(
 }
 
 /**
- * Apply only after the identity query has settled. `undefined` is still
- * loading: vendor identify / Sentry `user.id` are cleared so a same-device
- * account swap cannot keep the previous member's hex until the next fetch
- * (or forever, if that fetch fails with `retry: false`). `null` is a fetched
- * empty payload and also clears.
+ * Apply the identity query result. `undefined` is still loading or a failed
+ * `retry: false` fetch: treat it as empty so a same-device account swap
+ * cannot keep the previous member's hex. `null` is a fetched empty payload.
+ * Invalid hex also clears (via `applyAnalyticsIdentity`).
  */
 export function applyFetchedObservabilityIdentity(
   fetchEnabled: boolean,
@@ -183,12 +187,7 @@ export function applyFetchedObservabilityIdentity(
   setSentryUser: (user: { id: string } | null) => void,
 ): void {
   if (!fetchEnabled) return;
-  if (identity === undefined) {
-    resetPostHog();
-    setSentryUser(null);
-    return;
-  }
-  applyObservabilityIdentity(identity, setSentryUser);
+  applyObservabilityIdentity(identity ?? null, setSentryUser);
 }
 
 /**
