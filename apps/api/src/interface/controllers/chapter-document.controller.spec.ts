@@ -20,6 +20,10 @@ describe('ChapterDocumentController', () => {
           provide: ChapterDocumentService,
           useValue: mockChapterDocumentService,
         },
+        {
+          provide: 'SUPABASE_CLIENT',
+          useValue: {},
+        },
       ],
     }).compile();
 
