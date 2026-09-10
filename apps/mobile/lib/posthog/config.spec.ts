@@ -56,9 +56,11 @@ describe("RN init options the app ships", () => {
   });
 
   it("wires the identified sanitizer, not landing's drop-$set helper", async () => {
+    vi.resetModules();
     const { sanitizeIdentifiedPostHogCapture, sanitizeAnonymousPostHogCapture } =
       await import("@repo/observability/next");
-    const options = buildMobilePostHogInitOptions({ environment: "preview" });
+    const { buildMobilePostHogInitOptions: build } = await import("./config");
+    const options = build({ environment: "preview" });
     expect(options.before_send).toBe(sanitizeIdentifiedPostHogCapture);
     expect(options.before_send).not.toBe(sanitizeAnonymousPostHogCapture);
   });
