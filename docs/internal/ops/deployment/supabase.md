@@ -166,4 +166,32 @@ Did **not** Deploy production. A present env-var **name** is not proof the runni
 process has left the no-op provider — that would take a restart/Deploy, which
 this observation did not do.
 
+### Auth OAuth providers (Google + Apple)
+
+Provider client ids and secrets live in the **Supabase dashboard** (Authentication → Providers), not Infisical. Do not invent values here. The web and mobile clients call `signInWithOAuth` / native SIWA against whatever the hosted project has enabled; until Ops ticks the boxes, the UI maps `provider is not enabled` to member-facing copy and magic-link still works.
+
+**Redirect URLs the clients send** (must stay on the allow list in § Auth settings — the `/**` and `frapp://**` wildcards already cover them; confirm rather than adding a second copy of the origin):
+
+| Surface | Redirect the app asks GoTrue to use |
+| --- | --- |
+| Web staging | `https://app.staging.frapp.live/auth/callback?next=<guarded path>` |
+| Web production | `https://app.frapp.live/auth/callback?next=<guarded path>` |
+| Mobile (release / dev-client) | `frapp:///?` (`Linking.createURL("/")` plus a trailing `?`) |
+| Mobile Expo Go | `exp://<host>:8081/--/?` — same per-machine gap as magic-link (#765) |
+
+GoTrue's own provider callback (what you paste into Google Cloud / Apple, **not** the app URL) is `https://<project-ref>.supabase.co/auth/v1/callback` per hosted project.
+
+**Human console checklist (names only; no secrets):**
+
+1. Supabase → Authentication → Providers: enable **Google** and **Apple**. Turn **Automatic linking** on so a later Google/Apple identity can attach to an existing email/password or magic-link user. Do not merge `public.users` rows in the app — that table is unique on `supabase_auth_id` only.
+2. Google Cloud → APIs & Services → Credentials → OAuth 2.0 **Web** client (one per environment, or one client whose origins list both):
+   - Authorized JavaScript origins: `https://app.frapp.live`, `https://app.staging.frapp.live`
+   - Authorized redirect URIs: `https://<frapp-staging-ref>.supabase.co/auth/v1/callback` and `https://<frapp-prod-ref>.supabase.co/auth/v1/callback`
+   - Paste the Web client id + secret into each Supabase project's Google provider. Mobile uses this Web client through the browser auth session; there is no separate iOS/Android Google client in this change.
+3. Apple Developer:
+   - App ID `live.frapp.mobile` → enable **Sign in with Apple**
+   - Services ID (web) with Return URL `https://<project-ref>.supabase.co/auth/v1/callback` for each hosted project
+   - Key with Sign in with Apple enabled; upload the `.p8` in the Supabase Apple provider (key id, team id, Services ID). Native SIWA uses the app's bundle id; web/browser fallback uses the Services ID.
+4. Confirm the redirect allow list still includes `https://app.frapp.live/**`, `https://app.staging.frapp.live/**`, and `frapp://**`. Do not add failing conformance that the providers are enabled until this checklist is done.
+
 ---

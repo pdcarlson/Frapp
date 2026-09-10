@@ -122,6 +122,9 @@ describe("describeAuthError", () => {
       "exchange_failed",
       "verify_failed",
       "missing_code",
+      "identity_already_exists",
+      "user_already_exists",
+      "email_exists",
     ]) {
       expect(describeAuthError(code)).not.toMatch(/^Request a new link below, or sign in/);
     }

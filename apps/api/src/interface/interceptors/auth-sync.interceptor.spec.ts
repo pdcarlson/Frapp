@@ -15,6 +15,7 @@ describe('AuthSyncInterceptor', () => {
   const mockExecutionContext = (supabaseUser?: {
     id: string;
     email: string | null | undefined;
+    user_metadata?: Record<string, unknown>;
   }): ExecutionContext => {
     const request = { supabaseUser, appUser: undefined as unknown };
     return {
@@ -53,6 +54,7 @@ describe('AuthSyncInterceptor', () => {
     expect(mockAuthService.syncUser).toHaveBeenCalledWith(
       'auth-123',
       'test@example.com',
+      undefined,
     );
 
     await new Promise<void>((resolve) => {
@@ -79,10 +81,31 @@ describe('AuthSyncInterceptor', () => {
     const ctx = mockExecutionContext({ id: 'auth-456', email: null });
     const result$ = await interceptor.intercept(ctx, mockCallHandler);
 
-    expect(mockAuthService.syncUser).toHaveBeenCalledWith('auth-456', '');
+    expect(mockAuthService.syncUser).toHaveBeenCalledWith(
+      'auth-456',
+      '',
+      undefined,
+    );
 
     await new Promise<void>((resolve) => {
       result$.subscribe({ complete: resolve });
     });
+  });
+
+  it('forwards Auth user_metadata so Apple/Google names survive sync', async () => {
+    mockAuthService.syncUser.mockResolvedValue({ id: 'user-3' });
+
+    const ctx = mockExecutionContext({
+      id: 'auth-789',
+      email: 'n@privaterelay.appleid.com',
+      user_metadata: { full_name: 'Ada Lovelace' },
+    });
+    await interceptor.intercept(ctx, mockCallHandler);
+
+    expect(mockAuthService.syncUser).toHaveBeenCalledWith(
+      'auth-789',
+      'n@privaterelay.appleid.com',
+      { full_name: 'Ada Lovelace' },
+    );
   });
 });

@@ -98,6 +98,15 @@ describe("GET /auth/callback", () => {
     expect(url.searchParams.get("authError")).toBe("verify_failed");
   });
 
+  it("passes an OAuth identity collision through without exchanging a code", async () => {
+    const { url } = await callback(
+      "error=server_error&error_code=identity_already_exists&next=%2Fchat",
+    );
+    expect(exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(url.pathname).toBe("/sign-in");
+    expect(url.searchParams.get("authError")).toBe("identity_already_exists");
+  });
+
   it("sends a failed hash verify to sign-in without attempting a PKCE exchange", async () => {
     verifyOtp.mockResolvedValue({ error: { message: "otp_expired" } });
     const { url } = await callback("token_hash=stale&type=magiclink&next=%2Fchat");

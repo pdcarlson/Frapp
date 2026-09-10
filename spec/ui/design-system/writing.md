@@ -434,6 +434,10 @@ The Preferences card is a **second query** on the same screen (`GET /v1/settings
 | Auth error | `Unable to sign in` | The Supabase message, verbatim. It is deliberately non-enumerating ("Invalid login credentials" whether or not the address exists), so passing it through leaks nothing and says more than a generic line would. |
 | Magic link sent | `Magic link sent` | `Check your inbox to continue signing in.` |
 | Magic link, no email | `Email required` | `Enter your email address to request a magic link.` |
+| Continue with Apple / Google | — | Button labels. Equal Secondary size; Apple first. Design polishes brand marks later. |
+| Identity collision | `Unable to sign in` | `An account with this email already exists. Sign in with your password or a magic link. Google or Apple can attach to that same account on later visits.` |
+| Provider not enabled | `Unable to sign in` | `This sign-in method isn't available yet. Use your password or a magic link.` |
+| Membership hint | — | `Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.` |
 
 ### Sign up (pre-auth)
 
