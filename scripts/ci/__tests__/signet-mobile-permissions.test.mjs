@@ -5,12 +5,12 @@
 // Signet. A leftover sweep can put Frapp back in the OS dialog, add a
 // fourth *Permission string on app.config.js the first lock would miss,
 // drop a prompt so the hardcoded list still passes, or treat Settings →
-// Frapp / the store display name as in-scope. #1952.
+// Signet / the store display name as out of this lock's scope. #1952.
 //
 // SCOPE. String-valued *Permission prompts under apps/mobile, the
 // stripeUnavailableReason / pushUnavailableReason definitions, and the
-// dues merchantDisplayName default. Leave app.json name / scheme /
-// bundle id / Settings → Frapp on 1829. Do not add a must-exist assert
+// dues merchantDisplayName default. Leave app.json slug / scheme /
+// bundle id on the deferred rename. Do not add a must-exist assert
 // for the EAS project id. Do not run eas init. Do not walk landing.
 // Skip spec fixtures (1968 retires the Frapp pay-copy ones).
 

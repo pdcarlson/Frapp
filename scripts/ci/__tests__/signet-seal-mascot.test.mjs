@@ -6,8 +6,8 @@
 // sweep can put Frapp in the mascot line, drop the heading, drop the animal
 // wording, drop the USPTO ban, treat a wax seal as the mascot, or add a
 // third spec site the hardcoded paths would miss. It can also point the
-// walker at landing (frozen Frapp) or apps (no commissioned art this slice).
-// Leftover 1959. USPTO stay on 1901. Leave landing Frapp on 1954. Leave
+// walker at landing (visual freeze) or apps (no commissioned mascot this slice).
+// Leftover 1959. USPTO stay on 1901. Landing copy is Signet (1954). Leave
 // store-name on 1829. Do not restyle icons in this leftover.
 //
 // SCOPE. Markdown under spec/. Do not walk apps/ or docs/. No raster/SVG

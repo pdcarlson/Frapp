@@ -34,7 +34,7 @@ Rules:
    family.
 2. Tab bar active state = accent duotone glyph + 700-weight label. No pill or
    container shape behind the glyph.
-3. The rounded-square "S" mark is a brand asset, not an icon — it never takes
+3. Locked emblem B is a brand asset, not an icon — it never takes
    the duotone treatment or the chapter accent (see
    [brand identity](../brand-identity.md)).
 

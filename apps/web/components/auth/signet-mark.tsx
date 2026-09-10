@@ -35,7 +35,7 @@ export function SignetMark({
   size?: keyof typeof SIZES;
   className?: string;
 }) {
-  const maskId = useId();
+  const maskId = `signet-neck-${useId().replace(/:/g, "")}`;
 
   return (
     <span
