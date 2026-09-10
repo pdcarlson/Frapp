@@ -204,7 +204,14 @@ issue if anything looks off):
   labels rather than partitioning them, since chat ships on web, mobile and the API — #1499 alone
   touches `packages/chat-core` plus `apps/web` and `apps/mobile` call sites — so an issue can
   reasonably carry `area:chat` *and* a surface label. Whether that is intended is the owner's
-  call, not a routine's)
+  call, not a routine's) · `area:ops` (same story, rostered 2026-09-10 — in use on #2125 alone,
+  for a hosted-provider change, i.e. a custom Supabase Auth domain for OAuth callbacks; carries
+  no label description, and its scope is likewise the owner's to define. **It overlaps
+  `area:infra` rather than partitioning it** — #2125 is hosted-environment configuration, which
+  is exactly what `area:infra` was rostered for on 2026-08-21 — so the open question is not what
+  `area:ops` means but whether it should exist at all, or whether #2125 should be re-labelled
+  `area:infra` and this label deleted. That is the owner's call, not a routine's; it is rostered
+  here only so routines stop reading it as a typo and so a suggestion carrying it is not skipped)
 - **Scope:** `scope:production` — work that only becomes relevant once a production environment
   exists (owner decision 2026-08-10; see
   [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the
