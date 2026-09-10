@@ -13,6 +13,11 @@ import { REPOSITORY_SRC_ROOT as SRC_ROOT } from '#test/helpers/repository-corpus
  * `Promise.allSettled` `reason` are the same hole. Vendor SDK failures
  * (PostHog, Resend) and Realtime `removeChannel` errors go through
  * `logThrowable` as well so a non-Error extra never reaches inspect.
+ *
+ * A second-arg *ternary* that falls back to the throwable (`error instanceof
+ * Error ? error.stack : error`) is the same inspect leak (#2114): the false
+ * branch is that object. `: String(error)` is not — that prints
+ * `[object Object]`.
  */
 const POSTGREST_LOG_ARG = new Set([
   'error',
@@ -109,6 +114,7 @@ function isThrowableExtra(second: string): boolean {
   if (second.startsWith('JSON.stringify')) return false;
   if (/\.stack\s*$/.test(second)) return false;
   if (/\bas\s+Error\b/.test(second)) return true;
+  if (/:\s*(?:error|err|e|reason)\s*$/.test(second)) return true;
   if (second === 'result.reason' || /\.reason$/.test(second)) return true;
   if (POSTGREST_LOG_ARG.has(second)) return true;
   if (/^[A-Za-z][A-Za-z0-9]*Error$/.test(second)) return true;

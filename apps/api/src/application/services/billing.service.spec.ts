@@ -26,6 +26,34 @@ function restoreSalt(priorSalt: string | undefined): void {
   }
 }
 
+const POSTGREST_DETAILS =
+  'Key (email)=(alice@example.com) is not present in table "users".';
+
+function postgrestBody(): {
+  code: string;
+  message: string;
+  hint: string;
+  details: string;
+} {
+  return {
+    code: '23505',
+    message:
+      'duplicate key value violates unique constraint "chapters_stripe_customer_id_key"',
+    hint: 'Use a different customer.',
+    details: POSTGREST_DETAILS,
+  };
+}
+
+function loggerPrinted(spy: jest.SpyInstance): string {
+  return spy.mock.calls
+    .map((args) =>
+      args
+        .map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg)))
+        .join('\n'),
+    )
+    .join('\n');
+}
+
 import { BillingService } from './billing.service';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { BILLING_PROVIDER } from '#domain/adapters/billing.interface';
@@ -432,6 +460,41 @@ describe('BillingService', () => {
       );
     });
 
+    it('does not log PostgREST details when persisting the Stripe customer fails', async () => {
+      const chapterNoCustomer = {
+        ...baseChapter,
+        stripe_customer_id: null,
+      };
+      mockChapterRepo.findById.mockResolvedValue(chapterNoCustomer);
+      mockBillingProvider.createCustomer.mockResolvedValue('cus_new');
+      mockChapterRepo.update.mockRejectedValue(postgrestBody());
+      const errorSpy = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+
+      try {
+        await expect(
+          service.createCheckoutSession({
+            chapterId: 'ch-1',
+            customerEmail: 'admin@example.com',
+            successUrl: 'http://localhost:3000/success',
+            cancelUrl: 'http://localhost:3000/cancel',
+          }),
+        ).rejects.toThrow(ServiceUnavailableException);
+
+        expect(errorSpy).toHaveBeenCalled();
+        const printed = loggerPrinted(errorSpy);
+        expect(printed).toContain('Failed to create checkout session');
+        expect(printed).toContain('23505');
+        expect(printed).not.toContain('alice@example.com');
+        expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(
+          true,
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
     it('refuses checkout for a past_due chapter and points at the portal (#929)', async () => {
       // The double-subscription hole. `past_due` is a *live* subscription in
       // dunning, so a second checkout bills the chapter twice and orphans the
@@ -576,8 +639,7 @@ describe('BillingService', () => {
     ).rejects.toThrow(ServiceUnavailableException);
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      'Failed to create checkout session for chapter ch-1',
-      stripeError,
+      'Failed to create checkout session for chapter ch-1: Some string error',
     );
 
     loggerErrorSpy.mockRestore();
@@ -648,7 +710,7 @@ describe('BillingService', () => {
       ).rejects.toThrow(ServiceUnavailableException);
 
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Failed to create portal session for chapter ch-1',
+        'Failed to create portal session for chapter ch-1: Stripe is down',
         stripeError.stack,
       );
 
@@ -674,11 +736,38 @@ describe('BillingService', () => {
     ).rejects.toThrow(ServiceUnavailableException);
 
     expect(loggerErrorSpy).toHaveBeenCalledWith(
-      'Failed to create portal session for chapter ch-1',
-      stripeError,
+      'Failed to create portal session for chapter ch-1: Some string error',
     );
 
     loggerErrorSpy.mockRestore();
+  });
+
+  it('does not log PostgREST details when the portal provider throws a plain object', async () => {
+    mockChapterRepo.findById.mockResolvedValue(baseChapter);
+    mockBillingProvider.createCustomerPortalSession.mockRejectedValue(
+      postgrestBody(),
+    );
+    const errorSpy = jest
+      .spyOn(service['logger'], 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      await expect(
+        service.createPortalSession({
+          chapterId: 'ch-1',
+          returnUrl: 'http://localhost:3000/billing',
+        }),
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      expect(errorSpy).toHaveBeenCalled();
+      const printed = loggerPrinted(errorSpy);
+      expect(printed).toContain('Failed to create portal session');
+      expect(printed).toContain('23505');
+      expect(printed).not.toContain('alice@example.com');
+      expect(errorSpy.mock.calls.every((args) => args.length === 1)).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   describe('handleWebhookEvent', () => {

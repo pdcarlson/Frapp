@@ -39,6 +39,7 @@ import type { IStripeWebhookEventRepository } from '#domain/repositories/stripe-
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
+import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { pseudonymizeChapterId } from '../../infrastructure/observability/pseudonyms';
 
 export interface CreateCheckoutInput {
@@ -201,9 +202,11 @@ export class BillingService {
         grantTrial: !chapter.subscription_id,
       });
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `Failed to create checkout session for chapter ${input.chapterId}`,
-        error instanceof Error ? error.stack : error,
+        error,
       );
       throw new ServiceUnavailableException(
         'Billing service is temporarily unavailable',
@@ -247,9 +250,11 @@ export class BillingService {
         returnUrl: input.returnUrl,
       });
     } catch (error) {
-      this.logger.error(
+      logThrowable(
+        this.logger,
+        'error',
         `Failed to create portal session for chapter ${input.chapterId}`,
-        error instanceof Error ? error.stack : error,
+        error,
       );
       throw new ServiceUnavailableException(
         'Billing service is temporarily unavailable',
