@@ -3,8 +3,8 @@
 # Sourced, not executed. No `set -e` here — callers decide their own error policy.
 #
 # Sourced by BOTH bootstrap paths, for the same reason local-postgres-acl.sh is:
-#   * scripts/cloud-sandbox-up.sh  — Claude Code web sandbox (primary dev env)
-#   * scripts/local-dev-setup.sh   — laptop / WSL (secondary dev env)
+#   * scripts/cloud-sandbox-up.sh  — Cursor Cloud and Claude Code web (shared bringup)
+#   * scripts/local-dev-setup.sh   — laptop / WSL (third path)
 #
 # REQUIRES scripts/lib/local-postgres-acl.sh to have been sourced first — this file uses
 # `frapp_run_local_sql` for the "how do I reach the local database" dispatch (host psql

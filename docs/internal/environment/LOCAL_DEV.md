@@ -1,9 +1,8 @@
 # Local development
 
-> The **primary** dev environment is **Cursor Cloud** — see
-> [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) and [`AGENTS.md`](../../../AGENTS.md) § Cursor Cloud
-> specific instructions. Claude Code web is the fallback. This file is the **laptop/local**
-> path: running Frapp on a machine you own.
+> **Cursor Cloud and Claude Code web** are independent first-class agent environments — see
+> [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) and [`AGENTS.md`](../../../AGENTS.md). This file is the
+> **laptop/local** path: running Frapp on a machine you own.
 
 **Canonical run command (after bootstrap + Infisical login):** from the repo root,
 
@@ -63,11 +62,12 @@ Requires Expo Go on a device or emulator; not usable on typical headless VMs.
 
 Build `.env.local` per app using `npx supabase status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
 
-## Cloud sandbox (Cursor Cloud primary; Claude Code fallback)
+## Cloud sandbox (Cursor Cloud and Claude Code)
 
-The primary, automated environment is Cursor Cloud. Claude Code web is the fallback.
-Full config (`.cursor/environment.json`, env vars, network policy), auto-bringup, and
-failure troubleshooting live in [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md).
+Cursor Cloud and Claude Code web are independent first-class agent environments; they share
+`scripts/cloud-sandbox-up.sh`. Full config (`.cursor/environment.json`, Claude Setup script,
+env vars, network policy), auto-bringup, and failure troubleshooting live in
+[`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md).
 It generates `apps/api/.env.local` and `apps/web/.env.local`, so the API boots and `npm run build -w apps/web` succeeds without Infisical.
 
 ## SWC builder for API dev server
@@ -142,7 +142,7 @@ is stubbed, no daemon or database needed), run it with
 
 ## Related docs
 
-- [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) — Cursor Cloud (primary) and Claude Code fallback
+- [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) — Cursor Cloud and Claude Code web
 - [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) — Infisical project, syncs, login
 - [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) — variable list per app
 - [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md) — agent/provider creds + cloud-sandbox vars

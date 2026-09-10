@@ -12,7 +12,7 @@ Hosted agent sessions may carry provider/research credentials and cloud-sandbox 
 
 - Confirm before external/public actions; be proactive on internal/repo work.
 - **Use sub-agents liberally.** Delegate broad searches, independent research, and self-contained chunks to Explore/Plan/general-purpose sub-agents in parallel. Keep heavy reading out of your own context. Sub-agents inherit the session model — there is no pinned sub-agent model.
-- **Stop and report cloud-sandbox failures — don't work around them.** If the local stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, Docker Hub rate limit, missing env var), STOP and tell the user exactly what to add or change in the **Cursor Cloud environment dashboard** (network policy, env var, secrets) — or, on the Claude Code fallback path, in the Claude web environment. These are environment config you cannot fix from inside the session. Map of symptom → fix: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails"). Trust the `.cloud-sandbox-up.failed` sentinel over the log. **One exception, and the sentinel names it: a sentinel reading `(dependencies)` is yours to fix in this session — run `npm ci`.** It means only that `node_modules` is unusable; the stack itself is already up, because that check runs last. Report it only if `npm ci` cannot reach the registry, which is a network-policy problem like the rest.
+- **Stop and report cloud-sandbox failures — don't work around them.** If the local stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, Docker Hub rate limit, missing env var), STOP and tell the user exactly what to add or change in **this session's environment dashboard** — the Cursor Cloud environment dashboard, or the Claude Code web environment. These are environment config you cannot fix from inside the session. Map of symptom → fix: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails"). Trust the `.cloud-sandbox-up.failed` sentinel over the log. **One exception, and the sentinel names it: a sentinel reading `(dependencies)` is yours to fix in this session — run `npm ci`.** It means only that `node_modules` is unusable; the stack itself is already up, because that check runs last. Report it only if `npm ci` cannot reach the registry, which is a network-policy problem like the rest.
 
 ## Spec vs code
 
@@ -102,9 +102,13 @@ Default local run: `npm run dev:stack` (API + web + landing). Ports, URLs, per-a
 
 ## Starting the dev environment
 
-**Primary — Cursor Cloud:** [`.cursor/environment.json`](.cursor/environment.json) is the public contract. Wait for `.cloud-sandbox-up.done` (or stop on `.cloud-sandbox-up.failed`). Config, env vars, egress, and failure troubleshooting: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Cursor Cloud specific instructions: [below](#cursor-cloud-specific-instructions).
+**Cursor Cloud and Claude Code web** are independent first-class agent environments (ADR-16 amendment 9). Neither is primary. Laptop/local is the third path.
 
-**Claude files remain in-tree** until teardown; Cursor `start` owns bringup. Do not delete `.claude/**` in this cutover.
+**Cursor Cloud:** [`.cursor/environment.json`](.cursor/environment.json) is the public contract. Wait for `.cloud-sandbox-up.done` (or stop on `.cloud-sandbox-up.failed`). Cursor-specific instructions: [below](#cursor-cloud-specific-instructions).
+
+**Claude Code web:** `.claude/hooks/session-start.sh` launches `scripts/cloud-sandbox-up.sh` in the background at session start. Wait for `.cloud-sandbox-up.done`, then `npm run start:dev -w apps/api`. Claude-specific instructions: [below](#claude-code-web-sandbox).
+
+Shared bringup, egress, and failure troubleshooting: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Do not delete `.claude/**` or the Cursor adapter; both trees are live.
 
 **Laptop / WSL / Linux:** with Docker reachable, run `bash scripts/local-dev-setup.sh` (deps, Supabase, `db push --local`, optional checks; flags `--quick`, `--reset-supabase`, `--reset-supabase-data`). Then `npx infisical login` once and **`npm run dev:stack`**. See [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) and [`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md).
 
@@ -144,7 +148,7 @@ Gate postures: [`docs/internal/ci-cd/QUALITY_GATES.md`](docs/internal/ci-cd/QUAL
 
 ## Skills (read the matching one before deep work)
 
-All skills live under [`.claude/skills/`](.claude/skills/) (Cursor Cloud loads that tree). Moving the tree to `.cursor/skills/` is **gated** and is not this change. `/next` on Cursor: [`.cursor/commands/next.md`](.cursor/commands/next.md). Skills:
+All skills live under [`.claude/skills/`](.claude/skills/). Cursor Cloud loads that tree; Claude Code uses it natively. Keep one skill tree — do not copy into `.cursor/skills/`. `/next` on Cursor: [`.cursor/commands/next.md`](.cursor/commands/next.md). `/next` on Claude: [`.claude/commands/next.md`](.claude/commands/next.md). Skills:
 
 | Skill | Use |
 | ----- | --- |
@@ -191,15 +195,15 @@ When the user supplies durable environment hints or tool workarounds not documen
 
 ## Cursor Cloud specific instructions
 
-Cursor Cloud is the **primary** Frapp agent environment (ADR-16 amendment 8). Claude files remain in-tree until teardown; Cursor `start` owns bringup. Full sandbox/egress/bringup: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Credentials: [`AGENT_CREDENTIALS.md`](docs/internal/environment/AGENT_CREDENTIALS.md).
+Cursor Cloud is a first-class Frapp agent environment (ADR-16 amendment 9). Claude Code is the other, independent one — not a fallback. Full sandbox/egress/bringup: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Credentials: [`AGENT_CREDENTIALS.md`](docs/internal/environment/AGENT_CREDENTIALS.md).
 
 - **Environment contract:** [`.cursor/environment.json`](.cursor/environment.json). Wait for `.cloud-sandbox-up.done` or stop on `.cloud-sandbox-up.failed` (log `/tmp/cloud-sandbox-up.log`). Do not work around a failed bringup. Do not put secrets in that file. Do not trigger speculative environment Builds.
 - **Review gate:** `/diff-review`. Project [`.cursor/hooks.json`](.cursor/hooks.json) fails closed on the evidence marker `.cache/diff-review/<HEAD_SHA>`. Cursor built-ins (`/review`, Bugbot) are **not** Frapp's gate. Runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 - **Tracker:** GitHub Issues via this harness's GitHub MCP. Never `gh` or raw REST for tracker writes. Labels replace the whole set. Policy: [`GITHUB_PM.md`](docs/internal/ci-cd/GITHUB_PM.md).
 - **PRs:** open against `main`. Prefer this harness's PR tool when present; GitHub MCP remains valid. Never `gh`.
 - **Babysit:** subscribe using this harness's PR/CI tools. Do not freeze a catalog here. Wake-path facts: [`pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md).
-- **Skills:** currently [`.claude/skills/`](.claude/skills/). Moving to `.cursor/skills/` is gated — not this PR. `/next`: [`.cursor/commands/next.md`](.cursor/commands/next.md).
-- **Scheduled agents:** intended runtime is Cursor Automations; they are **not live** until a human pastes them and a run is observed ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). Do not enable Hygiene Scan without a healthy repo-backed stack.
+- **Skills:** [`.claude/skills/`](.claude/skills/) — Cursor loads that tree. Do not copy into `.cursor/skills/`. `/next`: [`.cursor/commands/next.md`](.cursor/commands/next.md).
+- **Scheduled agents:** Claude Code Routines remain a live path. Cursor Automations are paste-ready in [`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md); do not enable the same routine on both (they would double-file). Do not enable Hygiene Scan without a healthy repo-backed stack.
 - **Egress:** production-withholding allowlist is a **dashboard** decision (#2025). Canonical host list: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Do not invent hosts and do not put the list in `environment.json` as a guess.
 - **Linear stays retired.** Do not restore `LINEAR_API_KEY`.
 - Do not live-apply branch protection. From an agent session, `npm run configure:branch-protection:verify` only.
@@ -210,7 +214,7 @@ A task is not "done" when the code is pushed — it's done when the PR is ready 
 
 1. **Open a PR** against `main` — the only legal base. Don't wait to be asked. Prefer this harness's PR tool when present; GitHub MCP remains valid. Never `gh`.
 2. **Subscribe** using this harness's PR/CI subscription tools. Do not freeze a catalog. Repo-side wake comments (`CI wake`, `PR base sync`) still apply. Details: [`pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md#wake-coverage).
-3. Anything that needs a standing schedule is a Cursor Automation / Claude Routine in the UI — Automations are prepared, not silently live. See [`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md).
+3. Anything that needs a standing schedule is a Claude Code Routine or a Cursor Automation in the UI — do not dual-run the same job on both. See [`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md).
 4. **Triage CI failures before "fixing" them.** A job that died before its first repo step is GitHub Actions infra, not code — re-run it, don't patch. **No `CI wake` comment does not mean no failure:** that watchdog now comments only on a cancelled or timed-out run, or an infra failure its auto-requeue could not absorb. An ordinary red CI is yours to diagnose from the run itself.
 5. **Babysit until green:** real CI failure → diagnose and push a fix; review comment → address and resolve the thread. A `Base-branch sync` comment (`<!-- frapp-base-sync -->`) means merge `origin/main` (or follow the comment). Once the base-sync App is configured a clean behind-PR is updated for you silently and no comment arrives; **until then it is not** — you get the comment and you do the merge. Never read the absence of a comment as "it was updated for me": check the PR's own mergeability. Details: [`pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md#base-branch-sync-scriptscipr-base-syncmjs).
 6. **Stop conditions:** green and review-clean, OR out of scope (file an issue, report, stop), OR the user says to stop.
@@ -219,6 +223,21 @@ A `/next` session may hold **up to two open PRs** (pipelining in [`.claude/comma
 
 Wake-path mechanics: [`docs/internal/ci-cd/pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md).
 
-## Claude Code files (until teardown)
+## Claude Code web sandbox
 
-Claude Code remains a working fallback until Automations are observed and teardown (#2028). Cursor `start` already runs the shared bringup; do not delete `.claude/**` or `scripts/cloud-sandbox-up.sh` here. Same review evidence marker as the Cursor adapter. Details: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md).
+Claude Code is a first-class Frapp agent environment (ADR-16 amendment 9). Cursor Cloud is the other, independent one — not a replacement.
+
+`.claude/hooks/session-start.sh` launches `scripts/cloud-sandbox-up.sh` in the **background** at session start (gated on the `/etc/frapp-cloud-sandbox` marker, or `FRAPP_CLOUD_SANDBOX=1`) — it starts Docker + local Supabase and writes `apps/api/.env.local` and `apps/web/.env.local`, so the API boots and `npm run build -w apps/web` succeeds without Infisical.
+
+- **Wait before using the DB/API:** poll for `.cloud-sandbox-up.done` (success) or `.cloud-sandbox-up.failed` (error); live log at `/tmp/cloud-sandbox-up.log`.
+- **Boot the API** with `npm run start:dev -w apps/api` (the generated `.env.local` means no Infisical is needed). Cursor Cloud terminals already start the API — do not start a second copy there.
+- **On failure, STOP and report** what to fix in the Claude web environment. Don't paper over it.
+- **Review gate:** [`.claude/hooks/pre-push-review-gate.sh`](.claude/hooks/pre-push-review-gate.sh) via [`.claude/settings.json`](.claude/settings.json) `PreToolUse`. Same evidence marker as Cursor. `/diff-review`.
+- **Tracker:** GitHub MCP (`mcp__github__*`). Never `gh` or raw REST for tracker writes.
+- **PRs:** `create_pull_request` / `update_pull_request` against `main`. `doneMeansMerged: true` in `.claude/settings.json`.
+- **Babysit:** `subscribe_pr_activity`. **Do not call `send_later`, and do not add it to `permissions.allow`.** It still prompts the owner. Wake coverage is the PR-activity webhook, `CI wake` comments, and `PR base sync` comments.
+- **Skills / `/next`:** [`.claude/skills/`](.claude/skills/) and [`.claude/commands/next.md`](.claude/commands/next.md).
+- **Scheduled agents:** Claude Code Routines in the web UI. Do not dual-run the same routine as a Cursor Automation.
+- Full config: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Local-only `.env.local` and SWC notes: [`LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md).
+
+Do not delete `.claude/**` or `scripts/cloud-sandbox-up.sh`. Cursor `start` shares that bringup script.

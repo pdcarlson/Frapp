@@ -4,8 +4,8 @@
 # their own error policy; these helpers signal failure via return codes.
 #
 # Sourced by BOTH bootstrap paths, which is the whole point of the file:
-#   * scripts/cloud-sandbox-up.sh  — Claude Code web sandbox (primary dev env)
-#   * scripts/local-dev-setup.sh   — laptop / WSL (secondary dev env)
+#   * scripts/cloud-sandbox-up.sh  — Cursor Cloud and Claude Code web (shared bringup)
+#   * scripts/local-dev-setup.sh   — laptop / WSL (third path)
 #
 # This lib deliberately does NOT source scripts/lib/cloud-sandbox-common.sh and has no
 # `cs_*` dependencies. That lib is not side-effect-free at source time (it exports the
