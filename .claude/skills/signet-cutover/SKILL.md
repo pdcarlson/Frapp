@@ -52,9 +52,9 @@ spec-vs-implementation drift against it. The `apps/web` migration window is **cl
 class or a live `dark:` variant on a dashboard screen is a defect now, not a pending slice
 ([`ui-development`](../ui-development/SKILL.md)).
 
-New Signet work MUST NOT copy visual patterns from frozen surfaces. Assets still shipping the
-legacy "F" mark / bone lockup are expected until the Signet asset pass — do not restyle them
-piecemeal ([`spec/ui/assets.md`](../../../spec/ui/assets.md)).
+New Signet work MUST NOT copy visual patterns from frozen surfaces. Product marks ship locked
+emblem B from [`spec/ui/assets.md`](../../../spec/ui/assets.md); do not restyle them piecemeal.
+Landing tokens (Geist, bone/bronze) stay frozen until that surface's visual reskin.
 
 ## Naming
 

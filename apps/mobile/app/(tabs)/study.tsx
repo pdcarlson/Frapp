@@ -109,7 +109,7 @@ const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const MIRROR_RETRY_MS = 15 * 1000;
 
 const LOCATION_REQUIRED_COPY =
-  "Signet confirms you're in the study zone, so it needs location while you study. Turn it on in Settings → Frapp → Location.";
+  "Signet confirms you're in the study zone, so it needs location while you study. Turn it on in Settings → Signet → Location.";
 
 export default function StudyScreen() {
   const { tokens } = useFrappTheme();

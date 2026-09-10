@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 const chapterStats = [
-  { value: "50+", label: "Chapters operating on Frapp" },
+  { value: "50+", label: "Chapters operating on Signet" },
   { value: "2,000+", label: "Members engaged weekly" },
   { value: "10,000+", label: "Events managed without spreadsheets" },
 ];
@@ -62,7 +62,7 @@ const features = [
 const testimonials = [
   {
     quote:
-      "Frapp replaced three disconnected tools and finally gave our exec board one source of truth.",
+      "Signet replaced three disconnected tools and finally gave our exec board one source of truth.",
     name: "Jordan M.",
     role: "Chapter President",
     chapter: "Alpha Phi • Midwest University",
@@ -85,9 +85,9 @@ const testimonials = [
 
 const faqs = [
   {
-    question: "How is Frapp priced?",
+    question: "How is Signet priced?",
     answer:
-      "Frapp uses one flat monthly chapter plan. No per-seat pricing and no feature gating.",
+      "Signet uses one flat monthly chapter plan. No per-seat pricing and no feature gating.",
   },
   {
     question: "Can we cancel any time?",
@@ -100,7 +100,7 @@ const faqs = [
       "Yes, every new chapter starts with a 14-day trial so your leadership team can evaluate fit.",
   },
   {
-    question: "Can alumni and active members both use Frapp?",
+    question: "Can alumni and active members both use Signet?",
     answer:
       "Yes. Alumni support, role-based permissions, and dedicated channels are built into the product model.",
   },
@@ -113,12 +113,12 @@ export default function Home() {
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
-    name: "Frapp",
+    name: "Signet",
     applicationCategory: "BusinessApplication",
     operatingSystem: "Web, iOS, Android",
     url: "https://frapp.live",
     description:
-      "Frapp is the operating system for Greek Life, unifying chat, events, points, study hours, and chapter billing.",
+      "Signet is the operating system for Greek Life, unifying chat, events, points, study hours, and chapter billing.",
     offers: {
       "@type": "Offer",
       priceCurrency: "USD",
@@ -127,7 +127,7 @@ export default function Home() {
     },
     brand: {
       "@type": "Brand",
-      name: "Frapp",
+      name: "Signet",
     },
   };
 
@@ -194,7 +194,7 @@ export default function Home() {
               </h1>
             </div>
             <p className="max-w-xl text-lg text-muted-foreground">
-              Frapp unifies chapter communication, events, study accountability,
+              Signet unifies chapter communication, events, study accountability,
               points, and dues workflows so leadership can run operations
               without duct-taped tools.
             </p>
@@ -380,7 +380,7 @@ export default function Home() {
             <div className="border-b border-border">
               <Image
                 src="/showcase-dashboard.svg"
-                alt="Frapp web dashboard preview showing operations, members, and points modules."
+                alt="Signet web dashboard preview showing operations, members, and points modules."
                 width={1280}
                 height={900}
                 className="h-auto w-full"
@@ -402,7 +402,7 @@ export default function Home() {
             <div className="border-b border-border">
               <Image
                 src="/showcase-mobile.svg"
-                alt="Frapp mobile app preview showing feed updates and task-loop state cards."
+                alt="Signet mobile app preview showing feed updates and task-loop state cards."
                 width={900}
                 height={900}
                 className="h-auto w-full"
@@ -508,7 +508,7 @@ export default function Home() {
             Ready to run your chapter with clarity, speed, and accountability?
           </h2>
           <p className="mt-4 max-w-2xl text-white/70">
-            Join the chapters using Frapp to consolidate operations, reduce
+            Join the chapters using Signet to consolidate operations, reduce
             leadership overhead, and improve member engagement.
           </p>
           <TrackedCta
@@ -617,7 +617,7 @@ export default function Home() {
           </div>
         </div>
         <div className="border-t border-border py-4 text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Frapp. All rights reserved.
+          © {new Date().getFullYear()} Signet. All rights reserved.
         </div>
       </footer>
     </main>

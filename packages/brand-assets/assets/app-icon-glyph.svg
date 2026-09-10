@@ -14,8 +14,6 @@
       />
     </mask>
   </defs>
-  <rect width="64" height="64" rx="16" fill="#1A1A1A"/>
-  <!-- Locked emblem B: abstract crest, gold on charcoal, neck break. -->
   <path
     fill="#DDB844"
     mask="url(#neck-break)"

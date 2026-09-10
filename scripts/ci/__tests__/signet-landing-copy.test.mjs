@@ -1,17 +1,16 @@
-// Locks the landing freeze on Frapp until the USPTO unfreeze.
+// Locks landing customer chrome on Signet.
 //
-// WHY THIS EXISTS. Live frapp.live still serves Frapp marketing titles
-// on purpose. A leftover sweep can flip those titles to Signet before
-// the USPTO search clears, switch a title to single quotes the first
-// lock used to miss, or add a third metadata site the hardcoded paths
-// would miss. This lock is the freeze, not the unfreeze. The unfreeze
-// issue (1954) replaces this file with a Signet-title lock. USPTO stay
-// on 1901. Leave store-name on 1829.
+// WHY THIS EXISTS. #1954 unfreezes landing copy. A leftover sweep can
+// put Frapp back in metadata titles, JSON-LD, or the lockup aria-label,
+// switch a title to single quotes the first lock used to miss, or add a
+// third metadata site the hardcoded paths would miss. USPTO stay on
+// 1901. Leave store-name uniqueness on 1829. Landing visual tokens
+// (Geist, bone/bronze) stay frozen until the visual reskin.
 //
 // SCOPE. Landing metadata titles, JSON-LD SoftwareApplication / brand
-// names, the lockup aria-label, and the spec freeze banner. Do not
-// restyle icons or tokens. Do not change landing product copy here.
-// Do not walk apps/web (those titles are already Signet).
+// names, the lockup aria-label, and the spec visual-freeze banner. Do
+// not restyle Geist/bone tokens here. Do not walk apps/web (those
+// titles are already Signet).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -29,8 +28,8 @@ const HOME = "apps/landing/app/page.tsx";
 const LOCKUP = "apps/landing/components/frapp-lockup.tsx";
 const SPEC = "spec/ui/landing/README.md";
 
-const HOME_TITLE = "Frapp — The Operating System for Greek Life";
-const SUPPORT_TITLE = "Support — Frapp";
+const HOME_TITLE = "Signet — Ask your chapter anything.";
+const SUPPORT_TITLE = "Support — Signet";
 
 /** Root + OG + Twitter + /support. Deleting a title must fail, not pass. */
 const MIN_METADATA_TITLES = 4;
@@ -80,12 +79,12 @@ export function metadataTitleProblems(files) {
   for (const { rel, source } of files) {
     for (const title of collectMetadataTitles(source)) {
       found.push({ rel, title });
-      if (!/Frapp/.test(title)) problems.push(`${rel}:missing-frapp`);
-      if (/Signet/.test(title)) problems.push(`${rel}:signet`);
+      if (!/Signet/.test(title)) problems.push(`${rel}:missing-signet`);
+      if (/Frapp/.test(title)) problems.push(`${rel}:frapp`);
     }
   }
   if (found.length < MIN_METADATA_TITLES) {
-    problems.push("landing must keep the frozen metadata titles");
+    problems.push("landing must keep the Signet metadata titles");
   }
   return problems;
 }
@@ -107,28 +106,28 @@ export function frozenTitleProblems({ layout, support }) {
 export function jsonLdProblems(home) {
   const problems = [];
   const names = jsonLdNames(home);
-  if (!names.includes("Frapp")) {
+  if (!names.includes("Signet")) {
     problems.push("SoftwareApplication name");
   }
-  if (names.filter((name) => name === "Frapp").length !== 2) {
+  if (names.filter((name) => name === "Signet").length !== 2) {
     problems.push("application + brand");
   }
-  if (names.includes("Signet")) {
-    problems.push("JSON-LD must not name Signet yet");
+  if (names.includes("Frapp")) {
+    problems.push("JSON-LD must not name Frapp");
   }
   return problems;
 }
 
-export function freezeSurfaceProblems({ lockup, spec }) {
+export function chromeSurfaceProblems({ lockup, spec }) {
   const problems = [];
-  if (!/aria-label=["']Frapp["']/.test(lockup)) {
-    problems.push("lockup aria-label must stay Frapp");
+  if (!/aria-label=["']Signet["']/.test(lockup)) {
+    problems.push("lockup aria-label must be Signet");
   }
-  if (/aria-label=["']Signet["']/.test(lockup)) {
-    problems.push("lockup aria-label must not be Signet");
+  if (/aria-label=["']Frapp["']/.test(lockup)) {
+    problems.push("lockup aria-label must not be Frapp");
   }
-  if (!/> \*\*FROZEN \(pre-Signet\)\.\*\*/.test(spec)) {
-    problems.push("spec must keep the freeze banner");
+  if (!/> \*\*VISUAL FREEZE \(bone\/bronze\/Geist\)\.\*\*/.test(spec)) {
+    problems.push("spec must keep the visual-freeze banner");
   }
   return problems;
 }
@@ -161,7 +160,7 @@ function liveMetadataFiles() {
   }));
 }
 
-test("landing metadata titles stay Frapp, not Signet", () => {
+test("landing metadata titles stay Signet, not Frapp", () => {
   assert.deepEqual(metadataTitleProblems(liveMetadataFiles()), []);
   assert.deepEqual(
     frozenTitleProblems({
@@ -172,13 +171,13 @@ test("landing metadata titles stay Frapp, not Signet", () => {
   );
 });
 
-test("JSON-LD application and brand names stay Frapp", () => {
+test("JSON-LD application and brand names stay Signet", () => {
   assert.deepEqual(jsonLdProblems(readRepo(HOME)), []);
 });
 
-test("lockup aria-label and spec freeze banner stay Frapp", () => {
+test("lockup aria-label is Signet and spec keeps the visual-freeze banner", () => {
   assert.deepEqual(
-    freezeSurfaceProblems({
+    chromeSurfaceProblems({
       lockup: readRepo(LOCKUP),
       spec: readRepo(SPEC),
     }),
@@ -186,16 +185,16 @@ test("lockup aria-label and spec freeze banner stay Frapp", () => {
   );
 });
 
-test("putting Signet in a layout metadata title fails", () => {
+test("putting Frapp in a layout metadata title fails", () => {
   const problems = metadataTitleProblems([
     {
       rel: LAYOUT,
-      source: readRepo(LAYOUT).replaceAll(HOME_TITLE, "Signet — The Operating System for Greek Life"),
+      source: readRepo(LAYOUT).replaceAll(HOME_TITLE, "Frapp — The Operating System for Greek Life"),
     },
     { rel: SUPPORT, source: readRepo(SUPPORT) },
   ]);
   assert.ok(
-    problems.some((problem) => problem.includes("signet")),
+    problems.some((problem) => problem.includes("frapp")),
     problems.join("; "),
   );
 });
@@ -212,44 +211,44 @@ test("dropping a layout OG title fails the floor", () => {
     { rel: SUPPORT, source: readRepo(SUPPORT) },
   ]);
   assert.ok(
-    problems.some((problem) => problem.includes("frozen metadata titles")),
+    problems.some((problem) => problem.includes("Signet metadata titles")),
     problems.join("; "),
   );
 });
 
-test("a single-quoted Signet title is collected", () => {
+test("a single-quoted Frapp title is collected", () => {
   assert.deepEqual(
     collectMetadataTitles(
-      `export const metadata = {\n  title: 'Signet — Privacy',\n};\n`,
+      `export const metadata = {\n  title: 'Frapp — Privacy',\n};\n`,
     ),
-    ["Signet — Privacy"],
+    ["Frapp — Privacy"],
   );
 });
 
-test("a third JS-style Signet metadata site fails the walk", () => {
+test("a third JS-style Frapp metadata site fails the walk", () => {
   const rel = "apps/landing/app/privacy/page.tsx";
-  const source = "export const metadata = {\n  title: 'Signet — Privacy',\n};\n";
+  const source = "export const metadata = {\n  title: 'Frapp — Privacy',\n};\n";
   assert.equal(isMetadataFile(source), true);
   assert.deepEqual(metadataTitleProblems([{ rel, source }]), [
-    `${rel}:missing-frapp`,
-    `${rel}:signet`,
-    "landing must keep the frozen metadata titles",
+    `${rel}:missing-signet`,
+    `${rel}:frapp`,
+    "landing must keep the Signet metadata titles",
   ]);
 });
 
-test("putting Signet in JSON-LD fails", () => {
+test("putting Frapp in JSON-LD fails", () => {
   const problems = jsonLdProblems(
-    readRepo(HOME).replace('name: "Frapp"', 'name: "Signet"'),
+    readRepo(HOME).replace('name: "Signet"', 'name: "Frapp"'),
   );
   assert.ok(
-    problems.some((problem) => problem.includes("Signet") || problem.includes("Frapp")),
+    problems.some((problem) => problem.includes("Frapp") || problem.includes("Signet")),
     problems.join("; "),
   );
 });
 
 test("dropping the lockup aria-label fails", () => {
-  const problems = freezeSurfaceProblems({
-    lockup: readRepo(LOCKUP).replace('aria-label="Frapp"', 'aria-label="Signet"'),
+  const problems = chromeSurfaceProblems({
+    lockup: readRepo(LOCKUP).replace('aria-label="Signet"', 'aria-label="Frapp"'),
     spec: readRepo(SPEC),
   });
   assert.ok(
@@ -258,16 +257,16 @@ test("dropping the lockup aria-label fails", () => {
   );
 });
 
-test("dropping the freeze banner fails", () => {
-  const problems = freezeSurfaceProblems({
+test("dropping the visual-freeze banner fails", () => {
+  const problems = chromeSurfaceProblems({
     lockup: readRepo(LOCKUP),
     spec: readRepo(SPEC).replace(
-      "> **FROZEN (pre-Signet).**",
+      "> **VISUAL FREEZE (bone/bronze/Geist).**",
       "> **UNFROZEN (Signet).**",
     ),
   });
   assert.ok(
-    problems.some((problem) => problem.includes("freeze banner")),
+    problems.some((problem) => problem.includes("visual-freeze banner")),
     problems.join("; "),
   );
 });

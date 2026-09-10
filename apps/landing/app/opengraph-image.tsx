@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
 
-export const alt = "Frapp — The Operating System for Greek Life";
+export const alt = "Signet — Ask your chapter anything.";
 
 export const size = {
   width: 1200,
@@ -12,8 +12,8 @@ export const size = {
 export const contentType = "image/png";
 
 /**
- * Social preview card (Open Graph / Twitter). Keeps palette aligned with app icon:
- * navy field, sky accent — no missing static /og-image.png.
+ * Social preview card (Open Graph / Twitter). Locked emblem B: gold crest on
+ * charcoal — no missing static /og-image.png.
  */
 export default function OpenGraphImage() {
   return new ImageResponse(
@@ -25,7 +25,7 @@ export default function OpenGraphImage() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#0F172A",
+        backgroundColor: "#1A1A1A",
         fontFamily: "ui-sans-serif, system-ui, sans-serif",
       }}
     >
@@ -41,17 +41,25 @@ export default function OpenGraphImage() {
             width: 120,
             height: 120,
             borderRadius: 28,
-            backgroundColor: "#0F172A",
-            border: "4px solid #60A5FA",
+            backgroundColor: "#1A1A1A",
+            border: "4px solid #DDB844",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            color: "#60A5FA",
-            fontSize: 72,
-            fontWeight: 800,
           }}
         >
-          F
+          <svg
+            width="88"
+            height="88"
+            viewBox="0 0 64 64"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              fill="#DDB844"
+              d="M22.2 32.4c.2-8.2 7.8-15.2 18.2-14.2 6.6.7 12.4 5.6 13.8 12.2 1 4.8-.6 9.2-4.8 12.2-2.2 1.6-4.8 2.5-7.6 2.6l-1.2 7.4c-.4 2.2 1.2 4.2 3.4 4.4l.6-4.2c2.8.1 5.6-.6 8-2.2 5.8-4.2 8.2-11.2 6.8-18.2C57.2 19.4 48.2 12.2 38.2 11.2 24.4 9.8 14.8 19.4 14.6 31.4c-.1 5.4 2.6 10.2 7.2 13.2l2.2-3.4c-2.8-2.2-4.6-5.6-4.4-8.8z"
+            />
+          </svg>
         </div>
         <div
           style={{
@@ -64,22 +72,22 @@ export default function OpenGraphImage() {
             style={{
               fontSize: 96,
               fontWeight: 800,
-              color: "#60A5FA",
+              color: "#DDB844",
               letterSpacing: "-0.04em",
             }}
           >
-            frapp
+            Signet
           </span>
           <span
             style={{
               fontSize: 28,
               fontWeight: 600,
-              color: "#94A3B8",
+              color: "#A89B7A",
               letterSpacing: "0.08em",
               textTransform: "uppercase",
             }}
           >
-            The operating system for Greek life
+            Ask your chapter anything.
           </span>
         </div>
       </div>

@@ -1,8 +1,8 @@
-> **FROZEN (pre-Signet).** This surface ships the legacy Frapp landing at frapp.live until its Signet pass. Do not implement visual changes from this document and do not file spec-vs-implementation drift issues against it.
+> **VISUAL FREEZE (bone/bronze/Geist).** Product copy, JSON-LD, lockup word, and the mark are **Signet**. Do not implement Figtree / dark-first from this document until the landing visual reskin. Do not file spec-vs-implementation drift against the leftover bone/bronze tokens.
 
 # UI/UX Specification: Landing Page (frapp.live)
 
-> Frapp's storefront as built. It leads with the ops-consolidation message — *replace Discord, OmegaFi, and Life360 with one platform* — and treats chat as one capability among six, not as the headline. This is the single surviving spec page for the surface: section inventory, route facts, and the OG-image gotcha. Visual truth for the future reskin lives in [`../design-system/`](../design-system/README.md).
+> Signet's storefront as built. It leads with the ops-consolidation message — *replace Discord, OmegaFi, and Life360 with one platform* — and treats chat as one capability among six, not as the headline. This is the single surviving spec page for the surface: section inventory, route facts, and the OG-image gotcha. Visual truth for the future reskin lives in [`../design-system/`](../design-system/README.md).
 
 ## Section inventory (live page, scroll order)
 
@@ -60,4 +60,4 @@ Still open: **the page renders no free tier, and its "no feature gating" claim c
 
 ## Future reskin
 
-The landing's Signet visual system is specified in [`../design-system/`](../design-system/README.md). Until its Signet pass lands, the implementation intentionally ships the legacy Frapp landing and this document stays visual-change frozen.
+The landing's Signet visual system is specified in [`../design-system/`](../design-system/README.md). Copy and the locked crest are Signet; Geist + bone/bronze tokens stay until the visual reskin, so this document stays visual-change frozen for tokens and typeface.

@@ -478,7 +478,7 @@ a lens-shaped wedge across the break that makes the two halves read as links.
   its label already names the intent, which is how the points adjustment
   dialog resolved the same question (§6.2.3); and the tutorial's welcome slide
   takes the **mark**, because the slide is literally a welcome to Signet.
-- **`SignetMark`.** The gold "S" tile
+- **`SignetMark`.** Locked emblem B (gold crest on charcoal)
   ([`components/auth/signet-mark.tsx`](../../../apps/web/components/auth/signet-mark.tsx))
   is a brand composition governed by [`../brand-identity.md`](../brand-identity.md)
   §2, not an icon drawn to §1's duotone recipe — the same carve-out §6.2.2

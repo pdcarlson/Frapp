@@ -53,9 +53,10 @@ describe("the mark", () => {
     // and pre-auth renders outside it — so the two look identical today and
     // would diverge the moment anything mounted the bridge higher.
     const { container } = render(<SignInPage />);
-    const mark = container.querySelector(".bg-gold-house");
+    const mark = container.querySelector(".signet-mark");
     expect(mark).not.toBeNull();
-    expect(mark!.className).toMatch(/\btext-gold-on-house\b/);
+    expect(mark!.innerHTML).toContain("#1A1A1A");
+    expect(mark!.innerHTML).toContain("#DDB844");
     expect(mark!.getAttribute("aria-hidden")).toBe("true");
     expect(mark!.className).not.toMatch(/\bbg-primary\b/);
   });
@@ -73,7 +74,7 @@ describe("the mark", () => {
   it("is omitted on a screen reached from the entry screen", () => {
     // s02 draws no mark. It belongs to the screen a member arrives on.
     const { container } = render(<SignUpPage />);
-    expect(container.querySelector(".bg-gold-house")).toBeNull();
+    expect(container.querySelector(".signet-mark")).toBeNull();
   });
 });
 

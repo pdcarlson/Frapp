@@ -1,20 +1,23 @@
 # @repo/brand-assets
 
-Canonical **Frapp** marketing marks (not chapter logos).
+Canonical **Signet** marketing marks (not chapter logos). Filenames stay `frapp-*`.
 
 ## Contents
 
-| Asset                | Path                      |
-| -------------------- | ------------------------- |
-| App / tab icon       | `assets/app-icon.svg`     |
-| Lockup (mark + word) | `assets/frapp-lockup.svg` |
+| Asset                | Path                              |
+| -------------------- | --------------------------------- |
+| App / tab icon       | `assets/app-icon.svg`             |
+| Glyph (no tile)      | `assets/app-icon-glyph.svg`        |
+| Lockup (mark + word) | `assets/frapp-lockup.svg`         |
+| Master raster        | `assets/signet-emblem-B-locked.png` |
+| Apple touch icon     | `assets/apple-icon.png`           |
 
 ## Consumers
 
-- **Next.js:** Run `node scripts/sync-brand-assets.mjs` from the monorepo root so `app/icon.svg` is updated in `landing` and `web`.
+- **Next.js:** Run `npm run rasterize:brand-assets` then `npm run sync:brand-assets` from the monorepo root so `app/icon.svg` and `apple-icon.png` update in `landing` and `web`.
 - **Landing header:** Uses `apps/landing/components/frapp-lockup.tsx` (inline SVG with `currentColor` for the word); keep in sync when changing `frapp-lockup.svg`.
 - **Email / PDF:** Embed `frapp-lockup.svg` or export PNG from the same source.
-- **Expo:** Regenerate raster icons under `apps/mobile/assets/images/` (see `spec/ui/assets.md`).
+- **Expo:** Rasters under `apps/mobile/assets/images/` come from `npm run rasterize:brand-assets` (see `spec/ui/assets.md`).
 
 ## Monorepo tasks
 

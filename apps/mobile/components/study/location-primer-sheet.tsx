@@ -83,7 +83,7 @@ export const LocationPrimerSheet = forwardRef<
           <>
             <Text style={styles.blocked}>
               Location is turned off for Signet, and iOS won&apos;t ask again.
-              Turn it on in Settings → Frapp → Location, then start your session.
+              Turn it on in Settings → Signet → Location, then start your session.
             </Text>
             <Pressable
               accessibilityRole="button"
