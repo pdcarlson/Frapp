@@ -12,9 +12,10 @@
  *
  * Payload hygiene (`assertContentFreeProperties`, `AnalyticsEvent`) is what
  * clients share from this file. The HMAC is implemented in pure TypeScript so
- * the API (and its Jest suite) can produce byte-identical RFC 4231
- * HMAC-SHA-256 output without `node:crypto` / `SubtleCrypto` platform
- * branching.
+ * the API can produce byte-identical output without `node:crypto` /
+ * `SubtleCrypto` platform branching. Verified against the RFC 4231
+ * HMAC-SHA-256 test vectors in `analytics.spec` (run in the API Jest suite,
+ * which already imports `@repo/validation`).
  */
 
 // ── SHA-256 (FIPS 180-4) over bytes ──────────────────────────────────────────
