@@ -31,25 +31,32 @@ describe("dayDelta", () => {
     expect(dayDelta(at(2026, 12, 31, 9), at(2027, 1, 1, 9))).toBe(1);
   });
 
-  it("survives the spring-forward DST gap", () => {
-    // 2026-03-08 is the US spring-forward date: that local day is 23 hours
-    // long, so raw-millisecond division would round to the wrong integer.
-    // Reading local Y/M/D through `Date.UTC` keeps it at exactly one day.
+  // The two DST cases below pin stability across a transition, not a
+  // difference from elapsed-time arithmetic: `Math.round` absorbs a ±1h offset
+  // at equal hour-of-day, so a naive `(to - from) / MS_PER_DAY` answers these
+  // correctly too. The case that separates the two readings is the first test
+  // above. These guard a future rewrite that counts local midnights or steps
+  // days by hand, both of which go wrong on a 23- or 25-hour day.
+
+  it("is stable across the spring-forward DST gap", () => {
+    // 2026-03-08 is the US spring-forward date — that local day is 23h long.
     expect(dayDelta(at(2026, 3, 7, 12), at(2026, 3, 8, 12))).toBe(1);
     expect(dayDelta(at(2026, 3, 7, 12), at(2026, 3, 9, 12))).toBe(2);
   });
 
-  it("survives the autumn fall-back DST overlap", () => {
-    // 2026-11-01 is 25 hours long in the same zone.
+  it("is stable across the autumn fall-back DST overlap", () => {
+    // 2026-11-01 is 25h long in the same zone.
     expect(dayDelta(at(2026, 11, 1, 12), at(2026, 11, 2, 12))).toBe(1);
   });
 
   it("reads the local calendar, not the UTC date", () => {
-    // 09:00Z and 20:00Z on the same UTC day are both the 17th locally too in
-    // this zone (02:00 and 13:00), so the split must be zero — the property
-    // every TODAY/EARLIER and "due tomorrow" caller depends on.
-    const morning = new Date("2026-08-17T09:00:00.000Z");
-    const evening = new Date("2026-08-17T20:00:00.000Z");
-    expect(dayDelta(morning, evening)).toBe(0);
+    // Both instants land on 2026-08-17 in UTC, so a UTC-date reading answers 0.
+    // In this zone they are the 16th at 19:00 and the 17th at 13:00, so the
+    // local reading answers 1. This assertion is the one that fails if the
+    // body is ever swapped to `getUTC*` — the property every TODAY/EARLIER and
+    // "due tomorrow" caller depends on.
+    const before = new Date("2026-08-17T02:00:00.000Z");
+    const after = new Date("2026-08-17T20:00:00.000Z");
+    expect(dayDelta(before, after)).toBe(1);
   });
 });

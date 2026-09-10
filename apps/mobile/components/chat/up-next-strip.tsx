@@ -143,7 +143,7 @@ export function formatEventTime(startTime: string, now: Date): string {
  *
  * `tasks.due_date` is a bare `YYYY-MM-DD`, which `new Date()` reads as UTC
  * **midnight** — the previous local day for everyone west of Greenwich. Fed to
- * the local-calendar `dayDelta` below, that made every due date land one day
+ * the local-calendar `dayDelta`, that made every due date land one day
  * early: a task due Saturday painted `destructive` on Thursday for every US
  * user. UTC noon is the fix `lib/more/service-hours.ts` already documents.
  *
