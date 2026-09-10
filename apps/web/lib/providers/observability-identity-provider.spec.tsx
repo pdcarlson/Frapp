@@ -12,6 +12,7 @@ const UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
 const EMAIL = "treasurer@chapter.example.edu";
 
 const state = vi.hoisted(() => ({
+  authUserId: "web-user-a" as string | null,
   chapterId: "chap-1" as string | null,
   get: vi.fn(),
   dsn: "https://examplepublickey@o0.ingest.sentry.io/0" as string | undefined,
@@ -23,6 +24,10 @@ const setUser = vi.hoisted(() => vi.fn());
 vi.mock("@repo/hooks", () => ({
   useFrappClient: () => ({ GET: state.get }),
   useActiveChapterId: () => state.chapterId,
+}));
+
+vi.mock("@/lib/auth/use-auth-user-id", () => ({
+  useAuthUserId: () => state.authUserId,
 }));
 
 vi.mock("@/lib/sentry/options", () => ({
@@ -56,6 +61,7 @@ function renderProvider() {
 
 describe("ObservabilityIdentityProvider", () => {
   beforeEach(() => {
+    state.authUserId = "web-user-a";
     state.chapterId = "chap-1";
     state.dsn = "https://examplepublickey@o0.ingest.sentry.io/0";
     state.posthog = true;

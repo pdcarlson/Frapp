@@ -14,6 +14,7 @@ const RAW_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
 
 const session = vi.hoisted(() => ({
   auth: "authenticated" as "authenticated" | "unauthenticated" | "hydrating",
+  userId: "mobile-user-a" as string | null,
   chapter: "mobile-chap" as string | null,
   getIdentity: vi.fn(),
   sentryDsn: "https://examplepublickey@o0.ingest.sentry.io/0" as
@@ -30,7 +31,7 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 vi.mock("@/lib/auth-session", () => ({
-  useAuthSession: () => ({ status: session.auth }),
+  useAuthSession: () => ({ status: session.auth, userId: session.userId }),
 }));
 
 vi.mock("@/lib/sentry/options", () => ({
@@ -49,12 +50,14 @@ const { ObservabilityIdentityProvider } = await import(
   "./observability-identity-provider"
 );
 
-function mountIdentityTree() {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+function mountIdentityTree(client?: QueryClient) {
+  const queryClient =
+    client ??
+    new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
   return render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={queryClient}>
       <ObservabilityIdentityProvider>
         <span>child</span>
       </ObservabilityIdentityProvider>
@@ -65,6 +68,7 @@ function mountIdentityTree() {
 describe("mobile ObservabilityIdentityProvider", () => {
   beforeEach(() => {
     session.chapter = "mobile-chap";
+    session.userId = "mobile-user-a";
     session.auth = "authenticated";
     session.sentryDsn = "https://examplepublickey@o0.ingest.sentry.io/0";
     session.posthogReady = true;
@@ -191,5 +195,44 @@ describe("mobile ObservabilityIdentityProvider", () => {
         ]),
       );
     });
+  });
+
+  it("does not keep the previous member's hex after a same-chapter account swap", async () => {
+    const otherHex = "e".repeat(64);
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    session.getIdentity.mockImplementation(async () => ({
+      data: {
+        enabled: true,
+        distinct_id: session.userId === "mobile-user-b" ? otherHex : DISTINCT,
+        chapter_group_id: CHAPTER_GROUP,
+      },
+      error: undefined,
+    }));
+
+    const first = mountIdentityTree(queryClient);
+    await waitFor(() => {
+      expect(sentrySetUser).toHaveBeenCalledWith({ id: DISTINCT });
+    });
+    first.unmount();
+
+    session.userId = "mobile-user-b";
+    sentrySetUser.mockClear();
+    mountIdentityTree(queryClient);
+
+    await waitFor(() => {
+      expect(sentrySetUser).toHaveBeenCalledWith({ id: otherHex });
+    });
+    expect(session.getIdentity).toHaveBeenCalledTimes(2);
+    expect(memory.calls).toEqual(
+      expect.arrayContaining([
+        { type: "identify", distinctId: DISTINCT },
+        { type: "reset" },
+        { type: "identify", distinctId: otherHex },
+      ]),
+    );
   });
 });

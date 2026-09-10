@@ -39,11 +39,19 @@ export async function fetchAnalyticsIdentity(
   return data ?? null;
 }
 
-/** TanStack Query key for `GET /v1/analytics/identity` (chapter switches refetch). */
+/**
+ * TanStack Query key for `GET /v1/analytics/identity`.
+ *
+ * Subject is the Supabase auth uid, not `users.id` / `useViewerUserId`.
+ * `["user","me"]` is not account-scoped, so a magic-link swap can keep the
+ * previous Frapp user row while the JWT has already changed. Chapter is
+ * second so a switch still refetches `chapter_group_id`.
+ */
 export function observabilityIdentityQueryKey(
+  subjectId: string | null | undefined,
   chapterId: string | null | undefined,
-): readonly ["observability-identity", string] {
-  return ["observability-identity", chapterId ?? "none"];
+): readonly ["observability-identity", string, string] {
+  return ["observability-identity", subjectId ?? "none", chapterId ?? "none"];
 }
 
 /**
@@ -51,12 +59,13 @@ export function observabilityIdentityQueryKey(
  * `enabled` predicate (web: vendor DSNs; mobile: authenticated + vendors).
  */
 export function observabilityIdentityQueryOptions(
+  subjectId: string | null | undefined,
   chapterId: string | null | undefined,
   get: () => Promise<{ data?: AnalyticsIdentity | null; error?: unknown }>,
   enabled: boolean,
 ) {
   return {
-    queryKey: observabilityIdentityQueryKey(chapterId),
+    queryKey: observabilityIdentityQueryKey(subjectId, chapterId),
     queryFn: () => fetchAnalyticsIdentity(get),
     enabled,
     staleTime: Infinity,

@@ -15,6 +15,10 @@ import { isPostHogConfigured } from "@/lib/posthog/config";
  * this provider also sits above the auth screens, so the request waits until
  * `useAuthSession` is `authenticated`.
  *
+ * The identity query is keyed on the auth uid plus chapter. A magic-link
+ * swap stays `authenticated` and can keep the same chapter, so chapter-only
+ * keys would keep the previous member's hex (`staleTime: Infinity`).
+ *
  * Salt stays API-only. Opt-out still identifies (opt-in needs no refetch) and
  * still sets Sentry `user.id`. `enabled: false` means analytics is unconfigured.
  */
@@ -30,6 +34,7 @@ export function ObservabilityIdentityProvider({
   const canFetch = session.status === "authenticated" && vendorsOn;
   const query = useQuery(
     observabilityIdentityQueryOptions(
+      session.userId,
       chapterId,
       () => client.GET("/v1/analytics/identity"),
       canFetch,

@@ -61,25 +61,32 @@ describe("fetchAnalyticsIdentity", () => {
 });
 
 describe("observabilityIdentityQueryKey / options", () => {
-  it("keys the query on the chapter, or none", () => {
-    expect(observabilityIdentityQueryKey("chap-1")).toEqual([
+  it("keys the query on auth subject then chapter, or none", () => {
+    expect(observabilityIdentityQueryKey("user-1", "chap-1")).toEqual([
       "observability-identity",
+      "user-1",
       "chap-1",
     ]);
-    expect(observabilityIdentityQueryKey(null)).toEqual([
+    expect(observabilityIdentityQueryKey(null, null)).toEqual([
       "observability-identity",
+      "none",
       "none",
     ]);
   });
 
   it("disables the query when the app says so", () => {
     const options = observabilityIdentityQueryOptions(
+      "user-1",
       "chap-1",
       async () => ({}),
       false,
     );
     expect(options.enabled).toBe(false);
     expect(options.retry).toBe(false);
-    expect(options.queryKey).toEqual(["observability-identity", "chap-1"]);
+    expect(options.queryKey).toEqual([
+      "observability-identity",
+      "user-1",
+      "chap-1",
+    ]);
   });
 });

@@ -128,12 +128,19 @@ describe("identity, groups, logout, opt-out", () => {
     expect(lastUser).toBeNull();
   });
 
-  it("does not apply identity while the query is still loading", () => {
+  it("clears a prior identify while the next subject's query is loading", () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    applyObservabilityIdentity(
+      { enabled: true, distinct_id: HEX, chapter_group_id: null },
+      () => undefined,
+    );
     const setUser = vi.fn();
     applyFetchedObservabilityIdentity(true, undefined, setUser);
-    expect(setUser).not.toHaveBeenCalled();
+    expect(setUser).toHaveBeenCalledWith(null);
+    expect(memory.calls.at(-1)).toEqual({ type: "reset" });
     applyFetchedObservabilityIdentity(false, null, setUser);
-    expect(setUser).not.toHaveBeenCalled();
+    expect(setUser).toHaveBeenCalledTimes(1);
   });
 });
 

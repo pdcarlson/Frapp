@@ -172,14 +172,22 @@ export function applyObservabilityIdentity(
 
 /**
  * Apply only after the identity query has settled. `undefined` is still
- * loading; `null` is a fetched empty payload and clears identify / Sentry.
+ * loading: vendor identify / Sentry `user.id` are cleared so a same-device
+ * account swap cannot keep the previous member's hex until the next fetch
+ * (or forever, if that fetch fails with `retry: false`). `null` is a fetched
+ * empty payload and also clears.
  */
 export function applyFetchedObservabilityIdentity(
   fetchEnabled: boolean,
   identity: AnalyticsIdentity | null | undefined,
   setSentryUser: (user: { id: string } | null) => void,
 ): void {
-  if (!fetchEnabled || identity === undefined) return;
+  if (!fetchEnabled) return;
+  if (identity === undefined) {
+    resetPostHog();
+    setSentryUser(null);
+    return;
+  }
   applyObservabilityIdentity(identity, setSentryUser);
 }
 
