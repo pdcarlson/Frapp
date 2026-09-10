@@ -73,6 +73,11 @@ export {
 
 export { pathOnlyAnalyticsPath } from "./analytics-path";
 
+export {
+  FIRST_PARTY_API_ORIGINS,
+  firstPartyTracePropagationTargets,
+} from "./trace-targets";
+
 export { createNoPseudonymScrubHooks } from "./sentry-scrub-hooks";
 
 export { headerValue, httpStatusClass } from "./sentry-http";

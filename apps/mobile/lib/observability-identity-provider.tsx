@@ -23,11 +23,11 @@ export function ObservabilityIdentityProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const { status } = useAuthSession();
+  const session = useAuthSession();
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   const vendorsOn = Boolean(mobileSentryDsn()) || isPostHogConfigured();
-  const canFetch = status === "authenticated" && vendorsOn;
+  const canFetch = session.status === "authenticated" && vendorsOn;
   const query = useQuery(
     observabilityIdentityQueryOptions(
       chapterId,

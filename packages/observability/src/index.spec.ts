@@ -17,6 +17,8 @@ import {
   pickSentryErrorCorrelatedProperties,
   stripAuthority,
   shouldEnablePostHogReplay,
+  FIRST_PARTY_API_ORIGINS,
+  firstPartyTracePropagationTargets,
 } from "./index";
 import * as barrel from "./index";
 import * as anonymousNext from "../next";
@@ -45,6 +47,12 @@ describe("public API", () => {
     ]);
     expect(typeof pickSentryErrorCorrelatedProperties).toBe("function");
     expect(typeof pathOnlyAnalyticsPath).toBe("function");
+    expect(typeof firstPartyTracePropagationTargets).toBe("function");
+    expect(FIRST_PARTY_API_ORIGINS).toEqual([
+      "http://localhost:3001",
+      "https://api-staging.frapp.live",
+      "https://api.frapp.live",
+    ]);
     expect(DEFAULT_POSTHOG_LOGS_SAMPLE_RATE).toBe(1);
     expect(DEFAULT_TRACES_SAMPLE_RATE).toBe(0.1);
   });

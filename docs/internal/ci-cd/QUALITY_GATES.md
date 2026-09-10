@@ -273,11 +273,12 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 4.26%** duplicated lines (1,001 clones, 12,144 duplicated lines, across
-  1,294 files analysed) — measured 2026-09-10 with `npm run check:duplication` after extracting
-  identity-query / named-event helpers so the #2083 merge did not breach the ratchet.
-  The raw ratio is 12,144 / 284,825 = 4.264%, under the 4.3% threshold.
-- **Threshold: 4.3%**, just above it. Not ratcheted down: headroom is a few dozen lines.
+- **Current measurement: 4.16%** duplicated lines (977 clones, 11,833 duplicated lines, across
+  1,294 files analysed) — measured 2026-09-10 with `npm run check:duplication` after combining
+  the identity-query / named-event extract with first-party Sentry trace origins and the
+  shared `/task` `/event` `/hours` `card_posted` cases. The raw ratio is
+  11,833 / 284,707 = 4.156%, under the 4.3% threshold.
+- **Threshold: 4.3%**, just above it. Not ratcheted down.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
   make a red run green. Set the new value from a *measured* run, never from a guess, and leave
   enough headroom that ordinary drift does not redden it.

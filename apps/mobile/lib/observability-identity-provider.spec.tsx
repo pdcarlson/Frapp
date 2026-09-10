@@ -9,6 +9,8 @@ import {
 
 const DISTINCT = "c".repeat(64);
 const CHAPTER_GROUP = "d".repeat(64);
+const RAW_EMAIL = "treasurer@chapter.example.edu";
+const RAW_UUID = "3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b";
 
 const session = vi.hoisted(() => ({
   auth: "authenticated" as "authenticated" | "unauthenticated" | "hydrating",
@@ -108,10 +110,86 @@ describe("mobile ObservabilityIdentityProvider", () => {
     expect(sentrySetUser).not.toHaveBeenCalled();
   });
 
+  it("does not call GET /v1/analytics/identity while hydrating", () => {
+    session.auth = "hydrating";
+    mountIdentityTree();
+    expect(session.getIdentity).not.toHaveBeenCalled();
+  });
+
   it("does not call GET /v1/analytics/identity when both vendors are dark", () => {
     session.sentryDsn = undefined;
     session.posthogReady = false;
     mountIdentityTree();
     expect(session.getIdentity).not.toHaveBeenCalled();
+  });
+
+  it("still fetches when only the Expo Sentry DSN is set", async () => {
+    session.posthogReady = false;
+    session.getIdentity.mockResolvedValue({
+      data: {
+        enabled: true,
+        distinct_id: DISTINCT,
+        chapter_group_id: null,
+      },
+      error: undefined,
+    });
+    mountIdentityTree();
+    await waitFor(() => {
+      expect(session.getIdentity).toHaveBeenCalledWith("/v1/analytics/identity");
+    });
+  });
+
+  it("clears Sentry user and skips identify for a raw email or UUID", async () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    session.getIdentity.mockResolvedValue({
+      data: {
+        enabled: true,
+        distinct_id: RAW_EMAIL,
+        chapter_group_id: RAW_UUID,
+      },
+      error: undefined,
+    });
+    mountIdentityTree();
+    await waitFor(() => {
+      expect(sentrySetUser).toHaveBeenCalledWith(null);
+    });
+    expect(JSON.stringify(memory.calls)).not.toContain(RAW_EMAIL);
+    expect(JSON.stringify(memory.calls)).not.toContain(RAW_UUID);
+    expect(memory.calls.some((call) => call.type === "identify")).toBe(false);
+  });
+
+  it("loads a new chapter_group_id after the active chapter changes", async () => {
+    const memory = createMemoryPostHogAdapter();
+    bindPostHogAdapterForTests(memory.adapter);
+    session.getIdentity.mockImplementation(async () => ({
+      data: {
+        enabled: true,
+        distinct_id: DISTINCT,
+        chapter_group_id:
+          session.chapter === "chap-two" ? CHAPTER_GROUP : DISTINCT,
+      },
+      error: undefined,
+    }));
+
+    const first = mountIdentityTree();
+    await waitFor(() => {
+      expect(memory.calls).toEqual(
+        expect.arrayContaining([
+          { type: "group", groupType: "chapter", groupKey: DISTINCT },
+        ]),
+      );
+    });
+    first.unmount();
+
+    session.chapter = "chap-two";
+    mountIdentityTree();
+    await waitFor(() => {
+      expect(memory.calls).toEqual(
+        expect.arrayContaining([
+          { type: "group", groupType: "chapter", groupKey: CHAPTER_GROUP },
+        ]),
+      );
+    });
   });
 });
