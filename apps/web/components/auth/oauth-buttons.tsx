@@ -1,9 +1,9 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
 import { Button } from "@/components/ui/button";
-import type { OAuthProvider } from "@/lib/auth/oauth";
-import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth/oauth";
+import { OAUTH_MEMBERSHIP_HINT, type OAuthProvider } from "@/lib/auth/oauth";
 
 const LABELS: Record<OAuthProvider, string> = {
   apple: "Continue with Apple",
@@ -16,8 +16,8 @@ const LABELS: Record<OAuthProvider, string> = {
  * Canvas s01 draws one second method after the password primary. App Store
  * Guideline 4.8 requires Apple once Google is offered, so this stack is two
  * Secondary buttons of the same size, Apple first (the drawing's order), then
- * Google. Design polishes brand marks later; the slot geometry is the product
- * requirement now.
+ * Google. Each carries the official brand mark at 20px (`[&_svg]:size-5`)
+ * beside the label — trademarks, not Signet duotone.
  */
 export function OAuthButtons({
   onSelect,
@@ -37,12 +37,18 @@ export function OAuthButtons({
             key={provider}
             type="button"
             variant="secondary"
-            className="w-full"
+            className="w-full [&_svg]:size-5"
             disabled={disabled || pending !== null}
             aria-busy={busy}
             onClick={() => onSelect(provider)}
           >
-            {busy ? <Loader2 className="animate-spin" /> : null}
+            {busy ? (
+              <Loader2 className="animate-spin" />
+            ) : provider === "apple" ? (
+              <AppleMark />
+            ) : (
+              <GoogleMark />
+            )}
             {LABELS[provider]}
           </Button>
         );

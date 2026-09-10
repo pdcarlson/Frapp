@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { AuthMethod, useAuthSession } from "@/lib/auth-session";
 import {
@@ -7,6 +7,7 @@ import {
   OAUTH_MEMBERSHIP_HINT,
   type OAuthProvider,
 } from "@/lib/auth-providers";
+import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -127,6 +128,11 @@ export default function SignIn() {
             submitting ? styles.primaryButtonDisabled : null,
           ]}
         >
+          {oauthPending === "apple" ? (
+            <ActivityIndicator color={tokens.color.text.foreground} size="small" />
+          ) : (
+            <AppleMark color={tokens.color.text.foreground} />
+          )}
           <Text style={styles.oauthButtonText}>
             {oauthPending === "apple" ? "Signing in..." : "Continue with Apple"}
           </Text>
@@ -143,6 +149,11 @@ export default function SignIn() {
             submitting ? styles.primaryButtonDisabled : null,
           ]}
         >
+          {oauthPending === "google" ? (
+            <ActivityIndicator color={tokens.color.text.foreground} size="small" />
+          ) : (
+            <GoogleMark />
+          )}
           <Text style={styles.oauthButtonText}>
             {oauthPending === "google" ? "Signing in..." : "Continue with Google"}
           </Text>
@@ -340,8 +351,10 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.surface1,
       paddingVertical: tokens.spacing.md,
       minHeight: tokens.touch.button,
+      flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
+      gap: tokens.spacing.sm,
     },
     oauthButtonText: {
       color: tokens.color.text.foreground,
