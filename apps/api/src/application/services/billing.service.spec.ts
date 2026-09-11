@@ -619,6 +619,134 @@ describe('BillingService', () => {
         }),
       ).rejects.toThrow(ServiceUnavailableException);
     });
+
+    it('preserves the Stripe error as cause on a generic checkout 503 (FRAPP-API-4)', async () => {
+      // The HTTP body stays the generic 503; Sentry's LinkedErrors follows
+      // `Error.cause`. `extra` on captureException would be dropped by
+      // beforeSend, so this is the channel that actually arrives.
+      mockChapterRepo.findById.mockResolvedValue(baseChapter);
+      const stripeError = Object.assign(
+        new Error("No such price: 'price_xyz'"),
+        {
+          name: 'StripeInvalidRequestError',
+          code: 'resource_missing',
+          param: 'line_items[0].price',
+        },
+      );
+      mockBillingProvider.createCheckoutSession.mockRejectedValue(stripeError);
+
+      const thrown = await service
+        .createCheckoutSession({
+          chapterId: 'ch-1',
+          customerEmail: 'admin@example.com',
+          successUrl: 'http://localhost:3000/success',
+          cancelUrl: 'http://localhost:3000/cancel',
+        })
+        .catch((error: unknown) => error);
+
+      expect(thrown).toBeInstanceOf(ServiceUnavailableException);
+      expect(thrown).toMatchObject({ cause: stripeError });
+      expect(mockBillingProvider.createCustomer).not.toHaveBeenCalled();
+      expect(mockBillingProvider.createCheckoutSession).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('replaces an unknown stored customer and retries checkout once', async () => {
+      mockChapterRepo.findById.mockResolvedValue(baseChapter);
+      const missingCustomer = Object.assign(
+        new Error("No such customer: 'cus_123'"),
+        {
+          name: 'StripeInvalidRequestError',
+          code: 'resource_missing',
+          param: 'customer',
+        },
+      );
+      mockBillingProvider.createCheckoutSession
+        .mockRejectedValueOnce(missingCustomer)
+        .mockResolvedValueOnce('https://checkout.stripe.com/healed');
+      mockBillingProvider.createCustomer.mockResolvedValue('cus_new');
+      mockChapterRepo.update.mockResolvedValue({
+        ...baseChapter,
+        stripe_customer_id: 'cus_new',
+      });
+
+      const result = await service.createCheckoutSession({
+        chapterId: 'ch-1',
+        customerEmail: 'admin@example.com',
+        successUrl: 'http://localhost:3000/success',
+        cancelUrl: 'http://localhost:3000/cancel',
+      });
+
+      expect(result).toBe('https://checkout.stripe.com/healed');
+      expect(mockChapterRepo.update).toHaveBeenNthCalledWith(1, 'ch-1', {
+        stripe_customer_id: null,
+      });
+      expect(mockBillingProvider.createCustomer).toHaveBeenCalledTimes(1);
+      expect(mockBillingProvider.createCustomer).toHaveBeenCalledWith(
+        'admin@example.com',
+        'Alpha Chapter',
+      );
+      expect(mockChapterRepo.update).toHaveBeenNthCalledWith(2, 'ch-1', {
+        stripe_customer_id: 'cus_new',
+      });
+      expect(mockBillingProvider.createCheckoutSession).toHaveBeenCalledTimes(
+        2,
+      );
+      expect(
+        mockBillingProvider.createCheckoutSession,
+      ).toHaveBeenLastCalledWith(
+        expect.objectContaining({ customerId: 'cus_new' }),
+      );
+      expect(mockActivation.record).toHaveBeenCalledWith(
+        'ch-1',
+        'activation-checkout-started',
+      );
+    });
+
+    it('does not loop when the replacement customer is also unknown', async () => {
+      mockChapterRepo.findById.mockResolvedValue(baseChapter);
+      const missingStored = Object.assign(
+        new Error("No such customer: 'cus_123'"),
+        {
+          name: 'StripeInvalidRequestError',
+          code: 'resource_missing',
+          param: 'customer',
+        },
+      );
+      const missingReplacement = Object.assign(
+        new Error("No such customer: 'cus_new'"),
+        {
+          name: 'StripeInvalidRequestError',
+          code: 'resource_missing',
+          param: 'customer',
+        },
+      );
+      mockBillingProvider.createCheckoutSession
+        .mockRejectedValueOnce(missingStored)
+        .mockRejectedValueOnce(missingReplacement);
+      mockBillingProvider.createCustomer.mockResolvedValue('cus_new');
+      mockChapterRepo.update.mockResolvedValue({
+        ...baseChapter,
+        stripe_customer_id: 'cus_new',
+      });
+
+      const thrown = await service
+        .createCheckoutSession({
+          chapterId: 'ch-1',
+          customerEmail: 'admin@example.com',
+          successUrl: 'http://localhost:3000/success',
+          cancelUrl: 'http://localhost:3000/cancel',
+        })
+        .catch((error: unknown) => error);
+
+      expect(thrown).toBeInstanceOf(ServiceUnavailableException);
+      expect(thrown).toMatchObject({ cause: missingReplacement });
+      expect(mockBillingProvider.createCustomer).toHaveBeenCalledTimes(1);
+      expect(mockBillingProvider.createCheckoutSession).toHaveBeenCalledTimes(
+        2,
+      );
+    });
   });
 
   it('should throw ServiceUnavailableException with non-Error object on Stripe failure', async () => {
