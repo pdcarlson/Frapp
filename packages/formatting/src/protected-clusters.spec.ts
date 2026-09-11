@@ -14,6 +14,7 @@ import {
   formatLocaleDateTime,
 } from "./locale";
 import {
+  formatBareDate,
   parseBareDateLocalMidnight,
   parseBareDateUtcNoon,
 } from "./bare-date";
@@ -79,6 +80,40 @@ describe("protected clusters stay distinct from the generic formatter", () => {
       expect(parseBareDateUtcNoon(BARE)!.getTime()).not.toBe(
         parseBareDateLocalMidnight(BARE)!.getTime(),
       );
+    });
+
+    /**
+     * The cluster's formatter, and the assertion that fails on the defect
+     * #1641 fixed.
+     *
+     * Scope, stated exactly: #1641 moved five `apps/web` call sites onto this
+     * package, but only the ones reading a **bare `date`** column were
+     * rendering the wrong day. The rest read `timestamptz`, where
+     * `new Date(value)` was already correct and the change was a dedup. Do not
+     * read this as "five wrong-day renders" — routing a `timestamptz` through
+     * `formatBareDate` would be its own bug, discarding the time of day.
+     */
+    it("renders the stored calendar day; the generic formatter renders the day before", () => {
+      // Same string, two different rendered days, west of Greenwich.
+      expect(formatBareDate(BARE)).toBe(
+        parseBareDateUtcNoon(BARE)!.toLocaleDateString(),
+      );
+      expect(formatBareDate(BARE)).not.toBe(formatLocaleDate(BARE));
+      expect(formatLocaleDate(BARE)).toBe(new Date(BARE).toLocaleDateString());
+    });
+
+    it("still formats a full timestamp, so a column that changes shape degrades", () => {
+      const instant = "2026-08-12T18:30:00Z";
+      expect(formatBareDate(instant)).toBe(
+        new Date(instant).toLocaleDateString(),
+      );
+    });
+
+    it("renders the placeholder rather than `Invalid Date`", () => {
+      expect(formatBareDate("not-a-date")).toBe("—");
+      expect(formatBareDate("")).toBe("—");
+      expect(formatBareDate(null)).toBe("—");
+      expect(formatBareDate(undefined)).toBe("—");
     });
   });
 
