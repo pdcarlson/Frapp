@@ -514,8 +514,10 @@ describe("buildVercelProjects (the build phase)", () => {
   it("pulls and builds each project in turn, stashing each output, and uploads nothing", async () => {
     const stash = makeStashFs();
     const order = [];
+    const shas = [];
     const runCommand = async ({ args, env }) => {
       order.push(`${env.VERCEL_PROJECT_ID}:${args[0]}`);
+      shas.push(env.VERCEL_GIT_COMMIT_SHA);
       if (args[0] === "build") stash.dirs.add(vercelDirFor(CWD));
       return { code: 0, stdout: "", stderr: "" };
     };
@@ -523,6 +525,7 @@ describe("buildVercelProjects (the build phase)", () => {
     const outcome = await buildVercelProjects({
       apiKey: API_KEY,
       projects,
+      sha: SHA,
       target: VERCEL_TARGET_PRODUCTION,
       teamId: TEAM_ID,
       cwd: CWD,
@@ -535,6 +538,10 @@ describe("buildVercelProjects (the build phase)", () => {
     assert.equal(outcome.ok, true);
     assert.deepEqual(order, ["prj_web:pull", "prj_web:build", "prj_landing:pull", "prj_landing:build"]);
     assert.ok(!order.some((step) => step.endsWith(":deploy")), "nothing was uploaded");
+    assert.ok(
+      shas.every((value) => value === SHA),
+      "the named SHA must reach vercel pull/build as VERCEL_GIT_COMMIT_SHA",
+    );
     // One stash per project, and the working tree's .vercel is empty afterwards —
     // the second build could not have overwritten the first.
     assert.ok(stash.dirs.has(stashDirFor(STASH_ROOT, "frapp-web")));

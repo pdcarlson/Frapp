@@ -483,6 +483,11 @@ jobs:
           # obviously-fake values satisfy the boot-time env validation in
           # apps/api/src/config/env.validation.ts without needing any secret,
           # and a 200 proves the process booted and Nest is serving.
+          #
+          # sk_test_ci_not_real is a documented placeholder: StripePriceConsistency
+          # skips prices.retrieve for it. A real-looking sk_test_/sk_live_ would
+          # retrieve STRIPE_PRICE_ID at boot (and /health/ready); mocked billing
+          # tests cannot catch a cross-account Infisical mismatch.
           docker run -d --name frapp-api-ci -p 3001:3001 \
             -e SUPABASE_URL=http://127.0.0.1:1 \
             -e SUPABASE_SERVICE_ROLE_KEY=ci-not-a-real-key \
