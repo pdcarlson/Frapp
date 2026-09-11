@@ -58,6 +58,7 @@ describe("web-only runtime", () => {
     );
     expect(nextConfig).toContain("getAnonymousSentryBuildConfig");
     expect(nextConfig).toContain('project: "frapp-web"');
+    expect(nextConfig).toContain("release: sentryGitSha");
     expect(nextConfig).not.toContain("errorHandler");
     expect(nextConfig).not.toContain("frapp-landing");
   });
