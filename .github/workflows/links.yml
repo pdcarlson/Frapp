@@ -33,9 +33,24 @@ jobs:
       # (support.js, ios-frame.jsx) is deliberately not committed, so they carry
       # references that resolve nowhere. Excluding them as link *sources* keeps
       # that out of the gate; markdown links pointing *into* the directory are
-      # still checked. Today the exclusion is belt-and-braces (lychee's walk
-      # does not extract `<script src>`, and it only reaches these files when
-      # the directory is passed explicitly) — it guards against that changing.
+      # still checked.
+      #
+      # That exclusion was described here as belt-and-braces, on the grounds
+      # that lychee's walk does not extract `<script src>` and only reaches
+      # these files when the directory is passed explicitly. **Half of that is
+      # wrong, and it was measured when web-greenfield/reference/web-framework.dc.html
+      # landed.** `spec` IS passed explicitly, lychee walks into it, and it
+      # extracts `<img src>` even though it does skip `<script src>`: that one
+      # board produced 10 errors from its image references and none from its
+      # `./support.js`. So the exclusion is load-bearing for any export carrying
+      # an image, and it is the extraction rule, not the walk, that spares the
+      # script tags.
+      #
+      # The second exclusion below is scoped to the ONE file rather than its
+      # directory, because that directory also holds a README.md whose relative
+      # links and heading anchors this job is the only coverage for. Excluding
+      # the directory would silently drop 13 checked links.
+      #
       # `.claude` is in the input list because agent-authored markdown carries
       # relative links and heading anchors that nothing else in the repo
       # validates — this job is their only coverage. Added in #1597, where it
@@ -43,9 +58,11 @@ jobs:
       # fix. Measured 2026-09-04: 18 files (17 SKILL.md plus commands/next.md),
       # ~5.0k lines, 214 markdown link targets —
       # `git ls-files '.claude/**/*.md' | xargs wc -l` and the same list piped
-      # through `xargs grep -oE '\]\([^)]*\)' | wc -l`. NOT --exclude-path: that
-      # flag takes exactly one value, which spec/ui/design-system/reference
-      # already occupies.
+      # through `xargs grep -oE '\]\([^)]*\)' | wc -l`. NOT --exclude-path:
+      # that flag excludes, and `.claude` is meant to be checked. (It was
+      # asserted here that --exclude-path "takes exactly one value" — it takes
+      # one value per occurrence and the flag repeats, verified on lychee
+      # 0.24.2. That was never the reason `.claude` is an input.)
       #
       # apps/web/AGENTS.md and .github/pull_request_template.md are named
       # explicitly because the walked roots below (docs, spec, .claude) do not
@@ -58,5 +75,5 @@ jobs:
       - name: Check internal markdown links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference docs spec .claude AGENTS.md README.md CONTRIBUTING.md apps/web/AGENTS.md .github/pull_request_template.md"
+          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference --exclude-path spec/ui/web-greenfield/reference/web-framework.dc.html docs spec .claude AGENTS.md README.md CONTRIBUTING.md apps/web/AGENTS.md .github/pull_request_template.md"
           fail: true
