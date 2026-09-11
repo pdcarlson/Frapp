@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -110,6 +110,22 @@ export function ChannelMenu({
 }: ChannelMenuProps) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
+  const backRef = useRef<HTMLButtonElement | null>(null);
+
+  /*
+    Swapping the view unmounts the row button that was clicked, so focus falls
+    to `<body>` and the next Tab restarts from the top of the document — inside
+    an open popover, which is disorienting rather than merely untidy. Radix does
+    not help here: it manages focus on open and close, not on a content swap
+    this component drives itself. The back control is the right landing place —
+    it is the panel's title and its way out.
+
+    Keyed on `view` rather than run in the click handler because the back button
+    does not exist yet at click time.
+  */
+  useEffect(() => {
+    if (view !== "menu") backRef.current?.focus();
+  }, [view]);
 
   const rows: MenuRow[] = [
     { view: "search", label: "Search messages", Glyph: SearchGlyph },
@@ -201,6 +217,7 @@ export function ChannelMenu({
               <Button
                 variant="ghost"
                 size="icon"
+                ref={backRef}
                 className="h-7 w-7 pointer-coarse:h-11 pointer-coarse:w-11"
                 onClick={() => setView("menu")}
                 aria-label="Back to channel menu"
@@ -253,7 +270,15 @@ export function ChannelMenu({
                 level={notificationLevel}
                 disabled={!activeChannelId}
                 isSaving={notificationSaving}
-                onChange={onChangeNotificationLevel}
+                // Closes, the way the deleted popover's own `setOpen(false)`
+                // did. The write is optimistic and its failure is reported by
+                // the header's `role="alert"` line, so holding the menu open to
+                // watch it is the behaviour that froze the old menu whenever
+                // TanStack paused the mutation offline.
+                onChange={(level) => {
+                  onChangeNotificationLevel(level);
+                  close();
+                }}
               />
             ) : null}
           </>

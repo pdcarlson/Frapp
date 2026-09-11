@@ -112,7 +112,11 @@ export interface MessageTimelineProps {
   onUnreact: (messageId: string, emoji: string) => void;
   /** Stages an inline reply in the composer — the row's Reply control (#489). */
   onReply?: (message: ChatMessage) => void;
-  /** Opens the expanded thread view — now reached from a reply's quote. */
+  /**
+   * Scrolls this timeline to the message a reply quotes — what the quote above
+   * a reply does. It opened a Details-rail thread panel until #2142 deleted
+   * both.
+   */
   onJumpToParent?: (message: ChatMessage) => void;
   onRetry?: (clientMessageId: string) => void;
   onDiscard?: (clientMessageId: string) => void;

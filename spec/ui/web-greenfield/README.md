@@ -96,13 +96,33 @@ No CI check enforces this lock today. It is a review rule.
 | ---- | ----- | ---- | ------ |
 | 1 | [#2143](https://github.com/pdcarlson/Frapp/issues/2143) | Spec lock, foundation tokens, chapter accent | This directory plus [`tokens.md`](tokens.md) |
 | 2 | [#2141](https://github.com/pdcarlson/Frapp/issues/2141) | Shell: sidebar, top bar, kill the command palette, scrollbars | Consumes the tokens from lane 1 |
-| 3 | [#2142](https://github.com/pdcarlson/Frapp/issues/2142) | Chat: channels, kill the Details rail, bottom composer | Landed. Adds the **full-bleed route contract** below |
+| 3 | [#2142](https://github.com/pdcarlson/Frapp/issues/2142) | Chat: channels, kill the Details rail, bottom composer | Landed, with four board items deliberately left — see below. Adds the **full-bleed route contract** |
 | 4 | [#2144](https://github.com/pdcarlson/Frapp/issues/2144) | Resources, Backwork, Documents | |
 | 5 | [#2146](https://github.com/pdcarlson/Frapp/issues/2146) | Directory, Finance, Admin | |
 | 6 | [#2145](https://github.com/pdcarlson/Frapp/issues/2145) | Chat cold load and performance | |
 | 7 | [#2147](https://github.com/pdcarlson/Frapp/issues/2147) | Chapter accent, 404 and error polish | |
 
 [`deletion-checklist.md`](deletion-checklist.md) is the shared acceptance list across lanes 2 to 7.
+
+### What lane 3 left on the board, and why
+
+Recorded here because "landed" above would otherwise read as "`1b` and `1t` are done", and they are
+not. None of these is an oversight; each would have taken the lane outside the greenfield's scope,
+which [`deletion-checklist.md`](deletion-checklist.md) defines as chrome rather than capability.
+
+| Board item | Why not in lane 3 |
+| ---------- | ----------------- |
+| `1b` pin 5, the channels column's `+` | There is no create-channel surface anywhere in `apps/web` for it to open. Adding one is a new capability, not a restyle |
+| `1b` pin 6, presence dots on DMs | No presence data reaches the channel list. Same reason |
+| `1b` pin 11, member count in the channel header | `ChatChannel` carries `member_ids` for DMs only, so there is no count for a public channel. The chapter roster size would be wrong for `PRIVATE` and `ROLE_GATED`, and a wrong number is worse than none |
+| `1t`, ops-setup nudge → locked-row sheet | The replacement is the nav's locked-module explainer (`1h`), which is lane 2's surface and was not built. Deleting the nudge first removes an officer-facing prompt with nothing in its place |
+
+One deletion in `1t` that lane 3 **declined** rather than deferred: the board's `⋯` inventory
+(`1b` pin 11) omits Search, on the reading that the top bar's find field covers messages. Lane 3 kept
+message search inside the `⋯` instead, per `1t`'s own wording ("Search, Pins, Bookmarks, Notification
+level buttons → one ⋯ menu merged"), because deleting it outright would move a capability between
+lanes. See [`deletion-checklist.md`](deletion-checklist.md) §3 for the one thing the find bar does
+not cover today.
 
 ### The full-bleed route contract, added by lane 3
 

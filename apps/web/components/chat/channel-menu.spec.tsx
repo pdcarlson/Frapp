@@ -66,7 +66,19 @@ vi.mock("./bookmarks-popover", () => ({
   ),
 }));
 vi.mock("./notification-level-popover", () => ({
-  NotificationLevelPanel: () => <div data-testid="notifications-panel" />,
+  NotificationLevelPanel: ({
+    onChange,
+  }: {
+    onChange: (level: "all" | "mentions" | "off") => void;
+  }) => (
+    <button
+      type="button"
+      data-testid="notifications-panel"
+      onClick={() => onChange("off")}
+    >
+      mute
+    </button>
+  ),
 }));
 
 import { ChannelMenu } from "./channel-menu";
@@ -214,6 +226,34 @@ describe("ChannelMenu (#2142)", () => {
     await openMenu(user);
 
     expect(screen.getByRole("button", { name: "Saved" })).toBeInTheDocument();
+  });
+
+  it("keeps focus inside itself across a view swap", async () => {
+    // Swapping unmounts the row button that was clicked, so without this focus
+    // falls to <body> and the next Tab restarts from the top of the document —
+    // inside an open popover. Radix manages focus on open and close, not on a
+    // content swap this component drives itself.
+    const user = userEvent.setup();
+    renderMenu();
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /Pinned/ }));
+
+    expect(screen.getByRole("button", { name: "Back to channel menu" })).toHaveFocus();
+  });
+
+  it("closes when a notification level is picked", async () => {
+    // The deleted popover dismissed itself on change. Holding it open to watch
+    // the write is what froze the old menu when TanStack paused the mutation
+    // offline; the failure is reported by the header's alert line instead.
+    const user = userEvent.setup();
+    const props = renderMenu();
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+
+    await user.click(screen.getByTestId("notifications-panel"));
+
+    expect(props.onChangeNotificationLevel).toHaveBeenCalledWith("off");
+    expect(screen.queryByTestId("notifications-panel")).not.toBeInTheDocument();
   });
 
   it("is disabled with no channel open", () => {

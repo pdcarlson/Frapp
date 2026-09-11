@@ -98,7 +98,15 @@ so in place.
 **Taken by lane 3.** The `Input`, the `query` state, the `filtered` memo, the "No matches. Try a
 different name." empty state and the `SearchGlyph` import all went together; `sections` now iterates
 `channels` directly. The replacement is the top bar's find field on Cmd/Ctrl+F, which finds channels
-*and* members *and* messages (`1b` pin 8), so this field was the narrower of the two.
+*and* members *and* messages (`1b` pin 8).
+
+**One thing the find bar does not cover, recorded rather than glossed.** The deleted field filtered on
+`titleFor`, which runs `directChannelDisplayName` — so typing a person's name found the **DM** with
+them. `find-bar.tsx` matches its Channels group on the raw `row.name` from the channel payload, which
+for a DM is not the participant's name, so a DM is no longer reachable by typing who it is with. The
+member is still findable (Members group), but that lands on `/members`, not on the conversation. This
+is a real narrowing, it belongs to the find bar rather than to this rail, and it is filed as a
+follow-up rather than fixed here.
 
 Two things that look like search and are not, kept: `titles`/`titleFor` also resolve every row's
 displayed title and its sort key, so a DM sorts under the participant's name rather than a uuid. The
@@ -189,15 +197,21 @@ them, and must close the one that is open.
 
 - [ ] No `next-themes`, no theme switcher, no light palette. Signet web is dark-only
 - [ ] No live `dark:` variants
-- [x] No `shadow-*`. Elevation is a lighter surface step. ~~**This one is not clean today.**~~
-      **Closed by lane 3**, both halves. The two live sites
+- [x] No **live** `shadow-*`. Elevation is a lighter surface step. ~~**This one is not clean
+      today.**~~ **The defect is closed by lane 3**, both halves. The two live sites
       (`apps/web/components/chat/mention-list.tsx:128` and `:140`) dropped their `shadow-md`, and
       `md` is now bound in the shared preset (`packages/theme/src/tailwind.config.ts`) against a new
       `--shadow-md: none` in `signet.css`, so the gap cannot reopen by someone typing `shadow-md`
       again. The original diagnosis was exactly right: `boxShadow` bound `xs`/`sm`/`DEFAULT`/`lg`
       only, so `shadow-md` fell through to Tailwind's built-in and compiled a real drop shadow past a
       ban everyone believed the `none` tokens enforced. `grep -rn 'shadow-md' apps packages` is now
-      clean
+      clean.
+
+      **The box is ticked for "no shadow that renders", not "no `shadow-` string".** One inert class
+      remains, `settings-roles-tab.tsx:197`'s `shadow-sm`, which resolves to `--shadow-sm: none` and
+      draws nothing — `card.tsx` reasons about exactly this. It is dead class text on a lane 5
+      surface and should go when that lane touches the file. What made the `md` case different, and
+      a real defect rather than dead text, was that it had no token behind it at all
 - [ ] No legacy bone / bronze / Geist token on this surface
 - [ ] No unused component left under `apps/web/components/ui`
 - [ ] No customer-facing "Frapp" string or wordmark

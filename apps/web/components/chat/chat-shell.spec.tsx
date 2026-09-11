@@ -1335,3 +1335,96 @@ describe("ChatShell greenfield grammar (#2142)", () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * The responsive contract, which lane 3 nearly dropped.
+ *
+ * The old layout was a `grid` that collapsed to one stacked column below `md`.
+ * The flush two-column rewrite is breakpoint-free by construction, and below
+ * `lg` the app nav is a drawer — so a fixed 240px channels column beside the
+ * thread leaves the thread about 135px at the documented 375px floor. That
+ * passes the floor suite, which only reads `scrollWidth`, while failing what
+ * the floor is for.
+ *
+ * jsdom applies no media queries, so these read the classes rather than the
+ * rendered widths. That is the right granularity anyway: the defect was a
+ * missing breakpoint, not a wrong number.
+ */
+describe("ChatShell narrow viewports (#2142)", () => {
+  function columns() {
+    const channels = screen.getByRole("region", { name: "Channels" });
+    // The thread column is the channels column's next sibling.
+    const thread = channels.nextElementSibling as HTMLElement;
+    return { channels, thread };
+  }
+
+  it("shows one column at a time below lg, and both at lg", () => {
+    render(<ChatShell />);
+    const { channels, thread } = columns();
+
+    // Full width when it is the only column; 240px once both fit.
+    expect(channels.className).toContain("w-full");
+    expect(channels.className).toContain("lg:w-60");
+    // Exactly one of the two is hidden below lg.
+    const hiddenBelowLg = [channels, thread].filter((el) =>
+      el.className.includes("max-lg:hidden"),
+    );
+    expect(hiddenBelowLg).toHaveLength(1);
+  });
+
+  it("opens on the thread, so a deep link lands on its message", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    const { channels, thread } = columns();
+
+    expect(channels.className).toContain("max-lg:hidden");
+    expect(thread.className).not.toContain("max-lg:hidden");
+  });
+
+  it("navigates back to the list and forward again on a pick", async () => {
+    render(<ChatShell />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+    expect(columns().thread.className).toContain("max-lg:hidden");
+
+    // Picking has to navigate, because the two are never both on screen here.
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+  });
+});
+
+/**
+ * Two regressions the rewrite introduced and this pins shut: a cold load that
+ * says nothing to assistive tech, and an error branch that blanks a list the
+ * member is still using.
+ */
+describe("ChatShell channel-list states (#2142)", () => {
+  afterEach(() => {
+    channelsQueryState.value = {};
+  });
+
+  it("announces the cold load, which the skeleton alone cannot", () => {
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    // The deleted whole-route LoadingState carried this; the skeleton is
+    // aria-hidden, so it is no replacement on its own.
+    expect(screen.getByText("Loading channels")).toBeInTheDocument();
+  });
+
+  it("keeps a cached list rendered when a background refetch fails", () => {
+    // TanStack keeps the last good `data` when a refetch errors. Branching on
+    // `isError` first blanked the rail and unmounted the timeline because one
+    // request 502'd during an API restart.
+    channelsQueryState.value = { isError: true };
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("channel-list")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load channels")).toBeNull();
+  });
+});
+
