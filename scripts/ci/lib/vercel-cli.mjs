@@ -222,20 +222,45 @@ export async function runCommandCapturing({ command, args, env, cwd, logger = co
 }
 
 /**
+ * The named git SHA a CI deploy is shipping (`DEPLOY_SHA`).
+ *
+ * Same bounds as the API's `readDeployedCommit` (`RENDER_GIT_COMMIT`): 7–40
+ * hex. Refuse anything else so a typo cannot become a Sentry `release`.
+ */
+const GIT_SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
+
+export function normalizeGitSha(raw) {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  return GIT_SHA_PATTERN.test(trimmed) ? trimmed : undefined;
+}
+
+/**
  * The environment one Vercel CLI invocation runs with.
  *
  * Built explicitly from the ambient environment rather than mutating it, so two
  * projects deployed in the same process cannot inherit each other's
  * `VERCEL_PROJECT_ID` — the failure mode being that landing's build is uploaded
  * to the web project, which reports success everywhere.
+ *
+ * `gitSha` becomes `VERCEL_GIT_COMMIT_SHA` when it is a real SHA. ADR-21
+ * `vercel build` runs on the GitHub runner, not on Vercel's Git-linked
+ * builders, so that system variable is otherwise unset. Web and landing
+ * `next.config.js` inline Sentry `release` from it (and pass it to
+ * `withSentryConfig`); without the injection, staging/production events would
+ * have an empty release while source maps, if uploaded, would sit on a
+ * git-detected name the envelope does not carry.
  */
-export function vercelCliEnv({ token, orgId, projectId, baseEnv = process.env }) {
-  return {
+export function vercelCliEnv({ token, orgId, projectId, gitSha, baseEnv = process.env }) {
+  const env = {
     ...baseEnv,
     VERCEL_TOKEN: token,
     VERCEL_ORG_ID: orgId,
     VERCEL_PROJECT_ID: projectId,
   };
+  const sha = normalizeGitSha(gitSha);
+  if (sha) env.VERCEL_GIT_COMMIT_SHA = sha;
+  return env;
 }
 
 /** The `.vercel` directory the CLI reads and writes, for a working directory. */
@@ -312,6 +337,7 @@ export async function buildVercelProject({
   token,
   orgId,
   projectId,
+  sha,
   label = projectId,
   cwd,
   stashDir = null,
@@ -320,7 +346,7 @@ export async function buildVercelProject({
   stashFs = defaultStashFs,
   logger = console,
 }) {
-  const env = vercelCliEnv({ token, orgId, projectId });
+  const env = vercelCliEnv({ token, orgId, projectId, gitSha: sha });
   const common = { label, env, cwd, cliCommand, runCommand, logger };
 
   await runVercelStep({ ...common, args: vercelPullArgs({ target }) });
@@ -382,7 +408,7 @@ export async function deployPrebuiltVercelProject({
     logger.log?.(`[${label}] Restored the built output from ${stashDir}.`);
   }
 
-  const env = vercelCliEnv({ token, orgId, projectId });
+  const env = vercelCliEnv({ token, orgId, projectId, gitSha: sha });
   const result = await runVercelStep({
     label,
     env,
