@@ -18,6 +18,7 @@ Canonical docs (link, don't restate values):
 
 | Topic | Canonical |
 | --- | --- |
+| **Web rebuild (#2140): trust order, brand locks, tokens, deletions** | [`spec/ui/web-greenfield/`](../../../spec/ui/web-greenfield/README.md) |
 | Brand (name, mark, typeface, lane) | [`spec/ui/brand-identity.md`](../../../spec/ui/brand-identity.md) |
 | Token values | [`spec/ui/design-system/foundations.md`](../../../spec/ui/design-system/foundations.md) |
 | Process rules + visual bans | [`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md) |
@@ -31,7 +32,15 @@ Canonical docs (link, don't restate values):
 2. Where the two references disagree, **[`canvas-screens.dc.html`](../../../spec/ui/design-system/reference/canvas-screens.dc.html)
    wins** over [`signet-design-system.dc.html`](../../../spec/ui/design-system/reference/signet-design-system.dc.html)
    (known case: 4 tabs, not the system board's stale 5-tab bar).
-3. **Behavior spec wins over UI spec** for what the product *does*. UI specs never override
+3. **On the web surface while [#2140](https://github.com/pdcarlson/Frapp/issues/2140) is open,**
+   anything committed under
+   [`spec/ui/web-greenfield/reference/`](../../../spec/ui/web-greenfield/reference/README.md) is the
+   board for that surface, and [`spec/ui/web-greenfield/`](../../../spec/ui/web-greenfield/README.md)
+   outranks [`web-dashboard/`](../../../spec/ui/web-dashboard/README.md) on visuals and structure.
+   Distrust `web-dashboard/`'s **chrome**, not its contracts: its nav map, gating, routing and data
+   contracts are still truth. Do not file drift against its visual prose during the epic. Mobile is
+   unaffected.
+4. **Behavior spec wins over UI spec** for what the product *does*. UI specs never override
    [`spec/behavior/`](../../../spec/behavior/README.md).
 
 ## Current vs legacy — do not mix on one surface
@@ -41,9 +50,9 @@ Canonical docs (link, don't restate values):
 | Surfaces | `apps/mobile`; all of `apps/web` — the #920 reskin (shell, base tokens, primitives, every screen family) is complete | `apps/landing` visual tokens (Geist, bone/bronze) until the visual reskin; copy and mark are Signet |
 | Direction | Dark-first, warm, consumer (Notion dark / Cash App) | Light-first bone / bronze / ink |
 | Typeface | **Figtree**. Geist is rejected. Web ships it vendored at `packages/theme/fonts/FigtreeVF.woff2` (`next/font/local`, `--font-figtree`). | Geist Sans in `@repo/theme` — now landing-only |
-| House accent | Gold/amber `#EFB63B` / seed `#F2B72E` — never brown-bronze, never royal blue | Bronze `primary`, royal blue leftovers in old specs |
-| Token home | `spec/ui/design-system/foundations.md`; web implementation: `packages/theme/src/signet.css` + `packages/theme/src/signet.ts` | `packages/theme/src/globals.css` (legacy `@repo/theme` exports, imported by landing) |
-| Spec status | Live — [`web-dashboard`](../../../spec/ui/web-dashboard/README.md) is **Active (Signet)** again | Frozen README: [`landing`](../../../spec/ui/landing/README.md) |
+| House accent | Gold/amber: house gold `#EFB63B`, accent seed `#DDB844` (the mark gold) — never brown-bronze, never royal blue | Bronze `primary`, royal blue leftovers in old specs |
+| Token home | `spec/ui/design-system/foundations.md` (ladder `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621` since #2143); web implementation: `packages/theme/src/signet.css` + `packages/theme/src/signet.ts` | `packages/theme/src/globals.css` (legacy `@repo/theme` exports, imported by landing) |
+| Spec status | Live — [`web-dashboard`](../../../spec/ui/web-dashboard/README.md) is **Active (Signet)**, but [`web-greenfield`](../../../spec/ui/web-greenfield/README.md) outranks it on web visuals while #2140 is open | Frozen README: [`landing`](../../../spec/ui/landing/README.md) |
 
 **The two systems MUST NOT mix on one surface.** Do not import Signet tokens onto the frozen
 landing surface, and do not copy bone/bronze/Geist/`#2563EB` onto a Signet screen. The frozen

@@ -19,12 +19,18 @@ Fixed for every chapter — only the accent varies per tenant.
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--background` | `#0E0D0B` | App background, base of the ladder |
-| `--surface-1` | `#171512` | Raised surface — nav bars, input fills, other-party chat context |
-| `--card` | `#1E1B17` | Cards and list rows |
-| `--popover` | `#26221C` | Elevated surface — sheets, popovers, menus (the "elevated" step) |
+| `--background` | `#131211` | App background, base of the ladder |
+| `--surface-1` | `#1A1A1A` | Raised surface — nav bars, input fills, other-party chat context |
+| `--card` | `#211E1A` | Cards and list rows |
+| `--popover` | `#2A2621` | Elevated surface — sheets, popovers, menus (the "elevated" step) |
 
 Rationale: a warm charcoal ladder deliberately lifted off a pure `#0a0a0a` floor so the warmth reads on real screens. Each step is visibly lighter than the one below it, which is what carries elevation (§10).
+
+**The ladder was re-pitched for the web greenfield** ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)). It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things moved with it, and both are deliberate:
+
+- `--surface-1` is now `#1A1A1A`, the **mark's own field** ([`../brand-identity.md`](../brand-identity.md) §2), so locked emblem B sits flush on the raised surface instead of on a warmer neighbour.
+- Every step is lighter than before, which lowers contrast for light text by 0.142 to 0.681 points. **Three pairs crossed** below the 4.5:1 gate in [`README.md`](README.md) §6 as a result, and are handled in §5: `--destructive` on `--popover` (4.717 → 4.482), `--info` on `--card` (4.577 → 4.429), and `--mention` on `--surface-1` (4.656 → 4.447).
+- **Three more pairs are sub-AA but were already sub-AA before this ladder**, and are not this change's doing: `--info` on `--popover` (4.220 → 4.010), `--mention` on `--card` (4.383 → 4.238) and `--mention` on `--popover` (4.040 → 3.839). They are named here so the next ladder change is not reasoned from an inflated cost, and so nobody tries to "restore" contrast by darkening the ladder to fix failures that predate it.
 
 ---
 
@@ -68,6 +74,17 @@ Status-only, never decorative. A semantic hue states a fact ("paid", "overdue");
   - **White on this red measures 3.91:1**, under the 4.5:1 text floor [README.md](README.md) §6 sets, and it is the one drawn tone [components.md](components.md) §1's lift cannot rescue — the text is already white, and the fill is the fixed semantic. Both shipping surfaces render it as drawn; the miss is real, is pinned to its measured value by `apps/web/components/chat/chat-contrast.spec.ts`, and needs a system-level decision (darken the fill for both platforms, or grant the badge an explicit exemption) rather than a per-surface patch — tracked in #1190.
 - **Channel unread is neutral — never red, never accent.** Red is reserved for direct address, so an unread channel signals itself without it (Canvas chat list, `s04`): a count badge filled `rgba(255,255,255,.14)` — the `--input` value from §3 — with `--foreground` text, plus the row itself emphasized, bold title in `--foreground` over a `--muted-foreground` preview. A read row drops to a lighter title in `--muted-foreground` over a `--muted` preview and carries no badge at all, only its timestamp. The mention/DM badge is that same badge with the fill swapped to `#E5484D` and the text to white — fill and text are the only difference, so badge geometry stays one recipe, owned by [`components.md`](components.md).
 - On dark surfaces, semantic fills are tints, not solids: ~13% opacity of the hue as background with a lightened step of the same hue as text (see panels 4a/4d). Chip and badge recipes are specified in [`components.md`](components.md).
+- **A lifted text tone is not a second semantic.** [`components.md`](components.md) §5 lets an implementation raise the *text* tone of a semantic for AA while the hue stays fixed; the solid token remains the fill and the border. The greenfield ladder (§2) made two of these load-bearing rather than optional, because solid `--destructive` and solid `--info` now fall under 4.5:1 on the surfaces their badges sit on:
+
+  | Text token | Value | Lifts | Measured on `--card` / `--popover` |
+  |---|---|---|---|
+  | `--destructive-text` | `#FF7B72` | `--destructive` (4.95 / 4.48 solid) | 6.58 / 5.96 |
+  | `--info-text` | `#4C93F8` | `--info` (4.43 / 4.01 solid) | 5.40 / 4.89 |
+
+  Both are CSS-only (`packages/theme/src/signet.css`); neither is a `signetDarkTokens` entry, because neither is a new semantic. Use the lifted token wherever the hue is **text**, and the solid wherever it is a fill or a border.
+
+  **The two lifts do not have the same reach, and `--info-text` does not cover every case.** On plain surfaces both clear throughout. On the §5 *tint* recipe (13% of the hue as fill, the hue as text) `--destructive-text` measures 4.80–6.12:1 across the four steps and clears, but `--info-text` measures 4.08–5.16:1 and **fails on a `--popover`-seated tint (4.08)**. An info badge inside a dialog, sheet or menu therefore needs a further lift or a solid fill; the token as specified does not reach it. No surface renders `--info` today, so nothing is broken by this — but the first consumer must not assume the twin is sufficient.
+- **Mention red did not get a lifted tone, and the reason matters.** `#E5484D` now measures 4.45:1 on `--surface-1` and below that on `--card` and `--popover`, so it is under the text floor on every step except `--background`. It is exempt from the lift above because it is not drawn as text: it is a badge fill carrying white text (the separate, tracked 3.91:1 miss above) and an avatar dot, and a dot is non-text UI held to §6's 3:1 floor, which it clears on every step. A future surface that renders mention red **as text** needs a lifted tone first; it does not have one today.
 
 ---
 
@@ -119,6 +136,26 @@ shipped on both platforms before it was written down here.
 
 Sizes MUST come from the scale above. Inventing an off-scale font size in screen code — including arithmetic on a role token, e.g. `tokens.type.section - 2` — is a defect, exactly as a raw hex value is ([`../mobile/README.md`](../mobile/README.md)).
 
+### Type tokens
+
+The same six roles as CSS custom properties, for web surfaces. Mobile reads the numeric source off `typography.role` in `packages/theme/src/signet.ts` instead; these are the web half of the same scale, not a second one.
+
+| Token | Value | Role |
+|-------|-------|------|
+| `--text-display` | `32px` | display size |
+| `--text-display-weight` | `700` | display weight |
+| `--text-headline` | `24px` | headline size |
+| `--text-headline-weight` | `700` | headline weight |
+| `--text-title` | `18px` | title size |
+| `--text-title-weight` | `600` | title weight |
+| `--text-body` | `16px` | body size, the floor for paragraph text |
+| `--text-body-weight` | `400` | body weight |
+| `--text-body-line` | `25px` | body line height, the only one the scale states |
+| `--text-label` | `14px` | label size |
+| `--text-label-weight` | `600` | label weight |
+| `--text-caption` | `12.5px` | caption size |
+| `--text-caption-weight` | `400` | caption weight |
+
 ---
 
 ## 8. Radius
@@ -149,6 +186,22 @@ Canonical map (locked; supersedes panel 4h — see deviation note):
 - Dominant rhythm is **8 / 16 / 24**: 8 inside a component, 16 between components, 24 between sections.
 - Touch targets MUST be ≥ 44px. Buttons run 46–48px tall. Tab bar items are 56px tall.
 
+### Spacing tokens
+
+The grid as CSS custom properties. Every value is 4 × an integer; that is the whole rule, and a spacing value that is not on this list is a defect the same way an off-scale font size is.
+
+| Token | Value | Role |
+|-------|-------|------|
+| `--space-xs` | `4px` | the grid unit |
+| `--space-sm` | `8px` | inside a component |
+| `--space-md` | `12px` | control padding |
+| `--space-lg` | `16px` | between components |
+| `--space-xl` | `24px` | between sections |
+| `--space-2xl` | `32px` | major section breaks |
+| `--space-3xl` | `48px` | page-level separation |
+| `--touch-min` | `44px` | the touch floor, honored on web as well as mobile |
+| `--touch-button` | `46px` | standard button height |
+
 ---
 
 ## 10. Elevation & Focus
@@ -164,3 +217,22 @@ Panel 4h defines no motion tokens, so **no Signet motion values are locked yet (
 
 - **Settled — the discipline.** The three-class taxonomy (micro-feedback, standard transition, context shift), the budget each class is held to, and the requirements that motion stay subtle, functional, and reduced-motion-compatible bind every surface today. They are owned by [`README.md`](README.md) §7 and are not restated here.
 - **Provisional — the numbers only.** The durations and easing curves in use are carried forward from the legacy `@repo/theme` system (`packages/theme/src/tokens.ts`, `motion.duration` / `motion.easing`) and are listed in README §7. Implementations SHOULD keep using them so motion stays consistent across the app, but they are placeholders, not Signet canon: a Signet motion spec MAY replace every value without changing any rule above.
+
+---
+
+## 12. Scrollbars
+
+A scroll region on a Signet surface draws its own scrollbar. The browser default is a light-mode artifact on this ladder: it renders as a pale gutter that reads as a seam between panes.
+
+| Token | Value | Role |
+|-------|-------|------|
+| `--scrollbar-width` | `10px` | track width, and height for a horizontal bar |
+| `--scrollbar-thumb` | `rgba(255,255,255,0.14)` | the thumb at rest |
+| `--scrollbar-thumb-hover` | `rgba(255,255,255,0.24)` | the thumb under the pointer |
+| `--scrollbar-track` | `transparent` | the track |
+
+Three rules, each for a reason the token values alone do not carry:
+
+- **The thumb is low-opacity white, not a ladder step.** Same rule as hairlines (§3): it tracks whatever surface it overlays, so one token works in the sidebar, on a card, and inside a sheet without a per-surface variant.
+- **The track is transparent.** A scroll region that is not scrolling should gain no visible gutter. A filled track turns every scrollable pane into a bordered box.
+- **Styling is opt-in per region, never global.** The web implementation is a `.signet-scroll` class (`packages/theme/src/signet.css`), not a rule on `*`. A blanket rule repaints scrollbars inside embedded and third-party content, where the surface underneath is not ours and a low-opacity thumb can land on white. Overlay scrollbars — macOS and every touch device — already render correctly and are left alone.

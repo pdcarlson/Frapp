@@ -147,7 +147,17 @@ export function ChapterSwitcher({ className }: ChapterSwitcherProps) {
               <button
                 type="button"
                 onClick={() => handleSelect(membership.chapter_id)}
-                className="w-full truncate rounded-xs border border-border bg-surface-1 px-2 py-1.5 text-left text-[11px] text-foreground hover:bg-card focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                /*
+                 * `hover:bg-popover`, not `hover:bg-card`. A row seated on
+                 * `--surface-1` moving to `--card` was always a weak hover —
+                 * 1.0624:1, already under the 1.1 the contrast fixture treats
+                 * as "reads as the same colour" — and the greenfield ladder
+                 * (foundations.md §2) tightened that rung to 1.0486:1. Skipping
+                 * to the next step up is 1.1583:1, which is a hover a person
+                 * can actually see, and it does not require re-pitching a
+                 * ladder value to fix one call site.
+                 */
+                className="w-full truncate rounded-xs border border-border bg-surface-1 px-2 py-1.5 text-left text-[11px] text-foreground hover:bg-popover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
               >
                 {membership.chapter?.name ?? "Untitled chapter"}
               </button>

@@ -110,6 +110,20 @@ export type SignetTokens = {
   };
   touch: { minimum: number; button: number; buttonLarge: number; tabBar: number };
   focus: { ringWidth: number; ringOpacity: number };
+  /**
+   * Scroll regions on a Signet surface draw their own scrollbar rather than
+   * taking the browser default, which renders as a light-mode artifact on a
+   * dark ladder. Thumb colors are low-opacity white for the same reason
+   * hairlines are (§3): the bar tracks whatever surface it overlays instead of
+   * being pinned to one ladder step. The track is transparent so a scroll
+   * region does not gain a visible gutter when nothing is scrolling.
+   */
+  scrollbar: {
+    width: number;
+    thumb: string;
+    thumbHover: string;
+    track: string;
+  };
   /** Carried over from the legacy system. Provisional, not Signet canon — foundations.md §11. */
   motion: (typeof frappTokens)["motion"];
 };
@@ -117,10 +131,10 @@ export type SignetTokens = {
 const SIGNET_DARK: SignetTokens = {
   color: {
     surface: {
-      background: "#0E0D0B",
-      surface1: "#171512",
-      card: "#1E1B17",
-      popover: "#26221C",
+      background: "#131211",
+      surface1: "#1A1A1A",
+      card: "#211E1A",
+      popover: "#2A2621",
     },
     border: {
       hairline: "rgba(255,255,255,0.08)",
@@ -142,7 +156,7 @@ const SIGNET_DARK: SignetTokens = {
     },
     gold: {
       house: "#EFB63B",
-      seed: "#F2B72E",
+      seed: "#DDB844",
       onHouse: "#2C2000",
       askFill: "#251E0E",
       askBorder: "#6B5619",
@@ -178,6 +192,12 @@ const SIGNET_DARK: SignetTokens = {
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, "2xl": 32, "3xl": 48 },
   touch: { minimum: 44, button: 46, buttonLarge: 48, tabBar: 56 },
   focus: { ringWidth: 3, ringOpacity: 0.25 },
+  scrollbar: {
+    width: 10,
+    thumb: "rgba(255,255,255,0.14)",
+    thumbHover: "rgba(255,255,255,0.24)",
+    track: "transparent",
+  },
   motion: frappTokens.motion,
 };
 
@@ -239,5 +259,44 @@ export function getSignetCssVars(
     "--gold-ask-fill": t.color.gold.askFill,
     "--gold-ask-border": t.color.gold.askBorder,
     "--gold-ask-text": t.color.gold.askText,
+
+    // Type scale (foundations.md §7). Emitted as CSS custom properties so web
+    // chrome can consume the same six roles mobile already reads off
+    // `typography.role`. Sizes carry their unit here because a CSS `font-size`
+    // needs one; the numeric source stays unitless for React Native.
+    "--text-display": `${t.typography.role.display.size}px`,
+    "--text-display-weight": String(t.typography.role.display.weight),
+    "--text-headline": `${t.typography.role.headline.size}px`,
+    "--text-headline-weight": String(t.typography.role.headline.weight),
+    "--text-title": `${t.typography.role.title.size}px`,
+    "--text-title-weight": String(t.typography.role.title.weight),
+    "--text-body": `${t.typography.role.body.size}px`,
+    "--text-body-weight": String(t.typography.role.body.weight),
+    "--text-body-line": `${t.typography.role.body.lineHeight ?? 25}px`,
+    "--text-label": `${t.typography.role.label.size}px`,
+    "--text-label-weight": String(t.typography.role.label.weight),
+    "--text-caption": `${t.typography.role.caption.size}px`,
+    "--text-caption-weight": String(t.typography.role.caption.weight),
+
+    // The 4px grid (foundations.md §9). Named by step rather than by t-shirt
+    // size so a reader can see the grid: every value is 4 × an integer.
+    "--space-xs": `${t.spacing.xs}px`,
+    "--space-sm": `${t.spacing.sm}px`,
+    "--space-md": `${t.spacing.md}px`,
+    "--space-lg": `${t.spacing.lg}px`,
+    "--space-xl": `${t.spacing.xl}px`,
+    "--space-2xl": `${t.spacing["2xl"]}px`,
+    "--space-3xl": `${t.spacing["3xl"]}px`,
+
+    // Touch floors (foundations.md §9). Web honors the same 44px minimum;
+    // pointer input does not make a small target acceptable.
+    "--touch-min": `${t.touch.minimum}px`,
+    "--touch-button": `${t.touch.button}px`,
+
+    // Scrollbars. See the `scrollbar` doc on `SignetTokens`.
+    "--scrollbar-width": `${t.scrollbar.width}px`,
+    "--scrollbar-thumb": t.scrollbar.thumb,
+    "--scrollbar-thumb-hover": t.scrollbar.thumbHover,
+    "--scrollbar-track": t.scrollbar.track,
   };
 }

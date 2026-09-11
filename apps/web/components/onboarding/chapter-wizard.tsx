@@ -27,6 +27,7 @@ import {
   useOnboardChapter,
   type ChapterDirectoryResult,
 } from "@repo/hooks";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { EmailInviteSchema, dedupeEmails } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,7 +55,16 @@ const CHAT_LANDING_PATH = "/chat?channel=general";
 // NEXT_PUBLIC_LANDING_URL; default to production so the links always resolve.
 const LEGAL_BASE_URL =
   process.env.NEXT_PUBLIC_LANDING_URL ?? "https://frapp.live";
-const DEFAULT_ACCENT = "#F2B72E";
+// The house seed itself, not a copy of it. This was a bare `#F2B72E` literal
+// that had to be remembered whenever the seed moved, and the greenfield ladder
+// change is exactly the event that would have silently desynced it.
+//
+// Read from `@repo/theme/signet`, not `@repo/chapter-theme`'s `HOUSE_SEED`, for
+// the reason `components/roles/roles-page.tsx` records at its own
+// `DEFAULT_ROLE_SWATCH`: that package's `index.ts` re-exports through a
+// `./signet.js` specifier Turbopack cannot resolve from source, so importing it
+// in app code type-checks and passes vitest and then fails `next build`.
+const DEFAULT_ACCENT = signetDarkTokens.color.gold.seed;
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
 const INVITE_ROLE = "Member";
 

@@ -168,10 +168,14 @@ prevent.
 because `opacity` composites the whole element. It dims the focus ring — and
 soft-disabling is exactly the case where the control keeps its place in the tab
 order, so that ring is the entire focus indicator: across all 19 seeds,
-ring-vs-`--background` falls from 3.05–4.07 to 1.78–2.17, and **none** still
-clears [§6](../design-system/README.md)'s 3:1. And it flattens the on/off cue this
-whole carve-out exists to protect, dropping checked-vs-unchecked below 3:1 on
-six accents — the same erasure, at the same magnitude, that disqualified the
+ring-vs-`--background` falls from 8.48–11.47 undimmed to 2.96–3.68 at a 50% dim,
+putting **5 of the 19** under [§6](../design-system/README.md)'s 3:1. (Those
+undimmed figures were 3.05–4.07 while the recipe drew in accent-8; it draws in
+accent-11 since the greenfield ladder, so the dim fails five chapters rather than
+all of them — still five chapters whose keyboard users lose the indicator.) And
+it flattens the on/off cue this whole carve-out exists to protect, dropping
+checked-vs-unchecked below 3:1 on **sixteen** accents where nine already sit
+there undimmed — the same erasure, at a larger magnitude, that disqualified the
 real `disabled` attribute. `button.tsx` and `label.tsx` already record the
 system's ban on that idiom. So the visual signal here is the cursor, and the
 *explanation* is carried by `aria-describedby` and the note, not by dimming.

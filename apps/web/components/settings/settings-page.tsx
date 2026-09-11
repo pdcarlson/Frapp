@@ -202,7 +202,10 @@ function SettingsPageContent() {
   // entitled to change — over-gating is the worse defect here.
   const rolloverGate = useSubscriptionGate();
 
-  const canManage = can("chapter-config:manage", permissionsPayload?.permissions);
+  const canManage = can(
+    "chapter-config:manage",
+    permissionsPayload?.permissions,
+  );
 
   // Deep-link the active tab via `?tab=` so links (e.g. the redirect from the
   // former standalone `/roles` page) can land directly on a tab.
@@ -352,7 +355,9 @@ function SettingsPageContent() {
     );
   }
 
-  const parsedChapter = CurrentChapterPayloadSchema.safeParse(chapterQuery.data);
+  const parsedChapter = CurrentChapterPayloadSchema.safeParse(
+    chapterQuery.data,
+  );
   const chapterPayload = parsedChapter.success
     ? (parsedChapter.data as CurrentChapterPayload & {
         donation_url?: string | null;
@@ -419,10 +424,13 @@ function SettingsPageContent() {
     See the swatch below for why `--primary-foreground` cannot answer this.
     What matters here is the `?? ` this used to end with: `pickAccessibleColor`
     returns `null` when *neither* candidate clears AA, and falling back to
-    `gold.onHouse` reasserted a tone it had just rejected. The review typed
-    `#0080FD` — an ordinary hex, nothing exotic — and got "Preview" at 4.191:1
-    with no warning, which is the same defect one layer down from the one this
-    swatch was being fixed for.
+    `gold.onHouse` reasserted a tone it had just rejected. The review typed an
+    ordinary blue — nothing exotic — and got "Preview" at a sub-AA ratio with
+    no warning, which is the same defect one layer down from the one this
+    swatch was being fixed for. (`#0086FE` on the current ladder: kept by the
+    resolver at 4.62:1 on `--card`, ink at 4.446:1. The original `#0080FD`
+    stopped reaching this branch when the greenfield ladder lightened `--card`
+    and the resolver began substituting it.)
 
     The docstring's excuse was wrong too: `resolveChapterAccentColor` does not
     reject that accent. It asks whether the accent is legible **as text on the
@@ -733,7 +741,9 @@ function SettingsPageContent() {
                       <Input
                         id="semester-label"
                         value={semesterLabel}
-                        onChange={(event) => setSemesterLabel(event.target.value)}
+                        onChange={(event) =>
+                          setSemesterLabel(event.target.value)
+                        }
                         placeholder="Fall 2026"
                         required
                       />
@@ -744,7 +754,9 @@ function SettingsPageContent() {
                         id="semester-start"
                         type="date"
                         value={semesterStart}
-                        onChange={(event) => setSemesterStart(event.target.value)}
+                        onChange={(event) =>
+                          setSemesterStart(event.target.value)
+                        }
                         required
                       />
                     </div>
@@ -1054,8 +1066,8 @@ function SettingsPageContent() {
                     <p className="text-xs text-warning">
                       Label text on this color reads at{" "}
                       {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
-                      Buttons and name tags using it will be hard to read —
-                      pick a lighter or darker shade.
+                      Buttons and name tags using it will be hard to read — pick
+                      a lighter or darker shade.
                     </p>
                   ) : null}
                   {/*
@@ -1072,13 +1084,15 @@ function SettingsPageContent() {
                       {accentContrastWarning
                         .map(describeFailedContrastCheck)
                         .join(" ")}{" "}
-                      Try a lighter or darker shade of this hue and save
-                      again.
+                      Try a lighter or darker shade of this hue and save again.
                     </p>
                   ) : null}
                 </CardContent>
                 <CardFooter className="flex justify-end">
-                  <Button type="submit" disabled={!canManage || updateChapter.isPending}>
+                  <Button
+                    type="submit"
+                    disabled={!canManage || updateChapter.isPending}
+                  >
                     {updateChapter.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : null}

@@ -77,11 +77,25 @@ export function OfflineBanner() {
       // What remains is § 2's OFFLINE banner cell verbatim, which is also what
       // mobile ships (`apps/mobile/lib/connection/state.ts`).
       message: "You're offline. Showing cached data.",
+      /*
+       * Stays on the SOLID `--destructive`, not the `--destructive-text` lift.
+       * The banner is seated on `--background` (the sticky wrapper paints
+       * `bg-background/95`), and danger on its own 13% tint over that step
+       * measures 4.850:1 — clear of the gate. The lift is for where the drawn
+       * tone actually misses, which on this ladder is `--surface-1` (4.472),
+       * `--card` (4.222) and `--popover` (3.817). Applying it here would
+       * over-apply foundations §5, the same over-reach the billing guard's
+       * "negative branch" case records.
+       */
       className: "border-destructive/45 bg-destructive/[.13] text-destructive",
     },
   } as const;
 
-  const { icon: Icon, message, className } = config[state as "DEGRADED" | "OFFLINE"];
+  const {
+    icon: Icon,
+    message,
+    className,
+  } = config[state as "DEGRADED" | "OFFLINE"];
 
   return (
     <div

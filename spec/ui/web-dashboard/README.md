@@ -1,3 +1,11 @@
+> **Being rebuilt.** [#2140](https://github.com/pdcarlson/Frapp/issues/2140) is greenfielding this
+> surface from a Claude Design framework, and while that epic is open
+> [`../web-greenfield/`](../web-greenfield/README.md) **outranks this page on anything visual or
+> structural**. What stays truth here: the navigation and permission map, gating and routing
+> semantics, the responsive contract, and the data contracts. What is stale by construction: chrome
+> this page describes that a greenfield lane has replaced. Do not file spec-vs-code drift against
+> the visual prose below while the epic runs; when it closes, the surviving truth folds back here.
+>
 > **Active (Signet).** This surface ships the Signet design system since the #920 shell slice. Visuals are governed by [`../design-system/`](../design-system/README.md) and its committed reference boards; this page owns structure — navigation, gating, the responsive shell contract, data contracts — not palette. The #920 reskin is **complete**: per-screen-family truing-up landed with the Profile & pre-auth slice, and the legacy token engine was retired by the slice-9 cutover that followed it.
 
 # UI/UX Specification: Web Dashboard (app.frapp.live)

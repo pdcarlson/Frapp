@@ -66,7 +66,8 @@ export function payIntentErrorCopy(error: unknown): string {
       return "This invoice could not be found.";
     case 409:
       return (
-        serverMessage ?? "A payment for this invoice is already being processed."
+        serverMessage ??
+        "A payment for this invoice is already being processed."
       );
     case 503:
       return "The payment provider is unavailable right now. Please try again.";
@@ -142,7 +143,7 @@ function PayInvoiceForm({
     <form onSubmit={handleSubmit} className="space-y-4">
       <PaymentElement />
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-sm text-destructive-text">
           {error}
         </p>
       ) : null}
@@ -218,7 +219,7 @@ export function PayInvoiceDialog({
             </Button>
           </div>
         ) : payInvoice.isError ? (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-destructive-text">
             {payIntentErrorCopy(payInvoice.error)}
           </p>
         ) : clientSecret ? (

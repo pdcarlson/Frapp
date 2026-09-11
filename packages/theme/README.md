@@ -15,7 +15,7 @@ preview).
 
 `src/signet.css` is the Signet counterpart of `globals.css`: the dark-only
 foundations as CSS custom properties, the ShadCN-compat pairs the shared
-Tailwind preset reads, and the house-default accent slot (`#F2B72E` through
+Tailwind preset reads, and the house-default accent slot (`#DDB844` through
 `deriveSignetPalette`). **`apps/web` imports it** as of slice 1 of #920;
 `apps/landing` keeps importing the legacy `globals.css` until its own reskin. A
 surface imports exactly one of the two — `src/signet.css.spec.ts` pins the

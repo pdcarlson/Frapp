@@ -62,7 +62,7 @@ describe("the capability matrix states held and missing in text tones", () => {
       MATRIX_SURFACE,
     );
     expect(washed).toBeLessThan(AA_TEXT);
-    expect(washed).toBeCloseTo(2.184, 2);
+    expect(washed).toBeCloseTo(2.173, 2);
   });
 
   it("rules out `--muted`, which reads like the right token and is not", () => {
@@ -96,9 +96,10 @@ describe("the archetype card's selected state, across every seeded chapter", () 
       expect(ratio(selected, SURFACE.card), seed).toBeGreaterThan(1.1);
       expect(ratio(selected, hover), seed).toBeGreaterThan(1.05);
       // And its text has to be readable on it.
-      expect(ratio(roles["--accent-text"]!, selected), seed).toBeGreaterThanOrEqual(
-        AA_TEXT,
-      );
+      expect(
+        ratio(roles["--accent-text"]!, selected),
+        seed,
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
   });
 });

@@ -19,7 +19,7 @@ The `--muted` case generalises further than "placeholders and tab labels": it me
 
 Colors below are given by **token role** (`accent-N` per [accent-engine.md](accent-engine.md)). The only literal hexes are the fixed neutral and semantic values, which never vary by tenant. Chat bubbles and the AI sourced-answer card (panel 4e) are the two signature surfaces; they are specced in §11.
 
-- **Transcribe the reference, never lift it.** The board is a *picture* of the design, not an implementation: read its source text — do not render it in a browser or screenshot it — and rebuild what it draws in the target stack. The `x-dc` wrapper and the `dv-*` viewer chrome (`dv-turn`, `dv-thd`, `dv-card`) are export scaffolding, and their geometry is board layout rather than component spec — the `dv-card` panels are pinned to 440px/940px on a `#0E0D0B` ground, and panel content is inline-hex styled throughout. Specs are transcribed by token role; the export's own markup and inline values MUST NOT be copied into product code.
+- **Transcribe the reference, never lift it.** The board is a *picture* of the design, not an implementation: read its source text — do not render it in a browser or screenshot it — and rebuild what it draws in the target stack. The `x-dc` wrapper and the `dv-*` viewer chrome (`dv-turn`, `dv-thd`, `dv-card`) are export scaffolding, and their geometry is board layout rather than component spec — the `dv-card` panels are pinned to 440px/940px on a `#131211` ground, and panel content is inline-hex styled throughout. Specs are transcribed by token role; the export's own markup and inline values MUST NOT be copied into product code.
 - **The exports are not runnable.** Both files load `./support.js`, and `canvas-screens.dc.html` mounts each of its 23 screens through an `x-import` element sourced `from="./ios-frame.jsx"`; neither support file is committed to the repo. Opened in a browser the custom elements never upgrade, so the iOS device frames and panel 4e's accent-seed / bubble-radius controls do not render and the inline-styled screen markup paints unframed. The committed exports are authoritative as **source text**; a browser render is partial, so specs are transcribed from the markup and never from a rendered screenshot.
 
 ## 2. Shared rules
@@ -29,16 +29,27 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 - **No pill shapes** except the toggle track (§4) and the proportion meter (§12). The "Ask pill" is a rounded rectangle, not a capsule.
 - **Borders are neutral hairlines or tokens** — `rgba(255,255,255,.08)` structural, `rgba(255,255,255,.14)` on inputs, `accent-7` on accent-tinted chrome, low-opacity semantic on status surfaces (§10). Never a fixed grey hex.
 - **Focus (keyboard/input):** border swaps to `accent-9` plus a 3px ring of `accent-8` at ~25% opacity. Applies to every focusable control.
-  - **The border swap is the half that carries it.** `accent-8` at 25% composites to ~1.3:1 against every step of the surface ladder — under the 3:1 non-text floor [README.md](README.md) §6 sets — so the ring is the halo and the solid border is the signal. A control that drops the border swap has no focus indicator, whatever the ring looks like.
-  - **Where the border already means something, move the accent into an offset ring instead.** The toggle's border carries on/off (§4) and a tab's bottom border *is* the selected indicator (§6); repainting either on focus loses the state, or — worse, on tabs — draws the exact visual that means "selected" onto a merely-focused item. Those controls keep their border and take a 2px `accent-8` ring, at full opacity, offset from the control by a 2px band of `--background`.
-  - **The two recipes use different accent steps, and the reason is which half carries the indicator.** The bordered recipe dilutes its ring to 25% because the solid `accent-9` border is the signal. The offset recipe has no border to swap — that is why a control lands on it — so its ring is the *entire* indicator and must clear the 3:1 floor unaided. `accent-9` cannot: measured against `--background` across all 19 seeded chapter accents it fails on five (`#800000` 1.77:1, `#8B0000` 1.94, `#1F4E79` 2.24, `#006400` 2.61, `#8B4513` 2.74), so those chapters shipped no conforming indicator on any control using it. `accent-8` at full opacity clears all nineteen, tightest at 3.05:1. Pinned by `apps/web/components/ui/focus-contrast.spec.ts`.
-  - **The offset band is load-bearing.** The ring's inner edge abuts a band of `--background`, which is the surface the measurement above assumes. Its outer edge abuts whatever the control sits on, and against the deeper ladder steps `accent-8` does *not* clear 3:1 (worst seed 2.86 on surface-1, 2.69 on card, 2.48 on popover). Removing the offset would put the ring back at the mercy of its host surface.
+  - **The border swap is the half that carries it.** `accent-8` at 25% composites to 1.14–1.31:1 against the step it sits on — 0 of the 19 seeds × 4 steps clear the 3:1 non-text floor [README.md](README.md) §6 sets — so the ring is the halo and the solid border is the signal. A control that drops the border swap has no focus indicator, whatever the ring looks like.
+    - **How strong that border is depends on the chapter.** Solid `accent-9` against the step behind it ranges 1.50–18.71:1 across the 19 seeds; 7 of 19 fall under 3:1 on `--card` and 9 of 19 on `--popover`. So this recipe is *not* uniformly conforming, and nothing guards it — `focus-contrast.spec.ts` covers only the offset recipe. Tracked as a known gap rather than described as settled.
+  - **Where the border already means something, move the accent into an offset ring instead.** The toggle's border carries on/off (§4) and a tab's bottom border *is* the selected indicator (§6); repainting either on focus loses the state, or — worse, on tabs — draws the exact visual that means "selected" onto a merely-focused item. Those controls keep their border and take a 2px **`accent-11`** ring, at full opacity, offset from the control by a 2px band of `--background`.
+  - **The two recipes use different accent steps, and the reason is which half carries the indicator.** The bordered recipe dilutes its ring to 25% because the solid `accent-9` border is the signal. The offset recipe has no border to swap — that is why a control lands on it — so its ring is the *entire* indicator and must clear the 3:1 floor unaided. Measured against `--background` across all 19 seeded chapter accents:
+
+    | Step | Worst seed | Clears 3:1 |
+    | --- | --- | --- |
+    | `accent-9` | 1.87:1 (`#8B0000`) | no — fails on 4 (`#8B0000`, `#006400` 2.52, `#8B4513` 2.64, `#BF0A30` 2.94) |
+    | `accent-8` | 2.94:1 (`#4B0082`) | no — fails on 4 (`#4B0082`, and `#000000` / `#C0C0C0` / `#FFFFFF` at 2.98, which all derive the same ring) |
+    | `accent-11` | 8.48:1 (`#BF0A30`) | yes — all 19 |
+
+    `accent-8` held this role until the greenfield ladder ([foundations.md](foundations.md) §2) lifted `--background` to `#131211`; its margin was 3.05:1 against a 3.0 floor and the lighter base consumed it. `accent-11` is the engine's text role, gated at 4.5:1 as text ([accent-engine.md](accent-engine.md) §8), so it has real headroom as non-text UI. Pinned by `apps/web/components/ui/focus-contrast.spec.ts`.
+  - **The offset band fixes the surface the measurement assumes.** The ring's inner edge abuts a band of `--background`, which is what the table above measures against; its outer edge abuts whatever the control sits on. While the ring drew in `accent-8` this was load-bearing for conformance — that step fails 3:1 on every deeper rung (worst 2.73 on `--surface-1`, 2.61 on `--card`, 2.36 on `--popover`). On `accent-11` it no longer is: the ring clears 3:1 on every rung by itself (worst 7.89 / 7.52 / 6.81). Keep the offset anyway — it fixes one comparison surface instead of letting conformance vary by host, and keeps the ring off the control — but the margin is what makes the recipe robust, not a budget to spend.
+> **The hexes in this document are transcriptions, not the source.** Every ladder and text value here is owned by [foundations.md](foundations.md) §§2–5; they appear inline because the component recipes were written that way. When a token value moves, this file has to move with it — the greenfield ladder ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)) is the case in point. Prefer naming the token over pasting its value in anything new here.
+
 - **Semantic colors are status-only** (success `#3fb950`, warning `#e5a000`, danger `#f85149`, info `#2f81f7`) — never decorative.
 - **Raw chapter hex never paints.** Every accent role resolves through the generated scale ([accent-engine.md](accent-engine.md)).
-- Undrawn primitives (select, radio, dropdown menu, popover) MUST compose from the same tokens: elevated `#26221C` fill, hairline border, radius 12, `accent-8` ring.
+- Undrawn primitives (select, radio, dropdown menu, popover) MUST compose from the same tokens: elevated `#2A2621` fill, hairline border, radius 12, `accent-8` ring.
 - **A hairline's alpha is not a free parameter.** `--border` is `rgba(255,255,255,.08)` and a diluted `border-border/70` composites to 1.169:1 on `--card` against the token's 1.253:1. Neither clears §6's 3:1 non-text floor and at this ladder neither can, which is exactly why the remaining margin is not available to spend: once elevation is ~1.12:1 the hairline is the only edge there is. Five Chapter Ops row lists had invented that value; [README.md](README.md) §3 rule 4 already bans one-offing a token value at the call site, and this is what it costs.
-- **A bubble cannot sit on its own fill.** §11 paints the incoming bubble `--card` with a hairline, which means the surface *hosting* a thread must be a different step — the web dashboard's chat panes are `--background` for the thread and `--surface-1` for the rails, because wrapping the thread in a card made the specified bubble `#1E1B17` on `#1E1B17`. Note what carries the edge once they differ: one ladder step is ~1.12:1 and the composited hairline reaches ~1.4:1, both under the 3:1 non-text floor, so the **hairline is load-bearing** — an incoming bubble that drops its border is delineated by 1.12:1 and effectively has no edge.
-- **A highlighted row inside one of those primitives takes the accent tint, never a surface step.** The elevated fill above is the *top* of the surface ladder ([foundations.md](foundations.md) §2), so there is no step above it to highlight with — and `--accent`, the neutral highlight for a control sitting on a lower surface, holds that same `#26221C`. A menu that highlights with it paints the hovered row in its own background. Selection and hover inside menus, command palettes, selects and table rows therefore use the §5 accent-tint recipe (`accent-3` fill, `accent-11` text), which separates by hue: the ladder's own steps are ~1.1:1 apart and cannot carry "this one" on luminance alone.
+- **A bubble cannot sit on its own fill.** §11 paints the incoming bubble `--card` with a hairline, which means the surface *hosting* a thread must be a different step — the web dashboard's chat panes are `--background` for the thread and `--surface-1` for the rails, because wrapping the thread in a card made the specified bubble `#211E1A` on `#211E1A`. Note what carries the edge once they differ: one ladder step is ~1.12:1 and the composited hairline reaches ~1.4:1, both under the 3:1 non-text floor, so the **hairline is load-bearing** — an incoming bubble that drops its border is delineated by 1.12:1 and effectively has no edge.
+- **A highlighted row inside one of those primitives takes the accent tint, never a surface step.** The elevated fill above is the *top* of the surface ladder ([foundations.md](foundations.md) §2), so there is no step above it to highlight with — and `--accent`, the neutral highlight for a control sitting on a lower surface, holds that same `#2A2621`. A menu that highlights with it paints the hovered row in its own background. Selection and hover inside menus, command palettes, selects and table rows therefore use the §5 accent-tint recipe (`accent-3` fill, `accent-11` text), which separates by hue: the ladder's own steps are ~1.1:1 apart and cannot carry "this one" on luminance alone.
   - **The tint separates by hue, and only by hue — do not read it as a contrast remedy.** Measured across the seeded chapter directory, `accent-3` sits **1.032–1.143:1** from `--card` — a range that *straddles* the neutral highlight's 1.085:1 rather than beating it. **13 of the 19 seeds land at or below neutral** (the four dark reds worst, at 1.032), and the best reaches only 1.143, so luminance separation is not something the tint can be relied on to provide. What it does buy is chroma — 7–86 points of channel spread from the surface, against the neutral step's 3, holding even for the achromatic seeds. So a surface that needs to distinguish *two* row states cannot get the second one from the tint alone. A table row does: hover takes `accent-3`, and **selection takes `accent-4` plus `accent-11` text** — the one-step lift §3's state table already uses for tinted controls (1.178–1.358:1 on `--card`, and 1.108–1.193:1 above the hover fill, for every seed), with the text tone at 6.33–8.68:1 doing the work the fill cannot. None of these fills clears the 3:1 non-text floor and at this ladder none can, so a state that carries *information* rather than pointer feedback must be redundant with something that is not a fill — the row's own checkbox, a text tone, a summary bar. Measured in [`apps/web/components/shared/table-contrast.spec.ts`](../../../apps/web/components/shared/table-contrast.spec.ts).
 
 ## 3. Buttons
@@ -48,7 +59,7 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 | Variant | Fill | Border | Text | Weight |
 | ------- | ---- | ------ | ---- | ------ |
 | Primary | `accent-9` | none | `accent-contrast` | 700 |
-| Secondary | card `#1E1B17` | 1px `rgba(255,255,255,.14)` | `#EDEAE3` | 600 |
+| Secondary | card `#211E1A` | 1px `rgba(255,255,255,.14)` | `#EDEAE3` | 600 |
 | Tinted | `accent-3` | 1px `accent-7` | `accent-11` | 700 |
 | Ghost | transparent | none | `accent-11` | 600 |
 | Destructive | danger @ 14% alpha | none | `#f85149` | 700 |
@@ -59,8 +70,8 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 | Variant | Hover | Pressed | Disabled (all variants) |
 | ------- | ----- | ------- | ----------------------- |
-| Primary | fill `accent-10` | fill `accent-10` + 8% black overlay | fill card `#1E1B17`, border `rgba(255,255,255,.08)`, text `#57534C` |
-| Secondary | fill elevated `#26221C` | as hover | 〃 |
+| Primary | fill `accent-10` | fill `accent-10` + 8% black overlay | fill card `#211E1A`, border `rgba(255,255,255,.08)`, text `#57534C` |
+| Secondary | fill elevated `#2A2621` | as hover | 〃 |
 | Tinted / Ghost | fill `accent-3` (ghost gains it; tinted lifts one step to `accent-4`) | as hover | 〃 |
 | Destructive | tint deepens to ~20% alpha | as hover | 〃 |
 
@@ -83,12 +94,12 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 
 | State | Fill | Border | Text |
 | ----- | ---- | ------ | ---- |
-| Rest | surface `#171512` | 1px `rgba(255,255,255,.14)` | value `#EDEAE3`, placeholder `#78716A` |
-| Focus | surface `#171512` | 1px `accent-9` + 3px ring `accent-8` @ ~25% | caret 2px `accent-9` |
-| Error | surface `#171512` | 1px `#f85149` + 3px ring danger @ ~25% | caption 12.5 `#f85149` below |
-| Disabled | surface `#171512` | 1px `rgba(255,255,255,.08)` | `#57534C` |
+| Rest | surface `#1A1A1A` | 1px `rgba(255,255,255,.14)` | value `#EDEAE3`, placeholder `#78716A` |
+| Focus | surface `#1A1A1A` | 1px `accent-9` + 3px ring `accent-8` @ ~25% | caret 2px `accent-9` |
+| Error | surface `#1A1A1A` | 1px `#f85149` + 3px ring danger @ ~25% | caption 12.5 `#f85149` below |
+| Disabled | surface `#1A1A1A` | 1px `rgba(255,255,255,.08)` | `#57534C` |
 
-Default height 48px, radius 12, padding-x 14, text 15.5px. The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#0E0D0B` inside the surface-level app bar).
+Default height 48px, radius 12, padding-x 14, text 15.5px. The fill SHOULD sit one layer below the input's container (surface inside cards/sheets; bg `#131211` inside the surface-level app bar).
 
 In the Error state the caption MUST be wired to the field, not merely placed under it: `aria-describedby` on the input references the caption's id, and `aria-invalid` marks the input while the error stands.
 
@@ -98,7 +109,7 @@ In the Error state the caption MUST be wired to the field, not merely placed und
 
 ### Toggle
 
-Track 50×30px, full-round — one of the two sanctioned pills (the other is the §12 meter; [foundations.md](foundations.md) §8 holds the list). On: track `accent-9`, thumb 24px `accent-contrast`, right. Off: track elevated `#26221C` with 1px `rgba(255,255,255,.14)` border, thumb `#78716A`, left.
+Track 50×30px, full-round — one of the two sanctioned pills (the other is the §12 meter; [foundations.md](foundations.md) §8 holds the list). On: track `accent-9`, thumb 24px `accent-contrast`, right. Off: track elevated `#2A2621` with 1px `rgba(255,255,255,.14)` border, thumb `#78716A`, left.
 
 ## 5. Badges and chips
 
@@ -137,24 +148,24 @@ Composition of the sidebar and app bar belongs to [web-dashboard/README.md](../w
 Height 40px, radius 10, padding-x 12, icon 17px per the duotone recipe ([iconography.md](iconography.md)), gap 10.
 
 - Active: fill `accent-3`, text + icon `accent-11`, 14.5px / 600.
-- Inactive: transparent, text + icon `#A9A399`, 14.5px / 400; hover fill card `#1E1B17`.
+- Inactive: transparent, text + icon `#A9A399`, 14.5px / 400; hover fill card `#211E1A`.
 
 ### App bar chips
 
-Container: height 58px, surface `#171512`, 1px hairline, radius 14. Contents:
+Container: height 58px, surface `#1A1A1A`, 1px hairline, radius 14. Contents:
 
 | Element | Spec |
 | ------- | ---- |
 | Mark | 30px "S" rounded square (radius 9), house gold — never retints ([brand-identity.md](../brand-identity.md)) |
-| Search | compact input, height 38, radius 12, fill bg `#0E0D0B` |
+| Search | compact input, height 38, radius 12, fill bg `#131211` |
 | Ask entry | Tinted **geometry**, house-gold **paint**: height 38, radius 11, ✦ glyph + "Ask", 700 — rounded rect, not a capsule. Fill `gold.askFill`, 1px `gold.askBorder`, text `gold.askText` (§11), never `accent-3/7/11` — the design-system reference's TOP NAV panel draws it gold, and so does the mobile pill |
-| Avatar | 32px circle, elevated `#26221C` fill, initials 12.5px / 700 `#A9A399` |
+| Avatar | 32px circle, elevated `#2A2621` fill, initials 12.5px / 700 `#A9A399` |
 
 Where Search (or any chip) opens the command menu, its `aria-label` MUST spell the shortcut out in words — "Command K" — rather than leaning on the visible ⌘K glyph, which assistive tech does not announce.
 
 ## 8. Cards
 
-- Fill card `#1E1B17`, 1px border `rgba(255,255,255,.08)`, radius 16 (14 for dense/small cards), padding 16.
+- Fill card `#211E1A`, 1px border `rgba(255,255,255,.08)`, radius 16 (14 for dense/small cards), padding 16.
 - Title 16.5px / 700 `#EDEAE3`; metadata line 14.5px `#A9A399`; a trailing badge (§5) MAY sit in the title row.
 - Action rows use Inline buttons (44px, radius 12), gap 8, 13px above.
 - Cards never carry shadows; a raised card is a lighter surface ([foundations.md](foundations.md)).
@@ -163,7 +174,7 @@ Where Search (or any chip) opens the command menu, its `aria-label` MUST spell t
 
 ### Bottom sheet (mobile)
 
-- Fill elevated `#26221C`; top corners radius 20, bottom square; 1px hairline on top/sides, no bottom border.
+- Fill elevated `#2A2621`; top corners radius 20, bottom square; 1px hairline on top/sides, no bottom border.
 - Grabber: 40×4.5px, full-round, `rgba(255,255,255,.18)`, centered, 10px from the top edge, 14px above the header.
 - Header row: title 19px / 700 `#EDEAE3`, "Cancel" text control 14.5px `#78716A` right-aligned — **where the reference draws one**. s19, s20, s21 and s23 do; **s17 does not**: its header is the ✦ glyph + "Ask Signet" in gold with a trailing caption where Cancel would sit, and the grabber plus the scrim are the dismissal. Reference wins, so a Cancel MUST NOT be added there.
 - Scrim: `rgba(0,0,0,.55)` behind a presented sheet, fading in at the first detent and gone at dismissal. Mobile mechanics (`BottomSheetBackdrop`, snap points, sheet-aware scrollables): [patterns.md](../mobile/patterns.md).
@@ -173,7 +184,7 @@ Where Search (or any chip) opens the command menu, its `aria-label` MUST spell t
 
 ### Dialogs (web)
 
-Elevated `#26221C` fill, radius 20 (sheet family), 1px hairline. **`window.confirm` is banned** — destructive confirmation is always a dialog (web) or sheet (mobile) pairing a Destructive button with a Secondary cancel.
+Elevated `#2A2621` fill, radius 20 (sheet family), 1px hairline. **`window.confirm` is banned** — destructive confirmation is always a dialog (web) or sheet (mobile) pairing a Destructive button with a Secondary cancel.
 
 Web implementation: [`apps/web/components/shared/confirm-dialog.tsx`](../../../apps/web/components/shared/confirm-dialog.tsx). Two rules it carries, both learned by converting six call sites at once:
 
@@ -187,7 +198,7 @@ This section specs the **anatomy** of the three visual variants — one family, 
 ### Skeleton (loading)
 
 - **Content-shaped:** the skeleton mirrors the layout it becomes — same blocks, same radii. No spinner-in-a-box.
-- Shimmer: linear gradient 90°, elevated `#26221C` at 25%/75% and highlight `#332E26` at 50%; background-size 260px; sweep 1.4s linear infinite, phase-shared across blocks.
+- Shimmer: linear gradient 90°, elevated `#2A2621` at 25%/75% and highlight `#38312A` at 50%; background-size 260px; sweep 1.4s linear infinite, phase-shared across blocks.
 - Shapes: text lines 13px tall, radius 6, varied widths (~45–70%); avatars stay circles; control-sized blocks 44px, radius 12.
 - Skeletons are neutral only — never accent, never semantic.
 - Show on first load only; background refetches keep stale content in place ([resilience](../resilience/README.md)).
@@ -239,15 +250,15 @@ Bubbles take the locked bubble radius — **18 with the tail corner at 6** ([fou
 
 | Variant | Fill | Border | Text | Placement |
 | ------- | ---- | ------ | ---- | --------- |
-| Incoming (other) | card `#1E1B17` | 1px `rgba(255,255,255,.08)` | `#EDEAE3` | left, avatar leading |
+| Incoming (other) | card `#211E1A` | 1px `rgba(255,255,255,.08)` | `#EDEAE3` | left, avatar leading |
 | Self | `accent-9` | none | `accent-contrast` | right, no avatar |
 
 - Padding 11px vertical / 14px horizontal, text 16px / 23px line height. Max width **86%** of the thread column on both sides; the bubble hugs its content below that. Message rows sit 16px apart, avatar-to-bubble gap 10px, thread padding 20px.
 - The self bubble is the one place a message takes the chapter accent — `accent-9` fill with `accent-contrast` text ([accent-engine.md](accent-engine.md)). Incoming bubbles stay neutral in every chapter, so "mine vs theirs" survives any accent. (s05 draws the self bubble's text at weight 500, outside the locked 400/600/700 set in [foundations.md](foundations.md); it renders at the body weight.)
-- **Avatar** (incoming only): 32px circle, elevated `#26221C` fill, initials 12.5px / 700 `#A9A399`, top-aligned with the meta line.
+- **Avatar** (incoming only): 32px circle, elevated `#2A2621` fill, initials 12.5px / 700 `#A9A399`, top-aligned with the meta line.
 - **Meta line.** Incoming: `Name · time`, caption 12.5px `#78716A`, *above* the bubble, indented 4px. Self: `time`, caption right-aligned *below* the bubble, and it carries the delivery state when there is one ("5:16 PM · read"). Receipt semantics: [chat/README.md](../../behavior/chat/README.md).
 - **Day divider:** centered caption 12.5px / 600 `#78716A`.
-- **Reactions** attach to the bubble, 6px below and indented 4px, gap 6: the reacted chip is the Accent badge recipe (§5) at height 26 / radius 9 carrying emoji + count, and the add-reaction chip is the same geometry in elevated `#26221C` with no border and a `#A9A399` "+". Both MUST take a ≥ 44px hit area (§2) despite the 26px chip.
+- **Reactions** attach to the bubble, 6px below and indented 4px, gap 6: the reacted chip is the Accent badge recipe (§5) at height 26 / radius 9 carrying emoji + count, and the add-reaction chip is the same geometry in elevated `#2A2621` with no border and a `#A9A399` "+". Both MUST take a ≥ 44px hit area (§2) despite the 26px chip.
 - **Mention/DM red applies unchanged in chat**, including in accent-tinted chapters; the value and its rule are owned by [foundations.md](foundations.md) §5. Badge recipe and placement: §5 and [navigation.md](../mobile/navigation.md).
 - **Sided layout is for bubbles, not for the whole row.** A rich card in the flow (poll, task, event, audit, the AI answer card) keeps the incoming shape whoever sent it — panel 4e draws its card in the flow rather than sided, and §11 specs bubbles. A deleted message keeps the side it had, since a row that jumps columns the moment its sender deletes it reflows the thread around the one row nobody should be reading.
 - **The chip's 44px hit area grows vertically, not on every side.** Chips sit 6px apart, so a hit area overhanging 9px all round has each chip's overlay covering ~3px of the *visible* chip before it, and the later sibling wins the overlap — a control whose right edge cannot be clicked is a worse defect than the one it fixes. The vertical overhang lands in the row's own padding, where there is no sibling to swallow.
@@ -263,7 +274,7 @@ The one deliberately distinct surface in the system, and the only one that **nev
 
 | Slot | Spec |
 | ---- | ---- |
-| Container | radius 20, surface `#171512`, 1px border `rgba(239,182,59,.35)` (house gold @ 35%), padding 16 |
+| Container | radius 20, surface `#1A1A1A`, 1px border `rgba(239,182,59,.35)` (house gold @ 35%), padding 16 |
 | Header | ✦ glyph + "Ask Signet" 13px / 700 `#F4CB63`, trailing caption 12.5px `#78716A` |
 | Answer | 16px / 24px `#EDEAE3`; the answer's key figure bolded in `#F4CB63`, any secondary emphasis bold in `#EDEAE3` |
 | Sources | wrapping chip row, gap 7, 12px above; chips per §5 geometry (height 27–28, radius 9), fill `#251E0E`, 1px `#6B5619`, text 12.5px / 600 `#F4CB63`, leading duotone source glyph ([iconography.md](iconography.md)) |
@@ -271,7 +282,7 @@ The one deliberately distinct surface in the system, and the only one that **nev
 
 - **Never retints — the card is always house gold** (`#EFB63B` family, [brand-identity.md](../brand-identity.md)), never the chapter accent. Panel 4e retints live across four chapter seeds and the bubbles follow the accent while this card stays gold; its caption states the rule outright. In a house-gold chapter the card is indistinguishable from the accent tint family, which is exactly the intent — the answer surface speaks in Signet's voice, not the chapter's.
 - **Source chips are the citation UI.** Each cited source renders as one tappable chip (document, minutes, or channel), opening the source in-app; hit area ≥ 44px (§2). The citation contract itself — every answer cites, citations arrive as structured spans the UI renders as links, low confidence refuses rather than fabricates — is owned by [ai.md](../../behavior/ai.md) and MUST NOT be restated in UI specs. Header and footer copy: [writing.md](writing.md).
-- **Nested variant.** Presented inside the Ask sheet (s17), the answer block steps down to card `#1E1B17` at radius 16 — one ladder step below the sheet it sits in — and the ✦ header moves up to the sheet header. Sheet chrome, grabber, and dismissal are §9.
+- **Nested variant.** Presented inside the Ask sheet (s17), the answer block steps down to card `#211E1A` at radius 16 — one ladder step below the sheet it sits in — and the ✦ header moves up to the sheet header. Sheet chrome, grabber, and dismissal are §9.
 - **✦ Ask mark (claimed here).** The four-pointed sparkle ✦ is the mark of the Ask/AI affordance: a text glyph, not a duotone icon, so it is exempt from the [iconography.md](iconography.md) recipe. It renders in house gold `#F4CB63` at 15–16px in the card and Ask-sheet headers, and leads the Ask entry (§7) and the mobile Ask pill ([navigation.md](../mobile/navigation.md)). It MUST NOT mark anything that is not an Ask/AI entry point or answer.
 - **The entry control is gold too — this line used to say otherwise and was wrong.** The reference draws the ✦ Ask pill on s04 and s06 in the same pinned house-gold tints as the answer card (`#251E0E` fill, `#6B5619` border, `#F4CB63` text at 36px height, radius 10 — see `canvas-screens.dc.html` s04/s06), not as an accent Tinted button, and `apps/mobile/components/chat/ask-pill.tsx` ships those tokens. The web top-nav entry is drawn the same way (`signet-design-system.dc.html`, TOP NAV panel), so §7 has been corrected too: the Ask entry takes the Tinted *geometry* and the house-gold paint. The reference wins on visuals ([`../README.md`](../README.md)); the whole Ask affordance, entry and answer alike, speaks in Signet's voice rather than the chapter's.
 - **The pinned house-gold tints are named tokens.** They are the house-gold instance of the accent tint family, but this card holds them regardless of the chapter seed, so they cannot be spelled `accent-3/7/11`. They live in the `gold` group of `packages/theme/src/signet.ts`, named for the surface that owns them rather than for scale steps: `gold.askFill` (`#251E0E`), `gold.askBorder` (`#6B5619`), `gold.askText` (`#F4CB63`), alongside `gold.house` (`#EFB63B`) and `gold.onHouse` (`#2C2000`). The literal hexes in the table above are those tokens' values; implementations MUST use the token names.
