@@ -11,7 +11,7 @@ import {
   SEEDS,
   SURFACE,
   TEXT,
-} from "@/tests/signet-contrast";
+  INDISTINGUISHABLE,} from "@/tests/signet-contrast";
 
 /**
  * Contrast for the row states `components/ui/table.tsx` paints.
@@ -41,7 +41,7 @@ describe("the defect this file exists for", () => {
   it("would have caught `hover:bg-accent` on a card-seated row", () => {
     // `--accent` and `--popover` are the same value, so hovering a row inside a
     // card moved it one neutral step: no feedback a person could see.
-    expect(ratio(SURFACE.popover, SURFACE.card)).toBeLessThan(1.1);
+    expect(ratio(SURFACE.popover, SURFACE.card)).toBeLessThan(INDISTINGUISHABLE);
   });
 
   it("would have caught swapping the neutral step for the tint and stopping", () => {

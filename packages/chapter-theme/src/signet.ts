@@ -36,11 +36,11 @@ export type { SignetPalette };
 const GENERATOR_PARAMS = {
   appearance: "dark",
   gray: "#191919",
-  background: "#0E0D0B",
+  background: "#131211",
 } as const;
 
 /** The house default seed (accent-engine.md §3). Not a separate palette — it runs the same pipeline. */
-export const HOUSE_SEED = "#F2B72E";
+export const HOUSE_SEED = "#DDB844";
 
 /** WCAG AA for normal text, the floor the accent-derived text roles must clear. */
 const MIN_TEXT_CONTRAST = 4.5;

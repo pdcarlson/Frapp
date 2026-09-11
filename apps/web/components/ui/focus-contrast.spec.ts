@@ -37,20 +37,40 @@ const RING_ROLE: Record<string, string> = {
   primary: "--primary",
 };
 
-/** Pull `foo` out of the `focus-visible:ring-foo` in a recipe. */
+/**
+ * Pull the ring's custom property out of a recipe.
+ *
+ * Two spellings are legal, and both are read here rather than one being
+ * normalized away, because which one a recipe uses is itself a decision:
+ *
+ *  - `ring-<key>` — a colour key on the shared Tailwind preset, resolved
+ *    through `RING_ROLE`.
+ *  - `ring-[var(--token)]` — an arbitrary value, used when the token exists on
+ *    the Signet surface only and must NOT be added to the preset, which
+ *    `apps/landing` also reads. `FOCUS_RING_OFFSET` is that case; its own
+ *    docstring carries the reason.
+ */
 function ringRoleOf(recipe: string): string {
-  const names = [...recipe.matchAll(/focus-visible:ring-([a-z-]+)/g)]
+  const arbitrary = [
+    ...recipe.matchAll(/focus-visible:ring-\[var\((--[\w-]+)\)\]/g),
+  ].map((m) => m[1]!);
+
+  const keyed = [...recipe.matchAll(/focus-visible:ring-([a-z-]+)/g)]
     .map((m) => m[1]!)
     // `ring-2` / `ring-[3px]` are widths and `ring-offset-*` is the offset band.
-    .filter((n) => n !== "offset-2" && !n.startsWith("offset-"));
+    .filter((n) => n !== "offset-2" && !n.startsWith("offset-"))
+    .map((n) => {
+      const role = RING_ROLE[n];
+      expect(
+        role,
+        `unrecognized ring token "${n}" — add it to RING_ROLE and check its contrast`,
+      ).toBeDefined();
+      return role!;
+    });
 
-  expect(names).toHaveLength(1);
-  const role = RING_ROLE[names[0]!];
-  expect(
-    role,
-    `unrecognized ring token "${names[0]}" — add it to RING_ROLE and check its contrast`,
-  ).toBeDefined();
-  return role!;
+  const roles = [...arbitrary, ...keyed];
+  expect(roles).toHaveLength(1);
+  return roles[0]!;
 }
 
 describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 alone", () => {
@@ -74,50 +94,78 @@ describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 a
       ),
     );
 
-    // `#4B0082` is the tightest seed at ~3.05:1. Pinned a hair under so an
-    // ordinary rounding change is not a failure, but an actual regression is.
-    expect(worst).toBeGreaterThan(3.04);
+    // accent-11's tightest seed is `#1F1A15` at ~8.48:1 against a 3.0 floor.
+    //
+    // The bound is deliberately well under the measurement rather than a hair
+    // under it. This assertion previously read `> 3.04` against accent-8's
+    // 3.05:1 worst case, which made it a tripwire on an indicator that was one
+    // rounding step from non-conformance — and the greenfield ladder duly
+    // tripped it. A recipe whose margin needs pinning to two decimal places is
+    // the finding; 8:1 says the role has headroom, and a drop below that is a
+    // palette change worth stopping on rather than a rounding artifact.
+    expect(worst).toBeGreaterThan(8);
   });
 
-  it("records why --primary was wrong here, so the swap is not undone as cosmetic", () => {
-    // The five that shipped without a conforming indicator. Kept as an explicit
-    // expectation rather than a comment: if a palette change ever made accent-9
-    // pass, this failing tells the next reader the constraint has moved.
-    const failures = SEEDS.filter(
-      (seed) =>
-        ratio(accentRolesFor(seed)["--primary"]!, SURFACE.background) <
-        AA_NON_TEXT,
-    );
+  it("records why --primary and --ring are both wrong here, so the swap is not undone as cosmetic", () => {
+    // Kept as explicit expectations rather than comments: if a palette change
+    // ever made one of these pass, the failure tells the next reader the
+    // constraint has moved instead of leaving a stale rationale in a comment.
+    const failingSeeds = (role: string) =>
+      SEEDS.filter(
+        (seed) => ratio(accentRolesFor(seed)[role]!, SURFACE.background) < AA_NON_TEXT,
+      );
 
-    expect(failures).toEqual([
+    // accent-9 never worked here; this is the original defect.
+    expect(failingSeeds("--primary")).toEqual([
       "#006400",
-      "#1F4E79",
-      "#800000",
       "#8B0000",
       "#8B4513",
+      "#BF0A30",
+    ]);
+
+    // accent-8 worked on the previous surface ladder and stopped working when
+    // the greenfield ladder lifted `--background` to `#131211`. Three of these
+    // four are the achromatic seeds, which all derive the same `#606060` ring.
+    expect(failingSeeds("--ring")).toEqual([
+      "#000000",
+      "#4B0082",
+      "#C0C0C0",
+      "#FFFFFF",
     ]);
   });
 });
 
-describe("the offset band is load-bearing, not decoration", () => {
+describe("the offset band fixes the surface the measurement assumes", () => {
   it("keeps ring-offset-background, which is the surface the measurement assumes", () => {
     // The ring's inner edge abuts this 2px band. Drop it and the ring is judged
     // against whatever surface the control happens to sit on — see below.
     expect(FOCUS_RING_OFFSET).toContain("focus-visible:ring-offset-background");
   });
 
-  it("shows the ring does NOT clear 3:1 against the deeper ladder steps", () => {
+  it("no longer depends on the offset for conformance, and says so", () => {
     const role = ringRoleOf(FOCUS_RING_OFFSET);
     const worstAgainst = (surface: string) =>
       Math.min(
         ...SEEDS.map((seed) => ratio(accentRolesFor(seed)[role]!, surface)),
       );
 
-    // Why the offset exists: on a card or a popover the ring alone would fail,
-    // so the band of --background is what guarantees a conforming neighbour.
-    expect(worstAgainst(SURFACE.surface1)).toBeLessThan(AA_NON_TEXT);
-    expect(worstAgainst(SURFACE.card)).toBeLessThan(AA_NON_TEXT);
-    expect(worstAgainst(SURFACE.popover)).toBeLessThan(AA_NON_TEXT);
+    // This assertion is INVERTED from what it read before, and the inversion is
+    // the point rather than a loosening.
+    //
+    // While this recipe drew in accent-8, the ring failed 3:1 against every
+    // ladder step deeper than `--background` (2.86 on `--surface-1`, 2.69 on
+    // `--card`, 2.48 on `--popover`), so the offset band was the only thing
+    // guaranteeing a conforming neighbour — it was load-bearing for contrast.
+    // On accent-11 the ring clears the floor against every step on its own.
+    //
+    // So the offset is kept for two weaker but still real reasons — it fixes
+    // one comparison surface instead of letting conformance vary by host, and
+    // it keeps the ring from abutting the control — and NOT because the ring
+    // would otherwise fail. Pinning the true relationship means a future move
+    // back down the accent scale fails here, where the rationale lives.
+    for (const surface of [SURFACE.surface1, SURFACE.card, SURFACE.popover]) {
+      expect(worstAgainst(surface)).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    }
   });
 });
 

@@ -62,7 +62,7 @@ describe("the capability matrix states held and missing in text tones", () => {
       MATRIX_SURFACE,
     );
     expect(washed).toBeLessThan(AA_TEXT);
-    expect(washed).toBeCloseTo(2.184, 2);
+    expect(washed).toBeCloseTo(2.173, 2);
   });
 
   it("rules out `--muted`, which reads like the right token and is not", () => {

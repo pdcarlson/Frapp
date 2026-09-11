@@ -48,6 +48,19 @@ const COLOR_LADDERS = [
   "Semantic Colors",
 ];
 
+/**
+ * The sections that pin the non-color CSS custom properties: the web half of
+ * the type scale (§7), the spacing grid and touch floors (§9), and scrollbars
+ * (§12).
+ *
+ * Separate from `COLOR_LADDERS` because these sections are not color ladders —
+ * each carries prose and, in the type and spacing cases, a second table keyed by
+ * role name rather than by token. `tokenTable` reads every table row in the
+ * section, so the `--` filter in `documentedTokens` is what narrows these to the
+ * token rows. That filter is load-bearing here, not defensive.
+ */
+const SCALE_TABLES = ["Typography", "Spacing & Touch Targets", "Scrollbars"];
+
 // ── Markdown helpers ─────────────────────────────────────────────────────────
 
 /**
@@ -155,9 +168,10 @@ function numbers(cell: string): number[] {
   return (cell.match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
 }
 
-/** Every `--token` foundations.md names in its four color-ladder tables. */
+/** Every `--token` foundations.md names in a table `getSignetCssVars` emits from. */
 function documentedTokens(): string[] {
-  return COLOR_LADDERS.flatMap((title) => [...tokenTable(title).keys()])
+  return [...COLOR_LADDERS, ...SCALE_TABLES]
+    .flatMap((title) => [...tokenTable(title).keys()])
     .filter((name) => name.startsWith("--"));
 }
 
@@ -342,6 +356,23 @@ describe("getSignetCssVars", () => {
    * The gold family is owned by `brand-identity.md`; the mention pair appears in
    * Semantic Colors as the prose row "Mention/DM red", not under a token name.
    */
+  /**
+   * Tokens foundations.md names that `getSignetCssVars()` deliberately does NOT
+   * emit, because they are CSS-only.
+   *
+   * Both are AA text lifts of a semantic hue (§5), not semantics of their own:
+   * the solid token stays the fill and the border, and only the *text* tone
+   * moves. They live in `signet.css` alone because `signetDarkTokens` is what
+   * `apps/mobile` reads — 63 files import it — and shipping a lift there would
+   * claim a mobile treatment that no mobile screen implements. `--destructive-text`
+   * predates this list and was already CSS-only for the same reason; `--info-text`
+   * joined it when the greenfield ladder pushed solid `--info` under the gate.
+   *
+   * A token here is a real token with a real home. This is not a suppression
+   * list for tokens that were forgotten.
+   */
+  const CSS_ONLY = ["--destructive-text", "--info-text"];
+
   const UNDOCUMENTED_HERE = [
     "--gold-ask-border",
     "--gold-ask-fill",
@@ -358,13 +389,18 @@ describe("getSignetCssVars", () => {
     // `signet.ts` — the two-edit workflow this file's header prescribes — does
     // not also require editing a literal here, and a failure names the token
     // instead of diffing two anonymous arrays.
-    const expected = [...documentedTokens(), ...UNDOCUMENTED_HERE];
+    const expected = [
+      ...documentedTokens().filter((name) => !CSS_ONLY.includes(name)),
+      ...UNDOCUMENTED_HERE,
+    ];
 
     expect(Object.keys(vars).sort()).toEqual(expected.sort());
   });
 
   it("emits every fixed token foundations.md names", () => {
-    const documented = documentedTokens();
+    const documented = documentedTokens().filter(
+      (name) => !CSS_ONLY.includes(name),
+    );
 
     expect(documented.length).toBeGreaterThan(0);
     for (const name of documented) {

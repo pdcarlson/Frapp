@@ -173,9 +173,21 @@ describe("the accent preview reports its own legibility", () => {
    * `resolveChapterAccentColor` asks whether the accent is legible *as text on
    * the card*; a primary button needs the other question, whether text is
    * legible *on the accent*. They diverge, and the pre-push review found the
-   * band where: `#0080FD` passes the first with `reason: "ok"` and no warning,
-   * and fails the second at 4.191:1. Before this, the swatch drew "Preview" in
+   * band where: `#0086FE` passes the first with `reason: "ok"` and no warning,
+   * and fails the second at 4.446:1. Before this, the swatch drew "Preview" in
    * a tone `pickAccessibleColor` had explicitly rejected and said nothing.
+   *
+   * The band is narrow by construction, which is why the seed is exact and why
+   * it moved once already. Both checks rise together as the accent lightens —
+   * a lighter accent is more legible on the card AND gives dark ink more
+   * contrast — so "kept by the resolver but illegible under ink" is a thin
+   * strip rather than a broad region. The original seed was `#0080FD`, which
+   * measured 4.497:1 on the old `--card` and survived only because the
+   * resolver rounds to 2dp before comparing. The greenfield ladder
+   * (foundations.md §2) lifted `--card` to `#211E1A`, dropping it to 4.352 and
+   * substituting it away, which silently emptied this test. `#0086FE` sits at
+   * 4.62:1 on the card, so it clears the floor on the value rather than on the
+   * rounding.
    *
    * `settings-contrast.spec.ts` measures the tones. This asserts the screen
    * actually surfaces the verdict, which no measurement can.
@@ -191,11 +203,11 @@ describe("the accent preview reports its own legibility", () => {
     await user.click(screen.getByRole("tab", { name: /theme/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
-    await user.type(hex, "#0080FD");
+    await user.type(hex, "#0086FE");
     expect(
       screen.getByText(/under the 4\.5:1 minimum/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/4\.2:1/)).toBeInTheDocument();
+    expect(screen.getByText(/4\.4:1/)).toBeInTheDocument();
   });
 
   it("stays quiet for an accent whose label text is legible", async () => {

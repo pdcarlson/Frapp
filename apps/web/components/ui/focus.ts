@@ -22,10 +22,11 @@
  * `TabsTrigger` the bottom border IS the selected indicator — so swapping it on
  * focus either loses the state or, worse, paints the exact visual that means
  * "selected", leaving a keyboard user unable to tell focus from selection.
- * Those controls take `FOCUS_RING_OFFSET`, which puts the accent ring step in
- * an offset ring *around* the control and leaves its border alone. It uses
- * `--ring` at full opacity rather than `--primary`, because with no border to
- * swap the ring has to clear the 3:1 floor by itself — see that constant.
+ * Those controls take `FOCUS_RING_OFFSET`, which puts an accent step in an
+ * offset ring *around* the control and leaves its border alone. It uses
+ * `--accent-text` (accent-11) at full opacity rather than `--primary` or
+ * `--ring`, because with no border to swap the ring has to clear the 3:1 floor
+ * by itself on every chapter seed — see that constant.
  *
  * `focus-visible` rather than `focus`: a pointer click on a button should not
  * leave a ring behind it. Controls that are focusable but not clickable — the
@@ -58,30 +59,51 @@ export const FOCUS_RING =
  * reason a control lands on it — so the ring is the entire indicator and must
  * clear README §6's 3:1 non-text floor on its own.
  *
- * It draws in `--ring` (accent-8), **not** `--primary` (accent-9). Measured
- * against `--background` across all 19 seeded chapter accents
- * (`components/ui/focus-contrast.spec.ts`): `--primary` fails on five of them
- * — `#800000` at 1.77:1, `#8B0000` 1.94, `#1F4E79` 2.24, `#006400` 2.61,
- * `#8B4513` 2.74 — while `--ring` clears the floor on all nineteen. On those
- * five chapters the accent-9 ring meant a keyboard user got no conforming
- * focus indicator at all.
+ * It draws in `--accent-text` (accent-11), **not** `--primary` (accent-9) and
+ * no longer `--ring` (accent-8). Measured against `--background` across all 19
+ * seeded chapter accents (`components/ui/focus-contrast.spec.ts`):
  *
- * The margin is real but thin: `--ring`'s worst seed is `#4B0082` at 3.05:1
- * against a 3.0 floor. The guard pins it, so a palette change that erodes it
- * fails the suite rather than shipping.
+ * | Role | Worst seed | Clears 3:1 |
+ * | --- | --- | --- |
+ * | `--primary` (accent-9) | 1.87:1 | no, fails on 4 |
+ * | `--ring` (accent-8) | 2.94:1 | no, fails on 4 |
+ * | `--accent-text` (accent-11) | 8.48:1 | yes, on all 19 |
+ *
+ * `--ring` was the token here until the greenfield surface ladder
+ * (foundations.md §2) lifted `--background` from `#0E0D0B` to `#131211`. Its
+ * margin was always thin — 3.05:1 against a 3.0 floor on `#4B0082` — and the
+ * lighter base consumed it, dropping `#4B0082` to 2.94 and the three achromatic
+ * seeds (`#000000`, `#C0C0C0`, `#FFFFFF`, which all derive ring `#606060`) to
+ * 2.98. That is a keyboard user on four chapters with no conforming indicator,
+ * which is the exact defect this recipe was created to fix, so the token moved
+ * up the scale rather than the guard moving down.
+ *
+ * accent-11 is the accent engine's text role: `accent-engine.md` §8 gates it at
+ * 4.5:1 as text, so 3:1 as non-text UI has real headroom under it. That is why
+ * it is robust where accent-8 was merely passing.
+ *
+ * ## Why `ring-[var(--accent-text)]` and not a preset colour key
+ *
+ * Do not "tidy" this into an `accent-text` key on the shared Tailwind preset.
+ * That preset is read by `apps/landing` as well as `apps/web`, and
+ * `tailwind.config.spec.ts` asserts every token it reads is defined in the
+ * LEGACY `globals.css` `:root`. `--accent-text` is a Signet accent role that
+ * has no legacy counterpart, so adding the key would either fail that guard or
+ * force a Signet token onto the frozen landing surface — which
+ * `foundations.md` §1 forbids outright. An arbitrary value keeps the token on
+ * the one surface that defines it.
  *
  * ## `ring-offset-background` is load-bearing — do not "simplify" it away
  *
- * The offset band is what makes the comparison above the right one. The ring's
- * inner edge abuts that 2px band of `--background`; its outer edge abuts
- * whatever surface the control sits on, and against the deeper ladder steps
- * `--ring` does *not* clear 3:1 (worst seed: 2.86 on `--surface1`, 2.69 on
- * `--card`, 2.48 on `--popover`). Dropping the offset would leave the ring
- * depending on its host surface and reintroduce the failure this recipe was
- * fixed to remove.
+ * The offset band is what makes the comparison above the right one: the ring's
+ * inner edge abuts that 2px band of `--background`, so `--background` is the
+ * surface it is measured against. Dropping the offset would leave the ring
+ * depending on whichever ladder step hosts the control, which is both a weaker
+ * and a varying comparison. Keep it even though accent-11 has margin — the
+ * margin is what makes the recipe robust, not a budget to spend.
  */
 export const FOCUS_RING_OFFSET =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-text)] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
 
 export const FOCUS_RING_ALWAYS =
   "focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/25"

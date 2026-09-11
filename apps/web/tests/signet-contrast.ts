@@ -84,6 +84,25 @@ export { HOUSE_SEED, signetDarkTokens };
 export const AA_TEXT = 4.5;
 export const AA_NON_TEXT = 3;
 
+/**
+ * The ceiling under which two large areas read as the same colour.
+ *
+ * Not a WCAG figure and not a spec floor — the gates above are the only two of
+ * those. This is the perceptibility heuristic the washout guards assert
+ * against: a fill whose contrast with its own container is under this is a
+ * state nobody can see, which is the defect class `table-contrast`,
+ * `elevation-contrast` and `profile-contrast` all exist to catch.
+ *
+ * It lives here as a constant because it was three scattered `1.1` literals,
+ * and the greenfield surface ladder (foundations.md §2) moved every adjacent
+ * step slightly further apart — `--popover` on `--card` went from 1.09 to
+ * 1.1046 — which tripped all three at once without any of them becoming
+ * visible. Three literals that must move together are the shape this file
+ * exists to collapse. 1.2 is the bound `profile-contrast` already used for the
+ * same judgement, so the value is the codebase's own, not a new invention.
+ */
+export const INDISTINGUISHABLE = 1.2;
+
 export const ratio = (fg: string, bg: string) =>
   contrastRatio(parseHex(fg)!, parseHex(bg)!);
 

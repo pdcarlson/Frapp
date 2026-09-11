@@ -11,7 +11,7 @@ import {
   signetDarkTokens,
   SURFACE,
   TEXT,
-} from "@/tests/signet-contrast";
+  INDISTINGUISHABLE,} from "@/tests/signet-contrast";
 
 /**
  * The defects this file exists for — the Profile & pre-auth family, #920 slice 8.
@@ -44,8 +44,8 @@ describe("the archetype card's selected state", () => {
       );
       best = Math.max(best, ratio(washed, WIZARD_SURFACE));
     }
-    expect(best).toBeLessThan(1.2);
-    expect(best).toBeCloseTo(1.106, 2);
+    expect(best).toBeLessThan(INDISTINGUISHABLE);
+    expect(best).toBeCloseTo(1.124, 2);
   });
 
   it("would have caught `hover:bg-accent/50`, which was a colour over itself", () => {
@@ -56,7 +56,7 @@ describe("the archetype card's selected state", () => {
     // `--popover` wash at 50% over the app floor is a hover nobody sees as a
     // hover, because it is the same step the card already is not.
     const washed = applyAlpha(SURFACE.popover, 0.5, WIZARD_SURFACE);
-    expect(ratio(washed, WIZARD_SURFACE)).toBeLessThan(1.1);
+    expect(ratio(washed, WIZARD_SURFACE)).toBeLessThan(INDISTINGUISHABLE);
   });
 
   it("separates selected from resting and from hover, under every seed", () => {
@@ -83,8 +83,8 @@ describe("the tutorial's step strip, and the fix that would have been a second d
     // `--secondary` holds `--card`'s value and a dialog is `--popover`, so the
     // strip composited to `#211E19` — 1.050:1 against its own container.
     const washed = applyAlpha(SURFACE.card, 0.6, SURFACE.popover);
-    expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.05, 2);
-    expect(ratio(washed, SURFACE.popover)).toBeLessThan(1.1);
+    expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.064, 2);
+    expect(ratio(washed, SURFACE.popover)).toBeLessThan(INDISTINGUISHABLE);
   });
 
   it("rules out the accent tint, which is the obvious repair and is worse", () => {
@@ -100,8 +100,8 @@ describe("the tutorial's step strip, and the fix that would have been a second d
         ratio(accentRolesFor(seed)["--accent-subtle"]!, SURFACE.popover),
       );
     }
-    expect(best).toBeLessThan(1.1);
-    expect(best).toBeCloseTo(1.054, 2);
+    expect(best).toBeLessThan(INDISTINGUISHABLE);
+    expect(best).toBeCloseTo(1.099, 2);
   });
 
   it("shows dropping the fill improves the boundary rather than costing one", () => {
@@ -129,8 +129,8 @@ describe("the step indicator's track", () => {
       worstOnBackground = Math.min(worstOnBackground, ratio(fill, SURFACE.background));
     }
     expect(worstOnBackground).toBeGreaterThan(worstOnBorder);
-    expect(worstOnBorder).toBeCloseTo(1.486, 2);
-    expect(worstOnBackground).toBeCloseTo(1.774, 2);
+    expect(worstOnBorder).toBeCloseTo(1.528, 2);
+    expect(worstOnBackground).toBeCloseTo(1.869, 2);
   });
 });
 
@@ -139,9 +139,9 @@ describe("the emerald notice `/join` shipped", () => {
     // Tailwind's `emerald-900`. It travelled with a `dark:text-emerald-100`
     // that never applied — Signet is dark-only and nothing sets `.dark` — so
     // the tone that actually shipped was the light branch: near-black text on
-    // `#0E0D0B`. The family's last raw-palette colour and last inert `dark:`.
+    // the app floor. The family's last raw-palette colour and last inert `dark:`.
     expect(ratio("#064e3b", SURFACE.background)).toBeLessThan(AA_TEXT);
-    expect(ratio("#064e3b", SURFACE.background)).toBeCloseTo(1.999, 2);
+    expect(ratio("#064e3b", SURFACE.background)).toBeCloseTo(1.925, 2);
   });
 
   it("keeps the danger tone the rebuilt inline error uses above the gate", () => {
@@ -168,7 +168,7 @@ describe("the pre-auth screens have no tenant, so nothing on them takes the acce
     // misses §6's text gate, which is why every one of them lifts to
     // `--muted-foreground`. The assertion is the argument.
     expect(ratio(TEXT.muted, SURFACE.background)).toBeLessThan(AA_TEXT);
-    expect(ratio(TEXT.muted, SURFACE.background)).toBeCloseTo(4.041, 2);
+    expect(ratio(TEXT.muted, SURFACE.background)).toBeCloseTo(3.893, 2);
     expect(ratio(TEXT.mutedForeground, SURFACE.background)).toBeGreaterThanOrEqual(AA_TEXT);
   });
 

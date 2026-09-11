@@ -33,11 +33,11 @@
 @layer base {
   :root {
     /* ── Surface ladder (fixed for every chapter; foundations §2) ── */
-    --background: #0E0D0B;
-    --surface-1: #171512;
-    --card: #1E1B17;
+    --background: #131211;
+    --surface-1: #1A1A1A;
+    --card: #211E1A;
     --card-foreground: #EDEAE3;
-    --popover: #26221C;
+    --popover: #2A2621;
     --popover-foreground: #EDEAE3;
 
     /* ── Borders & hairlines (foundations §3) ─────────────────────
@@ -62,23 +62,30 @@
      * success 2.54:1 and destructive 3.35:1). On dark surfaces, prefer the
      * tint recipe (13% alpha fill + hue text) over solid fills. */
     --success: #3FB950;
-    --success-foreground: #0E0D0B;
+    --success-foreground: #131211;
     --warning: #E5A000;
-    --warning-foreground: #0E0D0B;
+    --warning-foreground: #131211;
     --destructive: #F85149;
-    --destructive-foreground: #0E0D0B;
+    --destructive-foreground: #131211;
     /* The AA-lifted tone for danger text ON a danger tint, which components.md
      * §5 sanctions explicitly ("implementations MAY lift the text tone for AA
      * contrast, but the hue is the fixed semantic") and the reference already
-     * does for success and info (#4BC262, #4C93F8). Measured: #F85149 on its
-     * own 13% tint is 4.39:1 over --card and 4.04:1 over --popover, i.e. below
-     * the 4.5:1 release gate in the design-system README §6 on exactly the two
-     * surfaces destructive badges and buttons actually sit on. #FF7B72 is the
-     * same hue lifted and clears 4.86:1 at its worst (over the 20% hover tint
-     * on --popover). The solid `--destructive` stays the fill and the border. */
+     * does for success and info (#4BC262, #4C93F8). Solid #F85149 is below the
+     * 4.5:1 release gate (design-system README §6) on the surfaces destructive
+     * badges and buttons sit on, and the greenfield ladder widened that gap:
+     * it now measures 4.95:1 over --card and 4.48:1 over --popover before any
+     * tint is composited. #FF7B72 is the same hue lifted and measures 6.58:1
+     * over --card and 5.96:1 over --popover. The solid `--destructive` stays
+     * the fill and the border. */
     --destructive-text: #FF7B72;
     --info: #2F81F7;
-    --info-foreground: #0E0D0B;
+    --info-foreground: #131211;
+    /* The same AA lift components.md §5 sanctions for danger, applied to info
+     * for the same reason: the lighter ladder puts solid `--info` at 4.43:1 over
+     * --card and 4.01:1 over --popover, under the 4.5:1 gate on the two surfaces
+     * info badges actually sit on. #4C93F8 is the reference's own lifted info
+     * tone and clears 5.40:1 / 4.89:1 there. The solid stays the fill and border. */
+    --info-text: #4C93F8;
     /* "You were addressed" — @-mention or DM. Fixed and semantic: never the
      * chapter accent, never any other status. White foreground is locked by
      * foundations §5. */
@@ -91,21 +98,21 @@
      * neutral hover/highlight fill for menus and undrawn primitives
      * (components.md §2): one ladder step up. Chapter-accent tints
      * are a different thing — `--accent-subtle` below. */
-    --secondary: #1E1B17;
+    --secondary: #211E1A;
     --secondary-foreground: #EDEAE3;
-    --accent: #26221C;
+    --accent: #2A2621;
     --accent-foreground: #EDEAE3;
 
     /* ── Accent slot — house default (accent-engine.md §2/§3) ─────
-     * deriveSignetPalette("#F2B72E") output, pinned by signet.css.spec.ts.
+     * deriveSignetPalette("#DDB844") output, pinned by signet.css.spec.ts.
      * Overridden per chapter at runtime; never edit by hand. */
-    --primary: #F2B72E;
-    --primary-hover: #E7AC1A;
-    --primary-foreground: #2B2009;
-    --ring: #86692B;
-    --accent-subtle: #2C210B;
-    --accent-border: #6A5220;
-    --accent-text: #FFC64A;
+    --primary: #DDB844;
+    --primary-hover: #D2AD37;
+    --primary-foreground: #292109;
+    --ring: #796938;
+    --accent-subtle: #282314;
+    --accent-border: #5F522C;
+    --accent-text: #E7C86B;
 
     /* ── Derived accent steps (components.md §3 states) ───────────
      * NOT a second accent source: each is a `color-mix` of the slot
@@ -147,7 +154,7 @@
      * The one neutral above the ladder's top step, used only by the
      * shimmer sweep below. Neutral by rule: skeletons are never
      * accent and never semantic. */
-    --skeleton-highlight: #332E26;
+    --skeleton-highlight: #363029;
 
     /* ── Shadows are banned on Signet surfaces (foundations §10) ──
      * Elevation is a lighter surface step. The tokens exist because
@@ -164,6 +171,63 @@
      * a bundled webfont — spec/architecture/README.md §15). */
     --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
       "Liberation Mono", "Courier New", monospace;
+
+    /* ── Type scale (foundations §7) ──────────────────────────────
+     * The six roles mobile already reads off `signet.ts`, exposed here
+     * so web chrome consumes the same scale instead of restating sizes
+     * per component. Sizes carry `px`; the numeric source in `signet.ts`
+     * stays unitless because React Native needs it that way.
+     *
+     * Only `body` has a line height in the spec (16/25). The other five
+     * are size-plus-weight and take the platform default rather than an
+     * invented value — see the note on `SignetTypeRole`.
+     *
+     * Body MUST NOT render below 16. Sizes MUST come from this scale;
+     * arithmetic on a role token is a defect exactly as a raw hex is. */
+    --text-display: 32px;
+    --text-display-weight: 700;
+    --text-headline: 24px;
+    --text-headline-weight: 700;
+    --text-title: 18px;
+    --text-title-weight: 600;
+    --text-body: 16px;
+    --text-body-weight: 400;
+    --text-body-line: 25px;
+    --text-label: 14px;
+    --text-label-weight: 600;
+    --text-caption: 12.5px;
+    --text-caption-weight: 400;
+
+    /* ── The 4px grid (foundations §9) ────────────────────────────
+     * Every value is 4 x an integer. The dominant rhythm is 8 / 16 / 24:
+     * 8 inside a component, 16 between components, 24 between sections. */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 12px;
+    --space-lg: 16px;
+    --space-xl: 24px;
+    --space-2xl: 32px;
+    --space-3xl: 48px;
+
+    /* ── Touch floors (foundations §9) ────────────────────────────
+     * Web honors the same 44px minimum as mobile. A pointer does not
+     * make a small target acceptable. */
+    --touch-min: 44px;
+    --touch-button: 46px;
+
+    /* ── Scrollbars ───────────────────────────────────────────────
+     * A scroll region on a Signet surface draws its own bar. The browser
+     * default renders as a light-mode artifact on this ladder.
+     *
+     * The thumb is low-opacity white for the same reason hairlines are
+     * (foundations §3): it tracks whatever surface it overlays rather
+     * than being pinned to one ladder step, so the same token works in
+     * the sidebar, a card and a sheet. The track is transparent so a
+     * scroll region gains no visible gutter when nothing is scrolling. */
+    --scrollbar-width: 10px;
+    --scrollbar-thumb: rgba(255,255,255,0.14);
+    --scrollbar-thumb-hover: rgba(255,255,255,0.24);
+    --scrollbar-track: transparent;
   }
 
   * {
@@ -174,6 +238,55 @@
     color: var(--foreground);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  /*
+   * Scroll regions opt in with `.signet-scroll` rather than this being applied
+   * globally to `*`. Two reasons it is a class and not a blanket rule:
+   *
+   * 1. A blanket `::-webkit-scrollbar` rule also repaints scrollbars inside
+   *    embedded content and third-party widgets, where the surface underneath
+   *    is not ours and the low-opacity thumb can land on white.
+   * 2. Overlay scrollbars (macOS, and every touch device) already render
+   *    correctly and are not worth overriding; the class lets a surface that
+   *    genuinely needs a persistent bar ask for one.
+   *
+   * Firefox takes the standard two-value `scrollbar-color`; WebKit and Blink
+   * take the pseudo-elements. Both are stated so neither engine falls back to
+   * a light-mode default.
+   */
+  .signet-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  .signet-scroll::-webkit-scrollbar {
+    width: var(--scrollbar-width);
+    height: var(--scrollbar-width);
+  }
+
+  .signet-scroll::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+
+  .signet-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: var(--radius-xs);
+    /* Inset the thumb off the track edge without a second color: a
+     * transparent border clipped to the padding box shows the track
+     * through it, so the bar reads narrower than its hit area. */
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .signet-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  .signet-scroll::-webkit-scrollbar-corner {
+    background: var(--scrollbar-track);
   }
 }
 
