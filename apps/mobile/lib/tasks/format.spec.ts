@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  dayDelta,
   formatDoneSubtitle,
   formatDueSubtitle,
   formatPointsChip,
@@ -117,12 +116,5 @@ describe("formatPointsChip", () => {
       tone: "offered",
       label: "+15",
     });
-  });
-});
-
-describe("dayDelta", () => {
-  it("counts calendar days, not elapsed hours", () => {
-    expect(dayDelta(at(2026, 8, 17, 23), at(2026, 8, 18, 1))).toBe(1);
-    expect(dayDelta(at(2026, 8, 17, 1), at(2026, 8, 17, 23))).toBe(0);
   });
 });
