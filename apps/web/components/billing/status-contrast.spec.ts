@@ -8,7 +8,8 @@ import {
   SEMANTIC,
   SURFACE,
   tint,
-  INDISTINGUISHABLE,} from "@/tests/signet-contrast";
+  INDISTINGUISHABLE,
+} from "@/tests/signet-contrast";
 
 /**
  * Contrast for the §5 Semantic badge, which billing and points state status in.
@@ -116,7 +117,9 @@ describe("the #916 pair", () => {
     // Stock Tailwind emerald-700, which is what the points amounts rendered in
     // and what #916 is about. `--success` is the same intent, measured.
     expect(ratio("#047857", SURFACE.card)).toBeLessThan(AA_TEXT);
-    expect(ratio(SEMANTIC.success, SURFACE.card)).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(ratio(SEMANTIC.success, SURFACE.card)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
   });
 
   it("keeps the negative branch on the solid, except on the step the greenfield ladder cost it", () => {

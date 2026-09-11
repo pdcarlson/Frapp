@@ -35,42 +35,23 @@ import { FOCUS_RING, FOCUS_RING_OFFSET } from "./focus";
 const RING_ROLE: Record<string, string> = {
   ring: "--ring",
   primary: "--primary",
+  "accent-text": "--accent-text",
 };
 
-/**
- * Pull the ring's custom property out of a recipe.
- *
- * Two spellings are legal, and both are read here rather than one being
- * normalized away, because which one a recipe uses is itself a decision:
- *
- *  - `ring-<key>` — a colour key on the shared Tailwind preset, resolved
- *    through `RING_ROLE`.
- *  - `ring-[var(--token)]` — an arbitrary value, used when the token exists on
- *    the Signet surface only and must NOT be added to the preset, which
- *    `apps/landing` also reads. `FOCUS_RING_OFFSET` is that case; its own
- *    docstring carries the reason.
- */
+/** Pull `foo` out of the `focus-visible:ring-foo` in a recipe. */
 function ringRoleOf(recipe: string): string {
-  const arbitrary = [
-    ...recipe.matchAll(/focus-visible:ring-\[var\((--[\w-]+)\)\]/g),
-  ].map((m) => m[1]!);
-
-  const keyed = [...recipe.matchAll(/focus-visible:ring-([a-z-]+)/g)]
+  const names = [...recipe.matchAll(/focus-visible:ring-([a-z-]+)/g)]
     .map((m) => m[1]!)
     // `ring-2` / `ring-[3px]` are widths and `ring-offset-*` is the offset band.
-    .filter((n) => n !== "offset-2" && !n.startsWith("offset-"))
-    .map((n) => {
-      const role = RING_ROLE[n];
-      expect(
-        role,
-        `unrecognized ring token "${n}" — add it to RING_ROLE and check its contrast`,
-      ).toBeDefined();
-      return role!;
-    });
+    .filter((n) => n !== "offset-2" && !n.startsWith("offset-"));
 
-  const roles = [...arbitrary, ...keyed];
-  expect(roles).toHaveLength(1);
-  return roles[0]!;
+  expect(names).toHaveLength(1);
+  const role = RING_ROLE[names[0]!];
+  expect(
+    role,
+    `unrecognized ring token "${names[0]}" — add it to RING_ROLE and check its contrast`,
+  ).toBeDefined();
+  return role!;
 }
 
 describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 alone", () => {
@@ -94,7 +75,7 @@ describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 a
       ),
     );
 
-    // accent-11's tightest seed is `#1F1A15` at ~8.48:1 against a 3.0 floor.
+    // accent-11's tightest seed is `#BF0A30` at 8.4806:1 against a 3.0 floor.
     //
     // The bound is deliberately well under the measurement rather than a hair
     // under it. This assertion previously read `> 3.04` against accent-8's
@@ -112,7 +93,8 @@ describe("FOCUS_RING_OFFSET is the whole indicator, so its ring must clear 3:1 a
     // constraint has moved instead of leaving a stale rationale in a comment.
     const failingSeeds = (role: string) =>
       SEEDS.filter(
-        (seed) => ratio(accentRolesFor(seed)[role]!, SURFACE.background) < AA_NON_TEXT,
+        (seed) =>
+          ratio(accentRolesFor(seed)[role]!, SURFACE.background) < AA_NON_TEXT,
       );
 
     // accent-9 never worked here; this is the original defect.

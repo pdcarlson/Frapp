@@ -12,10 +12,20 @@
  * ## The border swap is the load-bearing half
  *
  * Worth knowing before "simplifying" either recipe: the ring alone does not
- * carry the indicator. `--ring` (`#86692B`) at 25% composites to ~1.3:1 against
- * every step of the surface ladder, well under README §6's 3:1 floor for
- * non-text UI. It is the border going solid accent — 8.7:1 and up — that makes
- * focus visible. The ring is the halo around it, not the signal.
+ * carry the indicator. `--ring` (accent-8; `#796938` on the house seed) at 25%
+ * composites to 1.14–1.31:1 against the step it sits on — measured across all
+ * 19 seeded accents on all four ladder steps, and 0 of those 76 pairs clear
+ * README §6's 3:1 floor for non-text UI. It is the border going solid accent
+ * that makes focus visible. The ring is the halo around it, not the signal.
+ *
+ * How strong that border is depends on the chapter, and the figure this comment
+ * used to give ("8.7:1 and up") was the house seed's, stated as if it were
+ * everyone's. Solid `--primary` against the ladder step behind it ranges
+ * 1.50–18.71:1 across the 19 seeds; the house seed sits near the top at
+ * 8.70–9.81. Chapters at the bottom of that range get a weak `FOCUS_RING`,
+ * which is a real and separate concern from the one `FOCUS_RING_OFFSET` fixed
+ * below — it is not tracked by `focus-contrast.spec.ts`, which only guards the
+ * offset recipe.
  *
  * That is also why `FOCUS_RING` is wrong for a control whose border already
  * encodes something. On a `Switch` the border carries on/off, and on a
@@ -45,7 +55,7 @@
  * exclusive, so no tie can arise) rather than left to source order.
  */
 export const FOCUS_RING =
-  "focus-visible:outline-none focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/25"
+  "focus-visible:outline-none focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/25";
 
 /**
  * For controls whose own border encodes state — `Switch` (on/off) and
@@ -82,16 +92,17 @@ export const FOCUS_RING =
  * 4.5:1 as text, so 3:1 as non-text UI has real headroom under it. That is why
  * it is robust where accent-8 was merely passing.
  *
- * ## Why `ring-[var(--accent-text)]` and not a preset colour key
+ * ## The `accent-text` key is an app key, not a shared-preset key
  *
- * Do not "tidy" this into an `accent-text` key on the shared Tailwind preset.
- * That preset is read by `apps/landing` as well as `apps/web`, and
- * `tailwind.config.spec.ts` asserts every token it reads is defined in the
- * LEGACY `globals.css` `:root`. `--accent-text` is a Signet accent role that
- * has no legacy counterpart, so adding the key would either fail that guard or
- * force a Signet token onto the frozen landing surface — which
- * `foundations.md` §1 forbids outright. An arbitrary value keeps the token on
- * the one surface that defines it.
+ * `ring-accent-text` resolves through `apps/web/tailwind.config.ts`, which
+ * already carries `"accent-text": colorVar("--accent-text")` alongside the rest
+ * of the Signet-only keys. Do not "tidy" it up into the SHARED preset
+ * (`packages/theme/src/tailwind.config.ts`): that one is also read by
+ * `apps/landing`, and `tailwind.config.spec.ts` asserts every token the preset
+ * reads is defined in the legacy `globals.css` `:root`. `--accent-text` has no
+ * legacy counterpart, so a preset key would either fail that guard or force a
+ * Signet token onto the frozen landing surface, which `foundations.md` §1
+ * forbids. The app config is where this belongs, and its own header says so.
  *
  * ## `ring-offset-background` is load-bearing — do not "simplify" it away
  *
@@ -103,10 +114,10 @@ export const FOCUS_RING =
  * margin is what makes the recipe robust, not a budget to spend.
  */
 export const FOCUS_RING_OFFSET =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-text)] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 export const FOCUS_RING_ALWAYS =
-  "focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/25"
+  "focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/25";
 
 /**
  * For a container that owns the focus indicator on behalf of the control inside
@@ -121,7 +132,7 @@ export const FOCUS_RING_ALWAYS =
  * replaced it), and that is a README §6 release-gate failure.
  */
 export const FOCUS_RING_WITHIN =
-  "focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/25"
+  "focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/25";
 
 /**
  * A "Skip to X" link: invisible until it is the focused element, then pinned
@@ -131,4 +142,4 @@ export const FOCUS_RING_WITHIN =
  * recipe this file exists to keep in one place; see the top-of-file comment.
  */
 export const SKIP_LINK_CLASSES =
-  "sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
+  "sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm";

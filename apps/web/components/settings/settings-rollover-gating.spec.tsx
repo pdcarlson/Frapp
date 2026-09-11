@@ -28,7 +28,10 @@ vi.mock("@repo/hooks", () => ({
   usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
   useSemesters: () => ({ data: [], isPending: false, isError: false }),
   useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: mockUpdateChapter, isPending: false }),
+  useUpdateChapter: () => ({
+    mutateAsync: mockUpdateChapter,
+    isPending: false,
+  }),
   useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useOrgConfig: () => ({
     data: { org_archetype: "ifc" },
@@ -83,9 +86,7 @@ describe("settings semester rollover subscription gating", () => {
     render(<SettingsPage />);
 
     expect(rolloverButton()).toBeDisabled();
-    expect(
-      screen.getByText(/subscription is not active/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
     ).toHaveAttribute("href", "/billing");
@@ -204,9 +205,7 @@ describe("the accent preview reports its own legibility", () => {
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#0086FE");
-    expect(
-      screen.getByText(/under the 4\.5:1 minimum/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/under the 4\.5:1 minimum/i)).toBeInTheDocument();
     expect(screen.getByText(/4\.4:1/)).toBeInTheDocument();
   });
 
@@ -240,7 +239,9 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#222222");
-    await user.click(screen.getByRole("button", { name: /save accent color/i }));
+    await user.click(
+      screen.getByRole("button", { name: /save accent color/i }),
+    );
   }
 
   it("names the failing role, its ratio, and a next action", async () => {
@@ -281,7 +282,11 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
     mockUpdateChapter.mockResolvedValue({
       id: "chap-1",
       failedContrastChecks: [
-        { role: "--signet-accent-on-primary", against: "--signet-accent-primary", ratio: 2.5 },
+        {
+          role: "--signet-accent-on-primary",
+          against: "--signet-accent-primary",
+          ratio: 2.5,
+        },
       ],
     });
     const user = userEvent.setup();
@@ -353,8 +358,6 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
       /accent text on the app background/i,
     ).textContent!;
     expect(warning).toMatch(/reads at 3\.2:1, under the 4\.5:1 minimum\./);
-    expect(warning).toMatch(
-      /reads at 2\.5:1, under the 4\.5:1 minimum\./,
-    );
+    expect(warning).toMatch(/reads at 2\.5:1, under the 4\.5:1 minimum\./);
   });
 });

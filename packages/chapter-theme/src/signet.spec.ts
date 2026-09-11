@@ -139,7 +139,10 @@ describe("deriveSignetPalette", () => {
     const { palette } = deriveSignetPalette("#C9A56F");
     expect(palette["--signet-accent-on-primary"]).toBe("#000000");
     expect(
-      ratio(palette["--signet-accent-on-primary"], palette["--signet-accent-primary"]),
+      ratio(
+        palette["--signet-accent-on-primary"],
+        palette["--signet-accent-primary"],
+      ),
     ).toBeGreaterThanOrEqual(4.5);
   });
 
@@ -152,7 +155,9 @@ describe("deriveSignetPalette", () => {
   });
 
   it("is deterministic", () => {
-    expect(deriveSignetPalette("#8B0000")).toEqual(deriveSignetPalette("#8B0000"));
+    expect(deriveSignetPalette("#8B0000")).toEqual(
+      deriveSignetPalette("#8B0000"),
+    );
   });
 
   describe("seed resolution", () => {
@@ -256,10 +261,10 @@ describe("signetAccentSemanticVars", () => {
 describe("accent-text is the foreground-safe role", () => {
   /** The Signet neutral ladder (foundations.md §2), which consumers draw on. */
   const SURFACES = {
-    background: "#0E0D0B",
-    surface1: "#171512",
-    card: "#1E1B17",
-    popover: "#26221C",
+    background: "#131211",
+    surface1: "#1A1A1A",
+    card: "#211E1A",
+    popover: "#2A2621",
   };
   /** Drawn on an accent fill — `gold.onHouse` in `@repo/theme`'s Signet tokens. */
   const ON_ACCENT_LABEL = "#2C2000";
@@ -270,7 +275,8 @@ describe("accent-text is the foreground-safe role", () => {
 
   it("clears AA on every step of the neutral ladder, for every real chapter colour", () => {
     for (const seed of REAL_CHAPTER_COLORS) {
-      const accentText = deriveSignetPalette(seed).palette["--signet-accent-text"];
+      const accentText =
+        deriveSignetPalette(seed).palette["--signet-accent-text"];
       for (const [name, surface] of Object.entries(SURFACES)) {
         expect(
           ratio(accentText, surface),
@@ -282,7 +288,8 @@ describe("accent-text is the foreground-safe role", () => {
 
   it("also works the other way round, as a chip fill under a fixed label", () => {
     for (const seed of REAL_CHAPTER_COLORS) {
-      const accentText = deriveSignetPalette(seed).palette["--signet-accent-text"];
+      const accentText =
+        deriveSignetPalette(seed).palette["--signet-accent-text"];
       expect(
         ratio(ON_ACCENT_LABEL, accentText),
         `${seed} → label on ${accentText}`,
@@ -295,7 +302,8 @@ describe("accent-text is the foreground-safe role", () => {
     // paired with `on-primary`. This pins the reason a consumer must not reach
     // for it when it needs a foreground.
     const illegible = REAL_CHAPTER_COLORS.filter((seed) => {
-      const primary = deriveSignetPalette(seed).palette["--signet-accent-primary"];
+      const primary =
+        deriveSignetPalette(seed).palette["--signet-accent-primary"];
       return ratio(primary, SURFACES.card) < 4.5;
     });
     expect(illegible.length).toBeGreaterThan(0);

@@ -153,8 +153,17 @@
     /* ── Skeleton shimmer highlight (components.md §10) ───────────
      * The one neutral above the ladder's top step, used only by the
      * shimmer sweep below. Neutral by rule: skeletons are never
-     * accent and never semantic. */
-    --skeleton-highlight: #363029;
+     * accent and never semantic.
+     *
+     * The value is chosen to hold the sweep's AMPLITUDE, not to sit a fixed
+     * number of steps above `--popover`. The gradient is popover -> highlight
+     * -> popover, so that delta is the entire visible signal; the pre-greenfield
+     * pair (#332E26 on #26221C) measured 1.1744:1 and this one measures
+     * 1.1740:1 on the new `--popover`. Moving the highlight by the same channel
+     * delta as the ladder would have dropped it to 1.1531 — still lighter, but
+     * under the 1.2 the contrast fixture calls imperceptible, which on a dim
+     * panel is the difference between "loading" and "frozen". */
+    --skeleton-highlight: #38312A;
 
     /* ── Shadows are banned on Signet surfaces (foundations §10) ──
      * Elevation is a lighter surface step. The tokens exist because
@@ -253,13 +262,31 @@
    *    correctly and are not worth overriding; the class lets a surface that
    *    genuinely needs a persistent bar ask for one.
    *
-   * Firefox takes the standard two-value `scrollbar-color`; WebKit and Blink
-   * take the pseudo-elements. Both are stated so neither engine falls back to
-   * a light-mode default.
+   * Engine split: see the note on the `@supports` block directly below.
    */
-  .signet-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  /*
+   * The standard properties and the WebKit pseudo-elements are mutually
+   * exclusive, and putting both on one rule silently loses the detailed
+   * styling in the majority browser.
+   *
+   * Since Chromium 121, a non-`auto` `scrollbar-width` or `scrollbar-color` on
+   * an element makes that element's `::-webkit-scrollbar-*` pseudo-elements
+   * ignored outright — the standard properties win. Declaring both together
+   * therefore gives Chrome and Edge a flat `thin` bar and throws away
+   * `--scrollbar-width`, the inset, the rounding and the hover tone.
+   *
+   * So the standard properties are scoped to engines with no pseudo-element
+   * support, which is Firefox. `@supports not selector(::-webkit-scrollbar)`
+   * is false in Chromium and Safari (both match the selector) and true in
+   * Firefox, which is exactly the split we want.
+   */
+  @supports not selector(::-webkit-scrollbar) {
+    .signet-scroll {
+      scrollbar-width: thin;
+      /* Firefox has no width control finer than `thin`, so `--scrollbar-width`
+       * does not reach it. Only the two colors carry over. */
+      scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+    }
   }
 
   .signet-scroll::-webkit-scrollbar {

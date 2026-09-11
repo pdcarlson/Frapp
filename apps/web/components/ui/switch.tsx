@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import * as SwitchPrimitives from "@radix-ui/react-switch"
+import * as React from "react";
+import * as SwitchPrimitives from "@radix-ui/react-switch";
 
-import { cn } from "@/lib/utils"
-import { FOCUS_RING_OFFSET } from "@/components/ui/focus"
+import { cn } from "@/lib/utils";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 
 /*
  * The toggle, `spec/ui/design-system/components.md` §4.
@@ -56,11 +56,15 @@ const Switch = React.forwardRef<
        *
        *   - It dims the focus ring, and soft-disabling is precisely the case
        *     where the switch KEEPS its place in the tab order, so that ring is
-       *     the entire focus indicator. Measured over all 19 seeds with
-       *     `tests/signet-contrast.ts`, ring-vs-`--background` falls from
-       *     3.05-4.07 to 1.78-2.17 — none of the 19 still clears §6's 3:1.
-       *     `focus.ts` calls the untinted offset band load-bearing; a
-       *     composited one is no longer `--background` at all.
+       *     the entire focus indicator. Measured over all 19 seeds,
+       *     ring-vs-`--background` falls from 8.48-11.47 undimmed to 2.96-3.68
+       *     at a 50% dim, putting 5 of the 19 under §6's 3:1. (The undimmed
+       *     range was 3.05-4.07 while this recipe drew in accent-8; it draws in
+       *     accent-11 since the greenfield ladder, so the dim no longer fails
+       *     every chapter — it fails five, which is still five chapters whose
+       *     keyboard users lose the indicator.) The offset band is a second
+       *     casualty: a composited one is no longer `--background` at all, so
+       *     the measurement stops being the one `focus.ts` reasons about.
        *   - It flattens the very cue this variant exists to protect: checked
        *     `--primary` vs unchecked `--accent-subtle` drops below 3:1 on six
        *     accents (`#003087` 4.01 → 2.22, `#CC0000` 3.10 → 1.76), which is
@@ -73,7 +77,7 @@ const Switch = React.forwardRef<
        * for `opacity` either.
        */
       "aria-disabled:cursor-not-allowed",
-      className
+      className,
     )}
     {...props}
     ref={ref}
@@ -87,11 +91,11 @@ const Switch = React.forwardRef<
         // Radix stamps `data-disabled` on the root; `group-data-` carries two
         // ancestor classes and so outranks the sibling `data-[state]` rules
         // rather than tying with them.
-        "group-data-[disabled]:bg-disabled"
+        "group-data-[disabled]:bg-disabled",
       )}
     />
   </SwitchPrimitives.Root>
-))
-Switch.displayName = SwitchPrimitives.Root.displayName
+));
+Switch.displayName = SwitchPrimitives.Root.displayName;
 
-export { Switch }
+export { Switch };

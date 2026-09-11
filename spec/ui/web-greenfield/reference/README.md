@@ -32,9 +32,13 @@ Named to match the epic's source list, so a reader can tell which artifact they 
 2. **Do not edit an artifact to resolve a conflict.** These are handover records. If the framework
    contradicts a shipped token or a brand lock, record the conflict in
    [`../tokens.md`](../tokens.md) under Open locks and resolve it there.
-3. **`.dc.html` files are excluded from link checking.** `.github/workflows/links.yml` excludes
-   `spec/ui/design-system/reference`, not this directory. A framework HTML file committed here
-   **will** be crawled by lychee unless that exclude list is extended in the same PR. Extend it when
-   the first HTML artifact lands.
+3. **Check how lychee reaches a committed `.dc.html` before assuming it is safe.**
+   `.github/workflows/links.yml` excludes `spec/ui/design-system/reference` — and its own comment
+   records two things worth knowing before copying that remedy. First, `--exclude-path` **takes
+   exactly one value**, which that path already occupies, so there is no "list" to extend. Second,
+   lychee's walk does not extract `<script src>` and only reaches such files when the directory is
+   passed explicitly, so a framework artifact here may not be crawled at all. Verify with
+   `npm run check:links` when the first HTML artifact lands, and only change the workflow if that
+   run actually fails.
 4. **State what an artifact supersedes.** Add a row to the table above and note in
    [`../tokens.md`](../tokens.md) which open lock the artifact closes.

@@ -73,8 +73,9 @@ export const DESTRUCTIVE_TEXT = "#FF7B72";
 
 /** The hairline's alpha, parsed from the token so the two cannot disagree. */
 export const HAIRLINE_ALPHA = Number(
-  /rgba\([^)]*,\s*([\d.]+)\)/.exec(signetDarkTokens.color.border.hairline)?.[1] ??
-    "0.08",
+  /rgba\([^)]*,\s*([\d.]+)\)/.exec(
+    signetDarkTokens.color.border.hairline,
+  )?.[1] ?? "0.08",
 );
 
 /** README §6's two floors. */
@@ -93,15 +94,37 @@ export const AA_NON_TEXT = 3;
  * state nobody can see, which is the defect class `table-contrast`,
  * `elevation-contrast` and `profile-contrast` all exist to catch.
  *
- * It lives here as a constant because it was three scattered `1.1` literals,
- * and the greenfield surface ladder (foundations.md §2) moved every adjacent
- * step slightly further apart — `--popover` on `--card` went from 1.09 to
- * 1.1046 — which tripped all three at once without any of them becoming
- * visible. Three literals that must move together are the shape this file
- * exists to collapse. 1.2 is the bound `profile-contrast` already used for the
- * same judgement, so the value is the codebase's own, not a new invention.
+ * It lives here as a constant because the greenfield surface ladder
+ * (foundations.md §2) tripped four scattered `1.1` literals at once, without
+ * any of the pairs becoming visible: `table-contrast:44` and
+ * `elevation-contrast:56` (both 1.1046), `profile-contrast:59` (1.1007) and
+ * `status-contrast:92` (1.1108). Literals that must move together are the
+ * shape this file exists to collapse.
+ *
+ * **1.15, not 1.2.** The four measurements cluster at 1.10–1.11, so the bound
+ * has to clear them; but it is kept as low as that allows, because every point
+ * above them is discriminating power the guards lose. 1.2 was the first value
+ * tried here, justified as "the bound `profile-contrast` already used" — that
+ * was wrong on inspection: `profile-contrast:47`'s 1.2 bounds a composited
+ * hover wash, not a ladder-step delta, so it was never precedent for this.
+ *
+ * The two `profile-contrast` assertions that measure composited washes
+ * (1.0637 and 1.0994) keep their own `1.1` and are deliberately NOT on this
+ * constant: they were passing, they measure a different quantity, and
+ * loosening a passing assertion only costs coverage.
+ *
+ * The ladder did NOT uniformly widen. Measured old -> new:
+ * `--surface-1`/`--background` 1.0660 -> 1.0751 and `--popover`/`--card`
+ * 1.0847 -> 1.1046 both widened, but **`--card`/`--surface-1` went 1.0624 ->
+ * 1.0486**, making it the ladder's tightest adjacency. A `Card` seated on
+ * `--surface-1` is therefore *less* separable than before, and nothing here
+ * asserts a floor on that — these constants are `toBeLessThan` pins recording
+ * "these two alias", not a guarantee the ladder stays separable. Part of the
+ * cause is that `--surface-1` is now achromatic `#1A1A1A` (it is the mark's
+ * field) while the other three steps stayed warm, so the ladder is no longer
+ * one hue family and a pure-luminance model understates the difference.
  */
-export const INDISTINGUISHABLE = 1.2;
+export const INDISTINGUISHABLE = 1.15;
 
 export const ratio = (fg: string, bg: string) =>
   contrastRatio(parseHex(fg)!, parseHex(bg)!);

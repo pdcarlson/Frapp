@@ -64,6 +64,12 @@ const config: Config = {
         },
         // The AA-lifted danger tone for text/icons on a danger tint (§5).
         "destructive-text": colorVar("--destructive-text"),
+        // Its info twin, added with the greenfield ladder: solid `--info` fell
+        // under 4.5:1 on `--card` and `--popover` when the ladder lightened.
+        // Without this key the token would be declared in `signet.css`,
+        // documented in foundations §5, and unreachable from any component —
+        // `signet.css.spec.ts` only checks preset -> CSS, never CSS -> preset.
+        "info-text": colorVar("--info-text"),
         mention: {
           DEFAULT: colorVar("--mention"),
           foreground: colorVar("--mention-foreground"),
@@ -75,6 +81,66 @@ const config: Config = {
           "ask-border": colorVar("--gold-ask-border"),
           "ask-text": colorVar("--gold-ask-text"),
         },
+      },
+      /*
+       * The Signet type scale (foundations.md §7) as real utilities. Tailwind
+       * has no equivalent — its `text-sm`/`text-base` ladder is a different
+       * system — so without these keys the six roles are CSS custom properties
+       * no component can reach, and screens keep writing `text-[12.5px]`.
+       *
+       * Each key pairs its size with the role's line height and weight, so
+       * `text-body` carries 16px/25px/400 rather than only the size. The values
+       * are read from the custom properties, not restated, so `signet.css`
+       * stays the one place they are written.
+       */
+      fontSize: {
+        display: [
+          "var(--text-display)",
+          { lineHeight: "1.15", fontWeight: "var(--text-display-weight)" },
+        ],
+        headline: [
+          "var(--text-headline)",
+          { lineHeight: "1.2", fontWeight: "var(--text-headline-weight)" },
+        ],
+        title: [
+          "var(--text-title)",
+          { lineHeight: "1.3", fontWeight: "var(--text-title-weight)" },
+        ],
+        body: [
+          "var(--text-body)",
+          {
+            lineHeight: "var(--text-body-line)",
+            fontWeight: "var(--text-body-weight)",
+          },
+        ],
+        label: [
+          "var(--text-label)",
+          { lineHeight: "1.3", fontWeight: "var(--text-label-weight)" },
+        ],
+        caption: [
+          "var(--text-caption)",
+          { lineHeight: "1.35", fontWeight: "var(--text-caption-weight)" },
+        ],
+      },
+      /*
+       * Touch floors (foundations.md §9). `min-h-touch` is the 44px minimum the
+       * spec binds on every platform; `min-h-button` is the standard control
+       * height. Tailwind's numeric scale can express both, but not by name, and
+       * the name is the point — a reviewer can see the floor being honored.
+       *
+       * Deliberately NOT here: the `--space-*` grid. Tailwind's own spacing
+       * scale is already this 4px grid (`p-2` is 8px, `gap-4` is 16px), so a
+       * second named spelling would be a parallel token set on one surface,
+       * which `.claude/skills/signet-cutover/SKILL.md` bans. The custom
+       * properties exist for hand-written CSS and for parity with the mobile
+       * token source, not to replace `p-4`.
+       */
+      minHeight: {
+        touch: "var(--touch-min)",
+        button: "var(--touch-button)",
+      },
+      minWidth: {
+        touch: "var(--touch-min)",
       },
       borderRadius: {
         /*

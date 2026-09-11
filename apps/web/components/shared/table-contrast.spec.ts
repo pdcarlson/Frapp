@@ -11,7 +11,8 @@ import {
   SEEDS,
   SURFACE,
   TEXT,
-  INDISTINGUISHABLE,} from "@/tests/signet-contrast";
+  INDISTINGUISHABLE,
+} from "@/tests/signet-contrast";
 
 /**
  * Contrast for the row states `components/ui/table.tsx` paints.
@@ -41,7 +42,9 @@ describe("the defect this file exists for", () => {
   it("would have caught `hover:bg-accent` on a card-seated row", () => {
     // `--accent` and `--popover` are the same value, so hovering a row inside a
     // card moved it one neutral step: no feedback a person could see.
-    expect(ratio(SURFACE.popover, SURFACE.card)).toBeLessThan(INDISTINGUISHABLE);
+    expect(ratio(SURFACE.popover, SURFACE.card)).toBeLessThan(
+      INDISTINGUISHABLE,
+    );
   });
 
   it("would have caught swapping the neutral step for the tint and stopping", () => {
@@ -71,7 +74,8 @@ describe("the defect this file exists for", () => {
     const neutral = ratio(SURFACE.popover, SURFACE.card);
     const atOrBelow = SEEDS.filter(
       (seed) =>
-        ratio(accentRolesFor(seed)["--accent-subtle"]!, SURFACE.card) <= neutral,
+        ratio(accentRolesFor(seed)["--accent-subtle"]!, SURFACE.card) <=
+        neutral,
     ).length;
     expect(atOrBelow).toBeGreaterThan(SEEDS.length / 2);
   });
@@ -100,10 +104,13 @@ describe("row selection", () => {
       const roles = accentRolesFor(seed);
       const three = roles["--accent-subtle"]!;
       const four = accentFour(roles);
-      expect(ratio(four, SURFACE.card), `${seed} selected vs --card`).toBeGreaterThan(
-        ratio(three, SURFACE.card),
+      expect(
+        ratio(four, SURFACE.card),
+        `${seed} selected vs --card`,
+      ).toBeGreaterThan(ratio(three, SURFACE.card));
+      expect(ratio(four, three), `${seed} selected vs hover`).toBeGreaterThan(
+        1.1,
       );
-      expect(ratio(four, three), `${seed} selected vs hover`).toBeGreaterThan(1.1);
     }
   });
 
@@ -146,7 +153,10 @@ describe("the hairline", () => {
     // those rows have.
     for (const [name, bg] of Object.entries(SURFACE)) {
       const full = ratio(applyAlpha("#FFFFFF", HAIRLINE_ALPHA, bg), bg);
-      const thinned = ratio(applyAlpha("#FFFFFF", HAIRLINE_ALPHA * 0.7, bg), bg);
+      const thinned = ratio(
+        applyAlpha("#FFFFFF", HAIRLINE_ALPHA * 0.7, bg),
+        bg,
+      );
       expect(thinned, `thinned hairline over ${name}`).toBeLessThan(full);
       expect(full, `full hairline over ${name}`).toBeLessThan(AA_NON_TEXT);
     }
@@ -192,7 +202,9 @@ describe("table text", () => {
         ratio(TEXT.mutedForeground, bg),
         `--muted-foreground over ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
-      expect(ratio(TEXT.muted, bg), `--muted over ${name}`).toBeLessThan(AA_TEXT);
+      expect(ratio(TEXT.muted, bg), `--muted over ${name}`).toBeLessThan(
+        AA_TEXT,
+      );
     }
   });
 });

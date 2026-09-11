@@ -2,10 +2,7 @@
 
 import Link from "next/link";
 import { Bell, CheckCheck, Loader2 } from "lucide-react";
-import {
-  useMarkNotificationRead,
-  useNotifications,
-} from "@repo/hooks";
+import { useMarkNotificationRead, useNotifications } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -177,13 +174,13 @@ export function DashboardNotificationDrawer({
               Loading notifications...
             </div>
           ) : notificationsQuery.isError ? (
-            <div className="rounded-md border border-destructive/45 bg-destructive/[.13] p-3 text-sm text-destructive">
+            <div className="rounded-md border border-destructive/45 bg-destructive/[.13] p-3 text-sm text-destructive-text">
               Couldn&apos;t load notifications. Retry in a moment.
             </div>
           ) : notifications.length === 0 ? (
             <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-              No notifications yet. Chapter activity, billing alerts, and
-              point changes will appear here.
+              No notifications yet. Chapter activity, billing alerts, and point
+              changes will appear here.
             </div>
           ) : (
             <ul className="space-y-3">

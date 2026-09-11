@@ -99,13 +99,20 @@ Seven satellites, none imported outside the shell: `account-menu.tsx` (136),
 - [ ] Applied to the shell's scroll regions, not globally to `*`
 - [ ] Reduced-motion and keyboard scrolling unaffected
 
-## 7. Standing bans to keep true
+## 7. Standing bans
 
-These already hold. The greenfield must not reintroduce them.
+Most of these already hold; the shadow one does not. The greenfield must not reintroduce any of
+them, and must close the one that is open.
 
 - [ ] No `next-themes`, no theme switcher, no light palette. Signet web is dark-only
 - [ ] No live `dark:` variants
-- [ ] No `shadow-*`. Elevation is a lighter surface step
+- [ ] No `shadow-*`. Elevation is a lighter surface step. **This one is not clean today.** The
+      shared preset (`packages/theme/src/tailwind.config.ts`) binds `boxShadow` for `xs`, `sm`,
+      `DEFAULT` and `lg` only — all `none` — but there is **no `md` key**, so `shadow-md` falls
+      through to Tailwind's built-in and compiles a real drop shadow. Two live sites:
+      `apps/web/components/chat/mention-list.tsx:128` and `:140`. `card.tsx` reasons correctly that
+      `--shadow-*` being `none` makes a stray `shadow-sm` inert, and that was over-generalized to the
+      whole family. Fix the call sites, and consider binding `md` so the gap cannot reopen
 - [ ] No legacy bone / bronze / Geist token on this surface
 - [ ] No unused component left under `apps/web/components/ui`
 - [ ] No customer-facing "Frapp" string or wordmark

@@ -202,7 +202,10 @@ function SettingsPageContent() {
   // entitled to change — over-gating is the worse defect here.
   const rolloverGate = useSubscriptionGate();
 
-  const canManage = can("chapter-config:manage", permissionsPayload?.permissions);
+  const canManage = can(
+    "chapter-config:manage",
+    permissionsPayload?.permissions,
+  );
 
   // Deep-link the active tab via `?tab=` so links (e.g. the redirect from the
   // former standalone `/roles` page) can land directly on a tab.
@@ -352,7 +355,9 @@ function SettingsPageContent() {
     );
   }
 
-  const parsedChapter = CurrentChapterPayloadSchema.safeParse(chapterQuery.data);
+  const parsedChapter = CurrentChapterPayloadSchema.safeParse(
+    chapterQuery.data,
+  );
   const chapterPayload = parsedChapter.success
     ? (parsedChapter.data as CurrentChapterPayload & {
         donation_url?: string | null;
@@ -736,7 +741,9 @@ function SettingsPageContent() {
                       <Input
                         id="semester-label"
                         value={semesterLabel}
-                        onChange={(event) => setSemesterLabel(event.target.value)}
+                        onChange={(event) =>
+                          setSemesterLabel(event.target.value)
+                        }
                         placeholder="Fall 2026"
                         required
                       />
@@ -747,7 +754,9 @@ function SettingsPageContent() {
                         id="semester-start"
                         type="date"
                         value={semesterStart}
-                        onChange={(event) => setSemesterStart(event.target.value)}
+                        onChange={(event) =>
+                          setSemesterStart(event.target.value)
+                        }
                         required
                       />
                     </div>
@@ -1057,8 +1066,8 @@ function SettingsPageContent() {
                     <p className="text-xs text-warning">
                       Label text on this color reads at{" "}
                       {previewInkRatio.toFixed(1)}:1, under the 4.5:1 minimum.
-                      Buttons and name tags using it will be hard to read —
-                      pick a lighter or darker shade.
+                      Buttons and name tags using it will be hard to read — pick
+                      a lighter or darker shade.
                     </p>
                   ) : null}
                   {/*
@@ -1075,13 +1084,15 @@ function SettingsPageContent() {
                       {accentContrastWarning
                         .map(describeFailedContrastCheck)
                         .join(" ")}{" "}
-                      Try a lighter or darker shade of this hue and save
-                      again.
+                      Try a lighter or darker shade of this hue and save again.
                     </p>
                   ) : null}
                 </CardContent>
                 <CardFooter className="flex justify-end">
-                  <Button type="submit" disabled={!canManage || updateChapter.isPending}>
+                  <Button
+                    type="submit"
+                    disabled={!canManage || updateChapter.isPending}
+                  >
                     {updateChapter.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : null}

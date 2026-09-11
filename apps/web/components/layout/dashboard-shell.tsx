@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Ban, ChevronRight, Clock, ShieldCheck } from "lucide-react";
+import {
+  AlertCircle,
+  Ban,
+  ChevronRight,
+  Clock,
+  ShieldCheck,
+} from "lucide-react";
 import {
   useCurrentChapter,
   useMyPermissions,
@@ -102,7 +108,8 @@ function subscriptionStatusPresentation(
     case "past_due":
       return {
         label: "Payment past due",
-        className: "border-destructive/45 bg-destructive/[.13] text-destructive",
+        className:
+          "border-destructive/45 bg-destructive/[.13] text-destructive-text",
         Icon: AlertCircle,
       };
     case "canceled":
@@ -140,7 +147,9 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   if (isPending || (isFetching && data === undefined)) {
     return (
       <div className={shellClass}>
-        <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>
+        <p
+          className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}
+        >
           Subscription
         </p>
         <div className="mt-2 h-3 w-3/4 animate-pulse rounded-xs bg-popover" />
@@ -153,8 +162,12 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   // rendered from three copy-pasted JSX blocks.
   const errorPanel = (
     <div className={shellClass}>
-      <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>Subscription</p>
-      <p className="mt-1.5 text-[11px] text-muted-foreground">Could not load chapter details.</p>
+      <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>
+        Subscription
+      </p>
+      <p className="mt-1.5 text-[11px] text-muted-foreground">
+        Could not load chapter details.
+      </p>
     </div>
   );
 
@@ -235,8 +248,9 @@ export function DashboardShell({ children }: DashboardShellProps) {
   // A route can be legitimately absent from the nav — Profile lives in the
   // account menu — and still needs a name in the header.
   const crumbLabel =
-    (activeItem ? (activeItem.breadcrumbTitle ?? activeItem.label) : undefined) ??
-    OFF_NAV_ROUTE_TITLES[pathname];
+    (activeItem
+      ? (activeItem.breadcrumbTitle ?? activeItem.label)
+      : undefined) ?? OFF_NAV_ROUTE_TITLES[pathname];
   const pageTitle = crumbLabel ?? "Dashboard";
   const primaryActionLabel = activeItem?.primaryActionLabel ?? null;
   const primaryActionHref = activeItem?.href ?? pathname;
@@ -402,7 +416,9 @@ export function DashboardShell({ children }: DashboardShellProps) {
             OFFLINE/DEGRADED signal (#1746). Default 0px when the banner is
             unmounted. z-30 stays below the banner's z-40.
           */}
-          <header className={`${DASHBOARD_HEADER_STICKY_CLASS} border-b border-border bg-background/95 backdrop-blur`}>
+          <header
+            className={`${DASHBOARD_HEADER_STICKY_CLASS} border-b border-border bg-background/95 backdrop-blur`}
+          >
             <div className="flex h-16 items-center justify-between gap-2 px-4 sm:px-6">
               <nav aria-label="Breadcrumb" className="min-w-0">
                 <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">

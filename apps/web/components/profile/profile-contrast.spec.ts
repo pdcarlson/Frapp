@@ -11,7 +11,8 @@ import {
   signetDarkTokens,
   SURFACE,
   TEXT,
-  INDISTINGUISHABLE,} from "@/tests/signet-contrast";
+  INDISTINGUISHABLE,
+} from "@/tests/signet-contrast";
 
 /**
  * The defects this file exists for — the Profile & pre-auth family, #920 slice 8.
@@ -84,7 +85,7 @@ describe("the tutorial's step strip, and the fix that would have been a second d
     // strip composited to `#211E19` — 1.050:1 against its own container.
     const washed = applyAlpha(SURFACE.card, 0.6, SURFACE.popover);
     expect(ratio(washed, SURFACE.popover)).toBeCloseTo(1.064, 2);
-    expect(ratio(washed, SURFACE.popover)).toBeLessThan(INDISTINGUISHABLE);
+    expect(ratio(washed, SURFACE.popover)).toBeLessThan(1.1);
   });
 
   it("rules out the accent tint, which is the obvious repair and is worse", () => {
@@ -100,7 +101,7 @@ describe("the tutorial's step strip, and the fix that would have been a second d
         ratio(accentRolesFor(seed)["--accent-subtle"]!, SURFACE.popover),
       );
     }
-    expect(best).toBeLessThan(INDISTINGUISHABLE);
+    expect(best).toBeLessThan(1.1);
     expect(best).toBeCloseTo(1.099, 2);
   });
 
@@ -124,9 +125,16 @@ describe("the step indicator's track", () => {
     let worstOnBackground = Infinity;
     for (const seed of SEEDS) {
       const fill = accentRolesFor(seed)["--primary"]!;
-      const borderTrack = applyAlpha("#ffffff", HAIRLINE_ALPHA, SURFACE.background);
+      const borderTrack = applyAlpha(
+        "#ffffff",
+        HAIRLINE_ALPHA,
+        SURFACE.background,
+      );
       worstOnBorder = Math.min(worstOnBorder, ratio(fill, borderTrack));
-      worstOnBackground = Math.min(worstOnBackground, ratio(fill, SURFACE.background));
+      worstOnBackground = Math.min(
+        worstOnBackground,
+        ratio(fill, SURFACE.background),
+      );
     }
     expect(worstOnBackground).toBeGreaterThan(worstOnBorder);
     expect(worstOnBorder).toBeCloseTo(1.528, 2);
@@ -148,7 +156,9 @@ describe("the emerald notice `/join` shipped", () => {
     // `/join` renders its 410/409 copy as field-level text on the app floor,
     // not on a tint — so §5's lift does not apply and the solid tone is the
     // correct one. Reaching for `--destructive-text` here would over-apply §1.
-    expect(ratio(SEMANTIC.destructive, SURFACE.background)).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(
+      ratio(SEMANTIC.destructive, SURFACE.background),
+    ).toBeGreaterThanOrEqual(AA_TEXT);
   });
 });
 
@@ -169,7 +179,9 @@ describe("the pre-auth screens have no tenant, so nothing on them takes the acce
     // `--muted-foreground`. The assertion is the argument.
     expect(ratio(TEXT.muted, SURFACE.background)).toBeLessThan(AA_TEXT);
     expect(ratio(TEXT.muted, SURFACE.background)).toBeCloseTo(3.893, 2);
-    expect(ratio(TEXT.mutedForeground, SURFACE.background)).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(
+      ratio(TEXT.mutedForeground, SURFACE.background),
+    ).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("keeps the gold footer links above the gate", () => {

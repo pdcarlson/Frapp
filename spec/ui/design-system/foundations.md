@@ -29,7 +29,8 @@ Rationale: a warm charcoal ladder deliberately lifted off a pure `#0a0a0a` floor
 **The ladder was re-pitched for the web greenfield** ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)). It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things moved with it, and both are deliberate:
 
 - `--surface-1` is now `#1A1A1A`, the **mark's own field** ([`../brand-identity.md`](../brand-identity.md) §2), so locked emblem B sits flush on the raised surface instead of on a warmer neighbour.
-- Every step is lighter than before, which lowers contrast for light text by roughly 0.1 to 0.7 points. Three semantic tones crossed below the 4.5:1 gate in [`README.md`](README.md) §6 as a result and are handled in §5: `--destructive` on `--popover`, `--info` on `--card` and `--popover`, and `--mention` on `--surface-1` and above.
+- Every step is lighter than before, which lowers contrast for light text by 0.142 to 0.681 points. **Three pairs crossed** below the 4.5:1 gate in [`README.md`](README.md) §6 as a result, and are handled in §5: `--destructive` on `--popover` (4.717 → 4.482), `--info` on `--card` (4.577 → 4.429), and `--mention` on `--surface-1` (4.656 → 4.447).
+- **Three more pairs are sub-AA but were already sub-AA before this ladder**, and are not this change's doing: `--info` on `--popover` (4.220 → 4.010), `--mention` on `--card` (4.383 → 4.238) and `--mention` on `--popover` (4.040 → 3.839). They are named here so the next ladder change is not reasoned from an inflated cost, and so nobody tries to "restore" contrast by darkening the ladder to fix failures that predate it.
 
 ---
 
@@ -81,6 +82,8 @@ Status-only, never decorative. A semantic hue states a fact ("paid", "overdue");
   | `--info-text` | `#4C93F8` | `--info` (4.43 / 4.01 solid) | 5.40 / 4.89 |
 
   Both are CSS-only (`packages/theme/src/signet.css`); neither is a `signetDarkTokens` entry, because neither is a new semantic. Use the lifted token wherever the hue is **text**, and the solid wherever it is a fill or a border.
+
+  **The two lifts do not have the same reach, and `--info-text` does not cover every case.** On plain surfaces both clear throughout. On the §5 *tint* recipe (13% of the hue as fill, the hue as text) `--destructive-text` measures 4.80–6.12:1 across the four steps and clears, but `--info-text` measures 4.08–5.16:1 and **fails on a `--popover`-seated tint (4.08)**. An info badge inside a dialog, sheet or menu therefore needs a further lift or a solid fill; the token as specified does not reach it. No surface renders `--info` today, so nothing is broken by this — but the first consumer must not assume the twin is sufficient.
 - **Mention red did not get a lifted tone, and the reason matters.** `#E5484D` now measures 4.45:1 on `--surface-1` and below that on `--card` and `--popover`, so it is under the text floor on every step except `--background`. It is exempt from the lift above because it is not drawn as text: it is a badge fill carrying white text (the separate, tracked 3.91:1 miss above) and an avatar dot, and a dot is non-text UI held to §6's 3:1 floor, which it clears on every step. A future surface that renders mention red **as text** needs a lifted tone first; it does not have one today.
 
 ---

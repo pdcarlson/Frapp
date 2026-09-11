@@ -24,7 +24,7 @@ The shipping mark is **locked emblem B**: an abstract crest with a neck break, g
 | Fact             | Value                                                                                                                        |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | House gold       | `#EFB63B` — Signet's own accent. Gold/amber, never brown-bronze.                                                             |
-| Accent seed      | `#F2B72E` — the default chapter accent seed; see [design-system/accent-engine.md](design-system/accent-engine.md)            |
+| Accent seed      | `#DDB844` — the default chapter accent seed, equal in value to the mark gold below but a separate role; see [design-system/accent-engine.md](design-system/accent-engine.md) |
 | Mark field       | `#1A1A1A`                                                                                                                    |
 | Mark gold        | `#DDB844`                                                                                                                    |
 | Shipping mark    | Locked emblem B — abstract crest, neck break, gold on charcoal                                                                |

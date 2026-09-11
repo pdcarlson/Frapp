@@ -9,7 +9,8 @@ import {
   SURFACE,
   signetDarkTokens,
   tint,
-  INDISTINGUISHABLE,} from "@/tests/signet-contrast";
+  INDISTINGUISHABLE,
+} from "@/tests/signet-contrast";
 
 /**
  * The defect this file exists for.
@@ -53,7 +54,9 @@ describe("a state cannot elevate above the step it renders in", () => {
   it("would have caught the attendance panel's card inside a sheet", () => {
     // `--popover` is the top of the ladder, so a `--card` panel inside a
     // `SheetContent` is a step DOWN — it reads as a hole, not as elevation.
-    expect(ratio(SURFACE.card, SURFACE.popover)).toBeLessThan(INDISTINGUISHABLE);
+    expect(ratio(SURFACE.card, SURFACE.popover)).toBeLessThan(
+      INDISTINGUISHABLE,
+    );
   });
 
   it("shows that dropping the fill improves the boundary rather than costing one", () => {
