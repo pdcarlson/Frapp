@@ -2,9 +2,17 @@
   "name": "@repo/brand-assets",
   "version": "0.0.0",
   "private": true,
-  "description": "Canonical Signet rasters and lockup for web, email, and sync to Next app icons",
+  "description": "Canonical Signet emblem B vectors and rasters, and the sources synced into the Next apps and Expo",
   "exports": {
-    "./app-icon.svg": "./assets/app-icon.svg",
+    "./signet-emblem-B.svg": "./assets/signet-emblem-B.svg",
+    "./signet-emblem-B-glyph.svg": "./assets/signet-emblem-B-glyph.svg",
+    "./signet-emblem-B-rounded.svg": "./assets/signet-emblem-B-rounded.svg",
+    "./signet-emblem-B-glyph-1024.png": "./assets/signet-emblem-B-glyph-1024.png",
+    "./signet-emblem-B-1024.png": "./assets/signet-emblem-B-1024.png",
+    "./signet-emblem-B-180.png": "./assets/signet-emblem-B-180.png",
+    "./signet-emblem-B-48.png": "./assets/signet-emblem-B-48.png",
+    "./signet-emblem-B-32.png": "./assets/signet-emblem-B-32.png",
+    "./signet-emblem-B-16.png": "./assets/signet-emblem-B-16.png",
     "./frapp-lockup.svg": "./assets/frapp-lockup.svg"
   },
   "files": [

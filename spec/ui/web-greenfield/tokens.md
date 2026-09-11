@@ -23,9 +23,11 @@ and does not restate them.
 
 `--surface-1` is now the mark's own field, so locked emblem B sits flush on the raised surface.
 
-> **This rationale does not hold.** The committed mark's field is `#151515` and its gold is
-> `#DDA220`; `#1A1A1A` / `#DDB844` describe the superseded SVG reconstruction. The rung is left as
-> shipped because correcting it is a brand decision, not a lane-1 edit. See L-08.
+> **This rationale did not hold when the rung was set, and now does.** The committed mark measured
+> `#151515` / `#DDA220` while `#1A1A1A` / `#DDB844` described only the spec. Correcting it was a
+> brand decision rather than a lane-1 edit, so the rung was left as shipped; [#2153](https://github.com/pdcarlson/Frapp/issues/2153)
+> then re-exported the mark at the spec'd pair, so `--surface-1` *is* the mark's field. The rung's
+> value never moved. See L-08.
 
 ### Accent seed
 
@@ -36,15 +38,16 @@ Three golds now coexist, and they are not interchangeable:
 | Gold | Value | What it is |
 | ---- | ----- | ---------- |
 | House gold | `#EFB63B` | Signet's own brand accent. Paints the Ask and AI surface. Never retints per chapter. Unchanged. |
-| Mark gold | `#DDB844` *(spec'd)* | The emblem, per [`../brand-identity.md`](../brand-identity.md) §2. Never takes the chapter accent. **The committed raster actually measures `#DDA220` — see L-08.** |
+| Mark gold | `#DDB844` | The emblem, per [`../brand-identity.md`](../brand-identity.md) §2. Never takes the chapter accent. The committed rasters measured `#DDA220` until #2153 re-exported the mark — see L-08. |
 | Accent seed | `#DDB844` | The default fed to the accent engine. **Changed** to equal the *spec'd* mark gold. |
 
 The seed being equal to the spec'd mark gold is a coincidence of value, not an identity. A chapter
 that picks its own accent moves the seed and leaves both other golds where they are.
 
 Note what L-08 does to the intent here: the seed was moved so an unthemed chapter would resolve to
-"the same gold the crest is drawn in." The crest is drawn in `#DDA220`, so it does not — the seed
-matches the spec's description of the mark, not the mark.
+"the same gold the crest is drawn in." The crest was drawn in `#DDA220` until #2153 re-exported it,
+so for that window the seed matched the spec's description of the mark rather than the mark. It now
+matches both. The two stay separate roles: a chapter may move the seed, the mark never retints.
 
 ### Type scale, grid, and scrollbars
 
@@ -129,7 +132,7 @@ wins and this lands again.
 
 **Still open, and the case for the artifact is now stronger than when this was written.** The one
 rung the lane justified on its own merits — `--surface-1` at `#1A1A1A`, "the mark's own field, so
-locked emblem B sits flush" — does not survive measurement against the committed mark. See L-08.
+locked emblem B sits flush" — did not survive measurement against the mark as committed at the time; #2153 re-exported the mark so it holds again. See L-08.
 That rung is also the one L-06 blames for the collapsed middle step, so the board is now settling
 three questions at once rather than one: the four hexes, the mark's real field, and the pitch.
 
@@ -151,7 +154,7 @@ Nothing in `supabase/` bakes in a derived palette either — the directory seed 
 grepping the old derived hexes across `supabase/` returns nothing.
 
 **What is wrong is cosmetic and visible:** a chapter that never picked an accent has a row derived
-from `#F2B72E`, so it renders `--primary: #F2B72E` beside a mark drawn in `#DDA220` (L-08) and a
+from `#F2B72E`, so it renders `--primary: #F2B72E` beside a mark that was drawn in `#DDA220` until #2153 (L-08) and a
 Settings hex placeholder that now reads `#DDB844` — three nearly-but-not-quite matching golds on one
 screen,
 indefinitely, until something rewrites the row. A backfill was already outstanding for rows written
@@ -205,9 +208,12 @@ has no perceptible elevation.
 Nothing guards a **minimum** adjacent-step ratio; the washout guards are `toBeLessThan` pins
 recording that two surfaces alias, so they cannot catch a rung getting tighter.
 
-**L-08 dissolves the premise of that paragraph.** `#1A1A1A` was adopted as the mark's field and is
-not it, so nothing brand-related pins this rung — moving `--surface-1` is on the table alongside the
-`--card` alternative below, and a lane picking this up should not treat it as locked.
+**L-08 qualifies that paragraph, and #2153 has since reversed its conclusion.** `#1A1A1A` was
+adopted as the mark's field, was not it at the time, and is it again now that the mark has been
+re-exported. So the brand rationale for this rung is **restored**: moving `--surface-1` is no longer
+the cheap way out of this step, and a lane picking this up must solve the 1.0486:1 ratio on its own
+contrast merits — most likely by re-pitching `--card`. The rung stays as shipped either way; this
+lane changes no value.
 
 One live call site was affected and is fixed at the call site rather than by moving a token
 (`chapter-switcher.tsx`, whose row hover now skips to `--popover`). The ladder itself is left as
@@ -230,14 +236,20 @@ asserts only that the recipe *string* contains `border-primary`; there is no con
 conforming token for the bordered recipe too, which is the same decision lane 1 made for the offset
 recipe and should be made deliberately rather than folded into a token PR.
 
-### L-08 — The mark's field and gold in the spec do not match the committed mark
+### L-08 — The mark's field and gold did not match the committed mark (RESOLVED, #2153)
+
+**Resolved in direction A:** the mark was re-exported at the spec'd values, so `#1A1A1A` / `#DDB844`
+now describes the committed rasters as well as the spec. The spec did **not** move to the measured
+values — see why below. The record of the gap is kept because it is the provenance of every rung and
+claim this lane cites.
 
 The ladder pinned `--surface-1` to `#1A1A1A` on the stated grounds that it is the mark's own field.
-It is not, and the pair `#1A1A1A` / `#DDB844` does not describe either committed raster.
+At the time it was not, and the pair `#1A1A1A` / `#DDB844` described neither committed raster.
 
 Decoded from the committed assets:
 
-Full pixel census of both files as committed at `d43e977`, decoded 2026-09-11:
+Full pixel census of both files as committed at `d43e977`, decoded 2026-09-11 — **the pre-#2153
+state**, kept as the evidence that produced this lock:
 
 | Asset | Field | Gold | `#1A1A1A` | `#DDB844` |
 | ----- | ----- | ---- | --------- | --------- |
@@ -253,8 +265,9 @@ Reproduce with a full decode, not a sample: both files are 8-bit RGB PNGs, so an
 un-filter pass will do — `python3 -c` with `zlib` and `struct` is enough, and sampling every *n*-th
 pixel understates the rare-colour counts.
 
-`#1A1A1A` / `#DDB844` are exactly the values of the superseded SVG reconstruction, which
-[`../assets.md`](../assets.md) itself labels "not the shipping mark."
+`#1A1A1A` / `#DDB844` were exactly the values of the SVG reconstruction that
+[`../assets.md`](../assets.md) then labelled "Superseded reconstruction. Not the shipping mark." —
+a row this fix deleted, because that SVG is the shipping mark's source now.
 
 **They did not drift apart — they never agreed.** `267dafa`
 ([#2121](https://github.com/pdcarlson/Frapp/pull/2121)) is the only commit that has ever touched
@@ -279,40 +292,66 @@ that centroid — inside the radius, so it works today, with roughly 48 units of
 future re-export that shifts the gold past it produces a silently **empty** monochrome icon, and
 nothing catches that: the script has no test, and `check:brand-assets` only compares hashes.
 
+#### How it was closed
+
+`signet-emblem-B.svg` is the vector master now, and every raster — the 1024² tile, the favicons, the
+Apple touch icon, the Expo layers — is rendered from it rather than cropped and upscaled out of a
+JPEG. A census of the committed tile after the re-export: `#DDB844` **24.10%**, `#1A1A1A` **75.44%**,
+with no pixel more than 0.86 units off the line between them. `#DDB844` went from 0 px to ~253,000.
+
+The executable entry is fixed at the root, not patched:
+
+- The radius-90 ball is gone. `scripts/lib/brand-pixels.mjs` classifies by projection onto the
+  field→gold axis (`coverage() >= 0.5`, the antialiasing midpoint), which is scale-free and so cannot
+  stop matching when the brand moves — the failure mode the 48-unit margin was one re-export away
+  from.
+- `FIELD` / `GOLD` are hex strings in one shared module, not per-script byte literals. A repo-wide
+  `grep DDB844` now finds them; it did not before, which is most of why the drift survived.
+- `check:brand-assets` reads pixels. Every committed raster must contain both locked hexes and stay
+  on the axis between them; every glyph layer must be non-empty. Run against the pre-#2153 tile it
+  fails with `contains zero #DDB844 pixels`.
+- `scripts/ci/__tests__/brand-pixels.test.mjs` unit-tests the predicates, including the regression:
+  a gold outside the old radius-90 ball classifies empty under it and correctly under `coverage()`.
+
 Two consequences for this lane specifically:
 
-- **The flush claim fails as written.** `#151515` on `#1A1A1A` is a slightly darker patch, not flush.
+- **The flush claim failed as written** while the raster measured `#151515` on a `#1A1A1A` token — a
+  slightly darker patch, not flush. The re-export closes it: the mark's field is `#1A1A1A` exactly.
 - **Nothing in the product actually reads the rung as the mark's field.** `signet-mark.tsx` sets its
   own backdrop from a local `const FIELD = "#1A1A1A"` (`:14`), not from `var(--surface-1)`, and then
   covers it entirely with the opaque raster (`fill` + `object-cover`) — though not always: the
   `<Image>` carries no `priority`, so it is lazily loaded, and during first paint or on any fetch
   failure that `#1A1A1A` backdrop *is* the rendered mark. So the token and the mark are not wired
-  together at all: the rung's stated purpose is served by a hardcoded literal that is itself the
-  stale value. What `--surface-1` governs is the surface the tile *abuts*, which is where
-  the `#151515` vs `#1A1A1A` mismatch is actually visible — and it costs L-06's middle step to do it.
+  together at all: the rung's stated purpose is served by a hardcoded literal rather than by the
+  token. That wiring gap is unchanged by #2153 and still worth closing; what changed is that the
+  literal is no longer *stale* — `#1A1A1A` is now the mark's field in the pixels too, so the
+  `#151515` vs `#1A1A1A` seam where the tile abuts `--surface-1` is gone.
 
-**This needs a decision, not a doc fix, and the two directions are not symmetric.**
+**Why the spec moved the mark and not the other way round.** The two directions were never
+symmetric. Re-measuring the spec to `#151515` / `#DDA220` was the trap: **those are not brand values;
+they are compression artifacts.** The old `scripts/rasterize-brand-assets.mjs` said so in its own
+docstring — "Design's upload is a 16:9 letterbox around a centered charcoal tile. **JPEG letterbox is
+not pure black (~rgb 10)**" — and guarded against "JPEG-as-png" leftovers by name. The pixels agreed:
+24,069 distinct colours in a two-colour design, 8×8 DCT block-boundary discontinuity, a
+chroma-subsampling signature, and only ~38% of gold pixels landing exactly on `#DDA220`. The tile was
+then cropped and upscaled 2.26×, so its modal colours were artifacts of artifacts. Pinning the brand
+to them would have made the next clean vector export *fail* the spec it was supposed to define.
 
-- **Re-export the mark** at `#1A1A1A` / `#DDB844` so the spec becomes true.
-  [`../assets.md`](../assets.md) §8 makes this mechanical, but it needs Design to supply a lock
-  actually drawn in those values.
-- **Re-measure the spec** to `#151515` / `#DDA220` — and this is the trap. **Those are not brand
-  values; they are compression artifacts.** `scripts/rasterize-brand-assets.mjs` says so in its own
-  docstring: "Design's upload is a 16:9 letterbox around a centered charcoal tile. **JPEG letterbox
-  is not pure black (~rgb 10)**", and the file guards against "JPEG-as-png" leftovers by name. The
-  evidence is in the pixels: 24,069 distinct colours in a two-colour design, 8×8 DCT block-boundary
-  discontinuity, a chroma-subsampling signature, and only ~38% of gold pixels landing exactly on
-  `#DDA220`. The tile is then cropped and upscaled 2.26×, so its modal colours are artifacts of
-  artifacts. Writing them into the brand spec would pin the mark to JPEG noise and make the next
-  clean vector export *fail* the spec it was supposed to define.
+So the measured values were evidence that the spec and the asset disagreed — never a candidate
+replacement for the spec. #2153 closed it the other way: emblem B was traced to clean vectors at the
+locked hexes, and the rasters regenerated from them.
 
-So the measured values are evidence that the spec and the asset disagree — **not** a candidate
-replacement for the spec. It is a brand call, not a lane-1 correction, so this lane records it and
-changes nothing. Tracked as [#2153](https://github.com/pdcarlson/Frapp/issues/2153).
+**Knock-on, corrected.** An earlier revision of this lock reasoned that because `#1A1A1A` was *not*
+the mark's field, the brand rationale for that rung had evaporated and L-06 could be solved by moving
+`--surface-1` rather than re-pitching `--card`. **That reasoning no longer holds** — the rationale is
+restored, `--surface-1` is the mark's field in fact as well as in intent. L-06's `--card` /
+`--surface-1` step is still 1.0486:1 and still under the 1.15 the contrast fixture treats as "reads
+as the same colour", but it has to be solved on its own contrast merits now, not by citing a dead
+rationale. This lane changes no rung.
 
-Nothing enforces either direction today: `scripts/check-brand-assets.mjs` compares the master against
-its synced copies by sha256 and never reads a pixel, so a re-export that misses the spec'd hexes
-passes the same as one that hits them.
+Enforcement, which did not exist before: `check-brand-assets.mjs` now reads pixels as well as hashes,
+so a re-export that misses the locked hexes fails CI instead of passing exactly like one that hits
+them.
 
 ### L-09 — Five `--text-*` line heights are invented values
 

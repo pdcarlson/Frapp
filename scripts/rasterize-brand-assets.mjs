@@ -1,151 +1,124 @@
 #!/usr/bin/env node
 /**
- * Derives Expo launcher icons, Next favicons, and Apple touch icons from
- * the canonical Design raster `signet-emblem-B-locked.png`.
+ * Renders every Signet raster from the vector masters in
+ * `packages/brand-assets/assets/`.
  *
- * The master PNG is never overwritten. Edit that file (Design's lock),
- * then re-run this script. iOS Light / Dark / Tinted store variants and
- * Play Console feature graphics stay an Ops / EAS step.
+ * WHY THE SVG IS THE SOURCE, AND NOT A PNG (#2153). Until this change the
+ * source of truth was a 1280x720 JPEG-derived "Design lock" PNG, letterboxed
+ * around a ~454px tile that this script cropped and upscaled 2.26x. That master
+ * held `#DDB844` in zero pixels — it measured `#DDA220` on `#151515`, 24,069
+ * distinct colours in a two-colour design — so every raster under it shipped
+ * compression artifacts while the spec said otherwise, and no check could see
+ * it: `check:brand-assets` compared sha256 hashes and never read a pixel.
+ *
+ * A vector master cannot drift from its own colours. Every size below is now a
+ * supersampled render of that vector rather than an upscale of an upscale, and
+ * every buffer is audited AS WRITTEN — see `scripts/lib/brand-pixels.mjs` for
+ * why each layer shape gets a different audit.
+ *
+ * NAMING. Canonical assets are `signet-emblem-B[-glyph|-rounded][-<size>].<ext>`
+ * — see `packages/brand-assets/README.md`. The names written into `apps/` are
+ * fixed by Expo and by the Next App Router, not by us.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
+import {
+  FIELD,
+  FIELD_HEX,
+  GOLD_HEX,
+  assertGlyphCoverage,
+  assertLockedPair,
+  assertSvgLocked,
+  census,
+  coverage,
+  glyphCoverage,
+} from "./lib/brand-pixels.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const assets = join(root, "packages/brand-assets/assets");
 const mobileImages = join(root, "apps/mobile/assets/images");
-const MASTER = join(assets, "signet-emblem-B-locked.png");
-const FIELD = { r: 0x1a, g: 0x1a, b: 0x1a, alpha: 1 };
-const GOLD = { r: 0xdd, g: 0xb8, b: 0x44 };
 
-function assertPngMagic(buf, label) {
-  if (buf[0] !== 0x89 || buf[1] !== 0x50 || buf[2] !== 0x4e || buf[3] !== 0x47) {
-    throw new Error(`${label} is not a PNG (refusing JPEG-as-png or SVG raster leftovers)`);
-  }
+const MASTER_SVG = join(assets, "signet-emblem-B.svg");
+const GLYPH_SVG = join(assets, "signet-emblem-B-glyph.svg");
+const FLATTEN = { ...FIELD, alpha: 1 };
+
+/**
+ * Render the vectors once at this size, then downscale for every smaller
+ * raster. Rendering a 16px favicon straight from the vector drops hairlines
+ * (the whisker, the neck break) that supersampling preserves.
+ */
+const SUPERSAMPLE = 1024;
+
+/**
+ * Inset for the Android launcher mask: `spec/ui/assets.md` §7 wants the glyph
+ * well inside the 66% safe zone so a circular or squircle mask never clips it.
+ */
+const LAUNCHER_INSET = 0.17;
+
+/**
+ * Renders a vector at `SUPERSAMPLE`. No cropping: the SVG IS the frame.
+ *
+ * The letterbox-detecting `contentSquare()` this replaces existed only to dig a
+ * tile out of Design's 16:9 JPEG upload. It keyed off a four-corner luminance
+ * mean against a hard-coded `< 16`, and on the real master it returned a 454px
+ * box for a 448px-wide tile — pulling ~3px of letterbox into every icon before
+ * upscaling the result. A heuristic that can now only misfire is worse than no
+ * heuristic.
+ */
+async function renderVector(path) {
+  return sharp(readFileSync(path))
+    .resize(SUPERSAMPLE, SUPERSAMPLE, { fit: "fill" })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
+/** Opaque RGB. Apple rejects an alpha channel on a store icon. */
+async function opaque(source, size) {
+  return sharp(source)
+    .resize(size, size, { fit: "fill" })
+    .flatten({ background: FLATTEN })
+    .removeAlpha()
+    .png({ compressionLevel: 9 })
+    .toBuffer();
 }
 
 /**
- * Design's upload is a 16:9 letterbox around a centered charcoal tile.
- * JPEG letterbox is not pure black (~rgb 10), so crop from luminance
- * relative to the corners. A square full-bleed master is a no-op.
+ * The crest alone, full bleed, on transparency.
+ *
+ * Rendered from `signet-emblem-B-glyph.svg` rather than keyed out of the opaque
+ * tile, so its edges antialias against transparency instead of against
+ * charcoal — a glyph keyed out of a dark tile carries a dark fringe onto every
+ * light surface it lands on.
  */
-async function contentSquare(input) {
-  const { data, info } = await sharp(input)
-    .removeAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  const { width, height, channels } = info;
-  if (width < 1 || height < 1) {
-    throw new Error("master raster has no dimensions");
-  }
-
-  const lumAt = (x, y) => {
-    const i = (y * width + x) * channels;
-    return (data[i] + data[i + 1] + data[i + 2]) / 3;
-  };
-  const cornerLum =
-    (lumAt(0, 0) +
-      lumAt(width - 1, 0) +
-      lumAt(0, height - 1) +
-      lumAt(width - 1, height - 1)) /
-    4;
-  const centerLum = lumAt(Math.floor(width / 2), Math.floor(height / 2));
-  const letterboxed = cornerLum < 16 && centerLum - cornerLum > 6;
-
-  if (!letterboxed) {
-    const side = Math.min(width, height);
-    return {
-      left: Math.round((width - side) / 2),
-      top: Math.round((height - side) / 2),
-      width: side,
-      height: side,
-    };
-  }
-
-  const threshold = cornerLum + 5;
-  let minX = width;
-  let minY = height;
-  let maxX = 0;
-  let maxY = 0;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (lumAt(x, y) > threshold) {
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-  if (maxX <= minX || maxY <= minY) {
-    throw new Error("master raster has no visible tile to crop");
-  }
-  let side = Math.max(maxX - minX + 1, maxY - minY + 1);
-  side = Math.min(side, width, height);
-  const cx = Math.round((minX + maxX) / 2);
-  const cy = Math.round((minY + maxY) / 2);
-  const left = Math.max(0, Math.min(width - side, cx - Math.floor(side / 2)));
-  const top = Math.max(0, Math.min(height - side, cy - Math.floor(side / 2)));
-  return { left, top, width: side, height: side };
-}
-
-async function opaqueTile(size) {
-  const master = readFileSync(MASTER);
-  const region = await contentSquare(master);
-  return sharp(master)
-    .extract(region)
+async function transparent(source, size) {
+  return sharp(source)
     .resize(size, size, { fit: "fill" })
-    .flatten({ background: FIELD })
-    .removeAlpha()
-    .png()
-    .toBuffer();
-}
-
-async function paddedTile(size, insetRatio = 0.17) {
-  const inner = Math.round(size * (1 - insetRatio * 2));
-  const tile = await opaqueTile(inner);
-  return sharp({
-    create: {
-      width: size,
-      height: size,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite([{ input: tile, gravity: "center" }])
-    .png()
-    .toBuffer();
-}
-
-async function paddedMonochrome(size, insetRatio = 0.17) {
-  const inner = Math.round(size * (1 - insetRatio * 2));
-  const tile = await opaqueTile(inner);
-  const { data, info } = await sharp(tile)
     .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  const out = Buffer.from(data);
-  for (let i = 0; i < out.length; i += 4) {
-    const dr = out[i] - GOLD.r;
-    const dg = out[i + 1] - GOLD.g;
-    const db = out[i + 2] - GOLD.b;
-    const goldish = dr * dr + dg * dg + db * db < 90 * 90;
-    if (goldish) {
-      out[i] = 255;
-      out[i + 1] = 255;
-      out[i + 2] = 255;
-      out[i + 3] = 255;
-    } else {
-      out[i + 3] = 0;
-    }
-  }
-  const glyph = await sharp(out, {
-    raw: { width: info.width, height: info.height, channels: 4 },
-  })
-    .png()
+    .png({ compressionLevel: 9 })
     .toBuffer();
+}
+
+/**
+ * The crest alone, inset on transparency, for the Android adaptive foreground
+ * and the splash image.
+ *
+ * These used to composite the OPAQUE tile — a charcoal square on transparency —
+ * which `spec/ui/assets.md` §7 never described and which had two costs. The
+ * splash plugin paints `#131211` behind it, so a charcoal square showed as a
+ * hard-edged rectangle on the first screen of the app; and a launcher mask
+ * clipped the square's corners rather than the transparent margin that inset
+ * was there to provide. It also made the layer uncheckable: the alpha channel
+ * described the inset square, so a crest-less tile measured identically.
+ */
+async function insetGlyph(svgPath, size, insetRatio = LAUNCHER_INSET) {
+  const inner = Math.round(size * (1 - insetRatio * 2));
+  // Straight from the vector at the inset size. Downscaling a 1024 render to
+  // 676 instead pushes edge pixels up to 2.15 units off the brand axis through
+  // lanczos overshoot; a first-generation render lands them at 0.
+  const glyph = await transparent(readFileSync(svgPath), inner);
   return sharp({
     create: {
       width: size,
@@ -155,8 +128,90 @@ async function paddedMonochrome(size, insetRatio = 0.17) {
     },
   })
     .composite([{ input: glyph, gravity: "center" }])
-    .png()
+    .png({ compressionLevel: 9 })
     .toBuffer();
+}
+
+/**
+ * The Android themed-icon layer: the same inset crest, in white.
+ *
+ * The classifier this replaces was a radius-90 euclidean ball around the gold
+ * centroid — see `lib/brand-pixels.mjs` for why that was one re-export away
+ * from emitting an empty PNG. Here the source is already glyph-on-transparent,
+ * so alpha carries the shape and `coverage()` only has to reject the fringe.
+ */
+async function monochrome(insetBuffer) {
+  const { data, info } = await sharp(insetBuffer)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const out = Buffer.from(data);
+  for (let i = 0; i < out.length; i += 4) {
+    const visible = out[i + 3] >= 128 && coverage(out[i], out[i + 1], out[i + 2]) >= 0.5;
+    if (visible) {
+      out[i] = 255;
+      out[i + 1] = 255;
+      out[i + 2] = 255;
+      out[i + 3] = 255;
+    } else {
+      // Zero the colour as well as the alpha: a transparent pixel still
+      // carrying gold bytes bleeds on any consumer that downscales without
+      // premultiplying.
+      out[i] = 0;
+      out[i + 1] = 0;
+      out[i + 2] = 0;
+      out[i + 3] = 0;
+    }
+  }
+  return sharp(out, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+  })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
+/**
+ * Audits a buffer AS WRITTEN. `check:brand-assets` runs the same assertions
+ * over the COMMITTED files in CI; doing it here too fails a bad export at the
+ * point it is produced rather than one commit later.
+ *
+ * Measuring the written buffer and not an intermediate matters: an earlier
+ * revision asserted glyph coverage on the pre-composite inner tile, so the
+ * exporter and the gate applied one band to two numbers 2.29x apart and the
+ * exporter could certify a file the gate then rejected.
+ */
+async function audit(buffer, label, kind) {
+  const { data, info } = await sharp(buffer)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const meta = await sharp(buffer).metadata();
+  // Colour is claimed over fully opaque pixels; coverage over visible ones.
+  const stats = census(data, info.channels, info.width, info.height, 255);
+
+  if (kind === "opaque") {
+    if (meta.channels !== 3) {
+      throw new Error(
+        `${label}: has ${meta.channels} channels — must be opaque RGB, Apple rejects an alpha channel on a store icon (spec/ui/assets.md §7)`,
+      );
+    }
+    assertLockedPair(stats, label, { edge: info.width });
+  } else if (kind === "glyph") {
+    if (meta.channels !== 4) {
+      throw new Error(`${label}: must carry an alpha channel`);
+    }
+    assertLockedPair(stats, label, { requireField: false });
+    assertGlyphCoverage(
+      glyphCoverage(data, info.channels, info.width, info.height),
+      label,
+    );
+  } else if (kind === "monochrome") {
+    assertGlyphCoverage(
+      glyphCoverage(data, info.channels, info.width, info.height),
+      label,
+    );
+  }
+  return stats;
 }
 
 async function write(rel, buffer) {
@@ -166,32 +221,77 @@ async function write(rel, buffer) {
   console.log(`wrote ${rel} (${buffer.length} bytes)`);
 }
 
+async function emit(rel, buffer, kind) {
+  const stats = await audit(buffer, rel, kind);
+  await write(rel, buffer);
+  return stats;
+}
+
 async function main() {
-  const master = readFileSync(MASTER);
-  assertPngMagic(master, "packages/brand-assets/assets/signet-emblem-B-locked.png");
+  // Every shipped SVG, not just the two the rasters render from: the rounded
+  // tile and the lockup are `@repo/brand-assets` exports that reach consumers
+  // directly, and no raster check can see them.
+  assertSvgLocked(readFileSync(MASTER_SVG, "utf8"), "signet-emblem-B.svg");
+  assertSvgLocked(readFileSync(GLYPH_SVG, "utf8"), "signet-emblem-B-glyph.svg", {
+    requireField: false,
+  });
+  assertSvgLocked(
+    readFileSync(join(assets, "signet-emblem-B-rounded.svg"), "utf8"),
+    "signet-emblem-B-rounded.svg",
+  );
+  assertSvgLocked(
+    readFileSync(join(assets, "frapp-lockup.svg"), "utf8"),
+    "frapp-lockup.svg",
+  );
+
   mkdirSync(mobileImages, { recursive: true });
 
-  const tile1024 = await opaqueTile(1024);
-  await write("packages/brand-assets/assets/signet-emblem-B-tile.png", tile1024);
-  await write("apps/mobile/assets/images/icon.png", tile1024);
-  await write(
-    "apps/mobile/assets/images/adaptive-icon.png",
-    await paddedTile(1024),
+  const markHi = await renderVector(MASTER_SVG);
+  const glyphHi = await renderVector(GLYPH_SVG);
+
+  // ── canonical: packages/brand-assets/assets ───────────────────────────────
+  let tile1024;
+  for (const size of [16, 32, 48, 180, 1024]) {
+    const buffer = await opaque(markHi, size);
+    const stats = await emit(
+      `packages/brand-assets/assets/signet-emblem-B-${size}.png`,
+      buffer,
+      "opaque",
+    );
+    if (size === 1024) {
+      tile1024 = buffer;
+      console.log(
+        `master: ${GOLD_HEX} ${((100 * stats.gold) / stats.total).toFixed(2)}%, ` +
+          `${FIELD_HEX} ${((100 * stats.field) / stats.total).toFixed(2)}%, ` +
+          `worst ${stats.worstOffAxis.toFixed(2)} off-axis`,
+      );
+    }
+  }
+
+  await emit(
+    "packages/brand-assets/assets/signet-emblem-B-glyph-1024.png",
+    await transparent(glyphHi, 1024),
+    "glyph",
   );
-  await write(
+
+  // ── Expo: names fixed by apps/mobile/app.json ─────────────────────────────
+  // `icon.png` reuses the audited 1024 buffer rather than re-rendering it, so
+  // the store-bound icon cannot diverge from the tile it is supposed to be.
+  await emit("apps/mobile/assets/images/icon.png", tile1024, "opaque");
+  await emit(
+    "apps/mobile/assets/images/favicon.png",
+    await opaque(markHi, 96),
+    "opaque",
+  );
+
+  const launcher = await insetGlyph(GLYPH_SVG, 1024);
+  await emit("apps/mobile/assets/images/adaptive-icon.png", launcher, "glyph");
+  await emit("apps/mobile/assets/images/splash-icon.png", launcher, "glyph");
+  await emit(
     "apps/mobile/assets/images/adaptive-icon-monochrome.png",
-    await paddedMonochrome(1024),
+    await monochrome(launcher),
+    "monochrome",
   );
-  await write(
-    "apps/mobile/assets/images/splash-icon.png",
-    await paddedTile(1024),
-  );
-  await write("apps/mobile/assets/images/favicon.png", await opaqueTile(96));
-  await write("packages/brand-assets/assets/favicon-16.png", await opaqueTile(16));
-  await write("packages/brand-assets/assets/favicon-32.png", await opaqueTile(32));
-  await write("packages/brand-assets/assets/favicon-48.png", await opaqueTile(48));
-  await write("packages/brand-assets/assets/icon.png", await opaqueTile(32));
-  await write("packages/brand-assets/assets/apple-icon.png", await opaqueTile(180));
 }
 
 main().catch((error) => {

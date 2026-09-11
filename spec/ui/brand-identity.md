@@ -19,30 +19,30 @@
 
 ## 2. The mark
 
-The shipping mark is **locked emblem B**: an abstract crest with a neck break, gold on charcoal. Treat it as a crest, never as a dog, seal, or mascot in marketing copy. Canonical master is Design's raster in [`assets.md`](assets.md) (`packages/brand-assets/assets/signet-emblem-B-locked.png`). House UI accent stays `#EFB63B`; the mark itself is not that token.
+The shipping mark is **locked emblem B**: an abstract crest with a neck break, gold on charcoal. Treat it as a crest, never as a dog, seal, or mascot in marketing copy. Canonical master is the vector in [`assets.md`](assets.md) (`packages/brand-assets/assets/signet-emblem-B.svg`); every raster renders from it. House UI accent stays `#EFB63B`; the mark itself is not that token.
 
 | Fact             | Value                                                                                                                        |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | House gold       | `#EFB63B` — Signet's own accent. Gold/amber, never brown-bronze.                                                             |
 | Accent seed      | `#DDB844` — the default chapter accent seed, equal in value to the mark gold below but a separate role; see [design-system/accent-engine.md](design-system/accent-engine.md) |
-| Mark field       | `#1A1A1A` — **spec'd, not measured; the committed raster is `#151515`. See the note below.**                                  |
-| Mark gold        | `#DDB844` — **spec'd, not measured; the committed raster is `#DDA220`. See the note below.**                                  |
+| Mark field       | `#1A1A1A` — spec'd **and** measured; the committed rasters are drawn in it                                                     |
+| Mark gold        | `#DDB844` — spec'd **and** measured; the committed rasters are drawn in it                                                    |
 | Shipping mark    | Locked emblem B — abstract crest, neck break, gold on charcoal                                                                |
 | Mascot / extras  | Still **TBD** — the animal mascot stays blocked on the USPTO search for "Signet" (a human action). Do not commission mascot art before it clears. |
 
-> **The mark field and mark gold above describe the superseded SVG reconstruction, not the shipping
-> raster.** A full pixel census of `signet-emblem-B-locked.png` and `signet-emblem-B-tile.png` finds
-> `#DDB844` in **zero** pixels of either: the crest is drawn in `#DDA220` on a `#151515` field. The
-> raster and these two rows were authored in the same commit
-> ([#2121](https://github.com/pdcarlson/Frapp/pull/2121)) and have disagreed since; nothing drifted.
+> **These two rows once described only the spec, not the pixels.** Until
+> [#2153](https://github.com/pdcarlson/Frapp/issues/2153) a full census of the committed rasters
+> found `#DDB844` in **zero** pixels of any file: the crest shipped as `#DDA220` on a `#151515`
+> field. Raster and rows were authored in the same commit
+> ([#2121](https://github.com/pdcarlson/Frapp/pull/2121)) and disagreed from birth; nothing drifted.
 >
-> Closing the gap is a brand decision, tracked as
-> [#2153](https://github.com/pdcarlson/Frapp/issues/2153) and measured in
-> [`web-greenfield/tokens.md`](web-greenfield/tokens.md) L-08. **Do not close it by writing the
-> measured values into this table:** the committed raster is JPEG-derived and upscaled, so `#151515`
-> and `#DDA220` are compression artifacts rather than brand values. Until it is settled, treat these
-> two rows as the specification, not as a description of what ships, and do not sample either value
-> from the raster.
+> It was closed by re-exporting the mark at the values above, **not** by writing the measured ones
+> into this table — the old master was a JPEG-derived letterbox, so `#151515` and `#DDA220` were
+> compression artifacts rather than brand values, and pinning the brand to them would have failed
+> the next clean export against the spec it was meant to define. The source of truth is a vector
+> now, and `check:brand-assets` reads pixels, so this table and the rasters cannot silently part
+> again. History and the full census are in
+> [`web-greenfield/tokens.md`](web-greenfield/tokens.md) L-08.
 
 The mark and logo **MUST NOT** take the chapter accent — ever. Chapter theming recolors product UI through the accent engine; the brand itself never retints.
 

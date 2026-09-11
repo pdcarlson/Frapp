@@ -9,8 +9,9 @@
 The committed assets ship **locked emblem B** — gold `#DDB844` on charcoal `#1A1A1A`, neck break, treated as an abstract crest. `frapp-*` filenames, `@repo/brand-assets`, and `frapp.live` domains stay as-is in code. Prose says Signet; code cites real current names.
 
 - The animal mascot (a seal, the animal) remains **not commissioned** and MUST NOT ship until the USPTO search clears; [brand-identity.md](brand-identity.md) owns that ban.
-- Teams MUST NOT restyle the locked emblem piecemeal. Replace `packages/brand-assets/assets/signet-emblem-B-locked.png`, then rasterize and sync.
-- **`#DDB844` / `#1A1A1A` above are the specification, not a measurement of the committed raster.** The shipping files measure `#DDA220` on `#151515`; `#DDB844` occurs in zero pixels of either. Those measured values are JPEG artifacts, not brand values, so they are evidence of the gap and not a replacement for this line. Unsettled brand decision — [#2153](https://github.com/pdcarlson/Frapp/issues/2153), measured in [`web-greenfield/tokens.md`](web-greenfield/tokens.md) L-08. Do not sample the raster to "correct" this line, and do not re-export the mark to match it, until that issue closes.
+- Teams MUST NOT restyle the locked emblem piecemeal. Edit `packages/brand-assets/assets/signet-emblem-B.svg` — the vector master — then rasterize and sync (§8).
+- **`#DDB844` / `#1A1A1A` are both the specification and what the pixels measure**, settled in [#2153](https://github.com/pdcarlson/Frapp/issues/2153). They did not agree before: the committed rasters descended from a JPEG-derived letterbox and measured `#DDA220` on `#151515`, with `#DDB844` in zero pixels of any file. The mark was re-exported at the spec'd values — the spec did **not** move to the measured ones, because those were compression artifacts rather than brand values. History is in [`web-greenfield/tokens.md`](web-greenfield/tokens.md) L-08.
+- Do not sample a raster to "correct" the hexes above. If the mark must change, change `signet-emblem-B.svg` and re-run the pipeline in §8; `check:brand-assets` reads pixels and fails anything not drawn in the locked pair.
 - iOS **Light / Dark / Tinted** store variants and a Play Console feature graphic are still an Ops / EAS step; this package produces the in-repo Expo rasters and Next favicons.
 
 ---
@@ -32,22 +33,27 @@ The product mark NEVER takes the chapter accent, and chapter accent applies insi
 
 All canonical files live in **`@repo/brand-assets`** (`packages/brand-assets/assets/`):
 
-| File                         | Format            | Use                                                                    |
-| ---------------------------- | ----------------- | ---------------------------------------------------------------------- |
-| `signet-emblem-B-locked.png` | PNG (Design lock) | **Source of truth.** Letterboxed Design raster; never regenerated from SVG |
-| `signet-emblem-B-tile.png`    | PNG 1024²        | Center-square crop used for Expo `icon.png` and in-app tiles               |
-| `icon.png`                   | PNG 32²          | Next App Router favicon source (`app/icon.png`)                           |
-| `favicon-16.png` / `32` / `48` | PNG            | Favicon sizes for Ops                                                     |
-| `apple-icon.png`             | PNG 180²         | Apple touch icon, synced into both Next apps                               |
-| `app-icon.svg`               | SVG 64×64        | Superseded reconstruction. Not the shipping mark.                         |
-| `app-icon-glyph.svg`         | SVG 64×64        | Superseded. Adaptive/splash now derive from the Design PNG.               |
-| `frapp-lockup.svg`           | SVG               | Wordmark reference only; the crest in this file is not the shipping mark.  |
+Canonical assets are named **`signet-emblem-B[-glyph|-rounded][-<size>].<svg|png>`**. `-glyph` is the crest alone on transparent, `-rounded` is the crest on a tile with the app-icon corner radius, no suffix is the square full-bleed master, and `-<size>` is a raster's edge length in px. `frapp-lockup.svg` is the one exception, because §1 freezes `frapp-*` filenames. `scripts/ci/__tests__/brand-pixels.test.mjs` asserts the scheme.
+
+| File                             | Format          | Use                                                                        |
+| -------------------------------- | --------------- | -------------------------------------------------------------------------- |
+| `signet-emblem-B.svg`            | SVG 1024²       | **Source of truth.** Every raster below renders from it.                    |
+| `signet-emblem-B-glyph.svg`      | SVG 1024²       | Crest alone on transparent — for surfaces that are not the charcoal field   |
+| `signet-emblem-B-rounded.svg`    | SVG 1024²       | Crest on a rounded charcoal tile                                            |
+| `frapp-lockup.svg`               | SVG 3360×1024   | Rounded tile + Signet wordmark; the word uses `currentColor`                |
+| `signet-emblem-B-1024.png`       | PNG 1024² RGB   | Square tile — Expo `icon.png` and the in-app tiles                          |
+| `signet-emblem-B-glyph-1024.png` | PNG 1024² RGBA  | Crest alone on transparent, no dark fringe on light surfaces                |
+| `signet-emblem-B-180.png`        | PNG 180² RGB    | Apple touch icon, synced into both Next apps                                |
+| `signet-emblem-B-48.png` / `-32` / `-16` | PNG RGB | Favicon sizes; `-32` is the Next App Router favicon source (`app/icon.png`) |
+
+All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 units tall — so the same path data is reused **verbatim** and cannot drift between them. Only the viewBox *width* differs (`frapp-lockup.svg` is 3360 wide because it carries the wordmark beside the tile), and each file's intrinsic `width`/`height` must keep the viewBox's aspect or every raster renders distorted. `check:brand-assets` asserts all of it. That drift is exactly what #2153 was: a "superseded" SVG and the shipping raster drew different artwork, authored in one commit, disagreeing from birth.
 
 Requirements:
 
 - App icon MUST stay legible at 16px favicon scale.
 - Lockup MUST stay readable at ~120px width; the word uses `fill="currentColor"` when inlined so theme text colors apply. The tile and crest stay `#1A1A1A` / `#DDB844`.
-- Consumers MUST NOT hand-edit synced copies (`apps/*/app/icon.png`) — replace the canonical PNG and re-run rasterize + sync.
+- Consumers MUST NOT hand-edit synced copies (`apps/*/app/icon.png`) or any raster in this package — every one of them is generated. Edit the SVG master and re-run rasterize + sync.
+- Use the `-glyph` pair wherever the mark sits on a surface that is not the charcoal field: it is rendered against transparency rather than keyed out of the tile, so it carries no dark fringe.
 
 ---
 
@@ -55,18 +61,19 @@ Requirements:
 
 | What                                  | Path                                                                                                   |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Source rasters                        | `packages/brand-assets/assets/signet-emblem-B-locked.png` (master), `signet-emblem-B-tile.png`, `icon.png`, `apple-icon.png` |
+| Vector master                         | `packages/brand-assets/assets/signet-emblem-B.svg` (plus `signet-emblem-B-glyph.svg`) |
+| Source rasters                        | `packages/brand-assets/assets/signet-emblem-B-1024.png`, `-180.png`, `-32.png` (all generated) |
 | Synced tab icons                      | `apps/landing/app/icon.png`, `apps/web/app/icon.png`                                                   |
 | Synced Apple touch icons              | `apps/landing/app/apple-icon.png`, `apps/web/app/apple-icon.png`                                       |
 | In-app / lockup tile                | `apps/landing/public/brand/signet-emblem-B.png`, `apps/web/public/brand/signet-emblem-B.png`           |
-| Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — Design raster + Signet word. Tile/crest are `#1A1A1A` / `#DDB844`. |
+| Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — emblem raster + Signet word. Tile/crest are `#1A1A1A` / `#DDB844`. |
 | OG image                              | `apps/landing/app/opengraph-image.tsx`                                                                 |
 
 | Command | Effect |
 | ------- | ------ |
-| `npm run rasterize:brand-assets` (root; runs `scripts/rasterize-brand-assets.mjs`) | Reads the Design master PNG (never overwrites it). Writes Expo rasters, favicon 16/32/48, Next `icon.png`, and `apple-icon.png`. |
-| `npm run sync:brand-assets` (root; runs `scripts/sync-brand-assets.mjs`) | Copies `icon.png`, `apple-icon.png`, and the emblem tile into both Next apps |
-| `npm run check:brand-assets` (root; runs `scripts/check-brand-assets.mjs`) | Fails if synced `app/icon.png`, `apple-icon.png`, or the emblem tile is not byte-identical to the canonical file. Runs in CI (`.github/workflows/ci.yml`) |
+| `npm run rasterize:brand-assets` (root; runs `scripts/rasterize-brand-assets.mjs`) | Renders every canonical raster and every Expo raster from the SVG master. Refuses an SVG that paints anything but the locked pair, and refuses an empty or solid Android monochrome layer. |
+| `npm run sync:brand-assets` (root; runs `scripts/sync-brand-assets.mjs`) | Copies the 32², 180², and 1024² rasters into both Next apps under the names Next and the components expect |
+| `npm run check:brand-assets` (root; runs `scripts/check-brand-assets.mjs`) | Two gates. **Parity:** synced copies must be byte-identical to their canonical source. **Pixels:** every committed raster must be drawn in the locked pair, and every glyph layer must be non-empty — hash parity alone is blind to both, which is how #2153 shipped green. Runs in CI (`.github/workflows/ci.yml`) |
 
 The check covers tab icons and Apple touch icons. The React lockup component and the public lockup copy are aligned manually via the checklist in §8.
 
@@ -74,7 +81,7 @@ The check covers tab icons and Apple touch icons. The React lockup component and
 
 ## 5. Next.js behavior
 
-- **`app/icon.png`:** App Router [file convention](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/app-icons); emitted per deployment (immutable URL with build id). Derived from the Design PNG.
+- **`app/icon.png`:** App Router [file convention](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/app-icons); emitted per deployment (immutable URL with build id). Synced from the canonical 32² raster, which renders from the SVG master (§3).
 - **`app/apple-icon.png`:** Apple touch icon, synced from the canonical 180² raster.
 - **`opengraph-image.tsx`:** [Open Graph image](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/opengraph-image) route generating the 1200×630 card; avoids shipping a broken static `/og-image.png`.
 - Landing `metadata` in `apps/landing/app/layout.tsx` MUST reference the App Router OG route (`openGraph.images` / `twitter.images` resolve against `metadataBase`), not a static `/og-image.png`, unless that file actually exists in `public/`.
@@ -96,22 +103,24 @@ No transactional email templates exist in-repo yet; this binds the first ones bu
 
 Expo requires **raster** launcher icons: `apps/mobile/app.json` references PNGs under `apps/mobile/assets/images/` (`icon.png`, `adaptive-icon.png`, `adaptive-icon-monochrome.png`, `splash-icon.png`, `favicon.png`); SVG cannot be the store icon.
 
-Shapes: `icon.png` 1024² opaque RGB (Apple rejects alpha); `adaptive-icon.png` and `adaptive-icon-monochrome.png` 1024² glyph-only on transparent, with the glyph well inside the 66% safe zone so launcher masks never clip it (the monochrome layer is white, for Android themed icons); `splash-icon.png` glyph-only on transparent over the `expo-splash-screen` plugin's `backgroundColor`; `favicon.png` 96² for `expo start --web`. `android.adaptiveIcon.backgroundColor` is `#1A1A1A`, the mark's spec'd field (the raster measures `#151515`; see §1).
+Shapes: `icon.png` 1024² opaque RGB (Apple rejects alpha); `adaptive-icon.png`, `adaptive-icon-monochrome.png` and `splash-icon.png` 1024² **glyph-only on transparent** — the crest alone, inset 17% so the 66% launcher safe zone clips nothing (the monochrome layer is white, for Android themed icons). These composited an opaque charcoal tile until [#2153](https://github.com/pdcarlson/Frapp/issues/2153); that square showed as a hard edge on the splash background and made the layer uncheckable, since its alpha measured the same whether the crest was there or not; `favicon.png` 96² for `expo start --web`. `android.adaptiveIcon.backgroundColor` is `#1A1A1A`, the mark's field.
 
-After the master PNG changes:
+After the SVG master changes:
 
 1. Run `npm run rasterize:brand-assets` then `npm run sync:brand-assets`.
-2. Keep the `expo-splash-screen` plugin's `backgroundColor` and `android.adaptiveIcon.backgroundColor` in `app.json` consistent with the mark field.
+2. `android.adaptiveIcon.backgroundColor` MUST stay the mark field (`#1A1A1A`) — the launcher paints it behind the transparent crest, so it *is* the mark's field on Android. The `expo-splash-screen` plugin's `backgroundColor` is deliberately **not** the mark field: the splash image is transparent, so it sits on the app's own `--background` and the splash-to-app transition has no seam.
 3. iOS Light / Dark / Tinted store variants remain an Ops / EAS upload.
 
 ---
 
 ## 8. Update procedure
 
-1. Replace `packages/brand-assets/assets/signet-emblem-B-locked.png` with Design's lock (do not regenerate it from SVG).
-2. Run `npm run rasterize:brand-assets` then `npm run sync:brand-assets` from the repo root.
+1. Edit `packages/brand-assets/assets/signet-emblem-B.svg`. Apply the same path edit to `signet-emblem-B-glyph.svg`, `signet-emblem-B-rounded.svg`, and `frapp-lockup.svg` — they share the master's coordinate frame, so the `d` string copies verbatim, and a test fails if they diverge. Do not change any `fill`: `check:brand-assets` reads every shipped SVG, including the two that are never rasterized.
+2. Run `npm run rasterize:brand-assets` then `npm run sync:brand-assets` from the repo root. Do **not** hand-commit a raster; all of them are generated.
 3. Align `apps/landing/components/frapp-lockup.tsx` and `apps/web/components/auth/signet-mark.tsx` if the in-app tile path changed.
-4. Run `npm run check:brand-assets` (root) before PR.
+4. Run `npm run check:brand-assets` and `npm run test:ci-scripts` (root) before PR.
+
+A Design hand-off that arrives as a PNG or JPEG is **not** committable as-is: it has to be traced to vectors first. A lossy raster as source of truth is the whole of #2153.
 
 ---
 
@@ -121,4 +130,5 @@ After the master PNG changes:
 - Duplicated "slightly different" icons per app.
 - Chapter logo on the marketing homepage header, or the product mark painted with a chapter accent ([brand-identity.md](brand-identity.md)).
 - `og:image` pointing at a missing file (404 hurts crawlers and previews).
-- Restyling the locked emblem toward a new mark without replacing the canonical PNG first (§1).
+- Restyling the locked emblem toward a new mark without changing the SVG master first (§1).
+- Committing a raster by hand, or treating a JPEG-derived upload as a source of truth (#2153).
