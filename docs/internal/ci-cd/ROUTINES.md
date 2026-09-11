@@ -210,7 +210,12 @@ issue if anything looks off):
   provider-settings work, so the two are **not** cleanly separated today — whether `area:ops`
   should stay or fold into `area:infra` is the owner's call, not a routine's. Rostered rather than
   re-bucketed for the usual reason: a routine reading an unrostered label as a typo is the failure
-  this list exists to prevent)
+  this list exists to prevent) · `area:landing` (same story, rostered 2026-09-11 — in use on #2150
+  for `apps/landing` PostHog module work; carries no label description, and its scope is likewise
+  the owner's to define. Like `area:chat` it **overlaps** rather than partitions: `apps/landing` is
+  a surface `area:web` could also claim, so whether landing work should carry its own label or fold
+  into `area:web` is the owner's call, not a routine's. Rostered rather than re-bucketed for the
+  same reason as the five above)
 - **Scope:** `scope:production` — work that only becomes relevant once a production environment
   exists (owner decision 2026-08-10; see
   [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the
