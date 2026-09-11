@@ -38,7 +38,7 @@ import {
 import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatCurrency } from "@/lib/currency";
-import { formatLocaleDate as formatDate } from "@repo/formatting";
+import { formatBareDate as formatDate } from "@repo/formatting";
 import { asArray } from "@/lib/utils";
 
 // Mirrors what `BillingService.getChapterBillingStatus` actually returns. The
