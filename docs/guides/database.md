@@ -66,7 +66,7 @@ Three things about it are load-bearing:
   from another source is never overwritten by a re-run.
 - **Colors must be canonical `#RRGGBB`.** `npm run check:chapter-directory-seed` runs
   in CI as the `chapter-directory-seed` job, because a malformed hex does not fail —
-  the accent engine substitutes the house seed (`#F2B72E`), so the chapter gets a
+  the accent engine substitutes the house seed (`#DDB844`), so the chapter gets a
   plausible-looking wrong brand color with no error anywhere. The seed originally
   shipped with 50 of its 100 values missing a leading `#` and nothing noticed (#840).
   `deriveSignetPalette` reports the substitution on `invalidSeed` and the API callers

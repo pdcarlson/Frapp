@@ -291,7 +291,7 @@ function ChatSearchResults({
   if (isError) {
     return (
       <div className="px-3 py-4">
-        <p role="alert" className="text-[12.5px] text-destructive">
+        <p role="alert" className="text-[12.5px] text-destructive-text">
           Search failed.
         </p>
         <Button

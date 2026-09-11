@@ -8,6 +8,7 @@ import {
   SEMANTIC,
   SURFACE,
   tint,
+  INDISTINGUISHABLE,
 } from "@/tests/signet-contrast";
 
 /**
@@ -89,7 +90,7 @@ describe("status colour is never decorative", () => {
     expect(
       ratio(accentSubtleFor("#006400"), successTint),
       "a green chapter's accent badge vs the success badge",
-    ).toBeLessThan(1.1);
+    ).toBeLessThan(INDISTINGUISHABLE);
 
     for (const seed of ["#8B0000", "#BF0A30", "#CC0000"] as const) {
       expect(
@@ -116,22 +117,39 @@ describe("the #916 pair", () => {
     // Stock Tailwind emerald-700, which is what the points amounts rendered in
     // and what #916 is about. `--success` is the same intent, measured.
     expect(ratio("#047857", SURFACE.card)).toBeLessThan(AA_TEXT);
-    expect(ratio(SEMANTIC.success, SURFACE.card)).toBeGreaterThanOrEqual(AA_TEXT);
+    expect(ratio(SEMANTIC.success, SURFACE.card)).toBeGreaterThanOrEqual(
+      AA_TEXT,
+    );
   });
 
-  it("keeps the negative branch on the solid, because the lift is for tints only", () => {
-    // Written the other way round first, and this assertion is what corrected
-    // it. A negative points amount is danger text on a plain `--card` cell, not
-    // on a danger tint, and the solid clears the gate there (4.72–5.79 across
-    // the whole ladder). Reaching for `--destructive-text` outside a tint
-    // over-applies §1's lift — the rule is "where a *drawn* tone measures below
-    // the floor", and here it does not.
-    for (const [name, bg] of Object.entries(SURFACE)) {
+  it("keeps the negative branch on the solid, except on the step the greenfield ladder cost it", () => {
+    // A negative points amount is danger text on a plain cell, not on a danger
+    // tint, and the solid used to clear the gate on every ladder step
+    // (4.72–5.79). Reaching for `--destructive-text` outside a tint
+    // over-applied §1's lift, so this assertion pinned the solid.
+    //
+    // The greenfield surface ladder (foundations.md §2) took the top step below
+    // the gate: solid `--destructive` is now 5.58 / 5.19 / 4.95 on
+    // `--background` / `--surface-1` / `--card`, and **4.48 on `--popover`**.
+    // The three lower steps still hold, so the rule above is still right for
+    // them and is asserted as such rather than abandoned wholesale.
+    const { popover, ...holds } = SURFACE;
+
+    for (const [name, bg] of Object.entries(holds)) {
       expect(
         ratio(SEMANTIC.destructive, bg),
         `--destructive on plain ${name}`,
       ).toBeGreaterThanOrEqual(AA_TEXT);
     }
+
+    // Pinned as a measured shortfall rather than deleted, so it cannot be
+    // rediscovered as a surprise and cannot be silently "fixed" by a rounding
+    // change. Danger text seated on `--popover` — a dialog, sheet or menu —
+    // must take `--destructive-text` (5.96 there). Migrating the `text-destructive`
+    // call sites that land on that step is tracked separately; this suite states
+    // the constraint, it does not enforce the call sites.
+    expect(ratio(SEMANTIC.destructive, popover)).toBeLessThan(AA_TEXT);
+    expect(ratio(DESTRUCTIVE_TEXT, popover)).toBeGreaterThanOrEqual(AA_TEXT);
   });
 });
 

@@ -32,15 +32,25 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * from the danger tint, so the chapter that most needs `PAID` to read as paid is
  * the chapter where it reads as overdue.
  *
- * Only danger needs §1's lift. On its own 13% tint `--success` measures
- * 5.02–6.46:1 and `--warning` 5.57–7.15:1 across the whole ladder, both clear of
- * the 4.5:1 gate, so they render in the semantic hue itself and need no
- * `--destructive-text` twin. `--destructive` is 4.04–4.39:1 on `--card` and
- * `--popover`, which is why it has one. (`--info` would need one too — 3.65:1 on
- * `--popover` — but it has no call site, and a kind with no call sites is
- * exactly what slice 2 deleted seven of. Measured in
+ * Only danger and info need §1's lift. Measured on the new ladder
+ * (foundations.md §2), each hue on its own 13% tint across the four steps:
+ * `--success` 4.79–6.08:1 and `--warning` 5.27–6.81:1 both clear the 4.5:1
+ * gate, so they render in the semantic hue itself and need no twin.
+ * `--destructive` is 3.82–4.85:1 (4.222 on `--card`, 3.817 on `--popover`),
+ * which is why it has `--destructive-text` — that twin measures 4.80–6.12:1 on
+ * the same tints and clears throughout.
+ *
+ * `--info` is 3.45–4.36:1 on its own tint (3.807 on `--card`, 3.446 on
+ * `--popover`) and now has `--info-text` (#4C93F8) — added when the greenfield
+ * ladder took solid `--info` under the gate on plain `--card` and `--popover`
+ * too. **Read the twin's own limit before building an info badge**: on the
+ * *tint* it measures 4.08–5.16:1, so it clears on `--background` and
+ * `--surface-1` but NOT on a `--popover`-seated tint (4.08). A badge that has
+ * to sit in a dialog or menu needs a further lift or a solid fill; the token as
+ * it stands does not cover that case, and there is still no `--info` call site
+ * to have forced the question. Measured in
  * `components/billing/status-contrast.spec.ts` so the first consumer inherits
- * the number rather than the defect.)
+ * the number rather than the defect.
  *
  * `mention` landed with the chat slice of #920, which brought its first call
  * sites (`components/chat/channel-list.tsx`). It is the *neutral* badge with the

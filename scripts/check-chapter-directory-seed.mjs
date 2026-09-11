@@ -45,7 +45,7 @@ function main() {
       "A malformed value does not fail loudly at runtime — the accent engine substitutes",
     );
     console.error(
-      "house gold (#F2B72E) and the chapter silently gets the wrong brand color. That is why",
+      "the house seed (#DDB844) and the chapter silently gets the wrong brand color. That is why",
     );
     console.error("this is a blocking check rather than a lint warning.");
     process.exit(1);

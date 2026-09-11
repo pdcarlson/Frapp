@@ -12,20 +12,31 @@
  * ## The border swap is the load-bearing half
  *
  * Worth knowing before "simplifying" either recipe: the ring alone does not
- * carry the indicator. `--ring` (`#86692B`) at 25% composites to ~1.3:1 against
- * every step of the surface ladder, well under README §6's 3:1 floor for
- * non-text UI. It is the border going solid accent — 8.7:1 and up — that makes
- * focus visible. The ring is the halo around it, not the signal.
+ * carry the indicator. `--ring` (accent-8; `#796938` on the house seed) at 25%
+ * composites to 1.14–1.31:1 against the step it sits on — measured across all
+ * 19 seeded accents on all four ladder steps, and 0 of those 76 pairs clear
+ * README §6's 3:1 floor for non-text UI. It is the border going solid accent
+ * that makes focus visible. The ring is the halo around it, not the signal.
+ *
+ * How strong that border is depends on the chapter, and the figure this comment
+ * used to give ("8.7:1 and up") was the house seed's, stated as if it were
+ * everyone's. Solid `--primary` against the ladder step behind it ranges
+ * 1.50–18.71:1 across the 19 seeds; the house seed sits near the top at
+ * 8.70–9.81. Chapters at the bottom of that range get a weak `FOCUS_RING`,
+ * which is a real and separate concern from the one `FOCUS_RING_OFFSET` fixed
+ * below — it is not tracked by `focus-contrast.spec.ts`, which only guards the
+ * offset recipe.
  *
  * That is also why `FOCUS_RING` is wrong for a control whose border already
  * encodes something. On a `Switch` the border carries on/off, and on a
  * `TabsTrigger` the bottom border IS the selected indicator — so swapping it on
  * focus either loses the state or, worse, paints the exact visual that means
  * "selected", leaving a keyboard user unable to tell focus from selection.
- * Those controls take `FOCUS_RING_OFFSET`, which puts the accent ring step in
- * an offset ring *around* the control and leaves its border alone. It uses
- * `--ring` at full opacity rather than `--primary`, because with no border to
- * swap the ring has to clear the 3:1 floor by itself — see that constant.
+ * Those controls take `FOCUS_RING_OFFSET`, which puts an accent step in an
+ * offset ring *around* the control and leaves its border alone. It uses
+ * `--accent-text` (accent-11) at full opacity rather than `--primary` or
+ * `--ring`, because with no border to swap the ring has to clear the 3:1 floor
+ * by itself on every chapter seed — see that constant.
  *
  * `focus-visible` rather than `focus`: a pointer click on a button should not
  * leave a ring behind it. Controls that are focusable but not clickable — the
@@ -44,7 +55,7 @@
  * exclusive, so no tie can arise) rather than left to source order.
  */
 export const FOCUS_RING =
-  "focus-visible:outline-none focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/25"
+  "focus-visible:outline-none focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-ring/25";
 
 /**
  * For controls whose own border encodes state — `Switch` (on/off) and
@@ -58,33 +69,55 @@ export const FOCUS_RING =
  * reason a control lands on it — so the ring is the entire indicator and must
  * clear README §6's 3:1 non-text floor on its own.
  *
- * It draws in `--ring` (accent-8), **not** `--primary` (accent-9). Measured
- * against `--background` across all 19 seeded chapter accents
- * (`components/ui/focus-contrast.spec.ts`): `--primary` fails on five of them
- * — `#800000` at 1.77:1, `#8B0000` 1.94, `#1F4E79` 2.24, `#006400` 2.61,
- * `#8B4513` 2.74 — while `--ring` clears the floor on all nineteen. On those
- * five chapters the accent-9 ring meant a keyboard user got no conforming
- * focus indicator at all.
+ * It draws in `--accent-text` (accent-11), **not** `--primary` (accent-9) and
+ * no longer `--ring` (accent-8). Measured against `--background` across all 19
+ * seeded chapter accents (`components/ui/focus-contrast.spec.ts`):
  *
- * The margin is real but thin: `--ring`'s worst seed is `#4B0082` at 3.05:1
- * against a 3.0 floor. The guard pins it, so a palette change that erodes it
- * fails the suite rather than shipping.
+ * | Role | Worst seed | Clears 3:1 |
+ * | --- | --- | --- |
+ * | `--primary` (accent-9) | 1.87:1 | no, fails on 4 |
+ * | `--ring` (accent-8) | 2.94:1 | no, fails on 4 |
+ * | `--accent-text` (accent-11) | 8.48:1 | yes, on all 19 |
+ *
+ * `--ring` was the token here until the greenfield surface ladder
+ * (foundations.md §2) lifted `--background` from `#0E0D0B` to `#131211`. Its
+ * margin was always thin — 3.05:1 against a 3.0 floor on `#4B0082` — and the
+ * lighter base consumed it, dropping `#4B0082` to 2.94 and the three achromatic
+ * seeds (`#000000`, `#C0C0C0`, `#FFFFFF`, which all derive ring `#606060`) to
+ * 2.98. That is a keyboard user on four chapters with no conforming indicator,
+ * which is the exact defect this recipe was created to fix, so the token moved
+ * up the scale rather than the guard moving down.
+ *
+ * accent-11 is the accent engine's text role: `accent-engine.md` §8 gates it at
+ * 4.5:1 as text, so 3:1 as non-text UI has real headroom under it. That is why
+ * it is robust where accent-8 was merely passing.
+ *
+ * ## The `accent-text` key is an app key, not a shared-preset key
+ *
+ * `ring-accent-text` resolves through `apps/web/tailwind.config.ts`, which
+ * already carries `"accent-text": colorVar("--accent-text")` alongside the rest
+ * of the Signet-only keys. Do not "tidy" it up into the SHARED preset
+ * (`packages/theme/src/tailwind.config.ts`): that one is also read by
+ * `apps/landing`, and `tailwind.config.spec.ts` asserts every token the preset
+ * reads is defined in the legacy `globals.css` `:root`. `--accent-text` has no
+ * legacy counterpart, so a preset key would either fail that guard or force a
+ * Signet token onto the frozen landing surface, which `foundations.md` §1
+ * forbids. The app config is where this belongs, and its own header says so.
  *
  * ## `ring-offset-background` is load-bearing — do not "simplify" it away
  *
- * The offset band is what makes the comparison above the right one. The ring's
- * inner edge abuts that 2px band of `--background`; its outer edge abuts
- * whatever surface the control sits on, and against the deeper ladder steps
- * `--ring` does *not* clear 3:1 (worst seed: 2.86 on `--surface1`, 2.69 on
- * `--card`, 2.48 on `--popover`). Dropping the offset would leave the ring
- * depending on its host surface and reintroduce the failure this recipe was
- * fixed to remove.
+ * The offset band is what makes the comparison above the right one: the ring's
+ * inner edge abuts that 2px band of `--background`, so `--background` is the
+ * surface it is measured against. Dropping the offset would leave the ring
+ * depending on whichever ladder step hosts the control, which is both a weaker
+ * and a varying comparison. Keep it even though accent-11 has margin — the
+ * margin is what makes the recipe robust, not a budget to spend.
  */
 export const FOCUS_RING_OFFSET =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 export const FOCUS_RING_ALWAYS =
-  "focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/25"
+  "focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/25";
 
 /**
  * For a container that owns the focus indicator on behalf of the control inside
@@ -99,7 +132,7 @@ export const FOCUS_RING_ALWAYS =
  * replaced it), and that is a README §6 release-gate failure.
  */
 export const FOCUS_RING_WITHIN =
-  "focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/25"
+  "focus-within:border-primary focus-within:ring-[3px] focus-within:ring-ring/25";
 
 /**
  * A "Skip to X" link: invisible until it is the focused element, then pinned
@@ -109,4 +142,4 @@ export const FOCUS_RING_WITHIN =
  * recipe this file exists to keep in one place; see the top-of-file comment.
  */
 export const SKIP_LINK_CLASSES =
-  "sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
+  "sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm";
