@@ -11,8 +11,10 @@ import {
 import { BookmarkGlyph, MuteGlyph, PinGlyph } from "./chat-glyphs";
 import { SearchGlyph } from "@/components/layout/nav-glyphs";
 import { cn } from "@/lib/utils";
+import { EYEBROW } from "@/components/ui/typography";
+import { CHAT_CONTROL_CLASS } from "./chip";
 import { ChatSearchPanel, type ChatSearchHit } from "./chat-search-popover";
-import { PinsPanel } from "./pins-popover";
+import { PinsPanel, pinnedMessages } from "./pins-popover";
 import { BookmarksPanel, type BookmarkEntry } from "./bookmarks-popover";
 import { NotificationLevelPanel } from "./notification-level-popover";
 import type { ChatMessage } from "@repo/chat-core/types";
@@ -111,21 +113,37 @@ export function ChannelMenu({
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("menu");
   const backRef = useRef<HTMLButtonElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   /*
-    Swapping the view unmounts the row button that was clicked, so focus falls
-    to `<body>` and the next Tab restarts from the top of the document — inside
-    an open popover, which is disorienting rather than merely untidy. Radix does
-    not help here: it manages focus on open and close, not on a content swap
-    this component drives itself. The back control is the right landing place —
-    it is the panel's title and its way out.
+    Swapping the view unmounts the control that was clicked, so focus falls to
+    `<body>` and the next Tab restarts from the top of the document — inside a
+    non-modal popover, where Radix's `onFocusOutside` then dismisses the whole
+    menu. Radix does not help here: it manages focus on open and close, not on a
+    content swap this component drives itself.
 
-    Keyed on `view` rather than run in the click handler because the back button
-    does not exist yet at click time.
+    **Only when focus was actually lost.** A blanket `backRef.focus()` was wrong
+    in the other direction: `ChatSearchPanel` autofocuses its input on mount, and
+    a parent's passive effect runs after a child's mount-time autofocus, so the
+    Back button stole it every time. A member opening Search and typing got
+    nothing in the field, and their first Space or Enter activated Back. So this
+    checks whether anything inside the popover already has focus and defers to it
+    — the panel knows better than the host where its own entry point is.
+
+    Keyed on `view` rather than run in a click handler because neither the back
+    button nor the panel's own field exists yet at click time.
   */
   useEffect(() => {
-    if (view !== "menu") backRef.current?.focus();
-  }, [view]);
+    if (!open) return;
+    const content = contentRef.current;
+    if (content?.contains(document.activeElement)) return;
+    // Back on a panel; the first row on the way back to the menu.
+    const target =
+      view === "menu"
+        ? content?.querySelector<HTMLButtonElement>("button")
+        : backRef.current;
+    target?.focus();
+  }, [view, open]);
 
   const rows: MenuRow[] = [
     { view: "search", label: "Search messages", Glyph: SearchGlyph },
@@ -133,7 +151,7 @@ export function ChannelMenu({
       view: "pins",
       label: "Pinned",
       Glyph: PinGlyph,
-      count: messages.filter((message) => message.is_pinned).length,
+      count: pinnedMessages(messages).length,
     },
     {
       view: "saved",
@@ -167,17 +185,22 @@ export function ChannelMenu({
         <Button
           variant="ghost"
           size="icon"
-          // 32px to a pointer, 44px to a finger — the `pointer-coarse` carve-out
-          // `composer.tsx` documents, so the board's density does not cost a
-          // touch user the touch-target floor.
-          className="h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11"
-          disabled={!activeChannelId}
+          className={CHAT_CONTROL_CLASS}
+          // NOT disabled without a channel. Four separate triggers collapsed
+          // into this one, and two of the panels behind it are chapter-wide:
+          // `BookmarksPanel` never reads a channel id, and `ChatSearchPanel`
+          // deliberately falls back to a chapter-wide scope when there is none.
+          // Gating the single control on a channel would take Saved and search
+          // offline in exactly the states this lane keeps the frame up for — a
+          // stale `?channel=` link, or a chapter with no channels yet. Only
+          // `NotificationLevelPanel` needs one, and it has its own `disabled`.
           aria-label="Channel menu"
         >
           <MoreHorizontal className="h-5 w-5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
+        ref={contentRef}
         className={cn("p-0", view === "search" ? "w-96" : "w-80")}
         align="end"
       >
@@ -218,13 +241,13 @@ export function ChannelMenu({
                 variant="ghost"
                 size="icon"
                 ref={backRef}
-                className="h-7 w-7 pointer-coarse:h-11 pointer-coarse:w-11"
+                className={CHAT_CONTROL_CLASS}
                 onClick={() => setView("menu")}
                 aria-label="Back to channel menu"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <span className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              <span className={cn(EYEBROW, "text-muted-foreground")}>
                 {VIEW_TITLES[view]}
               </span>
             </div>

@@ -58,6 +58,7 @@ import { ChannelMenu } from "./channel-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
 import { ReconnectPill } from "./reconnect-pill";
+import { CHAT_CONTROL_CLASS } from "./chip";
 import type { SlashCommand } from "@repo/chat-integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
 
@@ -144,7 +145,7 @@ function ChannelHeaderMark({
  * `#1E1B17` on `#1E1B17`: the bubble simply would not have existed. The
  * reference resolves it the other way round (`canvas-screens.dc.html` s05):
  * the thread sits on `--background`, the app floor, and the bubbles are the
- * step above it. The two rails are `--surface-1`, the ladder step foundations
+ * step above it. The channels column is `--surface-1`, the ladder step foundations
  * §2 assigns to nav chrome, which is what the sidebar already uses.
  *
  * Every async branch still renders an explicit state, but only the no-chapter
@@ -288,6 +289,26 @@ export function ChatShell({
     channelId: initialChannelId,
     messageId: initialMessageId,
   });
+  /**
+   * Which of the two columns is on screen below `lg`.
+   *
+   * The shell's responsive contract is two states switching once at `lg`
+   * (`deletion-checklist.md` §5), and chat has to hold it: below `lg` the app
+   * nav is a drawer and `<main>` is the whole viewport, so a 240px channels
+   * column beside the thread leaves the thread about 135px wide at the
+   * documented 375px floor. That is not a narrow layout, it is an unusable one,
+   * and it clears the floor's horizontal-scroll check while failing what the
+   * check is for.
+   *
+   * So below `lg` exactly one column renders, the way every chat client on a
+   * phone does it. At `lg` and up both are always visible and this is inert.
+   *
+   * Defaults to the thread rather than the list: a channel is always resolved
+   * (the rail falls back to #general), and a `?message=` deep link must land on
+   * the message rather than on a list the member then has to navigate out of.
+   */
+  const [narrowPane, setNarrowPane] = useState<"channels" | "thread">("thread");
+
   useEffect(() => {
     if (
       appliedTargetRef.current.channelId === initialChannelId &&
@@ -305,6 +326,15 @@ export function ChatShell({
     setPendingJumpChannelId(initialChannelId);
     setUnreachableTarget(null);
     setJumpAttempt((n) => n + 1);
+    // The route does not remount on a search-param change, so below `lg` the
+    // member can be looking at the channels column when a link lands. Showing
+    // the thread is the whole point of following one.
+    //
+    // Conditional, unlike the six above: a URL that clears back to `/chat`
+    // names no target, and yanking someone off the channel list they are
+    // reading is not what "no target" should mean.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronizing to the URL, the external system this whole effect exists to follow; the six setState calls above it are the same act
+    if (initialChannelId) setNarrowPane("thread");
   }, [initialChannelId, initialMessageId]);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
@@ -575,25 +605,6 @@ export function ChatShell({
    * Scoping makes it structural rather than a cleanup every future switch path
    * has to remember.
    */
-  /**
-   * Which of the two columns is on screen below `lg`.
-   *
-   * The shell's responsive contract is two states switching once at `lg`
-   * (`deletion-checklist.md` §5), and chat has to hold it: below `lg` the app
-   * nav is a drawer and `<main>` is the whole viewport, so a 240px channels
-   * column beside the thread leaves the thread about 135px wide at the
-   * documented 375px floor. That is not a narrow layout, it is an unusable one,
-   * and it clears the floor's horizontal-scroll check while failing what the
-   * check is for.
-   *
-   * So below `lg` exactly one column renders, the way every chat client on a
-   * phone does it. At `lg` and up both are always visible and this is inert.
-   *
-   * Defaults to the thread rather than the list: a channel is always resolved
-   * (the rail falls back to #general), and a `?message=` deep link must land on
-   * the message rather than on a list the member then has to navigate out of.
-   */
-  const [narrowPane, setNarrowPane] = useState<"channels" | "thread">("thread");
 
   const [replyTarget, setReplyTarget] = useState<{
     channelId: string;
@@ -649,6 +660,11 @@ export function ChatShell({
       setPendingMessageId(messageId);
       setPendingJumpChannelId(channelId);
       setJumpAttempt((n) => n + 1);
+      // Below `lg` the thread column may be off-screen. Jumping into a
+      // `display:none` column consumes the target — `scrollToMessage` finds the
+      // index, reports success, and the pending state clears — while nothing
+      // visibly happens, so the link reads as broken.
+      setNarrowPane("thread");
     },
     [activeChannelId, refetchChannels],
   );
@@ -916,7 +932,8 @@ export function ChatShell({
 
   return (
     /*
-      Three flush columns, 100vh, independent scroll (`1b`). The route is
+      Flush columns, 100vh, independent scroll (`1b` — the board counts the app
+      nav as the third; this route owns the other two). The route is
       full-bleed (`layout/full-bleed-routes.ts`), so this sits directly in the
       shell's `<main>` with no inset: the channels column hugs the nav's right
       border, and `h-full` here is the shell's fixed frame rather than a
@@ -953,6 +970,26 @@ export function ChatShell({
         {liveAnnouncement}
       </div>
       {/*
+        The cold load, announced once.
+
+        The deleted whole-route `LoadingState` carried `role="status"`,
+        `aria-busy` and a visible caption, so a screen-reader user was told the
+        channels were loading; `ChannelListSkeleton` is `aria-hidden` (eight
+        anonymous rectangles are no use to anyone), so the window would
+        otherwise be silent.
+
+        Two things this is deliberately NOT. It is not `role="status"` on the
+        list's own container: that role implies `aria-atomic`, so every unread
+        badge `useChannelUnreadCounts` repaints would re-read the entire channel
+        list aloud — the same defect `#chat-timeline`'s `aria-live="off"` exists
+        to prevent, one column over. And it is not inside the channels column,
+        which `narrowPane` hides below `lg` — the announcement has to survive the
+        viewport where the skeleton itself is off-screen.
+      */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {channelsPaneState === "loading" ? "Loading channels" : ""}
+      </div>
+      {/*
         Channels: 240px, full height, its own scroll, no search field (`1b`
         pin 5). `--surface-1` is the same step the app nav takes, so the two
         columns read as one continuous piece of chrome with a hairline between
@@ -977,23 +1014,8 @@ export function ChatShell({
         <header className="flex h-12 shrink-0 items-center border-b border-border px-3">
           <h2 className="text-sm font-semibold text-foreground">Channels</h2>
         </header>
-        <div
-          className="min-h-0 flex-1 overflow-y-auto p-2"
-          // The deleted whole-route `LoadingState` carried `role="status"`,
-          // `aria-busy` and a visible caption, so a screen-reader user was told
-          // the channels were loading. `ChannelListSkeleton` is `aria-hidden`
-          // (eight anonymous rectangles are no use to anyone), so without this
-          // the cold-load window went completely silent — the skeleton is a
-          // visual affordance only, and it cannot be the whole replacement.
-          role="status"
-          aria-busy={channelsPaneState === "loading"}
-        >
-          {channelsPaneState === "loading" ? (
-            <>
-              <span className="sr-only">Loading channels</span>
-              <ChannelListSkeleton />
-            </>
-          ) : null}
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
           {channelsPaneState === "ready" ? (
             <ChannelList
               viewerId={userId}
@@ -1040,15 +1062,24 @@ export function ChatShell({
             Below `lg` this is the only way back to the list, because the list
             is not on screen. Hidden at `lg`, where both columns are.
           */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 pointer-coarse:h-11 pointer-coarse:w-11 lg:hidden"
-            onClick={() => setNarrowPane("channels")}
-            aria-label="Back to channels"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
+          {/*
+            Only when there is a list to go back to. With no channels, or a
+            channel list that failed to load, the channels column renders its
+            header over an empty scroll area — and since the only control that
+            comes back is a channel row, Back would strand the member on a blank
+            pane with the Retry button out of reach in the column they left.
+          */}
+          {channelsPaneState === "ready" ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(CHAT_CONTROL_CLASS, "shrink-0 lg:hidden")}
+              onClick={() => setNarrowPane("channels")}
+              aria-label="Back to channels"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+          ) : null}
           <div className="flex min-w-0 flex-1 items-baseline gap-2">
             {/*
               `h1`, not `h2`. This was correctly a sub-heading while the
@@ -1082,10 +1113,20 @@ export function ChatShell({
                     channel must not look identical to an unmuted one.
                   */}
                   {activeChannelLevel === "off" ? (
-                    <MuteGlyph
-                      className="h-4 w-4 shrink-0 text-muted-foreground"
-                      active
-                    />
+                    <>
+                      <MuteGlyph
+                        className="h-4 w-4 shrink-0 text-muted-foreground"
+                        active
+                      />
+                      {/*
+                        Every duotone glyph is `aria-hidden` (`ui/duotone.tsx`),
+                        so the mark alone would restate the deleted trigger's
+                        `aria-label` for sighted members only — which is most of
+                        the point missed. `channel-list.tsx` pairs its own
+                        `MuteGlyph` the same way.
+                      */}
+                      <span className="sr-only">Muted</span>
+                    </>
                   ) : null}
                 </>
               ) : (
@@ -1231,7 +1272,14 @@ export function ChatShell({
               title="Channel not found"
               description="That link points somewhere you can't reach."
               actionLabel="Browse channels"
-              onAction={() => setChannelTargetDismissed(true)}
+              onAction={() => {
+                setChannelTargetDismissed(true);
+                // Below `lg` the list is a separate pane, so a control named
+                // "Browse channels" has to actually show it. Dismissing alone
+                // resolved the #general fallback and painted a timeline, which
+                // is a different channel rather than a list.
+                setNarrowPane("channels");
+              }}
             />
           </div>
         ) : null}

@@ -20,6 +20,18 @@ import { replyPreviewText } from "./reply-quote";
  * its ref; a pin older than the loaded window still cannot be reached, and the
  * timeline no-ops rather than pretending.
  */
+/**
+ * The pinned subset, exported because two surfaces need the same answer: this
+ * panel, and the count on the `⋯` menu row that opens it. A second copy of the
+ * predicate drifts the first time the rule gains a clause — a tombstoned
+ * message keeps `is_pinned`, so the obvious next clause is excluding deleted
+ * ones, and a menu row reading "Pinned, 3" over a panel listing 2 is the shape
+ * that bug takes.
+ */
+export function pinnedMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.filter((message) => message.is_pinned);
+}
+
 export function PinsPanel({
   messages,
   nameFor,
@@ -30,7 +42,7 @@ export function PinsPanel({
   nameFor: (userId: string) => string | null;
   onJump?: (messageId: string) => void;
 }) {
-  const pins = messages.filter((message) => message.is_pinned);
+  const pins = pinnedMessages(messages);
   return (
     <>
       {pins.length === 0 ? (

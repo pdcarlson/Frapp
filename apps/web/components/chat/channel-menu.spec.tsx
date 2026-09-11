@@ -14,6 +14,8 @@ import type { ChatMessage } from "@repo/chat-core/types";
  * file that is not about searching.
  */
 vi.mock("./chat-search-popover", () => ({
+  // `autoFocus` stands in for the real panel's autofocused search input, which
+  // is the thing the host must not steal focus from.
   ChatSearchPanel: ({
     onJump,
   }: {
@@ -21,6 +23,7 @@ vi.mock("./chat-search-popover", () => ({
   }) => (
     <button
       type="button"
+      autoFocus
       data-testid="search-panel"
       onClick={() => onJump({ message: { id: "msg-1" }, channelId: "chan-1" })}
     >
@@ -29,6 +32,10 @@ vi.mock("./chat-search-popover", () => ({
   ),
 }));
 vi.mock("./pins-popover", () => ({
+  // The real predicate, not a stub: the count on the menu row and the panel's
+  // own list must agree, and mocking it away would let them drift untested.
+  pinnedMessages: (messages: Array<{ is_pinned?: boolean }>) =>
+    messages.filter((m) => m.is_pinned),
   PinsPanel: ({ onJump }: { onJump?: (messageId: string) => void }) => (
     <button
       type="button"
@@ -256,9 +263,44 @@ describe("ChannelMenu (#2142)", () => {
     expect(screen.queryByTestId("notifications-panel")).not.toBeInTheDocument();
   });
 
-  it("is disabled with no channel open", () => {
+  it("stays usable with no channel open, because two panels are chapter-wide", async () => {
+    // Gating the one surviving header control on a channel would take Saved and
+    // chapter-wide search offline in exactly the states this lane keeps the
+    // frame up for: a stale `?channel=` link, or a chapter with no channels.
+    const user = userEvent.setup();
     renderMenu({ activeChannelId: null });
 
-    expect(screen.getByRole("button", { name: "Channel menu" })).toBeDisabled();
+    const trigger = screen.getByRole("button", { name: "Channel menu" });
+    expect(trigger).toBeEnabled();
+
+    await user.click(trigger);
+    await user.click(screen.getByRole("button", { name: /Saved/ }));
+    expect(screen.getByTestId("saved-jump")).toBeInTheDocument();
+  });
+
+  it("hands focus to a panel's own entry point rather than stealing it", async () => {
+    // `ChatSearchPanel` autofocuses its input on mount, and a parent's passive
+    // effect runs after a child's mount-time autofocus — so a blanket focus of
+    // the back button swallowed every keystroke a member typed into search.
+    const user = userEvent.setup();
+    renderMenu();
+    await openMenu(user);
+
+    await user.click(screen.getByRole("button", { name: /Search messages/ }));
+
+    // The stub focuses itself on mount, standing in for the real autoFocus.
+    expect(screen.getByTestId("search-panel")).toHaveFocus();
+  });
+
+  it("keeps focus inside itself on the way back to the menu too", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /Pinned/ }));
+    await user.click(
+      screen.getByRole("button", { name: "Back to channel menu" }),
+    );
+
+    expect(document.body).not.toHaveFocus();
   });
 });

@@ -204,8 +204,20 @@ them, and must close the one that is open.
       `--shadow-md: none` in `signet.css`, so the gap cannot reopen by someone typing `shadow-md`
       again. The original diagnosis was exactly right: `boxShadow` bound `xs`/`sm`/`DEFAULT`/`lg`
       only, so `shadow-md` fell through to Tailwind's built-in and compiled a real drop shadow past a
-      ban everyone believed the `none` tokens enforced. `grep -rn 'shadow-md' apps packages` is now
-      clean.
+      ban everyone believed the `none` tokens enforced.
+
+      The check is `grep -rn 'shadow-md' apps/*/components apps/*/app`, which returns nothing — a
+      plain `grep -rn 'shadow-md' apps packages` does **not**, because it matches this row's own
+      reasoning in `tailwind.config.ts` and the token in `signet.css`. A proof that cannot fail is
+      not evidence, and neither is one that fails on its own footnotes.
+
+      **Where the `md` key lives is load-bearing.** It is bound in
+      `apps/web/tailwind.config.ts`, with the other Signet-only keys, and deliberately **not** in
+      the shared preset: that preset still serves the frozen `apps/landing`, whose `globals.css`
+      has real shadows and no `--shadow-md`, so binding it there would make `shadow-md` resolve
+      against an undefined property and be dropped — the silent failure #1145 documented, which is
+      the whole reason that app config exists. `signet.css.spec.ts`'s shadow roster now includes
+      `--shadow-md`, so deleting the token fails a test rather than quietly reopening the gap.
 
       **The box is ticked for "no shadow that renders", not "no `shadow-` string".** One inert class
       remains, `settings-roles-tab.tsx:197`'s `shadow-sm`, which resolves to `--shadow-sm: none` and

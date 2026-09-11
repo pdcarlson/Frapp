@@ -311,7 +311,13 @@ function ChatSearchResults({
           Search timed out — some matches may be missing.
         </p>
       ) : null}
-      <ul className="max-h-80 divide-y divide-border overflow-y-auto">
+      {/*
+        `max-h-72`, matching `PinsPanel` and `BookmarksPanel`. These three are
+        now views of one popover (`channel-menu.tsx`), so a height that differs
+        by 32px makes the frame jump as a member steps between them — invisible
+        back when each owned its own anchored popover.
+      */}
+      <ul className="max-h-72 divide-y divide-border overflow-y-auto">
         {hits.map((hit) => {
           const channelName = channelNameFor(hit.channelId);
           const showChannel =

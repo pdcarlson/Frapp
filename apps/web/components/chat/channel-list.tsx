@@ -447,8 +447,13 @@ function ChannelMark({
  *
  * Deliberately not a count derived from anything: there is no cached list to
  * count yet, and a number that changes between renders makes the column jump.
- * `aria-hidden` because `LoadingState` already announces; a screen reader has no
- * use for eight anonymous rectangles.
+ * `aria-hidden` because eight anonymous rectangles are no use to a screen
+ * reader. **That means this is not the whole loading affordance**: the spoken
+ * half is a separate `sr-only` live region in `chat-shell.tsx`, kept outside
+ * this column because `narrowPane` hides the column entirely below `lg`. Do not
+ * conclude from the `aria-hidden` here that an announcement is supplied by
+ * whatever renders this — the shared `LoadingState` that used to carry one was
+ * deleted with the whole-route loading card (#2142).
  */
 export function ChannelListSkeleton() {
   return (

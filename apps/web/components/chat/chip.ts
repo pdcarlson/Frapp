@@ -90,3 +90,20 @@ export { EYEBROW } from "@/components/ui/typography";
  * card that silently stops following §8 the next time §8 moves.
  */
 export const MESSAGE_CARD = "mt-1 rounded-lg p-4";
+
+/**
+ * A dense chat chrome control: 32px to a pointer, 44px to a finger.
+ *
+ * `size="icon"` on `Button` resolves to 44px, which is §2's touch-target floor
+ * and right for a control that stands alone. The board puts chat's chrome
+ * buttons at 32px (`1b` pin 13), and both are true at once through
+ * `pointer-coarse` — §2's own carve-out that "compact 38px controls are
+ * web/pointer-only", read in the other direction, which is the same move
+ * `CHIP_HIT_AREA` above and `shared/table-controls.ts` already make.
+ *
+ * Exported rather than written out per call site because the copies drift in
+ * exactly one direction: someone shortens one to `h-8 w-8` and a touch target
+ * silently drops to 32px, which no test and no type sees.
+ */
+export const CHAT_CONTROL_CLASS =
+  "h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11";

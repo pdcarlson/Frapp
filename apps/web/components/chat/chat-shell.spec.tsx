@@ -1416,6 +1416,27 @@ describe("ChatShell channel-list states (#2142)", () => {
     expect(screen.getByText("Loading channels")).toBeInTheDocument();
   });
 
+  it("announces it from outside the channels column, which narrow hides", () => {
+    // `narrowPane` defaults to "thread", so below `lg` the column holding the
+    // skeleton is `display:none` — and `display:none` is out of the
+    // accessibility tree, so a caption inside it is silent at exactly the
+    // width where it was the only thing on screen.
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(channels).not.toContainElement(screen.getByText("Loading channels"));
+  });
+
+  it("does not make the channel list itself a live region", () => {
+    // `role="status"` implies `aria-atomic`, so putting it on the list's own
+    // container made every unread badge repaint re-read all N channel names.
+    render(<ChatShell />);
+
+    const list = screen.getByTestId("channel-list");
+    expect(list.closest("[role='status']")).toBeNull();
+  });
+
   it("keeps a cached list rendered when a background refetch fails", () => {
     // TanStack keeps the last good `data` when a refetch errors. Branching on
     // `isError` first blanked the rail and unmounted the timeline because one
@@ -1425,6 +1446,59 @@ describe("ChatShell channel-list states (#2142)", () => {
 
     expect(screen.getByTestId("channel-list")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load channels")).toBeNull();
+  });
+});
+
+/**
+ * Below `lg` the two columns are never both on screen, so every control that
+ * moves between them has to actually move. Each of these was a dead end.
+ */
+describe("ChatShell narrow navigation (#2142)", () => {
+  afterEach(() => {
+    channelsQueryState.value = {};
+  });
+
+  function columns() {
+    const channels = screen.getByRole("region", { name: "Channels" });
+    return { channels, thread: channels.nextElementSibling as HTMLElement };
+  }
+
+  it("brings the thread on screen when a deep link arrives", async () => {
+    const { rerender } = render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => {
+      expect(columns().thread.className).toContain("max-lg:hidden");
+    });
+
+    // App Router updates search params in place rather than remounting, so the
+    // pane state survives the navigation. Jumping into a hidden column consumes
+    // the target while nothing visibly happens.
+    rerender(<ChatShell initialChannelId="chan-random" initialMessageId="msg-2" />);
+
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+  });
+
+  it("shows the list when 'Browse channels' is taken", async () => {
+    render(<ChatShell initialChannelId="does-not-exist" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse channels" }));
+
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+  });
+
+  it("offers no way back when there is no list to go back to", () => {
+    // The channels column renders its header over an empty scroll area in these
+    // states, and the only control that returns is a channel row — so Back
+    // would strand the member on a blank pane with Retry out of reach.
+    channelsQueryState.value = { isError: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(screen.queryByRole("button", { name: "Back to channels" })).toBeNull();
+    expect(screen.getByText("Couldn't load channels")).toBeInTheDocument();
   });
 });
 

@@ -28,6 +28,7 @@ import {
   SlashCommandGlyph,
 } from "./chat-glyphs";
 import { cn } from "@/lib/utils";
+import { CHAT_CONTROL_CLASS } from "./chip";
 import {
   useChapterRoster,
   useRequestChatUploadUrl,
@@ -346,21 +347,6 @@ export function notifyDispatchOutcome(
  * Dexie schema stays stable across editor upgrades.
  */
 /**
- * The composer's control size: 32px to a pointer, 44px to a finger.
- *
- * `size="icon"` resolves to 44px, which is `button.tsx`'s touch-target floor
- * and right for a control that stands alone. These sit in a row inside the
- * composer well, where `1b` pin 13 puts them at 32px.
- *
- * Both are true at once, via `pointer-coarse` — §2's own carve-out that
- * "compact 38px controls are web/pointer-only", read in the other direction,
- * and the same recipe `shared/table-controls.ts` and `chat/chip.ts` already
- * use. Shrinking to a flat `h-8 w-8` would have taken the board's desktop
- * density and charged every touch user the 44px floor for it.
- */
-const COMPOSER_CONTROL_CLASS = "h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11";
-
-/**
  * Composing help, behind a `?` and nowhere else.
  *
  * This replaces the line that used to sit in the toolbar reading "Shift+Enter
@@ -387,7 +373,7 @@ function ComposerHelp() {
           type="button"
           variant="ghost"
           size="icon"
-          className={COMPOSER_CONTROL_CLASS}
+          className={CHAT_CONTROL_CLASS}
           aria-label="Composing help"
         >
           <span aria-hidden="true" className="text-sm font-bold">
@@ -938,7 +924,7 @@ export function Composer({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className={COMPOSER_CONTROL_CLASS}
+                  className={CHAT_CONTROL_CLASS}
                   aria-label="Open emoji picker"
                 >
                   <ReactionGlyph className="h-5 w-5" />
@@ -952,7 +938,7 @@ export function Composer({
               type="button"
               variant="ghost"
               size="icon"
-              className={COMPOSER_CONTROL_CLASS}
+              className={CHAT_CONTROL_CLASS}
               aria-label="Attach file"
               onClick={() => fileInput.current?.click()}
               disabled={attachPending}
@@ -977,7 +963,7 @@ export function Composer({
               type="button"
               variant="ghost"
               size="icon"
-              className={COMPOSER_CONTROL_CLASS}
+              className={CHAT_CONTROL_CLASS}
               aria-label="Open slash commands (Command Slash)"
               aria-haspopup="dialog"
               aria-expanded={palette.open}

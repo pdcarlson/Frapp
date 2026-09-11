@@ -145,7 +145,18 @@ describe("signet.css is dark-only and side-token-free", () => {
   });
 
   it("neutralizes every shadow token — elevation is a lighter surface", () => {
-    for (const key of ["--shadow-xs", "--shadow-sm", "--shadow", "--shadow-lg"]) {
+    // `--shadow-md` is load-bearing rather than decorative: `shadow-md` is
+    // bound to it in `apps/web/tailwind.config.ts` precisely so the utility
+    // cannot fall through to Tailwind's stock scale and draw a real shadow. If
+    // this token is ever dropped, that binding resolves to nothing and the ban
+    // reopens silently — which is what this roster is here to prevent.
+    for (const key of [
+      "--shadow-xs",
+      "--shadow-sm",
+      "--shadow",
+      "--shadow-md",
+      "--shadow-lg",
+    ]) {
       expect(root.get(key), `${key} must be defined`).toBe("none");
     }
   });
