@@ -39,6 +39,7 @@ import {
   OfflineState,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
+import { PageHeader } from "@/components/layout/page-header";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -320,33 +321,31 @@ export function PollsPage() {
   );
 
   return (
-    <Can
-      permission="polls:view_all"
-      offlineFallback={(retry) => (
-        <div className="space-y-4">
-          <header>
-            <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
-          </header>
+    <>
+      {/*
+        Outside the `<Can>` so the permission-pending, denied and offline
+        branches keep the route's heading — the shell no longer supplies one
+        (#2141). Each branch used to render its own `<h2>Polls</h2>`; this is
+        the single replacement for all four.
+      */}
+      <PageHeader title="Polls" />
+      <Can
+        permission="polls:view_all"
+        offlineFallback={(retry) => (
           <PermissionsOfflineSurface
             description="Reconnect to check whether you can see the chapter's polls."
             onRetry={retry}
           />
-        </div>
-      )}
-      fallback={
-        <div className="space-y-4">
-          <header>
-            <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
+        )}
+        fallback={
+          <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Checking your chapter permissions&hellip;
             </p>
-          </header>
-        </div>
-      }
-      deniedFallback={
-        <div className="space-y-4">
-          <header>
-            <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
+          </div>
+        }
+        deniedFallback={
+          <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               The chapter-wide poll list and aggregate tallies require the{" "}
               <code className="font-mono text-xs">polls:view_all</code>{" "}
@@ -354,154 +353,153 @@ export function PollsPage() {
               this view; you can still vote on polls from chat channels you can
               access.
             </p>
-          </header>
-        </div>
-      }
-    >
-      <div className="space-y-6">
-        <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
-            <p className="text-sm text-muted-foreground">
-              Chapter-wide poll list. Vote, change your mind, or review results.
-              Polls are created inside chat channels; this surface is the
-              at-a-glance summary with live vote tallies.
-            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Select value={channelFilter} onValueChange={setChannelFilter}>
-              <SelectTrigger
-                className="h-11 w-[180px]"
-                aria-label="Filter polls by channel"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ANY_CHANNEL}>All channels</SelectItem>
-                {channels.map((c) => (
-                  <SelectItem
-                    key={c.id ?? "unknown"}
-                    value={String(c.id ?? "")}
-                  >
-                    {c.name ?? "Channel"}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={statusFilter}
-              onValueChange={(value) =>
-                setStatusFilter(value as "ALL" | "OPEN" | "CLOSED")
-              }
-            >
-              <SelectTrigger
-                className="h-11 w-[140px]"
-                aria-label="Filter polls by status"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All statuses</SelectItem>
-                <SelectItem value="OPEN">Open polls</SelectItem>
-                <SelectItem value="CLOSED">Closed polls</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              variant="secondary"
-              size="icon"
-              onClick={() => void pollsQuery.refetch()}
-              aria-label="Refresh polls"
-              disabled={pollsQuery.isFetching}
-            >
-              {pollsQuery.isFetching ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-        </header>
-
-        {/*
-          Disable, don't hide (§5 rule 4): the poll list and its tallies keep
-          working for a lapsed chapter — only casting and withdrawing votes
-          stops, and this says why.
-        */}
-        <SubscriptionNotice gate={gate} feature="voting on polls" />
-
-        {/*
-          `usePolls` is `enabled: !!chapterId && polls:view_all`. A disabled
-          TanStack Query v5 stays `isPending` forever with `fetchStatus:
-          "idle"`. `isLoading` is a fetch in flight; `fetchStatus ===
-          "paused"` is offline with no data — same `isPending &&
-          !isFetching` pair as disabled, but the member has the grant.
-          Gating the spinner on `isPending` is how a member without
-          `polls:view_all` used to spin forever (#872).
-
-          The offline branch sits above all three and inside `Can`, which is
-          the Chapter Ops ordering: permission, then network, then data. It
-          also has to come first among the query branches, because a paused
-          query is `isPending` and would otherwise spin behind an offline
-          member indefinitely — README §4 requires an offline state with a
-          retry here, not a spinner that cannot resolve.
-
-          It applies only when nothing is loaded. README §4 scopes the offline
-          treatment to "offline, **no cached data**" and §10 keeps stale
-          content in place on a refetch, so a list already rendered is not
-          thrown away on a WiFi blip — the shell's `OfflineBanner` states the
-          connection, and the vote controls fail with their own message.
-
-          The `paused` branch carries the same qualifier, and it is the one
-          that is easy to miss: `isLoading` already implies no data, but
-          `fetchStatus === "paused"` on its own does not — TanStack pauses a
-          *background* refetch (reconnect, window focus) while keeping the
-          cached rows, so an unqualified check swapped a rendered list for a
-          spinner on exactly the blip the branch above was fixed for.
-          `isPending && paused` is README §4's "offline, no cached data",
-          spelled in flags.
-        */}
-        {isOffline && polls.length === 0 ? (
-          <OfflineState
-            title="Polls unavailable offline"
-            description="Reconnect to load the chapter's polls and cast a vote."
-            onRetry={() => {
-              void pollsQuery.refetch();
-            }}
-          />
-        ) : pollsQuery.isLoading ||
-          (pollsQuery.isPending && pollsQuery.fetchStatus === "paused") ? (
-          <LoadingState message="Loading chapter polls..." />
-        ) : pollsQuery.isPending && pollsQuery.fetchStatus === "idle" ? (
-          <EmptyState
-            title="Poll list requires polls:view_all"
-            description="Ask your chapter president to grant it if you need this view. You can still vote on polls from chat channels you can access."
-          />
-        ) : pollsQuery.isError ? (
-          <ErrorState
-            title="Couldn't load polls"
-            description="Confirm your chapter access and retry, or confirm you have polls:view_all access."
-            onRetry={() => void pollsQuery.refetch()}
-          />
-        ) : polls.length === 0 ? (
-          <EmptyState
-            title="No polls match this view"
-            description="Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results."
-          />
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {polls.map((poll) => (
-              <Poll
-                key={poll.id}
-                poll={poll}
-                gate={gate}
-                channelName={
-                  channelNameById.get(poll.channel_id) ?? "Unknown channel"
+        }
+      >
+        <div className="space-y-6">
+          <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Chapter-wide poll list. Vote, change your mind, or review results.
+                Polls are created inside chat channels; this surface is the
+                at-a-glance summary with live vote tallies.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={channelFilter} onValueChange={setChannelFilter}>
+                <SelectTrigger
+                  className="h-11 w-[180px]"
+                  aria-label="Filter polls by channel"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ANY_CHANNEL}>All channels</SelectItem>
+                  {channels.map((c) => (
+                    <SelectItem
+                      key={c.id ?? "unknown"}
+                      value={String(c.id ?? "")}
+                    >
+                      {c.name ?? "Channel"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={statusFilter}
+                onValueChange={(value) =>
+                  setStatusFilter(value as "ALL" | "OPEN" | "CLOSED")
                 }
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </Can>
+              >
+                <SelectTrigger
+                  className="h-11 w-[140px]"
+                  aria-label="Filter polls by status"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All statuses</SelectItem>
+                  <SelectItem value="OPEN">Open polls</SelectItem>
+                  <SelectItem value="CLOSED">Closed polls</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={() => void pollsQuery.refetch()}
+                aria-label="Refresh polls"
+                disabled={pollsQuery.isFetching}
+              >
+                {pollsQuery.isFetching ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </header>
+
+          {/*
+            Disable, don't hide (§5 rule 4): the poll list and its tallies keep
+            working for a lapsed chapter — only casting and withdrawing votes
+            stops, and this says why.
+          */}
+          <SubscriptionNotice gate={gate} feature="voting on polls" />
+
+          {/*
+            `usePolls` is `enabled: !!chapterId && polls:view_all`. A disabled
+            TanStack Query v5 stays `isPending` forever with `fetchStatus:
+            "idle"`. `isLoading` is a fetch in flight; `fetchStatus ===
+            "paused"` is offline with no data — same `isPending &&
+            !isFetching` pair as disabled, but the member has the grant.
+            Gating the spinner on `isPending` is how a member without
+            `polls:view_all` used to spin forever (#872).
+
+            The offline branch sits above all three and inside `Can`, which is
+            the Chapter Ops ordering: permission, then network, then data. It
+            also has to come first among the query branches, because a paused
+            query is `isPending` and would otherwise spin behind an offline
+            member indefinitely — README §4 requires an offline state with a
+            retry here, not a spinner that cannot resolve.
+
+            It applies only when nothing is loaded. README §4 scopes the offline
+            treatment to "offline, **no cached data**" and §10 keeps stale
+            content in place on a refetch, so a list already rendered is not
+            thrown away on a WiFi blip — the shell's `OfflineBanner` states the
+            connection, and the vote controls fail with their own message.
+
+            The `paused` branch carries the same qualifier, and it is the one
+            that is easy to miss: `isLoading` already implies no data, but
+            `fetchStatus === "paused"` on its own does not — TanStack pauses a
+            *background* refetch (reconnect, window focus) while keeping the
+            cached rows, so an unqualified check swapped a rendered list for a
+            spinner on exactly the blip the branch above was fixed for.
+            `isPending && paused` is README §4's "offline, no cached data",
+            spelled in flags.
+          */}
+          {isOffline && polls.length === 0 ? (
+            <OfflineState
+              title="Polls unavailable offline"
+              description="Reconnect to load the chapter's polls and cast a vote."
+              onRetry={() => {
+                void pollsQuery.refetch();
+              }}
+            />
+          ) : pollsQuery.isLoading ||
+            (pollsQuery.isPending && pollsQuery.fetchStatus === "paused") ? (
+            <LoadingState message="Loading chapter polls..." />
+          ) : pollsQuery.isPending && pollsQuery.fetchStatus === "idle" ? (
+            <EmptyState
+              title="Poll list requires polls:view_all"
+              description="Ask your chapter president to grant it if you need this view. You can still vote on polls from chat channels you can access."
+            />
+          ) : pollsQuery.isError ? (
+            <ErrorState
+              title="Couldn't load polls"
+              description="Confirm your chapter access and retry, or confirm you have polls:view_all access."
+              onRetry={() => void pollsQuery.refetch()}
+            />
+          ) : polls.length === 0 ? (
+            <EmptyState
+              title="No polls match this view"
+              description="Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results."
+            />
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {polls.map((poll) => (
+                <Poll
+                  key={poll.id}
+                  poll={poll}
+                  gate={gate}
+                  channelName={
+                    channelNameById.get(poll.channel_id) ?? "Unknown channel"
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </Can>
+    </>
   );
 }

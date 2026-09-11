@@ -13,7 +13,8 @@ import { formatLocaleDateTime } from "@repo/formatting";
 import { Can } from "@/components/shared/can";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   ErrorState,
   anyReadUncached,
@@ -128,30 +129,36 @@ export function DiscordImportPage() {
   }, [outcome, toast]);
 
   return (
-    <Can
-      permission="channels:manage"
-      deniedFallback={
-        <Card>
-          <CardHeader>
-            <CardTitle>Discord Import</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Importing a Discord archive needs channel management permission.
-            </p>
-          </CardContent>
-        </Card>
-      }
-    >
-      <DiscordImportBody
-        wizardOpen={wizardOpen}
-        setWizardOpen={setWizardOpen}
-        activeId={activeId}
-        setActiveId={setActiveId}
-        resumingBotWizard={resumingBotWizard}
-        handshake={handshake}
-      />
-    </Can>
+    <>
+      {/*
+        Outside the `<Can>` so the permission-denied branch keeps the route's
+        heading — the shell no longer supplies one (#2141). The denied card's
+        `<CardTitle>` and the body's were that same title said twice, so both
+        are gone; the denied card's `CardHeader` held nothing else.
+      */}
+      <PageHeader title="Discord Import" />
+      <Can
+        permission="channels:manage"
+        deniedFallback={
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">
+                Importing a Discord archive needs channel management permission.
+              </p>
+            </CardContent>
+          </Card>
+        }
+      >
+        <DiscordImportBody
+          wizardOpen={wizardOpen}
+          setWizardOpen={setWizardOpen}
+          activeId={activeId}
+          setActiveId={setActiveId}
+          resumingBotWizard={resumingBotWizard}
+          handshake={handshake}
+        />
+      </Can>
+    </>
   );
 }
 
@@ -244,8 +251,7 @@ function DiscordImportBody({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div>
-            <CardTitle>Discord Import</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Bring your chapter’s Discord history into Signet as read-only
               archive messages.
             </p>

@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { cn } from "@/lib/utils";
+import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
 /**
  * The 40px chapter row at the top of the left nav.
@@ -189,10 +190,20 @@ export function ChapterNavHeader({
   // `x-chapter-id` the API will reject. This is the one case that matters even
   // for a single-chapter user, so it outranks the compact row.
   if (isSuccess && memberships.length > 0 && !activeMembership) {
+    /*
+     * In the rail this card has nowhere to go: its min-content width is wider
+     * than the 40px slot, so it overflowed and was clipped by the shell root's
+     * `overflow-hidden`, leaving a stuck member unable to read or hit the one
+     * control that gets them out of a chapter the API rejects.
+     *
+     * A recovery state outranks a width preference, so it renders at full
+     * width regardless and lets the rail be wrong for as long as it is showing.
+     */
     return (
       <div
         className={cn(
           "space-y-2 rounded-[10px] border border-destructive/45 bg-destructive/[.13] px-2.5 py-2",
+          collapsed && "w-[200px]",
           className,
         )}
       >
@@ -219,7 +230,10 @@ export function ChapterNavHeader({
                  * is a hover a person can actually see, and it does not require
                  * re-pitching a ladder value to fix one call site.
                  */
-                className="w-full truncate rounded-xs border border-border bg-surface-1 px-2 py-1.5 text-left text-[11px] text-foreground hover:bg-popover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                className={cn(
+                  "w-full truncate rounded-xs border border-border bg-surface-1 px-2 py-1.5 text-left text-[11px] text-foreground hover:bg-popover",
+                  FOCUS_RING_SHELL,
+                )}
               >
                 {membership.chapter?.name ?? "Untitled chapter"}
               </button>
@@ -246,7 +260,7 @@ export function ChapterNavHeader({
           title={collapsed ? name : undefined}
           className={cn(
             "flex h-10 w-full items-center gap-2.5 rounded-[10px] px-1.5 text-left transition hover:bg-card",
-            "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+            FOCUS_RING_SHELL,
             collapsed && "justify-center px-0",
             className,
           )}

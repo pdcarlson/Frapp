@@ -2,6 +2,7 @@
 
 import { Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { FindBar } from "@/components/layout/find-bar";
 import { AskPill } from "@/components/layout/ask-pill";
 import { AccountMenu } from "@/components/layout/account-menu";
@@ -37,8 +38,10 @@ type TopBarProps = {
 };
 
 /* 34px controls, radius 10, per the board's right cluster. */
-const topBarButtonClassName =
-  "grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[10px] text-muted-foreground transition hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25";
+const topBarButtonClassName = cn(
+  "grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[10px] text-muted-foreground transition hover:bg-card hover:text-foreground",
+  FOCUS_RING_SHELL,
+);
 
 export function TopBar({
   unreadNotifications,
@@ -57,25 +60,44 @@ export function TopBar({
         way to reach navigation at that width; at `lg` and up it collapses to
         an empty flexible spacer that balances the right cluster.
       */}
-      <div className="flex min-w-0 flex-1 items-center">
+      <div className="flex min-w-0 shrink-0 items-center lg:flex-1">
         <button
           type="button"
           onClick={onOpenMobileNav}
           aria-label="Open navigation menu"
           title="Open navigation menu"
-          className={cn(topBarButtonClassName, "lg:hidden")}
+          /*
+           * `lg:hidden` means this control exists ONLY on the touch tier, where
+           * the 44px floor binds - and below `lg` it is the only route to
+           * navigation at all. It is the one top-bar control that cannot take
+           * the board's 34px pointer geometry.
+           */
+          className={cn(
+            topBarButtonClassName,
+            // `min-h-touch`/`min-w-touch`, not `h-touch`: only the min-* keys
+            // are bound to `--touch-min` in the Tailwind config, and an unknown
+            // key compiles to nothing at all rather than erroring (#1145).
+            "min-h-touch min-w-touch lg:min-h-0 lg:min-w-0 lg:hidden",
+          )}
         >
           <Menu className="h-[18px] w-[18px]" aria-hidden="true" />
         </button>
       </div>
 
       {/*
-        The find field is 520px at its widest and shrinks rather than pushing
-        the bar wider, so the 375px floor holds without a second layout.
-      */}
-      <FindBar className="w-full max-w-[520px] shrink" />
+        `flex-1 basis-*`, NOT `w-full`.
 
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+        `w-full` makes the field's flex BASE SIZE the full width of the bar, so
+        below roughly 568px the hypothetical main size already overflows, there
+        is no free space to distribute, and both `flex-1 min-w-0` side cells
+        resolve to 0px. The field's opaque background then paints over the
+        `lg:hidden` drawer trigger — which below `lg` is the only route to
+        navigation at all — and the right cluster overflows back across it.
+        A basis of 0 with `flex-1` lets all three cells share the line.
+      */}
+      <FindBar className="min-w-0 flex-1 basis-0 sm:max-w-[520px]" />
+
+      <div className="flex shrink-0 items-center justify-end gap-1.5 lg:min-w-0 lg:flex-1">
         <button
           type="button"
           onClick={onOpenNotifications}
@@ -89,14 +111,23 @@ export function TopBar({
         >
           <NotificationsGlyph className="h-[18px] w-[18px]" />
           {/*
-            Gold, not red. The board badges the count in `#DDB844` (`1b`) and
-            reserves red for direct address — a mention or a DM (foundations
-            §5). A count of unread notifications is not direct address.
+            Fixed gold, and deliberately NOT `bg-primary`.
+
+            `--primary` is the per-tenant accent slot, so painting the badge
+            with it is the same house-tenant mistake the Ask pill documents:
+            on a chapter seeded a red accent this badge becomes visually
+            identical to the fixed `#E5484D` mention/DM badge, and a member
+            can no longer tell "3 notifications" from "3 people addressed me".
+            The board draws it in mark gold (`1b`). This uses `--gold-house`,
+            the existing "never retints per chapter" brand slot, rather than
+            adding a second fixed-gold token for one badge; the two differ by
+            a step of hue and the load-bearing property (fixed, not tenant) is
+            identical. Red stays reserved for direct address (foundations §5).
           */}
           {unreadNotifications > 0 ? (
             <span
               aria-hidden="true"
-              className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-1 text-[9.5px] font-bold text-primary-foreground"
+              className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-gold-house px-1 text-[9.5px] font-bold text-gold-on-house"
             >
               {unreadNotifications > 99 ? "99+" : unreadNotifications}
             </span>

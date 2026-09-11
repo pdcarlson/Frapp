@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
 /**
  * The global ✦ Ask entry in the dashboard top bar — a shell, not a feature.
@@ -69,7 +70,7 @@ export function AskPill({ className }: { className?: string }) {
         onClick={() => setOpen(true)}
         className={cn(
           "inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-[10px] border border-gold-ask-border bg-gold-ask-fill px-3 text-[13.5px] font-bold text-gold-ask-text transition hover:bg-gold-ask-border/30",
-          "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+          FOCUS_RING_SHELL,
           className,
         )}
       >

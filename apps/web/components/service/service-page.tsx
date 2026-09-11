@@ -48,6 +48,7 @@ import {
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -401,167 +402,179 @@ export function ServiceHoursPage() {
    */
   if (isOffline && anyReadUncached(entriesQuery, membersQuery)) {
     return (
-      <OfflineState
-        title="Service hours unavailable offline"
-        description="Reconnect to log hours and review the approval queue."
-        onRetry={() => {
-          void entriesQuery.refetch();
-          void membersQuery.refetch();
-        }}
-      />
+      <>
+        <PageHeader title="Service hours" />
+        <OfflineState
+          title="Service hours unavailable offline"
+          description="Reconnect to log hours and review the approval queue."
+          onRetry={() => {
+            void entriesQuery.refetch();
+            void membersQuery.refetch();
+          }}
+        />
+      </>
     );
   }
 
   if (entriesQuery.isPending) {
-    return <LoadingState message="Loading service entries..." />;
+    return (
+      <>
+        <PageHeader title="Service hours" />
+        <LoadingState message="Loading service entries..." />
+      </>
+    );
   }
 
   if (entriesQuery.isError) {
     return (
-      <ErrorState
-        title="Couldn't load service entries"
-        description="Members see only their own entries; admins need service:approve to see every entry."
-        onRetry={() => void entriesQuery.refetch()}
-      />
+      <>
+        <PageHeader title="Service hours" />
+        <ErrorState
+          title="Couldn't load service entries"
+          description="Members see only their own entries; admins need service:approve to see every entry."
+          onRetry={() => void entriesQuery.refetch()}
+        />
+      </>
     );
   }
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Members log hours; admins approve them for service points. Approved
-            hours also appear in chapter service reports.
-          </p>
-        </div>
-        <Can permission="service:log">
-          <Dialog {...logDialog.dialogProps}>
-            <DialogTrigger asChild>
-              <Button className="gap-2" {...gate.controlProps()}>
-                <Plus className="h-4 w-4" /> Log service
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-lg" {...logDialog.contentProps}>
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <ServiceGlyph className="h-4 w-4" />
-                  Log service hours
-                </DialogTitle>
-                <DialogDescription>
-                  Submit a service entry for admin approval. Attach a photo or
-                  PDF as proof of your service.
-                </DialogDescription>
-              </DialogHeader>
-              <form
-                id="service-log-form"
-                onSubmit={submitDraft}
-                className="space-y-4"
-              >
-                <div className="grid gap-3 sm:grid-cols-3">
+      <PageHeader
+        title="Service hours"
+        actions={
+          <Can permission="service:log">
+            <Dialog {...logDialog.dialogProps}>
+              <DialogTrigger asChild>
+                <Button className="gap-2" {...gate.controlProps()}>
+                  <Plus className="h-4 w-4" /> Log service
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-lg" {...logDialog.contentProps}>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <ServiceGlyph className="h-4 w-4" />
+                    Log service hours
+                  </DialogTitle>
+                  <DialogDescription>
+                    Submit a service entry for admin approval. Attach a photo or
+                    PDF as proof of your service.
+                  </DialogDescription>
+                </DialogHeader>
+                <form
+                  id="service-log-form"
+                  onSubmit={submitDraft}
+                  className="space-y-4"
+                >
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="grid gap-1">
+                      <Label htmlFor="service-date">Date</Label>
+                      <Input
+                        id="service-date"
+                        type="date"
+                        value={draft.date}
+                        onChange={(event) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            date: event.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label htmlFor="service-hours">Hours</Label>
+                      <Input
+                        id="service-hours"
+                        type="number"
+                        min={0}
+                        value={draft.hours}
+                        onChange={(event) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            hours: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label htmlFor="service-minutes">Minutes</Label>
+                      <Input
+                        id="service-minutes"
+                        type="number"
+                        min={0}
+                        max={59}
+                        value={draft.minutes}
+                        onChange={(event) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            minutes: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
                   <div className="grid gap-1">
-                    <Label htmlFor="service-date">Date</Label>
-                    <Input
-                      id="service-date"
-                      type="date"
-                      value={draft.date}
+                    <Label htmlFor="service-description">What did you do?</Label>
+                    <Textarea
+                      id="service-description"
+                      rows={3}
+                      value={draft.description}
                       onChange={(event) =>
                         setDraft((prev) => ({
                           ...prev,
-                          date: event.target.value,
+                          description: event.target.value,
                         }))
                       }
                       required
                     />
                   </div>
                   <div className="grid gap-1">
-                    <Label htmlFor="service-hours">Hours</Label>
+                    <Label htmlFor="service-proof">{proofLabel}</Label>
                     <Input
-                      id="service-hours"
-                      type="number"
-                      min={0}
-                      value={draft.hours}
+                      id="service-proof"
+                      type="file"
+                      accept={acceptAttribute("proof")}
                       onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          hours: event.target.value,
-                        }))
+                        setProofFile(event.target.files?.[0] ?? null)
                       }
+                      required={receiptRequired}
                     />
+                    <p className="text-[12.5px] text-muted-foreground">
+                      Photo or PDF, up to {MAX_UPLOAD_LABEL}.
+                    </p>
                   </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="service-minutes">Minutes</Label>
-                    <Input
-                      id="service-minutes"
-                      type="number"
-                      min={0}
-                      max={59}
-                      value={draft.minutes}
-                      onChange={(event) =>
-                        setDraft((prev) => ({
-                          ...prev,
-                          minutes: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="service-description">What did you do?</Label>
-                  <Textarea
-                    id="service-description"
-                    rows={3}
-                    value={draft.description}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        description: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="service-proof">{proofLabel}</Label>
-                  <Input
-                    id="service-proof"
-                    type="file"
-                    accept={acceptAttribute("proof")}
-                    onChange={(event) =>
-                      setProofFile(event.target.files?.[0] ?? null)
-                    }
-                    required={receiptRequired}
-                  />
-                  <p className="text-[12.5px] text-muted-foreground">
-                    Photo or PDF, up to {MAX_UPLOAD_LABEL}.
-                  </p>
-                </div>
-              </form>
-              <DialogFooter>
-                {/* Cancel only closes the dialog — gating the way out of a
-                    surface the gate just blocked would be a trap. */}
-                <Button
-                  variant="secondary"
-                  onClick={() => logDialog.setOpen(false)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  form="service-log-form"
-                  type="submit"
-                  {...gate.controlProps(submitting)}
-                >
-                  {submitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Submit for approval
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </Can>
-      </header>
+                </form>
+                <DialogFooter>
+                  {/* Cancel only closes the dialog — gating the way out of a
+                      surface the gate just blocked would be a trap. */}
+                  <Button
+                    variant="secondary"
+                    onClick={() => logDialog.setOpen(false)}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    form="service-log-form"
+                    type="submit"
+                    {...gate.controlProps(submitting)}
+                  >
+                    {submitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    Submit for approval
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </Can>
+        }
+      />
+      <p className="text-sm text-muted-foreground">
+        Members log hours; admins approve them for service points. Approved hours
+        also appear in chapter service reports.
+      </p>
 
       {/*
         Disable, don't hide (§5 rule 4): the review queue, history, and proof

@@ -54,6 +54,7 @@ import {
   OfflineState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -354,20 +355,28 @@ export function TasksBoard() {
    */
   if (isOffline && anyReadUncached(tasksQuery, membersQuery, currentUser)) {
     return (
-      <OfflineState
-        title="Tasks unavailable offline"
-        description="Reconnect to load the chapter board and move tasks through it."
-        onRetry={() => {
-          void tasksQuery.refetch();
-          void membersQuery.refetch();
-          void currentUser.refetch();
-        }}
-      />
+      <>
+        <PageHeader title="Tasks" />
+        <OfflineState
+          title="Tasks unavailable offline"
+          description="Reconnect to load the chapter board and move tasks through it."
+          onRetry={() => {
+            void tasksQuery.refetch();
+            void membersQuery.refetch();
+            void currentUser.refetch();
+          }}
+        />
+      </>
     );
   }
 
   if (tasksQuery.isPending) {
-    return <LoadingState message="Loading chapter tasks..." />;
+    return (
+      <>
+        <PageHeader title="Tasks" />
+        <LoadingState message="Loading chapter tasks..." />
+      </>
+    );
   }
 
   // Only swap the whole board out when there is nothing to show. v5 keeps the
@@ -378,11 +387,14 @@ export function TasksBoard() {
   // error page every time.
   if (tasksQuery.isError && !tasksQuery.data) {
     return (
-      <ErrorState
-        title="Couldn't load tasks"
-        description="Confirm your chapter access and retry. Assignees see only their own tasks; admins need tasks:manage to see every task."
-        onRetry={() => void tasksQuery.refetch()}
-      />
+      <>
+        <PageHeader title="Tasks" />
+        <ErrorState
+          title="Couldn't load tasks"
+          description="Confirm your chapter access and retry. Assignees see only their own tasks; admins need tasks:manage to see every task."
+          onRetry={() => void tasksQuery.refetch()}
+        />
+      </>
     );
   }
 
@@ -390,150 +402,151 @@ export function TasksBoard() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            Admins create and confirm chapter tasks; assignees move them through
-            the workflow.
-          </p>
-        </div>
-        <Can permission="tasks:manage">
-          <Dialog {...createDialog.dialogProps}>
-            <DialogTrigger asChild>
-              <Button className="gap-2" {...gate.controlProps()}>
-                <Plus className="h-4 w-4" /> New task
-              </Button>
-            </DialogTrigger>
-            <DialogContent
-              className="sm:max-w-lg"
-              {...createDialog.contentProps}
-            >
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <TasksGlyph className="h-4 w-4" />
-                  Create a task
-                </DialogTitle>
-                <DialogDescription>
-                  Assign it to a chapter member with a due date. Point rewards
-                  are optional.
-                </DialogDescription>
-              </DialogHeader>
-              <form
-                onSubmit={submitDraft}
-                className="space-y-4"
-                id="tasks-create-form"
+      <PageHeader
+        title="Tasks"
+        actions={
+          <Can permission="tasks:manage">
+            <Dialog {...createDialog.dialogProps}>
+              <DialogTrigger asChild>
+                <Button className="gap-2" {...gate.controlProps()}>
+                  <Plus className="h-4 w-4" /> New task
+                </Button>
+              </DialogTrigger>
+              <DialogContent
+                className="sm:max-w-lg"
+                {...createDialog.contentProps}
               >
-                <div className="grid gap-1">
-                  <Label htmlFor="task-title">Title</Label>
-                  <Input
-                    id="task-title"
-                    value={draft.title}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        title: event.target.value,
-                      }))
-                    }
-                    required
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="task-description">Description</Label>
-                  <Textarea
-                    id="task-description"
-                    rows={3}
-                    value={draft.description}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        description: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <TasksGlyph className="h-4 w-4" />
+                    Create a task
+                  </DialogTitle>
+                  <DialogDescription>
+                    Assign it to a chapter member with a due date. Point rewards
+                    are optional.
+                  </DialogDescription>
+                </DialogHeader>
+                <form
+                  onSubmit={submitDraft}
+                  className="space-y-4"
+                  id="tasks-create-form"
+                >
                   <div className="grid gap-1">
-                    <Label htmlFor="task-assignee">Assignee</Label>
-                    <Select
-                      value={draft.assignee_id}
-                      onValueChange={(value) =>
-                        setDraft((prev) => ({ ...prev, assignee_id: value }))
-                      }
-                    >
-                      <SelectTrigger id="task-assignee">
-                        <SelectValue placeholder="Select a member" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {members.map((member) => (
-                          <SelectItem
-                            key={member.user_id ?? "unknown"}
-                            value={String(member.user_id ?? "")}
-                          >
-                            {member.display_name ?? "Unnamed member"}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="task-due-date">Due date</Label>
+                    <Label htmlFor="task-title">Title</Label>
                     <Input
-                      id="task-due-date"
-                      type="date"
-                      value={draft.due_date}
+                      id="task-title"
+                      value={draft.title}
                       onChange={(event) =>
                         setDraft((prev) => ({
                           ...prev,
-                          due_date: event.target.value,
+                          title: event.target.value,
                         }))
                       }
                       required
                     />
                   </div>
-                </div>
-                <div className="grid gap-1 sm:max-w-xs">
-                  <Label htmlFor="task-points">Point reward (optional)</Label>
-                  <Input
-                    id="task-points"
-                    type="number"
-                    min={0}
-                    value={draft.point_reward}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        point_reward: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              </form>
-              <DialogFooter>
-                {/*
-                  Cancel is not gated: it only closes the dialog, and a lapsed
-                  chapter still needs a way out of a form it can't submit.
-                */}
-                <Button
-                  variant="secondary"
-                  onClick={() => createDialog.setOpen(false)}
-                  disabled={createTask.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  form="tasks-create-form"
-                  type="submit"
-                  {...gate.controlProps(createTask.isPending)}
-                >
-                  {createTask.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Create task
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </Can>
-      </header>
+                  <div className="grid gap-1">
+                    <Label htmlFor="task-description">Description</Label>
+                    <Textarea
+                      id="task-description"
+                      rows={3}
+                      value={draft.description}
+                      onChange={(event) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          description: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-1">
+                      <Label htmlFor="task-assignee">Assignee</Label>
+                      <Select
+                        value={draft.assignee_id}
+                        onValueChange={(value) =>
+                          setDraft((prev) => ({ ...prev, assignee_id: value }))
+                        }
+                      >
+                        <SelectTrigger id="task-assignee">
+                          <SelectValue placeholder="Select a member" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {members.map((member) => (
+                            <SelectItem
+                              key={member.user_id ?? "unknown"}
+                              value={String(member.user_id ?? "")}
+                            >
+                              {member.display_name ?? "Unnamed member"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-1">
+                      <Label htmlFor="task-due-date">Due date</Label>
+                      <Input
+                        id="task-due-date"
+                        type="date"
+                        value={draft.due_date}
+                        onChange={(event) =>
+                          setDraft((prev) => ({
+                            ...prev,
+                            due_date: event.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-1 sm:max-w-xs">
+                    <Label htmlFor="task-points">Point reward (optional)</Label>
+                    <Input
+                      id="task-points"
+                      type="number"
+                      min={0}
+                      value={draft.point_reward}
+                      onChange={(event) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          point_reward: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </form>
+                <DialogFooter>
+                  {/*
+                    Cancel is not gated: it only closes the dialog, and a lapsed
+                    chapter still needs a way out of a form it can't submit.
+                  */}
+                  <Button
+                    variant="secondary"
+                    onClick={() => createDialog.setOpen(false)}
+                    disabled={createTask.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    form="tasks-create-form"
+                    type="submit"
+                    {...gate.controlProps(createTask.isPending)}
+                  >
+                    {createTask.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    Create task
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </Can>
+        }
+      />
+      <p className="text-sm text-muted-foreground">
+        Admins create and confirm chapter tasks; assignees move them through the
+        workflow.
+      </p>
 
       {/*
         Outside the `tasks:manage` <Can>: the assignee-facing Start / Mark

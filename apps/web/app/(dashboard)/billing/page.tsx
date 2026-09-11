@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { anyReadUncached, LoadingState, OfflineState } from "@/components/shared/async-states";
 import { NestedEmpty } from "@/components/shared/nested-states";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   dashboardCheckboxCellClassName,
   dashboardCheckboxHitAreaClassName,
@@ -202,27 +203,37 @@ export default function BillingPage() {
    */
   if (isOffline && anyReadUncached(invoicesQuery, currentUserQuery)) {
     return (
-      <OfflineState
-        title="Billing workspace unavailable offline"
-        description="Reconnect to sync subscription status and invoice balances."
-        onRetry={() => {
-          void statusQuery.refetch();
-          void invoicesQuery.refetch();
-          void currentUserQuery.refetch();
-        }}
-      />
+      <>
+        <PageHeader title="Billing" />
+        <OfflineState
+          title="Billing workspace unavailable offline"
+          description="Reconnect to sync subscription status and invoice balances."
+          onRetry={() => {
+            void statusQuery.refetch();
+            void invoicesQuery.refetch();
+            void currentUserQuery.refetch();
+          }}
+        />
+      </>
     );
   }
 
   if (isLoading) {
-    return <LoadingState message={stateMicrocopy.billing.loading} />;
+    return (
+      <>
+        <PageHeader title="Billing" />
+        <LoadingState message={stateMicrocopy.billing.loading} />
+      </>
+    );
   }
 
   return (
     <div className="space-y-6">
+      <PageHeader title="Billing" />
       {/*
-        First on the page on purpose: when a chapter is locked, the control that
-        unlocks it is the only thing on this screen that can succeed. Suspense
+        First card on the page on purpose: when a chapter is locked, the control
+        that unlocks it is the only thing on this screen that can succeed. It
+        sits directly under the route heading, above every other card. Suspense
         because the card reads `?checkout=` via `useSearchParams`.
       */}
       <Suspense fallback={null}>

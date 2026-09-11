@@ -196,7 +196,9 @@ them on the board's authority breaks the no-retint rule on every chapter that pi
 
 The scrollbar rows were the larger change: the board draws a gold thumb on a `--surface-1` track
 where the shipped `.signet-scroll` drew a neutral thumb on a transparent one, and it applies the bar
-at the root rather than as an opt-in class.
+at the root rather than as an opt-in class. The board claims 8.9:1 thumb on track for the new pair;
+measured at `#DDB844` on `#1A1A1A` it is **9.13:1**, so the claim is sound and the bar clears the
+3:1 non-text floor with room to spare.
 [`../design-system/foundations.md`](../design-system/foundations.md) §12 moved with it, and the
 `.signet-scroll` class was retired rather than left beside the global rule — it had zero call sites,
 so nothing regressed.

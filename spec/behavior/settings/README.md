@@ -37,16 +37,24 @@ Related canon lives in:
 
 ## Beta Tab
 
-> **Not yet built.** The API contract below exists; the UI does not. The Beta tab currently renders
-> a coming-soon placeholder (`COMING_SOON_TABS` in `apps/web/components/settings/settings-page.tsx`),
-> and the dashboard shell paints the badge from a hardcoded `BETA_CONFIG` constant
-> (`apps/web/components/layout/dashboard-shell.tsx`) rather than reading the chapter's stored value —
-> so every signed-in user currently sees the sidebar pill regardless of what is saved.
+> **Not yet built, and there is no longer a renderer.** The API contract below exists; the UI does
+> not. The Beta tab renders a coming-soon placeholder (`COMING_SOON_TABS` in
+> `apps/web/components/settings/settings-page.tsx`).
+>
+> The dashboard shell used to paint the badge from a hardcoded `BETA_CONFIG` constant, so every
+> signed-in user saw a sidebar pill regardless of what was saved. The greenfield shell
+> ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) **deleted that row and `beta-badge.tsx`
+> outright** as generated chrome. So `beta_config` is now write-only end to end: the API still
+> accepts and stores it, and nothing renders it anywhere.
+>
+> Whoever builds this tab is therefore building the renderer too, not wiring an existing one — and
+> two of the four enum values below (`sidebar_pill`, `breadcrumb_pill`) name chrome that no longer
+> exists, so the enum needs revisiting in the same change rather than being implemented literally.
 
 - Beta preferences live in the chapter's `beta_config` object (`{ enabled, style }`), read and written through the audited config GET/PATCH like every other tab — shape in [`../chapter-config.md`](../chapter-config.md). Writes already work; nothing reads them yet.
-- **Build channel.** A stable / beta selector writes `beta_config.enabled`. Beta shows the BETA badge in the dashboard shell; stable hides it. The channel is chapter-level — there is no per-user override.
+- **Build channel.** A stable / beta selector writes `beta_config.enabled`. Beta would show a BETA badge; stable hides it. No badge renders today (see above). The channel is chapter-level — there is no per-user override.
 - **Badge style.** `beta_config.style` is one of `sidebar_pill | breadcrumb_pill | top_banner | corner_badge`. The enum is enforced at the API boundary (`apps/api/src/interface/dtos/chapter-config.dto.ts`), so an unrecognized style is rejected rather than silently coerced to a default.
-- **When the UI lands**, the shell MUST source the badge from the chapter's stored `beta_config` rather than a build-time constant, so a saved style takes effect without a redeploy.
+- **When the UI lands**, the badge MUST be sourced from the chapter's stored `beta_config` rather than a build-time constant, so a saved style takes effect without a redeploy. That was the defect the old hardcoded constant had; deleting the renderer removed the symptom, not the rule.
 
 ## Audit Rules
 

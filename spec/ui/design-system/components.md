@@ -158,16 +158,21 @@ Height 34px, radius 10, padding-x 10, icon 18px per the duotone recipe ([iconogr
 
 ### App bar chips
 
-Container: height 58px, surface `#1A1A1A`, 1px hairline, radius 14. Contents:
+**Web geometry moved with the greenfield shell** ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)), transcribed from the framework board (`1b`). Mobile is unchanged.
+
+Container: height 48px (was 58), surface `#1A1A1A`, 1px hairline, no radius — the bar is flush to the viewport edges. Contents:
 
 | Element | Spec |
 | ------- | ---- |
-| Mark | 30px "S" rounded square (radius 9), house gold — never retints ([brand-identity.md](../brand-identity.md)) |
-| Search | compact input, height 38, radius 12, fill bg `#131211` |
-| Ask entry | Tinted **geometry**, house-gold **paint**: height 38, radius 11, ✦ glyph + "Ask", 700 — rounded rect, not a capsule. Fill `gold.askFill`, 1px `gold.askBorder`, text `gold.askText` (§11), never `accent-3/7/11` — the design-system reference's TOP NAV panel draws it gold, and so does the mobile pill |
-| Avatar | 32px circle, elevated `#2A2621` fill, initials 12.5px / 700 `#A9A399` |
+| Mark | 30px "S" rounded square (radius 9), house gold — never retints ([brand-identity.md](../brand-identity.md)). **Not in the web top bar**: the chapter identity lives in the nav's 40px chapter row instead |
+| Find | wide input, height 34, radius 10, max width 520, fill `--card`, 1px `--input`. The container owns the focus ring on the input's behalf (`FOCUS_RING_WITHIN`) |
+| Ask entry | Tinted **geometry**, house-gold **paint**: height 34, radius 10, ✦ glyph + "Ask", 700 — rounded rect, not a capsule. Fill `gold.askFill`, 1px `gold.askBorder`, text `gold.askText` (§11), never `accent-3/7/11`. The board draws Ask in the same values as the chapter accent tints **because its demo tenant is the house tenant** — they coincide there and nowhere else, so merging the two families is the house-tenant trap, not a simplification |
+| Notification badge | Fixed `--gold-house` on the bell, never `--primary`. A count is not direct address, so it takes neither the chapter accent nor the mention red (§5) |
+| Avatar | 30px circle, elevated `--popover` fill, 1px `--border`, initials 11px / 600 |
 
-Where Search (or any chip) opens the command menu, its `aria-label` MUST spell the shortcut out in words — "Command K" — rather than leaning on the visible ⌘K glyph, which assistive tech does not announce.
+**Any control that exists only below `lg`** — the drawer trigger, and every nav row inside the drawer — is on the touch tier by construction and takes the 44px floor (§2, foundations §9), not the 34px pointer geometry above.
+
+There is no command menu and no ⌘K. The find field binds Cmd/Ctrl+F and advertises `⌘F` in the field itself; §5's ban on unwired keybinding hints is what makes that advertisement legitimate. An `aria-label` MUST NOT spell out a shortcut the surface does not bind.
 
 ## 8. Cards
 
@@ -204,7 +209,7 @@ This section specs the **anatomy** of the three visual variants — one family, 
 ### Skeleton (loading)
 
 - **Content-shaped:** the skeleton mirrors the layout it becomes — same blocks, same radii. No spinner-in-a-box.
-- Shimmer: linear gradient 90°, elevated `#2A2621` at 25%/75% and highlight `#38312A` at 50%; background-size 260px; sweep 1.4s linear infinite, phase-shared across blocks.
+- Shimmer: linear gradient 90°, elevated `#2A2621` at 25%/75% and highlight `#332E26` at 50%; background-size 260px; sweep 1.4s linear infinite, phase-shared across blocks. The highlight moved from `#38312A` with the greenfield shell ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) to match the framework board. **Mobile transcribes this value by hand** (`apps/mobile/components/state-block.tsx`) rather than reading `--skeleton-highlight`, so the two drift unless both move together. The amplitude cost that change carries is measured in [`../web-greenfield/tokens.md`](../web-greenfield/tokens.md) L-01.
 - Shapes: text lines 13px tall, radius 6, varied widths (~45–70%); avatars stay circles; control-sized blocks 44px, radius 12.
 - Skeletons are neutral only — never accent, never semantic.
 - Show on first load only; background refetches keep stale content in place ([resilience](../resilience/README.md)).

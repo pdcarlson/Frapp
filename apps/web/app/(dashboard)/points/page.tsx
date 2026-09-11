@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ErrorState, anyReadUncached, LoadingState, OfflineState } from "@/components/shared/async-states";
 import { NestedEmpty } from "@/components/shared/nested-states";
+import { PageHeader } from "@/components/layout/page-header";
 import { amountToneClassName } from "@/components/points/amount-tone";
 import {
   dashboardCheckboxCellClassName,
@@ -257,35 +258,43 @@ export default function PointsPage() {
    */
   if (isOffline && anyReadUncached(leaderboardQuery, summaryQuery)) {
     return (
-      <OfflineState
-        title="Points ledger unavailable offline"
-        description="Reconnect to refresh leaderboard standings and transaction history."
-        onRetry={() => {
-          /*
-           * Both reads key on `window` and `semesterArchiveId`, and the
-           * controls that set them render *below* this card — so changing
-           * either offline swaps to a never-fetched key and this branch
-           * unmounts the only way back. Resetting to the default selection is
-           * what lets Retry reach cached rows; a paused refetch alone cannot.
-           */
-          setWindow("all");
-          setSemesterArchiveId("");
-          void leaderboardQuery.refetch();
-          void summaryQuery.refetch();
-          // Names are refreshed alongside the reads that raised this card, so a
-          // retry that fixes the board fixes the labels too. Not the only path
-          // and not a complete one: a roster that fails while the points reads
-          // succeed renders no card at all, and recovers on window focus or
-          // reconnect (`query-provider.tsx`) rather than from any control here.
-          // Giving that case a visible signal is #1209's.
-          refetchRoster();
-        }}
-      />
+      <>
+        <PageHeader title="Points Ledger" />
+        <OfflineState
+          title="Points ledger unavailable offline"
+          description="Reconnect to refresh leaderboard standings and transaction history."
+          onRetry={() => {
+            /*
+             * Both reads key on `window` and `semesterArchiveId`, and the
+             * controls that set them render *below* this card — so changing
+             * either offline swaps to a never-fetched key and this branch
+             * unmounts the only way back. Resetting to the default selection is
+             * what lets Retry reach cached rows; a paused refetch alone cannot.
+             */
+            setWindow("all");
+            setSemesterArchiveId("");
+            void leaderboardQuery.refetch();
+            void summaryQuery.refetch();
+            // Names are refreshed alongside the reads that raised this card, so a
+            // retry that fixes the board fixes the labels too. Not the only path
+            // and not a complete one: a roster that fails while the points reads
+            // succeed renders no card at all, and recovers on window focus or
+            // reconnect (`query-provider.tsx`) rather than from any control here.
+            // Giving that case a visible signal is #1209's.
+            refetchRoster();
+          }}
+        />
+      </>
     );
   }
 
   if (isLoading) {
-    return <LoadingState message={stateMicrocopy.points.loading} />;
+    return (
+      <>
+        <PageHeader title="Points Ledger" />
+        <LoadingState message={stateMicrocopy.points.loading} />
+      </>
+    );
   }
 
   // The leaderboard and the ledger are what officers read chapter financial
@@ -296,38 +305,42 @@ export default function PointsPage() {
   // matching how Members handles its supporting queries.
   if (hasError) {
     return (
-      <ErrorState
-        title={stateMicrocopy.points.errorTitle}
-        description={stateMicrocopy.points.errorDescription}
-        onRetry={() => {
-          void leaderboardQuery.refetch();
-          void summaryQuery.refetch();
-          // Names are refreshed alongside the reads that raised this card, so a
-          // retry that fixes the board fixes the labels too. Not the only path
-          // and not a complete one: a roster that fails while the points reads
-          // succeed renders no card at all, and recovers on window focus or
-          // reconnect (`query-provider.tsx`) rather than from any control here.
-          // Giving that case a visible signal is #1209's.
-          refetchRoster();
-        }}
-      />
+      <>
+        <PageHeader title="Points Ledger" />
+        <ErrorState
+          title={stateMicrocopy.points.errorTitle}
+          description={stateMicrocopy.points.errorDescription}
+          onRetry={() => {
+            void leaderboardQuery.refetch();
+            void summaryQuery.refetch();
+            // Names are refreshed alongside the reads that raised this card, so
+            // a retry that fixes the board fixes the labels too. Not the only
+            // path and not a complete one: a roster that fails while the points
+            // reads succeed renders no card at all, and recovers on window
+            // focus or reconnect (`query-provider.tsx`) rather than from any
+            // control here.
+            // Giving that case a visible signal is #1209's.
+            refetchRoster();
+          }}
+        />
+      </>
     );
   }
 
   return (
     <div className="space-y-6">
+      <PageHeader title="Points Ledger" />
       <Card>
         {/*
-          Stacked below `sm` (#1142): the title plus "Adjust points" and the
-          three window buttons cannot share a row inside a 375px viewport, and
-          every one of them is `whitespace-nowrap`. Scoped with `max-sm:` rather
-          than written mobile-first on purpose — at `sm` and above the class list
-          resolves to exactly what it was, so the pinned 1440px visual baseline
-          for this route does not move.
+          Stacked below `sm` (#1142): the description plus "Adjust points" and
+          the three window buttons cannot share a row inside a 375px viewport,
+          and every one of them is `whitespace-nowrap`. Scoped with `max-sm:`
+          rather than written mobile-first on purpose — at `sm` and above the
+          class list resolves to exactly what it was, so the pinned 1440px
+          visual baseline for this route does not move.
         */}
         <CardHeader className="flex flex-row items-center justify-between max-sm:flex-col max-sm:items-start max-sm:gap-3 max-sm:space-y-0">
           <div>
-            <CardTitle>Points Ledger</CardTitle>
             <CardDescription>
               Track chapter ranking, manual adjustments, and transaction history.
             </CardDescription>

@@ -46,6 +46,7 @@ import {
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
+import { PageHeader } from "@/components/layout/page-header";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { BillingGlyph } from "@/components/layout/nav-glyphs";
 import { Can } from "@/components/shared/can";
@@ -295,7 +296,6 @@ function SettingsPageContent() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Chapter settings</CardTitle>
           <CardDescription>
             Select an active chapter to edit its organization, modules, and
             branding.
@@ -635,9 +635,6 @@ function SettingsPageContent() {
       */}
       {confirmDialog}
       <header>
-        <h2 className="text-2xl font-semibold tracking-tight">
-          Chapter settings
-        </h2>
         <p className="text-sm text-muted-foreground">
           Configure your organization identity, modules, branding, and chapter
           administration.
@@ -1138,8 +1135,16 @@ function SettingsPageContent() {
 // to sit under a Suspense boundary (matches the sign-in/sign-up/join pattern).
 export function SettingsPage() {
   return (
-    <Suspense fallback={<LoadingState message="Loading chapter settings..." />}>
-      <SettingsPageContent />
-    </Suspense>
+    <>
+      {/*
+        Outside the Suspense boundary so the heading is there on the pending
+        path too — the shell no longer supplies one (#2141), and the content
+        below deliberately renders none of its own.
+      */}
+      <PageHeader title="Chapter Settings" />
+      <Suspense fallback={<LoadingState message="Loading chapter settings..." />}>
+        <SettingsPageContent />
+      </Suspense>
+    </>
   );
 }

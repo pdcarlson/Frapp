@@ -141,5 +141,23 @@ export const FOCUS_RING_WITHIN =
  * #396) share this — a hand-copied className string is exactly the kind of
  * recipe this file exists to keep in one place; see the top-of-file comment.
  */
+/**
+ * The shell's focus recipe: the ring alone, with no border swap.
+ *
+ * `FOCUS_RING` is the house recipe and would normally be the one to reach for,
+ * but its `focus-visible:border-primary` half is unguarded and non-conforming
+ * on several chapter seeds (open lock L-07) — and several shell controls
+ * (the nav row, the Ask pill, the account avatar) already encode state in
+ * their border, so a border swap would fight that state rather than add to it.
+ *
+ * Exported because the greenfield shell needs it in six places. The literal was
+ * hand-copied into each of them first, which is exactly what the top-of-file
+ * comment says this module exists to prevent: when L-07 is resolved and the
+ * recipe moves, a grep for `FOCUS_RING` has to find every consumer, and six
+ * anonymous string copies are invisible to that grep.
+ */
+export const FOCUS_RING_SHELL =
+  "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25";
+
 export const SKIP_LINK_CLASSES =
   "sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm";

@@ -22,9 +22,16 @@ import {
 /**
  * Permission-aware dashboard navigation.
  *
- * Kept in a single module so the sidebar, mobile sheet, command palette, and
- * breadcrumb title map all stay in sync. Each entry mirrors the nav table
- * in `spec/ui/web-dashboard/README.md`.
+ * Kept in a single module so the sidebar and the mobile drawer stay in sync.
+ * (There is no longer a command palette or a breadcrumb title map; #2141
+ * deleted both.)
+ *
+ * `spec/ui/web-dashboard/README.md` carries a nav table this file used to
+ * mirror. That page is **distrusted on chrome** while
+ * [#2140](https://github.com/pdcarlson/Frapp/issues/2140) is open
+ * (`spec/ui/web-greenfield/README.md` §1) and its table still lists the
+ * pre-greenfield sections, so it is not the mirror any more. What remains
+ * truth there is the permission and module gating semantics, not the shape.
  *
  * Structure (greenfield shell, #2141): a Chat anchor with no section header,
  * then Chapter, then Resources, then an unlabeled Directory + Billing group,
@@ -326,14 +333,15 @@ export const DASHBOARD_NAV: NavSection[] = [
 /**
  * Titles for routes that are reachable but deliberately absent from the nav.
  *
- * The breadcrumb and header title resolve off `DASHBOARD_NAV_BY_HREF`, so a
- * route with no nav entry falls through to the bare "Dashboard". That was
- * harmless while every destination had a sidebar row; moving Profile into the
- * account menu made it a visible defect — `/profile` rendered a page titled
- * "Dashboard".
+ * **This no longer feeds the shell.** It existed because the shell derived
+ * every page's title from `DASHBOARD_NAV_BY_HREF`, so a route with no nav row
+ * fell through to a bare "Dashboard" — which is what `/profile` rendered.
+ * #2141 moved titles into the pages themselves (`page-header.tsx`), so a route
+ * now names itself and cannot fall through to anything.
  *
- * Keep this to routes a member actually lands on. Redirects (`/alumni`,
- * `/roles`) never render a shell of their own and do not belong here.
+ * It is kept as the record of what those off-nav routes are called, so the two
+ * places that need the string agree: the page's own `PageHeader`, and the
+ * route's `metadata.title`. Adding a row here does NOT make a title appear.
  */
 export const OFF_NAV_ROUTE_TITLES: Record<string, string> = {
   "/profile": "My Profile",
@@ -344,7 +352,11 @@ export const DASHBOARD_NAV_ITEMS: NavItem[] = DASHBOARD_NAV.flatMap(
   (section) => section.items,
 );
 
-/** Map of route → nav item, for breadcrumbs / header title resolution. */
+/**
+ * Map of route → nav item. The breadcrumb and header-title resolver that used
+ * to read this is gone (#2141); it survives for lookups by href, and
+ * `breadcrumbTitle` survives as the canonical display name for a route.
+ */
 export const DASHBOARD_NAV_BY_HREF: Record<string, NavItem> =
   Object.fromEntries(
     DASHBOARD_NAV_ITEMS.filter((item) => item.href).map((item) => [

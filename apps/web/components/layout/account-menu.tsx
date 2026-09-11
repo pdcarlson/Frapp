@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { cn, initials } from "@/lib/utils";
+import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
 type CurrentUser = {
   display_name?: string | null;
@@ -86,7 +87,7 @@ export function AccountMenu({
             aria-label={`Account menu for ${name}`}
             className={cn(
               "ml-1 shrink-0 rounded-full transition",
-              "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+              FOCUS_RING_SHELL,
             )}
           >
             <Avatar className="h-[30px] w-[30px] border border-border bg-popover">
@@ -105,7 +106,7 @@ export function AccountMenu({
             className={cn(
               "flex w-full items-center gap-2 rounded-[10px] px-2 py-2 text-left transition",
               "hover:bg-card",
-              "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+              FOCUS_RING_SHELL,
             )}
           >
             <Avatar className="h-8 w-8 shrink-0">

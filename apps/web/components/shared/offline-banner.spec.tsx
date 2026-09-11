@@ -111,9 +111,16 @@ describe("OfflineBanner", () => {
     expect(DASHBOARD_HEADER_STICKY_CLASS).toContain(
       `top-[var(${OFFLINE_BANNER_HEIGHT_VAR},0px)]`,
     );
-    expect(CHAT_RAIL_STICKY_CLASS).toContain(
-      `var(${OFFLINE_BANNER_HEIGHT_VAR},0px)`,
-    );
+    /*
+     * The chat rails deliberately do NOT read the banner variable any more.
+     * They stick inside `<main>`, which the greenfield shell (#2141) made the
+     * scroll container — and whose height already excludes both the banner and
+     * the 48px bar. Subtracting either again would leave a dead gap above the
+     * rails and clip their bottom. Asserted as an absence so a future change
+     * that "restores" the offset has to come through this test.
+     */
+    expect(CHAT_RAIL_STICKY_CLASS).not.toContain(OFFLINE_BANNER_HEIGHT_VAR);
+    expect(CHAT_RAIL_STICKY_CLASS).toContain("md:top-0");
 
     unmount();
     expect(

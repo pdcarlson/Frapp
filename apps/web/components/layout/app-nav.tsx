@@ -8,6 +8,7 @@ import {
   isNavItemVisible,
   ProtectedNavItem,
 } from "@/components/layout/protected-nav-item";
+import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
 /**
  * The flush-left navigation column: 220px expanded, 56px as an icon rail.
@@ -43,16 +44,6 @@ type AppNavProps = {
   variant?: "sidebar" | "drawer";
   className?: string;
 };
-
-/*
- * The one focus recipe (board `1d` pin 1): a 3px spread of the ring color at
- * 25%. Kept as the sidebar-local constant it already was rather than switched
- * to the shared `FOCUS_RING`, because that recipe's border swap is unguarded
- * and non-conforming on several chapter seeds (open lock L-07). Unifying the
- * two is that lock's job, not this lane's.
- */
-const navFocusRingClassName =
-  "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25";
 
 /** 18px duotone glyph, per `1b` pin 2. */
 const navIconClassName = "h-[18px] w-[18px]";
@@ -112,7 +103,7 @@ export function AppNav({
             permissions={permissions}
             iconClassName={navIconClassName}
             onNavigate={onNavigate}
-            focusClassName={navFocusRingClassName}
+            focusClassName={FOCUS_RING_SHELL}
             isModuleEnabled={isModuleEnabled}
             collapsed={isCollapsed}
           />
@@ -161,7 +152,7 @@ export function AppNav({
             title={isCollapsed ? "Expand navigation" : "Collapse navigation"}
             className={cn(
               "grid h-[34px] w-[34px] place-items-center rounded-[10px] text-muted transition hover:bg-card hover:text-foreground",
-              navFocusRingClassName,
+              FOCUS_RING_SHELL,
             )}
           >
             <CollapseIcon className="h-[18px] w-[18px]" aria-hidden="true" />

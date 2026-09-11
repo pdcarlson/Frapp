@@ -123,7 +123,13 @@ export function ProtectedNavItem({
         aria-label={collapsed ? item.label : undefined}
         title={collapsed ? item.label : item.description}
         className={cn(
-          "flex h-[34px] items-center rounded-[10px] text-left text-sm transition",
+          /*
+           * 34px is the board's POINTER geometry. The drawer that renders this
+           * below `lg` is touch-only, and `--touch-min` (44px) is binding on
+           * web as well as mobile (foundations §9) - so the row is 44px until
+           * the desktop breakpoint, then takes the board's density.
+           */
+          "flex min-h-touch items-center rounded-[10px] text-left text-sm transition lg:h-[34px] lg:min-h-0",
           collapsed
             ? "w-[34px] justify-center"
             : "w-full gap-2.5 px-2.5",
@@ -152,7 +158,7 @@ export function ProtectedNavItem({
       }
       onClick={(e) => e.preventDefault()}
       className={cn(
-        "flex h-[34px] cursor-not-allowed items-center rounded-[10px] text-left text-sm text-disabled",
+        "flex min-h-touch cursor-not-allowed items-center rounded-[10px] text-left text-sm text-disabled lg:h-[34px] lg:min-h-0",
         collapsed ? "w-[34px] justify-center" : "w-full gap-2.5 px-2.5",
         focusClassName,
       )}

@@ -95,12 +95,13 @@ export function DashboardShell({
   }, [notificationsData]);
 
   const toggleNavCollapsed = useCallback(() => {
-    setNavCollapsed((prev) => {
-      const next = !prev;
-      persistNavCollapsed(next);
-      return next;
-    });
-  }, []);
+    // The cookie write is deliberately OUTSIDE the updater. React requires an
+    // updater to be pure and double-invokes it under Strict Mode; the write is
+    // idempotent so nothing breaks today, but a side effect in that position is
+    // the kind that starts misbehaving the moment it stops being idempotent.
+    setNavCollapsed((prev) => !prev);
+    persistNavCollapsed(!navCollapsed);
+  }, [navCollapsed]);
 
   return (
     /*
