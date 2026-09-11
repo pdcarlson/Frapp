@@ -25,10 +25,24 @@ The shipping mark is **locked emblem B**: an abstract crest with a neck break, g
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | House gold       | `#EFB63B` — Signet's own accent. Gold/amber, never brown-bronze.                                                             |
 | Accent seed      | `#DDB844` — the default chapter accent seed, equal in value to the mark gold below but a separate role; see [design-system/accent-engine.md](design-system/accent-engine.md) |
-| Mark field       | `#1A1A1A`                                                                                                                    |
-| Mark gold        | `#DDB844`                                                                                                                    |
+| Mark field       | `#1A1A1A` — **spec'd, not measured; the committed raster is `#151515`. See the note below.**                                  |
+| Mark gold        | `#DDB844` — **spec'd, not measured; the committed raster is `#DDA220`. See the note below.**                                  |
 | Shipping mark    | Locked emblem B — abstract crest, neck break, gold on charcoal                                                                |
 | Mascot / extras  | Still **TBD** — the animal mascot stays blocked on the USPTO search for "Signet" (a human action). Do not commission mascot art before it clears. |
+
+> **The mark field and mark gold above describe the superseded SVG reconstruction, not the shipping
+> raster.** A full pixel census of `signet-emblem-B-locked.png` and `signet-emblem-B-tile.png` finds
+> `#DDB844` in **zero** pixels of either: the crest is drawn in `#DDA220` on a `#151515` field. The
+> raster and these two rows were authored in the same commit
+> ([#2121](https://github.com/pdcarlson/Frapp/pull/2121)) and have disagreed since; nothing drifted.
+>
+> Closing the gap is a brand decision, tracked as
+> [#2153](https://github.com/pdcarlson/Frapp/issues/2153) and measured in
+> [`web-greenfield/tokens.md`](web-greenfield/tokens.md) L-08. **Do not close it by writing the
+> measured values into this table:** the committed raster is JPEG-derived and upscaled, so `#151515`
+> and `#DDA220` are compression artifacts rather than brand values. Until it is settled, treat these
+> two rows as the specification, not as a description of what ships, and do not sample either value
+> from the raster.
 
 The mark and logo **MUST NOT** take the chapter accent — ever. Chapter theming recolors product UI through the accent engine; the brand itself never retints.
 

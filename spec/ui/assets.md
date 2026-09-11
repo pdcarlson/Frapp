@@ -10,6 +10,7 @@ The committed assets ship **locked emblem B** — gold `#DDB844` on charcoal `#1
 
 - The animal mascot (a seal, the animal) remains **not commissioned** and MUST NOT ship until the USPTO search clears; [brand-identity.md](brand-identity.md) owns that ban.
 - Teams MUST NOT restyle the locked emblem piecemeal. Replace `packages/brand-assets/assets/signet-emblem-B-locked.png`, then rasterize and sync.
+- **`#DDB844` / `#1A1A1A` above are the specification, not a measurement of the committed raster.** The shipping files measure `#DDA220` on `#151515`; `#DDB844` occurs in zero pixels of either. Those measured values are JPEG artifacts, not brand values, so they are evidence of the gap and not a replacement for this line. Unsettled brand decision — [#2153](https://github.com/pdcarlson/Frapp/issues/2153), measured in [`web-greenfield/tokens.md`](web-greenfield/tokens.md) L-08. Do not sample the raster to "correct" this line, and do not re-export the mark to match it, until that issue closes.
 - iOS **Light / Dark / Tinted** store variants and a Play Console feature graphic are still an Ops / EAS step; this package produces the in-repo Expo rasters and Next favicons.
 
 ---
@@ -95,7 +96,7 @@ No transactional email templates exist in-repo yet; this binds the first ones bu
 
 Expo requires **raster** launcher icons: `apps/mobile/app.json` references PNGs under `apps/mobile/assets/images/` (`icon.png`, `adaptive-icon.png`, `adaptive-icon-monochrome.png`, `splash-icon.png`, `favicon.png`); SVG cannot be the store icon.
 
-Shapes: `icon.png` 1024² opaque RGB (Apple rejects alpha); `adaptive-icon.png` and `adaptive-icon-monochrome.png` 1024² glyph-only on transparent, with the glyph well inside the 66% safe zone so launcher masks never clip it (the monochrome layer is white, for Android themed icons); `splash-icon.png` glyph-only on transparent over the `expo-splash-screen` plugin's `backgroundColor`; `favicon.png` 96² for `expo start --web`. `android.adaptiveIcon.backgroundColor` is `#1A1A1A`, the mark's own field.
+Shapes: `icon.png` 1024² opaque RGB (Apple rejects alpha); `adaptive-icon.png` and `adaptive-icon-monochrome.png` 1024² glyph-only on transparent, with the glyph well inside the 66% safe zone so launcher masks never clip it (the monochrome layer is white, for Android themed icons); `splash-icon.png` glyph-only on transparent over the `expo-splash-screen` plugin's `backgroundColor`; `favicon.png` 96² for `expo start --web`. `android.adaptiveIcon.backgroundColor` is `#1A1A1A`, the mark's spec'd field (the raster measures `#151515`; see §1).
 
 After the master PNG changes:
 

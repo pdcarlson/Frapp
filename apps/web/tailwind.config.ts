@@ -89,9 +89,18 @@ const config: Config = {
        * no component can reach, and screens keep writing `text-[12.5px]`.
        *
        * Each key pairs its size with the role's line height and weight, so
-       * `text-body` carries 16px/25px/400 rather than only the size. The values
-       * are read from the custom properties, not restated, so `signet.css`
-       * stays the one place they are written.
+       * `text-body` carries 16px/25px/400 rather than only the size.
+       *
+       * Sizes and weights are read from the custom properties. **Line heights
+       * are not, and cannot be for five of the six roles:** `foundations.md` §7
+       * states only `--text-body-line` (25px) — it calls that "the only one the
+       * scale states" — so `display` / `headline` / `title` / `label` /
+       * `caption` carry literals here that the type scale does not define.
+       * Those five values were chosen when these utilities landed, not derived
+       * from the spec, and `signet.css` is therefore *not* the one place they
+       * are written. Tracked as L-09 in
+       * `spec/ui/web-greenfield/tokens.md`; settle them there (or in §7)
+       * rather than editing one literal in place.
        */
       fontSize: {
         display: [
