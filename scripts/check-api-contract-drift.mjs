@@ -114,12 +114,13 @@ function run(command) {
     stdio: "inherit",
     env: {
       ...process.env,
-      // Placeholders: the OpenAPI export only builds the Swagger document and
-      // never calls these services. Real values are never needed. They must be
-      // present in the process env up front because some modules read them at
-      // import time (export-openapi.ts sets its own placeholders too late).
-      // Neutral strings (no `sk_`/`whsec_` prefixes) so secret scanners don't
-      // flag them.
+      // Placeholders: the OpenAPI export only builds the Swagger document.
+      // `onModuleInit` would retrieve STRIPE_PRICE_ID when STRIPE_SECRET_KEY
+      // looks real; `placeholder_value` is a documented skip, so CI still never
+      // hits live Stripe. They must be present in the process env up front
+      // because some modules read them at import time (export-openapi.ts sets
+      // its own placeholders too late). Neutral strings (no `sk_`/`whsec_`
+      // prefixes) so secret scanners don't flag them.
       SUPABASE_URL: process.env.SUPABASE_URL ?? "https://placeholder.supabase.co",
       SUPABASE_SERVICE_ROLE_KEY:
         process.env.SUPABASE_SERVICE_ROLE_KEY ?? "placeholder_value",

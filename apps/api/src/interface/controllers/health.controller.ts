@@ -8,6 +8,8 @@ import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { readDeployedCommit } from '../../infrastructure/observability/deployed-commit';
+import { StripePriceConsistencyService } from '../../infrastructure/billing/stripe-price-consistency.service';
+import { StripePriceAccountMismatchError } from '../../infrastructure/billing/stripe-price-consistency';
 import { HealthPayloadDto, type DependencyStatus } from '../dtos/health.dto';
 
 // The Supabase client (apps/api/src/infrastructure/supabase/supabase.provider.ts)
@@ -24,6 +26,7 @@ export class HealthController {
 
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    private readonly stripePriceConsistency: StripePriceConsistencyService,
   ) {}
 
   // Render's `healthCheckPath` (render.yaml) points at this route. It must
@@ -60,6 +63,22 @@ export class HealthController {
         code: 'DEGRADED',
         message: `database: ${payload.database}, storage: ${payload.storage}`,
       });
+    }
+
+    // Stripe is not a `/health` probe: Render's healthCheckPath must stay 2xx
+    // through a Stripe blip. Deploy smoke and production uptime poll this path,
+    // so a Price/account mismatch (resource_missing / inactive) 503s here —
+    // and `StripePriceConsistencyService.onModuleInit` already refused boot.
+    try {
+      await this.stripePriceConsistency.assertConfiguredPrice();
+    } catch (err) {
+      if (err instanceof StripePriceAccountMismatchError) {
+        throw new ServiceUnavailableException({
+          code: 'DEGRADED',
+          message: `database: ${payload.database}, storage: ${payload.storage}, billing: ${err.message}`,
+        });
+      }
+      throw err;
     }
 
     return payload;
