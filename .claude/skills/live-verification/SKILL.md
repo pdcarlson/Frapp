@@ -4,8 +4,9 @@ description: >
   Verify a change against the deployed staging environment — the live web dashboard, landing
   site, API, and hosted Supabase — instead of only the local stack. Use when a claim needs the
   real deployment to settle it: live Realtime/Presence, RLS as GoTrue actually enforces it,
-  a staging-only regression, "is staging actually serving the new build", or a visual check
-  against the deployed UI. Also read it before pointing Playwright, `curl`, or a Supabase
+  a staging-only regression, or "is staging actually serving the new build". Staging web
+  and landing custom domains are Vercel Authentication-gated (#1951) until Preview hosts
+  are excepted — not a correlated walkthrough target. Also read it before pointing Playwright, `curl`, or a Supabase
   client at any `frapp.live` or `supabase.co` host from a sandbox.
 ---
 
@@ -24,6 +25,8 @@ description: >
 > hosts were frozen at landing `2bf143b` and web `0372c6d`. Allow for the deploy to finish — CI
 > then a two-project build — before reading a host as stale. Canonical record: **ADR-21** in
 > [`spec/architecture/adr/adr-21.md`](../../../spec/architecture/adr/adr-21.md).
+> Deploy freshness is not Signet HTML: Vercel Authentication still gates those Preview
+> custom domains — [§3](#vercel-authentication).
 
 Sandbox sessions can reach **deployed staging** when the cloud environment's network
 allowlist carries the live-egress lines
@@ -56,7 +59,7 @@ generate it: `bash scripts/cloud-sandbox-egress-probe.sh`.
 
 | Manifest `status` | Meaning | Do |
 | ----------------- | ------- | -- |
-| `reachable` | the host answered (any HTTP code — `302` and `404` are normal here) | Proceed |
+| `reachable` | the host answered (any HTTP code). `302` and `404` mean the *socket* worked, not that Signet HTML loaded. On staging web/landing a 302 is often Vercel Authentication — see [§3](#vercel-authentication) | Proceed to the next gate; do not claim the UI loaded |
 | `blocked` | proxy refused CONNECT — host not allowlisted | Stop. Report as environment config (below) |
 | `timeout` / `no_dns` / `unknown` | the probe **could not tell** | Neither proceed nor report a block. Re-run the probe; if it stays inconclusive, say so in those words |
 
@@ -108,8 +111,46 @@ If a task appears to *require* production, it does not. Stop and ask the owner.
 
 ## 3. Authentication
 
-Egress alone gets an unauthenticated socket. Authenticated probes use the staging smoke
-account convention already established by `scripts/ci/staging-conformance.mjs`:
+Egress (§1) only proves the socket. Staging web and landing have **two** further gates:
+Vercel Authentication in front of the hostname, then Signet/Supabase auth inside the app.
+The API host `api-staging.frapp.live` is Render, not Vercel, and is not the first gate.
+
+### Vercel Authentication
+
+Unauthenticated `https://app.staging.frapp.live` and `https://staging.frapp.live` are **not**
+the Signet app today. They 302 to `https://vercel.com/sso-api` (`Login – Vercel`). That is
+**Vercel Authentication**, not Password Protection, not a Signet 401, and not a second
+product layer.
+
+Both Vercel projects store `ssoProtection.deploymentType = all_except_custom_domains`. On
+this Hobby plan, Vercel Authentication with Standard Protection still gates **Preview**
+deployments, including Preview custom domains whose `gitBranch=main` (those two staging
+hostnames). Production custom domains (`app.frapp.live`, `frapp.live`) are what the stored
+enum excepts. Do not read the field name as “every custom domain is public.”
+
+Human tracker: [#1951](https://github.com/pdcarlson/Frapp/issues/1951). An agent cannot
+except those hosts or upgrade the plan. Do not disable protection, do not generate a
+`protectionBypass`, do not call `update_project_deployment_protection`. Done when
+`curl -I https://app.staging.frapp.live/sign-in` is the Signet app, not `Login – Vercel`.
+
+**Observation (2026-09-10 ~21:03–21:08Z, Vercel REST + unauthenticated GET, redirect
+manual):** both staging custom domains and current Preview unique `*.vercel.app` hosts
+returned 302 `vercel.com/sso-api`. Password / Trusted IP / `protectionBypass` / Firewall
+were absent. Vercel MCP `get_access_to_vercel_url` / `web_fetch_vercel_url` returned 403
+(`Failed to create shareable URL` / `Failed to check deployment`) because the MCP
+principal is not on the Hobby team (`list_teams` empty). Unique Preview URLs are not an
+unauthenticated workaround. Do not re-probe those MCP tools until membership or protection
+actually changes.
+
+Until #1951 is cleared, a correlated web+API walkthrough, a Playwright run against
+`PLAYWRIGHT_BASE_URL=https://app.staging.frapp.live`, and a screenshot of “the deployed UI”
+are **blocked**, never passed. A preflight `reachable` with `http_code: 302` is this
+redirect, not the app.
+
+### Staging smoke credentials
+
+Authenticated Signet probes use the staging smoke account convention already established by
+`scripts/ci/staging-conformance.mjs`:
 `STAGING_SMOKE_USER_EMAIL` / `STAGING_SMOKE_USER_PASSWORD`, plus a staging project URL and
 anon key. In CI those come from two different places — the smoke pair are GitHub Actions
 secrets (`.github/workflows/staging-conformance.yml`), while `SUPABASE_URL` /
@@ -160,13 +201,19 @@ The cases where it beats the local stack:
   PGlite has no `anon` role. Read the job's output before deciding you need staging.
 - **`custom_access_token_hook` actually being enabled** — the exact drift class that went
   unnoticed in #805.
-- **Is staging serving this commit** — **for the API (Render staging) only.** Since the
-  2026-09-02 fence above, staging web and landing are frozen at a fixed build that no merge
-  advances, so the Vercel alias lag described in
-  [`vercel.md`](../../../docs/internal/ops/deployment/vercel.md) is no longer observable here —
-  those hosts always serve an old commit, and finding that they do proves nothing about yours.
+- **Is staging serving this commit** — **API:** `GET https://api-staging.frapp.live/health`
+  `commit` (Render). **Web/landing:** CI deploys them again (ADR-21 / #1578), but an
+  unauthenticated fetch of the custom domains returns Vercel Authentication HTML, not the
+  bundle, so it does not prove your commit. Read the aliased deployment via Vercel MCP/REST
+  instead. Alias lag when you *can* see the app:
+  [`vercel.md`](../../../docs/internal/ops/deployment/vercel.md).
 
 ### Playwright against the deployed UI
+
+Until [#1951](https://github.com/pdcarlson/Frapp/issues/1951) is cleared, this command does
+not load Signet. `PLAYWRIGHT_BASE_URL=https://app.staging.frapp.live` hits Vercel
+Authentication first ([§3](#vercel-authentication)); the page under
+test is `Login – Vercel`. Do not treat that run as a correlated walkthrough or a floor check.
 
 `apps/web/playwright.config.ts` already honours `PLAYWRIGHT_BASE_URL`; setting it skips the
 local `webServer` entirely. No code change needed:
@@ -197,18 +244,17 @@ and also what a genuinely regressed staging redirect, an expired session, or a V
 looks like — so the result distinguishes none of them, and it is never evidence the deployed
 pages hold 375px. Read the URL each test actually landed on before concluding anything.
 
-§3 notes no staging credential is provisioned today, so in practice pointing this suite at
-staging measures zero protected routes. Until that changes, treat it as a reachability probe,
-not a floor check: **the 375px gate is the local `web-responsive-floor` run, and a staging run
-is not a substitute for it.** For a visual read on deployed staging, take a screenshot and look
-at it.
+§3 notes Vercel Authentication still gates the hostname, and no staging smoke credential is
+provisioned today, so pointing this suite at staging measures zero protected routes. Until
+both change, treat it as a reachability probe, not a floor check: **the 375px gate is the
+local `web-responsive-floor` run, and a staging run is not a substitute for it.** A screenshot
+of those custom domains today is `Login – Vercel`, not the deployed Signet UI.
 
 There is no pixel-baseline suite to point at staging any more — `web-visual-regression`,
 its spec and its committed PNGs were deleted (see
-[`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)). For a visual check
-against deployed staging, take a screenshot and look at it — but per the 2026-09-02 fence at the
-top of this file, that screenshot shows the **frozen** web/landing build, not your commit, so it
-reads the deployed UI's current state and never verifies a change you merged.
+[`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)). When #1951 is cleared, a
+screenshot of the aliased host is the current CI build (ADR-21), not the 2026-09-01–09-04
+frozen window.
 
 ## 5. Writes and cleanup
 
