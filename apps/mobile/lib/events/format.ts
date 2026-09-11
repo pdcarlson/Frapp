@@ -10,6 +10,8 @@
  * force one of the two surfaces to render the wrong register.
  */
 
+import { dayDelta } from "@repo/formatting";
+
 /**
  * Grace minutes after `end_time` during which check-in stays open.
  *
@@ -23,13 +25,6 @@
 export const CHECK_IN_GRACE_MINUTES = 15;
 
 const MS_PER_MINUTE = 60 * 1000;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-function dayDelta(from: Date, to: Date): number {
-  const a = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
-  const b = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
-  return Math.round((b - a) / MS_PER_DAY);
-}
 
 function clock(date: Date): string {
   return date.toLocaleTimeString(undefined, {
