@@ -23,21 +23,28 @@ and does not restate them.
 
 `--surface-1` is now the mark's own field, so locked emblem B sits flush on the raised surface.
 
+> **This rationale does not hold.** The committed mark's field is `#151515` and its gold is
+> `#DDA220`; `#1A1A1A` / `#DDB844` describe the superseded SVG reconstruction. The rung is left as
+> shipped because correcting it is a brand decision, not a lane-1 edit. See L-08.
+
 ### Accent seed
 
-The house default seed moved from `#F2B72E` to `#DDB844`, the mark gold. A chapter with no accent of
-its own now resolves to the same gold the crest is drawn in.
+The house default seed moved from `#F2B72E` to `#DDB844`, the value the spec calls the mark gold.
 
 Three golds now coexist, and they are not interchangeable:
 
 | Gold | Value | What it is |
 | ---- | ----- | ---------- |
 | House gold | `#EFB63B` | Signet's own brand accent. Paints the Ask and AI surface. Never retints per chapter. Unchanged. |
-| Mark gold | `#DDB844` | The emblem. Never takes the chapter accent. Unchanged. |
-| Accent seed | `#DDB844` | The default fed to the accent engine. **Changed**, and now equal to the mark gold. |
+| Mark gold | `#DDB844` *(spec'd)* | The emblem, per [`../brand-identity.md`](../brand-identity.md) §2. Never takes the chapter accent. **The committed raster actually measures `#DDA220` — see L-08.** |
+| Accent seed | `#DDB844` | The default fed to the accent engine. **Changed** to equal the *spec'd* mark gold. |
 
-The seed being equal to the mark gold is a coincidence of value, not an identity. A chapter that
-picks its own accent moves the seed and leaves both other golds where they are.
+The seed being equal to the spec'd mark gold is a coincidence of value, not an identity. A chapter
+that picks its own accent moves the seed and leaves both other golds where they are.
+
+Note what L-08 does to the intent here: the seed was moved so an unthemed chapter would resolve to
+"the same gold the crest is drawn in." The crest is drawn in `#DDA220`, so it does not — the seed
+matches the spec's description of the mark, not the mark.
 
 ### Type scale, grid, and scrollbars
 
@@ -72,10 +79,18 @@ measurements.
 `FOCUS_RING_OFFSET` drew its ring in `--ring` (accent-8). The ring is the **entire** focus indicator
 in that recipe, so it has to clear the 3:1 non-text floor unaided. It is not a two-component recipe:
 `ui/switch.tsx` and `ui/tabs.tsx` are the archetypes, but `settings-fields-tab`, `settings-modules-tab`,
-`chat-admin-page`, `members-directory`, `roles-page`, `documents-page` and `chapter-wizard` all use it
-too — nine files. Do not delete the constant on the assumption that removing Switch and Tabs styling
-orphans it. Its margin was always thin (3.05:1 against a 3.0 floor on the tightest seed) and the
-lighter background consumed it: four of the nineteen seeded chapter accents dropped below, meaning
+`chat-admin-page`, `members-directory`, `roles-page` and `documents-page` all use it
+too — eight files, across nine usage sites (`documents-page` applies it twice). Nine is where the
+old count came from. (`chapter-wizard` is not one of them: it imports and applies `FOCUS_RING`, and
+names `FOCUS_RING_OFFSET` only inside a JSX comment. That comment cites
+[#1215](https://github.com/pdcarlson/Frapp/issues/1215) in the present tense, but #1215 closed
+completed on 2026-08-28 via [#1348](https://github.com/pdcarlson/Frapp/pull/1348), and lane 1 has
+since moved that ring again — accent-8 to accent-11. The comment is stale twice over; L-07 owns what
+is left of it.)
+
+Do not delete the constant on the assumption that removing Switch and Tabs styling orphans it. Its
+margin was always thin (3.05:1 against a 3.0 floor on the tightest seed) and the lighter background
+consumed it: four of the nineteen seeded chapter accents dropped below, meaning
 keyboard users on those chapters would have had no conforming indicator.
 
 The ring moved to `--accent-text` (accent-11), whose worst seed is 8.48:1. The guard was not
@@ -84,8 +99,13 @@ loosened; the token moved up the scale. Details in `apps/web/components/ui/focus
 ### One duplicate removed
 
 `apps/web/components/onboarding/chapter-wizard.tsx` carried a bare `#F2B72E` literal as its default
-accent. It now imports `HOUSE_SEED`. That literal was exactly the kind that would have silently
-desynced on this change.
+accent. It now reads `signetDarkTokens.color.gold.seed` from `@repo/theme/signet`. That literal was
+exactly the kind that would have silently desynced on this change.
+
+It deliberately does **not** import `HOUSE_SEED` from `@repo/chapter-theme`, and the file says why in
+place: that package's `index.ts` re-exports through a `./signet.js` specifier Turbopack cannot
+resolve, so the import type-checks and passes vitest and then fails `next build`. Both constants
+carry the same value. Reaching for the more obvious-looking one reintroduces a build failure.
 
 ---
 
@@ -94,12 +114,27 @@ desynced on this change.
 Unresolved. Each needs the framework artifact in [`reference/`](reference/README.md), a decision, or
 its own issue. **A lane that trips over one of these should resolve it here, not in passing.**
 
+L-08 and L-09 reach past this epic, so they carry issues —
+[#2153](https://github.com/pdcarlson/Frapp/issues/2153) and
+[#2154](https://github.com/pdcarlson/Frapp/issues/2154) — and outlive this directory, which is
+retired when [#2140](https://github.com/pdcarlson/Frapp/issues/2140) closes. The rest are lane-1
+consequences that a greenfield lane resolves here.
+
 ### L-01 — The ladder is not artifact-backed
 
 The values above came from the bullet in #2143, not from a committed reference. The repo's own rule
 ([`../README.md`](../README.md)) is that committed HTML beats written docs, and there is no
 committed HTML for this ladder. If the framework board disagrees with these four hexes, the board
 wins and this lands again.
+
+**Still open, and the case for the artifact is now stronger than when this was written.** The one
+rung the lane justified on its own merits — `--surface-1` at `#1A1A1A`, "the mark's own field, so
+locked emblem B sits flush" — does not survive measurement against the committed mark. See L-08.
+That rung is also the one L-06 blames for the collapsed middle step, so the board is now settling
+three questions at once rather than one: the four hexes, the mark's real field, and the pitch.
+
+Getting the artifact in is blocked on handover, not on a decision. See
+[`reference/README.md`](reference/README.md) § How to get an artifact in.
 
 ### L-02 — Chapter palettes need recomputing
 
@@ -116,8 +151,9 @@ Nothing in `supabase/` bakes in a derived palette either — the directory seed 
 grepping the old derived hexes across `supabase/` returns nothing.
 
 **What is wrong is cosmetic and visible:** a chapter that never picked an accent has a row derived
-from `#F2B72E`, so it renders `--primary: #F2B72E` beside a mark drawn in `#DDB844` and a Settings
-hex placeholder that now reads `#DDB844` — two nearly-but-not-quite matching golds on one screen,
+from `#F2B72E`, so it renders `--primary: #F2B72E` beside a mark drawn in `#DDA220` (L-08) and a
+Settings hex placeholder that now reads `#DDB844` — three nearly-but-not-quite matching golds on one
+screen,
 indefinitely, until something rewrites the row. A backfill was already outstanding for rows written
 before the map existed; this widens it.
 
@@ -144,8 +180,9 @@ should win. See [`README.md`](README.md) §3.
 
 ### L-05 — The `gold-ask-*` family may lose its only consumer
 
-If lane 3 or 7 removes the Ask pill, five tokens go with it. Tracked on the
-[deletion checklist](deletion-checklist.md) §4 rather than pre-emptively removed here.
+If lane 3 or 7 removes the Ask pill, three tokens go with it — `--gold-ask-fill`, `--gold-ask-border`
+and `--gold-ask-text`. Tracked on the [deletion checklist](deletion-checklist.md) §4 rather than
+pre-emptively removed here.
 
 ---
 
@@ -159,7 +196,7 @@ The re-pitch was not uniform. Adjacent-step contrast, old to new:
 | `--card` on `--surface-1` | 1.0624 | **1.0486** |
 | `--popover` on `--card` | 1.0847 | 1.1046 |
 
-Pinning `--surface-1` to the mark's field `#1A1A1A` is what costs the middle rung: it is the only
+Pinning `--surface-1` to `#1A1A1A` is what costs the middle rung: it is the only
 achromatic value in an otherwise warm ladder, so it does not sit on the same curve as its
 neighbours. §10's rule is that elevation **is** luminance, and 1.0486:1 is under the 1.15 the
 contrast fixture treats as "reads as the same colour" — so a `Card` placed in a `--surface-1` region
@@ -167,6 +204,10 @@ has no perceptible elevation.
 
 Nothing guards a **minimum** adjacent-step ratio; the washout guards are `toBeLessThan` pins
 recording that two surfaces alias, so they cannot catch a rung getting tighter.
+
+**L-08 dissolves the premise of that paragraph.** `#1A1A1A` was adopted as the mark's field and is
+not it, so nothing brand-related pins this rung — moving `--surface-1` is on the table alongside the
+`--card` alternative below, and a lane picking this up should not treat it as locked.
 
 One live call site was affected and is fixed at the call site rather than by moving a token
 (`chapter-switcher.tsx`, whose row hover now skips to `--popover`). The ladder itself is left as
@@ -189,14 +230,119 @@ asserts only that the recipe *string* contains `border-primary`; there is no con
 conforming token for the bordered recipe too, which is the same decision lane 1 made for the offset
 recipe and should be made deliberately rather than folded into a token PR.
 
+### L-08 — The mark's field and gold in the spec do not match the committed mark
+
+The ladder pinned `--surface-1` to `#1A1A1A` on the stated grounds that it is the mark's own field.
+It is not, and the pair `#1A1A1A` / `#DDB844` does not describe either committed raster.
+
+Decoded from the committed assets:
+
+Full pixel census of both files as committed at `d43e977`, decoded 2026-09-11:
+
+| Asset | Field | Gold | `#1A1A1A` | `#DDB844` |
+| ----- | ----- | ---- | --------- | --------- |
+| `signet-emblem-B-tile.png` (1024², the in-app tile) | `#151515` 41.87%, `#161616` 19.59% | `#DDA220` 9.28% | 26 px | **0 px** |
+| `signet-emblem-B-locked.png` (1280×720, the named master) | `#0A0A0A` 46.53% letterbox, `#151515` 9.48% tile face | `#DDA220` 2.13% | 17 px | **0 px** |
+
+Neither spec'd value is present in any meaningful quantity: `#DDB844` occurs in **zero** pixels of
+either file, and the `#1A1A1A` counts are antialiasing noise against a million-pixel image. The gold
+gap is not a rounding difference — `#DDA220` has relative luminance 0.4132 against `#DDB844`'s
+0.5007.
+
+Reproduce with a full decode, not a sample: both files are 8-bit RGB PNGs, so any zlib-inflate plus
+un-filter pass will do — `python3 -c` with `zlib` and `struct` is enough, and sampling every *n*-th
+pixel understates the rare-colour counts.
+
+`#1A1A1A` / `#DDB844` are exactly the values of the superseded SVG reconstruction, which
+[`../assets.md`](../assets.md) itself labels "not the shipping mark."
+
+**They did not drift apart — they never agreed.** `267dafa`
+([#2121](https://github.com/pdcarlson/Frapp/pull/2121)) is the only commit that has ever touched
+either raster, and it *added* them; there was no prior raster to replace. The same commit introduced
+the hex rows (before it, §2 read "Placeholder mark | Rounded-square 'S' tile on house gold" with no
+field or gold) and rewrote both SVGs, which had held `#0F172A` / `#60A5FA`. Raster, SVG and spec were
+authored in one pass and disagreed from birth. That matters for the remedy: ignoring or deleting the
+SVG does not restore a lost provenance, because the SVG was generated in the same pass and is not an
+upstream the raster drifted from. **This list is the work list for whichever
+direction the decision goes:** [`../brand-identity.md`](../brand-identity.md) §2,
+[`../assets.md`](../assets.md) §1 and §3,
+[`../design-system/accent-engine.md`](../design-system/accent-engine.md) §3 ("the same gold the crest
+is drawn in"), this file's own §1 "Three golds" table and L-02, plus `signet-mark.tsx`,
+`auth-screen.tsx`, `frapp-lockup.tsx`, `opengraph-image.tsx` and `apps/mobile/app.json` (field only;
+it carries no gold). Tests assert the literals rather than the pixels, so they move too.
+
+**The one entry on that list that is executable, not prose:** `scripts/rasterize-brand-assets.mjs`
+declares its own `FIELD` (`#1A1A1A`) and `GOLD` (`#DDB844`) constants. `FIELD` is the `.flatten()`
+background under every generated icon, and `GOLD` is the centroid of a `dr²+dg²+db² < 90²` classifier
+that extracts the glyph for the Android monochrome adaptive icon. The real gold sits 42.2 units from
+that centroid — inside the radius, so it works today, with roughly 48 units of unlabelled margin. A
+future re-export that shifts the gold past it produces a silently **empty** monochrome icon, and
+nothing catches that: the script has no test, and `check:brand-assets` only compares hashes.
+
+Two consequences for this lane specifically:
+
+- **The flush claim fails as written.** `#151515` on `#1A1A1A` is a slightly darker patch, not flush.
+- **Nothing in the product actually reads the rung as the mark's field.** `signet-mark.tsx` sets its
+  own backdrop from a local `const FIELD = "#1A1A1A"` (`:14`), not from `var(--surface-1)`, and then
+  covers it entirely with the opaque raster (`fill` + `object-cover`) — though not always: the
+  `<Image>` carries no `priority`, so it is lazily loaded, and during first paint or on any fetch
+  failure that `#1A1A1A` backdrop *is* the rendered mark. So the token and the mark are not wired
+  together at all: the rung's stated purpose is served by a hardcoded literal that is itself the
+  stale value. What `--surface-1` governs is the surface the tile *abuts*, which is where
+  the `#151515` vs `#1A1A1A` mismatch is actually visible — and it costs L-06's middle step to do it.
+
+**This needs a decision, not a doc fix, and the two directions are not symmetric.**
+
+- **Re-export the mark** at `#1A1A1A` / `#DDB844` so the spec becomes true.
+  [`../assets.md`](../assets.md) §8 makes this mechanical, but it needs Design to supply a lock
+  actually drawn in those values.
+- **Re-measure the spec** to `#151515` / `#DDA220` — and this is the trap. **Those are not brand
+  values; they are compression artifacts.** `scripts/rasterize-brand-assets.mjs` says so in its own
+  docstring: "Design's upload is a 16:9 letterbox around a centered charcoal tile. **JPEG letterbox
+  is not pure black (~rgb 10)**", and the file guards against "JPEG-as-png" leftovers by name. The
+  evidence is in the pixels: 24,069 distinct colours in a two-colour design, 8×8 DCT block-boundary
+  discontinuity, a chroma-subsampling signature, and only ~38% of gold pixels landing exactly on
+  `#DDA220`. The tile is then cropped and upscaled 2.26×, so its modal colours are artifacts of
+  artifacts. Writing them into the brand spec would pin the mark to JPEG noise and make the next
+  clean vector export *fail* the spec it was supposed to define.
+
+So the measured values are evidence that the spec and the asset disagree — **not** a candidate
+replacement for the spec. It is a brand call, not a lane-1 correction, so this lane records it and
+changes nothing. Tracked as [#2153](https://github.com/pdcarlson/Frapp/issues/2153).
+
+Nothing enforces either direction today: `scripts/check-brand-assets.mjs` compares the master against
+its synced copies by sha256 and never reads a pixel, so a re-export that misses the spec'd hexes
+passes the same as one that hits them.
+
+### L-09 — Five `--text-*` line heights are invented values
+
+Tracked as [#2154](https://github.com/pdcarlson/Frapp/issues/2154).
+
+§1 above presents the `--text-*` utilities as the wiring half of an already-specified scale, and §3
+claimed no new value was invented. Both are true of the sizes and weights and false of the line
+heights. `foundations.md` §7 states exactly one — `--text-body-line` (25px), which it calls "the only
+one the scale states" — so `display`, `headline`, `title`, `label` and `caption` carry literals in
+`apps/web/tailwind.config.ts` (`1.15`, `1.2`, `1.3`, …) that no spec defines. The block's own comment
+claimed the values were read from the custom properties; that comment is corrected in this change.
+
+Either promote the five into `foundations.md` §7 and `signet.css` as real tokens, or state in §7 that
+the non-body roles take a ratio chosen at the utility layer. Leaving it as-is means a screen that
+matches the spec and a screen that matches the utilities can disagree, with nothing to arbitrate.
+
+---
+
 ## 3. What this lane deliberately did not do
 
 - **No component or screen was restyled.** The ladder moved under the existing UI; every surface
   picked up the new values through the tokens it already consumed.
-- **No new token was invented for a value the spec did not already carry**, except the scrollbar
-  family, which is recorded as a new section rather than slipped in.
+- **Almost no new token was invented for a value the spec did not already carry.** The scrollbar
+  family is the recorded exception, added as a new section rather than slipped in. One further
+  exception was *not* recorded at the time and is now L-09: five of the six `--text-*` line heights
+  are literals in `apps/web/tailwind.config.ts` that the type scale never states.
 - **No guard was loosened to make the change pass.** Where a measurement moved, the pin moved with
   it and says why. Where a floor was genuinely breached, the implementation changed instead. The one
   threshold that was raised, `INDISTINGUISHABLE` in `apps/web/tests/signet-contrast.ts`, is a
-  perceptibility heuristic rather than a gate, and it replaced three scattered literals that all had
-  to move together.
+  perceptibility heuristic rather than a gate, and it replaced four scattered literals that all had
+  to move together — one each in `table-contrast`, `elevation-contrast`, `profile-contrast` and
+  `status-contrast`, as the fixture's own docstring records. (Named by file, not by line: the
+  docstring's own line numbers have already drifted.)

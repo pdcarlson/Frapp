@@ -8,8 +8,10 @@ This list is the acceptance criterion, not a suggestion. It restates the
 [cutover rule](../../../.claude/skills/signet-cutover/SKILL.md): a change that supersedes an
 implementation deletes it in the same change. Git history is the backup.
 
-Every path and line count below was read out of the tree at the time this lane landed. Treat them as
-a starting map, not as current truth, and re-read before deleting.
+Every path and line count below was read out of the tree **this lane branched from**, not out of the
+tree the lane left behind: lane 1 edited three of the files it counts, so a few numbers were already
+stale in the commit that introduced them. They are refreshed here against `main`. Treat them as a
+starting map, not as current truth, and re-read before deleting.
 
 ---
 
@@ -64,7 +66,7 @@ current palette already fixed once.
 
 | File | Lines | Note |
 | ---- | ----- | ---- |
-| `apps/web/components/layout/ask-pill.tsx` | 102 | Sole importer `dashboard-shell.tsx:30`, mounted at `:481` |
+| `apps/web/components/layout/ask-pill.tsx` | 102 | Sole importer `dashboard-shell.tsx:36`, mounted at `:497` |
 
 - [ ] Decide: remove the Ask pill, or keep it and restyle it in the greenfield top bar
 - [ ] If removed, the `gold-ask-*` tokens lose their only consumer. Remove them from `signet.css`
@@ -79,11 +81,11 @@ current palette already fixed once.
 
 | File | Lines |
 | ---- | ----- |
-| `apps/web/components/layout/dashboard-shell.tsx` | 498 |
+| `apps/web/components/layout/dashboard-shell.tsx` | 514 |
 
 Seven satellites, none imported outside the shell: `account-menu.tsx` (136),
-`chapter-switcher.tsx` (215), `chapter-lockup.tsx` (141), `beta-badge.tsx` (90),
-`dashboard-notification-drawer.tsx` (232), `ask-pill.tsx` (102), `dashboard-command-menu.tsx` (402).
+`chapter-switcher.tsx` (225), `chapter-lockup.tsx` (141), `beta-badge.tsx` (90),
+`dashboard-notification-drawer.tsx` (229), `ask-pill.tsx` (102), `dashboard-command-menu.tsx` (402).
 
 - [ ] Each satellite either rebuilt or deleted. None left rendering beside a replacement
 - [ ] `nav-config.ts`, `protected-nav-item.tsx`, and the account menu's shared bottom region survive
