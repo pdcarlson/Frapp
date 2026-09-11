@@ -76,7 +76,10 @@
 //   VERCEL_TEAM_ID            — required (used as the CLI's VERCEL_ORG_ID)
 //   VERCEL_WEB_PROJECT_ID     — required
 //   VERCEL_LANDING_PROJECT_ID — required
-//   DEPLOY_SHA                — required, the commit being shipped
+//   DEPLOY_SHA                — required, the commit being shipped. Stamped as
+//                               `meta.githubCommitSha` on upload, and injected
+//                               as `VERCEL_GIT_COMMIT_SHA` during `vercel build`
+//                               so web/landing Sentry `release` matches that SHA.
 //   DEPLOY_TARGET             — optional, `production` (default) or `preview`
 //   DEPLOY_PHASE              — optional, `build` | `upload` | `all` (default).
 //                               `build` and `upload` need
@@ -433,6 +436,7 @@ export function stashDirFor(stashRoot, label) {
 export async function buildVercelProjects({
   apiKey,
   projects,
+  sha,
   target = VERCEL_TARGET_PRODUCTION,
   teamId,
   cwd,
@@ -454,6 +458,7 @@ export async function buildVercelProjects({
     try {
       await buildVercelProject({
         target,
+        sha,
         token: apiKey,
         orgId: teamId,
         projectId: project.projectId,
@@ -665,10 +670,11 @@ async function main() {
 
   const apiKey = requireEnv("VERCEL_API_KEY");
   const teamId = requireEnv("VERCEL_TEAM_ID");
+  const sha = requireEnv("DEPLOY_SHA");
   const stashRoot = phase === DEPLOY_PHASE_ALL ? null : requireEnv("VERCEL_BUILD_STASH_DIR");
 
   if (phase === DEPLOY_PHASE_BUILD) {
-    const built = await buildVercelProjects({ apiKey, projects, target, teamId, stashRoot });
+    const built = await buildVercelProjects({ apiKey, projects, sha, target, teamId, stashRoot });
     for (const result of built.results) {
       if (result.status === "success") {
         console.log(`✅ [${result.label}] Built for ${target}; output stashed at ${result.stashDir}.`);
@@ -683,7 +689,7 @@ async function main() {
   const outcome = await deployVercel({
     apiKey,
     projects,
-    sha: requireEnv("DEPLOY_SHA"),
+    sha,
     ref: process.env.DEPLOY_REF || "main",
     target,
     teamId,

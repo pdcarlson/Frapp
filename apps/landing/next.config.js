@@ -12,6 +12,12 @@ assertProductionLandingAppEnv({
   appUrl: process.env.NEXT_PUBLIC_APP_URL,
 });
 
+/**
+ * Git SHA used as Sentry `release` (runtime init AND source-map upload).
+ * ADR-21 `vercel build` injects `VERCEL_GIT_COMMIT_SHA` from `DEPLOY_SHA`.
+ */
+const sentryGitSha = process.env.VERCEL_GIT_COMMIT_SHA || "";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@repo/theme", "@repo/validation", "@repo/observability"],
@@ -68,13 +74,11 @@ const nextConfig = {
     NEXT_PUBLIC_SENTRY_ENVIRONMENT: process.env.VERCEL_ENV ?? "development",
     /**
      * Sentry `release`, **derived** from `VERCEL_GIT_COMMIT_SHA`. Empty
-     * locally/CI when that SHA is unset. Do not add `NEXT_PUBLIC_SENTRY_RELEASE`
-     * to Infisical.
+     * locally and in non-deploy CI. Staging/production `vercel build`
+     * injects that variable from `DEPLOY_SHA` (ADR-21 runner path).
+     * Do not add `NEXT_PUBLIC_SENTRY_RELEASE` to Infisical.
      */
-    NEXT_PUBLIC_SENTRY_RELEASE:
-      process.env.VERCEL_GIT_COMMIT_SHA ||
-      process.env.NEXT_PUBLIC_SENTRY_RELEASE ||
-      "",
+    NEXT_PUBLIC_SENTRY_RELEASE: sentryGitSha || "",
   },
 };
 
@@ -94,6 +98,7 @@ export default withSentryConfig(
   getAnonymousSentryBuildConfig({
     project: "frapp-landing",
     authToken: process.env.SENTRY_AUTH_TOKEN,
+    release: sentryGitSha,
     errorHandler(err) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(
