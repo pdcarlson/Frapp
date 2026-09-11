@@ -15,9 +15,16 @@ import { cn } from "@/lib/utils";
  *
  * The board's note on that option is the whole specification:
  *
- * > r20 sheet on the popover step, 44px fields so they read one level below.
- * > Errors inline on touched fields; Upload stays enabled. Drop zone collapses
- * > to a file row once a file is chosen. No instructional paragraph.
+ * > r20 sheet on the popover step, 44px fields on the nav step so they read
+ * > one level below. Errors inline on touched fields; Upload stays enabled.
+ * > Drop zone collapses to a file row once a file is chosen. No instructional
+ * > paragraph.
+ *
+ * "On the nav step" is `--surface-1`, and it is already what `Input`,
+ * `Textarea` and `SelectTrigger` paint (`bg-surface-1`) — so the fields need
+ * only their height changed here, not their fill. An earlier draft of this
+ * comment dropped that clause from the quote, which made the board look vaguer
+ * about the ladder than it is.
  *
  * Two consumers, `/documents` and `/backwork`, which is why this is a module
  * rather than a recipe copied into both. They previously carried two spellings
@@ -168,79 +175,62 @@ export function UploadSheetFooter({
 }
 
 /**
- * Label, control, and the inline error under it.
+ * Label and control. The plain field of the sheet.
  *
- * The board draws the error as 12.5px `#FF7B72` directly beneath the field,
- * with the field's own hairline swapping to `#F85149` — no icon, no filled
- * red block. The border half is the caller's, because it belongs on the
- * control element: spread {@link fieldErrorProps} onto it, which also carries
- * the `aria-invalid` and `aria-describedby` that make the error reachable to a
- * screen reader rather than merely visible.
+ * **It carries no error slot, and that is a deliberate subtraction.** The board
+ * draws an inline "Semester is required" under a metadata field in `1j`, so the
+ * grammar is specified — but no metadata field on either of this module's two
+ * screens can produce that error: `/backwork` states outright that every field
+ * except the file is optional, and `/documents` is the same. The only field
+ * with a validation rule is the file, and {@link UploadFileField} renders its
+ * error itself.
  *
- * `role="alert"` rather than a live region on the form: these errors appear on
- * submit and on change of the field they describe, so they are announced when
- * they land and there is nothing to poll.
+ * An `error` prop here, plus the `aria-invalid`/`aria-describedby` helper that
+ * has to accompany it, was written first and had **zero** callers — an API
+ * exercised only by its own test, which is the dead code the cutover rule bans
+ * and the shape that silently drifts because nothing runs it. The lane that
+ * adds the first required metadata field adds the recipe back, against a field
+ * that actually uses it.
  */
 export function UploadField({
   id,
   label,
-  error,
   className,
   children,
 }: {
   id: string;
   label: React.ReactNode;
-  /** Rendered when set. Nothing is reserved for it when it is not. */
-  error?: string | null;
   className?: string;
   children: React.ReactNode;
 }) {
   /*
     `content-start`, and it is not cosmetic tidying. These sit in a
-    `sm:grid-cols-2` row, so a cell whose sibling has an error is the taller of
-    the two; without this the shorter cell's rows stretch to match and its
-    input floats ~10px below its neighbour's, so one form row renders at two
-    baselines the moment anything goes wrong. Caught on screen, not in a test.
+    `sm:grid-cols-2` row, so a cell taller than its neighbour — a wrapped label,
+    a `Textarea` — makes the shorter cell's rows stretch to match, floating its
+    input below its neighbour's and rendering one form row at two baselines.
+    Caught on screen, not in a test.
   */
   return (
     <div className={cn("grid content-start gap-1", className)}>
       <Label htmlFor={id}>{label}</Label>
       {children}
-      {error ? (
-        <p
-          id={fieldErrorId(id)}
-          role="alert"
-          className="text-[12.5px] text-destructive-text"
-        >
-          {error}
-        </p>
-      ) : null}
     </div>
   );
 }
 
-export function fieldErrorId(id: string): string {
+/**
+ * The id the file field's error is announced under. Module-private on purpose:
+ * it exists to tie {@link UploadFileField}'s `role="alert"` to its input's
+ * `aria-describedby`, and exporting it would invite a second field to
+ * hand-roll the half of the error state that component already owns.
+ */
+function fieldErrorId(id: string): string {
   return `${id}-error`;
 }
 
-/**
- * The control half of {@link UploadField}'s error state: the hairline swap and
- * the two ARIA attributes, spelled once so a field cannot ship the red border
- * without the announcement or the other way round.
- *
- * `aria-invalid` is written as a string because that is what the attribute
- * takes; React renders the boolean form correctly too, but a `false` becomes
- * `aria-invalid="false"` rather than being dropped, which is a different claim
- * from saying nothing.
- */
-export function fieldErrorProps(id: string, error?: string | null) {
-  return error
-    ? ({
-        "aria-invalid": "true",
-        "aria-describedby": fieldErrorId(id),
-        className: "border-destructive",
-      } as const)
-    : ({} as const);
+/** The id the file field's accepted types and size cap are announced under. */
+function fieldHintId(id: string): string {
+  return `${id}-hint`;
 }
 
 function fileExtensionLabel(name: string): string | null {
@@ -334,7 +324,17 @@ export function UploadFileField({
         disabled={disabled}
         className="sr-only"
         aria-invalid={error ? "true" : undefined}
-        aria-describedby={error ? fieldErrorId(id) : undefined}
+        /*
+          The hint is ALWAYS referenced, not only when it is visible. It
+          replaces the `DialogDescription` the board deletes, and Radix used to
+          wire that one to the dialog automatically — so dropping the paragraph
+          without this took the size cap and the allowed types away from a
+          screen-reader user entirely. They would have met the constraint for
+          the first time as a rejection.
+        */
+        aria-describedby={
+          error ? `${fieldHintId(id)} ${fieldErrorId(id)}` : fieldHintId(id)
+        }
         onChange={(event) => onSelect(event.target.files?.[0] ?? null)}
       />
     </>
@@ -378,10 +378,28 @@ export function UploadFileField({
         ) : (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             {picker}
-            <p className="min-w-0 flex-1 text-[12.5px] text-muted">{hint}</p>
+            {/*
+              Rendered here when the well is empty and, below, `sr-only` once a
+              file is chosen — one node either way, so the id the input points
+              at always resolves and is never duplicated. It goes visually quiet
+              rather than away because the board draws the chosen state as a
+              file row and nothing else, while the constraint still governs the
+              Replace that state offers.
+            */}
+            <p
+              id={fieldHintId(id)}
+              className="min-w-0 flex-1 text-[12.5px] text-muted"
+            >
+              {hint}
+            </p>
           </div>
         )}
       </div>
+      {file ? (
+        <p id={fieldHintId(id)} className="sr-only">
+          {hint}
+        </p>
+      ) : null}
       {error ? (
         <p
           id={fieldErrorId(id)}

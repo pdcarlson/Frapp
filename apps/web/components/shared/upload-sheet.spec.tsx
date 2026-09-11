@@ -11,8 +11,6 @@ import {
   UploadSheetContent,
   UploadSheetFooter,
   UploadSheetTitle,
-  fieldErrorId,
-  fieldErrorProps,
 } from "@/components/shared/upload-sheet";
 
 /*
@@ -21,9 +19,10 @@ import {
  * (`/documents`, `/backwork`) pin what they do with it; this suite pins what it
  * is, so the next screen to adopt it inherits a contract rather than a shape.
  *
- * Three of the four cases here are regressions that already happened once
- * during the lane, in review rather than in production — they are written down
- * because each was invisible on screen.
+ * Two of the six cases are regressions that already happened once during the
+ * lane, caught in review rather than in production, and are written down
+ * because neither was visible on screen: the accessible name concatenating
+ * across two labels, and Radix warning about a description the board deletes.
  */
 
 function Sheet({
@@ -49,8 +48,8 @@ function Sheet({
             error={error}
             onSelect={onSelect}
           />
-          <UploadField id="test-title" label="Title" error={error}>
-            <Input id="test-title" {...fieldErrorProps("test-title", error)} />
+          <UploadField id="test-title" label="Title">
+            <Input id="test-title" />
           </UploadField>
         </UploadSheetBody>
         <UploadSheetFooter>
@@ -102,43 +101,54 @@ describe("upload sheet", () => {
     expect(screen.getByLabelText(/^file$/i)).toHaveAccessibleName("File");
   });
 
-  it("announces an inline error and points the control at it", () => {
+  it("announces the file error alongside the constraint, not instead of it", () => {
     render(<Sheet error="Choose a file to upload." />);
 
-    // Both fields render the error, and both wire the control to it: a red
-    // border a screen reader cannot reach is half an error state.
-    const alerts = screen.getAllByRole("alert");
-    expect(alerts).toHaveLength(2);
-    for (const alert of alerts) {
-      expect(alert).toHaveTextContent("Choose a file to upload.");
-    }
-
-    const title = screen.getByLabelText(/^title$/i);
-    expect(title).toHaveAttribute("aria-invalid", "true");
-    expect(title).toHaveAttribute(
-      "aria-describedby",
-      fieldErrorId("test-title"),
-    );
-    expect(title).toHaveAccessibleDescription("Choose a file to upload.");
+    // The red hairline and the announcement are one state, not two: a border a
+    // screen reader cannot reach is half an error.
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Choose a file to upload.");
 
     const fileInput = screen.getByLabelText(/^file$/i);
     expect(fileInput).toHaveAttribute("aria-invalid", "true");
-    expect(fileInput).toHaveAccessibleDescription("Choose a file to upload.");
+    // Both, in that order. An error that REPLACED the description would take
+    // the size cap away at the moment it is most needed — the member has just
+    // broken it and is about to choose again.
+    expect(fileInput).toHaveAccessibleDescription(
+      "Up to 25 MB. Choose a file to upload.",
+    );
   });
 
-  it("says nothing about validity when there is no error", () => {
+  it("describes the input by its constraint even with nothing wrong", () => {
     /*
+      This replaces the `DialogDescription` the board deletes, which Radix wired
+      to the dialog automatically. Without it, a screen-reader user heard "File"
+      and nothing else, and met the size cap for the first time as a rejection.
+
       `aria-invalid="false"` is a claim, not silence — it announces the field as
-      explicitly valid before anyone has submitted anything. `fieldErrorProps`
-      returns an empty object rather than a `false`, and this is the case that
-      catches a future rewrite spelling it as a boolean.
+      explicitly valid before anyone has submitted anything. The attribute is
+      `undefined` rather than `false` so React drops it, and this case catches a
+      future rewrite spelling it as a boolean.
     */
     render(<Sheet />);
 
-    const title = screen.getByLabelText(/^title$/i);
-    expect(title).not.toHaveAttribute("aria-invalid");
-    expect(title).not.toHaveAttribute("aria-describedby");
+    const fileInput = screen.getByLabelText(/^file$/i);
+    expect(fileInput).not.toHaveAttribute("aria-invalid");
+    expect(fileInput).toHaveAccessibleDescription("Up to 25 MB.");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps the constraint announced once a file is chosen", () => {
+    // The well collapses to a file row and the hint goes `sr-only` rather than
+    // away: it still governs the Replace that state offers, and the id the
+    // input points at has to keep resolving.
+    render(
+      <Sheet file={new File(["x"], "a.pdf", { type: "application/pdf" })} />,
+    );
+
+    const fileInput = screen.getByLabelText(/^file$/i);
+    expect(fileInput).toHaveAccessibleDescription("Up to 25 MB.");
+    expect(document.querySelectorAll("#test-file-hint")).toHaveLength(1);
   });
 
   it("titles the sheet without a description Radix would warn about", () => {

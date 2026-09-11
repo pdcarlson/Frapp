@@ -111,14 +111,22 @@ type FolderRow = {
   sort_order: number | null;
 };
 
-// The signed-URL flow blocks SVG + executables. Kind `document` in
-// `@repo/validation` is shared with Backwork and chat so the three cannot
-// drift (the Backwork page previously omitted gif from a private copy).
+/*
+  The signed-URL flow blocks SVG + executables. Kind `document` in
+  `@repo/validation` is shared with Backwork and chat so the three cannot drift
+  (the Backwork page previously omitted gif from a private copy).
+
+  **Each string now names the verdict, because it no longer has a title to do
+  that for it.** These were toast *bodies*, under a title reading "File too
+  large" or "File type not allowed"; they are now the whole inline error, and a
+  standalone "Chapter documents accept files up to 25MB." states a rule without
+  ever saying that the member's file broke it.
+*/
 function uploadRejectionDescription(reason: "type" | "size"): string {
   if (reason === "size") {
-    return `Chapter documents accept files up to ${MAX_UPLOAD_LABEL}.`;
+    return `That file is too large. Chapter documents accept files up to ${MAX_UPLOAD_LABEL}.`;
   }
-  return "Chapter documents accept PDFs, Office files, text, CSV, and common images (no SVG).";
+  return "That file type is not allowed. Chapter documents accept PDFs, Office files, text, CSV, and common images (no SVG).";
 }
 
 // Deliberately ungated: the signed link comes from `GET /v1/documents/:id`, and
@@ -715,15 +723,31 @@ export function DocumentsPage() {
         actions={
           <Can permission="chapter_docs:upload">
             {/*
-              Closing by any route — Cancel, Escape, the X, the scrim — drops a
-              stale inline error, so reopening does not greet the member with
-              the rejection from last time. The draft itself survives on
-              purpose: a mistyped title is worth keeping, a spent error is not.
+              Cleared on OPEN, not on close, and the difference is the whole
+              reason this is written down.
+
+              Two of the three ways this dialog closes never reach an
+              `onOpenChange` handler at all. Radix `Root` runs the prop through
+              `useControllableState`, whose `onChange` fires only when Radix's
+              own setter runs — Escape, the scrim, the X. Cancel calls
+              `uploadDialog.setOpen(false)` directly, and `useGatedDialog`'s
+              revoke effect calls its internal `setOpenState(false)`; both just
+              change the controlled prop, and neither notifies anyone. Clearing
+              on close therefore left a spent rejection sitting under the file
+              field the next time the sheet opened after a Cancel.
+
+              Opening has no such hole: there is no `setOpen(true)` anywhere on
+              this page, so every open is a `DialogTrigger` press, which does go
+              through Radix's setter. Clearing there is reached by every route
+              into a fresh sheet, whatever ended the last one.
+
+              The draft itself survives on purpose: a mistyped title is worth
+              keeping, a spent error is not.
             */}
             <Dialog
               {...uploadDialog.dialogProps}
               onOpenChange={(next) => {
-                if (!next) setUploadError(null);
+                if (next) setUploadError(null);
                 uploadDialog.dialogProps.onOpenChange(next);
               }}
             >
@@ -1215,8 +1239,13 @@ export function DocumentsPage() {
                     description used to take a line of its own between the title
                     and the meta; it now joins the meta line, which is where a
                     one-clamped sentence was already headed and costs the row
-                    20px less. A row with a title and no description is ~40px,
-                    the board's data-row height.
+                    20px less.
+
+                    The board's `4d` data row is 40px and this one is floored at
+                    44 by `min-h-11`, deliberately: §2's touch-target floor
+                    outranks the board's density, and the 4px is the cheapest
+                    place in the lane to pay it. Do not "correct" the row to 40
+                    to match the board.
                   */
                   <li
                     key={doc.id}
@@ -1233,15 +1262,29 @@ export function DocumentsPage() {
                       <p className="truncate text-sm font-semibold">
                         {doc.title}
                       </p>
+                      {/*
+                        Description LAST, and the order is load-bearing. The
+                        merged line is `truncate`, where the two lines it
+                        replaced were not: the meta line wrapped and the
+                        description had its own `line-clamp-1`. So whatever
+                        leads this string is what survives a narrow row — and
+                        with the description first, one ordinary sentence ate
+                        the upload date, the folder, the type and the effective
+                        date, none of which had ever been able to disappear
+                        before. The structured fields are short, bounded and
+                        the ones a member scans by; the description is the
+                        free-text field and the right thing to lose to an
+                        ellipsis.
+                      */}
                       <p className="truncate text-[12.5px] text-muted">
                         {[
-                          doc.description,
                           `Uploaded ${formatLocaleDate(doc.created_at)}`,
                           doc.folder,
                           doc.document_type,
                           doc.effective_date
                             ? `Effective ${formatBareDate(doc.effective_date)}`
                             : null,
+                          doc.description,
                         ]
                           .filter(Boolean)
                           .join(" · ")}

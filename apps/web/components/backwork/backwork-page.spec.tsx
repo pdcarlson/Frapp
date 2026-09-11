@@ -183,9 +183,11 @@ describe("BackworkPage disabled-query handling", () => {
   });
 
   it("keeps the upload trigger reachable while the list is offline", () => {
-    // The offline state is scoped to the Resources card rather than replacing
-    // the page, so it cannot unmount the gated upload dialog above it — the
-    // defect `/documents` shipped with its own early returns.
+    // The offline state is scoped to the Resources list region rather than
+    // replacing the page, so it cannot unmount the gated upload dialog above
+    // it — the defect `/documents` shipped with its own early returns. (It was
+    // the Resources *card* until the greenfield lane flattened it; the scoping
+    // is what matters here, not the container.)
     mockOffline.value = true;
     resourcesQuery.data = [];
 
@@ -253,6 +255,16 @@ describe("BackworkPage subscription gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resolvedResourcesQuery();
+    /*
+      `mockOffline` is module state shared by every case in this file, and this
+      block had no reset — it simply held because nothing in it had ever gone
+      offline. The in-dialog submit case below does, and without this one leaked
+      `true` turned the next seven cases red: a disabled trigger opens no
+      dialog, and the offline gate suppresses the subscription notices the
+      others assert on. The sibling block at the top of the file already resets
+      it for the same reason.
+    */
+    mockOffline.value = false;
   });
 
   it("leaves the upload flow alone on an active chapter", () => {
@@ -359,6 +371,77 @@ describe("BackworkPage subscription gating", () => {
     );
     expect(mockRequestUpload).not.toHaveBeenCalled();
     expect(dialog.getByRole("button", { name: /cancel/i })).toBeEnabled();
+  });
+
+  it("drops a spent inline error when the sheet is reopened after Cancel", async () => {
+    // Same hole as `/documents`: Cancel sets the controlled `open` prop
+    // directly, so it never reaches `onOpenChange`. The clear lives on the open
+    // edge, which every reopen goes through.
+    const user = userEvent.setup();
+    chapter.active();
+    render(<BackworkPage />);
+
+    await user.click(uploadTrigger());
+    let dialog = within(screen.getByRole("dialog"));
+    await user.click(dialog.getByRole("button", { name: /^upload$/i }));
+    expect(await dialog.findByRole("alert")).toBeInTheDocument();
+
+    await user.click(dialog.getByRole("button", { name: /cancel/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+
+    await user.click(uploadTrigger());
+    dialog = within(screen.getByRole("dialog"));
+    expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps the gate on the in-dialog submit, not only on the trigger", async () => {
+    /*
+      `backwork-page.tsx`'s submit is `{...gate.controlProps(uploading)}`, and
+      its comment warns that writing a bare `disabled` after the spread would
+      drop the gate. Nothing in this file pinned that: every other
+      disabled-assertion here targets the OUTER trigger, and the subscription
+      path cannot reach the submit at all, because `useGatedDialog` force-closes
+      the dialog the moment the verdict turns blocked.
+
+      Offline is the one block that leaves the dialog standing — it must not
+      slam a draft — so it is the only path from which the submit is observable.
+      `/documents` already had this case; Backwork did not.
+    */
+    const user = userEvent.setup();
+    chapter.active();
+    const { rerender } = render(<BackworkPage />);
+
+    await user.click(uploadTrigger());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    mockOffline.value = true;
+    rerender(<BackworkPage />);
+
+    // The trigger is `aria-hidden` behind the open dialog, so this resolves to
+    // the submit — the control that would actually fire the write.
+    const submit = screen.getByRole("button", { name: /^upload$/i });
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveAttribute("title", "Reconnect to make changes.");
+  });
+
+  it("names the verdict, not just the rule, when a file is rejected", async () => {
+    // Was a toast BODY under a "File too large" title; inline it is the whole
+    // error, so it has to say what went wrong. Same case on `/documents`.
+    const user = userEvent.setup();
+    chapter.active();
+    render(<BackworkPage />);
+    await user.click(uploadTrigger());
+
+    const dialog = within(screen.getByRole("dialog"));
+    const oversized = new File(["x"], "huge.pdf", { type: "application/pdf" });
+    Object.defineProperty(oversized, "size", { value: 40 * 1024 * 1024 });
+    await user.upload(dialog.getByLabelText(/^file$/i), oversized);
+    await user.click(dialog.getByRole("button", { name: /^upload$/i }));
+
+    expect(await dialog.findByRole("alert")).toHaveTextContent(/too large/i);
+    expect(mockRequestUpload).not.toHaveBeenCalled();
   });
 
   // #1040: the call site read `download_url` while the API returns

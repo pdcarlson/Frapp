@@ -82,11 +82,18 @@ type Resource = {
   created_at: string;
 };
 
+/*
+  Each string names the verdict, because it no longer has a toast title to do
+  that for it. These were toast bodies under "File too large" / "File type not
+  allowed"; they are now the whole inline error, and a standalone "Backwork
+  accepts files up to 25MB." states a rule without saying the member's file
+  broke it. Same change on `/documents`.
+*/
 function uploadRejectionDescription(reason: "type" | "size"): string {
   if (reason === "size") {
-    return `Backwork accepts files up to ${MAX_UPLOAD_LABEL}.`;
+    return `That file is too large. Backwork accepts files up to ${MAX_UPLOAD_LABEL}.`;
   }
-  return "Backwork accepts PDF, Office, text/CSV, and common images (no SVG).";
+  return "That file type is not allowed. Backwork accepts PDF, Office, text/CSV, and common images (no SVG).";
 }
 
 // Sentinel used by Radix Select, which rejects empty-string values. Maps to
@@ -393,16 +400,24 @@ export function BackworkPage() {
             </Can>
             <Can permission="backwork:upload">
               {/*
-                Closing by any route — Cancel, Escape, the X, the scrim — drops
-                a stale inline error, so reopening does not greet the member
-                with the rejection from last time. The draft survives on
-                purpose: a half-typed course number is worth keeping, a spent
-                error is not.
+                Cleared on OPEN, not on close. Cancel calls
+                `uploadDialog.setOpen(false)` and `useGatedDialog`'s revoke
+                effect calls its own `setOpenState(false)`; both only change the
+                controlled prop, and Radix's `useControllableState` fires
+                `onOpenChange` for its own setter alone — so clearing on close
+                missed two of the three ways this sheet shuts, and a spent
+                rejection survived a Cancel into the next open. Every open is a
+                `DialogTrigger` press (nothing calls `setOpen(true)`), which
+                does reach the handler. Same reasoning as `/documents`, written
+                out there.
+
+                The draft survives on purpose: a half-typed course number is
+                worth keeping, a spent error is not.
               */}
               <Dialog
                 {...uploadDialog.dialogProps}
                 onOpenChange={(next) => {
-                  if (!next) setUploadError(null);
+                  if (next) setUploadError(null);
                   uploadDialog.dialogProps.onOpenChange(next);
                 }}
               >
@@ -457,6 +472,7 @@ export function BackworkPage() {
                       <UploadField id="bw-department" label="Department code">
                         <Input
                           id="bw-department"
+                          aria-describedby="bw-taxonomy-note"
                           className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.department_code}
                           onChange={(event) =>
@@ -485,6 +501,7 @@ export function BackworkPage() {
                       <UploadField id="bw-professor" label="Professor">
                         <Input
                           id="bw-professor"
+                          aria-describedby="bw-taxonomy-note"
                           className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.professor_name}
                           onChange={(event) =>
@@ -615,7 +632,15 @@ export function BackworkPage() {
                         </Select>
                       </UploadField>
                     </div>
-                    <p className="text-[12.5px] text-muted">
+                    {/*
+                      Carries an id and is referenced by the two fields it is
+                      about. Field help that is only positioned near a control
+                      reaches sighted users and nobody else — and this sentence
+                      is the one fact rescued from the deleted dialog
+                      description, where Radix had wired it to the dialog for
+                      free.
+                    */}
+                    <p id="bw-taxonomy-note" className="text-[12.5px] text-muted">
                       A department code or professor the chapter has not used
                       before is created for this chapter on upload.
                     </p>

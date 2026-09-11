@@ -302,14 +302,56 @@ describe("DocumentsPage subscription gating", () => {
     expect(mockRequestUpload).not.toHaveBeenCalled();
   });
 
-  it("still lets the gate disable the submit once the chapter is blocked", async () => {
-    // The other half of what the case above used to cover, kept on its own:
-    // the submit spreads `gate.controlProps(...)` rather than writing a bare
-    // `disabled` after it, which would silently drop the gate.
-    chapter.pastDue();
+  it("drops a spent inline error when the sheet is reopened after Cancel", async () => {
+    /*
+      Cancel calls `uploadDialog.setOpen(false)`, and `useGatedDialog`'s revoke
+      effect calls its own `setOpenState(false)`. Radix runs the `open` prop
+      through `useControllableState`, whose `onChange` fires only for Radix's
+      own setter — so neither of those reaches `<Dialog onOpenChange>`, and an
+      earlier draft of this lane cleared the error there. The rejection then
+      survived a Cancel and greeted the next open. The clear moved to the OPEN
+      edge, which every reopen goes through.
+    */
+    const user = userEvent.setup();
+    chapter.active();
     render(<DocumentsPage />);
 
-    expect(uploadTrigger()).toBeDisabled();
+    await user.click(uploadTrigger());
+    let dialog = within(screen.getByRole("dialog"));
+    await user.click(dialog.getByRole("button", { name: /^upload$/i }));
+    expect(await dialog.findByRole("alert")).toBeInTheDocument();
+
+    await user.click(dialog.getByRole("button", { name: /cancel/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+
+    await user.click(uploadTrigger());
+    dialog = within(screen.getByRole("dialog"));
+    expect(dialog.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("names the verdict, not just the rule, when a file is rejected", async () => {
+    /*
+      These two strings were toast BODIES, under a title that said "File too
+      large" or "File type not allowed". Inline they are the whole error, so a
+      bare "Chapter documents accept files up to 25MB." would state a rule
+      without ever telling the member their file broke it. Nothing pinned the
+      wording before, in either position.
+    */
+    const user = userEvent.setup();
+    chapter.active();
+    render(<DocumentsPage />);
+    await user.click(uploadTrigger());
+
+    const dialog = within(screen.getByRole("dialog"));
+    const oversized = new File(["x"], "huge.pdf", { type: "application/pdf" });
+    Object.defineProperty(oversized, "size", { value: 40 * 1024 * 1024 });
+    await user.upload(dialog.getByLabelText(/^file$/i), oversized);
+    await user.click(dialog.getByRole("button", { name: /^upload$/i }));
+
+    expect(await dialog.findByRole("alert")).toHaveTextContent(/too large/i);
+    expect(mockRequestUpload).not.toHaveBeenCalled();
   });
 });
 

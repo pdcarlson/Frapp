@@ -260,10 +260,24 @@ most likely to need to revisit, which is why it is stated rather than left in th
 - [x] `--gold-ask-*` untouched and still not merged into `--accent-*`. This lane's one accent use is
       the file row's icon tile, which is `--accent-subtle` / `--accent-text` and retints per chapter
       as product UI should
-- [x] No em dash in any copy on these two routes. Three went: two narration paragraphs and the
-      `SelectValue placeholder="—"` on Backwork's three selects, which is now the board's own unset
-      wording ("Pick one") and which a screen reader previously announced as nothing at all
-- [x] 375px floor still held on both routes (`tests/visual/responsive-floor.spec.ts`)
+- [x] No em dash left in user-facing copy on either route, verified by stripping comments and
+      grepping what remains. **Six sites, not the "three" an earlier draft of this line claimed** —
+      that count was wrong in both directions, and is corrected rather than quietly dropped:
+      Documents' narration paragraph, Documents' `DialogDescription`, Documents' folder-reorder
+      toast (pre-existing, fixed here because this lane owns the route), and the three
+      `SelectValue placeholder="—"` on Backwork, now the board's own unset wording ("Pick one")
+      and previously announced by a screen reader as nothing at all. Backwork's narration
+      paragraph, which the old line counted, contained no em dash
+- [x] 375px floor held on both routes under `tests/visual/responsive-floor.spec.ts`, **with the
+      caveat that suite states about itself**: it runs with no session and no active chapter, so
+      `/documents` renders its loading state and `/backwork` its no-chapter state. It proves the
+      shell, the page header and the folder rail do not overflow at 375px. It does **not** exercise
+      a populated document row, a populated backwork row or the three-column filter grid, which
+      are layouts this lane changed. The **upload sheet** was measured separately at 375
+      (`documentElement.scrollWidth === clientWidth === 375`, fields stacking to one column and the
+      footer holding one row) and read at 1280. The populated rows are the real gap: a case for
+      them needs a seeded session, which this lane does not add — so they are reviewed on the diff
+      and by the row-level unit cases, not proven at 375
 
 ### What this lane did NOT do, deliberately
 
@@ -273,6 +287,7 @@ most likely to need to revisit, which is why it is stated rather than left in th
 | Drag-and-drop on the file well | The board calls it a "drop zone", but a drop handler is behavior, not chrome. What ships is the well and its file row. Styling a target that silently ignores a drop would be the worse half of the board to take |
 | The `/documents` folder dialog | `1j` is the **upload** sheet. The folder dialog genuinely has a description (renaming re-files every document under that name), so it is a plain dialog rather than a sheet with its paragraph deleted |
 | Folding `CHAT_CONTROL_CLASS` into `denseRowControlClassName` | They are the same 32/44 recipe in two files. Merging means editing a chat module, which belongs to whichever lane next touches chat. Both sites now name each other so a grep finds the pair |
+| An `error` slot on the sheet's plain field | `1j` draws "Semester is required" under a metadata field, so the grammar is specified — but no metadata field on either screen can produce it: both state that every field except the file is optional. The prop, and the `aria-invalid`/`aria-describedby` helper that has to go with it, were written first and had **zero** callers, exercised only by their own test. Removed. The lane that adds the first required metadata field adds the recipe back against a field that uses it |
 | `nested-states.tsx`'s own framing | The four nested states still draw their own bordered block, which on a now-flat page reads as a small card. They are shared across every route, so re-pitching them is a change to that family and not to these two screens |
 
 ---
