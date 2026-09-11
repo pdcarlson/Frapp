@@ -19,24 +19,9 @@
  * imported from the strip unchanged and re-exported for the board's callers.
  */
 
-import { parseInstantOrBareUtcNoon } from "@repo/formatting";
+import { dayDelta, parseInstantOrBareUtcNoon } from "@repo/formatting";
 
 export { isDueUrgent } from "@/components/chat/up-next-strip";
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-/**
- * Whole calendar days between two instants, ignoring time of day.
- *
- * `Date.UTC` of each *local* Y/M/D — the arithmetic is done in UTC only to
- * sidestep DST, while the calendar days themselves stay local. Identical to the
- * helper in `up-next-strip.tsx` and `lib/events/format.ts`.
- */
-export function dayDelta(from: Date, to: Date): number {
-  const a = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
-  const b = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
-  return Math.round((b - a) / MS_PER_DAY);
-}
 
 /**
  * A bare `YYYY-MM-DD` parsed at UTC **noon**.

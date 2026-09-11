@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import { parseInstantOrBareUtcNoon } from "@repo/formatting";
+import { dayDelta, parseInstantOrBareUtcNoon } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -118,15 +118,6 @@ export function selectNextTask(tasks: unknown): UpNextTask | null {
   return open[0]?.task ?? null;
 }
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-/** Whole calendar days between two instants, ignoring time of day. */
-function dayDelta(from: Date, to: Date): number {
-  const a = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
-  const b = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
-  return Math.round((b - a) / MS_PER_DAY);
-}
-
 /** Today shows a clock time; anything further out shows the day instead. */
 export function formatEventTime(startTime: string, now: Date): string {
   const start = new Date(startTime);
@@ -152,7 +143,7 @@ export function formatEventTime(startTime: string, now: Date): string {
  *
  * `tasks.due_date` is a bare `YYYY-MM-DD`, which `new Date()` reads as UTC
  * **midnight** — the previous local day for everyone west of Greenwich. Fed to
- * the local-calendar `dayDelta` below, that made every due date land one day
+ * the local-calendar `dayDelta`, that made every due date land one day
  * early: a task due Saturday painted `destructive` on Thursday for every US
  * user. UTC noon is the fix `lib/more/service-hours.ts` already documents.
  *
