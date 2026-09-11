@@ -2,7 +2,7 @@
   "name": "@repo/formatting",
   "version": "0.0.0",
   "private": true,
-  "description": "Shared date, time, and duration display helpers. DOM-free so web and mobile share one implementation.",
+  "description": "Shared date, time, and duration helpers — display formatting plus calendar-day arithmetic. DOM-free so every runtime shares one implementation.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
