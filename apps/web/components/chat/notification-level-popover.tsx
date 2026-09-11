@@ -1,18 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { MuteGlyph } from "./chat-glyphs";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import type { ChatNotificationLevel } from "@repo/hooks";
 
 /**
- * Per-channel notification level, from the channel header (#296).
+ * Per-channel notification level (#296), rendered as the "Notifications" view
+ * of the channel overflow menu (`channel-menu.tsx`). The menu owns the popover,
+ * its trigger and the dismissal, so this file is content only.
  *
  * **Why the header and not the channel row.** The row in `channel-list.tsx` is
  * a single `<button>`; a mute control inside it would be a nested button, which
@@ -32,6 +26,15 @@ import type { ChatNotificationLevel } from "@repo/hooks";
  * misreported exactly the channels members most want to turn down — and the
  * no-op guard below then swallowed the corrective click. The server resolves
  * the default so this component never has to know one.
+ *
+ * **The state line and the lock are behaviour, not chrome.** The trigger this
+ * panel replaces named the current level in its `aria-label` ("Notifications:
+ * muted"), so a screen reader user learned the channel was muted without
+ * opening anything, and it was `disabled` whenever no channel was active or the
+ * level was unknown. Neither could simply be dropped: the name is now a line of
+ * copy at the top of the panel, and the refusal now disables the three option
+ * controls, so an unknown level still cannot be read as a real one or be
+ * overwritten by a stray click.
  */
 
 const OPTIONS: {
@@ -49,7 +52,7 @@ const OPTIONS: {
     label: "Only @mentions",
     // Not labelled "the default" any more: it is the default for ordinary
     // channels but not for #announcements (`all`) or #chapter-audit (`off`),
-    // and the popover is shown on those too.
+    // and the panel is shown on those too.
     description: "Notify me when someone addresses me.",
   },
   {
@@ -59,7 +62,15 @@ const OPTIONS: {
   },
 ];
 
-export function NotificationLevelPopover({
+// The words the deleted trigger's `aria-label` used for each level. The panel
+// states the same thing now that there is no trigger left to carry it.
+const CURRENT_LABEL: Record<ChatNotificationLevel, string> = {
+  all: "every message",
+  mentions: "only @mentions",
+  off: "muted",
+};
+
+export function NotificationLevelPanel({
   level,
   onChange,
   disabled,
@@ -68,7 +79,7 @@ export function NotificationLevelPopover({
   /**
    * The channel's server-resolved EFFECTIVE level (stored row, else the
    * channel's default), or `null` when it is not known yet. `null` renders a
-   * neutral, disabled trigger: a `mentions` stand-in would state a level, and
+   * neutral, disabled panel: a `mentions` stand-in would state a level, and
    * stating the wrong one is the defect this whole change exists to remove.
    */
   level: ChatNotificationLevel | null;
@@ -76,89 +87,69 @@ export function NotificationLevelPopover({
   disabled?: boolean;
   isSaving?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const isMuted = level === "off";
   const unknown = level === null;
+  // No channel to act on, or no level read yet: there is nothing to change, and
+  // components.md §5 bans a control that silently no-ops.
+  const locked = disabled || unknown;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={disabled || unknown}
-          // Names the state, not just the control: a screen reader user needs
-          // to know the channel is muted without opening the popover.
-          aria-label={
-            unknown
-              ? "Notification level unavailable"
-              : isMuted
-                ? "Notifications: muted. Change notification level"
-                : `Notifications: ${level === "all" ? "every message" : "only @mentions"}. Change notification level`
-          }
-        >
-          <MuteGlyph className="h-5 w-5" active={isMuted} />
-          {isMuted ? <span>Muted</span> : null}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-72 p-0" align="end">
-        <p className="border-b border-border px-3 py-3 text-[12.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Notify me about
+    <>
+      <div className="border-b border-border px-3 py-3">
+        <p className="text-[12.5px] text-foreground">
+          {unknown
+            ? "Notification level unavailable"
+            : `Notifications: ${CURRENT_LABEL[level]}`}
         </p>
-        <ul className="divide-y divide-border">
-          {OPTIONS.map((option) => {
-            const selected = option.level === level;
-            return (
-              <li key={option.level}>
-                <button
-                  type="button"
-                  disabled={isSaving}
-                  aria-current={selected ? "true" : undefined}
-                  onClick={() => {
-                    // Closes on click, unconditionally. An earlier revision
-                    // kept it open until the write landed so a failure had
-                    // somewhere to render; that made dismissal depend on an
-                    // `isPending` transition, which never arrived while
-                    // TanStack PAUSED the mutation offline — the menu froze
-                    // with every option disabled and no explanation, on a
-                    // surface that is explicitly offline-capable. The failure
-                    // is reported in the channel header instead, which does
-                    // not unmount.
-                    //
-                    // #1707 fixed that pause provider-wide (`query-provider.tsx`
-                    // now rejects offline writes rather than parking them), so
-                    // the specific hang described above can no longer happen.
-                    // This still closes unconditionally: dismissal should not
-                    // depend on a write's outcome at all, which was the actual
-                    // lesson, and the header is still the right place for the
-                    // error.
-                    if (!selected) onChange(option.level);
-                    setOpen(false);
-                  }}
+      </div>
+      <ul className="divide-y divide-border">
+        {OPTIONS.map((option) => {
+          const selected = option.level === level;
+          return (
+            <li key={option.level}>
+              <button
+                type="button"
+                disabled={isSaving || locked}
+                aria-current={selected ? "true" : undefined}
+                onClick={() => {
+                  // Nothing here waits on the write. An earlier revision kept
+                  // the menu open until it landed so a failure had somewhere to
+                  // render; that made dismissal depend on an `isPending`
+                  // transition, which never arrived while TanStack PAUSED the
+                  // mutation offline — the menu froze with every option
+                  // disabled and no explanation, on a surface that is
+                  // explicitly offline-capable.
+                  //
+                  // #1707 fixed that pause provider-wide (`query-provider.tsx`
+                  // now rejects offline writes rather than parking them), so
+                  // that specific hang can no longer happen. The lesson still
+                  // holds either way: the failure is reported in the channel
+                  // header, which does not unmount, and dismissal is the
+                  // overflow menu's business rather than this panel's.
+                  if (!selected) onChange(option.level);
+                }}
+                className={cn(
+                  "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors disabled:opacity-60",
+                  selected
+                    ? "bg-accent-subtle text-accent-text"
+                    : "text-foreground hover:bg-card",
+                )}
+              >
+                <span className="text-[14.5px] font-semibold">
+                  {option.label}
+                </span>
+                <span
                   className={cn(
-                    "flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors disabled:opacity-60",
-                    selected
-                      ? "bg-accent-subtle text-accent-text"
-                      : "text-foreground hover:bg-card",
+                    "text-[12.5px]",
+                    selected ? "text-accent-text" : "text-muted-foreground",
                   )}
                 >
-                  <span className="text-[14.5px] font-semibold">
-                    {option.label}
-                  </span>
-                  <span
-                    className={cn(
-                      "text-[12.5px]",
-                      selected ? "text-accent-text" : "text-muted-foreground",
-                    )}
-                  >
-                    {option.description}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </PopoverContent>
-    </Popover>
+                  {option.description}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }

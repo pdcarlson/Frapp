@@ -45,6 +45,21 @@ const config: Config = {
   darkMode: "class",
   theme: {
     extend: {
+      /*
+       * The one shadow key the shared preset deliberately leaves unbound, for
+       * the reason that file records: it still serves frozen `apps/landing`,
+       * which has real shadows and no `--shadow-md`.
+       *
+       * Signet needs it bound, and the omission was a live defect rather than
+       * a tidiness point. Every other `shadow-*` utility resolves to a token
+       * that is `none`; an UNBOUND key does not inherit that, it falls through
+       * to Tailwind's stock scale and compiles a real drop shadow. `shadow-md`
+       * did exactly that on this surface for as long as it existed, past a ban
+       * everyone believed the `none` tokens enforced.
+       */
+      boxShadow: {
+        md: "var(--shadow-md)",
+      },
       colors: {
         "surface-1": colorVar("--surface-1"),
         "primary-hover": colorVar("--primary-hover"),

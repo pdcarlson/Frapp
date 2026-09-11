@@ -16,10 +16,12 @@ import { TopBar } from "@/components/layout/top-bar";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { AccountMenu } from "@/components/layout/account-menu";
 import { persistNavCollapsed } from "@/components/layout/nav-collapse";
+import { isFullBleedRoute } from "@/components/layout/full-bleed-routes";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { cn } from "@/lib/utils";
 
 /**
  * The greenfield dashboard shell: flush-left nav, 48px top bar, content.
@@ -63,6 +65,7 @@ export function DashboardShell({
   defaultNavCollapsed = false,
 }: DashboardShellProps) {
   const pathname = usePathname();
+  const fullBleed = isFullBleedRoute(pathname);
   // Chapter accent, shell-wide: maps the persisted engine roles onto the
   // semantic tokens signet.css defines. Mounted here (not in ChatProvider) so
   // the nav's active-item tint does not depend on which route is open.
@@ -186,10 +189,19 @@ export function DashboardShell({
           makes the nav's own scroll position survive navigation. `min-h-0` is
           the flex-child counterpart of `min-w-0` and is what actually lets this
           element scroll instead of growing the page.
+
+          A full-bleed route (`full-bleed-routes.ts`) gets the same landmark
+          with no inset and no scroll: it is handed the frame and owns what
+          happens inside it. That is the only way chat's channels column can sit
+          flush against the nav and its composer can pin to the bottom of the
+          viewport instead of the bottom of a scrolling document.
         */}
         <main
           id="main-content"
-          className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 sm:px-6"
+          className={cn(
+            "flex min-h-0 flex-1 flex-col",
+            fullBleed ? "overflow-hidden" : "gap-3 overflow-y-auto px-4 py-4 sm:px-6",
+          )}
         >
           {children}
         </main>

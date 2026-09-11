@@ -3,12 +3,6 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SearchGlyph } from "./chat-glyphs";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
@@ -36,9 +30,11 @@ export interface ChatSearchHit {
  * channel or across all channels the user can access") and that only the
  * cross-domain command palette ever implemented.
  *
- * Built on `PinsPopover`'s shape rather than a new one: a header-triggered
- * popover whose rows jump the timeline and which dismisses itself on jump, so
- * the panel never covers the message it just scrolled to.
+ * Content only: this is the "search" view of the channel overflow menu
+ * (`channel-menu.tsx`), which owns the Popover, its `⋯` trigger, its width and
+ * its back header. Built on the pins panel's shape rather than a new one: rows
+ * jump the timeline, and the host closes the menu on jump so the panel never
+ * covers the message it just scrolled to.
  *
  * **Scoping is a request parameter, not a client-side filter.** `SEARCH_LIMIT`
  * is applied by the database across every channel the caller can read, so
@@ -49,12 +45,12 @@ export interface ChatSearchHit {
  *
  * Snippets with highlighted matches are **not** here. `ts_headline` is
  * unimplemented for all four search sources and #1356 owns it; doing a quarter
- * of it inside this popover would leave the other three inconsistent. Rows
+ * of it inside this panel would leave the other three inconsistent. Rows
  * render `replyPreviewText` under the same `line-clamp` treatment the pins
  * panel uses, so a poll or a file-only hit is a noun rather than an empty
  * grey block (#1726).
  */
-export function ChatSearchPopover({
+export function ChatSearchPanel({
   activeChannelId,
   channelNameFor,
   nameFor,
@@ -72,7 +68,6 @@ export function ChatSearchPopover({
    */
   onJump: (hit: ChatSearchHit) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<ChatSearchScope>("channel");
 
@@ -96,15 +91,17 @@ export function ChatSearchPopover({
       ? activeChannelId
       : undefined;
 
-  // Gated on `open`: Radix keeps this component mounted and only unmounts
-  // `PopoverContent`, so an ungated query kept living in a closed popover —
-  // and with `staleTime: 0` plus the app's global `refetchOnWindowFocus`, every
-  // later tab refocus re-issued a search nobody was looking at, against a route
-  // whose throttle bucket the ⌘K palette shares.
-  const search = useSearch(
-    open && hasMinQuery ? debouncedQuery : "",
-    channelFilter,
-  );
+  // Gated on `hasMinQuery` alone. There used to be an `open &&` term here
+  // because this was a self-triggering popover and Radix keeps such a component
+  // mounted while unmounting only `PopoverContent` — an ungated query went on
+  // living behind a closed popover, and with `staleTime: 0` plus the app's
+  // global `refetchOnWindowFocus` every later tab refocus re-issued a search
+  // nobody was looking at, against a route whose throttle bucket the ⌘K palette
+  // shares. `channel-menu.tsx` mounts this panel only while its view is
+  // selected, so mounted now means open and the query dies with the view. That
+  // mount scoping is what makes the gate unnecessary: keep this panel out of a
+  // closed menu rather than re-adding a stale `open` flag.
+  const search = useSearch(hasMinQuery ? debouncedQuery : "", channelFilter);
 
   const hits = useMemo<ChatSearchHit[]>(() => {
     const payload = search.data?.payload as { messages?: unknown } | undefined;
@@ -123,84 +120,74 @@ export function ChatSearchPopover({
   );
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="secondary" size="sm" aria-label="Search messages">
-          <SearchGlyph className="h-5 w-5" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-96 p-0" align="end">
-        <div className="border-b border-border p-3">
-          <Input
-            type="search"
-            value={query}
-            autoFocus
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search messages…"
-            aria-label="Search messages"
-          />
-          <div
-            className="mt-2 flex items-center gap-1"
-            role="radiogroup"
-            aria-label="Search scope"
-          >
-            <ScopeTab
-              label="This channel"
-              selected={effectiveScope === "channel"}
-              disabled={!activeChannelId}
-              onSelect={() => setScope("channel")}
-            />
-            <ScopeTab
-              label="All channels"
-              selected={effectiveScope === "chapter"}
-              onSelect={() => setScope("chapter")}
-            />
-          </div>
-        </div>
-
-        <div aria-live="polite" role="status" className="sr-only">
-          {/*
-            Announces a count ONLY for a settled, successful search. Gating this
-            on `!isFetching` alone announced "0 results" over the top of "Search
-            failed" and "Search timed out" — telling a screen-reader user the
-            channel holds no match when the search never finished, which is
-            precisely the "we stopped looking" vs "we found nothing" distinction
-            spec/behavior/search.md requires the client to preserve.
-          */}
-          {hasMinQuery &&
-          !isSettling &&
-          !search.isFetching &&
-          !search.isError &&
-          !messagesTimedOut
-            ? `${hits.length} ${hits.length === 1 ? "result" : "results"}`
-            : ""}
-        </div>
-
-        <ChatSearchResults
-          hasMinQuery={hasMinQuery}
-          // `isSettling` folds the debounce window into the pending state, so
-          // the panel never presents one query's hits under another's text.
-          // `isFetching && !search.data` (not bare `isFetching`) keeps a
-          // background refetch from blanking a list the member is reading.
-          isPending={isSettling || (search.isFetching && !search.data)}
-          isError={search.isError}
-          onRetry={() => void search.refetch()}
-          timedOut={messagesTimedOut}
-          hits={hits}
-          scope={effectiveScope}
-          activeChannelId={activeChannelId}
-          channelNameFor={channelNameFor}
-          nameFor={nameFor}
-          onPick={(hit) => {
-            // Dismiss before jumping, for the same reason the pins panel does:
-            // a 384px panel left open over the pane it just scrolled hides the
-            // message it navigated to.
-            setOpen(false);
-            onJump(hit);
-          }}
+    <>
+      <div className="border-b border-border p-3">
+        <Input
+          type="search"
+          value={query}
+          autoFocus
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search messages…"
+          aria-label="Search messages"
         />
-      </PopoverContent>
-    </Popover>
+        <div
+          className="mt-2 flex items-center gap-1"
+          role="radiogroup"
+          aria-label="Search scope"
+        >
+          <ScopeTab
+            label="This channel"
+            selected={effectiveScope === "channel"}
+            disabled={!activeChannelId}
+            onSelect={() => setScope("channel")}
+          />
+          <ScopeTab
+            label="All channels"
+            selected={effectiveScope === "chapter"}
+            onSelect={() => setScope("chapter")}
+          />
+        </div>
+      </div>
+
+      <div aria-live="polite" role="status" className="sr-only">
+        {/*
+          Announces a count ONLY for a settled, successful search. Gating this
+          on `!isFetching` alone announced "0 results" over the top of "Search
+          failed" and "Search timed out" — telling a screen-reader user the
+          channel holds no match when the search never finished, which is
+          precisely the "we stopped looking" vs "we found nothing" distinction
+          spec/behavior/search.md requires the client to preserve.
+        */}
+        {hasMinQuery &&
+        !isSettling &&
+        !search.isFetching &&
+        !search.isError &&
+        !messagesTimedOut
+          ? `${hits.length} ${hits.length === 1 ? "result" : "results"}`
+          : ""}
+      </div>
+
+      <ChatSearchResults
+        hasMinQuery={hasMinQuery}
+        // `isSettling` folds the debounce window into the pending state, so
+        // the panel never presents one query's hits under another's text.
+        // `isFetching && !search.data` (not bare `isFetching`) keeps a
+        // background refetch from blanking a list the member is reading.
+        isPending={isSettling || (search.isFetching && !search.data)}
+        isError={search.isError}
+        onRetry={() => void search.refetch()}
+        timedOut={messagesTimedOut}
+        hits={hits}
+        scope={effectiveScope}
+        activeChannelId={activeChannelId}
+        channelNameFor={channelNameFor}
+        nameFor={nameFor}
+        // Dismissal on jump is the host's now, and it still has to happen for
+        // the reason the pins panel first recorded: a panel left open over the
+        // pane it just scrolled hides the message it navigated to.
+        onPick={onJump}
+      />
+    </>
   );
 }
 
@@ -324,7 +311,13 @@ function ChatSearchResults({
           Search timed out — some matches may be missing.
         </p>
       ) : null}
-      <ul className="max-h-80 divide-y divide-border overflow-y-auto">
+      {/*
+        `max-h-72`, matching `PinsPanel` and `BookmarksPanel`. These three are
+        now views of one popover (`channel-menu.tsx`), so a height that differs
+        by 32px makes the frame jump as a member steps between them — invisible
+        back when each owned its own anchored popover.
+      */}
+      <ul className="max-h-72 divide-y divide-border overflow-y-auto">
         {hits.map((hit) => {
           const channelName = channelNameFor(hit.channelId);
           const showChannel =

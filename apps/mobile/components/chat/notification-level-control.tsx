@@ -8,9 +8,11 @@ import { MuteGlyph } from "./mute-glyph";
 /**
  * Per-channel notification level, from the thread header (#1406).
  *
- * Mirrors web's `NotificationLevelPopover`: `level` is the server-resolved
+ * Mirrors web's `NotificationLevelPanel` (named `NotificationLevelPopover`
+ * until #2142 moved it behind the channel header's `⋯` menu, which is also why
+ * it no longer owns a trigger of its own): `level` is the server-resolved
  * EFFECTIVE level (never a client-side `mentions` stand-in), unknown disables
- * the trigger, and picking a level closes immediately so dismissal does not
+ * the control, and picking a level closes immediately so dismissal does not
  * depend on the write. Failure is reported by the caller, in the header.
  *
  * Copy matches the web options so the three schema levels do not grow a fourth

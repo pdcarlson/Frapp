@@ -75,7 +75,7 @@ export function BookmarkGlyph({ className, active }: ChatGlyphProps) {
 /**
  * Attach a file.
  *
- * Stroke-only, like `SendGlyph` and the shell's `MenuGlyph`: a paperclip is an
+ * Stroke-only, like the shell's `MenuGlyph`: a paperclip is an
  * open curve with no silhouette, and SVG closes an open path implicitly when it
  * fills one — an earlier cut spread `fillProps` over `detail` here and painted a
  * lens-shaped wedge across the clip.
@@ -91,22 +91,6 @@ export function AttachGlyph({ className }: ChatGlyphProps) {
   );
 }
 
-/**
- * Send. Transcribed from the s05 composer's send glyph
- * (`canvas-screens.dc.html:189`, `M2.5 8.5h9M8 3.5l6 5-6 5` on a 17 grid),
- * rescaled onto the 24 grid the recipe fixes. Arrow strokes carry no
- * silhouette, so this one is legitimately stroke-only — the same exception
- * `MenuGlyph` documents in the shell.
- */
-export function SendGlyph({ className }: ChatGlyphProps) {
-  return (
-    <Svg className={className}>
-      <path d="M3.5 12h12.7M11.3 5l8.5 7-8.5 7" {...detail} />
-    </Svg>
-  );
-}
-
-/** Add a reaction. Face filled, features stroke-only. */
 export function ReactionGlyph({ className, active }: ChatGlyphProps) {
   return (
     <Svg className={className}>

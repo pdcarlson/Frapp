@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AuditGlyph, DirectMessageGlyph, LockGlyph } from "./chat-glyphs";
 import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-} from "@/components/shared/async-states";
+  AuditGlyph,
+  DirectMessageGlyph,
+  LockGlyph,
+  MuteGlyph,
+} from "./chat-glyphs";
+import { EmptyState, ErrorState } from "@/components/shared/async-states";
 import {
   directChannelDisplayName,
   useChannelNotificationPreferences,
@@ -26,6 +27,7 @@ import {
   resolveAuthorLabel,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
+import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
@@ -37,9 +39,9 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { FOCUS_RING, SKIP_LINK_CLASSES } from "@/components/ui/focus";
-import { CHAT_RAIL_STICKY_CLASS } from "@/components/shared/offline-banner-focus";
 import {
   ChannelList,
+  ChannelListSkeleton,
   type ChannelCategory,
   type ChannelUnread,
   type ChatChannel,
@@ -51,13 +53,12 @@ import {
 import { Composer, notifyDispatchOutcome } from "./composer";
 import { DELETED_MESSAGE_PLACEHOLDER } from "./message-placeholders";
 import { replyPreviewText } from "./reply-quote";
-import { ThreadPanel } from "./thread-panel";
 import { OpsSetupNudge } from "./ops-setup-nudge";
-import { PinsPopover } from "./pins-popover";
-import { ChatSearchPopover, type ChatSearchHit } from "./chat-search-popover";
-import { BookmarksPopover, type BookmarkEntry } from "./bookmarks-popover";
-import { NotificationLevelPopover } from "./notification-level-popover";
+import { ChannelMenu } from "./channel-menu";
+import type { ChatSearchHit } from "./chat-search-popover";
+import type { BookmarkEntry } from "./bookmarks-popover";
 import { ReconnectPill } from "./reconnect-pill";
+import { CHAT_CONTROL_CLASS } from "./chip";
 import type { SlashCommand } from "@repo/chat-integrations";
 import type { ChatNotificationLevel } from "@repo/hooks";
 
@@ -129,7 +130,14 @@ function ChannelHeaderMark({
 }
 
 /**
- * The 3-pane chat surface: channel rail, thread, thread/details rail.
+ * The chat surface: channels column, then thread and composer.
+ *
+ * **Two columns, flush, full height** (`1b`). It was three, the third being a
+ * Details rail that hosted `ThreadPanel` over a static placeholder. Both are
+ * deleted. Where threads went: the quote above a reply, which was the panel's
+ * only remaining entry point, now scrolls this timeline to the message it
+ * quotes (`MessageItem`'s `onJumpToParent`). The reasoning is recorded in
+ * `spec/ui/web-greenfield/deletion-checklist.md` §2.
  *
  * **The panes are not cards, and that is load-bearing.** They used to be
  * `<Card>`s, so the whole surface painted `--card` — and `components.md` §11
@@ -137,11 +145,12 @@ function ChannelHeaderMark({
  * `#1E1B17` on `#1E1B17`: the bubble simply would not have existed. The
  * reference resolves it the other way round (`canvas-screens.dc.html` s05):
  * the thread sits on `--background`, the app floor, and the bubbles are the
- * step above it. The two rails are `--surface-1`, the ladder step foundations
+ * step above it. The channels column is `--surface-1`, the ladder step foundations
  * §2 assigns to nav chrome, which is what the sidebar already uses.
  *
- * Every async branch (no-chapter, channels-loading, channels-error,
- * no-channels) renders an explicit state.
+ * Every async branch still renders an explicit state, but only the no-chapter
+ * branch replaces the route. The rest render inside the thread column with the
+ * frame already up, which is what the board's first-paint contract asks for.
  */
 export function ChatShell({
   initialChannelId = null,
@@ -204,13 +213,14 @@ export function ChatShell({
   // `asArray` turns the absent payload into `[]` and every channel falls into
   // the default "Channels" group, which is exactly the pre-category rail.
   //
-  // Note what this does *not* say: chat is still gated on
-  // `categoriesQuery.isPending` below, so a member does wait out the query
-  // provider's `retry: 3` backoff before that fallback renders. That gate
-  // predates categories being drawn and was pure cost then; it now buys a rail
-  // that paints grouped on first render instead of flat-then-reflowed. Whether
-  // that trade is right is worth revisiting — but the degradation is at the end
-  // of the retries, not instead of them.
+  // **Nothing waits for it either.** Chat used to gate the whole shell on
+  // `categoriesQuery.isPending`, which bought a rail that painted grouped on
+  // first render rather than flat-then-reflowed, and charged every cold load
+  // the query provider's `retry: 3` backoff for it. The framework board's
+  // first-paint contract (`1s`) prices that the other way round: it lists the
+  // gate under "delete" and accepts the reflow in as many words, "Categories
+  // regroup only below the fold or on next visit". So a pending fetch renders
+  // `[]`, which is the same flat rail the failed fetch degrades to.
   const categories = useMemo(
     () => asArray<ChannelCategory>(categoriesQuery.data),
     [categoriesQuery.data],
@@ -279,6 +289,26 @@ export function ChatShell({
     channelId: initialChannelId,
     messageId: initialMessageId,
   });
+  /**
+   * Which of the two columns is on screen below `lg`.
+   *
+   * The shell's responsive contract is two states switching once at `lg`
+   * (`deletion-checklist.md` §5), and chat has to hold it: below `lg` the app
+   * nav is a drawer and `<main>` is the whole viewport, so a 240px channels
+   * column beside the thread leaves the thread about 135px wide at the
+   * documented 375px floor. That is not a narrow layout, it is an unusable one,
+   * and it clears the floor's horizontal-scroll check while failing what the
+   * check is for.
+   *
+   * So below `lg` exactly one column renders, the way every chat client on a
+   * phone does it. At `lg` and up both are always visible and this is inert.
+   *
+   * Defaults to the thread rather than the list: a channel is always resolved
+   * (the rail falls back to #general), and a `?message=` deep link must land on
+   * the message rather than on a list the member then has to navigate out of.
+   */
+  const [narrowPane, setNarrowPane] = useState<"channels" | "thread">("thread");
+
   useEffect(() => {
     if (
       appliedTargetRef.current.channelId === initialChannelId &&
@@ -296,6 +326,15 @@ export function ChatShell({
     setPendingJumpChannelId(initialChannelId);
     setUnreachableTarget(null);
     setJumpAttempt((n) => n + 1);
+    // The route does not remount on a search-param change, so below `lg` the
+    // member can be looking at the channels column when a link lands. Showing
+    // the thread is the whole point of following one.
+    //
+    // Conditional, unlike the six above: a URL that clears back to `/chat`
+    // names no target, and yanking someone off the channel list they are
+    // reading is not what "no target" should mean.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronizing to the URL, the external system this whole effect exists to follow; the six setState calls above it are the same act
+    if (initialChannelId) setNarrowPane("thread");
   }, [initialChannelId, initialMessageId]);
 
   // `useChannels()` can serve a read up to its `staleTime` old. A channel
@@ -550,7 +589,6 @@ export function ChatShell({
     [orgConfig],
   );
 
-  const [threadParentId, setThreadParentId] = useState<string | null>(null);
   /**
    * The message the composer's next send replies to (#489).
    *
@@ -563,33 +601,15 @@ export function ChatShell({
    * outlive the channel it was staged in. `chat.service.ts` 400s a
    * `reply_to_id` naming a message in another channel, and clearing on the
    * switch paths alone is not enough to prevent that: the deep-link effect sets
-   * `selectedChannelId` directly without going through
-   * `dismissThreadForChannelSwitch`. Scoping makes it structural rather than a
-   * cleanup every future switch path has to remember.
+   * `selectedChannelId` directly without going through any switch handler.
+   * Scoping makes it structural rather than a cleanup every future switch path
+   * has to remember.
    */
+
   const [replyTarget, setReplyTarget] = useState<{
     channelId: string;
     messageId: string;
   } | null>(null);
-  // What had focus when a thread was opened (the row's Reply control, most
-  // often) — restored by `closeThread` below, per the keyboard-navigation
-  // acceptance criterion in #396.
-  const threadTriggerRef = useRef<HTMLElement | null>(null);
-  // A channel switch while a thread is open unmounts `ThreadPanel` the same
-  // way `closeThread` does, but the trigger that opened it belongs to the
-  // channel being left — refocusing it would be meaningless at best and
-  // would yank focus back to a message the member just navigated away from
-  // at worst. Only the bookkeeping is shared.
-  const dismissThreadForChannelSwitch = useCallback(() => {
-    setThreadParentId(null);
-    threadTriggerRef.current = null;
-    // A staged reply is NOT cleared here. It is scoped to its own channel (see
-    // `replyTarget`), so it is already invisible and unsendable anywhere else,
-    // and clearing here would discard it on a path that is not a switch at all:
-    // the rail calls this for a click on the channel already open, which is an
-    // ordinary miss-click. That silently dropped the reply while leaving the
-    // draft text, so Enter posted it as a top-level message.
-  }, []);
   // Channel-scoped: the notice belongs to the channel the jump was attempted
   // in, so it never follows the member into a channel the message was never in.
   const showUnreachableNotice =
@@ -600,7 +620,14 @@ export function ChatShell({
   // inert. The timeline exposes the scroll, the shell owns the wiring.
   const timeline = useRef<MessageTimelineHandle | null>(null);
   const jumpToMessage = useCallback((messageId: string) => {
-    timeline.current?.scrollToMessage(messageId);
+    const reached = timeline.current?.scrollToMessage(messageId);
+    // Keyboard focus has to go somewhere the scroll can't take away. Every
+    // trigger that lands here is inside the virtualized timeline or inside a
+    // popover that closes behind the jump, so `react-virtuoso` unmounts the
+    // focused element the moment the list scrolls and focus falls to `<body>` —
+    // the next Tab starts from the top of the document. The landmark is the
+    // destination anyway, and #396 made it focusable for exactly this.
+    if (reached) document.getElementById("chat-timeline")?.focus();
   }, []);
 
   // Every jump — a search hit, a bookmark, a `?message=` deep link — takes the
@@ -628,21 +655,28 @@ export function ChatShell({
         // ask for with the jump stranded. The deep-link path already forces
         // this refetch for the same reason.
         void refetchChannels();
-        // A jump out of the channel a thread belongs to must close it, the same
-        // cleanup picking a channel from the rail does. Left open, the panel
-        // merely fails to resolve against the new channel — and pops back up
-        // unbidden on any later jump that returns to its channel.
-        dismissThreadForChannelSwitch();
       }
       setUnreachableTarget(null);
       setPendingMessageId(messageId);
       setPendingJumpChannelId(channelId);
       setJumpAttempt((n) => n + 1);
+      // Below `lg` the thread column may be off-screen. Jumping into a
+      // `display:none` column consumes the target — `scrollToMessage` finds the
+      // index, reports success, and the pending state clears — while nothing
+      // visibly happens, so the link reads as broken.
+      setNarrowPane("thread");
     },
-    [activeChannelId, refetchChannels, dismissThreadForChannelSwitch],
+    [activeChannelId, refetchChannels],
   );
 
-  /** Search hit (#469) — the popover carries the channel on every row. */
+  // The channel's effective notification level, or `null` when it is not known
+  // yet. Read once here because two places need it: the mute mark beside the
+  // channel name, and the panel behind `⋯`.
+  const activeChannelLevel = activeChannelId
+    ? (levelByChannelId.get(activeChannelId) ?? null)
+    : null;
+
+  /** Search hit (#469) — the panel carries the channel on every row. */
   const jumpToSearchHit = useCallback(
     (hit: ChatSearchHit) => jumpToChannelMessage(hit.channelId, hit.message.id),
     [jumpToChannelMessage],
@@ -702,22 +736,6 @@ export function ChatShell({
     jumpAttempt,
   ]);
 
-  const threadParent = useMemo(() => {
-    if (!threadParentId) return null;
-    return channel.messages.find((m) => m.id === threadParentId) ?? null;
-  }, [channel.messages, threadParentId]);
-  // Captures the trigger (the row's Reply control, most often) on the way in,
-  // so `closeThread` can hand focus back. The thread panel is a persistent
-  // aside, not a dialog, so nothing returns focus here for free the way Radix
-  // does for the slash palette — hence the manual bookkeeping, per the
-  // keyboard-navigation acceptance criterion in #396.
-  const openThread = useCallback((message: ChatMessage) => {
-    threadTriggerRef.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    setThreadParentId(message.id);
-  }, []);
   /**
    * Stages an inline reply, **normalized to the root message** — AC 3 and
    * `spec/behavior/chat/README.md`: "Replying to a reply references the root
@@ -818,22 +836,6 @@ export function ChatShell({
     };
   }, [channel.messages, replyTarget, activeChannelId, nameFor, userId]);
 
-  const closeThread = useCallback(() => {
-    setThreadParentId(null);
-    // The trigger is a row inside the virtualized timeline (`react-virtuoso`
-    // unmounts rows scrolled out of its window), so it can have been removed
-    // from the document entirely while the thread stayed open — `.focus()`
-    // on a detached element is a silent no-op, which would otherwise strand
-    // focus with no explanation. Fall back to the timeline landmark itself,
-    // which #396 also made focusable, rather than leaving focus on nothing.
-    if (threadTriggerRef.current?.isConnected) {
-      threadTriggerRef.current.focus();
-    } else {
-      document.getElementById("chat-timeline")?.focus();
-    }
-    threadTriggerRef.current = null;
-  }, []);
-
   // A screen-reader announcement for a genuinely new incoming message,
   // decoupled from `#chat-timeline`'s DOM — see the comment on that `role="log"`
   // div for why: `MessageTimeline` virtualizes, so a live region wired to its
@@ -872,59 +874,90 @@ export function ChatShell({
   }, [channel.messages, activeChannelId, userId, nameFor]);
 
   if (!activeChapterId) {
+    // Padded by this route, not by the shell. `/chat` is full-bleed
+    // (`layout/full-bleed-routes.ts`), so `<main>` hands it the frame with no
+    // inset — which is what the two-column layout below wants and what a lone
+    // centred card very much does not: without this it renders hard against the
+    // nav's border and the top bar.
     return (
-      <EmptyState
-        title="No chapter selected"
-        description="Pick an active chapter to load its channels and messages."
-      />
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        <EmptyState
+          title="No chapter selected"
+          description="Pick an active chapter to load its channels."
+        />
+      </div>
     );
   }
 
-  if (channelsQuery.isPending || categoriesQuery.isPending) {
-    return <LoadingState message="Loading chapter channels…" />;
-  }
-  if (channelsQuery.isError) {
-    return (
-      <ErrorState
-        title="Couldn't load channels"
-        description="Confirm your chapter access and retry."
-        onRetry={() => void channelsQuery.refetch()}
-      />
-    );
-  }
-  if (channels.length === 0) {
-    return (
-      <EmptyState
-        title="No channels yet"
-        description="New chapters seed #general, #announcements, and #chapter-audit during onboarding. Ask an admin if none appear."
-      />
-    );
-  }
-  if (requestedChannelMissing) {
-    return (
-      <EmptyState
-        title="Channel not found"
-        description="This link points to a channel that's been removed, or one you no longer have access to."
-        actionLabel="Browse channels"
-        onAction={() => setChannelTargetDismissed(true)}
-      />
-    );
-  }
+  /*
+    From here the frame renders FIRST and every state renders inside it.
+
+    The board's first-paint contract (`1s`) paints "nav, top bar, chapter name,
+    channel column chrome, composer shell" at 0ms, and its delete list names
+    exactly what used to stop that here: "the `categoriesQuery.isPending` gate
+    on the whole shell; the shell-level LoadingState card". Both are gone.
+
+    - **Categories no longer gate anything.** `asArray` already turned an absent
+      payload into `[]`, so a pending fetch renders the flat rail and the groups
+      land when they land. `1s` asks for precisely that ("Categories regroup only
+      below the fold or on next visit"). The old gate bought a rail that never
+      reflowed, and charged every cold load the query provider's `retry: 3`
+      backoff for it.
+    - **A whole-route loading card is the opposite of the contract**: it makes
+      the channel column paint last rather than first. Channel rows shimmer in
+      their own geometry instead, and the channel column's chrome is up
+      immediately either way.
+
+    `!activeChapterId` above is the one gate that survives, because with no
+    chapter there is no frame to draw.
+  */
+  /*
+    Keyed off what we HAVE, not off `isError`. TanStack Query keeps the last
+    good `data` when a *background refetch* fails, so branching on `isError`
+    first would blank a rail the member is actively using — and unmount the
+    timeline with it — because one refetch 502'd during an API restart. The
+    error state is for having nothing to show. `levelByChannelId` above records
+    the same reasoning for the same reason; this is that rule applied to the
+    list itself.
+  */
+  const channelsPaneState =
+    channels.length > 0
+      ? "ready"
+      : channelsQuery.isPending
+        ? "loading"
+        : channelsQuery.isError
+          ? "error"
+          : "empty";
+  const timelineReady = channelsPaneState === "ready" && !requestedChannelMissing;
 
   return (
-    <div className="grid gap-4 md:grid-cols-[260px_1fr_300px]">
+    /*
+      Flush columns, 100vh, independent scroll (`1b` — the board counts the app
+      nav as the third; this route owns the other two). The route is
+      full-bleed (`layout/full-bleed-routes.ts`), so this sits directly in the
+      shell's `<main>` with no inset: the channels column hugs the nav's right
+      border, and `h-full` here is the shell's fixed frame rather than a
+      document that grows.
+
+      The panes no longer carry `rounded-xl` card chrome, `gap-4` between them,
+      or `md:sticky` rail positioning. They are flush columns divided by
+      hairlines, and each owns its own scroll because the page has none.
+    */
+    <div className="flex h-full min-h-0">
       {/*
         `dashboard-shell.tsx`'s "Skip to main content" link lands the keyboard
-        user at the top of `/chat`, which is still the whole 3-pane grid —
-        including the channel rail this link exists to skip past. Every visit
-        this route needs re-skipping, so it earns its own target rather than
-        relying on the app-shell's.
+        user at the top of `/chat`, which is still the whole layout, including
+        the channel column this link exists to skip past. Every visit to this
+        route needs re-skipping, so it earns its own target. Only offered when
+        there is a timeline to land on.
       */}
-      <a href="#chat-timeline" className={SKIP_LINK_CLASSES}>
-        Skip to messages
-      </a>
+      {timelineReady ? (
+        <a href="#chat-timeline" className={SKIP_LINK_CLASSES}>
+          Skip to messages
+        </a>
+      ) : null}
       {/*
-        Decoupled from `#chat-timeline` below on purpose — see that div's own
+        Decoupled from `#chat-timeline` below on purpose - see that div's own
         comment. This is the only thing that announces a genuinely new
         message; it never mounts inside the virtualized timeline.
       */}
@@ -937,168 +970,257 @@ export function ChatShell({
         {liveAnnouncement}
       </div>
       {/*
-        Rails take `--surface-1` (foundations §2: "raised surface — nav bars"),
-        the same step the dashboard sidebar uses, so the chat rail and the app
-        rail read as the same kind of chrome.
+        The cold load, announced once.
+
+        The deleted whole-route `LoadingState` carried `role="status"`,
+        `aria-busy` and a visible caption, so a screen-reader user was told the
+        channels were loading; `ChannelListSkeleton` is `aria-hidden` (eight
+        anonymous rectangles are no use to anyone), so the window would
+        otherwise be silent.
+
+        Two things this is deliberately NOT. It is not `role="status"` on the
+        list's own container: that role implies `aria-atomic`, so every unread
+        badge `useChannelUnreadCounts` repaints would re-read the entire channel
+        list aloud — the same defect `#chat-timeline`'s `aria-live="off"` exists
+        to prevent, one column over. And it is not inside the channels column,
+        which `narrowPane` hides below `lg` — the announcement has to survive the
+        viewport where the skeleton itself is off-screen.
+      */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {channelsPaneState === "loading" ? "Loading channels" : ""}
+      </div>
+      {/*
+        Channels: 240px, full height, its own scroll, no search field (`1b`
+        pin 5). `--surface-1` is the same step the app nav takes, so the two
+        columns read as one continuous piece of chrome with a hairline between
+        them rather than as a rail floating beside a page.
       */}
       <section
         aria-label="Channels"
         className={cn(
-          "flex flex-col overflow-hidden rounded-xl border border-border bg-surface-1",
-          CHAT_RAIL_STICKY_CLASS,
+          "flex min-h-0 flex-col border-r border-border bg-surface-1",
+          // Full width below `lg`, where it is the only column on screen.
+          "w-full lg:w-60 lg:shrink-0",
+          narrowPane === "thread" && "max-lg:hidden",
         )}
       >
-        <header className="border-b border-border px-3 py-3">
-          <h2 className="text-base font-bold text-foreground">Channels</h2>
-          <p className="text-[12.5px] text-muted-foreground">
-            {channels.length} channel{channels.length === 1 ? "" : "s"}
-          </p>
+        {/*
+          48px, matching the top bar and the channel header beside it, so the
+          three headers line up across the whole route (`3a` geometry: "Top bar,
+          column headers 48"). The "N channels" count that used to sit under the
+          title is deleted (`1t`) - it restated the length of a list already on
+          screen.
+        */}
+        <header className="flex h-12 shrink-0 items-center border-b border-border px-3">
+          <h2 className="text-sm font-semibold text-foreground">Channels</h2>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          <ChannelList
-            viewerId={userId}
-            memberNames={memberNames}
-            channels={channels}
-            categories={categories}
-            unreadByChannelId={unreadByChannelId}
-            activeChannelId={activeChannelId}
-            onPick={(ch) => {
-              setSelectedChannelId(ch.id);
-              dismissThreadForChannelSwitch();
-              // Deliberately leaves any pending jump target alone — it is
-              // gated on its own channel and will resolve if the member
-              // returns. Only the notice is channel-scoped for display.
-              setUnreachableTarget(null);
-            }}
-          />
+          {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
+          {channelsPaneState === "ready" ? (
+            <ChannelList
+              viewerId={userId}
+              memberNames={memberNames}
+              channels={channels}
+              categories={categories}
+              unreadByChannelId={unreadByChannelId}
+              activeChannelId={activeChannelId}
+              onPick={(ch) => {
+                setSelectedChannelId(ch.id);
+                // Below `lg` the list and the thread are never both on screen,
+                // so picking has to navigate. Inert at `lg` and up.
+                setNarrowPane("thread");
+                // Deliberately leaves any pending jump target alone - it is
+                // gated on its own channel and will resolve if the member
+                // returns. Only the notice is channel-scoped for display.
+                setUnreachableTarget(null);
+              }}
+            />
+          ) : null}
         </div>
       </section>
 
       {/*
-        The thread is the app floor with the bubbles stepped above it — s05.
-        Bordered rather than filled, so the pane still reads as a region.
+        The thread column is the app floor, with bubbles stepped above it (s05).
+        No border of its own: the channels column's right hairline is the only
+        division, and the composer pins to the bottom of this column, which is
+        the bottom of the viewport.
       */}
-      <section className="flex min-h-[70vh] flex-col overflow-hidden rounded-xl border border-border bg-background">
-        <header className="border-b border-border px-4 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              {/*
-                `h1`, not `h2`. This was correctly a sub-heading while the
-                dashboard shell rendered an `<h1>Chat</h1>` above it; #2141
-                deleted that, so the channel name is now the top heading on
-                this route — and it IS the page's title here, the way a chat
-                app names a screen. Left as `h2` the route would start its
-                outline at level 2, and a screen-reader user jumping by
-                heading level 1 would land nowhere.
-                Styling is explicit, so the tag change is visually identical.
-              */}
-              <h1 className="flex items-center gap-2 text-lg font-bold text-foreground">
-                {activeChannel ? (
-                  <>
-                    <ChannelHeaderMark
-                      channel={activeChannel}
-                      className="h-5 w-5 shrink-0 text-muted-foreground"
-                    />
-                    <span className="truncate">{activeChannelName}</span>
-                  </>
-                ) : (
-                  "Pick a channel"
-                )}
-              </h1>
-              {activeChannel?.description ? (
-                <p className="truncate text-[12.5px] text-muted-foreground">
-                  {activeChannel.description}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <ReconnectPill status={channel.connection} />
-              {activeChannel && failedChannelId === activeChannel.id ? (
-                // Lives in the header, not inside the popover. The popover
-                // unmounts its content when dismissed, so an alert in there is
-                // only seen by a member who happens to reopen it — and keeping
-                // it open until the write landed is what froze the menu when
-                // TanStack paused the mutation offline. Scoped to the channel
-                // the failed write was actually for: the mutation is shared by
-                // the whole shell, so its bare `isError` would assert a
-                // failure on channels nobody touched.
-                <p role="alert" className="text-[12.5px] text-destructive">
-                  Notification level not saved
-                </p>
-              ) : null}
-              <NotificationLevelPopover
-                level={
-                  activeChannel
-                    ? (levelByChannelId.get(activeChannel.id) ?? null)
-                    : null
-                }
-                disabled={!activeChannel}
-                isSaving={setNotificationLevel.isPending}
-                onChange={(level) => {
-                  if (!activeChannel) return;
-                  setNotificationLevel.mutate({
-                    channelId: activeChannel.id,
-                    level,
-                  });
-                }}
-              />
-              <ChatSearchPopover
-                activeChannelId={activeChannelId}
-                channelNameFor={channelNameFor}
-                nameFor={nameFor}
-                onJump={jumpToSearchHit}
-              />
-              <PinsPopover
-                messages={channel.messages}
-                nameFor={nameFor}
-                onJump={jumpToMessage}
-              />
-              {bookmarkWriteFailed ? (
-                // In the header rather than inside the popover, for the reason
-                // the notification-level alert beside it records: a popover
-                // unmounts its content when dismissed, so an alert in there is
-                // only seen by someone who happens to reopen it.
-                <p role="alert" className="text-[12.5px] text-destructive">
-                  {/* Covers both directions: the same alert fires for a failed
-                      save and a failed removal, and "not saved" would be wrong
-                      copy for the second. */}
-                  Bookmark not updated
-                </p>
-              ) : null}
-              <BookmarksPopover
-                bookmarks={bookmarks}
-                nameFor={nameFor}
-                isLoading={bookmarksQuery.isLoading}
-                isError={bookmarksQuery.isError}
-                onJump={jumpToBookmark}
-                onRemove={(messageId) => unbookmarkMessage.mutate(messageId)}
-              />
-            </div>
-          </div>
+      <section
+        className={cn(
+          "flex min-w-0 flex-1 flex-col bg-background",
+          narrowPane === "channels" && "max-lg:hidden",
+        )}
+      >
+        {/*
+          48px, one row (`1b` pin 11). The name, its description and the one
+          overflow control share the row; anything that cannot fit in 48px and
+          is not chrome moved below it. Four popover triggers used to live here
+          and are now behind `ChannelMenu`'s single `⋯`.
+        */}
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
           {/*
-            The container is ALWAYS mounted and carries the live region; only
-            its contents swap. A live region inserted into the DOM at the same
-            instant it gains content is not announced by most screen readers —
-            which would have left AT users with exactly the silent no-op this
-            notice exists to replace, just relocated. The search popover's own
-            `sr-only` region is mounted the same way.
+            Below `lg` this is the only way back to the list, because the list
+            is not on screen. Hidden at `lg`, where both columns are.
           */}
+          {/*
+            Only when there is a list to go back to. With no channels, or a
+            channel list that failed to load, the channels column renders its
+            header over an empty scroll area — and since the only control that
+            comes back is a channel row, Back would strand the member on a blank
+            pane with the Retry button out of reach in the column they left.
+          */}
+          {channelsPaneState === "ready" ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(CHAT_CONTROL_CLASS, "shrink-0 lg:hidden")}
+              onClick={() => setNarrowPane("channels")}
+              aria-label="Back to channels"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+          ) : null}
+          <div className="flex min-w-0 flex-1 items-baseline gap-2">
+            {/*
+              `h1`, not `h2`. This was correctly a sub-heading while the
+              dashboard shell rendered an `<h1>Chat</h1>` above it; #2141
+              deleted that, so the channel name is now the top heading on
+              this route - and it IS the page's title here, the way a chat
+              app names a screen. Left as `h2` the route would start its
+              outline at level 2, and a screen-reader user jumping by
+              heading level 1 would land nowhere.
+              Styling is explicit, so the tag change is visually identical.
+            */}
+            {/*
+              `min-w-0`, and deliberately NOT `shrink-0`: the `truncate` on the
+              name below only bites if this flex item is allowed to shrink below
+              its content. With `shrink-0` a long channel name simply overflows
+              and paints under the `⋯` trigger beside it.
+            */}
+            <h1 className="flex min-w-0 items-center gap-2 text-[15px] font-bold text-foreground">
+              {activeChannel ? (
+                <>
+                  <ChannelHeaderMark
+                    channel={activeChannel}
+                    className="h-4 w-4 shrink-0 text-muted-foreground"
+                  />
+                  <span className="truncate">{activeChannelName}</span>
+                  {/*
+                    Muting used to be readable without opening anything: the
+                    notification popover's trigger named it in its `aria-label`
+                    ("Notifications: muted"). That trigger is now behind `⋯`, so
+                    the state moves here rather than being lost - a muted
+                    channel must not look identical to an unmuted one.
+                  */}
+                  {activeChannelLevel === "off" ? (
+                    <>
+                      <MuteGlyph
+                        className="h-4 w-4 shrink-0 text-muted-foreground"
+                        active
+                      />
+                      {/*
+                        Every duotone glyph is `aria-hidden` (`ui/duotone.tsx`),
+                        so the mark alone would restate the deleted trigger's
+                        `aria-label` for sighted members only — which is most of
+                        the point missed. `channel-list.tsx` pairs its own
+                        `MuteGlyph` the same way.
+                      */}
+                      <span className="sr-only">Muted</span>
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                "Pick a channel"
+              )}
+            </h1>
+            {activeChannel?.description ? (
+              <p className="truncate text-[12.5px] text-muted-foreground">
+                {activeChannel.description}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <ReconnectPill status={channel.connection} />
+            <ChannelMenu
+              activeChannelId={activeChannelId}
+              messages={channel.messages}
+              nameFor={nameFor}
+              channelNameFor={channelNameFor}
+              onJumpToMessage={jumpToMessage}
+              onJumpToSearchHit={jumpToSearchHit}
+              onJumpToBookmark={jumpToBookmark}
+              bookmarks={bookmarks}
+              bookmarksLoading={bookmarksQuery.isLoading}
+              bookmarksError={bookmarksQuery.isError}
+              onRemoveBookmark={(messageId) =>
+                unbookmarkMessage.mutate(messageId)
+              }
+              notificationLevel={activeChannelLevel}
+              notificationSaving={setNotificationLevel.isPending}
+              onChangeNotificationLevel={(level) => {
+                if (!activeChannel) return;
+                setNotificationLevel.mutate({
+                  channelId: activeChannel.id,
+                  level,
+                });
+              }}
+            />
+          </div>
+        </header>
+        {/*
+          Status strip, directly under the 48px header rather than inside it.
+
+          Both `role="alert"` lines are here rather than inside the menu for the
+          reason they were never inside their own popovers: a popover unmounts
+          its content when dismissed, so an alert in there is only seen by a
+          member who happens to reopen it. Behind `⋯` that is now strictly
+          worse, since the control itself is out of sight too.
+
+          The unreachable-target container is ALWAYS mounted and carries the
+          live region; only its contents swap. A live region inserted into the
+          DOM at the same instant it gains content is not announced by most
+          screen readers - which would have left AT users with exactly the
+          silent no-op this notice exists to replace, just relocated.
+        */}
+        <div className="shrink-0 empty:hidden">
+          {activeChannel && failedChannelId === activeChannel.id ? (
+            // Scoped to the channel the failed write was actually for: the
+            // mutation is shared by the whole shell, so its bare `isError`
+            // would assert a failure on channels nobody touched.
+            <p
+              role="alert"
+              className="border-b border-border px-4 py-1.5 text-[12.5px] text-destructive"
+            >
+              Notification level not saved
+            </p>
+          ) : null}
+          {bookmarkWriteFailed ? (
+            <p
+              role="alert"
+              className="border-b border-border px-4 py-1.5 text-[12.5px] text-destructive"
+            >
+              {/* Covers both directions: the same alert fires for a failed
+                  save and a failed removal, and "not saved" would be wrong
+                  copy for the second. */}
+              Bookmark not updated
+            </p>
+          ) : null}
           <div aria-live="polite" role="status">
             {showUnreachableNotice ? (
               // Dismissible because it reports a past action, not a standing
               // condition of the channel.
-              <div className="mt-2 flex items-start justify-between gap-2">
+              <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-1.5">
                 <p className="text-[12.5px] text-muted-foreground">
-                  That message is older than the history loaded here, so the
-                  timeline can’t jump to it yet.
+                  That message is older than the history loaded here.
                 </p>
                 <Button
                   variant="secondary"
                   size="sm"
+                  className="h-8"
                   onClick={() => {
                     // Abandons the target, not just the notice. Clearing only
                     // the message would leave it pending, so the effect would
-                    // re-raise this the moment any new message arrived — a
+                    // re-raise this the moment any new message arrived - a
                     // dismiss that visibly un-dismisses itself.
                     setUnreachableTarget(null);
                     setPendingMessageId(null);
@@ -1110,14 +1232,7 @@ export function ChatShell({
               </div>
             ) : null}
           </div>
-          {channel.typingUsers.length > 0 ? (
-            <p className="mt-1 text-[12.5px] text-muted-foreground">
-              {channel.typingUsers.length === 1
-                ? "Someone is typing…"
-                : `${channel.typingUsers.length} people are typing…`}
-            </p>
-          ) : null}
-        </header>
+        </div>
         {/*
           Between the channel header and the timeline: "a dismissible inline
           nudge in chat" (`spec/product/modules.md` § Ops-setup nudges) without
@@ -1127,6 +1242,55 @@ export function ChatShell({
           costs the common case one early return.
         */}
         <OpsSetupNudge />
+        {/*
+          The three states that used to replace the whole route now render
+          inside this column, so the channels column beside them stays usable:
+          a member who cannot load #general can still see and pick another
+          channel. FITFO copy, per `3b`: the status line is the title and stays
+          under six words, with a short second line and one action.
+        */}
+        {channelsPaneState === "error" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <ErrorState
+              title="Couldn't load channels"
+              description="Check your chapter access."
+              onRetry={() => void channelsQuery.refetch()}
+            />
+          </div>
+        ) : null}
+        {channelsPaneState === "empty" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <EmptyState
+              title="No channels yet"
+              description="Onboarding seeds them. Ask an admin."
+            />
+          </div>
+        ) : null}
+        {channelsPaneState === "ready" && requestedChannelMissing ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <EmptyState
+              title="Channel not found"
+              description="That link points somewhere you can't reach."
+              actionLabel="Browse channels"
+              onAction={() => {
+                setChannelTargetDismissed(true);
+                // Below `lg` the list is a separate pane, so a control named
+                // "Browse channels" has to actually show it. Dismissing alone
+                // resolved the #general fallback and painted a timeline, which
+                // is a different channel rather than a list.
+                setNarrowPane("channels");
+              }}
+            />
+          </div>
+        ) : null}
+        {channelsPaneState === "loading" ? (
+          // Reserved geometry, not a card: `1s` wants the shell and the
+          // composer shell up while the tail fills in, and a bordered loading
+          // panel here would be one more thing to swap out on arrival.
+          <div className="min-h-0 flex-1" aria-hidden="true" />
+        ) : null}
+        {timelineReady ? (
+        <>
         {/*
           `role="log"` alone still carries an ARIA-spec *implicit* default of
           `aria-live="polite"` / `aria-relevant="additions text"` — so making
@@ -1168,7 +1332,10 @@ export function ChatShell({
             onReact={channel.react}
             onUnreact={channel.unreact}
             onReply={canReplyHere ? startReply : undefined}
-            onOpenThread={openThread}
+            // The quote above a reply scrolls to the message it quotes. It used
+            // to open `ThreadPanel` in the Details rail; #2142 deleted both, and
+            // this is the same machinery pins and saved messages already use.
+            onJumpToParent={(message) => jumpToMessage(message.id)}
             onRetry={channel.retry}
             onDiscard={channel.discard}
             // Heavy-command rows bypass the outbox, so `channel.retry` above
@@ -1209,6 +1376,21 @@ export function ChatShell({
             canManageChannel={canManageChannel}
           />
         </div>
+        {/*
+          Directly above the composer, which is where Discord and Slack both put
+          it and where a 48px header has no room for it. Reserves no space when
+          nobody is typing: it is transient status, and a permanently reserved
+          strip would push the composer down by a line on every channel.
+        */}
+        {channel.typingUsers.length > 0 ? (
+          <p className="shrink-0 px-4 pb-1 text-[12.5px] text-muted-foreground">
+            {channel.typingUsers.length === 1
+              ? "Someone is typing…"
+              : `${channel.typingUsers.length} people are typing…`}
+          </p>
+        ) : null}
+        </>
+        ) : null}
         {activeChannel ? (
           <Composer
             // Remounts the editor whenever the channel *or its resolved
@@ -1285,39 +1467,6 @@ export function ChatShell({
         ) : null}
       </section>
 
-      <aside
-        aria-label="Thread"
-        className={cn(
-          "flex flex-col overflow-hidden rounded-xl border border-border bg-surface-1",
-          CHAT_RAIL_STICKY_CLASS,
-        )}
-      >
-        {threadParent ? (
-          <ThreadPanel
-            nameFor={nameFor}
-            channelId={threadParent.channel_id}
-            parent={threadParent}
-            allMessages={channel.messages}
-            viewerId={userId}
-            onClose={closeThread}
-            onReact={channel.react}
-            onUnreact={channel.unreact}
-            onEdit={channel.edit}
-            onDelete={handleDeleteMessage}
-            bookmarkedMessageIds={bookmarkedMessageIds}
-            onToggleBookmark={handleToggleBookmark}
-            canManageChannel={canManageChannel}
-          />
-        ) : (
-          <div className="px-3 py-3">
-            <h2 className="text-base font-bold text-foreground">Details</h2>
-            <p className="mt-1 text-[12.5px] text-muted-foreground">
-              Open the quote above a reply to collect that conversation here.
-              Pinned messages live in the popover above the timeline.
-            </p>
-          </div>
-        )}
-      </aside>
       {confirmDialog}
     </div>
   );

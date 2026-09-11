@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
-import { PinsPopover } from "./pins-popover";
+import { PinsPanel } from "./pins-popover";
 import type { ChatMessage } from "@repo/chat-core/types";
 
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -34,57 +34,37 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
 
 const nameFor = (id: string) => (id === OTHER ? "Alice Chen" : null);
 
-describe("PinsPopover", () => {
-  it("previews a pinned poll by its kind noun, not an empty block", async () => {
+describe("PinsPanel", () => {
+  it("previews a pinned poll by its kind noun, not an empty block", () => {
     render(
-      <PinsPopover
+      <PinsPanel
         messages={[message({ id: "poll-1", content: "", kind: "poll" })]}
         nameFor={nameFor}
       />,
     );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "1 pinned messages" }),
-    );
-
     expect(screen.getByText("Poll")).toBeInTheDocument();
   });
 
-  it("previews a file-only pin as an attachment count", async () => {
+  it("previews a file-only pin as an attachment count", () => {
     render(
-      <PinsPopover
-        messages={[
-          message({ id: "file-1", content: "", attachment_count: 3 }),
-        ]}
+      <PinsPanel
+        messages={[message({ id: "file-1", content: "", attachment_count: 3 })]}
         nameFor={nameFor}
       />,
-    );
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "1 pinned messages" }),
     );
 
     expect(screen.getByText("3 attachments")).toBeInTheDocument();
   });
 
-  it("jumps and dismisses so the panel does not cover the message", async () => {
+  it("jumps to the message a row names", async () => {
     const onJump = vi.fn();
     render(
-      <PinsPopover
-        messages={[message()]}
-        nameFor={nameFor}
-        onJump={onJump}
-      />,
+      <PinsPanel messages={[message()]} nameFor={nameFor} onJump={onJump} />,
     );
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "1 pinned messages" }),
-    );
     await userEvent.click(screen.getByRole("button", { name: /dues link/ }));
 
     expect(onJump).toHaveBeenCalledWith("msg-1");
-    expect(
-      screen.queryByText("Pinned in this channel"),
-    ).not.toBeInTheDocument();
   });
 });

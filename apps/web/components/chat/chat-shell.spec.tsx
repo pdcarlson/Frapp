@@ -1,6 +1,15 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useEffect } from "react";
+
+/**
+ * Overrides folded into the `useChannels()` mock, so a case can drive the
+ * pending and error branches that now render INSIDE the layout rather than
+ * replacing it. Reset in `afterEach` on the block that sets it.
+ */
+const { channelsQueryState } = vi.hoisted(() => ({
+  channelsQueryState: { value: {} as Record<string, unknown> },
+}));
 
 const {
   mockScrollToMessage,
@@ -96,6 +105,7 @@ vi.mock("@repo/hooks", () => ({
     data: CHANNELS,
     isFetching: false,
     refetch: mockRefetch,
+    ...channelsQueryState.value,
   }),
   // Non-empty, and deliberately NOT in alphabetical order: the rail is
   // contractually required to render categories in the order the API returned
@@ -178,6 +188,7 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // doesn't provide) are stubbed — this test is about ChatShell's own
 // deep-link wiring, not their internals.
 vi.mock("./channel-list", () => ({
+  ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
   ChannelList: ({
     onPick,
     categories,
@@ -273,47 +284,36 @@ vi.mock("./composer", () => ({
     );
   },
 }));
-vi.mock("./thread-panel", () => ({
-  ThreadPanel: () => <div data-testid="thread-panel" />,
-}));
-vi.mock("./pins-popover", () => ({
-  PinsPopover: () => <div data-testid="pins-popover" />,
-}));
-// Stubbed down to a single button that fires `onJump` with whatever hit the
-// test set, so these cases exercise the *shell's* jump wiring rather than the
-// popover's own search behaviour (which chat-search-popover.spec.tsx owns).
-vi.mock("./chat-search-popover", () => ({
-  ChatSearchPopover: ({
-    onJump,
+// The four header popovers are now four panels behind one `ChannelMenu` (the
+// `⋯` control), so the shell wires their jump callbacks through that one
+// component. Stubbed down to the two buttons these cases actually drive, so
+// they exercise the *shell's* jump wiring rather than a panel's own behaviour
+// or Radix's popover mechanics — each panel's rendering is owned by its own
+// spec, and the menu's view switching by `channel-menu.spec.tsx`.
+vi.mock("./channel-menu", () => ({
+  ChannelMenu: ({
+    onJumpToSearchHit,
+    onJumpToBookmark,
   }: {
-    onJump: (hit: { message: { id: string }; channelId: string }) => void;
+    onJumpToSearchHit: (hit: { message: { id: string }; channelId: string }) => void;
+    onJumpToBookmark: (channelId: string, messageId: string) => void;
   }) => (
-    <button data-testid="search-jump" onClick={() => onJump(searchHit())}>
-      search
-    </button>
-  ),
-}));
-// Exposes `onJump` as a button so the cross-channel jump (#462) can be driven
-// without opening a real Radix popover. The panel's own rendering is covered in
-// `bookmarks-popover.spec.tsx`; what belongs here is the shell wiring.
-vi.mock("./bookmarks-popover", () => ({
-  BookmarksPopover: ({
-    onJump,
-  }: {
-    onJump?: (channelId: string, messageId: string) => void;
-  }) => (
-    <button
-      type="button"
-      data-testid="bookmarks-popover"
-      onClick={() => onJump?.("chan-random", "msg-2")}
-    >
-      bookmarks
-    </button>
-  ),
-}));
-vi.mock("./notification-level-popover", () => ({
-  NotificationLevelPopover: () => (
-    <div data-testid="notification-level-popover" />
+    <div>
+      <button
+        type="button"
+        data-testid="search-jump"
+        onClick={() => onJumpToSearchHit(searchHit())}
+      >
+        search
+      </button>
+      <button
+        type="button"
+        data-testid="bookmarks-popover"
+        onClick={() => onJumpToBookmark("chan-random", "msg-2")}
+      >
+        bookmarks
+      </button>
+    </div>
   ),
 }));
 vi.mock("./reconnect-pill", () => ({
@@ -432,8 +432,11 @@ describe("ChatShell deep-link targets", () => {
     expect(
       screen.getByRole("button", { name: "Browse channels" }),
     ).toBeTruthy();
-    // The fallback grid (channel rail, composer) must not render underneath.
-    expect(screen.queryByTestId("channel-list")).toBeNull();
+    // The channels column DOES render underneath, and that is the change
+    // #2142 made: this state used to replace the whole route, so a member who
+    // followed a dead link lost the list they would pick a live channel from.
+    // The state is now scoped to the thread column beside it.
+    expect(screen.getByTestId("channel-list")).toBeTruthy();
   });
 
   it("refetches the channel list once for a supplied target, so a just-created channel isn't a false miss", () => {
@@ -814,7 +817,7 @@ describe("ChatShell accessibility landmarks (#396)", () => {
 
 /**
  * `ChatShell` computes `canManageChannel` and owns the delete-confirmation
- * flow itself (`MessageTimeline`/`ThreadPanel` only render the button and
+ * flow itself (`MessageTimeline` only renders the button and
  * call the handler back) — this is the one place that logic can be tested
  * without a real Virtuoso/DOM-heavy `MessageTimeline`.
  */
@@ -1270,3 +1273,232 @@ describe("ChatShell reply-with-quote (#489)", () => {
     expect(screen.getByTestId("reply-offered")).toHaveTextContent("false");
   });
 });
+
+/**
+ * Lane 3 acceptance (#2142). These are the three things the lane is *for*, and
+ * each of them is the kind of change that quietly comes back: a rail is easy to
+ * re-add, and a loading gate is easy to re-introduce the next time a query
+ * needs settling before a list renders.
+ */
+describe("ChatShell greenfield grammar (#2142)", () => {
+  afterEach(() => {
+    channelsQueryState.value = {};
+  });
+
+  it("renders no Details rail", () => {
+    render(<ChatShell />);
+
+    expect(screen.queryByRole("complementary", { name: "Thread" })).toBeNull();
+    expect(screen.queryByText("Details")).toBeNull();
+  });
+
+  it("renders two columns, not three", () => {
+    render(<ChatShell />);
+
+    // The channels column is a labelled region; the thread column is not, so
+    // counting labelled regions counts the rails. Three meant a Details rail.
+    expect(screen.getAllByRole("region")).toHaveLength(1);
+    expect(
+      screen.getByRole("region", { name: "Channels" }),
+    ).toBeInTheDocument();
+  });
+
+  it("states no channel count above the list", () => {
+    render(<ChatShell />);
+
+    // `1t`: the count restated the length of a list already on screen.
+    expect(screen.queryByText(/\d+ channels?$/)).toBeNull();
+  });
+
+  it("paints the channels column while the channel list is still loading", async () => {
+    // `1s` deletes "the shell-level LoadingState card": a card that replaces the
+    // route makes the channel column paint last rather than first.
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(
+      screen.getByRole("region", { name: "Channels" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("channel-list-skeleton")).toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter channels…")).toBeNull();
+  });
+
+  it("keeps the channels column usable when the channel list fails", () => {
+    // The error used to replace the route, so a member who could not load one
+    // channel lost the list they would pick another from.
+    channelsQueryState.value = { isError: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(screen.getByText("Couldn't load channels")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Channels" }),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * The responsive contract, which lane 3 nearly dropped.
+ *
+ * The old layout was a `grid` that collapsed to one stacked column below `md`.
+ * The flush two-column rewrite is breakpoint-free by construction, and below
+ * `lg` the app nav is a drawer — so a fixed 240px channels column beside the
+ * thread leaves the thread about 135px at the documented 375px floor. That
+ * passes the floor suite, which only reads `scrollWidth`, while failing what
+ * the floor is for.
+ *
+ * jsdom applies no media queries, so these read the classes rather than the
+ * rendered widths. That is the right granularity anyway: the defect was a
+ * missing breakpoint, not a wrong number.
+ */
+describe("ChatShell narrow viewports (#2142)", () => {
+  function columns() {
+    const channels = screen.getByRole("region", { name: "Channels" });
+    // The thread column is the channels column's next sibling.
+    const thread = channels.nextElementSibling as HTMLElement;
+    return { channels, thread };
+  }
+
+  it("shows one column at a time below lg, and both at lg", () => {
+    render(<ChatShell />);
+    const { channels, thread } = columns();
+
+    // Full width when it is the only column; 240px once both fit.
+    expect(channels.className).toContain("w-full");
+    expect(channels.className).toContain("lg:w-60");
+    // Exactly one of the two is hidden below lg.
+    const hiddenBelowLg = [channels, thread].filter((el) =>
+      el.className.includes("max-lg:hidden"),
+    );
+    expect(hiddenBelowLg).toHaveLength(1);
+  });
+
+  it("opens on the thread, so a deep link lands on its message", () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    const { channels, thread } = columns();
+
+    expect(channels.className).toContain("max-lg:hidden");
+    expect(thread.className).not.toContain("max-lg:hidden");
+  });
+
+  it("navigates back to the list and forward again on a pick", async () => {
+    render(<ChatShell />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+    expect(columns().thread.className).toContain("max-lg:hidden");
+
+    // Picking has to navigate, because the two are never both on screen here.
+    fireEvent.click(screen.getByTestId("pick-random"));
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+  });
+});
+
+/**
+ * Two regressions the rewrite introduced and this pins shut: a cold load that
+ * says nothing to assistive tech, and an error branch that blanks a list the
+ * member is still using.
+ */
+describe("ChatShell channel-list states (#2142)", () => {
+  afterEach(() => {
+    channelsQueryState.value = {};
+  });
+
+  it("announces the cold load, which the skeleton alone cannot", () => {
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    // The deleted whole-route LoadingState carried this; the skeleton is
+    // aria-hidden, so it is no replacement on its own.
+    expect(screen.getByText("Loading channels")).toBeInTheDocument();
+  });
+
+  it("announces it from outside the channels column, which narrow hides", () => {
+    // `narrowPane` defaults to "thread", so below `lg` the column holding the
+    // skeleton is `display:none` — and `display:none` is out of the
+    // accessibility tree, so a caption inside it is silent at exactly the
+    // width where it was the only thing on screen.
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    const channels = screen.getByRole("region", { name: "Channels" });
+    expect(channels).not.toContainElement(screen.getByText("Loading channels"));
+  });
+
+  it("does not make the channel list itself a live region", () => {
+    // `role="status"` implies `aria-atomic`, so putting it on the list's own
+    // container made every unread badge repaint re-read all N channel names.
+    render(<ChatShell />);
+
+    const list = screen.getByTestId("channel-list");
+    expect(list.closest("[role='status']")).toBeNull();
+  });
+
+  it("keeps a cached list rendered when a background refetch fails", () => {
+    // TanStack keeps the last good `data` when a refetch errors. Branching on
+    // `isError` first blanked the rail and unmounted the timeline because one
+    // request 502'd during an API restart.
+    channelsQueryState.value = { isError: true };
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("channel-list")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load channels")).toBeNull();
+  });
+});
+
+/**
+ * Below `lg` the two columns are never both on screen, so every control that
+ * moves between them has to actually move. Each of these was a dead end.
+ */
+describe("ChatShell narrow navigation (#2142)", () => {
+  afterEach(() => {
+    channelsQueryState.value = {};
+  });
+
+  function columns() {
+    const channels = screen.getByRole("region", { name: "Channels" });
+    return { channels, thread: channels.nextElementSibling as HTMLElement };
+  }
+
+  it("brings the thread on screen when a deep link arrives", async () => {
+    const { rerender } = render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => {
+      expect(columns().thread.className).toContain("max-lg:hidden");
+    });
+
+    // App Router updates search params in place rather than remounting, so the
+    // pane state survives the navigation. Jumping into a hidden column consumes
+    // the target while nothing visibly happens.
+    rerender(<ChatShell initialChannelId="chan-random" initialMessageId="msg-2" />);
+
+    await waitFor(() => {
+      expect(columns().thread.className).not.toContain("max-lg:hidden");
+    });
+  });
+
+  it("shows the list when 'Browse channels' is taken", async () => {
+    render(<ChatShell initialChannelId="does-not-exist" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Browse channels" }));
+
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+  });
+
+  it("offers no way back when there is no list to go back to", () => {
+    // The channels column renders its header over an empty scroll area in these
+    // states, and the only control that returns is a channel row — so Back
+    // would strand the member on a blank pane with Retry out of reach.
+    channelsQueryState.value = { isError: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(screen.queryByRole("button", { name: "Back to channels" })).toBeNull();
+    expect(screen.getByText("Couldn't load channels")).toBeInTheDocument();
+  });
+});
+

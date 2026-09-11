@@ -16,12 +16,14 @@ export function messageRevealKey(message: RevealableMessage): string {
 
 /**
  * One reveal id per list — tapping a message row toggles *that* row's action
- * cluster and dismisses any other's (#1193). Shared by `message-timeline.tsx`
- * (virtualized) and `thread-panel.tsx` (a plain array), so the toggle logic
- * and the key derivation above live in one place rather than being
- * hand-rolled in lockstep on both — a mismatch between the two would show up
- * as "the wrong row's cluster stays open," which no compiler or unit test
- * scoped to a single list owner would catch.
+ * cluster and dismisses any other's (#1193).
+ *
+ * It has one caller today, `message-timeline.tsx`; it had two until #2142
+ * deleted `thread-panel.tsx`, which is why the toggle logic and the key
+ * derivation above are here rather than inline in the list that uses them. Kept
+ * as a hook rather than folded back in: the value of "one reveal id per list"
+ * is that a second list cannot get it subtly wrong, and the instant a second
+ * list exists it needs this, not a copy.
  */
 export function useTapRevealedMessage() {
   const [revealedId, setRevealedId] = useState<string | null>(null);

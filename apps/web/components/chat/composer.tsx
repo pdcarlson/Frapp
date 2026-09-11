@@ -25,10 +25,10 @@ import {
   AttachGlyph,
   OfflineGlyph,
   ReactionGlyph,
-  SendGlyph,
   SlashCommandGlyph,
 } from "./chat-glyphs";
 import { cn } from "@/lib/utils";
+import { CHAT_CONTROL_CLASS } from "./chip";
 import {
   useChapterRoster,
   useRequestChatUploadUrl,
@@ -346,6 +346,51 @@ export function notifyDispatchOutcome(
  * file upload. Drafts persist as serialized text (Tiptap → plain text) so the
  * Dexie schema stays stable across editor upgrades.
  */
+/**
+ * Composing help, behind a `?` and nowhere else.
+ *
+ * This replaces the line that used to sit in the toolbar reading "Shift+Enter
+ * for a new line · Cmd+/ for slash commands" (`1t`: "Composer hint → ? tooltip
+ * moved"). The board's rule is narrower than "shorten it": `3b` says help is
+ * only ever behind `?`, so a permanent line teaching two shortcuts is chrome a
+ * member reads once and then looks past forever, in a row that is otherwise all
+ * controls.
+ *
+ * The content is `3b`'s verbatim, and it says one thing the deleted line did
+ * not: `@` mentions. The deleted line also advertised `Cmd+/`, which is not the
+ * only way in — typing `/` opens the same palette — so the `/` spelling is both
+ * shorter and truer.
+ *
+ * A Popover rather than a `title=` tooltip: `title` is unreachable by keyboard
+ * and unreliable for screen readers, and this is the only place the shortcuts
+ * are stated now.
+ */
+function ComposerHelp() {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={CHAT_CONTROL_CLASS}
+          aria-label="Composing help"
+        >
+          <span aria-hidden="true" className="text-sm font-bold">
+            ?
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64">
+        <p className="text-[12.5px] text-muted-foreground">
+          Shift+Enter for a new line.
+          <br />/ for commands. @ to mention.
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function Composer({
   channelId,
   channelName,
@@ -667,7 +712,7 @@ export function Composer({
    * `replyTo` from `channel.messages`, so an unrelated edit or reaction lands a
    * fresh object on every render of an already-staged reply, and re-focusing on
    * each of those would fight a member who has clicked away — the same hazard
-   * `thread-panel.tsx` documents for its own focus effect.
+   * the deleted `thread-panel.tsx` documented for its own focus effect.
    */
   const replyTargetId = replyTo?.id ?? null;
   useEffect(() => {
@@ -696,7 +741,8 @@ export function Composer({
         setPalette({ open: true, query: "" });
         return;
       }
-      // `defaultPrevented` for the same reason `thread-panel.tsx` checks it:
+      // `defaultPrevented` for the same reason the deleted `thread-panel.tsx`
+      // checked it:
       // a Radix `DismissableLayer` (the emoji popover mounted from this
       // toolbar) closes itself on Escape by calling `preventDefault()` without
       // `stopPropagation()`, so that keydown still arrives here. Without the
@@ -878,6 +924,7 @@ export function Composer({
                   type="button"
                   variant="ghost"
                   size="icon"
+                  className={CHAT_CONTROL_CLASS}
                   aria-label="Open emoji picker"
                 >
                   <ReactionGlyph className="h-5 w-5" />
@@ -891,6 +938,7 @@ export function Composer({
               type="button"
               variant="ghost"
               size="icon"
+              className={CHAT_CONTROL_CLASS}
               aria-label="Attach file"
               onClick={() => fileInput.current?.click()}
               disabled={attachPending}
@@ -915,6 +963,7 @@ export function Composer({
               type="button"
               variant="ghost"
               size="icon"
+              className={CHAT_CONTROL_CLASS}
               aria-label="Open slash commands (Command Slash)"
               aria-haspopup="dialog"
               aria-expanded={palette.open}
@@ -922,18 +971,24 @@ export function Composer({
             >
               <SlashCommandGlyph className="h-5 w-5" />
             </Button>
-            <span className="hidden text-[12.5px] text-muted-foreground sm:inline">
-              Shift+Enter for a new line · Cmd+/ for slash commands
-            </span>
+            <ComposerHelp />
           </div>
+          {/*
+            32px and text-only (`1b` pin 13, `1t`: "Composer 48px Send with icon
+            → 32px text button shrunk"). The glyph is dropped rather than
+            shrunk: at 32px the icon and the word competed for a button whose
+            word already says everything the icon did.
+          */}
           <Button
             type="button"
+            size="sm"
+            className="h-8 pointer-coarse:h-11"
             onClick={submit}
             /* An attached file is enough to send: an empty editor with a staged
                attachment is a real message, and `submit` accepts it. */
             disabled={!editor || (editor.isEmpty && pending.length === 0)}
           >
-            <SendGlyph className="h-5 w-5" /> Send
+            Send
           </Button>
         </div>
       </div>

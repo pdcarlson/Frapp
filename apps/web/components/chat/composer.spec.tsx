@@ -535,3 +535,38 @@ describe("notifyDispatchOutcome — unconfirmed (#1733)", () => {
     expect(toast.mock.calls[0]![0].title).toMatch(/recorded/i);
   });
 });
+
+/**
+ * Lane 3 acceptance (#2142). The board's rule is that help lives behind `?` and
+ * nowhere else (`3b`), which is narrower than "shorten the hint" — a permanent
+ * line teaching two shortcuts is chrome a member reads once and looks past
+ * forever, in a row that is otherwise all controls.
+ */
+describe("Composer help and controls (#2142)", () => {
+  it("narrates nothing in the toolbar", async () => {
+    render(<Composer {...baseProps()} />);
+
+    expect(screen.queryByText(/Shift\+Enter for a new line ·/)).toBeNull();
+    expect(screen.queryByText(/Cmd\+\/ for slash commands/)).toBeNull();
+  });
+
+  it("states the shortcuts behind ?, including the @ mention the old line never did", async () => {
+    const user = userEvent.setup();
+    render(<Composer {...baseProps()} />);
+
+    await user.click(screen.getByRole("button", { name: "Composing help" }));
+
+    const help = await screen.findByText(/Shift\+Enter for a new line\./);
+    expect(help).toHaveTextContent("/ for commands. @ to mention.");
+  });
+
+  it("sends from a text button, not a 48px icon button", () => {
+    render(<Composer {...baseProps()} />);
+
+    const send = screen.getByRole("button", { name: "Send" });
+    // `1t`: "Composer 48px Send with icon → 32px text button shrunk".
+    expect(send.className).toContain("h-8");
+    expect(send.querySelector("svg")).toBeNull();
+  });
+});
+

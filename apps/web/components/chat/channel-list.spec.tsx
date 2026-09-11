@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import {
   ChannelList,
@@ -92,14 +91,15 @@ describe("ChannelList display names", () => {
     expect(screen.queryByText("Viewer Self")).not.toBeInTheDocument();
   });
 
-  it("searches the name the member can see, not the stored one", async () => {
-    const user = userEvent.setup();
-    renderList([general, dm]);
+  it("sorts on the name the member can see, not the stored one", () => {
+    // The search field this used to type into is deleted (#2142, `1b` pin 5).
+    // The resolution it proved is still load-bearing for the other consumer of
+    // `titleFor`: a DM must sort under the participant's name, not under the
+    // uuid the row never shows.
+    const { container } = renderList([dm, general]);
 
-    await user.type(screen.getByLabelText("Search channels"), "alice");
-
-    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
-    expect(screen.queryByText("general")).not.toBeInTheDocument();
+    expect(channelsUnder(container, "Direct messages")).toEqual(["Alice Chen"]);
+    expect(screen.getByText("general")).toBeInTheDocument();
   });
 
   it("leaves a non-direct channel's name alone", () => {
@@ -296,19 +296,14 @@ describe("ChannelList category grouping", () => {
     expect(channelsUnder(container, "Executive")).toEqual(["alpha", "zulu"]);
   });
 
-  it("drops a category header when the search filters out its last channel", async () => {
-    const user = userEvent.setup();
-    const { container } = renderList(
-      [general, exec, philanthropy],
-      undefined,
-      CATEGORIES,
-    );
+  it("drops a category header when the category has no channels in it", () => {
+    // This used to be driven by typing into the rail's search field, which
+    // #2142 deleted. The rule it pins survives the field: grouping is computed
+    // from the channels actually passed, so a category that ends up with none
+    // renders neither a header nor an empty block.
+    const { container } = renderList([general, exec], undefined, CATEGORIES);
 
-    await user.type(screen.getByLabelText("Search channels"), "exec");
-
-    // Filtering happens before grouping, so a category whose only match is
-    // filtered out disappears along with its header.
-    expect(sectionLabels(container)).toEqual(["Executive"]);
+    expect(sectionLabels(container)).toEqual(["Channels", "Executive"]);
     expect(channelsUnder(container, "Executive")).toEqual(["exec-board"]);
   });
 });
