@@ -1,6 +1,15 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useEffect } from "react";
+
+/**
+ * Overrides folded into the `useChannels()` mock, so a case can drive the
+ * pending and error branches that now render INSIDE the layout rather than
+ * replacing it. Reset in `afterEach` on the block that sets it.
+ */
+const { channelsQueryState } = vi.hoisted(() => ({
+  channelsQueryState: { value: {} as Record<string, unknown> },
+}));
 
 const {
   mockScrollToMessage,
@@ -96,6 +105,7 @@ vi.mock("@repo/hooks", () => ({
     data: CHANNELS,
     isFetching: false,
     refetch: mockRefetch,
+    ...channelsQueryState.value,
   }),
   // Non-empty, and deliberately NOT in alphabetical order: the rail is
   // contractually required to render categories in the order the API returned
@@ -178,6 +188,7 @@ vi.mock("@/lib/chat/use-chat-channel", () => ({
 // doesn't provide) are stubbed — this test is about ChatShell's own
 // deep-link wiring, not their internals.
 vi.mock("./channel-list", () => ({
+  ChannelListSkeleton: () => <div data-testid="channel-list-skeleton" />,
   ChannelList: ({
     onPick,
     categories,
@@ -273,47 +284,36 @@ vi.mock("./composer", () => ({
     );
   },
 }));
-vi.mock("./thread-panel", () => ({
-  ThreadPanel: () => <div data-testid="thread-panel" />,
-}));
-vi.mock("./pins-popover", () => ({
-  PinsPopover: () => <div data-testid="pins-popover" />,
-}));
-// Stubbed down to a single button that fires `onJump` with whatever hit the
-// test set, so these cases exercise the *shell's* jump wiring rather than the
-// popover's own search behaviour (which chat-search-popover.spec.tsx owns).
-vi.mock("./chat-search-popover", () => ({
-  ChatSearchPopover: ({
-    onJump,
+// The four header popovers are now four panels behind one `ChannelMenu` (the
+// `⋯` control), so the shell wires their jump callbacks through that one
+// component. Stubbed down to the two buttons these cases actually drive, so
+// they exercise the *shell's* jump wiring rather than a panel's own behaviour
+// or Radix's popover mechanics — each panel's rendering is owned by its own
+// spec, and the menu's view switching by `channel-menu.spec.tsx`.
+vi.mock("./channel-menu", () => ({
+  ChannelMenu: ({
+    onJumpToSearchHit,
+    onJumpToBookmark,
   }: {
-    onJump: (hit: { message: { id: string }; channelId: string }) => void;
+    onJumpToSearchHit: (hit: { message: { id: string }; channelId: string }) => void;
+    onJumpToBookmark: (channelId: string, messageId: string) => void;
   }) => (
-    <button data-testid="search-jump" onClick={() => onJump(searchHit())}>
-      search
-    </button>
-  ),
-}));
-// Exposes `onJump` as a button so the cross-channel jump (#462) can be driven
-// without opening a real Radix popover. The panel's own rendering is covered in
-// `bookmarks-popover.spec.tsx`; what belongs here is the shell wiring.
-vi.mock("./bookmarks-popover", () => ({
-  BookmarksPopover: ({
-    onJump,
-  }: {
-    onJump?: (channelId: string, messageId: string) => void;
-  }) => (
-    <button
-      type="button"
-      data-testid="bookmarks-popover"
-      onClick={() => onJump?.("chan-random", "msg-2")}
-    >
-      bookmarks
-    </button>
-  ),
-}));
-vi.mock("./notification-level-popover", () => ({
-  NotificationLevelPopover: () => (
-    <div data-testid="notification-level-popover" />
+    <div>
+      <button
+        type="button"
+        data-testid="search-jump"
+        onClick={() => onJumpToSearchHit(searchHit())}
+      >
+        search
+      </button>
+      <button
+        type="button"
+        data-testid="bookmarks-popover"
+        onClick={() => onJumpToBookmark("chan-random", "msg-2")}
+      >
+        bookmarks
+      </button>
+    </div>
   ),
 }));
 vi.mock("./reconnect-pill", () => ({
@@ -432,8 +432,11 @@ describe("ChatShell deep-link targets", () => {
     expect(
       screen.getByRole("button", { name: "Browse channels" }),
     ).toBeTruthy();
-    // The fallback grid (channel rail, composer) must not render underneath.
-    expect(screen.queryByTestId("channel-list")).toBeNull();
+    // The channels column DOES render underneath, and that is the change
+    // #2142 made: this state used to replace the whole route, so a member who
+    // followed a dead link lost the list they would pick a live channel from.
+    // The state is now scoped to the thread column beside it.
+    expect(screen.getByTestId("channel-list")).toBeTruthy();
   });
 
   it("refetches the channel list once for a supplied target, so a just-created channel isn't a false miss", () => {
@@ -814,7 +817,7 @@ describe("ChatShell accessibility landmarks (#396)", () => {
 
 /**
  * `ChatShell` computes `canManageChannel` and owns the delete-confirmation
- * flow itself (`MessageTimeline`/`ThreadPanel` only render the button and
+ * flow itself (`MessageTimeline` only renders the button and
  * call the handler back) — this is the one place that logic can be tested
  * without a real Virtuoso/DOM-heavy `MessageTimeline`.
  */
@@ -1268,5 +1271,67 @@ describe("ChatShell reply-with-quote (#489)", () => {
       );
     });
     expect(screen.getByTestId("reply-offered")).toHaveTextContent("false");
+  });
+});
+
+/**
+ * Lane 3 acceptance (#2142). These are the three things the lane is *for*, and
+ * each of them is the kind of change that quietly comes back: a rail is easy to
+ * re-add, and a loading gate is easy to re-introduce the next time a query
+ * needs settling before a list renders.
+ */
+describe("ChatShell greenfield grammar (#2142)", () => {
+  afterEach(() => {
+    channelsQueryState.value = {};
+  });
+
+  it("renders no Details rail", () => {
+    render(<ChatShell />);
+
+    expect(screen.queryByRole("complementary", { name: "Thread" })).toBeNull();
+    expect(screen.queryByText("Details")).toBeNull();
+  });
+
+  it("renders two columns, not three", () => {
+    render(<ChatShell />);
+
+    // The channels column is a labelled region; the thread column is not, so
+    // counting labelled regions counts the rails. Three meant a Details rail.
+    expect(screen.getAllByRole("region")).toHaveLength(1);
+    expect(
+      screen.getByRole("region", { name: "Channels" }),
+    ).toBeInTheDocument();
+  });
+
+  it("states no channel count above the list", () => {
+    render(<ChatShell />);
+
+    // `1t`: the count restated the length of a list already on screen.
+    expect(screen.queryByText(/\d+ channels?$/)).toBeNull();
+  });
+
+  it("paints the channels column while the channel list is still loading", async () => {
+    // `1s` deletes "the shell-level LoadingState card": a card that replaces the
+    // route makes the channel column paint last rather than first.
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(
+      screen.getByRole("region", { name: "Channels" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("channel-list-skeleton")).toBeInTheDocument();
+    expect(screen.queryByText("Loading chapter channels…")).toBeNull();
+  });
+
+  it("keeps the channels column usable when the channel list fails", () => {
+    // The error used to replace the route, so a member who could not load one
+    // channel lost the list they would pick another from.
+    channelsQueryState.value = { isError: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(screen.getByText("Couldn't load channels")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Channels" }),
+    ).toBeInTheDocument();
   });
 });

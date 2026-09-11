@@ -45,19 +45,22 @@ export interface MessageItemProps {
    * Stages an inline reply to this message in the composer — the Discord-style
    * reply-with-quote `spec/behavior/chat/README.md` § Reply threads specifies.
    *
-   * This is what the row's **Reply** control does now. It used to call
-   * `onOpenThread`, which opened a Slack-style side panel that has no composer
-   * in it (`thread-panel.tsx`), so "Reply" led to a read-only dead end and no
-   * web surface could author a reply at all (#489).
+   * This is what the row's **Reply** control does now. It used to open a
+   * Slack-style side panel with no composer in it, so "Reply" led to a
+   * read-only dead end and no web surface could author a reply at all (#489).
    */
   onReply?: (message: ChatMessage) => void;
   /**
-   * Opens the expanded thread view for a message. No longer reached from the
-   * Reply control — it is now what the **quote** on a reply opens, so the panel
-   * keeps a real entry point as the optional expanded view rather than being
-   * deleted.
+   * Scrolls the timeline to the message this one replies to, which is what the
+   * **quote** above a reply now does.
+   *
+   * It used to open `ThreadPanel` in the Details rail. #2142 deleted both: the
+   * panel was a read-only collector of replies that were already in the channel
+   * below it, and the rail it lived in was the third column the board removes.
+   * The quote keeps a destination — a better one, since the conversation it
+   * jumps into is the real one with a composer under it, not a copy.
    */
-  onOpenThread?: (message: ChatMessage) => void;
+  onJumpToParent?: (message: ChatMessage) => void;
   /**
    * The message this one replies to, when `message.reply_to_id` is set and that
    * parent is inside the loaded window; `null` or absent when it is not.
@@ -158,7 +161,7 @@ export function MessageItem({
   onReact,
   onUnreact,
   onReply,
-  onOpenThread,
+  onJumpToParent,
   replyParent,
   onRetry,
   onDiscard,
@@ -334,8 +337,8 @@ export function MessageItem({
         }
         preview={replyParent ? replyPreviewText(replyParent) : null}
         onOpen={
-          replyParent && onOpenThread
-            ? () => onOpenThread(replyParent)
+          replyParent && onJumpToParent
+            ? () => onJumpToParent(replyParent)
             : undefined
         }
       />

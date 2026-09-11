@@ -179,10 +179,22 @@ const config: Partial<Config> = {
         lg: "var(--radius-lg)",
         xl: "var(--radius-xl)",
       },
+      /*
+       * Every key is bound, including `md`, and that completeness is the point
+       * rather than tidiness. Signet has no drop shadows — elevation is a
+       * lighter surface step — and each of these resolves to a token that is
+       * `none`. An UNBOUND key does not inherit that: it falls through to
+       * Tailwind's stock scale and compiles a real shadow. `md` was the one
+       * gap, and `shadow-md` shipped a live drop shadow on this surface for as
+       * long as it existed, past a rule everyone believed was enforced by the
+       * tokens being `none`. Adding a key here without a matching `--shadow-*`
+       * reopens exactly that.
+       */
       boxShadow: {
         xs: "var(--shadow-xs)",
         sm: "var(--shadow-sm)",
         DEFAULT: "var(--shadow)",
+        md: "var(--shadow-md)",
         lg: "var(--shadow-lg)",
       },
       fontFamily: {

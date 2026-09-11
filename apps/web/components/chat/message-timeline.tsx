@@ -18,9 +18,10 @@ const GROUPING_GAP_MS = 5 * 60 * 1000;
  * Virtuoso owns the scroller's DOM and types both wrappers as `div`, so the
  * list semantics are carried by ARIA rather than by `<ul>`/`<li>`. That is why
  * `MessageItem` renders `role="listitem"` on a `div` instead of an `<li>`: a
- * real `<li>` inside Virtuoso's `div` was an orphan list item on this surface,
- * while the same component sat inside a genuine `<ul>` in the thread panel —
- * two call sites disagreeing about the row's own element.
+ * real `<li>` inside Virtuoso's `div` is an orphan list item. (It used to sit
+ * inside a genuine `<ul>` in the thread panel too, so the two call sites
+ * disagreed about the row's own element; #2142 deleted that panel, and this is
+ * now the only caller.)
  */
 const TimelineList = forwardRef<
   HTMLDivElement,
@@ -28,6 +29,31 @@ const TimelineList = forwardRef<
 >(function TimelineList({ style, children }, ref) {
   return (
     <div ref={ref} style={style} role="list">
+      {children}
+    </div>
+  );
+});
+
+/**
+ * Virtuoso's own scroll container, overridden only to carry
+ * `scroll-padding-bottom` (`1b` pin 13: "scroll-padding-bottom keeps focus
+ * visible").
+ *
+ * The composer is pinned to the bottom of the column and the timeline ends
+ * flush against it, so a row brought into view by the keyboard — tabbing onto a
+ * message's actions, or opening its edit field — landed hard against the
+ * composer's top border with nothing between them. `scroll-padding-bottom`
+ * reserves a gutter for exactly that: it changes where the browser considers
+ * the scrollport to end for `scrollIntoView` and keyboard scrolling, and does
+ * nothing to a programmatic `scrollTop`, so Virtuoso's own `scrollToIndex`
+ * (pins, saved messages, deep links) is unaffected.
+ */
+const TimelineScroller = forwardRef<
+  HTMLDivElement,
+  { style?: React.CSSProperties; children?: React.ReactNode }
+>(function TimelineScroller({ style, children, ...rest }, ref) {
+  return (
+    <div ref={ref} style={style} className="scroll-pb-6" {...rest}>
       {children}
     </div>
   );
@@ -87,7 +113,7 @@ export interface MessageTimelineProps {
   /** Stages an inline reply in the composer — the row's Reply control (#489). */
   onReply?: (message: ChatMessage) => void;
   /** Opens the expanded thread view — now reached from a reply's quote. */
-  onOpenThread?: (message: ChatMessage) => void;
+  onJumpToParent?: (message: ChatMessage) => void;
   onRetry?: (clientMessageId: string) => void;
   onDiscard?: (clientMessageId: string) => void;
   /** Replays an `unconfirmed` heavy-command row under its original key (#1733). */
@@ -138,7 +164,7 @@ export const MessageTimeline = forwardRef<
     onReact,
     onUnreact,
     onReply,
-    onOpenThread,
+    onJumpToParent,
     onRetry,
     onDiscard,
     onRetryUnconfirmed,
@@ -264,7 +290,7 @@ export const MessageTimeline = forwardRef<
         data={decorated}
         followOutput="smooth"
         initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
-        components={{ List: TimelineList }}
+        components={{ List: TimelineList, Scroller: TimelineScroller }}
         itemContent={(_, entry) => (
           <>
             {entry.startsDay ? (
@@ -286,7 +312,7 @@ export const MessageTimeline = forwardRef<
               onReact={onReact}
               onUnreact={onUnreact}
               onReply={onReply}
-              onOpenThread={onOpenThread}
+              onJumpToParent={onJumpToParent}
               // The parent, or `null` when it is outside the loaded window.
               // `MessageItem` decides whether to draw a quote from
               // `message.reply_to_id`, not from this prop, so `null` and

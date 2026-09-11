@@ -96,13 +96,36 @@ No CI check enforces this lock today. It is a review rule.
 | ---- | ----- | ---- | ------ |
 | 1 | [#2143](https://github.com/pdcarlson/Frapp/issues/2143) | Spec lock, foundation tokens, chapter accent | This directory plus [`tokens.md`](tokens.md) |
 | 2 | [#2141](https://github.com/pdcarlson/Frapp/issues/2141) | Shell: sidebar, top bar, kill the command palette, scrollbars | Consumes the tokens from lane 1 |
-| 3 | [#2142](https://github.com/pdcarlson/Frapp/issues/2142) | Chat: channels, kill the Details rail, bottom composer | |
+| 3 | [#2142](https://github.com/pdcarlson/Frapp/issues/2142) | Chat: channels, kill the Details rail, bottom composer | Landed. Adds the **full-bleed route contract** below |
 | 4 | [#2144](https://github.com/pdcarlson/Frapp/issues/2144) | Resources, Backwork, Documents | |
 | 5 | [#2146](https://github.com/pdcarlson/Frapp/issues/2146) | Directory, Finance, Admin | |
 | 6 | [#2145](https://github.com/pdcarlson/Frapp/issues/2145) | Chat cold load and performance | |
 | 7 | [#2147](https://github.com/pdcarlson/Frapp/issues/2147) | Chapter accent, 404 and error polish | |
 
 [`deletion-checklist.md`](deletion-checklist.md) is the shared acceptance list across lanes 2 to 7.
+
+### The full-bleed route contract, added by lane 3
+
+Worth knowing before lanes 4, 5 and 7 lay out a route, because it is the one place the shell now
+treats routes differently.
+
+`DashboardShell`'s `<main>` insets every route (`px-4 py-4 sm:px-6`) and owns its scroll
+(`overflow-y-auto`). Chat cannot live inside that: the board draws it as three flush columns at 100vh
+with the channels column hugging the nav's right border and the composer pinned to the bottom of the
+viewport (`1b`), and an inset, scrolling `<main>` contradicts all three.
+
+So `components/layout/full-bleed-routes.ts` lists the routes that are handed the frame instead:
+`<main>` keeps its landmark, its `#main-content` id and its skip-link target, and drops its padding
+and its scroll. `/chat` is the only entry today.
+
+Two consequences a later lane should not rediscover:
+
+- **A full-bleed route owns its own padding**, including for states that are not the main layout. The
+  no-chapter empty state in `chat-shell.tsx` carries its own inset for exactly this reason; without
+  it, a centred card renders hard against the nav border.
+- **It is a route list, not a prop or a context.** The shell is a client component that already knows
+  the pathname at first paint. A prop would have to be threaded from a server layout; a context would
+  only be readable after an effect, which is one frame of padded chat before it snaps flush.
 
 **Execution rule from the epic:** stacked PRs, one lane per PR, never one mega-PR. The
 [cutover rule](../../../.claude/skills/signet-cutover/SKILL.md) still binds inside each lane: a

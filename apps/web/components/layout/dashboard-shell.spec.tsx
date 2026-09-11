@@ -12,8 +12,9 @@ import { render, screen } from "@testing-library/react";
  *   3. titles are not in the top bar
  */
 
+const { mockPathname } = vi.hoisted(() => ({ mockPathname: { value: "/events" } }));
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/events",
+  usePathname: () => mockPathname.value,
   useRouter: () => ({ push: vi.fn() }),
 }));
 
@@ -163,6 +164,35 @@ describe("DashboardShell", () => {
       "h-[calc(100vh_-_var(--offline-banner-height,0px))]",
     );
     expect(root?.className).not.toContain("h-screen");
+  });
+
+  /*
+   * The full-bleed contract, added by #2142. Chat is drawn as three flush
+   * columns at 100vh with a composer pinned to the bottom of the viewport
+   * (`1b`), which it cannot be while `<main>` insets it and scrolls it. These
+   * pin both halves, because getting either wrong is invisible in a unit test
+   * of chat itself: the padding just reappears around a layout that still
+   * "works".
+   */
+  it("insets and scrolls an ordinary route", () => {
+    mockPathname.value = "/events";
+    render(<DashboardShell>content</DashboardShell>);
+
+    const main = screen.getByRole("main");
+    expect(main.className).toContain("overflow-y-auto");
+    expect(main.className).toContain("px-4");
+  });
+
+  it("hands a full-bleed route the frame, with no inset and no scroll of its own", () => {
+    mockPathname.value = "/chat";
+    render(<DashboardShell>content</DashboardShell>);
+
+    const main = screen.getByRole("main");
+    expect(main.className).toContain("overflow-hidden");
+    expect(main.className).not.toContain("px-4");
+    expect(main.className).not.toContain("overflow-y-auto");
+    // Still the same landmark, and still the skip link's target.
+    expect(main).toHaveAttribute("id", "main-content");
   });
 
   it("honours the server-read collapse preference on first render", () => {

@@ -61,12 +61,30 @@ current palette already fixed once.
 | `apps/web/components/chat/chat-shell.tsx` | `:915` | Grid is `md:grid-cols-[260px_1fr_300px]` |
 | `apps/web/components/chat/chat-shell.tsx` | `:1278-1310` | The `<aside aria-label="Thread">` |
 
-- [ ] Third column removed and the grid collapsed to two columns
-- [ ] The static "Details" placeholder deleted rather than hidden
-- [ ] `ThreadPanel` given a new home, or removed with a stated decision about threads
+- [x] Third column removed and the grid collapsed to two columns
+- [x] The static "Details" placeholder deleted rather than hidden
+- [x] `ThreadPanel` given a new home, or removed with a stated decision about threads
 
 > The rail is **not empty**: it hosts `ThreadPanel` as well as the placeholder. Deleting the column
 > without deciding where threads go removes a feature. Decide, then delete.
+
+**Taken by lane 3, and the decision about threads is: deleted, with the entry point repointed.**
+
+`ThreadPanel` was a **read-only collector** — its own doc comment said so. It listed a message and
+the replies to it, all of which were already in the timeline underneath. It never had a composer, and
+since [#489](https://github.com/pdcarlson/Frapp/pull/489) it was not even how you reply: the row's
+Reply control stages an inline reply in the composer, and the panel's only remaining entry point was
+clicking the quote above an existing reply.
+
+That quote now calls `onJumpToParent`, which scrolls the timeline to the message it quotes — the same
+`scrollToMessage` machinery pins, saved messages and deep links already use. The destination is the
+real conversation with a composer under it, rather than a copy of it in a third column, so the
+feature the rail carried is not lost; it is served better by the surface that was already under it.
+
+What went with the panel: `thread-panel.tsx`, `thread-panel.spec.tsx`, and the shell state that drove
+it (`threadParentId`, `openThread`, `closeThread`, `dismissThreadForChannelSwitch`,
+`threadTriggerRef`). `use-tap-revealed-message.ts` survives with one caller instead of two and says
+so in place.
 
 ## 3. Channel search — lane 3
 
@@ -74,8 +92,21 @@ current palette already fixed once.
 | ---- | -------- |
 | `apps/web/components/chat/channel-list.tsx` | `:188` the `query` state, `:220-226` the `filtered` memo, `:302-317` the input |
 
-- [ ] Search input, its state, and its filter memo removed together
-- [ ] No orphaned `SearchGlyph` import left behind
+- [x] Search input, its state, and its filter memo removed together
+- [x] No orphaned `SearchGlyph` import left behind
+
+**Taken by lane 3.** The `Input`, the `query` state, the `filtered` memo, the "No matches. Try a
+different name." empty state and the `SearchGlyph` import all went together; `sections` now iterates
+`channels` directly. The replacement is the top bar's find field on Cmd/Ctrl+F, which finds channels
+*and* members *and* messages (`1b` pin 8), so this field was the narrower of the two.
+
+Two things that look like search and are not, kept: `titles`/`titleFor` also resolve every row's
+displayed title and its sort key, so a DM sorts under the participant's name rather than a uuid. The
+two spec cases that drove the deleted field were rewritten against what they actually pin (name
+resolution, and grouping dropping an empty category) rather than deleted.
+
+The "N channels" count above the list is deleted too (`1t`), and the read-only "Read" badge is now a
+lock glyph with an `sr-only` label (`1b` pin 7).
 
 ## 4. Ask entry and AI chrome — lane 3 or 7
 
@@ -158,13 +189,15 @@ them, and must close the one that is open.
 
 - [ ] No `next-themes`, no theme switcher, no light palette. Signet web is dark-only
 - [ ] No live `dark:` variants
-- [ ] No `shadow-*`. Elevation is a lighter surface step. **This one is not clean today.** The
-      shared preset (`packages/theme/src/tailwind.config.ts`) binds `boxShadow` for `xs`, `sm`,
-      `DEFAULT` and `lg` only — all `none` — but there is **no `md` key**, so `shadow-md` falls
-      through to Tailwind's built-in and compiles a real drop shadow. Two live sites:
-      `apps/web/components/chat/mention-list.tsx:128` and `:140`. `card.tsx` reasons correctly that
-      `--shadow-*` being `none` makes a stray `shadow-sm` inert, and that was over-generalized to the
-      whole family. Fix the call sites, and consider binding `md` so the gap cannot reopen
+- [x] No `shadow-*`. Elevation is a lighter surface step. ~~**This one is not clean today.**~~
+      **Closed by lane 3**, both halves. The two live sites
+      (`apps/web/components/chat/mention-list.tsx:128` and `:140`) dropped their `shadow-md`, and
+      `md` is now bound in the shared preset (`packages/theme/src/tailwind.config.ts`) against a new
+      `--shadow-md: none` in `signet.css`, so the gap cannot reopen by someone typing `shadow-md`
+      again. The original diagnosis was exactly right: `boxShadow` bound `xs`/`sm`/`DEFAULT`/`lg`
+      only, so `shadow-md` fell through to Tailwind's built-in and compiled a real drop shadow past a
+      ban everyone believed the `none` tokens enforced. `grep -rn 'shadow-md' apps packages` is now
+      clean
 - [ ] No legacy bone / bronze / Geist token on this surface
 - [ ] No unused component left under `apps/web/components/ui`
 - [ ] No customer-facing "Frapp" string or wordmark

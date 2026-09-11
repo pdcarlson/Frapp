@@ -28,7 +28,7 @@ vi.mock("react-virtuoso", () => ({
 }));
 
 // `useAuthorAvatars` reaches for `FrappClientProvider`, which a bare `render()`
-// does not mount. Same treatment `thread-panel.spec.tsx` gives it.
+// does not mount.
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, useAuthorAvatars: () => ({ data: {} }) };
@@ -126,9 +126,9 @@ describe("MessageTimeline reply quotes (#489)", () => {
     // The mutation this catches renders every quote under the replier's name —
     // and because `resolveAuthorLabel` says "You" for the viewer's own rows, a
     // member's own reply would caption someone else's words with "You".
-    // `onOpenThread` is always wired by `chat-shell.tsx`, and it is what makes
-    // the quote a button — the handle this assertion needs.
-    renderTimeline([PARENT, REPLY], { onOpenThread: vi.fn() });
+    // `onJumpToParent` is always wired by `chat-shell.tsx`, and it is what
+    // makes the quote a button — the handle this assertion needs.
+    renderTimeline([PARENT, REPLY], { onJumpToParent: vi.fn() });
 
     // Bob wrote the reply; the quote above it must name Alice.
     const quote = screen.getByRole("button", { name: /the original/i });
@@ -151,14 +151,18 @@ describe("MessageTimeline reply quotes (#489)", () => {
     expect(screen.getAllByText("the original")).toHaveLength(1);
   });
 
-  it("opens the thread from a reply's quote — the panel's only entry point", async () => {
+  it("jumps to the quoted message from a reply's quote (#2142)", async () => {
+    // The quote used to open `ThreadPanel` in the Details rail. #2142 deleted
+    // both; the quote now scrolls this timeline to the message it quotes, which
+    // is the same conversation with a composer under it rather than a read-only
+    // copy of it in a third column.
     const user = userEvent.setup();
-    const onOpenThread = vi.fn();
-    renderTimeline([PARENT, REPLY], { onOpenThread });
+    const onJumpToParent = vi.fn();
+    renderTimeline([PARENT, REPLY], { onJumpToParent });
 
     await user.click(screen.getByRole("button", { name: /the original/i }));
 
-    expect(onOpenThread).toHaveBeenCalledWith(PARENT);
+    expect(onJumpToParent).toHaveBeenCalledWith(PARENT);
   });
 
   it("hands the Reply control through to each row", async () => {

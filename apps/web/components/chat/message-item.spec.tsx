@@ -324,29 +324,28 @@ describe("MessageItem tap-to-reveal (#1193)", () => {
  * replied-to message as a quote/preview above the reply… Discord-style
  * reply-with-quote, not Slack-style nested threads."
  *
- * Before this, the row's **Reply** control opened `ThreadPanel`, which has no
+ * Before this, the row's **Reply** control opened a thread panel, which had no
  * composer — so no web surface could author a reply at all — and nothing in the
  * timeline read `reply_to_id`.
  */
 describe("MessageItem reply-with-quote (#489)", () => {
   const PARENT = message({ id: "parent-1", content: "the original" });
 
-  it("stages an inline reply from the Reply control, not a thread panel", async () => {
+  it("stages an inline reply from the Reply control, and jumps nowhere", async () => {
     const user = userEvent.setup();
     const onReply = vi.fn();
-    const onOpenThread = vi.fn();
-    renderItemWithProps({ onReply, onOpenThread, isTapRevealed: true });
+    const onJumpToParent = vi.fn();
+    renderItemWithProps({ onReply, onJumpToParent, isTapRevealed: true });
 
     await user.click(screen.getByRole("button", { name: /reply/i }));
 
     expect(onReply).toHaveBeenCalledTimes(1);
     // The whole defect: this control used to lead to a read-only panel.
-    expect(onOpenThread).not.toHaveBeenCalled();
+    expect(onJumpToParent).not.toHaveBeenCalled();
   });
 
   it("offers no Reply control when the surface does not wire one", () => {
-    // `ThreadPanel` renders `MessageItem` without `onReply`. A chip that calls
-    // nothing is worse than no chip.
+    // A chip that calls nothing is worse than no chip.
     renderItemWithProps({ isTapRevealed: true });
     expect(
       screen.queryByRole("button", { name: /reply/i }),
@@ -362,18 +361,21 @@ describe("MessageItem reply-with-quote (#489)", () => {
     expect(screen.getByText("agreed")).toBeInTheDocument();
   });
 
-  it("opens the thread from the quote — the panel's new entry point", async () => {
+  it("jumps to the quoted message from the quote (#2142)", async () => {
+    // The quote used to open `ThreadPanel` in the Details rail. Both are gone;
+    // the quote now scrolls the timeline to the message it quotes, which is the
+    // same destination with a composer under it.
     const user = userEvent.setup();
-    const onOpenThread = vi.fn();
+    const onJumpToParent = vi.fn();
     renderItemWithProps({
       message: message({ id: "child-1", reply_to_id: "parent-1" }),
       replyParent: PARENT,
-      onOpenThread,
+      onJumpToParent,
     });
 
     await user.click(screen.getByRole("button", { name: /the original/i }));
 
-    expect(onOpenThread).toHaveBeenCalledWith(PARENT);
+    expect(onJumpToParent).toHaveBeenCalledWith(PARENT);
   });
 
   it("renders no quote at all on a message that is not a reply", () => {

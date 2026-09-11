@@ -1,7 +1,7 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ChatSearchPopover } from "./chat-search-popover";
+import { ChatSearchPanel } from "./chat-search-popover";
 
 const useSearch = vi.fn();
 
@@ -64,9 +64,9 @@ function previewHit(
   };
 }
 
-function renderPopover(props: Record<string, unknown> = {}) {
+function renderPanel(props: Record<string, unknown> = {}) {
   return render(
-    <ChatSearchPopover
+    <ChatSearchPanel
       activeChannelId="chan-1"
       channelNameFor={(id) => (id === "chan-2" ? "random" : "general")}
       nameFor={() => "Ada"}
@@ -76,30 +76,32 @@ function renderPopover(props: Record<string, unknown> = {}) {
   );
 }
 
-async function openAndQuery(query: string, props: Record<string, unknown> = {}) {
+// The panel carries no trigger: `channel-menu.tsx` owns the popover and mounts
+// this only while its view is selected, so rendering it IS opening it.
+async function typeQuery(query: string, props: Record<string, unknown> = {}) {
   const user = userEvent.setup();
-  renderPopover(props);
-  await user.click(screen.getByRole("button", { name: /search messages/i }));
+  renderPanel(props);
   await user.type(screen.getByRole("searchbox"), query);
   return user;
 }
 
 /**
- * In-channel message search for the web chat shell (#469).
+ * In-channel message search for the web chat shell (#469), as the search view
+ * of the channel overflow menu.
  *
  * The behaviours pinned here are the ones a refactor would silently break, and
  * the two that would be *wrong but invisible*: that the channel filter reaches
  * the request rather than being applied to the response, and that a timed-out
  * search never renders as "no matches".
  */
-describe("ChatSearchPopover", () => {
+describe("ChatSearchPanel", () => {
   beforeEach(() => {
     useSearch.mockReset();
     useSearch.mockReturnValue(result());
   });
 
   it("does not search until the query clears the minimum length", async () => {
-    await openAndQuery("bu");
+    await typeQuery("bu");
 
     // Below the minimum the hook is called with an empty query, so `enabled`
     // keeps it from ever reaching the API.
@@ -110,7 +112,7 @@ describe("ChatSearchPopover", () => {
   });
 
   it("scopes to the active channel by passing channelId to the request", async () => {
-    await openAndQuery("budget");
+    await typeQuery("budget");
 
     // The load-bearing assertion of this whole feature. SEARCH_LIMIT is applied
     // by the database across every accessible channel, so filtering the
@@ -122,7 +124,7 @@ describe("ChatSearchPopover", () => {
   });
 
   it("drops the channel filter when the member widens to all channels", async () => {
-    const user = await openAndQuery("budget");
+    const user = await typeQuery("budget");
     await user.click(screen.getByRole("radio", { name: /all channels/i }));
 
     await waitFor(() => {
@@ -131,7 +133,7 @@ describe("ChatSearchPopover", () => {
   });
 
   it("falls back to chapter-wide when no channel is open", async () => {
-    await openAndQuery("budget", { activeChannelId: null });
+    await typeQuery("budget", { activeChannelId: null });
 
     // "This channel" with no channel would scope to nothing and render an
     // honest-looking empty state for a question that was never asked.
@@ -142,7 +144,7 @@ describe("ChatSearchPopover", () => {
 
   it("previews a poll hit by its kind noun, not an empty block", async () => {
     useSearch.mockReturnValue(messagesResult([previewHit("m-poll", { kind: "poll" })]));
-    await openAndQuery("poll");
+    await typeQuery("poll");
 
     expect(await screen.findByText("Poll")).toBeInTheDocument();
   });
@@ -151,7 +153,7 @@ describe("ChatSearchPopover", () => {
     useSearch.mockReturnValue(
       messagesResult([previewHit("m-file", { attachment_count: 3 })]),
     );
-    await openAndQuery("file");
+    await typeQuery("file");
 
     expect(await screen.findByText("3 attachments")).toBeInTheDocument();
   });
@@ -160,28 +162,26 @@ describe("ChatSearchPopover", () => {
     useSearch.mockReturnValue(
       messagesResult([previewHit("m-gone", { is_deleted: true })]),
     );
-    await openAndQuery("gone");
+    await typeQuery("gone");
 
     expect(await screen.findByText("[message deleted]")).toBeInTheDocument();
   });
 
-  it("hands the picked hit to the shell and dismisses itself", async () => {
+  // Dismiss-on-jump is no longer asserted here because it is no longer this
+  // component's to do: the panel hands the hit up and `channel-menu.tsx` closes
+  // the popover, so the panel never covers the message it just scrolled to.
+  it("hands the picked hit to the shell", async () => {
     const onJump = vi.fn();
     useSearch.mockReturnValue(
       messagesResult([message("m-1", "chan-1", "dues link")]),
     );
-    const user = await openAndQuery("dues", { onJump });
+    const user = await typeQuery("dues", { onJump });
 
     await user.click(await screen.findByText("dues link"));
 
     expect(onJump).toHaveBeenCalledWith({
       message: expect.objectContaining({ id: "m-1" }),
       channelId: "chan-1",
-    });
-    // Dismiss on jump: a panel left open over the pane it just scrolled hides
-    // the message it navigated to — the defect the pins panel already fixed.
-    await waitFor(() => {
-      expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     });
   });
 
@@ -190,8 +190,7 @@ describe("ChatSearchPopover", () => {
       messagesResult([message("m-2", "chan-2", "pizza night")]),
     );
     const user = userEvent.setup();
-    renderPopover();
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
+    renderPanel();
     await user.click(screen.getByRole("radio", { name: /all channels/i }));
     await user.type(screen.getByRole("searchbox"), "pizza");
 
@@ -204,7 +203,7 @@ describe("ChatSearchPopover", () => {
     useSearch.mockReturnValue(
       messagesResult([], { timedOut: true, timedOutSources: ["messages"] }),
     );
-    await openAndQuery("budget");
+    await typeQuery("budget");
 
     // spec/behavior/search.md requires the client to render "we stopped
     // looking here" differently from "we found nothing".
@@ -212,28 +211,11 @@ describe("ChatSearchPopover", () => {
     expect(screen.queryByText(/no messages match/i)).not.toBeInTheDocument();
   });
 
-  // Replaces a weaker sibling that asserted `useSearch` was called with "" on a
-  // freshly-rendered, never-typed popover — true under any implementation,
-  // including one with no `open` gate at all. This one types first, so removing
-  // the gate genuinely fails it.
-  it("stops searching again once the popover is dismissed", async () => {
-    const user = await openAndQuery("budget");
-    await waitFor(() => {
-      expect(useSearch).toHaveBeenLastCalledWith("budget", "chan-1");
-    });
-
-    await user.keyboard("{Escape}");
-
-    await waitFor(() => {
-      expect(useSearch).toHaveBeenLastCalledWith("", "chan-1");
-    });
-  });
-
   it("does not announce a result count for a failed search", async () => {
     useSearch.mockReturnValue(
       result({ data: undefined, isError: true, refetch: vi.fn() }),
     );
-    await openAndQuery("budget");
+    await typeQuery("budget");
 
     await screen.findByRole("alert");
     // Announcing "0 results" here tells a screen-reader user the channel holds
@@ -247,7 +229,7 @@ describe("ChatSearchPopover", () => {
     useSearch.mockReturnValue(
       messagesResult([], { timedOut: true, timedOutSources: ["messages"] }),
     );
-    await openAndQuery("budget");
+    await typeQuery("budget");
 
     await screen.findByText(/timed out/i);
     const live = document.querySelector('[aria-live="polite"]');
@@ -255,9 +237,7 @@ describe("ChatSearchPopover", () => {
   });
 
   it("shows the scope as chapter-wide when no channel is open, rather than claiming otherwise", async () => {
-    const user = userEvent.setup();
-    renderPopover({ activeChannelId: null });
-    await user.click(screen.getByRole("button", { name: /search messages/i }));
+    renderPanel({ activeChannelId: null });
 
     // The tab state, the request and the per-row labels all read from one
     // effective scope. Previously "This channel" rendered aria-checked while
@@ -276,16 +256,16 @@ describe("ChatSearchPopover", () => {
     useSearch.mockReturnValue(
       result({ data: undefined, isError: true, refetch }),
     );
-    const user = await openAndQuery("budget");
+    const user = await typeQuery("budget");
 
-    // Waits on the alert itself, not on the dialog: the popover is already
-    // open, so `findByRole("dialog")` resolves before the debounce settles and
-    // would assert against the "type at least 3 characters" hint.
+    // Waits on the alert itself rather than on the panel: the panel is mounted
+    // from the first render, so anything less specific resolves before the
+    // debounce settles and would assert against the "type at least 3
+    // characters" hint.
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /search failed/i,
     );
-    const panel = within(screen.getByRole("dialog"));
-    await user.click(panel.getByRole("button", { name: /try again/i }));
+    await user.click(screen.getByRole("button", { name: /try again/i }));
     expect(refetch).toHaveBeenCalled();
   });
 });

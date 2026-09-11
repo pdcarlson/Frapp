@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { directChannelDisplayName, type DisplayNameMap } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { AuditGlyph, LockGlyph, SearchGlyph } from "./chat-glyphs";
+import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
+import { Skeleton } from "@/components/shared/async-states";
 import { cn, initials } from "@/lib/utils";
 
 export interface ChatChannel {
@@ -185,12 +185,12 @@ export function ChannelList({
   categories = NO_CATEGORIES,
   onPick,
 }: ChannelListProps) {
-  const [query, setQuery] = useState("");
-
-  // Resolved once, then used for the row title, the search needle and the sort
-  // key alike. Those three must agree: filtering on the stored name meant typing
-  // a name the row visibly showed matched nothing, while a chunk of a DM's uuid
-  // matched a row displaying no such text.
+  // Resolved once, then used for the row title and the sort key alike, which
+  // must agree: sorting on the stored name put a DM under its uuid rather than
+  // under the name the row visibly shows. (It resolved the search needle too,
+  // until the field was deleted — `1b` pin 5, "No search field". The top bar's
+  // find field on Cmd/Ctrl+F finds channels, and unlike this one it also finds
+  // members and messages.)
   const titles = useMemo(() => {
     const map = new Map<string, string>();
     for (const channel of channels) {
@@ -216,14 +216,6 @@ export function ChannelList({
     (channel: ChatChannel) => titles.get(channel.id) ?? channel.name,
     [titles],
   );
-
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (needle.length === 0) return channels;
-    return channels.filter((channel) =>
-      titleFor(channel).toLowerCase().includes(needle),
-    );
-  }, [channels, query, titleFor]);
 
   /**
    * Rail sections, in render order: the uncategorized default group, then one
@@ -251,7 +243,7 @@ export function ChannelList({
       categories.map((category) => [category.id, []]),
     );
 
-    for (const channel of filtered) {
+    for (const channel of channels) {
       if (isSystem(channel)) system.push(channel);
       else if (isDm(channel)) dms.push(channel);
       else {
@@ -287,7 +279,7 @@ export function ChannelList({
       section.channels.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
     }
     return result;
-  }, [filtered, titleFor, categories]);
+  }, [channels, titleFor, categories]);
 
   if (channels.length === 0) {
     return (
@@ -299,27 +291,6 @@ export function ChannelList({
 
   return (
     <div className="space-y-4">
-      <div className="relative">
-        <SearchGlyph className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        {/*
-          No height or size override. The field keeps the primitive's 48px and
-          16px value text — `input.tsx` states outright that a field's value
-          never renders below 16, and the previous `h-8 text-sm` here was
-          fighting exactly that.
-        */}
-        <Input
-          aria-label="Search channels"
-          placeholder="Search channels"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          className="pl-10"
-        />
-      </div>
-      {sections.every((section) => section.channels.length === 0) ? (
-        <p className="px-3 text-[12.5px] text-muted-foreground">
-          No matches. Try a different name.
-        </p>
-      ) : null}
       {sections.map((section) =>
         section.channels.length === 0 ? null : (
           <div key={section.key}>
@@ -363,13 +334,13 @@ export function ChannelList({
                       type="button"
                       onClick={() => onPick(channel)}
                       aria-current={isActive ? "page" : undefined}
-                      // The sidebar item recipe (components.md §7), which the
-                      // shell's own nav already ships: 40px tall, radius 10,
-                      // accent tint when selected. The rail and the app's
-                      // sidebar are the same kind of chrome, so they are the
-                      // same control.
+                      // `1b` pin 6 and the `3a` geometry table: a channel row
+                      // is 32px at radius 8, tighter than the 34px/r10 nav row
+                      // above it, because a rail of channels is a longer list
+                      // than a rail of sections. 14/600 type, and the accent
+                      // tint still marks the active row the way the nav's does.
                       className={cn(
-                        "flex h-10 w-full items-center gap-2.5 rounded-sm px-3 text-left text-[14.5px] transition-colors",
+                        "flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
                         isActive
                           ? "bg-accent-subtle font-semibold text-accent-text"
                           : isUnread
@@ -380,13 +351,36 @@ export function ChannelList({
                       <ChannelMark channel={channel} title={titleFor(channel)} />
                       <span className="truncate">{titleFor(channel)}</span>
                       <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                        {/*
+                          The glyphs below are `aria-hidden` (every duotone
+                          glyph is), so each carries its own `sr-only` word.
+                          The muted state used to be the literal text "muted",
+                          which a screen reader read for free; swapping it for a
+                          mark without this would have silently dropped it.
+                        */}
                         {channel.muted ? (
-                          <span className="text-[12.5px] text-muted-foreground">muted</span>
+                          <>
+                            <MuteGlyph
+                              className="h-4 w-4 text-muted-foreground"
+                              active
+                            />
+                            <span className="sr-only">Muted</span>
+                          </>
                         ) : null}
+                        {/*
+                          A lock glyph, not a "Read" badge (`1b` pin 7, `1t`).
+                          The badge spent 20-odd pixels of a 240px column
+                          spelling out a state the mark can carry, and read
+                          "Read" next to a row whose own styling already means
+                          read-or-unread — two different senses of the word on
+                          one row. `aria-label` keeps it stated for AT, which
+                          the badge did only by accident of its text.
+                        */}
                         {channel.is_read_only && !channel.muted && !isUnread ? (
-                          <Badge variant="outline" className="h-6 px-2">
-                            Read
-                          </Badge>
+                          <>
+                            <LockGlyph className="h-4 w-4 text-muted-foreground" />
+                            <span className="sr-only">Read-only</span>
+                          </>
                         ) : null}
                         {isUnread ? (
                           <Badge
@@ -441,3 +435,45 @@ function ChannelMark({
     </span>
   );
 }
+
+/**
+ * Reserved geometry for the channels column while `useChannels()` is in flight.
+ *
+ * The board's first-paint contract (`1s`) puts the channel column's chrome at
+ * 0ms and fills it from cache on the first chunk; what it never does is replace
+ * the route with a loading card. These blocks are the row geometry above — 32px
+ * tall at radius 8, the same 2px gaps, an indent for the mark — so the real rows
+ * land in the space the placeholders already held rather than pushing anything.
+ *
+ * Deliberately not a count derived from anything: there is no cached list to
+ * count yet, and a number that changes between renders makes the column jump.
+ * `aria-hidden` because `LoadingState` already announces; a screen reader has no
+ * use for eight anonymous rectangles.
+ */
+export function ChannelListSkeleton() {
+  return (
+    <div aria-hidden="true" className="space-y-0.5">
+      {SKELETON_ROW_WIDTHS.map((width, index) => (
+        <div key={index} className="flex h-8 items-center gap-2 px-2">
+          <Skeleton className="h-4 w-4 shrink-0 rounded-xs" />
+          <Skeleton className={cn("h-[13px]", width)} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Cycled rather than randomised: a skeleton that reshuffles on every render
+ * flickers, and under Strict Mode it would differ between the two passes.
+ */
+const SKELETON_ROW_WIDTHS = [
+  "w-[62%]",
+  "w-[45%]",
+  "w-[70%]",
+  "w-[52%]",
+  "w-[58%]",
+  "w-[40%]",
+  "w-[66%]",
+  "w-[48%]",
+] as const;
