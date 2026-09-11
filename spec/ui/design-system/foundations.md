@@ -28,7 +28,7 @@ Rationale: a warm charcoal ladder deliberately lifted off a pure `#0a0a0a` floor
 
 **The ladder was re-pitched for the web greenfield** ([#2143](https://github.com/pdcarlson/Frapp/issues/2143)). It previously ran `#0E0D0B` / `#171512` / `#1E1B17` / `#26221C`. Two things moved with it, and both are deliberate:
 
-- `--surface-1` is now `#1A1A1A`, the **mark's own field** ([`../brand-identity.md`](../brand-identity.md) §2), so locked emblem B sits flush on the raised surface instead of on a warmer neighbour.
+- `--surface-1` is now `#1A1A1A`, stated at the time as the **mark's own field** ([`../brand-identity.md`](../brand-identity.md) §2), so locked emblem B would sit flush on the raised surface instead of on a warmer neighbour. **That rationale does not survive measurement:** the committed mark's field is `#151515` and its gold `#DDA220`, so `#1A1A1A` is close to but not the mark's field, and the emblem does not sit flush. The value is left as shipped pending a brand decision — see [`../web-greenfield/tokens.md`](../web-greenfield/tokens.md) L-08 for the measurements and the two options.
 - Every step is lighter than before, which lowers contrast for light text by 0.142 to 0.681 points. **Three pairs crossed** below the 4.5:1 gate in [`README.md`](README.md) §6 as a result, and are handled in §5: `--destructive` on `--popover` (4.717 → 4.482), `--info` on `--card` (4.577 → 4.429), and `--mention` on `--surface-1` (4.656 → 4.447).
 - **Three more pairs are sub-AA but were already sub-AA before this ladder**, and are not this change's doing: `--info` on `--popover` (4.220 → 4.010), `--mention` on `--card` (4.383 → 4.238) and `--mention` on `--popover` (4.040 → 3.839). They are named here so the next ladder change is not reasoned from an inflated cost, and so nobody tries to "restore" contrast by darkening the ladder to fix failures that predate it.
 
@@ -150,11 +150,20 @@ The same six roles as CSS custom properties, for web surfaces. Mobile reads the 
 | `--text-title-weight` | `600` | title weight |
 | `--text-body` | `16px` | body size, the floor for paragraph text |
 | `--text-body-weight` | `400` | body weight |
-| `--text-body-line` | `25px` | body line height, the only one the scale states |
+| `--text-body-line` | `25px` | body line height, the only one the scale states — see the note below on the other five |
 | `--text-label` | `14px` | label size |
 | `--text-label-weight` | `600` | label weight |
 | `--text-caption` | `12.5px` | caption size |
 | `--text-caption-weight` | `400` | caption weight |
+
+**The other five roles ship a line height this scale does not define.** `display`, `headline`,
+`title`, `label` and `caption` are emitted as Tailwind `fontSize` keys in
+`apps/web/tailwind.config.ts`, and each pairs its size and weight (both read from the custom
+properties above) with a **literal** ratio — `1.15`, `1.2`, `1.3`, `1.3`, `1.35` — chosen when those
+utilities landed rather than derived from anything here. So a screen written against this section and
+a screen written against `text-title` can disagree, with nothing to arbitrate. Either promote the
+five into this table as real tokens, or record here that the non-body roles take a ratio owned at the
+utility layer. Tracked as L-09 in [`../web-greenfield/tokens.md`](../web-greenfield/tokens.md).
 
 ---
 
