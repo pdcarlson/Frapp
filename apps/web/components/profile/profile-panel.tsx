@@ -726,7 +726,14 @@ export function ProfilePanel() {
         </CardContent>
       </Card>
 
-      <Card>
+      {/*
+        Anchor target for the top-bar account menu's "Notification settings"
+        row. Notification preferences have no route of their own — they are a
+        section of this screen — so the menu links here rather than advertising
+        a settings page that does not exist. `scroll-mt` clears the sticky
+        48px top bar so the heading is not hidden under it on arrival.
+      */}
+      <Card id="notification-settings" className="scroll-mt-16">
         <CardHeader>
           <CardTitle>Notifications</CardTitle>
           <CardDescription>

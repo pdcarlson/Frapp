@@ -39,8 +39,10 @@ describe("AccountMenu", () => {
     // Profile left the nav and the header's Sign out button was deleted in the
     // same change. If either one failed to land here it would simply be gone
     // from the dashboard — this is the only place a member can reach them now.
+    // The greenfield shell then moved this whole menu onto the top-bar avatar,
+    // which is why the desktop variant is `topbar`.
     const user = userEvent.setup();
-    render(<AccountMenu variant="sidebar" />);
+    render(<AccountMenu variant="topbar" />);
 
     await user.click(screen.getByRole("button", { name: /account menu/i }));
 
@@ -54,7 +56,7 @@ describe("AccountMenu", () => {
   });
 
   it("names the signed-in member on the trigger", async () => {
-    render(<AccountMenu variant="sidebar" />);
+    render(<AccountMenu variant="topbar" />);
     expect(
       screen.getByRole("button", { name: /account menu for Paul Carlson/i }),
     ).toBeInTheDocument();
@@ -62,7 +64,7 @@ describe("AccountMenu", () => {
 
   it("falls back to a neutral label before the user query resolves", () => {
     useCurrentUser.mockReturnValue({ data: undefined });
-    render(<AccountMenu variant="sidebar" />);
+    render(<AccountMenu variant="topbar" />);
     expect(
       screen.getByRole("button", { name: /account menu for Your account/i }),
     ).toBeInTheDocument();
@@ -83,11 +85,47 @@ describe("AccountMenu", () => {
     expect(onNavigate).toHaveBeenCalledTimes(1);
   });
 
+  it("links notification settings at the section that actually exists", async () => {
+    // Notification preferences are a section of the profile screen, not a route
+    // of their own. A `?tab=` link would be a dead affordance the screen would
+    // silently ignore (components.md §5), so this must stay an anchor.
+    const user = userEvent.setup();
+    render(<AccountMenu variant="topbar" />);
+
+    await user.click(screen.getByRole("button", { name: /account menu/i }));
+
+    expect(
+      screen.getByRole("menuitem", { name: /notification settings/i }),
+    ).toHaveAttribute("href", "/profile#notification-settings");
+  });
+
+  it("keeps chapter switching out of the account menu", async () => {
+    // Identity and chapter are separate menus: switching lives in the nav's
+    // chapter header row. Folding it in here is the merge the board warns off.
+    const user = userEvent.setup();
+    render(<AccountMenu variant="topbar" />);
+
+    await user.click(screen.getByRole("button", { name: /account menu/i }));
+
+    expect(screen.queryByText(/switch chapter/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/join another chapter/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the top-bar trigger as the avatar alone", async () => {
+    // No name, no email, no chevron in the bar itself — three lines of chrome
+    // the board deletes. The name survives as the accessible name.
+    render(<AccountMenu variant="topbar" />);
+
+    const trigger = screen.getByRole("button", { name: /account menu/i });
+    expect(trigger).toHaveAccessibleName(/Paul Carlson/);
+    expect(trigger).not.toHaveTextContent("paul@example.com");
+  });
+
   it("renders no theme section — Signet is dark-only", async () => {
     // The theme radio group was deleted with next-themes in the #920 shell
     // slice. If it ever reappears, this menu is the place it would land.
     const user = userEvent.setup();
-    render(<AccountMenu variant="sidebar" />);
+    render(<AccountMenu variant="topbar" />);
 
     await user.click(screen.getByRole("button", { name: /account menu/i }));
 

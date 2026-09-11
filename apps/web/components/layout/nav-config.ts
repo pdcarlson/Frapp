@@ -26,11 +26,17 @@ import {
  * breadcrumb title map all stay in sync. Each entry mirrors the nav table
  * in `spec/ui/web-dashboard/README.md`.
  *
- * Structure (Wave 0 restructure): a Chat anchor with no section header,
- * followed by five sections. Chat leads because chat is the product's home —
- * `/` and `/dashboard` both redirect there. Profile is deliberately absent:
- * it moved to the account menu at the bottom of the sidebar
+ * Structure (greenfield shell, #2141): a Chat anchor with no section header,
+ * then Chapter, then Resources, then an unlabeled Directory + Billing group,
+ * then Admin. Chat leads because chat is the product's home — `/` and
+ * `/dashboard` both redirect there. Profile is deliberately absent: it lives in
+ * the account menu, which the shell now hangs off the top-bar avatar
  * (`account-menu.tsx`), because it is about the viewer, not about the chapter.
+ *
+ * There is no `primaryActionLabel`. The shell used to render one per route as a
+ * header button, but `primaryActionHref` resolved to the route already open, so
+ * it was a link to the current page — and every such action is also reachable
+ * inside the page. The board deletes it (`1t`, "per-route primaryActionLabel").
  *
  * Permission semantics:
  * - `requirePermission` — a single permission string; hide when absent.
@@ -71,7 +77,6 @@ export type NavItem = {
   icon: NavGlyphComponent;
   href?: string;
   breadcrumbTitle?: string;
-  primaryActionLabel?: string;
   description?: string;
   status: NavStatus;
   statusLabel?: string;
@@ -102,7 +107,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: ChatGlyph,
         href: "/chat",
         breadcrumbTitle: "Chat",
-        primaryActionLabel: "New Message",
         description: "Channels, DMs, announcements, realtime.",
         status: "available",
       },
@@ -118,7 +122,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: EventsGlyph,
         href: "/events",
         breadcrumbTitle: "Events",
-        primaryActionLabel: "New Event",
         description: "Schedule, attendance, check-ins, calendar export.",
         status: "available",
         module: "events",
@@ -129,7 +132,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: TasksGlyph,
         href: "/tasks",
         breadcrumbTitle: "Tasks",
-        primaryActionLabel: "New Task",
         description: "Assign, track, and confirm chapter tasks.",
         status: "available",
         module: "tasks",
@@ -140,7 +142,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: PointsGlyph,
         href: "/points",
         breadcrumbTitle: "Points Ledger",
-        primaryActionLabel: "Adjust Points",
         description: "Leaderboard, transactions, anomaly audit.",
         status: "available",
         module: "points",
@@ -151,7 +152,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: StudyGlyph,
         href: "/study",
         breadcrumbTitle: "Study hours",
-        primaryActionLabel: "Start session",
         description: "Start a tracked study session inside a study zone.",
         status: "available",
         module: "hours",
@@ -162,7 +162,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: ServiceGlyph,
         href: "/service",
         breadcrumbTitle: "Service hours",
-        primaryActionLabel: "Log service",
         description: "Log service hours and approve entries for points.",
         status: "available",
         module: "hours",
@@ -173,7 +172,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: PollsGlyph,
         href: "/polls",
         breadcrumbTitle: "Polls",
-        primaryActionLabel: "Open chat",
         description: "Chapter poll list with live results.",
         status: "available",
         module: "polls",
@@ -191,7 +189,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: DocumentsGlyph,
         href: "/documents",
         breadcrumbTitle: "Chapter Documents",
-        primaryActionLabel: "Upload Document",
         description: "Chapter files and organizational documents.",
         status: "available",
         module: "documents",
@@ -202,7 +199,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: BackworkGlyph,
         href: "/backwork",
         breadcrumbTitle: "Backwork",
-        primaryActionLabel: "Upload Resource",
         description: "Academic library with rich filters.",
         status: "available",
         module: "backwork",
@@ -210,8 +206,21 @@ export const DASHBOARD_NAV: NavSection[] = [
     ],
   },
   {
-    id: "directory",
-    label: "Directory",
+    /*
+     * Directory and Billing share one UNLABELED group.
+     *
+     * They were two sections of one item each, so the headings "DIRECTORY" and
+     * "FINANCE" were each announcing a single row whose own label already said
+     * the same word. The framework board (option `1b`) merges them and drops
+     * both headings; `1t` lists the two labels as deleted chrome. The group
+     * keeps a wider top margin so it still reads as its own block.
+     *
+     * `anchor` is the existing "render items with no heading" flag, the same
+     * one Chat uses. It is not a claim that this group is an app home.
+     */
+    id: "directory-finance",
+    label: "Directory and billing",
+    anchor: true,
     items: [
       {
         id: "members",
@@ -219,24 +228,16 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: DirectoryGlyph,
         href: "/members",
         breadcrumbTitle: "Directory",
-        primaryActionLabel: "Invite Member",
         description: "Actives and alumni, profile cards, invites, deactivation.",
         status: "available",
         requirePermission: "members:view",
       },
-    ],
-  },
-  {
-    id: "finance",
-    label: "Finance",
-    items: [
       {
         id: "billing",
         label: "Billing",
         icon: BillingGlyph,
         href: "/billing",
         breadcrumbTitle: "Billing",
-        primaryActionLabel: "Create Invoice",
         description: "Subscription, Stripe portal, member invoices, dues.",
         status: "available",
         requirePermission: "billing:view",
@@ -263,7 +264,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: StudyZonesGlyph,
         href: "/geofences",
         breadcrumbTitle: "Study Zones",
-        primaryActionLabel: "Add Study Zone",
         description: "Draw study polygons and reward rates.",
         status: "available",
         module: "geofences",
@@ -275,7 +275,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: ReportsGlyph,
         href: "/reports",
         breadcrumbTitle: "Reports & Export",
-        primaryActionLabel: "Generate Report",
         description: "Attendance, points, roster, and service exports.",
         status: "available",
         module: "reports",
@@ -287,7 +286,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: ChannelsGlyph,
         href: "/chat-admin",
         breadcrumbTitle: "Chat Admin",
-        primaryActionLabel: "New channel",
         description:
           "Create, edit, and delete channels; manage categories and pinned messages.",
         status: "available",
@@ -299,7 +297,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: ImportGlyph,
         href: "/discord-import",
         breadcrumbTitle: "Discord Import",
-        primaryActionLabel: "New import",
         description:
           "Bring a Discord server's history in as a read-only archive.",
         status: "available",

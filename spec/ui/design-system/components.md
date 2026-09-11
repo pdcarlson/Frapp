@@ -24,7 +24,7 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 
 ## 2. Shared rules
 
-- **Touch targets MUST be ≥ 44px** on touch surfaces. Compact 38px controls (§7) are web/pointer-only.
+- **Touch targets MUST be ≥ 44px** on touch surfaces. Compact 34px controls (§7) are web/pointer-only.
 - **No drop shadows.** Elevation is a lighter surface fill ([foundations.md](foundations.md)).
 - **No pill shapes** except the toggle track (§4) and the proportion meter (§12). The "Ask pill" is a rounded rectangle, not a capsule.
 - **Borders are neutral hairlines or tokens** — `rgba(255,255,255,.08)` structural, `rgba(255,255,255,.14)` on inputs, `accent-7` on accent-tinted chrome, low-opacity semantic on status surfaces (§10). Never a fixed grey hex.
@@ -84,7 +84,7 @@ Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) 
 | ---- | ------ | ------ | ----- | --- |
 | Default | 46–48px | 12 | 15px | standalone actions, forms, sheet primary |
 | Inline | 44px | 12 | 14.5px | action rows inside cards |
-| Compact | 38px | 12 | 14px | web app bar only (pointer) |
+| Compact | 34px | 10 | 13.5px | web app bar only (pointer) |
 
 ## 4. Inputs and selection
 
@@ -145,10 +145,16 @@ Composition of the sidebar and app bar belongs to [web-dashboard/README.md](../w
 
 ### Sidebar item
 
-Height 40px, radius 10, padding-x 12, icon 17px per the duotone recipe ([iconography.md](iconography.md)), gap 10.
+**Web geometry moved with the greenfield shell** ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)), which transcribed it from the framework board (option `1b`, pin 2). Mobile is unchanged.
 
-- Active: fill `accent-3`, text + icon `accent-11`, 14.5px / 600.
-- Inactive: transparent, text + icon `#A9A399`, 14.5px / 400; hover fill card `#211E1A`.
+Height 34px, radius 10, padding-x 10, icon 18px per the duotone recipe ([iconography.md](iconography.md)), gap 10, 2px between rows. Label 14px. (Was 40 / 12 / 17 / 14.5px.)
+
+- Active: fill `accent-3`, text + icon `accent-11`, 14px / 600.
+- Inactive: transparent, text + icon `#A9A399`, 14px / 400; hover fill card `#211E1A`.
+
+**No left accent bar.** The board offers a gold active bar only as an unadopted "spice" treatment (`4f` A) and prices it at 56px of nav height. The active state is the tinted fill and the weight bump, nothing else.
+
+**Collapsed rail.** The web nav collapses to a 56px icon rail as a remembered user preference, not a breakpoint. In the rail the row is 34x34, the label carries as the accessible name rather than visible text, and section headings are replaced by hairline dividers between groups (`1c` pin 1). The preference is read from a cookie server-side so the first paint is already the right width.
 
 ### App bar chips
 
