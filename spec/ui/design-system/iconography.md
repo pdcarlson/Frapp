@@ -62,9 +62,11 @@ Use only these icon sizes in product UI:
 - Mobile tab glyphs are 24px (`TAB_GLYPH_SIZE` in
   `apps/mobile/components/tab-glyphs.tsx`), matching the Canvas lock. The
   pre-reskin bar drew them at 20px.
-- Web sidebar nav glyphs are 17px ([components.md](components.md) §7's
-  item-level spec), a documented exception to this scale; top-bar glyphs use
-  the standard 20px (see §6.2).
+- Web sidebar nav glyphs are 18px ([components.md](components.md) §7's
+  item-level spec), a documented exception to this scale; top-bar glyphs are
+  18px too (see §6.2). Both were 17px / 20px before the greenfield shell
+  ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) took the board's
+  geometry.
 
 ---
 
@@ -157,8 +159,9 @@ recipe (§1), not Lucide. The glyphs live in
 `apps/web/components/layout/nav-glyphs.tsx` — transcribed from the reference
 boards where the boards draw the shape, drawn fresh in the same recipe where
 they do not — and `apps/web/components/layout/nav-config.ts` consumes them.
-Sidebar items render them at 17px ([components.md](components.md) §7);
-top-bar controls at 20px (`apps/web/components/layout/dashboard-shell.tsx`).
+Sidebar items render them at 18px ([components.md](components.md) §7);
+top-bar controls at 18px (`apps/web/components/layout/top-bar.tsx` — the top
+bar moved out of `dashboard-shell.tsx` in #2141).
 This table is the intent → glyph map; it MUST change in the same PR as
 `nav-glyphs.tsx`.
 

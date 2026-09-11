@@ -31,10 +31,18 @@ claims are the durable part; re-read before deleting either way.
 | `apps/web/components/layout/dashboard-shell.tsx` | — | The `k` keybinding and the mount |
 | `apps/web/components/ui/command.tsx` | 165 | The `cmdk` wrapper |
 
-- [ ] Palette component and its suite deleted
-- [ ] Keybinding removed from the shell, and the top bar's Search control removed or repointed
-- [ ] `cmdk` dependency removed from `apps/web/package.json` **only if** `ui/command.tsx` has no
-      surviving consumers
+- [x] Palette component and its suite deleted
+- [x] Keybinding removed from the shell, and the top bar's Search control removed or repointed
+- [x] `cmdk` dependency removed from `apps/web/package.json` **only if** `ui/command.tsx` has no
+      surviving consumers — **kept**, it has three consumers and only one was the palette
+      (`chat/slash-palette.tsx` and `onboarding/chapter-wizard.tsx` remain)
+
+**Taken by lane 2.** The replacement is the top bar's find field on Cmd/Ctrl+F
+(`components/layout/find-bar.tsx`). It is visible rather than summoned, and it advertises the
+binding it actually wires. Its Navigation group did not need re-deriving because it has no
+navigation list at all: it finds channels, members and messages, which is what its placeholder
+promises. Nav gating therefore stays exactly where it was, in `nav-config.ts` +
+`isNavItemVisible`.
 
 > **`cmdk` is not scoped to the palette.** `ui/command.tsx` has two other consumers besides the
 > palette. Deleting the palette does not automatically free the dependency. Check before removing it,
@@ -75,7 +83,9 @@ current palette already fixed once.
 | ---- | ----- | ---- |
 | `apps/web/components/layout/ask-pill.tsx` | 102 | Sole importer `dashboard-shell.tsx:36`, mounted at `:497` |
 
-- [ ] Decide: remove the Ask pill, or keep it and restyle it in the greenfield top bar
+- [x] Decide: remove the Ask pill, or keep it and restyle it in the greenfield top bar —
+      **kept and restyled** by lane 2 to the board's 34px/r10 top-bar geometry. The `gold-ask-*`
+      tokens therefore keep their consumer and L-05 does not fire
 - [ ] If removed, the `gold-ask-*` tokens lose their only consumer. Remove them from `signet.css`
       and `signet.ts` in the same change, or state why they stay
 
@@ -94,19 +104,52 @@ Seven satellites, none imported outside the shell: `account-menu.tsx` (136),
 `chapter-switcher.tsx` (225), `chapter-lockup.tsx` (141), `beta-badge.tsx` (90),
 `dashboard-notification-drawer.tsx` (229), `ask-pill.tsx` (102), `dashboard-command-menu.tsx` (407).
 
-- [ ] Each satellite either rebuilt or deleted. None left rendering beside a replacement
-- [ ] `nav-config.ts`, `protected-nav-item.tsx`, and the account menu's shared bottom region survive
+- [x] Each satellite either rebuilt or deleted. None left rendering beside a replacement
+- [x] `nav-config.ts`, `protected-nav-item.tsx`, and the account menu's shared bottom region survive
       or have their behavior re-homed. These carry permission and module gating, which is behavior,
       not chrome
-- [ ] The responsive contract is re-stated or deliberately changed. Today it is **two states, not
+- [x] The responsive contract is re-stated or deliberately changed. Today it is **two states, not
       four**, switching once at `lg`. Adding a tier is a spec change
+
+**Taken by lane 2.** Where each satellite went:
+
+| Satellite | Outcome |
+| --------- | ------- |
+| `dashboard-command-menu.tsx` + spec | Deleted. See §1 |
+| `chapter-lockup.tsx` + `chapter-switcher.tsx` (+ spec) | **Merged** into `chapter-nav-header.tsx`, the 40px chapter row at the top of the nav. The switcher's suite was ported, not dropped; two of its cases reverse deliberately, because the row is now identity and renders for single-chapter users too |
+| `beta-badge.tsx` | Deleted. Only `sidebar_pill` was ever referenced and the Status/BETA row is deleted chrome; the other three styles were dead code |
+| `account-menu.tsx` | Rebuilt. Moved off the nav onto the top-bar avatar (`topbar` variant); the drawer keeps a full-width row |
+| `ask-pill.tsx` | Rebuilt to the board's 34px/r10 top-bar geometry. Still `gold-ask-*`. See §4 |
+| `dashboard-notification-drawer.tsx` | Kept as-is; the bell that opens it moved into the new top bar |
+| `dashboard-shell.tsx` | Rewritten. Split into `app-nav.tsx`, `top-bar.tsx`, `find-bar.tsx`, `page-header.tsx` |
+
+The responsive contract is **unchanged and deliberately so**: still two states switching once at
+`lg`. The 56px rail is a remembered user preference inside the desktop state, not a third viewport
+tier — below `lg` the drawer renders `AppNav` always-expanded and the rail never appears.
+
+The shell also gained its first unit coverage (`dashboard-shell.spec.tsx`), which had been none at
+all. It pins this lane's three acceptance criteria: the route renders in the shell, ⌘K is gone, and
+no title sits in the top bar.
 
 ## 6. Scrollbars — lane 2
 
-- [ ] Chrome's default scrollbars replaced using the `--scrollbar-*` tokens from
+- [x] Chrome's default scrollbars replaced using the `--scrollbar-*` tokens from
       [`tokens.md`](tokens.md)
-- [ ] Applied to the shell's scroll regions, not globally to `*`
-- [ ] Reduced-motion and keyboard scrolling unaffected
+- [x] ~~Applied to the shell's scroll regions, not globally to `*`~~ — **reversed.** Applied
+      globally, on `*`
+- [x] Reduced-motion and keyboard scrolling unaffected
+
+**Taken by lane 2, and this section's second line was wrong.** It restated the pre-greenfield
+`foundations.md` §12 rule. The framework board (option `3a`) declares the bar at the root, calls it
+chrome, and says scrollbars are "never hidden" — and committed HTML outranks written docs while
+#2140 is open. The `.signet-scroll` opt-in class had zero call sites repo-wide, so it was retired
+rather than left standing beside the global rule, and `foundations.md` §12 was rewritten in the same
+change rather than left contradicting the code.
+
+Values are the board's: 8px, `#DDB844` thumb on a `#1A1A1A` track, both fixed and never retinting
+per chapter. The board's own CSS was **not** copied verbatim — see `tokens.md` L-01 for why it does
+not render what it specifies in Chrome, and for the measured cost of the `#332E26` skeleton
+highlight that shipped alongside it.
 
 ## 7. Standing bans
 

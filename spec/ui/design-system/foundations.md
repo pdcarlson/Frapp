@@ -235,13 +235,15 @@ A scroll region on a Signet surface draws its own scrollbar. The browser default
 
 | Token | Value | Role |
 |-------|-------|------|
-| `--scrollbar-width` | `10px` | track width, and height for a horizontal bar |
-| `--scrollbar-thumb` | `rgba(255,255,255,0.14)` | the thumb at rest |
-| `--scrollbar-thumb-hover` | `rgba(255,255,255,0.24)` | the thumb under the pointer |
-| `--scrollbar-track` | `transparent` | the track |
+| `--scrollbar-width` | `8px` | track width, and height for a horizontal bar |
+| `--scrollbar-thumb` | `#DDB844` | the thumb at rest |
+| `--scrollbar-thumb-hover` | `#F0CD5E` | the thumb under the pointer |
+| `--scrollbar-track` | `#1A1A1A` | the track |
 
 Three rules, each for a reason the token values alone do not carry:
 
-- **The thumb is low-opacity white, not a ladder step.** Same rule as hairlines (§3): it tracks whatever surface it overlays, so one token works in the sidebar, on a card, and inside a sheet without a per-surface variant.
-- **The track is transparent.** A scroll region that is not scrolling should gain no visible gutter. A filled track turns every scrollable pane into a bordered box.
-- **Styling is opt-in per region, never global.** The web implementation is a `.signet-scroll` class (`packages/theme/src/signet.css`), not a rule on `*`. A blanket rule repaints scrollbars inside embedded and third-party content, where the surface underneath is not ours and a low-opacity thumb can land on white. Overlay scrollbars — macOS and every touch device — already render correctly and are left alone.
+- **The thumb is fixed mark gold and never retints.** It is brand chrome, not an accent role. The chapter accent engine must not reach it, for the same reason it must not reach the mark (`../brand-identity.md` §2) — a tenant accent on the scrollbar is the house-tenant mistake in a different place. The track is the fixed `#1A1A1A` nav field, not a ladder token, so the pair reads the same on every surface.
+- **The track is opaque, and the bar is never hidden.** A scroll region always shows where it is. This reverses the earlier transparent-track rule: a persistent bar is part of how the surface reads.
+- **Styling is global, not opt-in per region.** The web implementation is a rule on `*` (`packages/theme/src/signet.css`), not a class. The previous `.signet-scroll` opt-in was retired by the greenfield shell lane ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) because the framework board declares the bar at the root and calls it chrome; the class had zero call sites, so nothing regressed. The old objection that a blanket rule can land a low-opacity thumb on an unknown surface no longer applies, because both colors are now opaque.
+
+**Engine split, and why the board's own CSS is not copied verbatim.** The standard properties (`scrollbar-width` / `scrollbar-color`) and the WebKit pseudo-elements are mutually exclusive: since Chromium 121, a non-`auto` value for either standard property makes that element's `::-webkit-scrollbar-*` rules ignored outright. The board declares both together, which in Chrome and Edge silently discards the 8px width, the rounding and the track inset it also specifies. So the standard properties are scoped to `@supports not selector(::-webkit-scrollbar)` — true only in Firefox — and every other engine gets the pseudo-elements. All engines then render the board's intent rather than only the one that reads the shorthand.

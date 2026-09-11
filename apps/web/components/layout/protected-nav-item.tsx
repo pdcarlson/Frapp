@@ -10,8 +10,12 @@ type Props = {
   isActive: boolean;
   permissions: readonly string[] | null | undefined;
   iconClassName: string;
-  statusIconClassName?: string;
   onNavigate?: () => void;
+  /**
+   * Rail mode: render the glyph alone, centered, with the label carried by
+   * `aria-label` and the native tooltip instead of by visible text.
+   */
+  collapsed?: boolean;
   focusClassName: string;
   /**
    * Predicate from `useOrgConfig().data?.isModuleEnabled`. When provided and
@@ -87,26 +91,48 @@ export function ProtectedNavItem({
   onNavigate,
   focusClassName,
   isModuleEnabled,
+  collapsed = false,
 }: Props) {
   if (!isNavItemVisible(item, permissions, isModuleEnabled)) {
     return null;
   }
 
-  // Signet sidebar item (components.md §7): 40px tall, radius 10, tinted
-  // accent fill + accent text when active, quiet neutral otherwise. The active
-  // pair (`accent-subtle` + `accent-text`) comes from the chapter accent
-  // engine, which guarantees their AA contrast at generation time for every
-  // seed — this is what replaced the legacy branded `--side-*` sidebar and its
-  // stock-text-on-branded-surface failures (#1150/#1164).
+  /*
+   * Greenfield nav row (board option `1b`, pin 2): 34px tall, radius 10, 10px
+   * padding and gap, an 18px duotone glyph and a 14px label.
+   *
+   * Active is a tinted fill plus accent text and a weight bump — deliberately
+   * NOT a left accent bar. The board offers that bar only as a "spice" option
+   * (`4f` A) and prices it at 56px of nav height; the baseline shell does not
+   * take it.
+   *
+   * The active pair (`accent-subtle` + `accent-text`) is chapter accent engine
+   * output, which guarantees AA contrast at generation time for every seed.
+   * That is what replaced the legacy branded `--side-*` sidebar and its
+   * stock-text-on-branded-surface failures (#1150/#1164). Hover skips to
+   * `--card`, the board's own hover step.
+   */
   if (item.href) {
     return (
       <Link
         href={item.href}
         onClick={onNavigate}
         aria-current={isActive ? "page" : undefined}
-        title={item.description}
+        // In the rail the label has nowhere to render, so the accessible name
+        // has to come from somewhere other than the text content.
+        aria-label={collapsed ? item.label : undefined}
+        title={collapsed ? item.label : item.description}
         className={cn(
-          "flex h-10 w-full items-center gap-2.5 rounded-sm px-3 text-left text-[14.5px] transition",
+          /*
+           * 34px is the board's POINTER geometry. The drawer that renders this
+           * below `lg` is touch-only, and `--touch-min` (44px) is binding on
+           * web as well as mobile (foundations §9) - so the row is 44px until
+           * the desktop breakpoint, then takes the board's density.
+           */
+          "flex min-h-touch items-center rounded-[10px] text-left text-sm transition lg:h-[34px] lg:min-h-0",
+          collapsed
+            ? "w-[34px] justify-center"
+            : "w-full gap-2.5 px-2.5",
           focusClassName,
           isActive
             ? "bg-accent-subtle font-semibold text-accent-text"
@@ -114,7 +140,7 @@ export function ProtectedNavItem({
         )}
       >
         <item.icon className={iconClassName} active={isActive} />
-        <span>{item.label}</span>
+        {collapsed ? null : <span className="truncate">{item.label}</span>}
       </Link>
     );
   }
@@ -124,16 +150,22 @@ export function ProtectedNavItem({
       type="button"
       aria-disabled="true"
       tabIndex={-1}
-      title={item.description ?? item.statusLabel ?? "Coming soon"}
+      aria-label={collapsed ? item.label : undefined}
+      title={
+        collapsed
+          ? item.label
+          : (item.description ?? item.statusLabel ?? "Coming soon")
+      }
       onClick={(e) => e.preventDefault()}
       className={cn(
-        "flex h-10 w-full cursor-not-allowed items-center gap-2.5 rounded-sm px-3 text-left text-[14.5px] text-disabled",
+        "flex min-h-touch cursor-not-allowed items-center rounded-[10px] text-left text-sm text-disabled lg:h-[34px] lg:min-h-0",
+        collapsed ? "w-[34px] justify-center" : "w-full gap-2.5 px-2.5",
         focusClassName,
       )}
     >
       <item.icon className={iconClassName} />
-      <span>{item.label}</span>
-      {item.statusLabel ? (
+      {collapsed ? null : <span className="truncate">{item.label}</span>}
+      {!collapsed && item.statusLabel ? (
         <span className="ml-auto rounded-xs border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted">
           {item.statusLabel}
         </span>

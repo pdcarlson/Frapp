@@ -41,6 +41,7 @@ import {
   NestedLoading,
 } from "@/components/shared/nested-states";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   DocumentsGlyph,
   ReportsGlyph,
@@ -593,381 +594,385 @@ export function ReportsPage() {
   }
 
   return (
-    <Can
-      permission="reports:export"
-      offlineFallback={(retry) => (
-        <PermissionsOfflineSurface
-          description="Reconnect to check whether you can export chapter data."
-          onRetry={retry}
-        />
-      )}
-      fallback={
-        <div className="min-h-40">
-          <Card aria-label="Reports & Export permissions check">
-            <CardHeader>
-              <CardTitle>Reports &amp; Export</CardTitle>
-              <CardDescription>
-                Checking your chapter permissions…
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </div>
-      }
-      deniedFallback={
-        <div className="min-h-40">
+    <>
+      {/*
+        Outside the `<Can>` so the permission-pending, denied and offline
+        branches keep the route's heading — the shell no longer supplies one
+        (#2141). The two `<CardTitle>Reports & Export</CardTitle>` copies and
+        the body's `<h2>` were the same title said a second time.
+      */}
+      <PageHeader title="Reports & Export" />
+      <Can
+        permission="reports:export"
+        offlineFallback={(retry) => (
+          <PermissionsOfflineSurface
+            description="Reconnect to check whether you can export chapter data."
+            onRetry={retry}
+          />
+        )}
+        fallback={
+          <div className="min-h-40">
+            <Card aria-label="Reports & Export permissions check">
+              <CardHeader>
+                <CardDescription>
+                  Checking your chapter permissions…
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </div>
+        }
+        deniedFallback={
+          <div className="min-h-40">
+            <Card>
+              <CardHeader>
+                <CardDescription>
+                  Exporting chapter data requires the <code>reports:export</code>{" "}
+                  permission. Ask your chapter president to grant access.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          </div>
+        }
+      >
+        <div className="space-y-6">
+          <header>
+            <p className="text-sm text-muted-foreground">
+              Generate attendance, points, roster, and service hours reports.
+              Download as CSV, or export a branded PDF with your chapter&apos;s
+              name and logo.
+            </p>
+          </header>
+
+          {/*
+            Disable, don't hide (§5 rule 4): the filters and any preview already
+            on screen stay usable while the subscription is lapsed — only the two
+            buttons that POST are blocked.
+          */}
+          <SubscriptionNotice gate={gate} feature="generating reports" />
+
           <Card>
             <CardHeader>
-              <CardTitle>Reports &amp; Export</CardTitle>
+              <CardTitle className="text-lg">Choose a report</CardTitle>
               <CardDescription>
-                Exporting chapter data requires the <code>reports:export</code>{" "}
-                permission. Ask your chapter president to grant access.
+                Each report respects the same chapter + permission scoping as the
+                rest of the dashboard.
               </CardDescription>
             </CardHeader>
-          </Card>
-        </div>
-      }
-    >
-      <div className="space-y-6">
-        <header>
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Reports &amp; Export
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Generate attendance, points, roster, and service hours reports.
-            Download as CSV, or export a branded PDF with your chapter&apos;s
-            name and logo.
-          </p>
-        </header>
-
-        {/*
-          Disable, don't hide (§5 rule 4): the filters and any preview already
-          on screen stay usable while the subscription is lapsed — only the two
-          buttons that POST are blocked.
-        */}
-        <SubscriptionNotice gate={gate} feature="generating reports" />
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Choose a report</CardTitle>
-            <CardDescription>
-              Each report respects the same chapter + permission scoping as the
-              rest of the dashboard.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="grid gap-1">
-                <Label htmlFor="report-kind">Report</Label>
-                <Select
-                  value={kind}
-                  // Also locked during a plain "Generate report": the run in
-                  // flight resolves into setPreview regardless of what the
-                  // select says by then, so switching mid-run would label one
-                  // report's rows as another's — and the CSV download names
-                  // the file from the *new* kind.
-                  disabled={pdfPending || activeMutation.isPending}
-                  onValueChange={(value) => {
-                    setKind(value as ReportKind);
-                    runToken.current += 1;
-                    setPreview(null);
-                    setTruncation(null);
-                    setPreviewError(null);
-                  }}
-                >
-                  <SelectTrigger id="report-kind">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="attendance">
-                      {reportLabel.attendance}
-                    </SelectItem>
-                    <SelectItem value="points">{reportLabel.points}</SelectItem>
-                    <SelectItem value="roster">{reportLabel.roster}</SelectItem>
-                    <SelectItem value="service">
-                      {reportLabel.service}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {reportDescription[kind]}
-                </p>
-              </div>
-            </div>
-
-            {kind === "attendance" ? (
-              <div className="grid gap-3 md:grid-cols-3">
-                <PickerField
-                  idPrefix="report-event"
-                  label="Event (optional)"
-                  value={eventId}
-                  onValueChange={onFilterChange(setEventId)}
-                  options={eventOptions}
-                  query={eventsQuery}
-                  allLabel="Chapter-wide (all events)"
-                  noun="events"
-                  singularNoun="event"
-                />
-                <div className="grid gap-1">
-                  <Label htmlFor="report-start">Start date</Label>
-                  <Input
-                    id="report-start"
-                    type="date"
-                    value={startDate}
-                    onChange={(event) =>
-                      onFilterChange(setStartDate)(event.target.value)
-                    }
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="report-end">End date</Label>
-                  <Input
-                    id="report-end"
-                    type="date"
-                    value={endDate}
-                    onChange={(event) =>
-                      onFilterChange(setEndDate)(event.target.value)
-                    }
-                  />
-                </div>
-              </div>
-            ) : null}
-
-            {kind === "points" ? (
+            <CardContent className="space-y-4">
               <div className="grid gap-3 md:grid-cols-2">
-                <PickerField
-                  idPrefix="report-member"
-                  label="Member (optional)"
-                  value={memberId}
-                  onValueChange={onFilterChange(setMemberId)}
-                  options={memberOptions}
-                  query={membersQuery}
-                  allLabel="Chapter-wide (all members)"
-                  noun="members"
-                  singularNoun="member"
-                />
                 <div className="grid gap-1">
-                  <Label htmlFor="report-window">Time window</Label>
+                  <Label htmlFor="report-kind">Report</Label>
                   <Select
-                    value={pointsWindow}
-                    onValueChange={(value) =>
-                      onFilterChange(setPointsWindow)(
-                        value as typeof pointsWindow,
-                      )
-                    }
+                    value={kind}
+                    // Also locked during a plain "Generate report": the run in
+                    // flight resolves into setPreview regardless of what the
+                    // select says by then, so switching mid-run would label one
+                    // report's rows as another's — and the CSV download names
+                    // the file from the *new* kind.
+                    disabled={pdfPending || activeMutation.isPending}
+                    onValueChange={(value) => {
+                      setKind(value as ReportKind);
+                      runToken.current += 1;
+                      setPreview(null);
+                      setTruncation(null);
+                      setPreviewError(null);
+                    }}
                   >
-                    <SelectTrigger id="report-window">
+                    <SelectTrigger id="report-kind">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All time</SelectItem>
-                      <SelectItem value="semester">Current semester</SelectItem>
-                      <SelectItem value="month">Rolling month</SelectItem>
+                      <SelectItem value="attendance">
+                        {reportLabel.attendance}
+                      </SelectItem>
+                      <SelectItem value="points">{reportLabel.points}</SelectItem>
+                      <SelectItem value="roster">{reportLabel.roster}</SelectItem>
+                      <SelectItem value="service">
+                        {reportLabel.service}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {reportDescription[kind]}
+                  </p>
                 </div>
               </div>
-            ) : null}
 
-            {kind === "service" ? (
-              <div className="grid gap-3 md:grid-cols-3">
-                <PickerField
-                  idPrefix="service-report-member"
-                  label="Member (optional)"
-                  value={memberId}
-                  onValueChange={onFilterChange(setMemberId)}
-                  options={memberOptions}
-                  query={membersQuery}
-                  allLabel="Chapter-wide (all members)"
-                  noun="members"
-                  singularNoun="member"
-                />
-                <div className="grid gap-1">
-                  <Label htmlFor="service-report-start">Start date</Label>
-                  <Input
-                    id="service-report-start"
-                    type="date"
-                    value={startDate}
-                    onChange={(event) =>
-                      onFilterChange(setStartDate)(event.target.value)
-                    }
+              {kind === "attendance" ? (
+                <div className="grid gap-3 md:grid-cols-3">
+                  <PickerField
+                    idPrefix="report-event"
+                    label="Event (optional)"
+                    value={eventId}
+                    onValueChange={onFilterChange(setEventId)}
+                    options={eventOptions}
+                    query={eventsQuery}
+                    allLabel="Chapter-wide (all events)"
+                    noun="events"
+                    singularNoun="event"
                   />
+                  <div className="grid gap-1">
+                    <Label htmlFor="report-start">Start date</Label>
+                    <Input
+                      id="report-start"
+                      type="date"
+                      value={startDate}
+                      onChange={(event) =>
+                        onFilterChange(setStartDate)(event.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="report-end">End date</Label>
+                    <Input
+                      id="report-end"
+                      type="date"
+                      value={endDate}
+                      onChange={(event) =>
+                        onFilterChange(setEndDate)(event.target.value)
+                      }
+                    />
+                  </div>
                 </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="service-report-end">End date</Label>
-                  <Input
-                    id="service-report-end"
-                    type="date"
-                    value={endDate}
-                    onChange={(event) =>
-                      onFilterChange(setEndDate)(event.target.value)
-                    }
-                  />
-                </div>
-              </div>
-            ) : null}
-          </CardContent>
-          <CardFooter className="flex items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">
-              PDF export is generated server-side; its download link is valid
-              for one hour.
-            </p>
-            <div className="flex items-center gap-2">
-              {/*
-                Not subscription-gated: this serializes the preview already in
-                memory and never reaches the API, so it is a read of data the
-                chapter has already been served. The rows behind it came from a
-                generate that was itself gated.
-              */}
-              <Button
-                variant="secondary"
-                onClick={exportCsv}
-                disabled={!preview || preview.length === 0}
-              >
-                <Download className="h-4 w-4" />
-                Download CSV
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={exportPdf}
-                // Gate on pdfPending too: activeMutation swaps when the report
-                // kind changes, so keying only off it would re-enable this
-                // button mid-export and let a second render be queued.
-                {...gate.controlProps(pdfPending || activeMutation.isPending)}
-              >
-                {pdfPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <DocumentsGlyph className="h-4 w-4" />
-                )}
-                {pdfPending ? "Preparing PDF..." : "Download PDF"}
-              </Button>
-              <Button
-                onClick={runReport}
-                {...gate.controlProps(pdfPending || activeMutation.isPending)}
-              >
-                {activeMutation.isPending && !pdfPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ReportsGlyph className="h-4 w-4" />
-                )}
-                Generate report
-              </Button>
-            </div>
-          </CardFooter>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="text-lg">Preview</CardTitle>
-              {/*
-                `spec/behavior/reports.md` caps a report at 5,000 rows and
-                says truncation is never silent — but the only signal was a
-                toast, so once it dismissed a partial table sat on screen
-                claiming to be the whole report, and the CSV built from it
-                carries the same claim into a file. §5's Semantic warning
-                kind, which needs no §1 lift on its own tint (5.57–7.15:1).
-              */}
-              {truncation?.truncated ? (
-                <Badge variant="warning">Incomplete report</Badge>
               ) : null}
-            </div>
-            <CardDescription>
-              {truncation?.truncated
-                ? `${truncationSummary(truncation)} This preview and the CSV built from it are not a complete record of the chapter.`
-                : "First 25 rows of the generated report. The CSV download contains every returned row."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {/*
-              The nested state variants: this renders inside a
-              `<CardContent>`, where a `bg-card` state on a `bg-card` card is
-              exactly 1.00:1 and the region disappears (`components.md` §10).
-              This panel previously rendered no state-family component at all —
-              bare paragraphs and a hand-rolled spinner row — so it was the one
-              surface in the family whose states did not match the other three.
-            */}
-            {activeMutation.isPending && !pdfPending ? (
-              <NestedLoading message="Generating report..." sole />
-            ) : previewError ? (
-              <NestedError
-                sole
-                title={`Couldn't generate ${reportLabel[kind].toLowerCase()} report`}
-                description={previewError}
-                onRetry={() => void runReport()}
-                /*
-                  `gate.controlProps`, not a hand-built `{ disabled }`. Retry
-                  re-enters `runReport` — the same paid-ops POST the two footer
-                  buttons carry the gate on — so it is a third trigger for a
-                  gated write and README §5's "gate the trigger" reaches it
-                  too. Building the object by hand disabled it only while busy,
-                  so a chapter that lapsed between the failed run and the click
-                  would have fired the doomed request the standard exists to
-                  prevent. The busy flags go *into* `controlProps`, which ORs
-                  them with the verdict rather than replacing it — and this is
-                  the shape `actionProps`/`retryProps` were built to take.
 
-                  The busy half matters on its own: the loading branch above is
-                  `activeMutation.isPending && !pdfPending`, so during a PDF
-                  export it is false and this branch renders its stale error
-                  with Retry wired to the same mutation the export is using.
+              {kind === "points" ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <PickerField
+                    idPrefix="report-member"
+                    label="Member (optional)"
+                    value={memberId}
+                    onValueChange={onFilterChange(setMemberId)}
+                    options={memberOptions}
+                    query={membersQuery}
+                    allLabel="Chapter-wide (all members)"
+                    noun="members"
+                    singularNoun="member"
+                  />
+                  <div className="grid gap-1">
+                    <Label htmlFor="report-window">Time window</Label>
+                    <Select
+                      value={pointsWindow}
+                      onValueChange={(value) =>
+                        onFilterChange(setPointsWindow)(
+                          value as typeof pointsWindow,
+                        )
+                      }
+                    >
+                      <SelectTrigger id="report-window">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All time</SelectItem>
+                        <SelectItem value="semester">Current semester</SelectItem>
+                        <SelectItem value="month">Rolling month</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ) : null}
+
+              {kind === "service" ? (
+                <div className="grid gap-3 md:grid-cols-3">
+                  <PickerField
+                    idPrefix="service-report-member"
+                    label="Member (optional)"
+                    value={memberId}
+                    onValueChange={onFilterChange(setMemberId)}
+                    options={memberOptions}
+                    query={membersQuery}
+                    allLabel="Chapter-wide (all members)"
+                    noun="members"
+                    singularNoun="member"
+                  />
+                  <div className="grid gap-1">
+                    <Label htmlFor="service-report-start">Start date</Label>
+                    <Input
+                      id="service-report-start"
+                      type="date"
+                      value={startDate}
+                      onChange={(event) =>
+                        onFilterChange(setStartDate)(event.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="service-report-end">End date</Label>
+                    <Input
+                      id="service-report-end"
+                      type="date"
+                      value={endDate}
+                      onChange={(event) =>
+                        onFilterChange(setEndDate)(event.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+            <CardFooter className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                PDF export is generated server-side; its download link is valid
+                for one hour.
+              </p>
+              <div className="flex items-center gap-2">
+                {/*
+                  Not subscription-gated: this serializes the preview already in
+                  memory and never reaches the API, so it is a read of data the
+                  chapter has already been served. The rows behind it came from a
+                  generate that was itself gated.
+                */}
+                <Button
+                  variant="secondary"
+                  onClick={exportCsv}
+                  disabled={!preview || preview.length === 0}
+                >
+                  <Download className="h-4 w-4" />
+                  Download CSV
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={exportPdf}
+                  // Gate on pdfPending too: activeMutation swaps when the report
+                  // kind changes, so keying only off it would re-enable this
+                  // button mid-export and let a second render be queued.
+                  {...gate.controlProps(pdfPending || activeMutation.isPending)}
+                >
+                  {pdfPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <DocumentsGlyph className="h-4 w-4" />
+                  )}
+                  {pdfPending ? "Preparing PDF..." : "Download PDF"}
+                </Button>
+                <Button
+                  onClick={runReport}
+                  {...gate.controlProps(pdfPending || activeMutation.isPending)}
+                >
+                  {activeMutation.isPending && !pdfPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ReportsGlyph className="h-4 w-4" />
+                  )}
+                  Generate report
+                </Button>
+              </div>
+            </CardFooter>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="text-lg">Preview</CardTitle>
+                {/*
+                  `spec/behavior/reports.md` caps a report at 5,000 rows and
+                  says truncation is never silent — but the only signal was a
+                  toast, so once it dismissed a partial table sat on screen
+                  claiming to be the whole report, and the CSV built from it
+                  carries the same claim into a file. §5's Semantic warning
+                  kind, which needs no §1 lift on its own tint (5.57–7.15:1).
+                */}
+                {truncation?.truncated ? (
+                  <Badge variant="warning">Incomplete report</Badge>
+                ) : null}
+              </div>
+              <CardDescription>
+                {truncation?.truncated
+                  ? `${truncationSummary(truncation)} This preview and the CSV built from it are not a complete record of the chapter.`
+                  : "First 25 rows of the generated report. The CSV download contains every returned row."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/*
+                The nested state variants: this renders inside a
+                `<CardContent>`, where a `bg-card` state on a `bg-card` card is
+                exactly 1.00:1 and the region disappears (`components.md` §10).
+                This panel previously rendered no state-family component at all —
+                bare paragraphs and a hand-rolled spinner row — so it was the one
+                surface in the family whose states did not match the other three.
+              */}
+              {activeMutation.isPending && !pdfPending ? (
+                <NestedLoading message="Generating report..." sole />
+              ) : previewError ? (
+                <NestedError
+                  sole
+                  title={`Couldn't generate ${reportLabel[kind].toLowerCase()} report`}
+                  description={previewError}
+                  onRetry={() => void runReport()}
+                  /*
+                    `gate.controlProps`, not a hand-built `{ disabled }`. Retry
+                    re-enters `runReport` — the same paid-ops POST the two footer
+                    buttons carry the gate on — so it is a third trigger for a
+                    gated write and README §5's "gate the trigger" reaches it
+                    too. Building the object by hand disabled it only while busy,
+                    so a chapter that lapsed between the failed run and the click
+                    would have fired the doomed request the standard exists to
+                    prevent. The busy flags go *into* `controlProps`, which ORs
+                    them with the verdict rather than replacing it — and this is
+                    the shape `actionProps`/`retryProps` were built to take.
+
+                    The busy half matters on its own: the loading branch above is
+                    `activeMutation.isPending && !pdfPending`, so during a PDF
+                    export it is false and this branch renders its stale error
+                    with Retry wired to the same mutation the export is using.
+                  */
+                  retryProps={gate.controlProps(
+                    pdfPending || activeMutation.isPending,
+                  )}
+                />
+              ) : preview === null ? (
+                <NestedEmpty
+                  sole
+                  title="No report generated yet"
+                  description="Generate a report to see a preview here."
+                />
+              ) : preview.length === 0 ? (
+                <NestedEmpty
+                  sole
+                  title="Report returned no rows"
+                  description="The filters matched nothing in the active chapter."
+                />
+              ) : (
+                /*
+                  The shared primitive rather than a hand-rolled `<table>`. It
+                  brings the `overflow-auto` wrapper that keeps a wide report off
+                  the 375px floor, the undiluted `--border` hairline, and the row
+                  recipe `components/shared/table-contrast.spec.ts` already pins.
+                  The hand-rolled one carried three defects at once: a
+                  `bg-secondary/40` header that is 1.000:1 on a card, a
+                  `border-border/70` row rule at the diluted alpha §2 forbids,
+                  and `text-xs` cells under foundations §7's 16px body floor.
                 */
-                retryProps={gate.controlProps(
-                  pdfPending || activeMutation.isPending,
-                )}
-              />
-            ) : preview === null ? (
-              <NestedEmpty
-                sole
-                title="No report generated yet"
-                description="Generate a report to see a preview here."
-              />
-            ) : preview.length === 0 ? (
-              <NestedEmpty
-                sole
-                title="Report returned no rows"
-                description="The filters matched nothing in the active chapter."
-              />
-            ) : (
-              /*
-                The shared primitive rather than a hand-rolled `<table>`. It
-                brings the `overflow-auto` wrapper that keeps a wide report off
-                the 375px floor, the undiluted `--border` hairline, and the row
-                recipe `components/shared/table-contrast.spec.ts` already pins.
-                The hand-rolled one carried three defects at once: a
-                `bg-secondary/40` header that is 1.000:1 on a card, a
-                `border-border/70` row rule at the diluted alpha §2 forbids,
-                and `text-xs` cells under foundations §7's 16px body floor.
-              */
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {previewColumnKeys.map((key) => (
-                      <TableHead key={key} className="whitespace-nowrap">
-                        {key}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {preview.slice(0, 25).map((row, index) => {
-                    const flat = flattenRecord(row);
-                    return (
-                      <TableRow key={index}>
-                        {previewColumnKeys.map((key) => (
-                          <TableCell key={key} className="whitespace-nowrap">
-                            {flat[key] ?? ""}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </Can>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      {previewColumnKeys.map((key) => (
+                        <TableHead key={key} className="whitespace-nowrap">
+                          {key}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {preview.slice(0, 25).map((row, index) => {
+                      const flat = flattenRecord(row);
+                      return (
+                        <TableRow key={index}>
+                          {previewColumnKeys.map((key) => (
+                            <TableCell key={key} className="whitespace-nowrap">
+                              {flat[key] ?? ""}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </Can>
+    </>
   );
 }

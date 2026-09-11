@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 
 /**
  * The global ✦ Ask entry in the dashboard top bar — a shell, not a feature.
@@ -33,8 +34,17 @@ import { cn } from "@/lib/utils";
  * (`apps/mobile/components/chat/ask-pill.tsx`), the entry paints in the fixed
  * `gold-ask-*` family because "the Ask/AI surface speaks in Signet's voice,
  * not the tenant's" (`spec/ui/design-system/components.md` §11) — it never
- * retints with the chapter accent. The 38px height and 11px radius are the
- * app-bar chip geometry from components.md §7, hence the arbitrary values.
+ * retints with the chapter accent.
+ *
+ * This is the trap the framework board sets, so it is worth stating plainly:
+ * the board draws the Ask pill in the same values as the chapter accent tints,
+ * because the board's demo tenant IS the house tenant. They coincide there and
+ * nowhere else. Merging `--gold-ask-*` into `--accent-*` on the board's
+ * authority would repaint Ask in the tenant's colour on every chapter that
+ * picks an accent, which is exactly what the no-retint rule forbids.
+ *
+ * Geometry is the board's top-bar cluster: 34px tall, radius 10, to sit level
+ * with the bell and the avatar beside it.
  *
  * No feature flag ships with this. Mobile gates on `EXPO_PUBLIC_ASK_ENABLED`
  * because it has a real (if synthetic) corpus to switch on or off; web has no
@@ -43,8 +53,8 @@ import { cn } from "@/lib/utils";
  */
 export function AskPill({ className }: { className?: string }) {
   const [open, setOpen] = useState(false);
-  // Documents can be switched off per chapter, and the sidebar and ⌘K both hide
-  // it when it is. Offering it from here anyway would send a member to a screen
+  // Documents can be switched off per chapter, and the nav hides the row when
+  // it is. Offering it from here anyway would send a member to a screen
   // whose reads the API refuses — the dead end this dialog exists to avoid,
   // reintroduced by the dialog itself. Fail-safe while the config loads, like
   // every other module gate on this surface.
@@ -59,8 +69,8 @@ export function AskPill({ className }: { className?: string }) {
         title="Ask"
         onClick={() => setOpen(true)}
         className={cn(
-          "inline-flex h-[38px] items-center gap-1.5 rounded-[11px] border border-gold-ask-border bg-gold-ask-fill px-[13px] text-sm font-bold text-gold-ask-text transition hover:bg-gold-ask-border/30",
-          "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25",
+          "inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-[10px] border border-gold-ask-border bg-gold-ask-fill px-3 text-[13.5px] font-bold text-gold-ask-text transition hover:bg-gold-ask-border/30",
+          FOCUS_RING_SHELL,
           className,
         )}
       >
@@ -72,16 +82,16 @@ export function AskPill({ className }: { className?: string }) {
           <DialogHeader>
             <DialogTitle>Ask isn&apos;t ready on the dashboard yet</DialogTitle>
             <DialogDescription>
-              Ask will answer questions about your chapter — bylaws, minutes,
-              dues, who holds which role — in plain language. It can&apos;t
-              answer anything yet, so nothing it says would be trustworthy.
+              Ask will answer questions about your chapter in plain language:
+              bylaws, minutes, dues, who holds which role. It can&apos;t answer
+              anything yet, so nothing it says would be trustworthy.
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             In the meantime, everything Ask would quote is already readable:
-            search across members, events, backwork and chat with{" "}
+            find channels, members and messages from the top bar, or press{" "}
             <kbd className="rounded-xs border border-border px-1 py-0.5 text-xs">
-              ⌘K
+              ⌘F
             </kbd>
             {documentsEnabled ? ", and chapter files live under Documents." : "."}
           </p>

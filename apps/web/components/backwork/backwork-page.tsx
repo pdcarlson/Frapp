@@ -48,6 +48,7 @@ import {
 import { BackworkGlyph } from "@/components/documents/resources-glyphs";
 import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-drawer";
 import { Can } from "@/components/shared/can";
+import { PageHeader } from "@/components/layout/page-header";
 import { readSignedUpload } from "@/lib/signed-upload";
 import {
   SubscriptionNotice,
@@ -366,12 +367,10 @@ export function BackworkPage() {
   if (!activeChapterId) {
     return (
       <div className="space-y-6">
-        <header>
-          <h2 className="text-2xl font-semibold tracking-tight">Backwork</h2>
-          <p className="text-sm text-muted-foreground">
-            Shared coursework archive.
-          </p>
-        </header>
+        <PageHeader title="Backwork" />
+        <p className="text-sm text-muted-foreground">
+          Shared coursework archive.
+        </p>
         <EmptyState
           title="No chapter selected"
           description="Pick a chapter from the switcher to browse its backwork."
@@ -382,262 +381,262 @@ export function BackworkPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Backwork</h2>
-          <p className="text-sm text-muted-foreground">
-            Academic library for the chapter. Browse and download with a signed
-            URL, or upload new resources. Duplicate files (matching SHA-256) are
-            rejected automatically.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-start gap-2">
-          <Can permission="backwork:admin">
-            <BackworkTaxonomyDrawer />
-          </Can>
-          <Can permission="backwork:upload">
-            <Dialog {...uploadDialog.dialogProps}>
-              <DialogTrigger asChild>
-                <Button className="gap-2" {...gate.controlProps()}>
-                  <Upload className="h-4 w-4" /> Upload
-                </Button>
-              </DialogTrigger>
-              <DialogContent
-                className="max-h-[80vh] overflow-y-auto sm:max-w-xl"
-                {...uploadDialog.contentProps}
-              >
-                <DialogHeader>
-                  <DialogTitle>Upload backwork</DialogTitle>
-                  <DialogDescription>
-                    Every metadata field except the file itself is optional.
-                    Unknown departments or professors are auto-created per
-                    chapter.
-                  </DialogDescription>
-                </DialogHeader>
-                <form
-                  id="backwork-upload-form"
-                  onSubmit={handleUpload}
-                  className="space-y-4"
+      <PageHeader
+        title="Backwork"
+        actions={
+          <>
+            <Can permission="backwork:admin">
+              <BackworkTaxonomyDrawer />
+            </Can>
+            <Can permission="backwork:upload">
+              <Dialog {...uploadDialog.dialogProps}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2" {...gate.controlProps()}>
+                    <Upload className="h-4 w-4" /> Upload
+                  </Button>
+                </DialogTrigger>
+                <DialogContent
+                  className="max-h-[80vh] overflow-y-auto sm:max-w-xl"
+                  {...uploadDialog.contentProps}
                 >
-                  <div className="grid gap-1">
-                    <Label htmlFor="bw-file">File</Label>
-                    <Input
-                      id="bw-file"
-                      type="file"
-                      accept={acceptAttribute("document")}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          file: event.target.files?.[0] ?? null,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-title">Title</Label>
-                      <Input
-                        id="bw-title"
-                        value={uploadDraft.title}
-                        onChange={(event) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            title: event.target.value,
-                          }))
-                        }
-                        placeholder="CS 3320 Midterm"
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-department">Department code</Label>
-                      <Input
-                        id="bw-department"
-                        value={uploadDraft.department_code}
-                        onChange={(event) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            department_code: event.target.value,
-                          }))
-                        }
-                        placeholder="CS, MATH, ECON"
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-course">Course number</Label>
-                      <Input
-                        id="bw-course"
-                        value={uploadDraft.course_number}
-                        onChange={(event) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            course_number: event.target.value,
-                          }))
-                        }
-                        placeholder="3320"
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-professor">Professor</Label>
-                      <Input
-                        id="bw-professor"
-                        value={uploadDraft.professor_name}
-                        onChange={(event) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            professor_name: event.target.value,
-                          }))
-                        }
-                        placeholder="Dr. Lastname"
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-year">Year</Label>
-                      <Input
-                        id="bw-year"
-                        type="number"
-                        min={2000}
-                        max={2100}
-                        value={uploadDraft.year}
-                        onChange={(event) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            year: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-semester">Semester</Label>
-                      <Select
-                        value={uploadDraft.semester}
-                        onValueChange={(value) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            semester: value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger id="bw-semester">
-                          <SelectValue placeholder="—" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SEMESTERS.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-assignment-type">
-                        Assignment type
-                      </Label>
-                      <Select
-                        value={uploadDraft.assignment_type}
-                        onValueChange={(value) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            assignment_type: value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger id="bw-assignment-type">
-                          <SelectValue placeholder="—" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ASSIGNMENT_TYPES.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {t}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-assignment-number">
-                        Assignment number
-                      </Label>
-                      <Input
-                        id="bw-assignment-number"
-                        type="number"
-                        min={0}
-                        value={uploadDraft.assignment_number}
-                        onChange={(event) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            assignment_number: event.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-variant">Document variant</Label>
-                      <Select
-                        value={uploadDraft.document_variant}
-                        onValueChange={(value) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            document_variant: value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger id="bw-variant">
-                          <SelectValue placeholder="—" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {DOCUMENT_VARIANTS.map((v) => (
-                            <SelectItem key={v} value={v}>
-                              {v}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="bw-tags">Tags (comma-separated)</Label>
-                    <Input
-                      id="bw-tags"
-                      value={uploadDraft.tags}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          tags: event.target.value,
-                        }))
-                      }
-                      placeholder="curved, rubric-provided"
-                    />
-                  </div>
-                </form>
-                <DialogFooter>
-                  {/*
-                  Cancel is not gated: it closes the dialog rather than writing,
-                  and a revoked subscription must still leave a way out.
-                */}
-                  <Button
-                    variant="secondary"
-                    onClick={() => uploadDialog.setOpen(false)}
-                    disabled={uploading}
+                  <DialogHeader>
+                    <DialogTitle>Upload backwork</DialogTitle>
+                    <DialogDescription>
+                      Every metadata field except the file itself is optional.
+                      Unknown departments or professors are auto-created per
+                      chapter.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form
+                    id="backwork-upload-form"
+                    onSubmit={handleUpload}
+                    className="space-y-4"
                   >
-                    Cancel
-                  </Button>
-                  <Button
-                    form="backwork-upload-form"
-                    type="submit"
-                    {...gate.controlProps(uploading || !uploadDraft.file)}
-                  >
-                    {uploading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    Upload
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </Can>
-        </div>
-      </header>
+                    <div className="grid gap-1">
+                      <Label htmlFor="bw-file">File</Label>
+                      <Input
+                        id="bw-file"
+                        type="file"
+                        accept={acceptAttribute("document")}
+                        onChange={(event) =>
+                          setUploadDraft((prev) => ({
+                            ...prev,
+                            file: event.target.files?.[0] ?? null,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="grid gap-1">
+                        <Label htmlFor="bw-title">Title</Label>
+                        <Input
+                          id="bw-title"
+                          value={uploadDraft.title}
+                          onChange={(event) =>
+                            setUploadDraft((prev) => ({
+                              ...prev,
+                              title: event.target.value,
+                            }))
+                          }
+                          placeholder="CS 3320 Midterm"
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="bw-department">Department code</Label>
+                        <Input
+                          id="bw-department"
+                          value={uploadDraft.department_code}
+                          onChange={(event) =>
+                            setUploadDraft((prev) => ({
+                              ...prev,
+                              department_code: event.target.value,
+                            }))
+                          }
+                          placeholder="CS, MATH, ECON"
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="bw-course">Course number</Label>
+                        <Input
+                          id="bw-course"
+                          value={uploadDraft.course_number}
+                          onChange={(event) =>
+                            setUploadDraft((prev) => ({
+                              ...prev,
+                              course_number: event.target.value,
+                            }))
+                          }
+                          placeholder="3320"
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="bw-professor">Professor</Label>
+                        <Input
+                          id="bw-professor"
+                          value={uploadDraft.professor_name}
+                          onChange={(event) =>
+                            setUploadDraft((prev) => ({
+                              ...prev,
+                              professor_name: event.target.value,
+                            }))
+                          }
+                          placeholder="Dr. Lastname"
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="bw-year">Year</Label>
+                        <Input
+                          id="bw-year"
+                          type="number"
+                          min={2000}
+                          max={2100}
+                          value={uploadDraft.year}
+                          onChange={(event) =>
+                            setUploadDraft((prev) => ({
+                              ...prev,
+                              year: event.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="bw-semester">Semester</Label>
+                        <Select
+                          value={uploadDraft.semester}
+                          onValueChange={(value) =>
+                            setUploadDraft((prev) => ({
+                              ...prev,
+                              semester: value,
+                            }))
+                          }
+                        >
+                          <SelectTrigger id="bw-semester">
+                            <SelectValue placeholder="—" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SEMESTERS.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="bw-assignment-type">
+                          Assignment type
+                        </Label>
+                        <Select
+                          value={uploadDraft.assignment_type}
+                          onValueChange={(value) =>
+                            setUploadDraft((prev) => ({
+                              ...prev,
+                              assignment_type: value,
+                            }))
+                          }
+                        >
+                          <SelectTrigger id="bw-assignment-type">
+                            <SelectValue placeholder="—" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ASSIGNMENT_TYPES.map((t) => (
+                              <SelectItem key={t} value={t}>
+                                {t}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="bw-assignment-number">
+                          Assignment number
+                        </Label>
+                        <Input
+                          id="bw-assignment-number"
+                          type="number"
+                          min={0}
+                          value={uploadDraft.assignment_number}
+                          onChange={(event) =>
+                            setUploadDraft((prev) => ({
+                              ...prev,
+                              assignment_number: event.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="bw-variant">Document variant</Label>
+                        <Select
+                          value={uploadDraft.document_variant}
+                          onValueChange={(value) =>
+                            setUploadDraft((prev) => ({
+                              ...prev,
+                              document_variant: value,
+                            }))
+                          }
+                        >
+                          <SelectTrigger id="bw-variant">
+                            <SelectValue placeholder="—" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {DOCUMENT_VARIANTS.map((v) => (
+                              <SelectItem key={v} value={v}>
+                                {v}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div className="grid gap-1">
+                      <Label htmlFor="bw-tags">Tags (comma-separated)</Label>
+                      <Input
+                        id="bw-tags"
+                        value={uploadDraft.tags}
+                        onChange={(event) =>
+                          setUploadDraft((prev) => ({
+                            ...prev,
+                            tags: event.target.value,
+                          }))
+                        }
+                        placeholder="curved, rubric-provided"
+                      />
+                    </div>
+                  </form>
+                  <DialogFooter>
+                    {/*
+                    Cancel is not gated: it closes the dialog rather than writing,
+                    and a revoked subscription must still leave a way out.
+                  */}
+                    <Button
+                      variant="secondary"
+                      onClick={() => uploadDialog.setOpen(false)}
+                      disabled={uploading}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      form="backwork-upload-form"
+                      type="submit"
+                      {...gate.controlProps(uploading || !uploadDraft.file)}
+                    >
+                      {uploading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      Upload
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </Can>
+          </>
+        }
+      />
+      <p className="text-sm text-muted-foreground">
+        Academic library for the chapter. Browse and download with a signed URL,
+        or upload new resources. Duplicate files (matching SHA-256) are rejected
+        automatically.
+      </p>
 
       {/*
         Disable, don't hide (§5 rule 4): the library stays browsable and

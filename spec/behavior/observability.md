@@ -336,11 +336,11 @@ If either report needs to stay queryable without a PostHog provider configured �
 
 ## Search Telemetry
 
-The web command palette (`apps/web/components/layout/dashboard-command-menu.tsx`) fires one client event, `search-completed` (defined in `packages/hooks/src/search-analytics.ts`), once per settled search — a query that clears the 3-character minimum ([`search.md`](search.md)) and finishes fetching, deduped on the query's `dataUpdatedAt` so a re-render never double-counts and a repeat search of the same text (`useSearch`'s `staleTime: 0` refetches it) still counts once per real fetch.
+The web top-bar find field (`apps/web/components/layout/find-bar.tsx`) fires one client event, `search-completed` (defined in `packages/hooks/src/search-analytics.ts`), once per settled search — a query that clears the 3-character minimum ([`search.md`](search.md)) and finishes fetching, deduped on the query's `dataUpdatedAt` so a re-render never double-counts and a repeat search of the same text (`useSearch`'s `staleTime: 0` refetches it) still counts once per real fetch.
 
 | Property | Meaning |
 | --- | --- |
-| `surface` | Where the search ran — `"command-menu"` today; a future mobile entry point would use its own value |
+| `surface` | Where the search ran — `"find-bar"` today. Rows before [#2141](https://github.com/pdcarlson/Frapp/issues/2141) carry `"command-menu"`, from the ⌘K palette the find field replaced; a query spanning that change has to union both values, and a future mobile entry point would use its own |
 | `query_length` | Character count of the trimmed query |
 | `query_word_count` | Word count of the trimmed query |
 | `backwork_count`, `events_count`, `members_count`, `messages_count` | True per-domain result counts — not the palette's own 5-per-domain display cap |

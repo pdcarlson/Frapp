@@ -982,7 +982,17 @@ export function ChatShell({
         <header className="border-b border-border px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="flex items-center gap-2 text-lg font-bold text-foreground">
+              {/*
+                `h1`, not `h2`. This was correctly a sub-heading while the
+                dashboard shell rendered an `<h1>Chat</h1>` above it; #2141
+                deleted that, so the channel name is now the top heading on
+                this route — and it IS the page's title here, the way a chat
+                app names a screen. Left as `h2` the route would start its
+                outline at level 2, and a screen-reader user jumping by
+                heading level 1 would land nowhere.
+                Styling is explicit, so the tag change is visually identical.
+              */}
+              <h1 className="flex items-center gap-2 text-lg font-bold text-foreground">
                 {activeChannel ? (
                   <>
                     <ChannelHeaderMark
@@ -994,7 +1004,7 @@ export function ChatShell({
                 ) : (
                   "Pick a channel"
                 )}
-              </h2>
+              </h1>
               {activeChannel?.description ? (
                 <p className="truncate text-[12.5px] text-muted-foreground">
                   {activeChannel.description}

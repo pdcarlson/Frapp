@@ -51,6 +51,7 @@ import {
   NestedOffline,
 } from "@/components/shared/nested-states";
 import { Can } from "@/components/shared/can";
+import { PageHeader } from "@/components/layout/page-header";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   DocumentsGlyph,
@@ -684,153 +685,151 @@ export function DocumentsPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Chapter documents
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Organizational files — bylaws, constitutions, meeting agendas. Every
-            chapter member can download; upload and delete are permission-gated.
-          </p>
-        </div>
-        <Can permission="chapter_docs:upload">
-          <Dialog {...uploadDialog.dialogProps}>
-            <DialogTrigger asChild>
-              <Button className="gap-2" {...gate.controlProps()}>
-                <Upload className="h-4 w-4" /> Upload document
-              </Button>
-            </DialogTrigger>
-            <DialogContent
-              className="sm:max-w-lg"
-              {...uploadDialog.contentProps}
-            >
-              <DialogHeader>
-                <DialogTitle>Upload a chapter document</DialogTitle>
-                <DialogDescription>
-                  Max {MAX_UPLOAD_LABEL}. PDFs, Word/Excel/PowerPoint, text/CSV,
-                  and images are allowed — no SVGs or executables.
-                </DialogDescription>
-              </DialogHeader>
-              <form
-                id="doc-upload-form"
-                onSubmit={handleUpload}
-                className="space-y-4"
+      <PageHeader
+        title="Chapter Documents"
+        actions={
+          <Can permission="chapter_docs:upload">
+            <Dialog {...uploadDialog.dialogProps}>
+              <DialogTrigger asChild>
+                <Button className="gap-2" {...gate.controlProps()}>
+                  <Upload className="h-4 w-4" /> Upload document
+                </Button>
+              </DialogTrigger>
+              <DialogContent
+                className="sm:max-w-lg"
+                {...uploadDialog.contentProps}
               >
-                <div className="grid gap-1">
-                  <Label htmlFor="doc-title">Title</Label>
-                  <Input
-                    id="doc-title"
-                    value={uploadDraft.title}
-                    onChange={(event) =>
-                      setUploadDraft((prev) => ({
-                        ...prev,
-                        title: event.target.value,
-                      }))
-                    }
-                    placeholder="Fall 2026 bylaws revision"
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="doc-description">
-                    Description (optional)
-                  </Label>
-                  <Textarea
-                    id="doc-description"
-                    rows={2}
-                    value={uploadDraft.description}
-                    onChange={(event) =>
-                      setUploadDraft((prev) => ({
-                        ...prev,
-                        description: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="doc-folder">Folder (optional)</Label>
-                  <Input
-                    id="doc-folder"
-                    value={uploadDraft.folder}
-                    onChange={(event) =>
-                      setUploadDraft((prev) => ({
-                        ...prev,
-                        folder: event.target.value,
-                      }))
-                    }
-                    placeholder="Governance"
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="doc-type">Document type (optional)</Label>
-                  <Input
-                    id="doc-type"
-                    value={uploadDraft.documentType}
-                    onChange={(event) =>
-                      setUploadDraft((prev) => ({
-                        ...prev,
-                        documentType: event.target.value,
-                      }))
-                    }
-                    placeholder="Bylaws"
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="doc-effective-date">
-                    Effective date (optional)
-                  </Label>
-                  <Input
-                    id="doc-effective-date"
-                    type="date"
-                    value={uploadDraft.effectiveDate}
-                    onChange={(event) =>
-                      setUploadDraft((prev) => ({
-                        ...prev,
-                        effectiveDate: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="doc-file">File</Label>
-                  <Input
-                    id="doc-file"
-                    type="file"
-                    accept={acceptAttribute("document")}
-                    onChange={(event) =>
-                      setUploadDraft((prev) => ({
-                        ...prev,
-                        file: event.target.files?.[0] ?? null,
-                      }))
-                    }
-                  />
-                </div>
-              </form>
-              <DialogFooter>
-                {/* Cancel only closes the dialog — gating the way out of a
-                    surface the gate just blocked would be a trap. */}
-                <Button
-                  variant="secondary"
-                  onClick={() => uploadDialog.setOpen(false)}
-                  disabled={uploading}
+                <DialogHeader>
+                  <DialogTitle>Upload a chapter document</DialogTitle>
+                  <DialogDescription>
+                    Max {MAX_UPLOAD_LABEL}. PDFs, Word/Excel/PowerPoint, text/CSV,
+                    and images are allowed — no SVGs or executables.
+                  </DialogDescription>
+                </DialogHeader>
+                <form
+                  id="doc-upload-form"
+                  onSubmit={handleUpload}
+                  className="space-y-4"
                 >
-                  Cancel
-                </Button>
-                <Button
-                  form="doc-upload-form"
-                  type="submit"
-                  {...gate.controlProps(uploading || !uploadDraft.file)}
-                >
-                  {uploading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Upload
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </Can>
-      </header>
+                  <div className="grid gap-1">
+                    <Label htmlFor="doc-title">Title</Label>
+                    <Input
+                      id="doc-title"
+                      value={uploadDraft.title}
+                      onChange={(event) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          title: event.target.value,
+                        }))
+                      }
+                      placeholder="Fall 2026 bylaws revision"
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="doc-description">
+                      Description (optional)
+                    </Label>
+                    <Textarea
+                      id="doc-description"
+                      rows={2}
+                      value={uploadDraft.description}
+                      onChange={(event) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          description: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="doc-folder">Folder (optional)</Label>
+                    <Input
+                      id="doc-folder"
+                      value={uploadDraft.folder}
+                      onChange={(event) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          folder: event.target.value,
+                        }))
+                      }
+                      placeholder="Governance"
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="doc-type">Document type (optional)</Label>
+                    <Input
+                      id="doc-type"
+                      value={uploadDraft.documentType}
+                      onChange={(event) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          documentType: event.target.value,
+                        }))
+                      }
+                      placeholder="Bylaws"
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="doc-effective-date">
+                      Effective date (optional)
+                    </Label>
+                    <Input
+                      id="doc-effective-date"
+                      type="date"
+                      value={uploadDraft.effectiveDate}
+                      onChange={(event) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          effectiveDate: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="doc-file">File</Label>
+                    <Input
+                      id="doc-file"
+                      type="file"
+                      accept={acceptAttribute("document")}
+                      onChange={(event) =>
+                        setUploadDraft((prev) => ({
+                          ...prev,
+                          file: event.target.files?.[0] ?? null,
+                        }))
+                      }
+                    />
+                  </div>
+                </form>
+                <DialogFooter>
+                  {/* Cancel only closes the dialog — gating the way out of a
+                      surface the gate just blocked would be a trap. */}
+                  <Button
+                    variant="secondary"
+                    onClick={() => uploadDialog.setOpen(false)}
+                    disabled={uploading}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    form="doc-upload-form"
+                    type="submit"
+                    {...gate.controlProps(uploading || !uploadDraft.file)}
+                  >
+                    {uploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    Upload
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </Can>
+        }
+      />
+      <p className="text-sm text-muted-foreground">
+        Organizational files — bylaws, constitutions, meeting agendas. Every
+        chapter member can download; upload and delete are permission-gated.
+      </p>
 
       {/*
         Disable, don't hide (§5 rule 4): browsing and downloading stay live for

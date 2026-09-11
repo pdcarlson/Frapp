@@ -46,6 +46,7 @@ import {
   NestedLoading,
   NestedOffline,
 } from "@/components/shared/nested-states";
+import { PageHeader } from "@/components/layout/page-header";
 import { Switch } from "@/components/ui/switch";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { signOutCurrentSession } from "@/lib/auth/session";
@@ -157,23 +158,34 @@ export function ProfilePanel() {
     userQuery.isPending && userQuery.fetchStatus === "paused";
   if (isOffline && anyReadUncached(userQuery)) {
     return (
-      <OfflineState
-        title="Your profile is unavailable offline"
-        description="Reconnect to load your directory entry and notification preferences."
-        onRetry={() => void userQuery.refetch()}
-      />
+      <>
+        <PageHeader title="My Profile" />
+        <OfflineState
+          title="Your profile is unavailable offline"
+          description="Reconnect to load your directory entry and notification preferences."
+          onRetry={() => void userQuery.refetch()}
+        />
+      </>
     );
   }
   if (userQuery.isLoading || userPaused) {
-    return <LoadingState message="Loading your profile..." />;
+    return (
+      <>
+        <PageHeader title="My Profile" />
+        <LoadingState message="Loading your profile..." />
+      </>
+    );
   }
   if (userQuery.isError && anyReadUncached(userQuery)) {
     return (
-      <ErrorState
-        title="Couldn't load your profile"
-        description="Sign in succeeded but we couldn't reach the API. Retry in a moment."
-        onRetry={() => void userQuery.refetch()}
-      />
+      <>
+        <PageHeader title="My Profile" />
+        <ErrorState
+          title="Couldn't load your profile"
+          description="Sign in succeeded but we couldn't reach the API. Retry in a moment."
+          onRetry={() => void userQuery.refetch()}
+        />
+      </>
     );
   }
 
@@ -503,6 +515,7 @@ export function ProfilePanel() {
 
   return (
     <div className="space-y-6">
+      <PageHeader title="My Profile" />
       {/*
         s15's identity header, as far as the data goes.
         `--accent-subtle` / `--accent-border` / `--accent-text` is the token
@@ -726,7 +739,14 @@ export function ProfilePanel() {
         </CardContent>
       </Card>
 
-      <Card>
+      {/*
+        Anchor target for the top-bar account menu's "Notification settings"
+        row. Notification preferences have no route of their own — they are a
+        section of this screen — so the menu links here rather than advertising
+        a settings page that does not exist. `scroll-mt` clears the sticky
+        48px top bar so the heading is not hidden under it on arrival.
+      */}
+      <Card id="notification-settings" className="scroll-mt-16">
         <CardHeader>
           <CardTitle>Notifications</CardTitle>
           <CardDescription>

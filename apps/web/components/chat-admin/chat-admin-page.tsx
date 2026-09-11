@@ -58,6 +58,7 @@ import {
   OfflineState,
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
+import { PageHeader } from "@/components/layout/page-header";
 import { NestedEmpty } from "@/components/shared/nested-states";
 import {
   dashboardCheckboxHitAreaClassName,
@@ -189,29 +190,37 @@ function PermissionCheckboxGrid({
 
 export function ChatAdminPage() {
   return (
-    <Can
-      permission="channels:manage"
-      deniedFallback={
-        <Card>
-          <CardHeader>
-            <CardTitle>Chat Admin</CardTitle>
-            <CardDescription>
-              Managing channels and categories needs the{" "}
-              <code>channels:manage</code> permission. Ask your chapter
-              president to grant access.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      }
-      offlineFallback={(retry) => (
-        <PermissionsOfflineSurface
-          description="Reconnect to check whether you can manage chat channels."
-          onRetry={retry}
-        />
-      )}
-    >
-      <ChatAdminBody />
-    </Can>
+    <>
+      {/*
+        Outside the `<Can>` so the permission-denied and offline branches keep
+        the route's heading — the shell no longer supplies one (#2141). The
+        denied card's own `<CardTitle>Chat Admin</CardTitle>`, and the body's
+        `<h2>`, were that same title said twice.
+      */}
+      <PageHeader title="Chat Admin" />
+      <Can
+        permission="channels:manage"
+        deniedFallback={
+          <Card>
+            <CardHeader>
+              <CardDescription>
+                Managing channels and categories needs the{" "}
+                <code>channels:manage</code> permission. Ask your chapter
+                president to grant access.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        }
+        offlineFallback={(retry) => (
+          <PermissionsOfflineSurface
+            description="Reconnect to check whether you can manage chat channels."
+            onRetry={retry}
+          />
+        )}
+      >
+        <ChatAdminBody />
+      </Can>
+    </>
   );
 }
 
@@ -539,7 +548,6 @@ function ChatAdminBody() {
       {confirmDialog}
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Chat Admin</h2>
           <p className="text-sm text-muted-foreground">
             Create, edit, and delete channels; organize them into categories;
             and manage pinned messages.

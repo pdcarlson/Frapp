@@ -22,15 +22,28 @@ import {
 /**
  * Permission-aware dashboard navigation.
  *
- * Kept in a single module so the sidebar, mobile sheet, command palette, and
- * breadcrumb title map all stay in sync. Each entry mirrors the nav table
- * in `spec/ui/web-dashboard/README.md`.
+ * Kept in a single module so the sidebar and the mobile drawer stay in sync.
+ * (There is no longer a command palette or a breadcrumb title map; #2141
+ * deleted both.)
  *
- * Structure (Wave 0 restructure): a Chat anchor with no section header,
- * followed by five sections. Chat leads because chat is the product's home —
- * `/` and `/dashboard` both redirect there. Profile is deliberately absent:
- * it moved to the account menu at the bottom of the sidebar
+ * `spec/ui/web-dashboard/README.md` carries a nav table this file used to
+ * mirror. That page is **distrusted on chrome** while
+ * [#2140](https://github.com/pdcarlson/Frapp/issues/2140) is open
+ * (`spec/ui/web-greenfield/README.md` §1) and its table still lists the
+ * pre-greenfield sections, so it is not the mirror any more. What remains
+ * truth there is the permission and module gating semantics, not the shape.
+ *
+ * Structure (greenfield shell, #2141): a Chat anchor with no section header,
+ * then Chapter, then Resources, then an unlabeled Directory + Billing group,
+ * then Admin. Chat leads because chat is the product's home — `/` and
+ * `/dashboard` both redirect there. Profile is deliberately absent: it lives in
+ * the account menu, which the shell now hangs off the top-bar avatar
  * (`account-menu.tsx`), because it is about the viewer, not about the chapter.
+ *
+ * There is no `primaryActionLabel`. The shell used to render one per route as a
+ * header button, but `primaryActionHref` resolved to the route already open, so
+ * it was a link to the current page — and every such action is also reachable
+ * inside the page. The board deletes it (`1t`, "per-route primaryActionLabel").
  *
  * Permission semantics:
  * - `requirePermission` — a single permission string; hide when absent.
@@ -71,7 +84,6 @@ export type NavItem = {
   icon: NavGlyphComponent;
   href?: string;
   breadcrumbTitle?: string;
-  primaryActionLabel?: string;
   description?: string;
   status: NavStatus;
   statusLabel?: string;
@@ -102,7 +114,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: ChatGlyph,
         href: "/chat",
         breadcrumbTitle: "Chat",
-        primaryActionLabel: "New Message",
         description: "Channels, DMs, announcements, realtime.",
         status: "available",
       },
@@ -118,7 +129,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: EventsGlyph,
         href: "/events",
         breadcrumbTitle: "Events",
-        primaryActionLabel: "New Event",
         description: "Schedule, attendance, check-ins, calendar export.",
         status: "available",
         module: "events",
@@ -129,7 +139,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: TasksGlyph,
         href: "/tasks",
         breadcrumbTitle: "Tasks",
-        primaryActionLabel: "New Task",
         description: "Assign, track, and confirm chapter tasks.",
         status: "available",
         module: "tasks",
@@ -140,7 +149,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: PointsGlyph,
         href: "/points",
         breadcrumbTitle: "Points Ledger",
-        primaryActionLabel: "Adjust Points",
         description: "Leaderboard, transactions, anomaly audit.",
         status: "available",
         module: "points",
@@ -151,7 +159,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: StudyGlyph,
         href: "/study",
         breadcrumbTitle: "Study hours",
-        primaryActionLabel: "Start session",
         description: "Start a tracked study session inside a study zone.",
         status: "available",
         module: "hours",
@@ -162,7 +169,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: ServiceGlyph,
         href: "/service",
         breadcrumbTitle: "Service hours",
-        primaryActionLabel: "Log service",
         description: "Log service hours and approve entries for points.",
         status: "available",
         module: "hours",
@@ -173,7 +179,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: PollsGlyph,
         href: "/polls",
         breadcrumbTitle: "Polls",
-        primaryActionLabel: "Open chat",
         description: "Chapter poll list with live results.",
         status: "available",
         module: "polls",
@@ -191,7 +196,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: DocumentsGlyph,
         href: "/documents",
         breadcrumbTitle: "Chapter Documents",
-        primaryActionLabel: "Upload Document",
         description: "Chapter files and organizational documents.",
         status: "available",
         module: "documents",
@@ -202,7 +206,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: BackworkGlyph,
         href: "/backwork",
         breadcrumbTitle: "Backwork",
-        primaryActionLabel: "Upload Resource",
         description: "Academic library with rich filters.",
         status: "available",
         module: "backwork",
@@ -210,8 +213,21 @@ export const DASHBOARD_NAV: NavSection[] = [
     ],
   },
   {
-    id: "directory",
-    label: "Directory",
+    /*
+     * Directory and Billing share one UNLABELED group.
+     *
+     * They were two sections of one item each, so the headings "DIRECTORY" and
+     * "FINANCE" were each announcing a single row whose own label already said
+     * the same word. The framework board (option `1b`) merges them and drops
+     * both headings; `1t` lists the two labels as deleted chrome. The group
+     * keeps a wider top margin so it still reads as its own block.
+     *
+     * `anchor` is the existing "render items with no heading" flag, the same
+     * one Chat uses. It is not a claim that this group is an app home.
+     */
+    id: "directory-finance",
+    label: "Directory and billing",
+    anchor: true,
     items: [
       {
         id: "members",
@@ -219,24 +235,16 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: DirectoryGlyph,
         href: "/members",
         breadcrumbTitle: "Directory",
-        primaryActionLabel: "Invite Member",
         description: "Actives and alumni, profile cards, invites, deactivation.",
         status: "available",
         requirePermission: "members:view",
       },
-    ],
-  },
-  {
-    id: "finance",
-    label: "Finance",
-    items: [
       {
         id: "billing",
         label: "Billing",
         icon: BillingGlyph,
         href: "/billing",
         breadcrumbTitle: "Billing",
-        primaryActionLabel: "Create Invoice",
         description: "Subscription, Stripe portal, member invoices, dues.",
         status: "available",
         requirePermission: "billing:view",
@@ -263,7 +271,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: StudyZonesGlyph,
         href: "/geofences",
         breadcrumbTitle: "Study Zones",
-        primaryActionLabel: "Add Study Zone",
         description: "Draw study polygons and reward rates.",
         status: "available",
         module: "geofences",
@@ -275,7 +282,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: ReportsGlyph,
         href: "/reports",
         breadcrumbTitle: "Reports & Export",
-        primaryActionLabel: "Generate Report",
         description: "Attendance, points, roster, and service exports.",
         status: "available",
         module: "reports",
@@ -287,7 +293,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: ChannelsGlyph,
         href: "/chat-admin",
         breadcrumbTitle: "Chat Admin",
-        primaryActionLabel: "New channel",
         description:
           "Create, edit, and delete channels; manage categories and pinned messages.",
         status: "available",
@@ -299,7 +304,6 @@ export const DASHBOARD_NAV: NavSection[] = [
         icon: ImportGlyph,
         href: "/discord-import",
         breadcrumbTitle: "Discord Import",
-        primaryActionLabel: "New import",
         description:
           "Bring a Discord server's history in as a read-only archive.",
         status: "available",
@@ -329,14 +333,15 @@ export const DASHBOARD_NAV: NavSection[] = [
 /**
  * Titles for routes that are reachable but deliberately absent from the nav.
  *
- * The breadcrumb and header title resolve off `DASHBOARD_NAV_BY_HREF`, so a
- * route with no nav entry falls through to the bare "Dashboard". That was
- * harmless while every destination had a sidebar row; moving Profile into the
- * account menu made it a visible defect — `/profile` rendered a page titled
- * "Dashboard".
+ * **This no longer feeds the shell.** It existed because the shell derived
+ * every page's title from `DASHBOARD_NAV_BY_HREF`, so a route with no nav row
+ * fell through to a bare "Dashboard" — which is what `/profile` rendered.
+ * #2141 moved titles into the pages themselves (`page-header.tsx`), so a route
+ * now names itself and cannot fall through to anything.
  *
- * Keep this to routes a member actually lands on. Redirects (`/alumni`,
- * `/roles`) never render a shell of their own and do not belong here.
+ * It is kept as the record of what those off-nav routes are called, so the two
+ * places that need the string agree: the page's own `PageHeader`, and the
+ * route's `metadata.title`. Adding a row here does NOT make a title appear.
  */
 export const OFF_NAV_ROUTE_TITLES: Record<string, string> = {
   "/profile": "My Profile",
@@ -347,7 +352,11 @@ export const DASHBOARD_NAV_ITEMS: NavItem[] = DASHBOARD_NAV.flatMap(
   (section) => section.items,
 );
 
-/** Map of route → nav item, for breadcrumbs / header title resolution. */
+/**
+ * Map of route → nav item. The breadcrumb and header-title resolver that used
+ * to read this is gone (#2141); it survives for lookups by href, and
+ * `breadcrumbTitle` survives as the canonical display name for a route.
+ */
 export const DASHBOARD_NAV_BY_HREF: Record<string, NavItem> =
   Object.fromEntries(
     DASHBOARD_NAV_ITEMS.filter((item) => item.href).map((item) => [

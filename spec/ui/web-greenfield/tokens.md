@@ -64,11 +64,11 @@ are also bound as utilities in `apps/web/tailwind.config.ts`:
 | `--text-*` | `text-display` / `-headline` / `-title` / `-body` / `-label` / `-caption` | Tailwind has no equivalent scale, so without this a screen writes `text-[12.5px]`. Each key carries size, line height and weight together |
 | `--touch-*` | `min-h-touch`, `min-h-button`, `min-w-touch` | Names the 44px floor so a reviewer can see it honored |
 | `--space-*` | **none, deliberately** | Tailwind's own spacing scale **is** this 4px grid (`p-2` is 8px, `gap-4` is 16px). A second named spelling would be a parallel token set on one surface, which the cutover rule bans. The custom properties exist for hand-written CSS and for parity with the mobile token source, not to replace `p-4` |
-| `--scrollbar-*` | none needed | Consumed directly by the `.signet-scroll` rule |
+| `--scrollbar-*` | none needed | Consumed directly by the global scrollbar rule |
 
 Scrollbars are genuinely new. Nothing specified them before; they are now
-[`foundations.md`](../design-system/foundations.md) §12, with `--scrollbar-*` tokens and a
-`.signet-scroll` opt-in class. Lane 2 consumes them.
+[`foundations.md`](../design-system/foundations.md) §12, with `--scrollbar-*` tokens. Lane 2 took
+them to the board's values and made the rule global; the `.signet-scroll` opt-in class is gone.
 
 ### Two AA text lifts
 
@@ -185,20 +185,40 @@ is the house tenant**, where the seed and the house gold coincide. It is not a s
 fixed `--gold-ask-*` family should collapse into the retinting `--accent-*` one. A lane that merges
 them on the board's authority breaks the no-retint rule on every chapter that picks an accent.
 
-**Three are authored, and are genuine conflicts the board wins — but they are chrome, so lane 2
-([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) owns them, not this file.**
+**Three were authored, and were genuine conflicts the board wins. Lane 2
+([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) owned them and has now taken all three.**
 
-| Role | Shipped | Board `3a` |
-| ---- | ------- | ---------- |
+| Role | Was | Board `3a`, and now shipped |
+| ---- | --- | --------------------------- |
 | `--scrollbar-width` | `10px` | `8px` |
 | `--scrollbar-thumb` / `--scrollbar-track` | `rgba(255,255,255,0.14)` / `transparent` | `#DDB844` / `#1A1A1A`, with a 2px track-coloured border on the thumb |
 | `--skeleton-highlight` | `#38312A` | `#332E26` |
 
-The scrollbar rows are the larger change: the board draws a gold thumb on a `--surface-1` track and
-claims 8.9:1 thumb on track, where the shipped `.signet-scroll` draws a neutral thumb on a
-transparent one. The board also applies it at `:root` rather than as an opt-in class.
-[`../design-system/foundations.md`](../design-system/foundations.md) §12 moves with it whenever lane
-2 takes it.
+The scrollbar rows were the larger change: the board draws a gold thumb on a `--surface-1` track
+where the shipped `.signet-scroll` drew a neutral thumb on a transparent one, and it applies the bar
+at the root rather than as an opt-in class. The board claims 8.9:1 thumb on track for the new pair;
+measured at `#DDB844` on `#1A1A1A` it is **9.13:1**, so the claim is sound and the bar clears the
+3:1 non-text floor with room to spare.
+[`../design-system/foundations.md`](../design-system/foundations.md) §12 moved with it, and the
+`.signet-scroll` class was retired rather than left beside the global rule — it had zero call sites,
+so nothing regressed.
+
+Two things lane 2 found while taking these, both recorded rather than smoothed over:
+
+- **The board's own scrollbar CSS does not render what it specifies.** It declares `scrollbar-color`
+  and `::-webkit-scrollbar` together on `*`; since Chromium 121 a non-`auto` standard property makes
+  that element's WebKit pseudo-elements ignored outright, so Chrome and Edge get a flat `thin` bar
+  and silently discard the 8px width, the rounding and the track inset. The repo's existing
+  `@supports not selector(::-webkit-scrollbar)` split was kept, which is what makes every engine
+  render the board's *intent*. Transcribe the reference, never lift it.
+- **`#332E26` is measurably a weaker shimmer on this ladder, and shipped anyway.** The gradient is
+  `--popover` -> highlight -> `--popover`, so that delta is the whole visible signal. Against the
+  greenfield `--popover` (`#2A2621`): `#38312A` measures **1.1740:1**, `#332E26` measures
+  **1.1158:1** — under the 1.2 the contrast fixture calls imperceptible. `#332E26` measured 1.1744:1
+  against the *old* `--popover` (`#26221C`); the board reuses the legacy highlight without
+  re-pitching it for the ladder it also moved. The board wins on trust order and the value ships, but
+  if the sweep reads dead on a real panel the fix is to re-pitch the highlight against `#2A2621`, not
+  to move a ladder rung.
 
 **Two roles are not comparable.** The board gives `--ring` as "3px · 25%" — geometry and opacity, not
 a colour — so it neither confirms nor contradicts the shipped `#796938`, and it says nothing about

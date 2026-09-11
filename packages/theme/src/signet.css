@@ -155,15 +155,27 @@
      * shimmer sweep below. Neutral by rule: skeletons are never
      * accent and never semantic.
      *
-     * The value is chosen to hold the sweep's AMPLITUDE, not to sit a fixed
-     * number of steps above `--popover`. The gradient is popover -> highlight
-     * -> popover, so that delta is the entire visible signal; the pre-greenfield
-     * pair (#332E26 on #26221C) measured 1.1744:1 and this one measures
-     * 1.1740:1 on the new `--popover`. Moving the highlight by the same channel
-     * delta as the ladder would have dropped it to 1.1531 — still lighter, but
-     * under the 1.2 the contrast fixture calls imperceptible, which on a dim
-     * panel is the difference between "loading" and "frozen". */
-    --skeleton-highlight: #38312A;
+     * Set from the framework board, which draws the sweep as
+     * `linear-gradient(90deg,#2A2621 25%,#332E26 50%,#2A2621 75%)` (option
+     * `3a`). Committed HTML outranks written docs while #2140 is open, so the
+     * board's pair is what ships.
+     *
+     * KNOWN COST, recorded rather than silently accepted. The value that stood
+     * here before the greenfield was #38312A, chosen to hold the sweep's
+     * AMPLITUDE rather than to sit a fixed number of steps above `--popover`:
+     * the gradient is popover -> highlight -> popover, so that delta is the
+     * entire visible signal. Measured against this `--popover` (#2A2621):
+     *
+     *   #38312A (was)   1.1740:1   <- matches the pre-greenfield amplitude
+     *   #332E26 (board) 1.1158:1   <- ships now, ~5% less signal
+     *
+     * 1.1158 is under the 1.2 the contrast fixture calls imperceptible, which
+     * on a dim panel is the difference between "loading" and "frozen". #332E26
+     * measured 1.1744:1 against the OLD `--popover` (#26221C) — the board reuses
+     * the legacy highlight without re-pitching it for the ladder it also moved.
+     * If the sweep reads dead on a real panel, the fix is to re-pitch the
+     * highlight against #2A2621, not to move a ladder rung. */
+    --skeleton-highlight: #332E26;
 
     /* ── Shadows are banned on Signet surfaces (foundations §10) ──
      * Elevation is a lighter surface step. The tokens exist because
@@ -228,15 +240,16 @@
      * A scroll region on a Signet surface draws its own bar. The browser
      * default renders as a light-mode artifact on this ladder.
      *
-     * The thumb is low-opacity white for the same reason hairlines are
-     * (foundations §3): it tracks whatever surface it overlays rather
-     * than being pinned to one ladder step, so the same token works in
-     * the sidebar, a card and a sheet. The track is transparent so a
-     * scroll region gains no visible gutter when nothing is scrolling. */
-    --scrollbar-width: 10px;
-    --scrollbar-thumb: rgba(255,255,255,0.14);
-    --scrollbar-thumb-hover: rgba(255,255,255,0.24);
-    --scrollbar-track: transparent;
+     * Board chrome (option `3a`): an 8px gold thumb on a fixed `#1A1A1A`
+     * track, drawn on every scroll region and never hidden. Both colors are
+     * FIXED and never retint per chapter — the thumb is mark gold, which the
+     * brand lock keeps out of the accent engine entirely
+     * (`spec/ui/brand-identity.md` §2), so wiring it to `--primary` would be
+     * the same house-tenant mistake as retinting the mark itself. */
+    --scrollbar-width: 8px;
+    --scrollbar-thumb: #DDB844;
+    --scrollbar-thumb-hover: #F0CD5E;
+    --scrollbar-track: #1A1A1A;
   }
 
   * {
@@ -252,36 +265,41 @@
 
 @layer components {
   /*
-   * Scroll regions opt in with `.signet-scroll` rather than this being applied
-   * globally to `*`. Two reasons it is a class and not a blanket rule:
+   * Scrollbars are GLOBAL board chrome, not a per-surface opt-in.
    *
-   * 1. A blanket `::-webkit-scrollbar` rule also repaints scrollbars inside
-   *    embedded content and third-party widgets, where the surface underneath
-   *    is not ours and the low-opacity thumb can land on white.
-   * 2. Overlay scrollbars (macOS, and every touch device) already render
-   *    correctly and are not worth overriding; the class lets a surface that
-   *    genuinely needs a persistent bar ask for one.
+   * This replaced a `.signet-scroll` class whose two stated reasons were that
+   * a blanket rule would repaint third-party widgets on surfaces we do not
+   * own, and that overlay scrollbars already render correctly. The framework
+   * board (option `3a`) overrules both: it declares the bar at the root, calls
+   * it chrome, and says scrollbars are "never hidden" — a persistent gold bar
+   * is part of how the surface reads, not an accessibility nicety to be left
+   * to the platform. Committed HTML outranks written docs while #2140 is open
+   * (`spec/ui/web-greenfield/README.md` §1), and the class had ZERO call sites
+   * in the entire repo, so nothing regressed by retiring it. The concern about
+   * third-party surfaces is now moot in the other direction: the thumb is an
+   * opaque brand gold on an opaque track, so it no longer depends on guessing
+   * what is underneath it.
    *
-   * Engine split: see the note on the `@supports` block directly below.
-   */
-  /*
-   * The standard properties and the WebKit pseudo-elements are mutually
-   * exclusive, and putting both on one rule silently loses the detailed
-   * styling in the majority browser.
+   * `foundations.md` §12 was rewritten with this change rather than left to
+   * contradict it.
    *
-   * Since Chromium 121, a non-`auto` `scrollbar-width` or `scrollbar-color` on
-   * an element makes that element's `::-webkit-scrollbar-*` pseudo-elements
-   * ignored outright — the standard properties win. Declaring both together
-   * therefore gives Chrome and Edge a flat `thin` bar and throws away
-   * `--scrollbar-width`, the inset, the rounding and the hover tone.
+   * ENGINE SPLIT — the board's own CSS gets this wrong, and copying it
+   * verbatim would throw the styling away in the majority browser. The board
+   * declares `scrollbar-color` AND `::-webkit-scrollbar` together on `*`.
+   * Since Chromium 121 a non-`auto` `scrollbar-width`/`scrollbar-color` on an
+   * element makes that element's `::-webkit-scrollbar-*` pseudo-elements
+   * ignored outright, so in Chrome and Edge the board's rule resolves to a
+   * flat `thin` bar and silently discards the 8px width, the 8px rounding and
+   * the 2px track inset it also specifies.
    *
-   * So the standard properties are scoped to engines with no pseudo-element
-   * support, which is Firefox. `@supports not selector(::-webkit-scrollbar)`
+   * So the standard properties stay scoped to engines with no pseudo-element
+   * support, which is Firefox: `@supports not selector(::-webkit-scrollbar)`
    * is false in Chromium and Safari (both match the selector) and true in
-   * Firefox, which is exactly the split we want.
+   * Firefox. Every engine then renders the board's INTENT — 8px gold thumb on
+   * #1A1A1A — rather than only the engine that reads the shorthand.
    */
   @supports not selector(::-webkit-scrollbar) {
-    .signet-scroll {
+    * {
       scrollbar-width: thin;
       /* Firefox has no width control finer than `thin`, so `--scrollbar-width`
        * does not reach it. Only the two colors carry over. */
@@ -289,30 +307,31 @@
     }
   }
 
-  .signet-scroll::-webkit-scrollbar {
+  *::-webkit-scrollbar {
     width: var(--scrollbar-width);
     height: var(--scrollbar-width);
   }
 
-  .signet-scroll::-webkit-scrollbar-track {
+  *::-webkit-scrollbar-track {
     background: var(--scrollbar-track);
   }
 
-  .signet-scroll::-webkit-scrollbar-thumb {
+  *::-webkit-scrollbar-thumb {
     background-color: var(--scrollbar-thumb);
     border-radius: var(--radius-xs);
-    /* Inset the thumb off the track edge without a second color: a
-     * transparent border clipped to the padding box shows the track
-     * through it, so the bar reads narrower than its hit area. */
-    border: 3px solid transparent;
+    /* The board draws a 2px track-colored border around the thumb. Keeping it
+     * transparent + `background-clip: padding-box` renders identically over
+     * the opaque track while still working on any region that sets its own
+     * track color. */
+    border: 2px solid transparent;
     background-clip: padding-box;
   }
 
-  .signet-scroll::-webkit-scrollbar-thumb:hover {
+  *::-webkit-scrollbar-thumb:hover {
     background-color: var(--scrollbar-thumb-hover);
   }
 
-  .signet-scroll::-webkit-scrollbar-corner {
+  *::-webkit-scrollbar-corner {
     background: var(--scrollbar-track);
   }
 }

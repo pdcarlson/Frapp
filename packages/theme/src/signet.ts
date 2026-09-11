@@ -111,12 +111,16 @@ export type SignetTokens = {
   touch: { minimum: number; button: number; buttonLarge: number; tabBar: number };
   focus: { ringWidth: number; ringOpacity: number };
   /**
-   * Scroll regions on a Signet surface draw their own scrollbar rather than
-   * taking the browser default, which renders as a light-mode artifact on a
-   * dark ladder. Thumb colors are low-opacity white for the same reason
-   * hairlines are (§3): the bar tracks whatever surface it overlays instead of
-   * being pinned to one ladder step. The track is transparent so a scroll
-   * region does not gain a visible gutter when nothing is scrolling.
+   * Scrollbars are board chrome, not a per-surface opt-in: an 8px gold thumb
+   * on a fixed `#1A1A1A` track, drawn everywhere (web-framework board option
+   * `3a`, "never hidden"). The greenfield shell is the surface that settled
+   * this; see the `@layer components` block in `signet.css` for the engine
+   * split and for why the previous low-opacity-white opt-in was retired.
+   *
+   * Both colors are FIXED literals and never retint per chapter. The thumb is
+   * mark gold, which the brand lock keeps out of the accent engine entirely
+   * (`spec/ui/brand-identity.md` §2), so wiring it to `--primary` would be the
+   * same house-tenant mistake as painting the mark with a tenant accent.
    */
   scrollbar: {
     width: number;
@@ -193,10 +197,10 @@ const SIGNET_DARK: SignetTokens = {
   touch: { minimum: 44, button: 46, buttonLarge: 48, tabBar: 56 },
   focus: { ringWidth: 3, ringOpacity: 0.25 },
   scrollbar: {
-    width: 10,
-    thumb: "rgba(255,255,255,0.14)",
-    thumbHover: "rgba(255,255,255,0.24)",
-    track: "transparent",
+    width: 8,
+    thumb: "#DDB844",
+    thumbHover: "#F0CD5E",
+    track: "#1A1A1A",
   },
   motion: frappTokens.motion,
 };

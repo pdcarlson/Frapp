@@ -37,6 +37,7 @@ import {
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -528,36 +529,48 @@ export function StudyPage() {
     anyReadUncached(geofencesQuery, sessionsQuery)
   ) {
     return (
-      <OfflineState
-        title="Study hours unavailable offline"
-        description="Reconnect to start a session — tracking needs a live location check."
-        onRetry={() => {
-          void geofencesQuery.refetch();
-          void sessionsQuery.refetch();
-        }}
-      />
+      <>
+        <PageHeader title="Study hours" />
+        <OfflineState
+          title="Study hours unavailable offline"
+          description="Reconnect to start a session — tracking needs a live location check."
+          onRetry={() => {
+            void geofencesQuery.refetch();
+            void sessionsQuery.refetch();
+          }}
+        />
+      </>
     );
   }
 
   if (geofencesQuery.isPending || sessionsQuery.isPending) {
-    return <LoadingState message="Loading study zones..." />;
+    return (
+      <>
+        <PageHeader title="Study hours" />
+        <LoadingState message="Loading study zones..." />
+      </>
+    );
   }
 
   if (geofencesQuery.isError || sessionsQuery.isError) {
     return (
-      <ErrorState
-        title="Couldn't load study data"
-        description="Confirm your chapter access and retry."
-        onRetry={() => {
-          void geofencesQuery.refetch();
-          void sessionsQuery.refetch();
-        }}
-      />
+      <>
+        <PageHeader title="Study hours" />
+        <ErrorState
+          title="Couldn't load study data"
+          description="Confirm your chapter access and retry."
+          onRetry={() => {
+            void geofencesQuery.refetch();
+            void sessionsQuery.refetch();
+          }}
+        />
+      </>
     );
   }
 
   return (
     <div className="space-y-6">
+      <PageHeader title="Study hours" />
       <header>
         <p className="text-sm text-muted-foreground">
           Start a tracked study session inside a chapter study zone. Hiding the

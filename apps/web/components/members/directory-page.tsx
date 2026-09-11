@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LoadingState } from "@/components/shared/async-states";
+import { PageHeader } from "@/components/layout/page-header";
 import { MembersDirectory } from "@/components/members/members-directory";
 import { AlumniDirectory } from "@/components/alumni/alumni-directory";
 
@@ -65,8 +66,15 @@ function DirectoryPageContent() {
 // requires to sit under a Suspense boundary (matches the settings page).
 export function DirectoryPage() {
   return (
-    <Suspense fallback={<LoadingState message="Loading directory..." />}>
-      <DirectoryPageContent />
-    </Suspense>
+    <>
+      {/*
+        Outside the Suspense boundary so the heading is there on the pending
+        path too — the shell no longer supplies one (#2141).
+      */}
+      <PageHeader title="Directory" />
+      <Suspense fallback={<LoadingState message="Loading directory..." />}>
+        <DirectoryPageContent />
+      </Suspense>
+    </>
   );
 }

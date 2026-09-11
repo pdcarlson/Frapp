@@ -34,6 +34,7 @@ import {
   LoadingState,
   OfflineState,
 } from "@/components/shared/async-states";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -285,29 +286,48 @@ export function EventsPage() {
     }
   }
 
+  /*
+   * Every path renders the title, not just the happy one.
+   *
+   * The shell used to supply an <h1> from the nav map, so these three early
+   * returns got a heading for free. It does not any more (#2141 moved the title
+   * into the page), and a bare state card with no heading is exactly where a
+   * member is least able to tell what screen they are on.
+   */
   if (isOffline && anyReadUncached(eventsQuery)) {
     return (
-      <OfflineState
-        title="Events workspace unavailable offline"
-        description="Reconnect to load event schedules and attendance updates."
-        onRetry={() => {
-          void eventsQuery.refetch();
-        }}
-      />
+      <>
+        <PageHeader title="Events" />
+        <OfflineState
+          title="Events workspace unavailable offline"
+          description="Reconnect to load event schedules and attendance updates."
+          onRetry={() => {
+            void eventsQuery.refetch();
+          }}
+        />
+      </>
     );
   }
 
   if (eventsQuery.isLoading) {
-    return <LoadingState message={stateMicrocopy.events.loading} />;
+    return (
+      <>
+        <PageHeader title="Events" />
+        <LoadingState message={stateMicrocopy.events.loading} />
+      </>
+    );
   }
 
   if (eventsQuery.isError) {
     return (
-      <ErrorState
-        title="Couldn't load chapter events"
-        description="The events workflow needs a healthy API response. Verify your chapter access and retry."
-        onRetry={() => void eventsQuery.refetch()}
-      />
+      <>
+        <PageHeader title="Events" />
+        <ErrorState
+          title="Couldn't load chapter events"
+          description="The events workflow needs a healthy API response. Verify your chapter access and retry."
+          onRetry={() => void eventsQuery.refetch()}
+        />
+      </>
     );
   }
 
@@ -315,14 +335,20 @@ export function EventsPage() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Events</CardTitle>
-            <CardDescription>
-              Plan chapter events and monitor attendance operations.
-            </CardDescription>
-          </div>
+      {/*
+        No wrapper card, no description paragraph, one toolbar row. The card
+        that used to hold the title, a restatement of what Events is, and the
+        New Event button is the generated chrome the greenfield deletes (board
+        `1f` pin 2). The title and the action share one row; the filters sit
+        directly under it on the page surface.
+
+        "New Event" also used to render a second time, as the shell header's
+        per-route primary action — a <Link> to the route already open. That one
+        is gone with `primaryActionLabel`, so this is now the only one.
+      */}
+      <PageHeader
+        title="Events"
+        actions={
           <Button
             className="gap-2"
             {...eventWriteGate.controlProps()}
@@ -336,18 +362,19 @@ export function EventsPage() {
             <Plus className="h-4 w-4" />
             New Event
           </Button>
-        </CardHeader>
-        <CardContent>
-          {/*
-            Above the filters so it sits with the New Event button it explains.
-            Search and the time/status filters below are reads and stay live —
-            a lapsed chapter keeps full visibility of its own calendar.
-          */}
-          <SubscriptionNotice
-            gate={eventWriteGate}
-            feature="creating and editing events"
-          />
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        }
+      />
+      <div className="space-y-4">
+        {/*
+          Above the filters so it sits with the New Event button it explains.
+          Search and the time/status filters below are reads and stay live —
+          a lapsed chapter keeps full visibility of its own calendar.
+        */}
+        <SubscriptionNotice
+          gate={eventWriteGate}
+          feature="creating and editing events"
+        />
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative max-w-md">
               <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -402,9 +429,8 @@ export function EventsPage() {
                 <option value="one-time">Cadence: One-time</option>
               </select>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {selectedEventIds.length > 0 ? (
         <Card className="border-accent-border bg-accent-subtle">
