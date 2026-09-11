@@ -228,6 +228,68 @@ them, and must close the one that is open.
 - [ ] No unused component left under `apps/web/components/ui`
 - [ ] No customer-facing "Frapp" string or wordmark
 
+## 8. Resources: Documents and Backwork — lane 4
+
+Not a pre-written row, because this list was drafted against the shell and chat and the resources
+family was never on it. Written as the lane landed, in the same shape as the rest.
+
+**The board does not draw either page.** `1j` is the Backwork upload dialog and is the only frame in
+the file that is about this family at all. "Documents" and "Backwork" otherwise appear only as nav
+labels under the `Resources` section header, in the `4d` plan matrix, and in `4b`'s locked-module
+copy. So the two page bodies are **derived** — from `1f` pin 2 (one toolbar row, no wrapper card, no
+description paragraph), the `4d` table (36px header, 40px rows, top-border dividers, no zebra and no
+per-row fill) and the section label §2 already defines. That derivation is the part a later lane is
+most likely to need to revisit, which is why it is stated rather than left in the diff.
+
+### What was deleted
+
+| File | What went | Note |
+| ---- | --------- | ---- |
+| `documents-page.tsx` | The narration paragraph under `PageHeader` | "Organizational files — bylaws… upload and delete are permission-gated". Board: page-narration paragraphs, removed outright |
+| `documents-page.tsx` | Both wrapper `<Card>`s, four `CardTitle`/`CardDescription` blocks | The folder rail card and the list card. Their headings survive as `EYEBROW` section labels; their descriptions did not |
+| `backwork-page.tsx` | The narration paragraph, on **both** return paths | The no-chapter early return carried its own copy ("Shared coursework archive.") |
+| `backwork-page.tsx` | The Filters card and the Resources card | `1t` names the Events "filter card" as gone; this is the same card one route over |
+| both | `DialogDescription` on the upload dialogs | `1j`: "no instructional paragraph". The one actionable fact in Backwork's (unknown departments and professors are auto-created) moved to field help beside the two fields it is about |
+| both | The submit's `!file` disable | `1j`: "Upload stays enabled". Replaced by an inline error on the field. The **subscription** gate still disables it — that is a verdict about the chapter, not about the form |
+| both | `Badge` rows and the third text line per row | Backwork's tags moved inline into the meta line; Documents' description did the same |
+
+- [x] Narration paragraphs deleted on both routes, not restyled
+- [x] Wrapper cards deleted; both pages sit on `--background` with flush lists
+- [x] Upload dialogs on the `1j` sheet: r20, 18/700 title, 44px fields, inline errors on touched
+      fields, Upload enabled, the well collapsing to a file row
+- [x] `--gold-ask-*` untouched and still not merged into `--accent-*`. This lane's one accent use is
+      the file row's icon tile, which is `--accent-subtle` / `--accent-text` and retints per chapter
+      as product UI should
+- [x] No em dash left in user-facing copy on either route, verified by stripping comments and
+      grepping what remains. **Six sites, not the "three" an earlier draft of this line claimed** —
+      that count was wrong in both directions, and is corrected rather than quietly dropped:
+      Documents' narration paragraph, Documents' `DialogDescription`, Documents' folder-reorder
+      toast (pre-existing, fixed here because this lane owns the route), and the three
+      `SelectValue placeholder="—"` on Backwork, now the board's own unset wording ("Pick one")
+      and previously announced by a screen reader as nothing at all. Backwork's narration
+      paragraph, which the old line counted, contained no em dash
+- [x] 375px floor held on both routes under `tests/visual/responsive-floor.spec.ts`, **with the
+      caveat that suite states about itself**: it runs with no session and no active chapter, so
+      `/documents` renders its loading state and `/backwork` its no-chapter state. It proves the
+      shell, the page header and the folder rail do not overflow at 375px. It does **not** exercise
+      a populated document row, a populated backwork row or the three-column filter grid, which
+      are layouts this lane changed. The **upload sheet** was measured separately at 375
+      (`documentElement.scrollWidth === clientWidth === 375`, fields stacking to one column and the
+      footer holding one row) and read at 1280. The populated rows are the real gap: a case for
+      them needs a seeded session, which this lane does not add — so they are reviewed on the diff
+      and by the row-level unit cases, not proven at 375
+
+### What this lane did NOT do, deliberately
+
+| Left | Why |
+| ---- | --- |
+| `#2129` signed-URL, wire-name and storage work | Out of scope by the issue. Every `handleUpload` still owns its own request; the sheet is chrome |
+| Drag-and-drop on the file well | The board calls it a "drop zone", but a drop handler is behavior, not chrome. What ships is the well and its file row. Styling a target that silently ignores a drop would be the worse half of the board to take |
+| The `/documents` folder dialog | `1j` is the **upload** sheet. The folder dialog genuinely has a description (renaming re-files every document under that name), so it is a plain dialog rather than a sheet with its paragraph deleted |
+| Folding `CHAT_CONTROL_CLASS` into `denseRowControlClassName` | They are the same 32/44 recipe in two files. Merging means editing a chat module, which belongs to whichever lane next touches chat. Both sites now name each other so a grep finds the pair |
+| An `error` slot on the sheet's plain field | `1j` draws "Semester is required" under a metadata field, so the grammar is specified — but no metadata field on either screen can produce it: both state that every field except the file is optional. The prop, and the `aria-invalid`/`aria-describedby` helper that has to go with it, were written first and had **zero** callers, exercised only by their own test. Removed. The lane that adds the first required metadata field adds the recipe back against a field that uses it |
+| `nested-states.tsx`'s own framing | The four nested states still draw their own bordered block, which on a now-flat page reads as a small card. They are shared across every route, so re-pitching them is a change to that family and not to these two screens |
+
 ---
 
 ## What this checklist does not cover

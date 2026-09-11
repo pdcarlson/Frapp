@@ -93,3 +93,25 @@ export const dashboardCheckboxHitAreaClassName = [
   "flex h-6 w-6 cursor-pointer items-center justify-center",
   "pointer-coarse:h-11 pointer-coarse:w-11",
 ].join(" ");
+
+/**
+ * The icon button that sits at the trailing edge of a **dense list row** —
+ * `/documents` and `/backwork` after the greenfield lane flattened their cards
+ * away (`spec/ui/web-greenfield/`, [#2144](https://github.com/pdcarlson/Frapp/issues/2144)).
+ *
+ * `Button`'s `size="icon"` is 44x44, which is right for a toolbar and wrong
+ * inside a row the same lane pulled down to ~40px: the control would set the
+ * row's height and undo the density it was flattened for. So this is the same
+ * trade the checkbox hit area above makes, in the other direction — a pointer
+ * gets a 32px box that fits the row, and `pointer-coarse` restores the real
+ * 44px target §2 requires on touch, where the row grows to hold it.
+ *
+ * **There is a second copy of this recipe in the tree**, `CHAT_CONTROL_CLASS`
+ * in `components/chat/chip.ts`, landed by the chat lane for the same reason.
+ * They are the same string and should be one; folding them together means
+ * editing a chat module, which belongs to whichever lane next touches chat
+ * rather than to the one that flattened these two lists. Recorded here so the
+ * grep that looks for the recipe finds both.
+ */
+export const denseRowControlClassName =
+  "h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11";

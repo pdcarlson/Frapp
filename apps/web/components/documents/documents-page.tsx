@@ -25,13 +25,6 @@ import {
 } from "@repo/hooks";
 import { formatBareDate, formatLocaleDate } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,6 +52,18 @@ import {
   SearchGlyph,
 } from "@/components/documents/resources-glyphs";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { EYEBROW } from "@/components/ui/typography";
+import { denseRowControlClassName } from "@/components/shared/table-controls";
+import {
+  UPLOAD_FIELD_CLASS,
+  UPLOAD_SHEET_BUTTON_CLASS,
+  UploadField,
+  UploadFileField,
+  UploadSheetBody,
+  UploadSheetContent,
+  UploadSheetFooter,
+  UploadSheetTitle,
+} from "@/components/shared/upload-sheet";
 import {
   SubscriptionNotice,
   useGatedDialog,
@@ -106,14 +111,22 @@ type FolderRow = {
   sort_order: number | null;
 };
 
-// The signed-URL flow blocks SVG + executables. Kind `document` in
-// `@repo/validation` is shared with Backwork and chat so the three cannot
-// drift (the Backwork page previously omitted gif from a private copy).
+/*
+  The signed-URL flow blocks SVG + executables. Kind `document` in
+  `@repo/validation` is shared with Backwork and chat so the three cannot drift
+  (the Backwork page previously omitted gif from a private copy).
+
+  **Each string now names the verdict, because it no longer has a title to do
+  that for it.** These were toast *bodies*, under a title reading "File too
+  large" or "File type not allowed"; they are now the whole inline error, and a
+  standalone "Chapter documents accept files up to 25MB." states a rule without
+  ever saying that the member's file broke it.
+*/
 function uploadRejectionDescription(reason: "type" | "size"): string {
   if (reason === "size") {
-    return `Chapter documents accept files up to ${MAX_UPLOAD_LABEL}.`;
+    return `That file is too large. Chapter documents accept files up to ${MAX_UPLOAD_LABEL}.`;
   }
-  return "Chapter documents accept PDFs, Office files, text, CSV, and common images (no SVG).";
+  return "That file type is not allowed. Chapter documents accept PDFs, Office files, text, CSV, and common images (no SVG).";
 }
 
 // Deliberately ungated: the signed link comes from `GET /v1/documents/:id`, and
@@ -145,12 +158,22 @@ function DownloadButton({ id }: { id: string }) {
     }
   }
 
+  /*
+    A trailing text action rather than the filled Secondary it was. The board
+    puts a 13px/600 text action at a row's trailing edge (`1j`'s "Replace", the
+    settings rows in `4c`), and a 44px Secondary button set the height of every
+    row in a list this lane pulled down to 40.
+
+    The label stays. An icon-only download is the version that needs a tooltip
+    to be usable, and `denseRowControlClassName`'s coarse-pointer carve-out
+    gets the 44px target back on touch either way.
+  */
   return (
     <Button
-      variant="secondary"
-      size="sm"
+      variant="ghost"
       onClick={handleDownload}
       disabled={isFetching}
+      className="h-8 gap-1.5 px-2 text-[13px] font-semibold pointer-coarse:h-11"
     >
       {isFetching ? (
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -170,11 +193,14 @@ function DownloadButton({ id }: { id: string }) {
  * needed three synchronised edits and nothing would have caught a fourth row
  * drifting.
  *
- * §2's two row states rather than §7's sidebar item: §7 defines one active
- * fill and a hover that falls back to the card, which a rail already sitting
- * *on* a card cannot use. Hover takes `accent-3`, active `accent-4` plus
- * `accent-11` text — the table recipe `components/shared/table-contrast.spec.ts`
- * pins. `FOCUS_RING_OFFSET`, not `FOCUS_RING`: these rows carry no border, and
+ * §2's two row states rather than §7's sidebar item. §7 defines one active fill
+ * and a hover that falls back to the card, which was unusable when this rail
+ * sat *on* a card — and is still the wrong pick now that the card is gone and
+ * the rail sits on `--background`, because §7's fallback would paint the rail
+ * a step lighter than the list beside it and rebuild the panel this lane
+ * deleted. Hover takes `accent-3`, active `accent-4` plus `accent-11` text —
+ * the table recipe `components/shared/table-contrast.spec.ts` pins.
+ * `FOCUS_RING_OFFSET`, not `FOCUS_RING`: these rows carry no border, and
  * `FOCUS_RING`'s indicator is the border swap.
  */
 function folderRowClassName(isActive: boolean): string {
@@ -318,6 +344,13 @@ export function DocumentsPage() {
     file: null,
   });
   const [uploading, setUploading] = useState(false);
+  /*
+    The upload sheet's one inline error, held on the page rather than inside
+    `UploadFileField` because `handleUpload` is what discovers it: the file is
+    inspected on submit, against `@repo/validation`'s shared allowlist, and the
+    field cannot know the verdict before then.
+  */
+  const [uploadError, setUploadError] = useState<string | null>(null);
   /*
     Which rows' deletes are in flight — a set, not a scalar. `useDeleteDocument` is pessimistic —
     the row only disappears once the DELETE round-trips — so without this
@@ -503,7 +536,7 @@ export function DocumentsPage() {
         title: "Couldn't reorder folders",
         description:
           applied > 0
-            ? "Some folders moved before this failed — the list below shows the order that saved."
+            ? "Some folders moved before this failed. The list below shows the order that saved."
             : getErrorMessage(
                 error,
                 "Requires chapter_docs:manage. Retry or confirm your permissions.",
@@ -518,27 +551,27 @@ export function DocumentsPage() {
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    /*
+      Both rejections are now inline on the field they are about, not a toast
+      (board `1j`: "errors inline on touched fields"). A toast is the right
+      shape for something that happened elsewhere — the network, the storage
+      bucket — and the wrong one for "this control's value is wrong", which the
+      member has to read *and then act on* while the toast is timing out over
+      the top-right corner of a form they are still in.
+
+      The upload failures further down stay toasts for exactly that reason.
+    */
     const file = uploadDraft.file;
     if (!file) {
-      toast({
-        title: "Choose a file first",
-        description: "Drag in a file or click Browse to attach one.",
-        variant: "destructive",
-      });
+      setUploadError("Choose a file to upload.");
       return;
     }
     const inspected = inspectUploadFile("document", file);
     if (!inspected.ok) {
-      toast({
-        title:
-          inspected.reason === "size"
-            ? "File too large"
-            : "File type not allowed",
-        description: uploadRejectionDescription(inspected.reason),
-        variant: "destructive",
-      });
+      setUploadError(uploadRejectionDescription(inspected.reason));
       return;
     }
+    setUploadError(null);
     const contentType = inspected.contentType;
     setUploading(true);
     try {
@@ -689,32 +722,66 @@ export function DocumentsPage() {
         title="Chapter Documents"
         actions={
           <Can permission="chapter_docs:upload">
-            <Dialog {...uploadDialog.dialogProps}>
+            {/*
+              Cleared on OPEN, not on close, and the difference is the whole
+              reason this is written down.
+
+              Two of the three ways this dialog closes never reach an
+              `onOpenChange` handler at all. Radix `Root` runs the prop through
+              `useControllableState`, whose `onChange` fires only when Radix's
+              own setter runs — Escape, the scrim, the X. Cancel calls
+              `uploadDialog.setOpen(false)` directly, and `useGatedDialog`'s
+              revoke effect calls its internal `setOpenState(false)`; both just
+              change the controlled prop, and neither notifies anyone. Clearing
+              on close therefore left a spent rejection sitting under the file
+              field the next time the sheet opened after a Cancel.
+
+              Opening has no such hole: there is no `setOpen(true)` anywhere on
+              this page, so every open is a `DialogTrigger` press, which does go
+              through Radix's setter. Clearing there is reached by every route
+              into a fresh sheet, whatever ended the last one.
+
+              The draft itself survives on purpose: a mistyped title is worth
+              keeping, a spent error is not.
+            */}
+            <Dialog
+              {...uploadDialog.dialogProps}
+              onOpenChange={(next) => {
+                if (next) setUploadError(null);
+                uploadDialog.dialogProps.onOpenChange(next);
+              }}
+            >
               <DialogTrigger asChild>
                 <Button className="gap-2" {...gate.controlProps()}>
                   <Upload className="h-4 w-4" /> Upload document
                 </Button>
               </DialogTrigger>
-              <DialogContent
-                className="sm:max-w-lg"
-                {...uploadDialog.contentProps}
-              >
-                <DialogHeader>
-                  <DialogTitle>Upload a chapter document</DialogTitle>
-                  <DialogDescription>
-                    Max {MAX_UPLOAD_LABEL}. PDFs, Word/Excel/PowerPoint, text/CSV,
-                    and images are allowed — no SVGs or executables.
-                  </DialogDescription>
-                </DialogHeader>
-                <form
-                  id="doc-upload-form"
-                  onSubmit={handleUpload}
-                  className="space-y-4"
-                >
-                  <div className="grid gap-1">
-                    <Label htmlFor="doc-title">Title</Label>
+              <UploadSheetContent {...uploadDialog.contentProps}>
+                <UploadSheetTitle>Upload a chapter document</UploadSheetTitle>
+                <UploadSheetBody id="doc-upload-form" onSubmit={handleUpload}>
+                  {/*
+                    The file first, where the board puts it: it is the only
+                    required field on this form, and it is the one the member
+                    came to supply. It used to sit last, under five optional
+                    metadata fields.
+                  */}
+                  <UploadFileField
+                    id="doc-file"
+                    label="File"
+                    hint={`Up to ${MAX_UPLOAD_LABEL}. PDFs, Office files, text, CSV, and common images. No SVGs or executables.`}
+                    accept={acceptAttribute("document")}
+                    file={uploadDraft.file}
+                    error={uploadError}
+                    disabled={uploading}
+                    onSelect={(file) => {
+                      setUploadError(null);
+                      setUploadDraft((prev) => ({ ...prev, file }));
+                    }}
+                  />
+                  <UploadField id="doc-title" label="Title">
                     <Input
                       id="doc-title"
+                      className={UPLOAD_FIELD_CLASS}
                       value={uploadDraft.title}
                       onChange={(event) =>
                         setUploadDraft((prev) => ({
@@ -724,11 +791,11 @@ export function DocumentsPage() {
                       }
                       placeholder="Fall 2026 bylaws revision"
                     />
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="doc-description">
-                      Description (optional)
-                    </Label>
+                  </UploadField>
+                  <UploadField
+                    id="doc-description"
+                    label="Description (optional)"
+                  >
                     <Textarea
                       id="doc-description"
                       rows={2}
@@ -740,42 +807,45 @@ export function DocumentsPage() {
                         }))
                       }
                     />
+                  </UploadField>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <UploadField id="doc-folder" label="Folder (optional)">
+                      <Input
+                        id="doc-folder"
+                        className={UPLOAD_FIELD_CLASS}
+                        value={uploadDraft.folder}
+                        onChange={(event) =>
+                          setUploadDraft((prev) => ({
+                            ...prev,
+                            folder: event.target.value,
+                          }))
+                        }
+                        placeholder="Governance"
+                      />
+                    </UploadField>
+                    <UploadField id="doc-type" label="Document type (optional)">
+                      <Input
+                        id="doc-type"
+                        className={UPLOAD_FIELD_CLASS}
+                        value={uploadDraft.documentType}
+                        onChange={(event) =>
+                          setUploadDraft((prev) => ({
+                            ...prev,
+                            documentType: event.target.value,
+                          }))
+                        }
+                        placeholder="Bylaws"
+                      />
+                    </UploadField>
                   </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="doc-folder">Folder (optional)</Label>
-                    <Input
-                      id="doc-folder"
-                      value={uploadDraft.folder}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          folder: event.target.value,
-                        }))
-                      }
-                      placeholder="Governance"
-                    />
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="doc-type">Document type (optional)</Label>
-                    <Input
-                      id="doc-type"
-                      value={uploadDraft.documentType}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          documentType: event.target.value,
-                        }))
-                      }
-                      placeholder="Bylaws"
-                    />
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="doc-effective-date">
-                      Effective date (optional)
-                    </Label>
+                  <UploadField
+                    id="doc-effective-date"
+                    label="Effective date (optional)"
+                  >
                     <Input
                       id="doc-effective-date"
                       type="date"
+                      className={UPLOAD_FIELD_CLASS}
                       value={uploadDraft.effectiveDate}
                       onChange={(event) =>
                         setUploadDraft((prev) => ({
@@ -784,52 +854,58 @@ export function DocumentsPage() {
                         }))
                       }
                     />
-                  </div>
-                  <div className="grid gap-1">
-                    <Label htmlFor="doc-file">File</Label>
-                    <Input
-                      id="doc-file"
-                      type="file"
-                      accept={acceptAttribute("document")}
-                      onChange={(event) =>
-                        setUploadDraft((prev) => ({
-                          ...prev,
-                          file: event.target.files?.[0] ?? null,
-                        }))
-                      }
-                    />
-                  </div>
-                </form>
-                <DialogFooter>
-                  {/* Cancel only closes the dialog — gating the way out of a
+                  </UploadField>
+                </UploadSheetBody>
+                <UploadSheetFooter>
+                  {/* Cancel only closes the dialog. Gating the way out of a
                       surface the gate just blocked would be a trap. */}
                   <Button
                     variant="secondary"
+                    className={UPLOAD_SHEET_BUTTON_CLASS}
                     onClick={() => uploadDialog.setOpen(false)}
                     disabled={uploading}
                   >
                     Cancel
                   </Button>
+                  {/*
+                    Enabled with no file chosen, which the board asks for by
+                    name. The old form disabled Upload until a file was
+                    attached, so a member who missed the field got a control
+                    that did nothing and said nothing; now the press answers
+                    them, inline and under the field that is wrong. The
+                    subscription gate still disables it, because that is a
+                    verdict about the chapter rather than about this form.
+                  */}
                   <Button
                     form="doc-upload-form"
                     type="submit"
-                    {...gate.controlProps(uploading || !uploadDraft.file)}
+                    className={UPLOAD_SHEET_BUTTON_CLASS}
+                    {...gate.controlProps(uploading)}
                   >
                     {uploading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : null}
                     Upload
                   </Button>
-                </DialogFooter>
-              </DialogContent>
+                </UploadSheetFooter>
+              </UploadSheetContent>
             </Dialog>
           </Can>
         }
       />
-      <p className="text-sm text-muted-foreground">
-        Organizational files — bylaws, constitutions, meeting agendas. Every
-        chapter member can download; upload and delete are permission-gated.
-      </p>
+      {/*
+        The page-narration paragraph that sat here is deleted, not restyled.
+        The framework board lists "page-narration paragraphs" under Removed
+        outright, and `1f` pin 2 gives a route's main pane one toolbar row with
+        "no wrapper card, no description paragraph".
+
+        Nothing in it was load-bearing. "Organizational files, bylaws,
+        constitutions, meeting agendas" described a library the member is
+        looking at; "every chapter member can download" restated the absence of
+        a gate; "upload and delete are permission-gated" was narration about
+        controls that are already absent for a member who lacks the permission,
+        which is what `Can` is for.
+      */}
 
       {/*
         Disable, don't hide (§5 rule 4): browsing and downloading stay live for
@@ -860,37 +936,46 @@ export function DocumentsPage() {
         <SubscriptionNotice gate={gate} feature="managing documents" />
       </Can>
 
-      <div className="grid gap-4 md:grid-cols-[240px_1fr]">
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <CardTitle className="text-sm">Folders</CardTitle>
-                <CardDescription>
-                  Flat, one-level deep. Naming a new folder during upload still
-                  registers it.
-                </CardDescription>
-              </div>
-              <Can permission="chapter_docs:manage">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="New folder"
-                  onClick={() => openFolderDialog(null)}
-                  {...gate.controlProps(folderBusy)}
-                >
-                  <FolderPlus className="h-4 w-4" />
-                </Button>
-              </Can>
-            </div>
-          </CardHeader>
+      {/*
+        Flush, not carded. Two `<Card>`s used to sit here, one per column, so
+        the rail and the list each paid a hairline, 24px of padding and a title
+        block to say what a 220px column beside a list of files already says.
+        The board's page body is the surface itself (`1f` pin 2: "no wrapper
+        card"), and what survives of each card is its heading — as the section
+        label §2 draws above a grouped list, which is what both of these are.
+
+        200px rather than the old 240: the rail holds folder names and a four
+        control management row, and the width it was giving up was the list's.
+      */}
+      <div className="grid gap-x-6 gap-y-4 md:grid-cols-[200px_minmax(0,1fr)]">
+        <nav aria-labelledby="doc-folders-label">
+          <div className="flex min-h-9 items-center justify-between gap-2">
+            <h2
+              id="doc-folders-label"
+              className={`${EYEBROW} text-muted-foreground`}
+            >
+              Folders
+            </h2>
+            <Can permission="chapter_docs:manage">
+              <Button
+                variant="ghost"
+                size="icon"
+                className={denseRowControlClassName}
+                aria-label="New folder"
+                onClick={() => openFolderDialog(null)}
+                {...gate.controlProps(folderBusy)}
+              >
+                <FolderPlus className="h-4 w-4" />
+              </Button>
+            </Can>
+          </div>
           {/*
             The two filter rows stay ungated — they are client-side filters over
             the loaded list, not writes. The per-folder management controls
             beside each named row are gated, because those *are* the folder
             write routes (`chapter_docs:manage`, no `@FreeTier`).
           */}
-          <CardContent className="space-y-1 p-2">
+          <div className="space-y-0.5 pt-1">
             <button
               type="button"
               onClick={() => setActiveFolder(null)}
@@ -1008,31 +1093,41 @@ export function DocumentsPage() {
                 </button>
               </p>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </nav>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm">
-              {activeFolder === null
-                ? "All documents"
-                : activeFolder === ""
-                  ? "Uncategorized documents"
-                  : activeFolder}
-            </CardTitle>
-            {/*
-              Rendered only once there is a count to state. A placeholder
-              character here would put a stray non-breaking space in the
-              accessibility tree, and "0 documents." while the query is still
-              in flight is a claim about the library rather than a description
-              of it — the state below already says what is happening.
-            */}
-            {listState === "ready" ? (
-              <CardDescription>
-                {visible.length} document{visible.length === 1 ? "" : "s"}
-                {deferredSearch ? ` matching "${deferredSearch}"` : ""}.
-              </CardDescription>
-            ) : null}
+        <section aria-labelledby="doc-list-label">
+          {/*
+            One toolbar row, not a card header: the list's own name and count
+            on the left, its search on the right, sitting directly on the page
+            surface. `1f` pin 2.
+          */}
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <h2
+                id="doc-list-label"
+                className={`${EYEBROW} truncate text-muted-foreground`}
+              >
+                {activeFolder === null
+                  ? "All documents"
+                  : activeFolder === ""
+                    ? "Uncategorized documents"
+                    : activeFolder}
+              </h2>
+              {/*
+                Rendered only once there is a count to state. A placeholder
+                character here would put a stray non-breaking space in the
+                accessibility tree, and "0 documents." while the query is still
+                in flight is a claim about the library rather than a description
+                of it — the state below already says what is happening.
+              */}
+              {listState === "ready" ? (
+                <p className="shrink-0 text-[12.5px] text-muted">
+                  {visible.length} document{visible.length === 1 ? "" : "s"}
+                  {deferredSearch ? ` matching "${deferredSearch}"` : ""}
+                </p>
+              ) : null}
+            </div>
             {/*
               `type="search"`, not `type="text"`: it gets the browser's own
               clear affordance and the correct role, so no hand-rolled X button
@@ -1044,29 +1139,31 @@ export function DocumentsPage() {
               fixed `top-2.5` against an `h-11` field. The wrapper carries the
               spacing so the icon offset never has to compensate for it.
             */}
-            <div className="pt-2">
-              <div className="relative">
-                <Label htmlFor="doc-search" className="sr-only">
-                  Search documents
-                </Label>
-                <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="doc-search"
-                  type="search"
-                  className="h-11 pl-9"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search by title"
-                />
-              </div>
+            <div className="relative w-full sm:w-64">
+              <Label htmlFor="doc-search" className="sr-only">
+                Search documents
+              </Label>
+              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                id="doc-search"
+                type="search"
+                className="h-11 pl-9"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by title"
+              />
             </div>
-          </CardHeader>
-          <CardContent>
+          </div>
+          <div className="pt-2">
             {/*
-              The nested variants, not the whole-screen ones: these render
-              inside a `<CardContent>`, where a `bg-card` state on a `bg-card`
-              card composites to exactly 1.00:1 and the region disappears
-              (`components.md` §10).
+              Still the nested variants even though the card they were chosen
+              for is gone. They paint no fill of their own, and the page is now
+              `--background` rather than `--card` — so the whole-screen variants
+              would paint a `--card` block where nothing else on the page has
+              one, reintroducing by the back door the card this lane deleted.
+              `components.md` §10 is about the 1.00:1 composite; the reason they
+              are right here is the flatter one, that these states sit inside a
+              region rather than replacing the screen.
             */}
             {listState === "offline-search" ? (
               <NestedOffline
@@ -1123,11 +1220,36 @@ export function DocumentsPage() {
                 not a free parameter". Chapter Ops found five of these; this
                 is the sixth.
               */
-              <ul className="divide-y divide-border">
+              /*
+                The board's list grammar (`4d`): a top hairline per row and
+                nothing else — no card, no zebra, no per-row fill. `divide-y`
+                gives the same rule between rows; `border-t` on the block adds
+                the one above the first, so the list reads as a set rather than
+                as rows that happen to be adjacent.
+
+                `divide-border`, undiluted: `divide-border/70` measures 1.169:1
+                where the token itself measures 1.253:1, and neither clears the
+                3:1 non-text floor — `components.md` §2, "a hairline's alpha is
+                not a free parameter".
+              */
+              <ul className="divide-y divide-border border-t border-border">
                 {visible.map((doc) => (
+                  /*
+                    Two lines, not three, and 8px of padding rather than 12. The
+                    description used to take a line of its own between the title
+                    and the meta; it now joins the meta line, which is where a
+                    one-clamped sentence was already headed and costs the row
+                    20px less.
+
+                    The board's `4d` data row is 40px and this one is floored at
+                    44 by `min-h-11`, deliberately: §2's touch-target floor
+                    outranks the board's density, and the 4px is the cheapest
+                    place in the lane to pay it. Do not "correct" the row to 40
+                    to match the board.
+                  */
                   <li
                     key={doc.id}
-                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:gap-3"
+                    className="flex min-h-11 flex-col gap-1 py-2 sm:flex-row sm:items-center sm:gap-3"
                   >
                     {/*
                       s12 draws a leading file glyph on every document row —
@@ -1135,26 +1257,40 @@ export function DocumentsPage() {
                       on the recent list. Web has no pin field, so every row
                       takes the neutral variant.
                     */}
-                    <DocumentsGlyph className="h-5 w-5 shrink-0 text-muted-foreground" />
+                    <DocumentsGlyph className="hidden h-4 w-4 shrink-0 text-muted sm:block" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
+                      <p className="truncate text-sm font-semibold">
                         {doc.title}
                       </p>
-                      {doc.description ? (
-                        <p className="line-clamp-1 text-xs text-muted-foreground">
-                          {doc.description}
-                        </p>
-                      ) : null}
-                      <p className="text-[12.5px] text-muted-foreground">
-                        Uploaded {formatLocaleDate(doc.created_at)}
-                        {doc.folder ? ` · ${doc.folder}` : ""}
-                        {doc.document_type ? ` · ${doc.document_type}` : ""}
-                        {doc.effective_date
-                          ? ` · Effective ${formatBareDate(doc.effective_date)}`
-                          : ""}
+                      {/*
+                        Description LAST, and the order is load-bearing. The
+                        merged line is `truncate`, where the two lines it
+                        replaced were not: the meta line wrapped and the
+                        description had its own `line-clamp-1`. So whatever
+                        leads this string is what survives a narrow row — and
+                        with the description first, one ordinary sentence ate
+                        the upload date, the folder, the type and the effective
+                        date, none of which had ever been able to disappear
+                        before. The structured fields are short, bounded and
+                        the ones a member scans by; the description is the
+                        free-text field and the right thing to lose to an
+                        ellipsis.
+                      */}
+                      <p className="truncate text-[12.5px] text-muted">
+                        {[
+                          `Uploaded ${formatLocaleDate(doc.created_at)}`,
+                          doc.folder,
+                          doc.document_type,
+                          doc.effective_date
+                            ? `Effective ${formatBareDate(doc.effective_date)}`
+                            : null,
+                          doc.description,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2 sm:ml-auto">
+                    <div className="flex shrink-0 items-center gap-1 sm:ml-auto">
                       <DownloadButton id={doc.id} />
                       <Can permission="chapter_docs:manage">
                         {/*
@@ -1166,6 +1302,7 @@ export function DocumentsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          className={denseRowControlClassName}
                           aria-label={`Delete ${doc.title}`}
                           onClick={() => void handleDelete(doc)}
                           {...gate.controlProps(deletingIds.has(doc.id))}
@@ -1178,8 +1315,8 @@ export function DocumentsPage() {
                 ))}
               </ul>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       </div>
       {/*
         Rendered last and unconditionally, for the reason the states above no

@@ -12,13 +12,6 @@ import {
   useRequestBackworkUploadUrl,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -28,15 +21,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Dialog, DialogTrigger } from "@/components/ui/dialog";
+import { EYEBROW } from "@/components/ui/typography";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  UPLOAD_FIELD_CLASS,
+  UPLOAD_SHEET_BUTTON_CLASS,
+  UploadField,
+  UploadFileField,
+  UploadSheetBody,
+  UploadSheetContent,
+  UploadSheetFooter,
+  UploadSheetTitle,
+} from "@/components/shared/upload-sheet";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/async-states";
 import {
@@ -86,11 +82,18 @@ type Resource = {
   created_at: string;
 };
 
+/*
+  Each string names the verdict, because it no longer has a toast title to do
+  that for it. These were toast bodies under "File too large" / "File type not
+  allowed"; they are now the whole inline error, and a standalone "Backwork
+  accepts files up to 25MB." states a rule without saying the member's file
+  broke it. Same change on `/documents`.
+*/
 function uploadRejectionDescription(reason: "type" | "size"): string {
   if (reason === "size") {
-    return `Backwork accepts files up to ${MAX_UPLOAD_LABEL}.`;
+    return `That file is too large. Backwork accepts files up to ${MAX_UPLOAD_LABEL}.`;
   }
-  return "Backwork accepts PDF, Office, text/CSV, and common images (no SVG).";
+  return "That file type is not allowed. Backwork accepts PDF, Office, text/CSV, and common images (no SVG).";
 }
 
 // Sentinel used by Radix Select, which rejects empty-string values. Maps to
@@ -132,12 +135,18 @@ function InlineDownloadCell({ id }: { id: string }) {
     }
   }
 
+  /*
+    A trailing text action rather than the filled Secondary it was, matching
+    `/documents`: the board puts a 13px/600 text action at a row's trailing
+    edge, and a 44px Secondary set the height of every row in a list this lane
+    pulled down to 40. `pointer-coarse` restores the 44px target on touch.
+  */
   return (
     <Button
-      variant="secondary"
-      size="sm"
+      variant="ghost"
       onClick={handle}
       disabled={isFetching}
+      className="h-8 gap-1.5 px-2 text-[13px] font-semibold pointer-coarse:h-11"
     >
       {isFetching ? (
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -200,6 +209,13 @@ export function BackworkPage() {
     file: null,
   });
   const [uploading, setUploading] = useState(false);
+  /*
+    The upload sheet's one inline error. Held here rather than inside
+    `UploadFileField` because `handleUpload` is what discovers it: the file is
+    inspected on submit against `@repo/validation`'s shared allowlist, and the
+    field cannot know the verdict before then.
+  */
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
 
   const resourcesQuery = useBackworkResources({
@@ -258,27 +274,24 @@ export function BackworkPage() {
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    /*
+      Inline on the field, not a toast (board `1j`: "errors inline on touched
+      fields"). A toast is right for something that happened elsewhere — the
+      network, the storage bucket, which is what the failures further down are —
+      and wrong for "this control's value is wrong", which the member has to
+      read and then act on inside a form the toast is timing out on top of.
+    */
     const file = uploadDraft.file;
     if (!file) {
-      toast({
-        title: "Attach a file first",
-        description: "Drag in a file or use Browse.",
-        variant: "destructive",
-      });
+      setUploadError("Choose a file to upload.");
       return;
     }
     const inspected = inspectUploadFile("document", file);
     if (!inspected.ok) {
-      toast({
-        title:
-          inspected.reason === "size"
-            ? "File too large"
-            : "File type not allowed",
-        description: uploadRejectionDescription(inspected.reason),
-        variant: "destructive",
-      });
+      setUploadError(uploadRejectionDescription(inspected.reason));
       return;
     }
+    setUploadError(null);
     const contentType = inspected.contentType;
 
     setUploading(true);
@@ -368,9 +381,6 @@ export function BackworkPage() {
     return (
       <div className="space-y-6">
         <PageHeader title="Backwork" />
-        <p className="text-sm text-muted-foreground">
-          Shared coursework archive.
-        </p>
         <EmptyState
           title="No chapter selected"
           description="Pick a chapter from the switcher to browse its backwork."
@@ -389,48 +399,66 @@ export function BackworkPage() {
               <BackworkTaxonomyDrawer />
             </Can>
             <Can permission="backwork:upload">
-              <Dialog {...uploadDialog.dialogProps}>
+              {/*
+                Cleared on OPEN, not on close. Cancel calls
+                `uploadDialog.setOpen(false)` and `useGatedDialog`'s revoke
+                effect calls its own `setOpenState(false)`; both only change the
+                controlled prop, and Radix's `useControllableState` fires
+                `onOpenChange` for its own setter alone — so clearing on close
+                missed two of the three ways this sheet shuts, and a spent
+                rejection survived a Cancel into the next open. Every open is a
+                `DialogTrigger` press (nothing calls `setOpen(true)`), which
+                does reach the handler. Same reasoning as `/documents`, written
+                out there.
+
+                The draft survives on purpose: a half-typed course number is
+                worth keeping, a spent error is not.
+              */}
+              <Dialog
+                {...uploadDialog.dialogProps}
+                onOpenChange={(next) => {
+                  if (next) setUploadError(null);
+                  uploadDialog.dialogProps.onOpenChange(next);
+                }}
+              >
                 <DialogTrigger asChild>
                   <Button className="gap-2" {...gate.controlProps()}>
                     <Upload className="h-4 w-4" /> Upload
                   </Button>
                 </DialogTrigger>
-                <DialogContent
-                  className="max-h-[80vh] overflow-y-auto sm:max-w-xl"
-                  {...uploadDialog.contentProps}
-                >
-                  <DialogHeader>
-                    <DialogTitle>Upload backwork</DialogTitle>
-                    <DialogDescription>
-                      Every metadata field except the file itself is optional.
-                      Unknown departments or professors are auto-created per
-                      chapter.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <form
+                <UploadSheetContent {...uploadDialog.contentProps}>
+                  <UploadSheetTitle>Upload backwork</UploadSheetTitle>
+                  <UploadSheetBody
                     id="backwork-upload-form"
                     onSubmit={handleUpload}
-                    className="space-y-4"
                   >
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-file">File</Label>
-                      <Input
-                        id="bw-file"
-                        type="file"
-                        accept={acceptAttribute("document")}
-                        onChange={(event) =>
-                          setUploadDraft((prev) => ({
-                            ...prev,
-                            file: event.target.files?.[0] ?? null,
-                          }))
-                        }
-                      />
-                    </div>
+                    <UploadFileField
+                      id="bw-file"
+                      label="File"
+                      hint={`Up to ${MAX_UPLOAD_LABEL}. PDFs, Office files, text, CSV, and common images. No SVGs or executables.`}
+                      accept={acceptAttribute("document")}
+                      file={uploadDraft.file}
+                      error={uploadError}
+                      disabled={uploading}
+                      onSelect={(file) => {
+                        setUploadError(null);
+                        setUploadDraft((prev) => ({ ...prev, file }));
+                      }}
+                    />
+                    {/*
+                      The dialog's instructional paragraph is deleted with the
+                      rest of the page's narration, and the one fact in it that
+                      a member could act on is now field help where it applies:
+                      "unknown departments or professors are auto-created" sits
+                      under those two fields, not over the whole form. "Every
+                      metadata field except the file itself is optional" is what
+                      the field labels already say by not being marked required.
+                    */}
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="grid gap-1">
-                        <Label htmlFor="bw-title">Title</Label>
+                      <UploadField id="bw-title" label="Title">
                         <Input
                           id="bw-title"
+                          className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.title}
                           onChange={(event) =>
                             setUploadDraft((prev) => ({
@@ -440,11 +468,12 @@ export function BackworkPage() {
                           }
                           placeholder="CS 3320 Midterm"
                         />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="bw-department">Department code</Label>
+                      </UploadField>
+                      <UploadField id="bw-department" label="Department code">
                         <Input
                           id="bw-department"
+                          aria-describedby="bw-taxonomy-note"
+                          className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.department_code}
                           onChange={(event) =>
                             setUploadDraft((prev) => ({
@@ -454,11 +483,11 @@ export function BackworkPage() {
                           }
                           placeholder="CS, MATH, ECON"
                         />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="bw-course">Course number</Label>
+                      </UploadField>
+                      <UploadField id="bw-course" label="Course number">
                         <Input
                           id="bw-course"
+                          className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.course_number}
                           onChange={(event) =>
                             setUploadDraft((prev) => ({
@@ -468,11 +497,12 @@ export function BackworkPage() {
                           }
                           placeholder="3320"
                         />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="bw-professor">Professor</Label>
+                      </UploadField>
+                      <UploadField id="bw-professor" label="Professor">
                         <Input
                           id="bw-professor"
+                          aria-describedby="bw-taxonomy-note"
+                          className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.professor_name}
                           onChange={(event) =>
                             setUploadDraft((prev) => ({
@@ -482,14 +512,14 @@ export function BackworkPage() {
                           }
                           placeholder="Dr. Lastname"
                         />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="bw-year">Year</Label>
+                      </UploadField>
+                      <UploadField id="bw-year" label="Year">
                         <Input
                           id="bw-year"
                           type="number"
                           min={2000}
                           max={2100}
+                          className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.year}
                           onChange={(event) =>
                             setUploadDraft((prev) => ({
@@ -498,9 +528,8 @@ export function BackworkPage() {
                             }))
                           }
                         />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="bw-semester">Semester</Label>
+                      </UploadField>
+                      <UploadField id="bw-semester" label="Semester">
                         <Select
                           value={uploadDraft.semester}
                           onValueChange={(value) =>
@@ -510,8 +539,17 @@ export function BackworkPage() {
                             }))
                           }
                         >
-                          <SelectTrigger id="bw-semester">
-                            <SelectValue placeholder="—" />
+                          {/*
+                            "Pick one" is the board's own unset-value copy
+                            (`1j`). It replaces a bare em dash, which the
+                            greenfield brand lock bans in product copy and which
+                            a screen reader announced as nothing at all.
+                          */}
+                          <SelectTrigger
+                            id="bw-semester"
+                            className={UPLOAD_FIELD_CLASS}
+                          >
+                            <SelectValue placeholder="Pick one" />
                           </SelectTrigger>
                           <SelectContent>
                             {SEMESTERS.map((s) => (
@@ -521,11 +559,11 @@ export function BackworkPage() {
                             ))}
                           </SelectContent>
                         </Select>
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="bw-assignment-type">
-                          Assignment type
-                        </Label>
+                      </UploadField>
+                      <UploadField
+                        id="bw-assignment-type"
+                        label="Assignment type"
+                      >
                         <Select
                           value={uploadDraft.assignment_type}
                           onValueChange={(value) =>
@@ -535,8 +573,11 @@ export function BackworkPage() {
                             }))
                           }
                         >
-                          <SelectTrigger id="bw-assignment-type">
-                            <SelectValue placeholder="—" />
+                          <SelectTrigger
+                            id="bw-assignment-type"
+                            className={UPLOAD_FIELD_CLASS}
+                          >
+                            <SelectValue placeholder="Pick one" />
                           </SelectTrigger>
                           <SelectContent>
                             {ASSIGNMENT_TYPES.map((t) => (
@@ -546,15 +587,16 @@ export function BackworkPage() {
                             ))}
                           </SelectContent>
                         </Select>
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="bw-assignment-number">
-                          Assignment number
-                        </Label>
+                      </UploadField>
+                      <UploadField
+                        id="bw-assignment-number"
+                        label="Assignment number"
+                      >
                         <Input
                           id="bw-assignment-number"
                           type="number"
                           min={0}
+                          className={UPLOAD_FIELD_CLASS}
                           value={uploadDraft.assignment_number}
                           onChange={(event) =>
                             setUploadDraft((prev) => ({
@@ -563,9 +605,8 @@ export function BackworkPage() {
                             }))
                           }
                         />
-                      </div>
-                      <div className="grid gap-1">
-                        <Label htmlFor="bw-variant">Document variant</Label>
+                      </UploadField>
+                      <UploadField id="bw-variant" label="Document variant">
                         <Select
                           value={uploadDraft.document_variant}
                           onValueChange={(value) =>
@@ -575,8 +616,11 @@ export function BackworkPage() {
                             }))
                           }
                         >
-                          <SelectTrigger id="bw-variant">
-                            <SelectValue placeholder="—" />
+                          <SelectTrigger
+                            id="bw-variant"
+                            className={UPLOAD_FIELD_CLASS}
+                          >
+                            <SelectValue placeholder="Pick one" />
                           </SelectTrigger>
                           <SelectContent>
                             {DOCUMENT_VARIANTS.map((v) => (
@@ -586,12 +630,24 @@ export function BackworkPage() {
                             ))}
                           </SelectContent>
                         </Select>
-                      </div>
+                      </UploadField>
                     </div>
-                    <div className="grid gap-1">
-                      <Label htmlFor="bw-tags">Tags (comma-separated)</Label>
+                    {/*
+                      Carries an id and is referenced by the two fields it is
+                      about. Field help that is only positioned near a control
+                      reaches sighted users and nobody else — and this sentence
+                      is the one fact rescued from the deleted dialog
+                      description, where Radix had wired it to the dialog for
+                      free.
+                    */}
+                    <p id="bw-taxonomy-note" className="text-[12.5px] text-muted">
+                      A department code or professor the chapter has not used
+                      before is created for this chapter on upload.
+                    </p>
+                    <UploadField id="bw-tags" label="Tags (comma-separated)">
                       <Input
                         id="bw-tags"
+                        className={UPLOAD_FIELD_CLASS}
                         value={uploadDraft.tags}
                         onChange={(event) =>
                           setUploadDraft((prev) => ({
@@ -601,42 +657,58 @@ export function BackworkPage() {
                         }
                         placeholder="curved, rubric-provided"
                       />
-                    </div>
-                  </form>
-                  <DialogFooter>
+                    </UploadField>
+                  </UploadSheetBody>
+                  <UploadSheetFooter>
                     {/*
                     Cancel is not gated: it closes the dialog rather than writing,
                     and a revoked subscription must still leave a way out.
                   */}
                     <Button
                       variant="secondary"
+                      className={UPLOAD_SHEET_BUTTON_CLASS}
                       onClick={() => uploadDialog.setOpen(false)}
                       disabled={uploading}
                     >
                       Cancel
                     </Button>
+                    {/*
+                      Enabled with no file chosen, per the board. The gate still
+                      disables it — that is a verdict about the chapter, not
+                      about this form.
+                    */}
                     <Button
                       form="backwork-upload-form"
                       type="submit"
-                      {...gate.controlProps(uploading || !uploadDraft.file)}
+                      className={UPLOAD_SHEET_BUTTON_CLASS}
+                      {...gate.controlProps(uploading)}
                     >
                       {uploading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : null}
                       Upload
                     </Button>
-                  </DialogFooter>
-                </DialogContent>
+                  </UploadSheetFooter>
+                </UploadSheetContent>
               </Dialog>
             </Can>
           </>
         }
       />
-      <p className="text-sm text-muted-foreground">
-        Academic library for the chapter. Browse and download with a signed URL,
-        or upload new resources. Duplicate files (matching SHA-256) are rejected
-        automatically.
-      </p>
+      {/*
+        The page-narration paragraph that sat here is deleted, not restyled.
+        The framework board lists "page-narration paragraphs" under Removed
+        outright, and `1f` pin 2 gives a route's main pane one toolbar row with
+        "no wrapper card, no description paragraph". The same paragraph on the
+        no-chapter path above went with it.
+
+        Nothing in it was load-bearing. "Academic library for the chapter"
+        described a library the member is looking at, "browse and download with
+        a signed URL" narrated the implementation of a Download button, and the
+        SHA-256 duplicate rule is a server behaviour a member meets as a clear
+        rejection when it fires — which is where it belongs, rather than as a
+        standing warning to everyone who never uploads a duplicate.
+      */}
 
       {/*
         Disable, don't hide (§5 rule 4): the library stays browsable and
@@ -661,15 +733,25 @@ export function BackworkPage() {
         <SubscriptionNotice gate={gate} feature="uploading backwork" />
       </Can>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Filters</CardTitle>
-          <CardDescription>
-            Combine search and filters; all fields are optional.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={applyFilters} className="grid gap-3 md:grid-cols-3">
+      {/*
+        A filter row, not a filter card. The board draws one toolbar row under
+        the title with no wrapper (`1f` pin 2), and the deletion list `1t` names
+        the Events "filter card" specifically as gone — this is the same card on
+        the next route over. Its title said "Filters" above a row of controls
+        labelled Search, Department and Professor, and its description said the
+        fields were optional, which none of them are marked as requiring.
+
+        The `<h2>` survives the card as the section label §2 draws above a
+        group, `sr-only` because the controls below are individually labelled
+        and a visible "FILTERS" eyebrow over a row of obvious filters is the
+        narration this lane is removing. It stays in the accessibility tree so
+        the region is still named for anyone navigating by landmark.
+      */}
+      <section aria-labelledby="bw-filters-label">
+        <h2 id="bw-filters-label" className="sr-only">
+          Filters
+        </h2>
+        <form onSubmit={applyFilters} className="grid gap-3 md:grid-cols-3">
             <div className="grid gap-1 md:col-span-2">
               <Label htmlFor="bw-search">Search</Label>
               <Input
@@ -805,27 +887,31 @@ export function BackworkPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex items-end gap-2 md:col-span-3">
-              <Button type="submit">Apply filters</Button>
-              <Button type="button" variant="secondary" onClick={clearFilters}>
-                Clear
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+          <div className="flex flex-wrap items-end gap-2 md:col-span-3">
+            <Button type="submit">Apply filters</Button>
+            <Button type="button" variant="secondary" onClick={clearFilters}>
+              Clear
+            </Button>
+          </div>
+        </form>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <BackworkGlyph className="h-4 w-4 text-muted-foreground" />
+      <section aria-labelledby="bw-list-label">
+        {/*
+          One toolbar row: the list's name and its count, on the page surface.
+          The glyph stays — it is the route's own mark and the only thing on
+          this row that is not a word.
+        */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <BackworkGlyph className="h-4 w-4 shrink-0 text-muted" />
+          <h2 id="bw-list-label" className={`${EYEBROW} text-muted-foreground`}>
             Resources
-          </CardTitle>
-          <CardDescription>
+          </h2>
+          <p className="text-[12.5px] text-muted">
             {resources.length} result{resources.length === 1 ? "" : "s"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </p>
+        </div>
+        <div className="pt-2">
           {/*
             Same trap as `/polls` (#872 / #873): `useBackworkResources` is
             `enabled: !!chapterId`, and a disabled query stays `isPending`
@@ -833,8 +919,11 @@ export function BackworkPage() {
             `paused` is offline with no data — not an empty library.
 
             The nested variants, not the whole-screen ones: these render
-            inside a `<CardContent>`, where a `bg-card` state on a `bg-card`
-            card is exactly 1.00:1 and the region disappears (§10). And the
+            still right now that the card is gone: they paint no fill of their
+            own, and the page is `--background`, so the whole-screen variants
+            would put a `--card` block where nothing else on the page has one
+            and rebuild the card this lane deleted (§10 is about the 1.00:1
+            composite these were first chosen for). And the
             offline branch comes first, because a paused query is `isPending`
             and would otherwise spin behind an offline member indefinitely
             (README §4 item 4) — but only when there is nothing loaded. README
@@ -876,7 +965,13 @@ export function BackworkPage() {
               description="Loosen the filters, or upload the first resource to build the library."
             />
           ) : (
-            <ul className="divide-y divide-border">
+            /*
+              The board's list grammar (`4d`): a hairline between rows and
+              nothing else — no card, no zebra, no per-row fill. `border-t` on
+              the block adds the rule above the first row, so the list reads as
+              a set rather than as rows that happen to be adjacent.
+            */
+            <ul className="divide-y divide-border border-t border-border">
               {resources.map((row) => {
                 const department = row.department_id
                   ? departmentById.get(row.department_id)
@@ -885,16 +980,25 @@ export function BackworkPage() {
                   ? professorById.get(row.professor_id)
                   : null;
                 return (
+                  /*
+                    Two lines and 8px of padding, down from three and 12. The
+                    tags used to take a third line of `Badge`s under the meta;
+                    they now sit inline at the end of the meta line, which is
+                    where a comma-separated list of short strings reads fine and
+                    costs the row ~24px less. `Redacted` stays a `Badge`,
+                    because it is a status rather than a label — §5's Semantic
+                    kind, and the one thing on the row a member must not miss.
+                  */
                   <li
                     key={row.id}
-                    className="flex flex-col gap-1 py-3 md:flex-row md:items-center md:justify-between"
+                    className="flex min-h-11 flex-col gap-1 py-2 md:flex-row md:items-center md:gap-3"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">
+                      <p className="truncate text-sm font-semibold">
                         {row.title ??
                           `${row.assignment_type ?? "Resource"} · ${row.course_number ?? ""}`}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="truncate text-[12.5px] text-muted">
                         {[
                           department?.code,
                           row.course_number,
@@ -903,21 +1007,13 @@ export function BackworkPage() {
                           row.year,
                           row.assignment_type,
                           row.document_variant,
+                          ...(row.tags ?? []),
                         ]
                           .filter(Boolean)
                           .join(" · ") || "No metadata"}
                       </p>
-                      {row.tags && row.tags.length ? (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {row.tags.map((tag) => (
-                            <Badge key={tag} variant="outline">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : null}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-2 md:ml-auto">
                       {row.is_redacted ? (
                         <Badge variant="outline">Redacted</Badge>
                       ) : null}
@@ -928,8 +1024,8 @@ export function BackworkPage() {
               })}
             </ul>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
     </div>
   );
 }

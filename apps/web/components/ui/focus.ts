@@ -120,6 +120,46 @@ export const FOCUS_RING_ALWAYS =
   "focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/25";
 
 /**
+ * `FOCUS_RING_OFFSET`'s recipe, delegated to a container the way
+ * `FOCUS_RING_WITHIN` delegates `FOCUS_RING`'s.
+ *
+ * For a well whose focusable control is visually hidden inside it — the upload
+ * sheet's file field (`components/shared/upload-sheet.tsx`), where the
+ * `<input type="file">` is `sr-only` so a `<label>` can carry the affordance.
+ * The input is what takes focus, so `focus-visible` on it would draw a ring
+ * around nothing a sighted keyboard user can see.
+ *
+ * The **offset** recipe rather than `FOCUS_RING_WITHIN`, for the reason
+ * `FOCUS_RING_OFFSET` exists: that well's border already encodes its error
+ * state, and `FOCUS_RING_WITHIN` swaps the border, so focusing an invalid
+ * field would erase the one thing the border was saying.
+ *
+ * **The offset is `--popover`, not `--background`, and that is the one line
+ * that differs from `FOCUS_RING_OFFSET`.** Tailwind's ring-offset is a literal
+ * band of colour, not a hole punched through to whatever is really behind the
+ * element. `FOCUS_RING_OFFSET` names `--background` because its hosts sit on
+ * it; this recipe's host is a well inside a sheet, so the band falls on
+ * `--popover`. Painting `--background` there put a third dark tone between the
+ * well and the sheet, measurably distinct at 1.245:1 rather than the 1.000:1 a
+ * matched band gives — a visible seam around the control, in the one state
+ * that exists to make the control obvious.
+ *
+ * Moving it costs contrast the ring can afford. Against `--popover` the house
+ * seed's accent-11 measures 9.21:1, and the worst of the 19 seeded accents
+ * — the one `focus-contrast.spec.ts` records at 8.48:1 against `--background`
+ * — scales to 6.81:1. README §6's floor for non-text UI is 3:1, so the margin
+ * is more than doubled even at the worst seed.
+ *
+ * Spelled out rather than derived from `FOCUS_RING_OFFSET` at runtime. A
+ * `.replace()` over that constant produces the right string and the wrong
+ * build: Tailwind scans source text, so a class that never appears literally is
+ * never emitted, and the ring silently does not exist — the same failure mode
+ * the top-of-file comment describes for an unknown variant.
+ */
+export const FOCUS_RING_OFFSET_WITHIN =
+  "focus-within:outline-none focus-within:ring-2 focus-within:ring-accent-text focus-within:ring-offset-2 focus-within:ring-offset-popover";
+
+/**
  * For a container that owns the focus indicator on behalf of the control inside
  * it — the chat composer, whose editable surface is a ProseMirror node inside a
  * framed well.
