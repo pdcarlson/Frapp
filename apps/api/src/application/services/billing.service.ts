@@ -40,6 +40,7 @@ import { SystemRoleKeys } from '#domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import { toReportableError } from '../../infrastructure/observability/reportable-error';
 import { pseudonymizeChapterId } from '../../infrastructure/observability/pseudonyms';
 
 export interface CreateCheckoutInput {
@@ -93,6 +94,36 @@ const UNKNOWN_REF_REPORT_COOLDOWN_MS = 15 * 60_000;
  * it exists to report, exactly as `auth-failure-spike.ts` warns.
  */
 const MAX_TRACKED_UNKNOWN_REFS = 500;
+
+/**
+ * Stripe `resource_missing` aimed at Checkout Session `customer` — the stored
+ * `stripe_customer_id` is not on the configured account (key/account mismatch,
+ * deleted customer). Price/product misses use a different `param` and must stay
+ * 503s.
+ *
+ * Duck-typed on purpose: this layer talks to `IBillingProvider`, not the Stripe
+ * SDK, so `instanceof Stripe.errors.StripeInvalidRequestError` is not a
+ * boundary we own. `code` + (`param === 'customer'` or the SDK's "No such
+ * customer" prose) is the contract the Node SDK actually throws.
+ */
+function isUnknownStripeCustomerError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as {
+    code?: unknown;
+    param?: unknown;
+    message?: unknown;
+  };
+  if (candidate.code !== 'resource_missing') return false;
+  if (candidate.param === 'customer') return true;
+  return (
+    typeof candidate.message === 'string' &&
+    /no such customer/i.test(candidate.message)
+  );
+}
+
+function asErrorCause(error: unknown): Error {
+  return error instanceof Error ? error : toReportableError(error);
+}
 
 @Injectable()
 export class BillingService {
@@ -177,30 +208,53 @@ export class BillingService {
       // orphaned immediately — and permanently if checkout was abandoned —
       // leaving `POST /v1/billing/portal` opening a portal for a customer that
       // owns no subscription.
-      let customerId = chapter.stripe_customer_id;
+      const storedCustomerId = chapter.stripe_customer_id;
+      let customerId = storedCustomerId;
       if (!customerId) {
-        customerId = await this.billingProvider.createCustomer(
+        customerId = await this.mintAndPersistCustomer(
+          chapter,
           input.customerEmail,
-          chapter.name,
         );
-        await this.chapterRepo.update(chapter.id, {
-          stripe_customer_id: customerId,
-        });
       }
 
-      checkoutUrl = await this.billingProvider.createCheckoutSession({
-        chapterId: input.chapterId,
-        customerId,
-        successUrl: input.successUrl,
-        cancelUrl: input.cancelUrl,
-        // The trial is once per chapter. Having ever held a subscription is the
-        // durable "already had its trial" mark; status is not, since a chapter
-        // can return to `canceled` repeatedly. Now that the session carries the
-        // chapter's own customer, Stripe can see that history too — but this
-        // stays the boundary rather than a second line of defence, because it
-        // is keyed on our record rather than on what Stripe infers.
-        grantTrial: !chapter.subscription_id,
-      });
+      const openSession = (id: string) =>
+        this.billingProvider.createCheckoutSession({
+          chapterId: input.chapterId,
+          customerId: id,
+          successUrl: input.successUrl,
+          cancelUrl: input.cancelUrl,
+          // The trial is once per chapter. Having ever held a subscription is the
+          // durable "already had its trial" mark; status is not, since a chapter
+          // can return to `canceled` repeatedly. Now that the session carries the
+          // chapter's own customer, Stripe can see that history too — but this
+          // stays the boundary rather than a second line of defence, because it
+          // is keyed on our record rather than on what Stripe infers.
+          grantTrial: !chapter.subscription_id,
+        });
+
+      try {
+        checkoutUrl = await openSession(customerId);
+      } catch (error) {
+        // FRAPP-API-4: a leftover `stripe_customer_id` from another Stripe
+        // account (or a deleted customer) is `resource_missing` here. Clear
+        // it, mint once, retry the session once. A missing Price is a different
+        // `param` and must still 503. Do not loop — a second miss is a 503.
+        if (storedCustomerId && isUnknownStripeCustomerError(error)) {
+          this.logger.warn(
+            `Stored Stripe customer ${storedCustomerId} is unknown on this Stripe account; clearing and minting a replacement for chapter ${input.chapterId}`,
+          );
+          await this.chapterRepo.update(chapter.id, {
+            stripe_customer_id: null,
+          });
+          customerId = await this.mintAndPersistCustomer(
+            chapter,
+            input.customerEmail,
+          );
+          checkoutUrl = await openSession(customerId);
+        } else {
+          throw error;
+        }
+      }
     } catch (error) {
       logThrowable(
         this.logger,
@@ -208,8 +262,12 @@ export class BillingService {
         `Failed to create checkout session for chapter ${input.chapterId}`,
         error,
       );
+      // `cause` is the channel that reaches Sentry. AllExceptionsFilter
+      // captures this 503; LinkedErrors follows `Error.cause`. `extra` on
+      // `captureException` would be dropped by `beforeSend` (allowlist).
       throw new ServiceUnavailableException(
         'Billing service is temporarily unavailable',
+        { cause: asErrorCause(error) },
       );
     }
 
@@ -230,6 +288,20 @@ export class BillingService {
     );
 
     return checkoutUrl;
+  }
+
+  private async mintAndPersistCustomer(
+    chapter: Chapter,
+    customerEmail: string,
+  ): Promise<string> {
+    const customerId = await this.billingProvider.createCustomer(
+      customerEmail,
+      chapter.name,
+    );
+    await this.chapterRepo.update(chapter.id, {
+      stripe_customer_id: customerId,
+    });
+    return customerId;
   }
 
   async createPortalSession(input: CreatePortalInput): Promise<string> {
