@@ -14,8 +14,10 @@ export const size = {
 export const contentType = "image/png";
 
 /**
- * Social preview card (Open Graph / Twitter). Locked emblem B from
- * Design's raster, not the reconstructed crest SVG.
+ * Social preview card (Open Graph / Twitter). Locked emblem B, synced from
+ * the canonical 1024² raster that `rasterize:brand-assets` renders from
+ * `signet-emblem-B.svg` — a raster here because Satori cannot lay out an
+ * external SVG, not because the vector is the lesser source (#2153).
  */
 export default async function OpenGraphImage() {
   const emblemBytes = await readFile(

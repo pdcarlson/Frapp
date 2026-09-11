@@ -1,94 +1,244 @@
 #!/usr/bin/env node
 /**
- * Verifies synced Next app icons match packages/brand-assets (byte-identical)
- * and that the Design master is a real PNG (not a JPEG leftover).
+ * The CI gate over the committed Signet brand assets.
+ *
+ * Three independent properties, because before #2153 this script checked only
+ * the first one and it proved nothing about the mark:
+ *
+ *   1. PARITY — synced Next app icons are byte-identical to their canonical
+ *      source. Catches a hand-edited copy or a forgotten `sync:brand-assets`.
+ *
+ *   2. VECTORS — every shipped SVG paints the locked pair and nothing else,
+ *      in the shared coordinate frame. Not just the two the rasters render
+ *      from: `signet-emblem-B-rounded.svg` and `frapp-lockup.svg` are
+ *      `@repo/brand-assets` exports that reach consumers directly, and no
+ *      raster check can see them.
+ *
+ *   3. PIXELS — the committed rasters are drawn in the locked pair, carry the
+ *      channel shape their consumer requires, every glyph layer is non-empty,
+ *      and the rasters are still a render of the committed vector.
+ *
+ * Hash parity is blind to 2 and 3: every file could agree perfectly with every
+ * other file and still be the wrong colour, which is exactly the state #2153
+ * found — a full pixel census of the pre-#2153 masters returned `#DDB844` in
+ * ZERO pixels while this script reported success.
+ *
+ * This reads pixels rather than trusting a re-run of `rasterize:brand-assets`,
+ * because the gate has to hold for whatever is committed — including a file
+ * someone dropped in by hand.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
+import {
+  FIELD,
+  FIELD_HEX,
+  GOLD_HEX,
+  RENDER_AGREEMENT_MIN,
+  SYNCED,
+  assertGlyphCoverage,
+  assertLockedPair,
+  assertSvgLocked,
+  census,
+  coverageMask,
+  glyphCoverage,
+  maskIou,
+} from "./lib/brand-pixels.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
+const repo = (rel) => join(root, rel);
 
-const master = join(
-  root,
-  "packages/brand-assets/assets/signet-emblem-B-locked.png",
-);
+const MASTER_SVG = "packages/brand-assets/assets/signet-emblem-B.svg";
+const GLYPH_SVG = "packages/brand-assets/assets/signet-emblem-B-glyph.svg";
+const MASTER_RASTER = "packages/brand-assets/assets/signet-emblem-B-1024.png";
 
-const pairs = [
-  {
-    canonical: join(root, "packages/brand-assets/assets/icon.png"),
-    targets: [
-      join(root, "apps/landing/app/icon.png"),
-      join(root, "apps/web/app/icon.png"),
-    ],
-  },
-  {
-    canonical: join(root, "packages/brand-assets/assets/apple-icon.png"),
-    targets: [
-      join(root, "apps/landing/app/apple-icon.png"),
-      join(root, "apps/web/app/apple-icon.png"),
-    ],
-  },
-  {
-    canonical: join(
-      root,
-      "packages/brand-assets/assets/signet-emblem-B-tile.png",
-    ),
-    targets: [
-      join(root, "apps/landing/public/brand/signet-emblem-B.png"),
-      join(root, "apps/web/public/brand/signet-emblem-B.png"),
-      join(root, "apps/landing/app/opengraph-emblem.png"),
-    ],
-  },
+/** Every shipped vector. `requireField` is false for the crest-alone glyph. */
+const vectors = [
+  { rel: MASTER_SVG },
+  { rel: GLYPH_SVG, requireField: false },
+  { rel: "packages/brand-assets/assets/signet-emblem-B-rounded.svg" },
+  { rel: "packages/brand-assets/assets/frapp-lockup.svg" },
+];
+
+/**
+ * Opaque RGB rasters. All of them, not a sample: the 16px favicon is the one
+ * most likely to lose the mark to antialiasing, and the mobile `icon.png` is
+ * the one that reaches an app store.
+ */
+const opaqueRasters = [
+  "packages/brand-assets/assets/signet-emblem-B-16.png",
+  "packages/brand-assets/assets/signet-emblem-B-32.png",
+  "packages/brand-assets/assets/signet-emblem-B-48.png",
+  "packages/brand-assets/assets/signet-emblem-B-180.png",
+  MASTER_RASTER,
+  "apps/mobile/assets/images/icon.png",
+  "apps/mobile/assets/images/favicon.png",
+];
+
+/**
+ * Crest-on-transparency layers. Their alpha IS the mark, so an empty layer is
+ * visible here — which was NOT true while these composited an opaque tile: a
+ * charcoal square with the crest missing measured exactly the same 43.58%.
+ */
+const glyphLayers = [
+  "packages/brand-assets/assets/signet-emblem-B-glyph-1024.png",
+  "apps/mobile/assets/images/adaptive-icon.png",
+  "apps/mobile/assets/images/splash-icon.png",
+];
+
+/** White-on-transparent, deliberately off the brand axis: alpha only. */
+const monochromeLayers = [
+  "apps/mobile/assets/images/adaptive-icon-monochrome.png",
 ];
 
 function sha256(buf) {
   return createHash("sha256").update(buf).digest("hex");
 }
 
-function isPng(buf) {
-  return buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
-}
-
 let failed = false;
 
-if (!existsSync(master)) {
-  console.error("missing: packages/brand-assets/assets/signet-emblem-B-locked.png");
+function fail(message) {
+  console.error(message);
   failed = true;
-} else {
-  const masterBuf = readFileSync(master);
-  if (!isPng(masterBuf)) {
-    console.error(
-      "master is not a PNG — rasterize will refuse it. Commit Design's PNG, do not rasterize from SVG.",
-    );
-    failed = true;
+}
+
+function present(rel, hint) {
+  if (existsSync(repo(rel))) return true;
+  fail(`missing: ${rel}${hint ? ` — ${hint}` : ""}`);
+  return false;
+}
+
+// ── 1. Vectors ──────────────────────────────────────────────────────────────
+for (const { rel, requireField } of vectors) {
+  if (!present(rel, "the vector sources every raster renders from")) continue;
+  try {
+    assertSvgLocked(readFileSync(repo(rel), "utf8"), rel, { requireField });
+  } catch (error) {
+    fail(String(error.message ?? error));
   }
 }
 
-for (const { canonical, targets } of pairs) {
-  if (!existsSync(canonical)) {
-    console.error(
-      `missing: ${canonical} — run npm run rasterize:brand-assets then npm run sync:brand-assets`,
-    );
-    failed = true;
+// ── 2. Parity ───────────────────────────────────────────────────────────────
+let syncedCount = 0;
+for (const { canonical, targets } of SYNCED) {
+  if (
+    !present(
+      canonical,
+      "run npm run rasterize:brand-assets then npm run sync:brand-assets",
+    )
+  ) {
     continue;
   }
-  const expectedHash = sha256(readFileSync(canonical));
+  const expectedHash = sha256(readFileSync(repo(canonical)));
   for (const dest of targets) {
-    let actual;
-    try {
-      actual = readFileSync(dest);
-    } catch {
-      console.error(`missing: ${dest}`);
-      failed = true;
-      continue;
+    if (!present(dest, "run: node scripts/sync-brand-assets.mjs")) continue;
+    syncedCount += 1;
+    if (sha256(readFileSync(repo(dest))) !== expectedHash) {
+      fail(`drift: ${dest}\n  run: node scripts/sync-brand-assets.mjs`);
     }
-    if (sha256(actual) !== expectedHash) {
-      console.error(`drift: ${dest}\n  run: node scripts/sync-brand-assets.mjs`);
-      failed = true;
+  }
+}
+
+// ── 3. Pixels ───────────────────────────────────────────────────────────────
+async function decode(rel) {
+  const buffer = readFileSync(repo(rel));
+  const [{ data, info }, meta] = await Promise.all([
+    sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true }),
+    sharp(buffer).metadata(),
+  ]);
+  return { data, info, meta };
+}
+
+for (const rel of opaqueRasters) {
+  if (!present(rel, "run npm run rasterize:brand-assets")) continue;
+  try {
+    const { data, info, meta } = await decode(rel);
+    if (meta.channels !== 3) {
+      throw new Error(
+        `${rel}: has ${meta.channels} channels — must be opaque RGB, Apple rejects an alpha channel on a store icon (spec/ui/assets.md §7)`,
+      );
     }
+    assertLockedPair(
+      census(data, info.channels, info.width, info.height, 255),
+      rel,
+      { edge: info.width },
+    );
+  } catch (error) {
+    fail(`${rel}: ${String(error.message ?? error)}`.replace(`${rel}: ${rel}: `, `${rel}: `));
+  }
+}
+
+for (const rel of glyphLayers) {
+  if (!present(rel, "run npm run rasterize:brand-assets")) continue;
+  try {
+    const { data, info, meta } = await decode(rel);
+    if (meta.channels !== 4) {
+      throw new Error(`${rel}: must carry an alpha channel`);
+    }
+    assertLockedPair(
+      census(data, info.channels, info.width, info.height, 255),
+      rel,
+      { requireField: false },
+    );
+    assertGlyphCoverage(
+      glyphCoverage(data, info.channels, info.width, info.height),
+      rel,
+    );
+  } catch (error) {
+    fail(`${rel}: ${String(error.message ?? error)}`.replace(`${rel}: ${rel}: `, `${rel}: `));
+  }
+}
+
+for (const rel of monochromeLayers) {
+  if (!present(rel, "run npm run rasterize:brand-assets")) continue;
+  try {
+    const { data, info } = await decode(rel);
+    assertGlyphCoverage(
+      glyphCoverage(data, info.channels, info.width, info.height),
+      rel,
+    );
+  } catch (error) {
+    fail(`${rel}: ${String(error.message ?? error)}`.replace(`${rel}: ${rel}: `, `${rel}: `));
+  }
+}
+
+// ── 4. The rasters are still a render of the vector ─────────────────────────
+// The property hash parity cannot express: someone edits the SVG, does not
+// re-run rasterize, and the committed PNGs quietly go on describing the old
+// artwork. That divergence between vector and raster IS #2153.
+//
+// This compares GLYPH MASKS, so it is colour-blind by construction — a recolour
+// scores ~100% here. Property 1 above is what catches that, which is why it
+// covers every SVG and not only this pair.
+if (existsSync(repo(MASTER_SVG)) && existsSync(repo(MASTER_RASTER))) {
+  try {
+    const shape = async (input) => {
+      const { data, info } = await sharp(input)
+        .resize(1024, 1024, { fit: "fill" })
+        .flatten({ background: { ...FIELD, alpha: 1 } })
+        .removeAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      return coverageMask(data, info.channels, info.width, info.height);
+    };
+    const agreement = maskIou(
+      await shape(readFileSync(repo(MASTER_SVG))),
+      await shape(readFileSync(repo(MASTER_RASTER))),
+    );
+    if (agreement < RENDER_AGREEMENT_MIN) {
+      fail(
+        `stale: signet-emblem-B-1024.png agrees with signet-emblem-B.svg on only ` +
+          `${(agreement * 100).toFixed(3)}% of the glyph (floor ${(RENDER_AGREEMENT_MIN * 100).toFixed(1)}%)\n` +
+          `  the vector master was edited without re-rendering — run: npm run rasterize:brand-assets`,
+      );
+    }
+  } catch (error) {
+    fail(
+      `could not compare signet-emblem-B.svg to its raster: ${String(error.message ?? error)}`,
+    );
   }
 }
 
@@ -96,5 +246,8 @@ if (failed) {
   process.exit(1);
 }
 console.log(
-  "brand-assets: synced icon.png, apple-icon.png, and emblem tile match canonical files",
+  `brand-assets: ${vectors.length} vectors paint ${GOLD_HEX} on ${FIELD_HEX}; ` +
+    `${syncedCount} synced copies match canonical; ` +
+    `${opaqueRasters.length} opaque rasters in the locked pair; ` +
+    `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty`,
 );

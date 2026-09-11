@@ -93,9 +93,11 @@ Two things the board does **not** settle, recorded so a later lane does not over
   alternative L-06 floats, and it does not discuss adjacent-step pitch at all. L-06 stays open; the
   board is evidence for the current value, not against the concern.
 - **L-08.** The board writes the mark as "`#DDB844` on `#1A1A1A`, raster only" — the spec'd pair,
-  which the committed raster contradicts. The board was drawn from the same spec, so this is the
-  spec restated, **not** independent evidence about the raster.
-  [#2153](https://github.com/pdcarlson/Frapp/issues/2153) is unaffected.
+  which the committed raster contradicted at the time. The board was drawn from the same spec, so
+  this is the spec restated, **not** independent evidence about the raster, and it moved
+  [#2153](https://github.com/pdcarlson/Frapp/issues/2153) not at all. That issue was closed
+  separately, by re-exporting the mark at the spec'd pair; the board's label is now true of the
+  pixels for a reason outside the board.
 
 ## What goes here
 

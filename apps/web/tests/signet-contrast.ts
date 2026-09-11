@@ -124,7 +124,8 @@ export const AA_NON_TEXT = 3;
  * cause is that `--surface-1` is now achromatic `#1A1A1A` while the other
  * three steps stayed warm, so the ladder is no longer one hue family and a
  * pure-luminance model understates the difference. (That value was adopted as
- * "the mark's field"; it is not — the committed mark measures `#151515`. See
+ * "the mark's field", was not it while the raster measured `#151515`, and is
+ * it again since #2153 re-exported the mark. See
  * `spec/ui/web-greenfield/tokens.md` L-08. The hue argument here holds either
  * way: achromatic beside warm is the point, not which achromatic.)
  */
