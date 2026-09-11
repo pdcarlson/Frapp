@@ -96,10 +96,11 @@ export const AA_NON_TEXT = 3;
  *
  * It lives here as a constant because the greenfield surface ladder
  * (foundations.md §2) tripped four scattered `1.1` literals at once, without
- * any of the pairs becoming visible: `table-contrast:44` and
- * `elevation-contrast:56` (both 1.1046), `profile-contrast:59` (1.1007) and
- * `status-contrast:92` (1.1108). Literals that must move together are the
- * shape this file exists to collapse.
+ * any of the pairs becoming visible: one each in `table-contrast` and
+ * `elevation-contrast` (both 1.1046), `profile-contrast` (1.1007) and
+ * `status-contrast` (1.1108). Literals that must move together are the
+ * shape this file exists to collapse. (Named by file: the line numbers this
+ * list used to carry had already drifted off the assertions.)
  *
  * **1.15, not 1.2.** The four measurements cluster at 1.10–1.11, so the bound
  * has to clear them; but it is kept as low as that allows, because every point
@@ -120,9 +121,12 @@ export const AA_NON_TEXT = 3;
  * `--surface-1` is therefore *less* separable than before, and nothing here
  * asserts a floor on that — these constants are `toBeLessThan` pins recording
  * "these two alias", not a guarantee the ladder stays separable. Part of the
- * cause is that `--surface-1` is now achromatic `#1A1A1A` (it is the mark's
- * field) while the other three steps stayed warm, so the ladder is no longer
- * one hue family and a pure-luminance model understates the difference.
+ * cause is that `--surface-1` is now achromatic `#1A1A1A` while the other
+ * three steps stayed warm, so the ladder is no longer one hue family and a
+ * pure-luminance model understates the difference. (That value was adopted as
+ * "the mark's field"; it is not — the committed mark measures `#151515`. See
+ * `spec/ui/web-greenfield/tokens.md` L-08. The hue argument here holds either
+ * way: achromatic beside warm is the point, not which achromatic.)
  */
 export const INDISTINGUISHABLE = 1.15;
 

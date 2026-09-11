@@ -23,7 +23,7 @@
  * one is a defect (#1151) and fails `tailwind.config.spec.ts`.
  *
  * The accent slot (`--primary` … `--accent-text`) holds the HOUSE DEFAULT —
- * the `#F2B72E` seed run through `deriveSignetPalette`, exactly as a chapter
+ * the `#DDB844` seed run through `deriveSignetPalette`, exactly as a chapter
  * with no accent of its own resolves (`accent-engine.md` §3). A chapter that
  * chose a seed overrides these at runtime: `use-chapter-theme.ts` maps the
  * persisted `--signet-accent-*` tokens onto these names via
