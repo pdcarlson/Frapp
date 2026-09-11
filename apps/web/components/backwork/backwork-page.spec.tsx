@@ -332,22 +332,33 @@ describe("BackworkPage subscription gating", () => {
     await waitFor(() => expect(screen.getByRole("status")).toHaveFocus());
   });
 
-  it("keeps the submit's own file guard on top of the gate", async () => {
-    // The submit is `controlProps(uploading || !file)`, not a bare `disabled`:
-    // spreading the gate and then writing `disabled` afterwards would drop it.
+  it("leaves Upload enabled with no file and answers the press inline", async () => {
+    /*
+      This case reverses deliberately. It used to assert Upload was DISABLED
+      with no file attached — `controlProps(uploading || !file)`. The framework
+      board (`1j`) says "Upload stays enabled" and moves the rejection inline
+      onto the field, because a disabled submit over nine optional fields does
+      not tell a member which one is wrong.
+
+      What survives the reversal: the press still requests no signed-URL
+      ticket, and Cancel is still not gated, since a revoked subscription must
+      leave a way out of the form.
+    */
     chapter.active();
     render(<BackworkPage />);
     await userEvent.click(uploadTrigger());
 
-    const dialog = screen.getByRole("dialog");
-    expect(
-      within(dialog).getByRole("button", { name: /^upload$/i }),
-    ).toBeDisabled();
-    // Cancel is not a write, and a revoked subscription must still leave a way
-    // out of the form.
-    expect(
-      within(dialog).getByRole("button", { name: /cancel/i }),
-    ).toBeEnabled();
+    const dialog = within(screen.getByRole("dialog"));
+    const submit = dialog.getByRole("button", { name: /^upload$/i });
+    expect(submit).toBeEnabled();
+
+    await userEvent.click(submit);
+
+    expect(await dialog.findByRole("alert")).toHaveTextContent(
+      /choose a file to upload/i,
+    );
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+    expect(dialog.getByRole("button", { name: /cancel/i })).toBeEnabled();
   });
 
   // #1040: the call site read `download_url` while the API returns

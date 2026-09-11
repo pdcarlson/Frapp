@@ -97,7 +97,7 @@ No CI check enforces this lock today. It is a review rule.
 | 1 | [#2143](https://github.com/pdcarlson/Frapp/issues/2143) | Spec lock, foundation tokens, chapter accent | This directory plus [`tokens.md`](tokens.md) |
 | 2 | [#2141](https://github.com/pdcarlson/Frapp/issues/2141) | Shell: sidebar, top bar, kill the command palette, scrollbars | Consumes the tokens from lane 1 |
 | 3 | [#2142](https://github.com/pdcarlson/Frapp/issues/2142) | Chat: channels, kill the Details rail, bottom composer | Landed, with four board items deliberately left — see below. Adds the **full-bleed route contract** |
-| 4 | [#2144](https://github.com/pdcarlson/Frapp/issues/2144) | Resources, Backwork, Documents | |
+| 4 | [#2144](https://github.com/pdcarlson/Frapp/issues/2144) | Resources, Backwork, Documents | Landed. Flattens both routes onto the shell, deletes their narration and wrapper cards, and takes the upload dialogs to board `1j`. The board draws **no** Documents or Backwork page body, so the list grammar is derived — see [`deletion-checklist.md`](deletion-checklist.md) §8 |
 | 5 | [#2146](https://github.com/pdcarlson/Frapp/issues/2146) | Directory, Finance, Admin | |
 | 6 | [#2145](https://github.com/pdcarlson/Frapp/issues/2145) | Chat cold load and performance | |
 | 7 | [#2147](https://github.com/pdcarlson/Frapp/issues/2147) | Chapter accent, 404 and error polish | |

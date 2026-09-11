@@ -120,6 +120,30 @@ export const FOCUS_RING_ALWAYS =
   "focus:outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/25";
 
 /**
+ * `FOCUS_RING_OFFSET`'s recipe, delegated to a container the way
+ * `FOCUS_RING_WITHIN` delegates `FOCUS_RING`'s.
+ *
+ * For a well whose focusable control is visually hidden inside it — the upload
+ * sheet's file field (`components/shared/upload-sheet.tsx`), where the
+ * `<input type="file">` is `sr-only` so a `<label>` can carry the affordance.
+ * The input is what takes focus, so `focus-visible` on it would draw a ring
+ * around nothing a sighted keyboard user can see.
+ *
+ * The **offset** recipe rather than `FOCUS_RING_WITHIN`, for the reason
+ * `FOCUS_RING_OFFSET` exists: that well's border already encodes its error
+ * state, and `FOCUS_RING_WITHIN` swaps the border, so focusing an invalid
+ * field would erase the one thing the border was saying.
+ *
+ * Spelled out rather than derived from `FOCUS_RING_OFFSET` at runtime. A
+ * `.replace()` over that constant produces the right string and the wrong
+ * build: Tailwind scans source text, so a class that never appears literally is
+ * never emitted, and the ring silently does not exist — the same failure mode
+ * the top-of-file comment describes for an unknown variant.
+ */
+export const FOCUS_RING_OFFSET_WITHIN =
+  "focus-within:outline-none focus-within:ring-2 focus-within:ring-accent-text focus-within:ring-offset-2 focus-within:ring-offset-background";
+
+/**
  * For a container that owns the focus indicator on behalf of the control inside
  * it — the chat composer, whose editable surface is a ProseMirror node inside a
  * framed well.

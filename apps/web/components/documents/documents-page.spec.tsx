@@ -274,15 +274,42 @@ describe("DocumentsPage subscription gating", () => {
     expect(uploadTrigger()).toBeDisabled();
   });
 
-  it("keeps the submit's own file guard intact behind the gate", async () => {
-    // The gate ORs in the caller's conditions rather than replacing them: an
-    // active chapter with no file attached still cannot submit.
+  it("leaves Upload enabled with no file and answers the press inline", async () => {
+    /*
+      This case reverses deliberately. It used to assert that Upload was
+      DISABLED with no file attached, which was the page's own guard ORed into
+      `gate.controlProps`. The framework board (`1j`) says "Upload stays
+      enabled" and puts the rejection inline on the field instead — a disabled
+      control with no explanation is the state a member cannot get out of,
+      because nothing tells them which of six fields is the problem.
+
+      What has to survive the reversal is that the press still cannot upload
+      anything: no signed-URL ticket is requested.
+    */
     chapter.active();
     render(<DocumentsPage />);
     await userEvent.click(uploadTrigger());
 
     const dialog = within(screen.getByRole("dialog"));
-    expect(dialog.getByRole("button", { name: /^upload$/i })).toBeDisabled();
+    const submit = dialog.getByRole("button", { name: /^upload$/i });
+    expect(submit).toBeEnabled();
+
+    await userEvent.click(submit);
+
+    expect(await dialog.findByRole("alert")).toHaveTextContent(
+      /choose a file to upload/i,
+    );
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+  });
+
+  it("still lets the gate disable the submit once the chapter is blocked", async () => {
+    // The other half of what the case above used to cover, kept on its own:
+    // the submit spreads `gate.controlProps(...)` rather than writing a bare
+    // `disabled` after it, which would silently drop the gate.
+    chapter.pastDue();
+    render(<DocumentsPage />);
+
+    expect(uploadTrigger()).toBeDisabled();
   });
 });
 
