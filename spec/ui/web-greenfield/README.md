@@ -52,17 +52,21 @@ governs presentation. It never changes what the product does.
 
 Binding for every lane, and none of them negotiable inside #2140.
 
-**This table names the locks; it does not restate their values.** Every row below except the last is
-already owned by another document, and the values live there only — a second copy that is correct
-today is still a defect ([`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md)).
-Follow the link before building anything that depends on a specific hex or an exact wording.
+**This table is a routing table, not a second copy of the brand.** Every row except the last is owned
+elsewhere, and a second copy that is correct today is still a defect
+([`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md)), so the
+values live at the link and not here. Follow it before building anything that turns on a specific
+hex or an exact wording. Links carry heading anchors on purpose: a bare `§2` in prose is checked by
+nothing, while an anchor is verified by the `link-check` job.
+
+One row deliberately breaks that rule and says so in place.
 
 | Lock | What a lane needs to know | Owned by |
 | ---- | ------------------------- | -------- |
-| Emblem | Locked emblem B is the shipping mark, and the vocabulary for describing it is closed. Read the banned list there before writing any copy about it | [`../brand-identity.md`](../brand-identity.md) §2 |
-| Mark colors | Fixed gold on a fixed charcoal field. Do not sample them from a screenshot and do not restyle them piecemeal | [`../assets.md`](../assets.md) §1, [`../brand-identity.md`](../brand-identity.md) §2 |
-| Mark never retints | The mark and logo **MUST NOT** take the chapter accent, ever. Chapter theming recolors product UI; the brand itself does not move. Restated in full because it is the lock a greenfield lane is most likely to break by accident, wiring the mark to `--primary` along with everything else | [`../brand-identity.md`](../brand-identity.md) §2 |
-| No Frapp chrome | No customer-facing "Frapp" string, wordmark, or legacy bone/bronze/Geist visual on this surface. Code identifiers, `@repo/*` packages and `frapp.live` domains stay as they are | [`../brand-identity.md`](../brand-identity.md) §1 |
+| Emblem | Locked emblem B is the shipping mark, and how it may be *described in copy* is constrained by that section's opening rule — read it before writing any product or marketing string about the mark. (The separate "Banned logo vocabulary" list under it governs future mark **exploration**, not copy, and does not answer this question.) | [`brand-identity.md` § 2 The mark](../brand-identity.md#2-the-mark) |
+| Mark colors | Fixed gold on a fixed charcoal field. Do not sample them from a screenshot and do not restyle them piecemeal | [`assets.md` § 1 Status](../assets.md#1-status-locked-emblem-b), [`brand-identity.md` § 2](../brand-identity.md#2-the-mark) |
+| Mark never retints | The mark and logo **MUST NOT** take the chapter accent, ever. Chapter theming recolors product UI; the brand itself does not move. **This is a restatement**, kept because it is the lock a greenfield lane is most likely to break by accident, wiring the mark to `--primary` with everything else. If the rule is ever narrowed at its owner, this copy has to be narrowed with it | [`brand-identity.md` § 2](../brand-identity.md#2-the-mark) |
+| No Frapp chrome | No customer-facing "Frapp" string or wordmark, and no legacy bone/bronze/Geist visual on this surface. Code identifiers, `@repo/*` packages and `frapp.live` domains stay as they are. Three owners, not one: the naming rule, the Geist rejection, and the bone/bronze freeze each live in a different section | naming [§ 1](../brand-identity.md#1-identity) · Geist [§ 3](../brand-identity.md#3-decisions-recorded-as-of-this-doc) · bone/bronze [§ 5](../brand-identity.md#5-what-still-ships-legacy) |
 | No em dashes | **New with this epic**, and the only row here without a prior home. Product copy on the web greenfield does not use em dashes. See the scope note below | this document, until it moves |
 
 ### Scope note on "no em dashes"
@@ -124,9 +128,12 @@ greenfield PR is not blocked on any of them.
   blocked on this epic.
 - **Stripe secrets in Infisical**, and billing provider configuration generally.
 - **Deployment**: Vercel and Render configuration, environment promotion, release mechanics.
-- **Restore flows and the USPTO search**, including anything that would reopen the mark or
-  commission the brand artwork that search still blocks. The mark is locked; see §2 and
-  [`../brand-identity.md`](../brand-identity.md) §2, which owns what is and is not commissioned.
+- **Restore flows and the USPTO search**, including anything that would reopen the mark or commission
+  the brand artwork that search still blocks. The mark is locked; see §2 above and
+  [`brand-identity.md` § 2](../brand-identity.md#2-the-mark), which records what that search blocks.
+  It does **not** record a commissioning status for the shipping emblem — if a lane needs to know
+  whether the committed master may be re-cut, [`assets.md` § 1](../assets.md#1-status-locked-emblem-b)
+  is the constraint, and the answer is no.
 
 ---
 
