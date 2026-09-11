@@ -8,10 +8,17 @@ This list is the acceptance criterion, not a suggestion. It restates the
 [cutover rule](../../../.claude/skills/signet-cutover/SKILL.md): a change that supersedes an
 implementation deletes it in the same change. Git history is the backup.
 
-Every path and line count below was read out of the tree **this lane branched from**, not out of the
-tree the lane left behind: lane 1 edited three of the files it counts, so a few numbers were already
-stale in the commit that introduced them. They are refreshed here against `main`. Treat them as a
-starting map, not as current truth, and re-read before deleting.
+Every path and line count below is `wc -l` output, refreshed at `3161e90` (merge of `8ab9d86`).
+**Expect them to be wrong by the time you read this** — they were already stale in the commit that
+first wrote them, because lane 1 edited three of the files it counts, and merging one unrelated PR
+into this branch moved a fourth. Re-run rather than trust:
+
+```sh
+wc -l apps/web/components/layout/{dashboard-shell,dashboard-command-menu,ask-pill,account-menu,chapter-switcher,chapter-lockup,beta-badge,dashboard-notification-drawer}.tsx
+```
+
+The numbers are a sizing hint for planning a lane, never an identifier. Paths and "sole importer"
+claims are the durable part; re-read before deleting either way.
 
 ---
 
@@ -19,7 +26,7 @@ starting map, not as current truth, and re-read before deleting.
 
 | File | Lines | Note |
 | ---- | ----- | ---- |
-| `apps/web/components/layout/dashboard-command-menu.tsx` | 402 | The palette |
+| `apps/web/components/layout/dashboard-command-menu.tsx` | 407 | The palette |
 | `apps/web/components/layout/dashboard-command-menu.spec.tsx` | 516 | Its suite, deleted with it |
 | `apps/web/components/layout/dashboard-shell.tsx` | — | The `k` keybinding and the mount |
 | `apps/web/components/ui/command.tsx` | 165 | The `cmdk` wrapper |
@@ -85,7 +92,7 @@ current palette already fixed once.
 
 Seven satellites, none imported outside the shell: `account-menu.tsx` (136),
 `chapter-switcher.tsx` (225), `chapter-lockup.tsx` (141), `beta-badge.tsx` (90),
-`dashboard-notification-drawer.tsx` (229), `ask-pill.tsx` (102), `dashboard-command-menu.tsx` (402).
+`dashboard-notification-drawer.tsx` (229), `ask-pill.tsx` (102), `dashboard-command-menu.tsx` (407).
 
 - [ ] Each satellite either rebuilt or deleted. None left rendering beside a replacement
 - [ ] `nav-config.ts`, `protected-nav-item.tsx`, and the account menu's shared bottom region survive
