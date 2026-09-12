@@ -49,7 +49,11 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  // `tab=semester`: board `4d` gives Semester its own rail entry, so the
+  // rollover form no longer sits at the bottom of the default Chapter tab.
+  // Landing the page on the tab under test is also what the nav's own deep
+  // links do.
+  useSearchParams: () => new URLSearchParams("tab=semester"),
 }));
 
 // The permission gate has its own tests; here it must not swallow the controls.
@@ -103,16 +107,25 @@ describe("settings semester rollover subscription gating", () => {
     );
   });
 
-  it("leaves the other settings writes alone — they are not paid-ops", () => {
+  it("leaves the other settings writes alone — they are not paid-ops", async () => {
     // `SemesterRolloverController` is the only paid-ops controller behind this
     // screen. Chapter profile (`chapter`) and org config (`chapter-config`) are
     // `@FreeTier`, and `billing` is exempt because it is the recovery path
     // (§5 rule 3). Gating them would lock a lapsed chapter out of settings it
     // is still entitled to change.
+    //
+    // The two live on different rail entries since board `4d` split them —
+    // profile on Chapter, the Stripe portal on Danger zone — and Radix unmounts
+    // an inactive tab, so each is asserted on its own tab rather than both on
+    // whichever one happens to be open.
+    const user = userEvent.setup();
     chapter.incomplete();
     render(<SettingsPage />);
 
+    await user.click(screen.getByRole("tab", { name: /^chapter$/i }));
     expect(saveProfileButton()).toBeEnabled();
+
+    await user.click(screen.getByRole("tab", { name: /danger zone/i }));
     expect(portalButton()).toBeEnabled();
   });
 
@@ -122,7 +135,7 @@ describe("settings semester rollover subscription gating", () => {
     chapter.incomplete();
     render(<SettingsPage />);
 
-    await userEvent.click(screen.getByRole("tab", { name: /theme/i }));
+    await userEvent.click(screen.getByRole("tab", { name: /accent/i }));
 
     expect(
       screen.getByRole("button", { name: /save accent color/i }),
@@ -201,7 +214,7 @@ describe("the accent preview reports its own legibility", () => {
   it("warns when label text on the typed accent misses AA", async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /theme/i }));
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#0086FE");
@@ -212,7 +225,7 @@ describe("the accent preview reports its own legibility", () => {
   it("stays quiet for an accent whose label text is legible", async () => {
     const user = userEvent.setup();
     render(<SettingsPage />);
-    await user.click(screen.getByRole("tab", { name: /theme/i }));
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#F2B72E");
@@ -235,7 +248,7 @@ describe("the accent form surfaces the server's own §8 disclosure (#1183)", () 
   });
 
   async function saveAccent(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole("tab", { name: /theme/i }));
+    await user.click(screen.getByRole("tab", { name: /accent/i }));
     const hex = screen.getByLabelText(/accent color hex value/i);
     await user.clear(hex);
     await user.type(hex, "#222222");

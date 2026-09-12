@@ -10,6 +10,9 @@ const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
 const mockSaveDefaultRole = vi.fn();
+const mockUseCatalog = vi.fn();
+const mockUseMembers = vi.fn();
+const mockUpdateRole = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -18,6 +21,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCreateCustomRole: () => ({ mutateAsync: mockCreate, isPending: false }),
   useUpdateCustomRole: () => ({ mutateAsync: mockUpdate, isPending: false }),
   useDeleteCustomRole: () => ({ mutateAsync: mockDelete, isPending: false }),
+  // The `4e` matrix reads these three directly, so the tab renders even when
+  // the chapter-config call is refused.
+  usePermissionsCatalog: () => mockUseCatalog(),
+  useMembers: () => mockUseMembers(),
+  useUpdateRole: () => ({ mutateAsync: mockUpdateRole, isPending: false }),
+}));
+
+vi.mock("@/lib/providers/network-provider", () => ({
+  useNetwork: () => ({ isOffline: false }),
 }));
 
 // The folded-in live RBAC manager pulls in @repo/hooks; stub it out.
@@ -61,31 +73,113 @@ describe("SettingsRolesTab", () => {
     });
     mockUseRoles.mockReturnValue({
       data: [
-        { id: "role-member", name: "Member" },
-        { id: "role-pledge", name: "New Member" },
+        {
+          id: "role-member",
+          name: "Member",
+          permissions: ["members:view"],
+          is_system: true,
+          display_order: 1,
+        },
+        {
+          id: "role-pledge",
+          name: "New Member",
+          permissions: [],
+          is_system: false,
+          display_order: 2,
+        },
       ],
       isPending: false,
       isError: false,
+      isSuccess: true,
+      refetch: vi.fn(),
     });
-  });
-
-  it("renders the role pack (read-only) from the active archetype", () => {
-    render(
-      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
-        defaultInviteRoleId={null}
-        onSaveDefaultInviteRole={mockSaveDefaultRole}
-      />,
-    );
-    // Pack sub-tab is the default; ifc_standard includes President.
-    expect(screen.getByText("President")).toBeInTheDocument();
-  });
-
-  it("derives matrix columns from the pack plus live custom roles", async () => {
-    const user = userEvent.setup();
-    mockUseCustomRoles.mockReturnValue({
-      data: [customRole({ label: "Pledge Educator" })],
+    mockUseCatalog.mockReturnValue({
+      data: CATALOG,
       isPending: false,
       isError: false,
+      refetch: vi.fn(),
+    });
+    mockUseMembers.mockReturnValue({ data: [], isPending: false, isError: false });
+    mockUpdateRole.mockResolvedValue({});
+  });
+
+  it("names the role pack in the header rather than as a view of its own", () => {
+    // `4e` draws the pack as a label beside the count. It used to be the
+    // default sub-tab, so `?tab=roles` landed on a read-only list of archetype
+    // names and the editor was two clicks further in.
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Roles" })).toBeInTheDocument();
+    expect(screen.getByText(/role pack/i)).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /pack/i })).not.toBeInTheDocument();
+  });
+
+  it("draws one row per permission and one column per live role", () => {
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
+    );
+    // Columns are the `roles` table, not the archetype pack — the old matrix
+    // drew pack columns it had no capability data for and filled them with the
+    // literal string "n/a".
+    expect(
+      screen.getByRole("columnheader", { name: "Member, 0 members" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "New Member, 0 members" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("rowheader", { name: "MEMBERS_VIEW" }),
+    ).toBeInTheDocument();
+    // Rows group by permission namespace (`4e` pin 3).
+    expect(screen.getByRole("rowheader", { name: "Members" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "Events" })).toBeInTheDocument();
+    expect(screen.queryByText("n/a")).not.toBeInTheDocument();
+  });
+
+  it("flips a cell straight to the API, with no Save step", async () => {
+    // `4e` pin 2: "Click flips and saves". The permission it sends is the
+    // role's existing set plus the one clicked — never the whole catalog.
+    const user = userEvent.setup();
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "EVENTS_CREATE for Member" }),
+    );
+
+    expect(mockUpdateRole).toHaveBeenCalledWith({
+      id: "role-member",
+      body: { permissions: ["members:view", "events:create"] },
+    });
+  });
+
+  it("locks every cell of a role holding the wildcard", () => {
+    // The API rejects introducing or stripping `*` outside presidency
+    // transfer, so a clickable cell there is a control that always fails.
+    mockUseRoles.mockReturnValue({
+      data: [
+        {
+          id: "role-president",
+          name: "President",
+          permissions: ["*"],
+          is_system: true,
+          display_order: 0,
+        },
+      ],
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+      refetch: vi.fn(),
     });
     render(
       <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
@@ -93,18 +187,37 @@ describe("SettingsRolesTab", () => {
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
-    await user.click(screen.getByRole("tab", { name: /matrix/i }));
-    // A pack column and the custom-role column are both present as headers.
-    expect(
-      screen.getByRole("columnheader", { name: "President" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("columnheader", { name: "Pledge Educator" }),
-    ).toBeInTheDocument();
-    // The capability the custom role holds is reflected in the matrix.
-    expect(
-      screen.getByLabelText("Pledge Educator has members:view"),
-    ).toBeInTheDocument();
+
+    expect(screen.queryByRole("button", { name: /for President/ })).not.toBeInTheDocument();
+    // And it reads as granted rather than empty.
+    expect(screen.getByText("Granted: MEMBERS_VIEW for President")).toBeInTheDocument();
+  });
+
+  it("never renders the wildcard as a permission row", () => {
+    render(
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage
+        catalog={[{ key: "WILDCARD", permission: "*" }, ...CATALOG]}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
+    );
+    expect(screen.queryByRole("rowheader", { name: "WILDCARD" })).not.toBeInTheDocument();
+  });
+
+  it("leaves the cells read-only for a caller who cannot manage roles", () => {
+    render(
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage={false}
+        catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /for Member/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Granted: MEMBERS_VIEW for Member")).toBeInTheDocument();
   });
 
   it("hides the delete control for core roles and shows it for non-core", async () => {
@@ -123,7 +236,6 @@ describe("SettingsRolesTab", () => {
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
-    await user.click(screen.getByRole("tab", { name: /custom/i }));
     expect(
       screen.queryByRole("button", { name: /delete core role/i }),
     ).not.toBeInTheDocument();
@@ -141,7 +253,6 @@ describe("SettingsRolesTab", () => {
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
-    await user.click(screen.getByRole("tab", { name: /custom/i }));
     await user.type(screen.getByLabelText("Key"), "social_chair");
     await user.type(screen.getByLabelText("Label"), "Social Chair");
     await user.click(screen.getByLabelText("new role events:create"));
@@ -166,7 +277,6 @@ describe("SettingsRolesTab", () => {
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
-    await user.click(screen.getByRole("tab", { name: /custom/i }));
     expect(screen.getByLabelText("Key")).toBeDisabled();
     expect(
       screen.getByRole("button", { name: /create role/i }),
@@ -190,7 +300,6 @@ describe("SettingsRolesTab", () => {
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
-    await user.click(screen.getByRole("tab", { name: /custom/i }));
 
     // The API rejects `*` on custom roles (400), so the chip must not render —
     // neither on existing roles nor in the create form.
@@ -220,7 +329,6 @@ describe("SettingsRolesTab", () => {
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />,
     );
-    await user.click(screen.getByRole("tab", { name: /custom/i }));
     await user.click(
       screen.getByRole("checkbox", { name: "Pledge Educator events:create" }),
     );
@@ -241,26 +349,21 @@ describe("the capability matrix's marks, at the call site", () => {
    * assertions and all of this file's green. Same lesson as the accent-painted
    * status one slice back: a value-level guard is blind to the call site.
    */
-  it("uses the token pair the measurements clear, not the one that reads right", async () => {
-    const user = userEvent.setup();
-    mockUseCustomRoles.mockReturnValue({
-      data: [customRole({ label: "Pledge Educator" })],
-      isPending: false,
-      isError: false,
-    });
+  it("uses the token pair the measurements clear, not the one that reads right", () => {
     render(<SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
         defaultInviteRoleId={null}
         onSaveDefaultInviteRole={mockSaveDefaultRole}
       />);
-    await user.click(screen.getByRole("tab", { name: /matrix/i }));
 
+    // The cells that carry the mark: one granted, one not, both on a role
+    // whose cells are editable so the tone lives on the button.
     const marks = [
-      screen.getByLabelText("Pledge Educator has members:view"),
-      screen.getByLabelText("Pledge Educator lacks events:create"),
+      screen.getByRole("button", { name: "MEMBERS_VIEW for Member" }),
+      screen.getByRole("button", { name: "EVENTS_CREATE for Member" }),
     ];
     for (const mark of marks) {
       const { className } = mark;
-      // `--muted` is 3.568:1 on this card, and `✓`/`—` are characters, so
+      // `--muted` is 3.568:1 on this card, and the marks are characters, so
       // §6's 4.5:1 text floor applies rather than the 3:1 glyph one.
       expect(className).not.toMatch(/text-muted(?![-\w])/);
       /*
@@ -270,16 +373,18 @@ describe("the capability matrix's marks, at the call site", () => {
        * `text-muted-foreground/[.4]` — the identical 2.184:1 the whole file
        * exists to prevent, reached through the bracket syntax. Checking which
        * token is only half the question; a correct token at 40% is the same
-       * defect. `text-success/50` measures 2.64:1 and would have passed too.
+       * defect. This caught `text-muted-foreground/60` on the first cut of the
+       * `4e` matrix.
        */
-      expect(className).not.toMatch(/text-(success|muted-foreground)\//);
-      // #916's raw palette green beside `--success`, and the dead variant it
-      // travelled with — Signet is dark-only, so `dark:` never applied.
+      expect(className).not.toMatch(/text-(accent-text|muted-foreground)\//);
       expect(className).not.toMatch(/emerald|green-\d/);
       expect(className).not.toMatch(/\bdark:/);
-      expect(className).toMatch(/\btext-(success|muted-foreground)\b/);
     }
-    expect(marks[0]!.className).toContain("text-success");
+    // Granted takes the retinting accent, not `--success`: a held permission
+    // is an entitlement, not a status (`pro-chip.tsx`). And not `--gold-ask-*`,
+    // which is Ask's fixed family and must never merge into the accent.
+    expect(marks[0]!.className).toContain("text-accent-text");
+    expect(marks[0]!.className).not.toContain("gold-ask");
     expect(marks[1]!.className).toContain("text-muted-foreground");
   });
 
