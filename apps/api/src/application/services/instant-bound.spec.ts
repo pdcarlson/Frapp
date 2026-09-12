@@ -38,8 +38,10 @@ describe('instantOrThrow', () => {
   });
 
   it('names the offending parameter in the message, verbatim', () => {
-    // The label is the wire name, so the three call sites read
-    // `before …`, `start_date …`, `end_date …` — not a camelCased field name.
+    // The label is the wire name, so the five call sites produce three
+    // messages — `before …`, `start_date …`, `end_date …` — and never a
+    // camelCased field name, even where the option that feeds them is
+    // `options.startDate`.
     expect(() => instantOrThrow('end_date', 'nope')).toThrow(
       `end_date ${ISO_INSTANT_MESSAGE}`,
     );

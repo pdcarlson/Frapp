@@ -18,11 +18,14 @@ import {
  * and chat DTOs pin their bounds with `@Matches(ISO_INSTANT_REGEX)`
  * (`chapter-audit-log.dto.ts`, `chat.dto.ts`), so there this is the guard for a
  * direct, non-HTTP call. `points.dto.ts`'s `before` carries the looser
- * `@IsISO8601()` — the validator `iso-instant.ts` exists to be narrower than,
- * and which accepts every shape this function rejects except an outright
- * non-date — so on that route this is the FIRST rejector, not a second one.
- * Do not delete a call here on the reasoning that the pipe already ran. #2168
- * proposes closing that DTO gap; until it lands, this is the only guard there.
+ * `@IsISO8601()`, which accepts all five shapes this function exists to reject:
+ * a bare date, an offset-less time, basic format, an hour-only offset, and the
+ * calendar-invalid `2026-02-30`. On those five this is the FIRST rejector, not
+ * a second one — do not delete a call here on the reasoning that the pipe
+ * already ran. (The pipe is still first for a non-date and for an out-of-range
+ * component — month 13, day 32, hour 25, an offset past ±23:59 — which
+ * validator.js bounds by regex. The two reject-sets overlap; neither contains
+ * the other.) #2168 proposes closing the five-shape gap at the DTO.
  *
  * Lives in `application/` rather than beside `parseIsoInstant`: the parse rule
  * is domain code and returns `null`, and turning that into an HTTP status is
