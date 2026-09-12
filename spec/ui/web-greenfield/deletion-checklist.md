@@ -794,7 +794,7 @@ not a line of state.
 | `/chat-admin` and `/discord-import` | Also in the Admin nav group, and neither is named by #2146's Admin slice ("Roles / Study Zones / Reports / chapter settings"). Two more routes is a second PR, not a wider one |
 | Restyling the `Switch` primitive to `4c`'s 36×22 | A shared primitive used across every surface. Lane 2's, not a page lane's |
 | A `?subtab=` param | The Roles tab has no sub-tabs left to address |
-| Arrow-key navigation in the `4e` matrix | Every editable cell is a real `<button>`, so the matrix is keyboard-reachable and operable — but at 7 roles × 40 permissions that is ~280 Tab stops, and the WAI-ARIA **grid** pattern (roving `tabindex`, arrow keys, `role="gridcell"`) is what a data shape this size actually calls for. It is a self-contained follow-up on a surface this lane is otherwise done with, and the board says nothing about it. Filed rather than folded in |
+| Arrow-key navigation in the `4e` matrix | Every editable cell is a real `<button>`, so the matrix is keyboard-reachable and operable — but at 7 roles × 40 permissions that is ~280 Tab stops, and the WAI-ARIA **grid** pattern (roving `tabindex`, arrow keys, `role="gridcell"`) is what a data shape this size actually calls for. It is a self-contained follow-up on a surface this lane is otherwise done with, and the board says nothing about it. Filed as [#2173](https://github.com/pdcarlson/Frapp/issues/2173) rather than folded in |
 
 ---
 
