@@ -20,11 +20,8 @@ import { can } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -102,7 +99,10 @@ function buildEventOptions(data: unknown): PickerOption[] {
       const id = String(event.id ?? "");
       if (!id) return null;
       const name = String(event.name ?? "Untitled event");
-      return { id, label: `${name} — ${formatLocaleDateTime(event.start_time)}` };
+      return {
+        id,
+        label: `${name} — ${formatLocaleDateTime(event.start_time)}`,
+      };
     })
     .filter((option): option is PickerOption => option !== null);
 }
@@ -203,8 +203,8 @@ function PickerField({
       </select>
       {query.isError ? (
         <p className="text-xs text-destructive">
-          Couldn&apos;t load {noun} — enter an id manually below, or leave
-          both blank for a chapter-wide report, or{" "}
+          Couldn&apos;t load {noun} — enter an id manually below, or leave both
+          blank for a chapter-wide report, or{" "}
           <button
             type="button"
             onClick={() => query.refetch()}
@@ -626,8 +626,9 @@ export function ReportsPage() {
             <Card>
               <CardHeader>
                 <CardDescription>
-                  Exporting chapter data requires the <code>reports:export</code>{" "}
-                  permission. Ask your chapter president to grant access.
+                  Exporting chapter data requires the{" "}
+                  <code>reports:export</code> permission. Ask your chapter
+                  president to grant access.
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -635,13 +636,10 @@ export function ReportsPage() {
         }
       >
         <div className="space-y-6">
-          <header>
-            <p className="text-sm text-muted-foreground">
-              Generate attendance, points, roster, and service hours reports.
-              Download as CSV, or export a branded PDF with your chapter&apos;s
-              name and logo.
-            </p>
-          </header>
+          {/*
+            No description paragraph: `PageHeader` already names the route, and
+            the report picker below says what it generates.
+          */}
 
           {/*
             Disable, don't hide (§5 rule 4): the filters and any preview already
@@ -650,15 +648,16 @@ export function ReportsPage() {
           */}
           <SubscriptionNotice gate={gate} feature="generating reports" />
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Choose a report</CardTitle>
-              <CardDescription>
-                Each report respects the same chapter + permission scoping as the
-                rest of the dashboard.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+          <section className="space-y-4">
+            {/*
+              No card title and no card description. "Choose a report" named
+              the control immediately under it, and "Each report respects the
+              same chapter + permission scoping as the rest of the dashboard"
+              reassured the officer about something no other route stops to
+              mention. `1t` lists exactly this pair — "filter card, card title"
+              — as gone one route over.
+            */}
+            <div className="space-y-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="grid gap-1">
                   <Label htmlFor="report-kind">Report</Label>
@@ -685,8 +684,12 @@ export function ReportsPage() {
                       <SelectItem value="attendance">
                         {reportLabel.attendance}
                       </SelectItem>
-                      <SelectItem value="points">{reportLabel.points}</SelectItem>
-                      <SelectItem value="roster">{reportLabel.roster}</SelectItem>
+                      <SelectItem value="points">
+                        {reportLabel.points}
+                      </SelectItem>
+                      <SelectItem value="roster">
+                        {reportLabel.roster}
+                      </SelectItem>
                       <SelectItem value="service">
                         {reportLabel.service}
                       </SelectItem>
@@ -764,7 +767,9 @@ export function ReportsPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All time</SelectItem>
-                        <SelectItem value="semester">Current semester</SelectItem>
+                        <SelectItem value="semester">
+                          Current semester
+                        </SelectItem>
                         <SelectItem value="month">Rolling month</SelectItem>
                       </SelectContent>
                     </Select>
@@ -809,8 +814,8 @@ export function ReportsPage() {
                   </div>
                 </div>
               ) : null}
-            </CardContent>
-            <CardFooter className="flex items-center justify-between gap-2">
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
                 PDF export is generated server-side; its download link is valid
                 for one hour.
@@ -857,32 +862,35 @@ export function ReportsPage() {
                   Generate report
                 </Button>
               </div>
-            </CardFooter>
-          </Card>
+            </div>
+          </section>
 
-          <Card>
-            <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle className="text-lg">Preview</CardTitle>
-                {/*
-                  `spec/behavior/reports.md` caps a report at 5,000 rows and
-                  says truncation is never silent — but the only signal was a
-                  toast, so once it dismissed a partial table sat on screen
-                  claiming to be the whole report, and the CSV built from it
-                  carries the same claim into a file. §5's Semantic warning
-                  kind, which needs no §1 lift on its own tint (5.57–7.15:1).
-                */}
-                {truncation?.truncated ? (
-                  <Badge variant="warning">Incomplete report</Badge>
-                ) : null}
-              </div>
-              <CardDescription>
-                {truncation?.truncated
-                  ? `${truncationSummary(truncation)} This preview and the CSV built from it are not a complete record of the chapter.`
-                  : "First 25 rows of the generated report. The CSV download contains every returned row."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+          <section className="space-y-3">
+            <header className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-bold">Preview</h2>
+              {/*
+                `spec/behavior/reports.md` caps a report at 5,000 rows and
+                says truncation is never silent — but the only signal was a
+                toast, so once it dismissed a partial table sat on screen
+                claiming to be the whole report, and the CSV built from it
+                carries the same claim into a file. §5's Semantic warning
+                kind, which needs no §1 lift on its own tint (5.57–7.15:1).
+              */}
+              {truncation?.truncated ? (
+                <Badge variant="warning">Incomplete report</Badge>
+              ) : null}
+            </header>
+            {/*
+              Kept, and it is not narration: it reports the row count actually
+              returned and whether the export is partial. `1t` deletes a card's
+              *description of itself*, not a line of state.
+            */}
+            <p className="text-sm text-muted-foreground">
+              {truncation?.truncated
+                ? `${truncationSummary(truncation)} This preview and the CSV built from it are not a complete record of the chapter.`
+                : "First 25 rows of the generated report. The CSV download contains every returned row."}
+            </p>
+            <div>
               {/*
                 The nested state variants: this renders inside a
                 `<CardContent>`, where a `bg-card` state on a `bg-card` card is
@@ -969,8 +977,8 @@ export function ReportsPage() {
                   </TableBody>
                 </Table>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         </div>
       </Can>
     </>

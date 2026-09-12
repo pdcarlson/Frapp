@@ -42,6 +42,7 @@ import {
   PermissionsOfflineSurface,
 } from "@/components/shared/async-states";
 import { PageHeader } from "@/components/layout/page-header";
+import { StudyZonesSettingsDrawer } from "@/components/geofences/study-zones-settings-drawer";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -352,7 +353,20 @@ export function GeofencesAdminPage() {
         one (#2141). The two `<CardTitle>Study zones</CardTitle>` copies below
         were that same title said twice.
       */}
-      <PageHeader title="Study Zones" />
+      {/*
+        `4c` pin 1: the gear sits beside the page title and "shows only for
+        roles that hold that page's manage permission". `<Can>` is that gate;
+        the drawer itself is read-only today, but a control that appears for
+        members who cannot act still reads as an offer.
+      */}
+      <PageHeader
+        title="Study Zones"
+        actions={
+          <Can permission="geofences:manage" deniedFallback={null} fallback={null}>
+            <StudyZonesSettingsDrawer />
+          </Can>
+        }
+      />
       <Can
         permission="geofences:manage"
         deniedFallback={
@@ -415,14 +429,16 @@ export function GeofencesAdminPage() {
           />
         ) : (
           <div className="space-y-6">
-            <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Draw a polygon from GPS coordinates, set the reward rate, and
-                  members can start tracked study sessions when they&apos;re
-                  inside the zone.
-                </p>
-              </div>
+            {/*
+              No description paragraph. "Draw a polygon from GPS coordinates,
+              set the reward rate, and members can start tracked study sessions
+              when they're inside the zone" narrated the page to the one member
+              who had already proved they know what it is by holding
+              `geofences:manage` and navigating here. `1f` pin 2 gives a
+              route's body one toolbar row, "no wrapper card, no description
+              paragraph".
+            */}
+            <header className="flex flex-wrap items-center justify-end gap-2">
               <Dialog {...createDialog.dialogProps}>
                 <DialogTrigger asChild>
                   <Button className="gap-2" {...gate.controlProps()}>

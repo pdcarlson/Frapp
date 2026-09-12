@@ -221,7 +221,6 @@ describe("SettingsRolesTab", () => {
   });
 
   it("hides the delete control for core roles and shows it for non-core", async () => {
-    const user = userEvent.setup();
     mockUseCustomRoles.mockReturnValue({
       data: [
         customRole({ id: "core1", label: "Core Role", core: true }),
@@ -267,7 +266,6 @@ describe("SettingsRolesTab", () => {
   });
 
   it("disables custom-role editing controls when the caller cannot manage", async () => {
-    const user = userEvent.setup();
     render(
       <SettingsRolesTab
         archetypeKey="ifc"
@@ -284,7 +282,6 @@ describe("SettingsRolesTab", () => {
   });
 
   it("never offers the wildcard as a capability checkbox", async () => {
-    const user = userEvent.setup();
     const catalogWithWildcard = [
       { key: "WILDCARD", permission: "*" },
       ...CATALOG,

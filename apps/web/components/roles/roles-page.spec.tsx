@@ -270,7 +270,7 @@ describe("permissions are not edited here any more", () => {
     await user.click(screen.getByRole("button", { name: /save role/i }));
 
     await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
-    const [[payload]] = updateRole.mutateAsync.mock.calls;
+    const payload = updateRole.mutateAsync.mock.calls[0]![0];
     expect(payload.body).not.toHaveProperty("permissions");
   });
 });

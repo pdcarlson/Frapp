@@ -33,6 +33,10 @@ const ZONE = {
 
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
+  // Read by the board `4c` settings drawer's Access section, which reports
+  // which roles hold each `geofences:*` permission.
+  useRoles: () => ({ data: [], isPending: false, isError: false }),
+  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
   useGeofences: () => ({
     data: [ZONE],
     isPending: false,
