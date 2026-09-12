@@ -50,8 +50,11 @@ const CAPTURE =
  * Note this is for COMPARING two bounds. The value handed to Postgres is
  * always the caller's original string — re-serializing it would truncate a
  * `timestamptz`'s microseconds to milliseconds and drop same-millisecond rows
- * (#1832). This paragraph is that rule's one home; callers point here rather
- * than restating it.
+ * (#1832). This paragraph is the API-side home for that rule; callers in
+ * `apps/api` point here rather than restating it. The client half — why the web
+ * dashboard hands the cursor back verbatim rather than through `Date` — is
+ * stated once too, on `olderAuditCursor` in
+ * `apps/web/components/points/points-audit-card.tsx`.
  */
 export function parseIsoInstant(value: string): number | null {
   const m = CAPTURE.exec(value);
