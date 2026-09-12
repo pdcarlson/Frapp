@@ -16,7 +16,13 @@ import {
  * instead of repeating a ternary at every avatar.
  *
  * The ring matches the surface behind it so the dot reads as its own token
- * rather than merging into the avatar's edge.
+ * rather than merging into the avatar's edge. That surface is `--background`:
+ * the greenfield lane deleted the `<Card>` this avatar used to sit inside, so
+ * the rows now sit directly on the page. The board draws the same fixed ring
+ * against its own column fill (`4a`, `border:2px solid #1A1A1A` on a `#1A1A1A`
+ * aside) rather than varying it per row state, so a hovered or selected row
+ * keeps the resting ring here too — the dot is 10px and the tint under it moves
+ * by one ladder step, which is the trade the board already makes.
  *
  * **Accessibility is split by context.** A dot inside a non-interactive
  * container names itself, so a screen reader announces "Online". A dot inside
@@ -36,7 +42,7 @@ export function AvatarPresenceDot({
 }) {
   if (!status) return null;
   const label = presenceLabel(status);
-  const shared = `absolute bottom-0 right-0 inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-card ${presenceStatusKind(status)}`;
+  const shared = `absolute bottom-0 right-0 inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-background ${presenceStatusKind(status)}`;
 
   if (decorative) {
     return <span aria-hidden="true" data-presence={status} className={shared} />;

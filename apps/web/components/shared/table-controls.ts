@@ -115,3 +115,38 @@ export const dashboardCheckboxHitAreaClassName = [
  */
 export const denseRowControlClassName =
   "h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11";
+
+/**
+ * The `<ul>` that holds a **dense list** on a flattened greenfield route.
+ *
+ * Top-border dividers and nothing else: no card, no zebra, no per-row fill. The
+ * framework board draws this consistently — `4d`'s plan matrix and `4e`'s roles
+ * matrix both separate rows with `border-top:1px solid rgba(255,255,255,.08)`
+ * and neither stripes, and the one filled row in the file is a row *state*
+ * rather than striping. `divide-y` gives the rule between rows; `border-t` on
+ * the block adds the one above the first, so the list reads as a set rather
+ * than as rows that happen to be adjacent.
+ *
+ * `divide-border` undiluted, which is not a style preference:
+ * `components.md` §2 measures `divide-border/70` at 1.169:1 where the token
+ * itself measures 1.253:1, and records that "a hairline's alpha is not a free
+ * parameter".
+ *
+ * **Extracted here because this lane is what made it a duplicate.** Lane 4
+ * ([#2144](https://github.com/pdcarlson/Frapp/issues/2144)) hand-spelled this
+ * string twice, on `/documents` and `/backwork`, which is the count at which
+ * two copies still read as two screens agreeing. The Directory lane
+ * ([#2146](https://github.com/pdcarlson/Frapp/issues/2146)) adds the actives
+ * and alumni lists, and four copies of one load-bearing recipe is the drift the
+ * `EYEBROW` docstring in `components/ui/typography.ts` was written about. All
+ * four now import this.
+ *
+ * **What is deliberately NOT extracted with it: the row.** `/documents` and
+ * `/backwork` draw a two-line `min-h-11` row that is not itself a control;
+ * `/members` draws a one-line `min-h-9 pointer-coarse:min-h-11` row that is the
+ * member's whole hit target. They differ in line count, height and whether they
+ * are interactive at all, so a shared parent would be a name over two things
+ * that only look alike. Each row recipe is documented where it is written.
+ */
+export const denseListClassName =
+  "divide-y divide-border border-t border-border";

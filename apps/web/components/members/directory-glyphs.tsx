@@ -15,10 +15,12 @@
  *
  * **Control furniture stays Lucide**, exactly as it does in the shell and in
  * chat (§6.2.2): `Loader2`, `Trash2`, `Copy`, and the `AlertTriangle` the §10
- * state family already draws from Lucide on every surface. So do the two pairs
- * that name a *control's own action* rather than a domain object — the
- * `ArrowUp`/`ArrowDown` sort direction and the `List`/`LayoutGrid` view mode.
- * A verb on a button is furniture; the thing the row is *about* is an intent.
+ * state family already draws from Lucide on every surface. A verb on a button
+ * is furniture; the thing the row is *about* is an intent. The rule used to be
+ * illustrated by two more pairs — `ArrowUp`/`ArrowDown` for sort direction and
+ * `List`/`LayoutGrid` for view mode — and both controls are gone: the
+ * greenfield lane replaced four sortable table headers with one sort select and
+ * deleted the table/card view toggle outright.
  *
  * The three silhouettes the Directory shares with the shell's nav intents are
  * re-exported rather than redrawn — a second copy of the same path data is the
@@ -55,19 +57,18 @@ export function InviteGlyph({ className, active }: DirectoryGlyphProps) {
   );
 }
 
-/**
- * Alumni.
+/*
+ * `AlumniGlyph`, the mortarboard, is deleted rather than left unimported.
  *
- * A mortarboard: the cap is the silhouette, the tassel is detail. Replaces
- * Lucide's `GraduationCap` on the alumni tag, which is §5's Hairline badge —
- * so it renders at 14px beside 12.5px text (§2's badge companion size).
+ * It existed for one consumer: the "ALUMNI" Hairline badge on every card in the
+ * alumni grid. The greenfield lane deleted that badge, because a per-row tag
+ * reading ALUMNI on every row of the list the Alumni tab opens is the same fact
+ * three times — the board's `1t` deletes badge rows on the same reasoning, and
+ * lane 4 deleted `/backwork`'s for it. With the badge gone the glyph has no
+ * call site, and `iconography.md` §6.3 requires the intent map to move in the
+ * same change, so the "Alumni" row went out of §6.2.3 with it.
+ *
+ * The intent is not homeless: the alumni list is reached through the Directory
+ * tab row, which is text, and `DirectoryGlyph` is still the nav intent for the
+ * route. Git history holds the path data if a later surface needs the mark.
  */
-export function AlumniGlyph({ className, active }: DirectoryGlyphProps) {
-  return (
-    <Svg className={className}>
-      <path d="M12 4.2L21.5 8.6 12 13 2.5 8.6z" {...stroke} {...fillProps(active)} />
-      <path d="M6.6 10.6v4.7c0 1.7 2.4 3 5.4 3s5.4-1.3 5.4-3v-4.7" {...detail} />
-      <path d="M20.4 9.1v4.6" {...detail} />
-    </Svg>
-  );
-}

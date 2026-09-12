@@ -21,7 +21,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -319,24 +318,39 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
+      {/*
+        The instructional paragraph under the title is deleted, not restyled.
+        Board `1j` gives a sheet "no instructional paragraph" and `1t` lists
+        page-narration under gone; this one ("Generate a join link and assign a
+        default role before members join.") narrated the two controls directly
+        beneath it, which name themselves.
+
+        `aria-describedby={undefined}` for the reason `UploadSheetContent`
+        carries it: with no `DialogDescription` rendered, Radix warns on every
+        open for a `Content` pointing at a description id nothing renders.
+      */}
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[88vh] overflow-y-auto sm:max-w-2xl"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <InviteGlyph className="h-5 w-5" />
             Invite members
           </DialogTitle>
-          <DialogDescription>
-            Generate a join link and assign a default role before members join.
-          </DialogDescription>
         </DialogHeader>
 
         {hasLiveDataError ? (
           <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning/[.13] p-3 text-[12.5px] text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              Live invite data could not load. Resolve the underlying API error before issuing
-              chapter invites.
-            </div>
+            {/*
+              Terse, because it is a status rather than a briefing: the board
+              budgets a state line at six words, and the sentence this replaces
+              ("Resolve the underlying API error before issuing chapter
+              invites.") instructed the reader to fix something they cannot
+              reach from here.
+            */}
+            <div>Invite data could not load.</div>
           </div>
         ) : null}
 

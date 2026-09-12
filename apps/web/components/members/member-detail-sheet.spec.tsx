@@ -89,8 +89,13 @@ describe("MemberDetailSheet custom fields", () => {
     expect(screen.getByText("Yes")).toBeInTheDocument();
     // Points render (including the falsy-safe number path).
     expect(screen.getByText("142")).toBeInTheDocument();
-    // An unset value shows an em dash rather than being dropped.
-    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    // An unset value is still shown rather than dropped — the row is a label
+    // over a value, so a missing value has to say so. It says it in a word now
+    // rather than with an em dash: board `1t` lists "em dashes in UI copy"
+    // under gone, and a lone glyph is a character a screen reader announces
+    // standing in for nothing at all.
+    expect(screen.getAllByText("Not set").length).toBeGreaterThan(0);
+    expect(screen.queryByText("—")).toBeNull();
   });
 
   it("omits the custom-fields section when the server returns none", () => {

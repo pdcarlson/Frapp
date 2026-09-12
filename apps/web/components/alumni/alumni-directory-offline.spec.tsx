@@ -104,7 +104,17 @@ beforeEach(() => {
   Object.assign(filteredRead, read());
 });
 
-const OFFLINE_COPY = "Alumni directory unavailable offline";
+// Shortened by the greenfield Directory lane (#2146) from "Alumni directory
+// unavailable offline". The board budgets a state line at six words and this
+// screen is already titled Alumni by the tab above it; `writing.md` §7 carries
+// the approved string. The cases below are about the reset behaviour, not the
+// wording, so the constant moves and nothing else in the suite does.
+const OFFLINE_COPY = "Alumni unavailable offline";
+
+// `/^retry/i`, not `/retry now/i`: the same lane moved this screen off the
+// whole-screen `OfflineState` (which paints `--card`, the fill the lane just
+// deleted from this route) onto `NestedOffline`, whose button reads "Retry".
+// The cases care that the control exists and what it resets, not its label.
 
 function lastCommitted() {
   return committedFilters[committedFilters.length - 1];
@@ -173,7 +183,7 @@ describe("AlumniDirectory offline read path (#1621)", () => {
     rerender(<AlumniDirectory />);
     expect(screen.getByText(OFFLINE_COPY)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /retry now/i }));
+    await user.click(screen.getByRole("button", { name: /^retry/i }));
 
     expect(mockOffline.value).toBe(true);
     expect(screen.queryByText(OFFLINE_COPY)).not.toBeInTheDocument();
@@ -197,7 +207,7 @@ describe("AlumniDirectory offline read path (#1621)", () => {
 
     mockOffline.value = true;
     rerender(<AlumniDirectory />);
-    await user.click(screen.getByRole("button", { name: /retry now/i }));
+    await user.click(screen.getByRole("button", { name: /^retry/i }));
 
     expect(screen.getByLabelText("Graduation year")).toHaveValue("");
     expect(screen.getByLabelText("City")).toHaveValue("");

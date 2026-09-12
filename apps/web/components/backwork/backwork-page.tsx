@@ -35,6 +35,7 @@ import {
 } from "@/components/shared/upload-sheet";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/shared/async-states";
+import { denseListClassName } from "@/components/shared/table-controls";
 import {
   NestedEmpty,
   NestedError,
@@ -965,13 +966,9 @@ export function BackworkPage() {
               description="Loosen the filters, or upload the first resource to build the library."
             />
           ) : (
-            /*
-              The board's list grammar (`4d`): a hairline between rows and
-              nothing else — no card, no zebra, no per-row fill. `border-t` on
-              the block adds the rule above the first row, so the list reads as
-              a set rather than as rows that happen to be adjacent.
-            */
-            <ul className="divide-y divide-border border-t border-border">
+            // The board's list grammar (`4d`), now written once in
+            // `table-controls.ts` rather than here and on `/documents`.
+            <ul className={denseListClassName}>
               {resources.map((row) => {
                 const department = row.department_id
                   ? departmentById.get(row.department_id)

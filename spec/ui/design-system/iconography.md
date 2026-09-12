@@ -281,7 +281,8 @@ Inside a `Button` they render at 16 whatever the call site asks for, because
 375px floor gate unaffected by a glyph swap.
 
 Alumni draws from the Directory file rather than one of its own: `/members`
-hosts both tabs, so they are one screen with one set of intents. Billing has no
+hosts both tabs, so they are one screen with one set of intents. It no longer
+contributes an intent of its own — see the note below the table. Billing has no
 file at all — its single in-screen intent is already the shell's Billing nav
 intent, so [`subscription-checkout-card.tsx`](../../../apps/web/components/billing/subscription-checkout-card.tsx)
 imports `BillingGlyph` directly. §1 rule 1 is about not redrawing, not about
@@ -290,7 +291,6 @@ where an import points.
 | Semantic intent | Glyph | Home |
 | --- | --- | --- |
 | Invite a member | `InviteGlyph` | `directory-glyphs.tsx` |
-| Alumni | `AlumniGlyph` | `directory-glyphs.tsx` |
 | Member record (detail sheet) | `DirectoryGlyph` | re-export, shell |
 | Role access | `RolesGlyph` | re-export, shell |
 | Directory / ledger search | `SearchGlyph` | re-export, shell |
@@ -298,7 +298,8 @@ where an import points.
 | Flagged transaction | `FlaggedGlyph` | `points-glyphs.tsx` |
 | Payment method / checkout | `BillingGlyph` | re-export, shell |
 
-Three things this table deliberately does not contain:
+Five things this table deliberately does not contain (the count was wrong at
+four and is corrected here rather than left drifting):
 
 - **A second invite icon.** One intent had shipped as two glyphs — `UserPlus`
   on the directory's trigger and `ShieldPlus` inside the dialog that trigger
@@ -319,11 +320,22 @@ Three things this table deliberately does not contain:
   unmigrated domain intents. They are not this family's to move: the state
   family is shared, so its glyphs migrate with a pass over
   `components/shared/**`, not with a screen family.
-- **Control furniture**, unchanged from §6.2.2's rule, plus this family's four:
-  `Copy` and `Plus` are verbs on buttons, and `ArrowUp`/`ArrowDown` and
-  `List`/`LayoutGrid` name a control's own action — sort direction and view
-  mode — rather than a domain object. `RefreshCcw` in the audit card was a
-  stray second spelling of §6.2.2's `RefreshCw` and is now the sanctioned one.
+- **Control furniture**, unchanged from §6.2.2's rule: `Copy` and `Plus` are
+  verbs on buttons. `RefreshCcw` in the audit card was a stray second spelling
+  of §6.2.2's `RefreshCw` and is now the sanctioned one. This entry used to name
+  four and now names two — `ArrowUp`/`ArrowDown` and `List`/`LayoutGrid` were
+  the Directory table's sort-direction arrows and its table/card view toggle,
+  and the greenfield Directory lane ([#2146](https://github.com/pdcarlson/Frapp/issues/2146))
+  deleted both controls, so neither pair has a call site left in this family.
+  The rule they illustrated is unchanged; only the examples went.
+- **An Alumni glyph.** `AlumniGlyph`, a mortarboard, had one consumer: the
+  "ALUMNI" Hairline badge on every card of the alumni grid. The greenfield
+  Directory lane deleted that badge — a per-row tag reading ALUMNI on every row
+  of the list the Alumni tab opens states one fact three times, which is the
+  reasoning board `1t` applies to badge rows — and §6.3 requires the map to move
+  with the code, so the intent leaves this table rather than pointing at a
+  function with no call site. The alumni list is still reached through a text
+  tab under the route's `DirectoryGlyph` nav intent.
 
 ### 6.2.4 Chapter Ops (Signet duotone)
 
