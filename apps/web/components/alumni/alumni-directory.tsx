@@ -163,10 +163,14 @@ export function AlumniDirectory() {
         One toolbar row: the list's name and count on the left, its filter form
         on the right, on the page surface. `1f` pin 2.
 
-        The three fields carry `sr-only` labels and name themselves in their
-        placeholders, where they used to stack under visible `EYEBROW` labels in
-        a four-column grid. A placeholder is not an accessible name, which is
-        why the labels are hidden rather than dropped.
+        The three fields keep **visible** `EYEBROW` labels, inline rather than
+        stacked in a four-column grid. An earlier draft made them `sr-only` and
+        moved the label text into the placeholders — which is the
+        placeholder-as-label regression: the accessible name survives, but a
+        placeholder disappears the moment a value is typed, leaving three
+        identical 160px boxes reading `2018 | Austin | Acme` with nothing saying
+        which is which. The placeholders go back to carrying the format hint,
+        which is the job only they can do.
       */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex min-w-0 items-baseline gap-2">
@@ -183,41 +187,56 @@ export function AlumniDirectory() {
           ) : null}
         </div>
         <form
-          className="flex flex-wrap items-center gap-2"
+          className="flex flex-wrap items-end gap-2"
           onSubmit={applyFilters}
           aria-label="Filter alumni"
         >
-          <Label htmlFor="alumni-grad-year" className="sr-only">
-            Graduation year
-          </Label>
-          <Input
-            id="alumni-grad-year"
-            value={graduationYear}
-            onChange={(event) => setGraduationYear(event.target.value)}
-            placeholder="Graduation year"
-            inputMode="numeric"
-            className="h-11 w-full sm:w-40"
-          />
-          <Label htmlFor="alumni-city" className="sr-only">
-            City
-          </Label>
-          <Input
-            id="alumni-city"
-            value={cityFilter}
-            onChange={(event) => setCityFilter(event.target.value)}
-            placeholder="City"
-            className="h-11 w-full sm:w-40"
-          />
-          <Label htmlFor="alumni-company" className="sr-only">
-            Company
-          </Label>
-          <Input
-            id="alumni-company"
-            value={companyFilter}
-            onChange={(event) => setCompanyFilter(event.target.value)}
-            placeholder="Company"
-            className="h-11 w-full sm:w-40"
-          />
+          <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
+            <Label
+              htmlFor="alumni-grad-year"
+              className={`${EYEBROW} text-muted-foreground`}
+            >
+              Graduation year
+            </Label>
+            <Input
+              id="alumni-grad-year"
+              value={graduationYear}
+              onChange={(event) => setGraduationYear(event.target.value)}
+              placeholder="e.g. 2018"
+              inputMode="numeric"
+              className="h-11 w-full sm:w-40"
+            />
+          </div>
+          <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
+            <Label
+              htmlFor="alumni-city"
+              className={`${EYEBROW} text-muted-foreground`}
+            >
+              City
+            </Label>
+            <Input
+              id="alumni-city"
+              value={cityFilter}
+              onChange={(event) => setCityFilter(event.target.value)}
+              placeholder="Austin, Chicago, …"
+              className="h-11 w-full sm:w-40"
+            />
+          </div>
+          <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
+            <Label
+              htmlFor="alumni-company"
+              className={`${EYEBROW} text-muted-foreground`}
+            >
+              Company
+            </Label>
+            <Input
+              id="alumni-company"
+              value={companyFilter}
+              onChange={(event) => setCompanyFilter(event.target.value)}
+              placeholder="Employer or industry"
+              className="h-11 w-full sm:w-40"
+            />
+          </div>
           <Button type="submit" size="sm" className="gap-2">
             <SearchGlyph className="h-4 w-4" />
             Apply filters
@@ -271,20 +290,28 @@ export function AlumniDirectory() {
           {alumni.map((alum) => {
             const id = alum.id ?? alum.user_id;
             const name = alum.display_name ?? "Unnamed alum";
+            /*
+              The bounded fields only. The bio used to ride at the end of this
+              join on lane 4's "free text last" rule, and that rule does not
+              transfer: on `/documents` the description trails one short date
+              and a folder name, where here three fields precede it in half a
+              row, so an ellipsis took the bio in full at every width — and
+              unlike a document, an alumnus has no detail surface to recover it
+              from. It gets its own line below.
+            */
             const meta = [
               alum.graduation_year ? `Class of ${alum.graduation_year}` : null,
               alum.current_company,
               alum.current_city,
-              alum.bio,
             ]
               .filter(Boolean)
               .join(" · ");
             return (
               <li
                 key={id}
-                className="flex min-h-9 items-center gap-2.5 px-2 py-1 pointer-coarse:min-h-11"
+                className="flex min-h-9 items-start gap-2.5 px-2 py-1 pointer-coarse:min-h-11"
               >
-                <Avatar className="h-6 w-6 shrink-0">
+                <Avatar className="mt-0.5 h-6 w-6 shrink-0">
                   {alum.avatar_url ? (
                     <AvatarImage src={alum.avatar_url} alt="" />
                   ) : null}
@@ -292,12 +319,31 @@ export function AlumniDirectory() {
                     {initials(alum.display_name)}
                   </AvatarFallback>
                 </Avatar>
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-                  {name}
-                </span>
-                <span className="hidden min-w-0 flex-1 truncate text-[12.5px] text-muted sm:block">
-                  {meta}
-                </span>
+                {/*
+                  Name over meta below `sm`, side by side above it. An earlier
+                  draft hid the meta line on a phone (`hidden sm:block`), which
+                  on this half was total: the row is deliberately
+                  non-interactive and carries no `aria-label`, and `display:none`
+                  removes text from the accessibility tree — so class year,
+                  company and city existed in no form anywhere in the product
+                  below 640px, on the screen whose entire purpose is those three
+                  fields.
+                */}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-3">
+                    <span className="min-w-0 truncate text-sm font-semibold sm:flex-1">
+                      {name}
+                    </span>
+                    <span className="min-w-0 truncate text-[12.5px] text-muted sm:flex-1">
+                      {meta}
+                    </span>
+                  </div>
+                  {alum.bio ? (
+                    <p className="line-clamp-1 text-[12.5px] text-muted">
+                      {alum.bio}
+                    </p>
+                  ) : null}
+                </div>
               </li>
             );
           })}

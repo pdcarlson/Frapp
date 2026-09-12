@@ -68,7 +68,9 @@ const MEMBERS = [
 
 const membersRead = read(MEMBERS);
 const searchRead = read([]);
-const rolesRead = read([{ id: "r-1", name: "Treasurer", is_system: false, permissions: [] }]);
+const rolesRead = read([
+  { id: "r-1", name: "Treasurer", is_system: false, permissions: [] },
+]);
 const leaderboardRead = read([{ user_id: "u-1", total: 42 }]);
 
 vi.mock("@repo/hooks", () => ({
@@ -92,15 +94,10 @@ vi.mock("@/lib/providers/chapter-presence-provider", () => ({
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 /**
- * Stubbed, not rendered. The sheet pulls in six more hooks and a router, and
- * nothing here is about what it contains — only about whether the *row* opens
- * it, which the stub reports without any of that.
- */
-/**
- * Stubbed for its own reasons: it fires six invite hooks this file's `@repo/hooks`
- * mock has no business knowing about. What matters here is only that the trigger
- * sits in the toolbar row, above the list *and* above every empty state — which
- * is what lets those states carry no CTA of their own.
+ * Stubbed because it fires six invite hooks this file's `@repo/hooks` mock has
+ * no business knowing about. What matters here is only that the trigger sits in
+ * the toolbar row, above the list *and* above every empty state — which is what
+ * lets those states carry no CTA of their own.
  */
 vi.mock("@/components/members/invite-member-dialog", () => ({
   InviteMemberDialog: ({ trigger }: { trigger: React.ReactNode }) => (
@@ -109,8 +106,16 @@ vi.mock("@/components/members/invite-member-dialog", () => ({
 }));
 
 vi.mock("@/components/members/member-detail-sheet", () => ({
-  MemberDetailSheet: ({ open, member }: { open: boolean; member: { display_name?: string } | null }) =>
-    open ? <div data-testid="detail-sheet">{member?.display_name ?? "none"}</div> : null,
+  MemberDetailSheet: ({
+    open,
+    member,
+  }: {
+    open: boolean;
+    member: { display_name?: string } | null;
+  }) =>
+    open ? (
+      <div data-testid="detail-sheet">{member?.display_name ?? "none"}</div>
+    ) : null,
 }));
 
 import { MembersDirectory } from "@/components/members/members-directory";
@@ -125,7 +130,12 @@ import { MembersDirectory } from "@/components/members/members-directory";
  */
 function cardFilledContainers(container: HTMLElement) {
   return Array.from(container.querySelectorAll(".bg-card")).filter(
-    (el) => el.tagName !== "BUTTON",
+    (el) =>
+      el.tagName !== "BUTTON" &&
+      // The idle presence dot is deliberately `bg-card` (`presence-status.ts`:
+      // a transparent interior lets an avatar photo show through and destroys
+      // the shape cue). It is a 10px disc, not a container.
+      !el.hasAttribute("data-presence"),
   );
 }
 
@@ -134,7 +144,10 @@ beforeEach(() => {
   mockOffline.value = false;
   Object.assign(membersRead, read(MEMBERS));
   Object.assign(searchRead, read([]));
-  Object.assign(rolesRead, read([{ id: "r-1", name: "Treasurer", is_system: false, permissions: [] }]));
+  Object.assign(
+    rolesRead,
+    read([{ id: "r-1", name: "Treasurer", is_system: false, permissions: [] }]),
+  );
   Object.assign(leaderboardRead, read([{ user_id: "u-1", total: 42 }]));
 });
 
@@ -159,7 +172,9 @@ describe("Directory on the greenfield shell", () => {
     // owns the route's only heading and it lives one component up.
     expect(screen.queryByText("Members Directory")).toBeNull();
     expect(screen.queryByText("Member Records")).toBeNull();
-    expect(screen.queryByText(/Search and review chapter membership records/)).toBeNull();
+    expect(
+      screen.queryByText(/Search and review chapter membership records/),
+    ).toBeNull();
   });
 
   it("keeps the row at 36px on a pointer and 44px on touch", () => {
@@ -179,7 +194,9 @@ describe("Directory on the greenfield shell", () => {
     expect(screen.queryByRole("button", { name: /view details/i })).toBeNull();
 
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
-    expect(screen.getByTestId("detail-sheet")).toHaveTextContent("Ada Lovelace");
+    expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
+      "Ada Lovelace",
+    );
   });
 
   it("drops an absent field from the meta line instead of rendering an em dash", () => {
@@ -190,9 +207,9 @@ describe("Directory on the greenfield shell", () => {
     expect(container.textContent).not.toContain("—");
     // Ada is the positive control: without it, a matcher that silently never
     // matches would make the negative assertion below pass for free.
-    expect(screen.getByRole("button", { name: /^Ada Lovelace,/ })).toHaveAccessibleName(
-      /joined/i,
-    );
+    expect(
+      screen.getByRole("button", { name: /^Ada Lovelace,/ }),
+    ).toHaveAccessibleName(/joined/i);
     const grace = screen.getByRole("button", { name: /^Grace Hopper,/ });
     expect(grace).not.toHaveAccessibleName(/joined/i);
     expect(grace).not.toHaveAccessibleName(/Treasurer/);
@@ -207,8 +224,9 @@ describe("Directory on the greenfield shell", () => {
     // The state carries no CTA because the toolbar row above it still does.
     expect(screen.getByTestId("invite-trigger")).toBeInTheDocument();
     expect(
-      within(screen.getByRole("heading", { name: "Actives" }).closest("section")!)
-        .queryByRole("button", { name: /invite/i }),
+      within(
+        screen.getByRole("heading", { name: "Actives" }).closest("section")!,
+      ).queryByRole("button", { name: /invite/i }),
     ).not.toBeNull();
     unmount();
 
@@ -223,7 +241,9 @@ describe("Directory on the greenfield shell", () => {
       screen.getByLabelText("Filter members by role"),
       "r-1",
     );
-    expect(screen.getByText("No actives match the filters")).toBeInTheDocument();
+    expect(
+      screen.getByText("No actives match the filters"),
+    ).toBeInTheDocument();
   });
 
   it("names the query when a search matches nothing", async () => {
@@ -238,22 +258,63 @@ describe("Directory on the greenfield shell", () => {
     expect(screen.queryByText("No actives yet")).toBeNull();
   });
 
-  it("keeps the member sheet mounted when the list drops into an error state", async () => {
+  it("lets an async state replace the sheet rather than strand it on a missing member", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<MembersDirectory />);
 
     await user.click(screen.getByRole("button", { name: /^Ada Lovelace,/ }));
-    expect(screen.getByTestId("detail-sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
+      "Ada Lovelace",
+    );
 
-    // A background refetch fails while the sheet is open. The sheet owns a
-    // `useConfirmDialog` promise for member removal, and `await confirm(...)`
-    // only settles while its host is mounted — so unmounting it here would
-    // hang that await forever. The state must replace the list, not the sheet.
+    // A background refetch fails while the sheet is open. The sheet goes with
+    // the body, which is the shape every other `useConfirmDialog` caller has:
+    // `ConfirmDialogHost` settles a pending confirmation to `null` on unmount
+    // (`confirm-dialog.spec.tsx`, "resolves null when the caller stops
+    // rendering the dialog"), so there is no promise left hanging. Keeping it
+    // mounted is what would hurt — `activeMember` is looked up in
+    // `sortedMembers`, which is empty in exactly these branches, so the sheet
+    // would render an unknown member with its roles cleared and a Save that
+    // silently no-ops.
     Object.assign(leaderboardRead, read([]), { isError: true });
     rerender(<MembersDirectory />);
 
-    expect(screen.getByText("Couldn't load roles and points")).toBeInTheDocument();
-    expect(screen.getByTestId("detail-sheet")).toBeInTheDocument();
+    expect(
+      screen.getByText("Couldn't load roles and points"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("detail-sheet")).toBeNull();
+  });
+
+  it("sorts members with no role, and with an unparseable join date, last in both directions", async () => {
+    const user = userEvent.setup();
+    render(<MembersDirectory />);
+    const rows = () =>
+      screen
+        .getAllByRole("button", { name: /Lovelace|Hopper/ })
+        .map((el) => el.getAttribute("aria-label")?.split(",")[0]);
+
+    // Grace has no role. A sentinel string inside the comparator would put her
+    // last ascending and FIRST descending; the partition keeps her last in both.
+    await user.selectOptions(screen.getByLabelText("Sort members"), "role:asc");
+    expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
+    await user.selectOptions(
+      screen.getByLabelText("Sort members"),
+      "role:desc",
+    );
+    expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
+
+    // Grace's `created_at` is "not-a-date". Subtracting it yields NaN, and a
+    // comparator returning NaN reads as "equal to everything" — not an ordering.
+    await user.selectOptions(
+      screen.getByLabelText("Sort members"),
+      "joined:desc",
+    );
+    expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
+    await user.selectOptions(
+      screen.getByLabelText("Sort members"),
+      "joined:asc",
+    );
+    expect(rows()).toEqual(["Ada Lovelace", "Grace Hopper"]);
   });
 
   it("draws its async states without repainting the card the lane deleted", () => {
@@ -279,19 +340,25 @@ describe("Directory on the greenfield shell", () => {
     const user = userEvent.setup();
     render(<MembersDirectory />);
 
-    // No select-all in a header row, because there is no header row.
-    expect(
-      screen.queryByRole("checkbox", { name: /select all members on this page/i }),
-    ).toBeNull();
+    const selectAll = () =>
+      screen.getByRole("checkbox", {
+        name: /select all members on this page/i,
+      });
 
-    await user.click(screen.getByRole("checkbox", { name: "Select Ada Lovelace" }));
+    // Select-all is rendered from zero, not conditioned on its own output. The
+    // bulk bar is what appears on selection; the control that drives it must
+    // not live inside the thing it can unmount.
+    expect(selectAll()).toBeInTheDocument();
+    expect(screen.queryByText(/selected$/)).toBeNull();
 
-    // Selecting one row raises the selection bar, which is where select-all
-    // and the bulk role assignment now live.
-    expect(screen.getByText("1 selected")).toBeInTheDocument();
-    expect(
-      screen.getByRole("checkbox", { name: /select all members on this page/i }),
-    ).toBeInTheDocument();
+    await user.click(selectAll());
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
     expect(screen.getByLabelText("Select role to assign")).toBeInTheDocument();
+
+    // Unticking it empties the selection — and the control survives, so focus
+    // is not dropped to <body> mid-interaction.
+    await user.click(selectAll());
+    expect(screen.queryByText(/selected$/)).toBeNull();
+    expect(selectAll()).toBeInTheDocument();
   });
 });

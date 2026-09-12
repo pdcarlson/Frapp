@@ -314,21 +314,44 @@ export function MembersDirectory() {
       switch (sortKey) {
         case "points":
           return (pointsOf(a) - pointsOf(b)) * factor;
-        case "joined":
-          return (
-            (new Date(a.created_at).getTime() -
-              new Date(b.created_at).getTime()) *
-            factor
-          );
-        case "role":
-          // Members with no role sort last in either direction rather than
-          // under an empty string, which would put them above every named role
-          // ascending and below it descending for no reason a reader can see.
-          return (
-            (primaryRoleName(a) ?? "￿").localeCompare(
-              primaryRoleName(b) ?? "￿",
-            ) * factor
-          );
+        case "joined": {
+          /*
+            A date that will not parse sorts last in both directions, for the
+            same reason the role branch below partitions: `NaN - t` is `NaN`,
+            and a comparator that returns `NaN` is read as 0 — "equal to
+            everything" — which is not a valid ordering. One bad row survives
+            V8's TimSort by luck; two or more scramble the good rows around
+            them, so "Newest first" can put the oldest member at the top.
+            `formatJoined` already treats an unparseable date as absent; this
+            is the same fact reaching the sort.
+          */
+          const joinedA = new Date(a.created_at).getTime();
+          const joinedB = new Date(b.created_at).getTime();
+          const badA = Number.isNaN(joinedA);
+          const badB = Number.isNaN(joinedB);
+          if (badA && badB) return 0;
+          if (badA) return 1;
+          if (badB) return -1;
+          return (joinedA - joinedB) * factor;
+        }
+        case "role": {
+          /*
+            Members with no role sort last in BOTH directions, which takes a
+            branch ahead of the `* factor` rather than a sentinel inside it.
+            A sentinel is still compared and then flipped, so it only mirrors
+            the empty string it replaces: "\uffff" lands roleless members last
+            ascending and *first* descending, so "Role Z to A" would stack every
+            member holding no office above every named one, on page 1 of a
+            25-row pager. The direction toggle orders the named roles; a reader
+            flipping it does not expect the roleless block to move at all.
+          */
+          const roleA = primaryRoleName(a);
+          const roleB = primaryRoleName(b);
+          if (!roleA && !roleB) return 0;
+          if (!roleA) return 1;
+          if (!roleB) return -1;
+          return roleA.localeCompare(roleB) * factor;
+        }
         case "name":
         default:
           return displayNameOf(a).localeCompare(displayNameOf(b)) * factor;
@@ -441,246 +464,333 @@ export function MembersDirectory() {
     }
   }
 
-  /**
-   * Everything that can be *replaced* by an async state.
-   *
-   * Split out so `<MemberDetailSheet>` can render outside it, and that is a
-   * correctness fix rather than tidying. The sheet owns a `useConfirmDialog`
-   * promise now (this lane's replacement for `window.confirm` on member
-   * removal), and `await confirm(...)` only settles while its host is mounted.
-   * With the state branches returning early from the component, a background
-   * refetch flipping `rolesQuery` or `leaderboardQuery` to `isError` while the
-   * sheet sat at the confirm step would unmount the sheet mid-promise and hang
-   * that `await` forever — the same two-change interaction `documents-page.tsx`
-   * records against its own confirmation, and the reason it renders its dialog
-   * last and unconditionally.
-   *
-   * The branches themselves are unchanged, deliberately. Lane 4 scopes its
-   * states to the list region and keeps its toolbar up; doing that here would
-   * leave the search input mounted while offline, which rewrites the recorded
-   * reason (#1621) that this screen's Retry clears the search term — that
-   * escape exists precisely because the state replaces the input that produced
-   * it. Re-deciding it is a resilience change, not a chrome one.
+  /*
+   * Roles and points are in this gate, not just the member rows, because the
+   * two guards below that would otherwise catch them are dead while offline:
+   * a paused query is neither `isLoading` nor `isError`. Without them the
+   * directory renders every member at 0 points under a raw role UUID, with an
+   * empty role filter and meaningless points sorting — which is exactly the
+   * "looks healthy while quietly broken" state the comment on those guards
+   * exists to prevent.
    */
-  function renderBody() {
-    /*
-     * Roles and points are in this gate, not just the member rows, because the
-     * two guards below that would otherwise catch them are dead while offline:
-     * a paused query is neither `isLoading` nor `isError`. Without them the
-     * directory renders every member at 0 points under a raw role UUID, with an
-     * empty role filter and meaningless points sorting — which is exactly the
-     * "looks healthy while quietly broken" state the comment on those guards
-     * exists to prevent.
-     */
-    if (
-      isOffline &&
-      anyReadUncached(activeQuery, rolesQuery, leaderboardQuery)
-    ) {
-      return (
-        <NestedOffline
-          sole
-          title={stateMicrocopy.members.offlineTitle}
-          description={stateMicrocopy.members.offlineDescription}
-          onRetry={() => {
-            /*
-             * Clearing the search is part of the retry, not a nicety. Typing
-             * offline swaps `activeQuery` to a search key that was never
-             * fetched, so this card replaces the directory — including the input
-             * that produced the term — while the query state survives. Without
-             * this the member has no control left to undo it.
-             *
-             * Only when the search is actually the uncached read, though: the
-             * gate covers three reads, and discarding what they typed to recover
-             * from an uncached *roles* fetch would lose their work for nothing.
-             */
-            if (usingSearch && anyReadUncached(searchQuery)) setQuery("");
-            void membersQuery.refetch();
-            if (usingSearch) void searchQuery.refetch();
-            void rolesQuery.refetch();
-            void leaderboardQuery.refetch();
-          }}
-        />
-      );
-    }
-
-    if (activeQuery.isLoading) {
-      return <NestedLoading sole message={stateMicrocopy.members.loading} />;
-    }
-
-    if (activeQuery.isError) {
-      return (
-        <NestedError
-          sole
-          title={stateMicrocopy.members.errorTitle}
-          description={stateMicrocopy.members.errorDescription}
-          onRetry={() => {
-            void activeQuery.refetch();
-          }}
-        />
-      );
-    }
-
-    // Roles and points underpin the role filter, bulk assignment, the role in
-    // each row's meta line and points sorting. If either query fails silently the
-    // directory still looks healthy while those features are quietly broken, so
-    // surface their load state.
-    if (rolesQuery.isLoading || leaderboardQuery.isLoading) {
-      return <NestedLoading sole message={stateMicrocopy.members.loading} />;
-    }
-
-    if (rolesQuery.isError || leaderboardQuery.isError) {
-      return (
-        <NestedError
-          sole
-          title={stateMicrocopy.members.supportErrorTitle}
-          description={stateMicrocopy.members.supportErrorDescription}
-          onRetry={() => {
-            void activeQuery.refetch();
-            void rolesQuery.refetch();
-            void leaderboardQuery.refetch();
-          }}
-        />
-      );
-    }
-
+  if (isOffline && anyReadUncached(activeQuery, rolesQuery, leaderboardQuery)) {
     return (
-      <section aria-labelledby="members-list-label" className="space-y-3">
-        {/*
-        One toolbar row, not a card header: the list's own name and count on the
-        left, its search, filters and sort on the right, sitting directly on the
-        page surface. `1f` pin 2.
-      */}
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="flex min-w-0 items-baseline gap-2">
-            <h2
-              id="members-list-label"
-              className={`${EYEBROW} truncate text-muted-foreground`}
-            >
-              Actives
-            </h2>
+      <NestedOffline
+        sole
+        title={stateMicrocopy.members.offlineTitle}
+        description={stateMicrocopy.members.offlineDescription}
+        onRetry={() => {
+          /*
+           * Clearing the search is part of the retry, not a nicety. Typing
+           * offline swaps `activeQuery` to a search key that was never
+           * fetched, so this card replaces the directory — including the input
+           * that produced the term — while the query state survives. Without
+           * this the member has no control left to undo it.
+           *
+           * Only when the search is actually the uncached read, though: the
+           * gate covers three reads, and discarding what they typed to recover
+           * from an uncached *roles* fetch would lose their work for nothing.
+           */
+          if (usingSearch && anyReadUncached(searchQuery)) setQuery("");
+          void membersQuery.refetch();
+          if (usingSearch) void searchQuery.refetch();
+          void rolesQuery.refetch();
+          void leaderboardQuery.refetch();
+        }}
+      />
+    );
+  }
+
+  if (activeQuery.isLoading) {
+    return <NestedLoading sole message={stateMicrocopy.members.loading} />;
+  }
+
+  if (activeQuery.isError) {
+    return (
+      <NestedError
+        sole
+        title={stateMicrocopy.members.errorTitle}
+        description={stateMicrocopy.members.errorDescription}
+        onRetry={() => {
+          void activeQuery.refetch();
+        }}
+      />
+    );
+  }
+
+  // Roles and points underpin the role filter, bulk assignment, the role in
+  // each row's meta line and points sorting. If either query fails silently the
+  // directory still looks healthy while those features are quietly broken, so
+  // surface their load state.
+  if (rolesQuery.isLoading || leaderboardQuery.isLoading) {
+    return <NestedLoading sole message={stateMicrocopy.members.loading} />;
+  }
+
+  if (rolesQuery.isError || leaderboardQuery.isError) {
+    return (
+      <NestedError
+        sole
+        title={stateMicrocopy.members.supportErrorTitle}
+        description={stateMicrocopy.members.supportErrorDescription}
+        onRetry={() => {
+          void activeQuery.refetch();
+          void rolesQuery.refetch();
+          void leaderboardQuery.refetch();
+        }}
+      />
+    );
+  }
+
+  return (
+    <section aria-labelledby="members-list-label" className="space-y-3">
+      {/*
+      One toolbar row, not a card header: the list's own name and count on the
+      left, its search, filters and sort on the right, sitting directly on the
+      page surface. `1f` pin 2.
+    */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h2
+            id="members-list-label"
+            className={`${EYEBROW} truncate text-muted-foreground`}
+          >
+            Actives
+          </h2>
+          {/*
+            Suppressed while a search is in flight rather than rendering
+            "0 members matching …", which is a claim about the roster made
+            before the answer is back.
+          */}
+          {activeQuery.isLoading ? null : (
             <p className="shrink-0 text-[12.5px] text-muted">
               {sortedMembers.length} member
               {sortedMembers.length === 1 ? "" : "s"}
               {usingSearch ? ` matching “${deferredQuery}”` : ""}
             </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {/*
-            `type="search"`, not `type="text"`: it gets the browser's own clear
-            affordance and the correct role. The visible <Label> is `sr-only`
-            rather than absent — a placeholder is not an accessible name.
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/*
+          `type="search"`, not `type="text"`: it gets the browser's own clear
+          affordance and the correct role. The visible <Label> is `sr-only`
+          rather than absent — a placeholder is not an accessible name.
 
-            The top bar's find field (`1b` pin 8) finds members too, but it
-            navigates to this route rather than narrowing it, and this input is
-            wired to `useMemberSearch` — a server-side search over the whole
-            roster, not a filter over the loaded page. Deleting it the way lane
-            3 deleted the channels column's field would remove a capability, so
-            it stays, as `/documents` and `/backwork` kept theirs.
-          */}
-            <div className="relative w-full sm:w-56">
-              {/*
-              "Search members", not "Search by member name": `GET
-              /v1/members/search` matches name, email and custom-field values
-              (`spec/behavior/members.md`), so naming only the name narrowed the
-              control in its own label.
-            */}
-              <Label htmlFor="member-search" className="sr-only">
-                Search members
-              </Label>
-              <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="member-search"
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search members"
-                className="h-11 pl-9"
-              />
-            </div>
-            <select
-              aria-label="Filter members by role"
-              value={roleFilter}
-              onChange={(event) => setRoleFilter(event.target.value)}
-              className={dashboardFilterSelectClassName}
-            >
-              <option value="all">Role: All</option>
-              {roleOptions.map((role) => (
-                <option key={role.id} value={role.id}>
-                  Role: {role.name}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label={`Filter members by ${cohortTerm}`}
-              value={cohortFilter}
-              onChange={(event) => setCohortFilter(event.target.value)}
-              className={dashboardFilterSelectClassName}
-            >
-              <option value="all">{cohortTerm}: All</option>
-              {cohortOptions.map((year) => (
-                <option key={year} value={String(year)}>
-                  {cohortTerm}: {year}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter members by status"
-              value={statusFilter}
-              onChange={(event) =>
-                setStatusFilter(
-                  event.target.value as "all" | "active" | "pending",
-                )
-              }
-              className={dashboardFilterSelectClassName}
-            >
-              <option value="all">Status: All</option>
-              <option value="active">Status: Active</option>
-              <option value="pending">Status: Pending</option>
-            </select>
-            <select
-              aria-label="Sort members"
-              value={sort}
-              onChange={(event) => setSort(event.target.value as SortValue)}
-              className={dashboardFilterSelectClassName}
-            >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  Sort: {option.label}
-                </option>
-              ))}
-            </select>
+          The top bar's find field (`1b` pin 8) finds members too, but it
+          navigates to this route rather than narrowing it, and this input is
+          wired to `useMemberSearch` — a server-side search over the whole
+          roster, not a filter over the loaded page. Deleting it the way lane
+          3 deleted the channels column's field would remove a capability, so
+          it stays, as `/documents` and `/backwork` kept theirs.
+        */}
+          <div className="relative w-full sm:w-56">
             {/*
-            The route's primary action, at the trailing edge of the one toolbar
-            row `1f` pin 2 describes. It renders above the empty state as well
-            as above a populated list, which is what lets the empty state carry
-            no CTA of its own without leaving the member nothing to do.
+            "Search members", not "Search by member name": `GET
+            /v1/members/search` matches name, email and custom-field values
+            (`spec/behavior/members.md`), so naming only the name narrowed the
+            control in its own label.
           */}
-            <InviteMemberDialog
-              trigger={
-                <Button className="gap-2">
-                  <InviteGlyph className="h-4 w-4" />
-                  Invite member
-                </Button>
-              }
+            <Label htmlFor="member-search" className="sr-only">
+              Search members
+            </Label>
+            <SearchGlyph className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="member-search"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search members"
+              className="h-11 pl-9"
             />
           </div>
+          <select
+            aria-label="Filter members by role"
+            value={roleFilter}
+            onChange={(event) => setRoleFilter(event.target.value)}
+            className={dashboardFilterSelectClassName}
+          >
+            <option value="all">Role: All</option>
+            {roleOptions.map((role) => (
+              <option key={role.id} value={role.id}>
+                Role: {role.name}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label={`Filter members by ${cohortTerm}`}
+            value={cohortFilter}
+            onChange={(event) => setCohortFilter(event.target.value)}
+            className={dashboardFilterSelectClassName}
+          >
+            <option value="all">{cohortTerm}: All</option>
+            {cohortOptions.map((year) => (
+              <option key={year} value={String(year)}>
+                {cohortTerm}: {year}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Filter members by status"
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(
+                event.target.value as "all" | "active" | "pending",
+              )
+            }
+            className={dashboardFilterSelectClassName}
+          >
+            <option value="all">Status: All</option>
+            <option value="active">Status: Active</option>
+            <option value="pending">Status: Pending</option>
+          </select>
+          <select
+            aria-label="Sort members"
+            value={sort}
+            onChange={(event) => setSort(event.target.value as SortValue)}
+            className={dashboardFilterSelectClassName}
+          >
+            {SORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                Sort: {option.label}
+              </option>
+            ))}
+          </select>
+          {/*
+          The route's primary action, at the trailing edge of the one toolbar
+          row `1f` pin 2 describes. It renders above the empty state as well
+          as above a populated list, which is what lets the empty state carry
+          no CTA of its own without leaving the member nothing to do.
+        */}
+          <InviteMemberDialog
+            trigger={
+              <Button className="gap-2">
+                <InviteGlyph className="h-4 w-4" />
+                Invite member
+              </Button>
+            }
+          />
         </div>
+      </div>
 
-        {/*
+      {/*
         The selection bar `1f` pin 4 names, in place of the accent-tinted
         `<Card>` that used to stack above the results card. It is a flush tinted
         row rather than a card because the page has no cards left for it to sit
-        beside, and it carries the select-all the deleted table header used to
-        hold: with the checkbox column gone there is no header row for it, and
-        hoisting it into the toolbar would put a permanently visible control
-        there for a bulk action most members cannot complete.
+        beside.
+
+        **The select-all is NOT in here**, and an earlier draft of this lane put
+        it here on the reasoning that the toolbar should not carry a permanently
+        visible control for a bulk action most members cannot complete. That
+        reasoning cost two things the deleted `<th>` checkbox had. It was
+        unreachable from zero — you could not select a page without first
+        ticking a row — and worse, it destroyed itself when used: unticking it
+        drives the selection to zero, which unmounts the bar holding the
+        checkbox that currently has focus, dropping a keyboard user to `<body>`
+        to restart tabbing from the top. `Clear` and a successful `Apply` are
+        the same shape. So the select-all lives in the always-rendered list
+        header below, where it behaves like the header control it replaces, and
+        only the *count* and the bulk action are conditional.
       */}
-        {selectedCount > 0 ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent-border bg-accent-subtle px-2 py-1.5">
-            <p className="text-[12.5px] font-semibold text-accent-text">
-              {selectedCount} selected
-            </p>
-            <label className="flex min-h-11 cursor-pointer items-center gap-2 text-[12.5px] text-muted-foreground">
+      {selectedCount > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-accent-border bg-accent-subtle px-2 py-1.5">
+          <p className="text-[12.5px] font-semibold text-accent-text">
+            {selectedCount} selected
+          </p>
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+            <select
+              aria-label="Select role to assign"
+              value={bulkRoleId}
+              onChange={(event) => setBulkRoleId(event.target.value)}
+              className={dashboardFilterSelectClassName}
+            >
+              <option value="">Assign role</option>
+              {assignableRoleOptions.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+            <Button
+              size="sm"
+              onClick={() => void applyBulkRole()}
+              disabled={!bulkRoleId || updateRolesMutation.isPending}
+            >
+              Apply
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setSelectedMemberIds([]);
+                setBulkRoleId("");
+              }}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {activeQuery.isLoading ? (
+        <NestedLoading message={stateMicrocopy.members.loading} />
+      ) : sortedMembers.length === 0 ? (
+        /*
+         * Three states where there was one, because the board draws them as
+         * three: "Empty = accent tile + tinted CTA. No results = neutral tile,
+         * names the query." The string this replaced ("Try a broader search or
+         * invite your first members to populate this directory.") guessed at
+         * both at once and instructed the reader in either case.
+         *
+         * No CTA on any of them. §10 makes the empty-state action optional, and
+         * the toolbar row above renders whether or not the list has rows, so
+         * Invite is already on screen — a second copy of it inside the state
+         * would be the same button twice, which reads worst here, where the
+         * screen has nothing else on it. That is the reasoning the deleted
+         * version carried, and it survives the flattening intact.
+         */
+        usingSearch ? (
+          <NestedEmpty
+            sole
+            title={`No match for “${deferredQuery}”`}
+            description={stateMicrocopy.members.noMatchDescription}
+          />
+        ) : narrowed ? (
+          <NestedEmpty
+            sole
+            title={stateMicrocopy.members.filteredTitle}
+            description={stateMicrocopy.members.filteredDescription}
+          />
+        ) : (
+          <NestedEmpty
+            sole
+            title={stateMicrocopy.members.emptyTitle}
+            description={stateMicrocopy.members.emptyDescription}
+          />
+        )
+      ) : (
+        <>
+          {/*
+          On the `<ul>` below: `role="list"` restored explicitly. `display:flex` on an `<li>` drops
+          its `list-item` box, and WebKit stops exposing list semantics when
+          it does — so without this a screen reader announces neither the list
+          nor its item count. That matters more here than on a list that was
+          always a list: this one replaces a `<table>`, which had strong
+          semantics of its own, so silently landing on a bare group of buttons
+          would be a real regression rather than a nit.
+        */}
+          {/*
+            The list header, which is all that survives of the deleted
+            `<thead>`: no column labels (a flush list has no columns to label)
+            and no sort buttons (one sort select in the toolbar replaced four),
+            but the select-all stays, permanently rendered.
+
+            It is here rather than in the selection bar because a control must
+            not be conditioned on its own output. Inside the bar it could not be
+            reached until a row had been ticked individually, and unticking it
+            emptied the selection, which unmounted the bar around the checkbox
+            that had focus. Here it behaves exactly as the `<th>` checkbox did.
+          */}
+          <label className="flex w-fit min-h-9 cursor-pointer items-center gap-2 text-[12.5px] text-muted pointer-coarse:min-h-11">
+            <span className={dashboardCheckboxHitAreaClassName}>
               <input
                 type="checkbox"
                 aria-label="Select all members on this page"
@@ -698,233 +808,183 @@ export function MembersDirectory() {
                   );
                 }}
               />
-              All on this page
-            </label>
-            <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
-              <select
-                aria-label="Select role to assign"
-                value={bulkRoleId}
-                onChange={(event) => setBulkRoleId(event.target.value)}
-                className={dashboardFilterSelectClassName}
-              >
-                <option value="">Assign role</option>
-                {assignableRoleOptions.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
-              <Button
-                size="sm"
-                onClick={() => void applyBulkRole()}
-                disabled={!bulkRoleId || updateRolesMutation.isPending}
-              >
-                Apply
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  setSelectedMemberIds([]);
-                  setBulkRoleId("");
-                }}
-              >
-                Clear
-              </Button>
-            </div>
-          </div>
-        ) : null}
+            </span>
+            Select all on this page
+          </label>
+          <ul role="list" className={denseListClassName}>
+            {pageMembers.map((member) => {
+              const id = memberId(member);
+              const name = displayNameOf(member);
+              const roleName = primaryRoleName(member);
+              const joined = formatJoined(member.created_at);
+              const points = pointsOf(member);
+              const status = presenceStatusOf(member);
+              const selected = selectedMemberIds.includes(id);
+              return (
+                <li
+                  key={id}
+                  className={cn(
+                    "flex min-h-9 items-center gap-1 pointer-coarse:min-h-11",
+                    // Fill means state, never striping. `accent-subtle-hover`
+                    // is what the deleted `TableRow` painted for
+                    // `data-state="selected"`, kept so selection still reads a
+                    // step above the row hover below it.
+                    selected && "bg-accent-subtle-hover text-accent-text",
+                  )}
+                >
+                  <label
+                    className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
+                  >
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${name}`}
+                      className={dashboardTableCheckboxClassName}
+                      checked={selected}
+                      onChange={(event) =>
+                        toggleMember(id, event.target.checked)
+                      }
+                    />
+                  </label>
+                  {/*
+                  The row is the control. `4a`'s note is "Click a row →
+                  profile popover with Message", and the trailing "View
+                  details" Secondary button this replaces was a 44px control
+                  inside a row the lane pulled down to 36, so it would have
+                  set the row's height on its own.
 
-        {sortedMembers.length === 0 ? (
-          /*
-           * Three states where there was one, because the board draws them as
-           * three: "Empty = accent tile + tinted CTA. No results = neutral tile,
-           * names the query." The string this replaced ("Try a broader search or
-           * invite your first members to populate this directory.") guessed at
-           * both at once and instructed the reader in either case.
-           *
-           * No CTA on any of them. §10 makes the empty-state action optional, and
-           * the toolbar row above renders whether or not the list has rows, so
-           * Invite is already on screen — a second copy of it inside the state
-           * would be the same button twice, which reads worst here, where the
-           * screen has nothing else on it. That is the reasoning the deleted
-           * version carried, and it survives the flattening intact.
-           */
-          usingSearch ? (
-            <NestedEmpty
-              sole
-              title={`No match for “${deferredQuery}”`}
-              description={stateMicrocopy.members.noMatchDescription}
-            />
-          ) : narrowed ? (
-            <NestedEmpty
-              sole
-              title={stateMicrocopy.members.filteredTitle}
-              description={stateMicrocopy.members.filteredDescription}
-            />
-          ) : (
-            <NestedEmpty
-              sole
-              title={stateMicrocopy.members.emptyTitle}
-              description={stateMicrocopy.members.emptyDescription}
-            />
-          )
-        ) : (
-          <>
-            {/*
-            `role="list"` restored explicitly. `display:flex` on an `<li>` drops
-            its `list-item` box, and WebKit stops exposing list semantics when
-            it does — so without this a screen reader announces neither the list
-            nor its item count. That matters more here than on a list that was
-            always a list: this one replaces a `<table>`, which had strong
-            semantics of its own, so silently landing on a bare group of buttons
-            would be a real regression rather than a nit.
-          */}
-            <ul role="list" className={denseListClassName}>
-              {pageMembers.map((member) => {
-                const id = memberId(member);
-                const name = displayNameOf(member);
-                const roleName = primaryRoleName(member);
-                const joined = formatJoined(member.created_at);
-                const points = pointsOf(member);
-                const status = presenceStatusOf(member);
-                const selected = selectedMemberIds.includes(id);
-                return (
-                  <li
-                    key={id}
+                  `aria-label` rather than the assembled subtree, and the reason
+                  is **ordering**, not the presence dot: the dot is `aria-hidden`
+                  now that `AvatarPresenceDot` has no labelled variant, so it
+                  contributes nothing to this button's name. An assembled name
+                  would read the row's own visual order and change shape with the
+                  layout, where the label states the same facts in a fixed order
+                  with the status last, and adds the status the dot conveys only
+                  in colour. It must keep restating every fact the row shows: an
+                  `aria-label` overrides the whole subtree, so anything left out
+                  of it is dropped from the accessible name even though it is on
+                  screen.
+
+                  `FOCUS_RING_OFFSET`, not `FOCUS_RING`: the row carries no
+                  border, and `FOCUS_RING`'s indicator is the border swap.
+                */}
+                  <button
+                    type="button"
+                    onClick={() => openMember(id)}
+                    aria-label={[
+                      name,
+                      roleName,
+                      `${points} points`,
+                      joined ? `joined ${joined}` : null,
+                      member.email || null,
+                      status ? presenceLabel(status) : null,
+                    ]
+                      .filter(Boolean)
+                      .join(", ")}
                     className={cn(
-                      "flex min-h-9 items-center gap-1 pointer-coarse:min-h-11",
-                      // Fill means state, never striping. `accent-subtle-hover`
-                      // is what the deleted `TableRow` painted for
-                      // `data-state="selected"`, kept so selection still reads a
-                      // step above the row hover below it.
-                      selected && "bg-accent-subtle-hover text-accent-text",
+                      "flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
+                      "pointer-coarse:min-h-11",
+                      /*
+                        Hover only while NOT selected. The selected fill lives
+                        on the `<li>` and this button is `flex-1`, so an
+                        unconditional hover paints `accent-3` over the row's
+                        `accent-4` across everything right of the checkbox, and
+                        `hover:text-foreground` overrides `text-accent-text` —
+                        a hovered selected row would be pixel-identical to a
+                        hovered unselected one, leaving the checkbox as the only
+                        cue and contradicting the note on the `<li>` above.
+                      */
+                      !selected &&
+                        "hover:bg-accent-subtle hover:text-foreground",
+                      FOCUS_RING_OFFSET,
                     )}
                   >
-                    <label
-                      className={`${dashboardCheckboxHitAreaClassName} shrink-0`}
-                    >
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${name}`}
-                        className={dashboardTableCheckboxClassName}
-                        checked={selected}
-                        onChange={(event) =>
-                          toggleMember(id, event.target.checked)
-                        }
-                      />
-                    </label>
+                    <div className="relative shrink-0">
+                      <Avatar className="h-6 w-6">
+                        {member.avatar_url ? (
+                          <AvatarImage src={member.avatar_url} alt="" />
+                        ) : null}
+                        <AvatarFallback className="text-[9px]">
+                          {initials(name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <AvatarPresenceDot status={status} />
+                    </div>
                     {/*
-                    The row is the control. `4a`'s note is "Click a row →
-                    profile popover with Message", and the trailing "View
-                    details" Secondary button this replaces was a 44px control
-                    inside a row the lane pulled down to 36, so it would have
-                    set the row's height on its own.
-
-                    `aria-label` rather than the assembled subtree: the presence
-                    dot is an `img`-role descendant, so without one the button
-                    would be named "Online Jane Doe …" and would silently rename
-                    itself whenever presence changed. Overriding the subtree
-                    means restating everything the row shows, including the meta
-                    line that `sm:` hides on a phone — so a screen-reader user
-                    keeps the role, join date and email the layout drops.
-
-                    `FOCUS_RING_OFFSET`, not `FOCUS_RING`: the row carries no
-                    border, and `FOCUS_RING`'s indicator is the border swap.
-                  */}
-                    <button
-                      type="button"
-                      onClick={() => openMember(id)}
-                      aria-label={[
-                        name,
-                        roleName,
-                        `${points} points`,
-                        joined ? `joined ${joined}` : null,
-                        member.email || null,
-                        status ? presenceLabel(status) : null,
-                      ]
-                        .filter(Boolean)
-                        .join(", ")}
-                      className={cn(
-                        "flex min-h-9 min-w-0 flex-1 items-center gap-2.5 rounded-md px-2 py-1 text-left transition-colors",
-                        "pointer-coarse:min-h-11",
-                        "hover:bg-accent-subtle hover:text-foreground",
-                        FOCUS_RING_OFFSET,
-                      )}
-                    >
-                      <div className="relative shrink-0">
-                        <Avatar className="h-6 w-6">
-                          {member.avatar_url ? (
-                            <AvatarImage src={member.avatar_url} alt="" />
-                          ) : null}
-                          <AvatarFallback className="text-[9px]">
-                            {initials(name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <AvatarPresenceDot status={status} decorative />
-                      </div>
-                      <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                      Name over meta below `sm`, side by side above it — the
+                      stacking shape lane 4's document row uses. An earlier
+                      draft hid the meta line outright on a phone (`hidden
+                      sm:block`), which puts the role, join date and email in no
+                      form at all at the 375px floor this repo measures:
+                      `display:none` takes them out of the accessibility tree
+                      too, so the row's own `aria-label` was the only place they
+                      survived.
+                    */}
+                    <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-3">
+                      <span className="min-w-0 truncate text-sm font-semibold sm:flex-1">
                         {name}
                       </span>
                       {/*
-                      One meta line, `·`-joined, bounded fields first and the
-                      free-text one last — lane 4's ordering rule, for the same
-                      reason: this line truncates, so whatever leads it is what
-                      survives a narrow row, and an email is the field that can
-                      run long.
-                    */}
-                      <span className="hidden min-w-0 flex-1 truncate text-[12.5px] text-muted sm:block">
+                        One meta line, `·`-joined, bounded fields first and the
+                        free-text one last — lane 4's ordering rule, for the
+                        same reason: this line truncates, so whatever leads it
+                        is what survives a narrow row, and an email is the field
+                        that can run long.
+                      */}
+                      <span className="min-w-0 truncate text-[12.5px] text-muted sm:flex-1">
                         {[roleName, joined, member.email]
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
-                      <span className="shrink-0 text-[12.5px] tabular-nums text-muted">
-                        {points} pts
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+                    </span>
+                    <span className="shrink-0 text-[12.5px] tabular-nums text-muted">
+                      {points} pts
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
 
-            {pageCount > 1 ? (
-              <div className="flex items-center justify-between gap-2 text-[12.5px]">
-                <p className="text-muted">
-                  Page {currentPage} of {pageCount}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={currentPage <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={currentPage >= pageCount}
-                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                  >
-                    Next
-                  </Button>
-                </div>
+          {pageCount > 1 ? (
+            <div className="flex items-center justify-between gap-2 text-[12.5px]">
+              <p className="text-muted">
+                Page {currentPage} of {pageCount}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={currentPage >= pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                >
+                  Next
+                </Button>
               </div>
-            ) : null}
-          </>
-        )}
-      </section>
-    );
-  }
-
-  return (
-    <>
-      {renderBody()}
+            </div>
+          ) : null}
+        </>
+      )}
       {/*
-        Outside `renderBody`, and rendered unconditionally, for the reason its
-        docstring gives: an offline or error branch that replaced this would
-        unmount a pending confirmation without settling its promise.
+        Rendered inside the success branch, which is where every other screen
+        using `useConfirmDialog` renders its dialog — and the early returns
+        above are safe for it. `ConfirmDialogHost` carries
+        `useEffect(() => () => onSettle(null))` precisely so a pending
+        confirmation settles when the caller stops rendering it, and
+        `confirm-dialog.spec.tsx`'s "resolves null when the caller stops
+        rendering the dialog" pins that against this exact shape. An earlier
+        draft of this lane hoisted the sheet out of the state branches to
+        "fix" a hang that the primitive had already fixed — and paid for it,
+        since a sheet that outlives its own query looks up `activeMember` in an
+        empty `sortedMembers` and renders an unknown member with its roles
+        cleared and a Save that silently no-ops.
       */}
       <MemberDetailSheet
         open={detailSheetOpen}
@@ -933,6 +993,6 @@ export function MembersDirectory() {
         points={activeMember ? pointsOf(activeMember) : null}
         usingPreviewData={false}
       />
-    </>
+    </section>
   );
 }

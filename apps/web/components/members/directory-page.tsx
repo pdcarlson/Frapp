@@ -96,17 +96,23 @@ export function DirectoryPage() {
         **No `actions` here, and that is a decision rather than an omission.**
         `1f` pin 2 puts a route's primary action in this row, and lane 4 duly
         put `/documents`' Upload in it — behind `<Can permission="…">`. This
-        route has no `<Can>` anywhere (`spec/behavior/members.md`: the only
-        client mirror of `members:view` is the nav entry), and adding one is a
-        permission read, which is behavior rather than chrome. Mounting Invite
-        here unguarded would fire `useInvites` — `GET /v1/invites`, gated on
-        `members:invite` — for every visitor on every path, including the
-        Alumni tab, which is the guaranteed-403-per-visit shape
-        `member-detail-sheet.tsx` already guards `useCustomRoles` against.
+        route has no `<Can>` anywhere; the only client mirror of `members:view`
+        is the sidebar entry in `components/layout/nav-config.ts`. Adding one is
+        a permission read, which is behavior rather than chrome, so it is filed
+        as [#2170](https://github.com/pdcarlson/Frapp/issues/2170) rather than
+        taken here.
 
-        So Invite sits in the actives list's own toolbar row instead, where it
-        mounts exactly when it mounts today. It is also the more honest home:
-        you invite people onto the roster, and the alumni tab has no invite.
+        Invite therefore sits in the actives list's own toolbar row. **That
+        narrows a problem rather than solving it, and the distinction matters:**
+        `InviteMemberDialog` calls `useInvites()` unconditionally on mount, and
+        `GET /v1/invites` is gated on `members:invite` — so a member without it
+        still fires a guaranteed 403 whenever they open the default tab. What
+        this placement buys is that the 403 is not *widened* to the Alumni tab
+        and to the loading, error and offline paths, which is where mounting
+        Invite in an unguarded `PageHeader` would put it. #2170 carries the
+        actual fix (gate the hook, gate the control). It is also the more honest
+        home regardless: you invite people onto the roster, and the alumni tab
+        has no invite.
       */}
       <PageHeader title="Directory" />
       {/*
