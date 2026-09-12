@@ -35,9 +35,21 @@ const overdueQuery: {
 const invoicesQuery: {
   data: unknown;
   isPending: boolean;
+  isSuccess: boolean;
   isError: boolean;
   refetch: () => void;
-} = { data: [], isPending: false, isError: false, refetch: vi.fn() };
+} = {
+  data: [],
+  isPending: false,
+  isSuccess: true,
+  isError: false,
+  refetch: vi.fn(),
+};
+
+const currentUserQuery: { data: unknown; isPending: boolean } = {
+  data: { id: "u-1" },
+  isPending: false,
+};
 
 const transitionQuery: {
   isPending: boolean;
@@ -93,7 +105,7 @@ vi.mock("@repo/hooks", () => ({
   useMyPermissions: () => ({ data: { permissions: mockPermissions() } }),
   useInvoices: () => invoicesQuery,
   useOverdueInvoices: () => overdueQuery,
-  useCurrentUser: () => ({ data: { id: "u-1" } }),
+  useCurrentUser: () => currentUserQuery,
   useMembers: () => ({ data: [{ user_id: "u-1", display_name: "Rae Okafor" }] }),
   useCreateInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTransitionInvoiceStatus: () => ({
@@ -159,7 +171,10 @@ beforeEach(() => {
   mockPermissions.mockReturnValue(["billing:manage", "members:view"]);
   invoicesQuery.data = [OPEN_INVOICE, OVERDUE_INVOICE, PAID_INVOICE];
   invoicesQuery.isPending = false;
+  invoicesQuery.isSuccess = true;
   invoicesQuery.isError = false;
+  currentUserQuery.data = { id: "u-1" };
+  currentUserQuery.isPending = false;
   overdueQuery.data = [];
   overdueQuery.isError = false;
   overdueQuery.isPending = false;
@@ -559,5 +574,50 @@ describe("subscription gating (#858/#1753)", () => {
     render(<InvoiceList />);
 
     expect(trigger()).toBeEnabled();
+  });
+});
+
+describe("nothing is asserted from a read that has not answered", () => {
+  it("shows no counts at all while the invoice read is in flight", () => {
+    // `openCount` and `paidCount` derive from `invoices`, which is `[]` until
+    // the read lands — so an unconditional count line reads "0 open · 0 paid"
+    // above the spinner, telling a treasurer mid-load that nothing is
+    // outstanding. The page this list replaces could not reach that state
+    // because it gated its whole body on a page-level `isLoading`.
+    invoicesQuery.data = undefined;
+    invoicesQuery.isPending = true;
+    invoicesQuery.isSuccess = false;
+    render(<InvoiceList />);
+
+    expect(screen.queryByText(/\d+ open/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\d+ paid/)).not.toBeInTheDocument();
+    // The list itself says what is happening.
+    expect(screen.getByText(/loading billing overview/i)).toBeInTheDocument();
+  });
+
+  it("shows no counts when the invoice read failed", () => {
+    invoicesQuery.data = undefined;
+    invoicesQuery.isPending = false;
+    invoicesQuery.isSuccess = false;
+    invoicesQuery.isError = true;
+    render(<InvoiceList />);
+
+    expect(screen.queryByText(/\d+ open/)).not.toBeInTheDocument();
+    expect(screen.getByText(/couldn't load invoices/i)).toBeInTheDocument();
+  });
+
+  it("holds the rows until the caller's identity resolves, so Pay cannot pop in", () => {
+    // Pay is gated on `invoice.user_id === currentUserId`. Rendering rows
+    // first shows a member their own OPEN invoice with no way to pay it and
+    // nothing saying why, then pops the button in.
+    currentUserQuery.data = undefined;
+    currentUserQuery.isPending = true;
+    render(<InvoiceList />);
+
+    expect(screen.queryByText("Fall 2026 dues")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^pay$/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/loading billing overview/i)).toBeInTheDocument();
   });
 });

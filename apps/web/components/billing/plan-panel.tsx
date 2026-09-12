@@ -10,7 +10,9 @@ import {
   useCreateCheckout,
   useCreatePortal,
   useCurrentUser,
+  useMyPermissions,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
@@ -127,6 +129,30 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
   const billingStatus = statusQuery.data as BillingStatusPreview | undefined;
   const shownStatus = status ?? billingStatus?.subscription_status;
 
+  /*
+   * A **failed** `GET /v1/billing/status`, told apart from the 403 that is its
+   * ordinary outcome.
+   *
+   * The ids below are omitted when absent, which is right for a member: the
+   * endpoint is class-level `@RequirePermissions(billing:view)` and most
+   * members do not hold it, so their `isError` is the expected answer and a
+   * warning about it would fire on every load for most of the userbase. That
+   * is what the page-wide "Showing preview billing data" banner this lane
+   * deleted actually did.
+   *
+   * But `isError` is also what a 500 looks like to a treasurer who *does* hold
+   * `billing:view`, and for them absence-as-403 is wrong: the panel would
+   * render exactly as it does for a member, with no signal and no retry, and
+   * a chapter that is wired to Stripe would read as one that never was. The
+   * permission is the thing that separates the two cases, and `<Can>` below
+   * already puts `useMyPermissions` in this component's cache, so reading it
+   * here costs no request.
+   */
+  const { data: permissionsPayload } = useMyPermissions();
+  const statusReadFailed =
+    statusQuery.isError &&
+    can("billing:view", permissionsPayload?.permissions ?? []);
+
   const currentUserQuery = useCurrentUser();
   const createCheckout = useCreateCheckout();
   const createPortal = useCreatePortal();
@@ -159,6 +185,37 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
   // on its own once the status flips or the budget runs out.
   const [attempt, setAttempt] = useState(0);
   const isPolling = awaiting && attempt < ACTIVATION_POLL_ATTEMPTS;
+
+  /*
+   * Did this visit actually *watch* the chapter go from not-active to active?
+   *
+   * It matters because **this lane added a Portal button to the `active`
+   * branch**, and that button's `return_url` is `/billing?checkout=returned`.
+   * Before it existed, an active chapter could not land on `?checkout=returned`
+   * at all: the card this panel replaces offered the Portal only in its lapsed
+   * branch, and the one other portal in the app
+   * (`settings-page.tsx`) returns to `/settings`. So `active + returned` could
+   * only mean the intended dunning recovery — lapsed chapter fixes its card,
+   * webhook lands, status flips — and printing "Payment cleared" for it was
+   * true by construction.
+   *
+   * It is not any more. A treasurer on a healthy chapter who opens the Portal
+   * to download a receipt, change the billing address, or *cancel*, and then
+   * clicks Return, arrives at exactly that URL with nothing having been paid —
+   * and a green checkmark reading "Payment cleared" is the fake optimism this
+   * screen exists not to have.
+   *
+   * `success` is unaffected and stays unconditional: that URL is
+   * `createCheckout`'s own `success_url`, so the caller did go through
+   * checkout. `returned` now has to earn it by having rendered the awaiting
+   * state first, which only happens when the status was lapsed on arrival.
+   */
+  const [sawActivation, setSawActivation] = useState(false);
+  useEffect(() => {
+    if (!awaiting) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- latch that this visit rendered the awaiting state, so the confirmation below is about a flip we witnessed
+    setSawActivation(true);
+  }, [awaiting]);
 
   useEffect(() => {
     if (!isPolling) return;
@@ -282,6 +339,23 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
           invoicesHref={invoicesHref}
         />
 
+        {statusReadFailed ? (
+          <p
+            role="status"
+            className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground"
+          >
+            Couldn&apos;t load this chapter&apos;s Stripe details.
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto px-0"
+              onClick={() => void statusQuery.refetch()}
+            >
+              Retry
+            </Button>
+          </p>
+        ) : null}
+
         {outcome === "cancelled" && !usesPortal ? (
           <p className="mt-2 text-[12.5px] text-muted-foreground">
             Your last checkout was cancelled. No charge was made.
@@ -314,7 +388,8 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
           null
         ) : status === "active" ? (
           <>
-            {outcome === "success" || outcome === "returned" ? (
+            {outcome === "success" ||
+            (outcome === "returned" && sawActivation) ? (
               <p className="flex items-center gap-2 text-[12.5px] font-semibold text-success">
                 <CheckCircle2 className="h-4 w-4 shrink-0" />
                 Payment cleared
@@ -384,31 +459,54 @@ function PlanMeta({
   const customerId = billingStatus?.stripe_customer_id ?? null;
   const subscriptionId = billingStatus?.subscription_id ?? null;
 
-  const items: React.ReactNode[] = [];
-  if (lapsedOn) items.push(<>Past due since {lapsedOn}</>);
+  /*
+   * Keyed by name, not by array index, and the difference is reachable rather
+   * than theoretical. Entries are inserted at the **front** of this list as
+   * they become available, so an index key shifts every later entry's identity
+   * — and the last entry is a focusable anchor. React reconciling by index
+   * replaces the DOM node that held focus instead of moving it.
+   *
+   * The trigger is this panel's own poll: it invalidates `["billing"]` every
+   * 3s, so an officer waiting out a checkout can tab onto Invoices at index 0
+   * and have the Stripe ids arrive on the next tick, pushing it to index 2 and
+   * dropping focus to `<body>`.
+   */
+  const items: { key: string; node: React.ReactNode }[] = [];
+  if (lapsedOn) {
+    items.push({ key: "lapsed", node: <>Past due since {lapsedOn}</> });
+  }
   if (customerId) {
-    items.push(
-      <>
-        Customer <span className="font-mono">{customerId}</span>
-      </>,
-    );
+    items.push({
+      key: "customer",
+      node: (
+        <>
+          Customer <span className="font-mono">{customerId}</span>
+        </>
+      ),
+    });
   }
   if (subscriptionId) {
-    items.push(
-      <>
-        Subscription <span className="font-mono">{subscriptionId}</span>
-      </>,
-    );
+    items.push({
+      key: "subscription",
+      node: (
+        <>
+          Subscription <span className="font-mono">{subscriptionId}</span>
+        </>
+      ),
+    });
   }
   if (invoicesHref) {
-    items.push(
-      <a
-        href={invoicesHref}
-        className="font-semibold underline underline-offset-4"
-      >
-        Invoices
-      </a>,
-    );
+    items.push({
+      key: "invoices",
+      node: (
+        <a
+          href={invoicesHref}
+          className="font-semibold underline underline-offset-4"
+        >
+          Invoices
+        </a>
+      ),
+    });
   }
 
   if (items.length === 0) return null;
@@ -416,9 +514,9 @@ function PlanMeta({
   return (
     <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
       {items.map((item, index) => (
-        <span key={index} className="flex items-center gap-2">
+        <span key={item.key} className="flex items-center gap-2">
           {index > 0 ? <span aria-hidden="true">·</span> : null}
-          {item}
+          {item.node}
         </span>
       ))}
     </p>
@@ -433,11 +531,24 @@ function PlanMeta({
  * officer with `billing:manage` can complete checkout and unlock these
  * features" — a permission key quoted at someone who cannot act on it.
  *
- * All three non-granted branches render it, for the reason
- * `subscription-gate.tsx`'s own `DefaultRecovery` gives: `<Can>` fails closed
- * with `fallback` defaulting to `null`, so a loading or offline permission read
- * would otherwise leave the status stated with no next step at all. Naming
- * someone who can fix it beats naming nobody.
+ * **Only `deniedFallback` gets it, and the other two slots are deliberately
+ * left alone.** An earlier cut of this file passed the same node to all three,
+ * reasoning by analogy with `subscription-gate.tsx`'s `DefaultRecovery`
+ * ("naming someone who can fix it beats naming nobody"). That reasoning is
+ * about a *notice*, whose whole job is to name a recovery. This slot is the
+ * action itself, and `can.tsx` documents the three branches as three different
+ * facts:
+ *
+ * - `deniedFallback` — **proved** they do not hold it. "Ask an officer" is
+ *   exactly right, and is the only branch that has established anything.
+ * - `fallback` — idle, nothing cached. Nothing is established, so it stays
+ *   `null` and the slot is briefly empty, as the card this replaces left it.
+ *   The alternative told a treasurer holding `billing:manage` to ask an
+ *   officer, for the length of their own permission fetch.
+ * - `offlineFallback` — paused, cannot check. Omitted so `<Can>` supplies its
+ *   default, §10's control-slot `PermissionsOffline`: "Offline, can't check
+ *   your access", with a Retry that re-arms. Offline, the denied copy was not
+ *   briefly wrong but permanently wrong, and carried no way out.
  */
 function StripeAction({
   label,
@@ -459,12 +570,7 @@ function StripeAction({
   );
 
   return (
-    <Can
-      permission="billing:manage"
-      fallback={denied}
-      deniedFallback={denied}
-      offlineFallback={denied}
-    >
+    <Can permission="billing:manage" deniedFallback={denied}>
       <Button
         variant={variant}
         onClick={() => void onRun()}

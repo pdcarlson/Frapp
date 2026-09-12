@@ -20,16 +20,18 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  */
 
 const {
-  canGranted,
+  canBranch,
   mockCurrentChapter,
   mockBillingStatus,
+  mockPermissions,
   mockCheckoutMutate,
   mockPortalMutate,
   mockSearchParams,
 } = vi.hoisted(() => ({
-  canGranted: { value: true },
+  canBranch: { value: "granted" },
   mockCurrentChapter: vi.fn(),
   mockBillingStatus: vi.fn(),
+  mockPermissions: vi.fn(),
   mockCheckoutMutate: vi.fn(),
   mockPortalMutate: vi.fn(),
   mockSearchParams: vi.fn(),
@@ -41,6 +43,7 @@ const {
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useBillingStatus: () => mockBillingStatus(),
+  useMyPermissions: () => ({ data: { permissions: mockPermissions() } }),
   useCurrentUser: () => ({ data: { email: "treasurer@example.edu" } }),
   useCreateCheckout: () => ({
     mutateAsync: mockCheckoutMutate,
@@ -58,19 +61,42 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => mockSearchParams(),
 }));
 
-// The permission gate has its own tests (`can-fallback.spec.tsx`), so this
-// stub only has to route between the two branches the panel cares about —
-// held, and not held. Flipping `canGranted` is how the "Ask an officer" block
-// below reaches the denied copy without re-stubbing `useMyPermissions` and the
-// chapter store that `<Can>` reads.
+/*
+  The permission component has its own tests (`can-fallback.spec.tsx`). This
+  stub reproduces its **four** branches rather than two, because which node
+  this panel hands to which slot is itself under test: `deniedFallback` is
+  "proved denied", `fallback` is "idle, nothing cached", `offlineFallback` is
+  "paused, cannot check", and omitting either of the last two means the
+  component gets `<Can>`'s own default. `undefined` here stands for "the panel
+  passed nothing", which is what the default-rendering cases assert.
+*/
 vi.mock("@/components/shared/can", () => ({
   Can: ({
     children,
+    fallback,
     deniedFallback,
+    offlineFallback,
   }: {
     children: React.ReactNode;
+    fallback?: React.ReactNode;
     deniedFallback?: React.ReactNode;
-  }) => (canGranted.value ? <>{children}</> : <>{deniedFallback}</>),
+    offlineFallback?: React.ReactNode;
+  }) => {
+    if (canBranch.value === "granted") return <>{children}</>;
+    if (canBranch.value === "denied") return <>{deniedFallback}</>;
+    if (canBranch.value === "loading") {
+      return fallback === undefined ? (
+        <span data-testid="can-default-loading" />
+      ) : (
+        <>{fallback}</>
+      );
+    }
+    return offlineFallback === undefined ? (
+      <span data-testid="can-default-offline" />
+    ) : (
+      <>{offlineFallback}</>
+    );
+  },
 }));
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
@@ -111,8 +137,9 @@ function renderPanel(props: { invoicesHref?: string } = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   setParam(null);
-  canGranted.value = true;
-  mockBillingStatus.mockReturnValue({ data: undefined });
+  canBranch.value = "granted";
+  mockPermissions.mockReturnValue(["billing:view", "billing:manage"]);
+  mockBillingStatus.mockReturnValue({ data: undefined, isError: false });
 });
 
 describe("the panel states plan status, always (4d)", () => {
@@ -181,6 +208,7 @@ describe("the panel states plan status, always (4d)", () => {
     setChapter(undefined, { isPending: true });
     mockBillingStatus.mockReturnValue({
       data: { subscription_status: "active", stripe_customer_id: "cus_9" },
+      isError: false,
     });
     renderPanel();
 
@@ -219,6 +247,7 @@ describe("the meta line carries only facts that exist", () => {
 
     mockBillingStatus.mockReturnValue({
       data: { stripe_customer_id: "cus_123", subscription_id: "sub_456" },
+      isError: false,
     });
     renderPanel();
     expect(screen.getByText("cus_123")).toBeInTheDocument();
@@ -482,7 +511,7 @@ describe("members without billing rights (4b)", () => {
     // replaces read "A chapter officer with `billing:manage` can complete
     // checkout and unlock these features" — a permission key shown to the one
     // person who cannot act on it.
-    canGranted.value = false;
+    canBranch.value = "denied";
     setChapter("incomplete");
     renderPanel();
 
@@ -496,7 +525,7 @@ describe("members without billing rights (4b)", () => {
   });
 
   it("names the action that actually applies to the chapter's status", () => {
-    canGranted.value = false;
+    canBranch.value = "denied";
 
     setChapter("past_due");
     const pastDue = renderPanel();
@@ -517,11 +546,143 @@ describe("members without billing rights (4b)", () => {
     // The status is not officer-only: the whole point of putting it on this
     // page is that anyone who can reach the route can see where the chapter
     // stands.
-    canGranted.value = false;
+    canBranch.value = "denied";
     setChapter("past_due");
     renderPanel();
 
     expect(screen.getByRole("heading", { name: "Pro" })).toBeInTheDocument();
     expect(screen.getByText("Past due")).toBeInTheDocument();
+  });
+});
+
+describe("the three permission branches are three different facts", () => {
+  it("leaves the action slot empty while the permission read is idle", () => {
+    // `fallback` stays `null`, as the card this panel replaces left it.
+    // Passing the denied copy here told a treasurer holding `billing:manage`
+    // to ask an officer, for the length of their own permission fetch.
+    canBranch.value = "loading";
+    setChapter("incomplete");
+    renderPanel();
+
+    expect(
+      screen.queryByText(/ask an officer/i),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("can-default-loading")).toBeInTheDocument();
+  });
+
+  it("takes the gate's own offline state rather than the denied copy", () => {
+    // §10's control-slot `PermissionsOffline` — "Offline, can't check your
+    // access" with a Retry that re-arms. Offline the denied copy was not
+    // briefly wrong but permanently wrong, and carried no way out.
+    canBranch.value = "offline";
+    setChapter("incomplete");
+    renderPanel();
+
+    expect(screen.queryByText(/ask an officer/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("can-default-offline")).toBeInTheDocument();
+  });
+});
+
+describe("a failed billing:view read is not the same as a 403", () => {
+  const FAILURE_COPY = /couldn't load this chapter's stripe details/i;
+
+  it("offers a retry to a caller who holds billing:view", () => {
+    setChapter("active");
+    mockBillingStatus.mockReturnValue({ data: undefined, isError: true });
+    renderPanel();
+
+    expect(screen.getByText(FAILURE_COPY)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("says nothing to a member, for whom the error IS the expected answer", () => {
+    // `GET /v1/billing/status` is class-level `@RequirePermissions(billing:view)`.
+    // Warning every member about their own routine 403 on every load is what
+    // the page-wide "Showing preview billing data" banner this lane deleted
+    // actually did.
+    mockPermissions.mockReturnValue([]);
+    setChapter("active");
+    mockBillingStatus.mockReturnValue({ data: undefined, isError: true });
+    renderPanel();
+
+    expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
+  });
+
+  it("says nothing when the read simply succeeded with no ids", () => {
+    setChapter("active");
+    renderPanel();
+
+    expect(screen.queryByText(FAILURE_COPY)).not.toBeInTheDocument();
+  });
+});
+
+describe("the Portal button on an active chapter cannot fake a payment", () => {
+  it("says nothing when a healthy chapter just visited the Portal and came back", () => {
+    // This lane added the Portal button to the `active` branch, and its
+    // return_url is /billing?checkout=returned. A treasurer who opens the
+    // Portal to download a receipt or change the billing address lands here
+    // with nothing paid; a green "Payment cleared" would be inventing one.
+    setChapter("active");
+    setParam("returned");
+    renderPanel();
+
+    expect(screen.queryByText(/payment cleared/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Active")).toBeInTheDocument();
+  });
+
+  it("still confirms the dunning recovery it watched happen", () => {
+    // past_due -> Portal -> card fixed -> webhook -> active. The panel renders
+    // its awaiting state first, which is what earns the confirmation.
+    setChapter("past_due");
+    setParam("returned");
+    const { rerender } = renderPanel();
+    expect(screen.getByText(/checking stripe/i)).toBeInTheDocument();
+
+    setChapter("active");
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <PlanPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText(/payment cleared/i)).toBeInTheDocument();
+  });
+
+  it("confirms a checkout return unconditionally, because that URL means they paid", () => {
+    // `success_url` is createCheckout's own, so the caller did go through
+    // checkout even if the webhook beat them back to the page.
+    setChapter("active");
+    setParam("success");
+    renderPanel();
+
+    expect(screen.getByText(/payment cleared/i)).toBeInTheDocument();
+  });
+});
+
+describe("PlanMeta identity", () => {
+  it("keys entries by name, so the focusable anchor survives ids arriving", () => {
+    // Entries are inserted at the front as they resolve, and the poll
+    // invalidates ["billing"] every 3s. An index key would replace the DOM
+    // node holding focus rather than move it.
+    setChapter("active");
+    const { rerender } = renderPanel({ invoicesHref: "#invoices" });
+    const before = screen.getByRole("link", { name: "Invoices" });
+    before.focus();
+    expect(document.activeElement).toBe(before);
+
+    mockBillingStatus.mockReturnValue({
+      data: { stripe_customer_id: "cus_1", subscription_id: "sub_1" },
+      isError: false,
+    });
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <PlanPanel invoicesHref="#invoices" />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText("cus_1")).toBeInTheDocument();
+    expect(document.activeElement).toBe(
+      screen.getByRole("link", { name: "Invoices" }),
+    );
   });
 });

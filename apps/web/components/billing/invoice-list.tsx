@@ -403,6 +403,18 @@ export function InvoiceList({ id }: { id?: string }) {
           >
             Invoices
           </h2>
+          {/*
+            Only once the read has answered. `openCount` and `paidCount` come
+            from `invoices`, which is `[]` while `GET /v1/invoices` is in
+            flight — so rendering this unconditionally put "0 open · 0 paid"
+            above the spinner for the length of the round trip, which is the
+            confidently-wrong signal #707 exists to stop, on two more numbers.
+            The page this replaces could not reach that state because it gated
+            its whole body on a page-level `isLoading`; this list has no such
+            gate, so the guard moves here. Same shape the alumni list uses for
+            its own count.
+          */}
+          {invoicesQuery.isSuccess ? (
           <p className="shrink-0 text-[12.5px] text-muted-foreground tabular-nums">
             {openCount} open ·{" "}
             <span
@@ -416,6 +428,7 @@ export function InvoiceList({ id }: { id?: string }) {
             </span>{" "}
             · {paidCount} paid
           </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Input
@@ -662,7 +675,16 @@ export function InvoiceList({ id }: { id?: string }) {
         </div>
       ) : null}
 
-      {invoicesQuery.isPending ? (
+      {/*
+        `currentUserQuery` belongs in this gate, and the page this replaces
+        said why at its own: the Pay affordance is gated on
+        `invoice.user_id === currentUserId`, so rendering rows before the
+        caller's identity resolves briefly shows a member their own OPEN
+        invoice with no way to pay it, then pops the button in. That gate was
+        page-level and went with the page body, so it moves here, where the
+        rows it is about actually render.
+      */}
+      {invoicesQuery.isPending || currentUserQuery.isPending ? (
         <NestedLoading sole message={stateMicrocopy.billing.loading} />
       ) : invoicesQuery.isError ? (
         <NestedError
