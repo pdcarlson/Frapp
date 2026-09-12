@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { MODULE_CATALOG } from "@repo/org-archetypes";
+import { DASHBOARD_NAV_ITEMS } from "@/components/layout/nav-config";
 import { PlanMatrix } from "./plan-matrix";
 import { ProChip } from "./pro-chip";
 
@@ -14,8 +15,25 @@ import { ProChip } from "./pro-chip";
  * it has Events when `MODULE_CATALOG` marks Events `tier: "paid"`.
  */
 
-const PAID = MODULE_CATALOG.filter((entry) => entry.tier === "paid");
+const SHIPPED = new Set<string>([
+  ...DASHBOARD_NAV_ITEMS.flatMap((item) => (item.module ? [item.module] : [])),
+  "dues",
+]);
+const PAID = MODULE_CATALOG.filter(
+  (entry) => entry.tier === "paid" && SHIPPED.has(entry.key),
+);
 const FREE = MODULE_CATALOG.filter((entry) => entry.tier === "free");
+
+/** Catalog entries with no controller, no route and no nav row anywhere. */
+const UNBUILT = [
+  "academics",
+  "philanthropy",
+  "risk",
+  "lines",
+  "networking",
+  "standards",
+  "serviceFirst",
+] as const;
 
 describe("PlanMatrix", () => {
   it("lists every paid module from the catalog, by its catalog label", () => {
@@ -45,14 +63,66 @@ describe("PlanMatrix", () => {
     );
   });
 
-  it("says Included or Not included in words, not only as a glyph", () => {
-    // A screen reader announcing "black circle" fifty times answers nothing.
+  it("names the column in each verdict, so a linear read cannot invert it", () => {
+    // This block has no table semantics — `4d` draws none — so a bare
+    // "Included" left a row reading "Events · Pro · Not included · Included",
+    // which parses most naturally as the exact inverse of the fact.
     render(<PlanMatrix />);
 
-    // Free tier: one row, included in both columns. Paid: excluded from Free,
-    // included in Pro.
-    expect(screen.getAllByText("Not included")).toHaveLength(PAID.length);
-    expect(screen.getAllByText("Included")).toHaveLength(PAID.length + 2);
+    expect(screen.getAllByText("Not included in Free")).toHaveLength(
+      PAID.length,
+    );
+    expect(screen.getAllByText("Included in Pro")).toHaveLength(
+      PAID.length + 1,
+    );
+    expect(screen.getAllByText("Included in Free")).toHaveLength(1);
+    // The bare words would be ambiguous and must not come back.
+    expect(screen.queryByText("Included")).not.toBeInTheDocument();
+    expect(screen.queryByText("Not included")).not.toBeInTheDocument();
+  });
+
+  it("clears the 4.5:1 text gate on the not-included dash", () => {
+    // `--disabled` (#57534C) is 2.45:1 on `--background`, under §6's release
+    // gate, and WCAG's inactive-control exemption does not cover informational
+    // content. `--muted-foreground` is 7.47:1.
+    const { container } = render(<PlanMatrix />);
+    const dash = Array.from(container.querySelectorAll("span")).find(
+      (node) => node.textContent === "–",
+    );
+    expect(dash?.parentElement?.className).toContain("text-muted-foreground");
+    expect(dash?.parentElement?.className).not.toContain("text-disabled");
+  });
+
+  it("sells no module this product has not built", () => {
+    // Seven catalog entries are archetype flavour flags with no controller, no
+    // route and no nav row. Listing them under "What the subscription unlocks"
+    // with a success dot promises capabilities that do not exist.
+    render(<PlanMatrix />);
+
+    for (const key of UNBUILT) {
+      const entry = MODULE_CATALOG.find((m) => m.key === key)!;
+      expect(
+        screen.queryByText(entry.label),
+        `${key} has no surface and must not be sold`,
+      ).not.toBeInTheDocument();
+    }
+  });
+
+  it("never lists Billing, the one module the server exempts", () => {
+    // `BillingController` is class-level `@SubscriptionExempt()` so the
+    // chapter can always reach the screen that ungates it. A "Billing — not
+    // included in Free" row would tell an `incomplete` president that the page
+    // they are standing on is locked behind the purchase they are making here.
+    render(<PlanMatrix />);
+
+    const billing = MODULE_CATALOG.find((m) => m.key === "billing")!;
+    expect(billing.tier).toBe("paid"); // the trap this guards
+    expect(screen.queryByText(billing.label)).not.toBeInTheDocument();
+  });
+
+  it("keeps Dues, whose surface is this page's own invoice list", () => {
+    render(<PlanMatrix />);
+    expect(screen.getByText("Dues")).toBeInTheDocument();
   });
 
   it("invents no tier the product does not sell", () => {

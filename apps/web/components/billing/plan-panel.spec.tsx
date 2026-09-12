@@ -524,6 +524,21 @@ describe("members without billing rights (4b)", () => {
     expect(screen.queryByText(/billing:manage/)).not.toBeInTheDocument();
   });
 
+  it("invents no errand on a healthy chapter", () => {
+    // `4b` writes "Ask an officer" for a *locked* row. On `active` nothing is
+    // blocked, so an officer holding billing:view but not billing:manage gets
+    // the plan and its status and no standing instruction to chase anyone.
+    canBranch.value = "denied";
+    setChapter("active");
+    renderPanel();
+
+    expect(screen.queryByText(/ask an officer/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /manage in stripe/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("names the action that actually applies to the chapter's status", () => {
     canBranch.value = "denied";
 

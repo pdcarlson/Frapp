@@ -340,10 +340,14 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
         />
 
         {statusReadFailed ? (
-          <p
-            role="status"
-            className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground"
-          >
+          /*
+            No `role="status"`. This is present on load whenever the read has
+            failed, so announcing it would add a third polite region to the
+            queue a screen-reader user hears on arrival. The Retry beside it is
+            focusable and the sentence is its accessible context, which is the
+            §10 control-slot shape.
+          */
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted-foreground">
             Couldn&apos;t load this chapter&apos;s Stripe details.
             <Button
               variant="link"
@@ -395,12 +399,26 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
                 Payment cleared
               </p>
             ) : null}
+            {/*
+              `askAnOfficer` is deliberately empty here, and this is the only
+              branch where it is. Board `4b` writes "Ask an officer" for a
+              *locked* row — §5 rule 2's "say what fixes it", which presumes
+              something is broken. On `active` nothing is: a member holding
+              `billing:view` but not `billing:manage` is an ordinary officer
+              on a healthy chapter, and handing them a standing instruction to
+              chase the treasurer about a subscription that needs nothing is
+              an errand invented by the UI. They get the plan and its status,
+              which is what they came for, and no action column.
+
+              The other three branches keep the copy, because each has a real
+              block behind it.
+            */}
             <StripeAction
               label="Manage in Stripe"
               variant="secondary"
               pending={createPortal.isPending}
               onRun={openPortal}
-              askAnOfficer="Ask an officer to manage the subscription in Stripe."
+              askAnOfficer={null}
             />
           </>
         ) : usesPortal ? (
@@ -561,13 +579,14 @@ function StripeAction({
   variant: "default" | "secondary";
   pending: boolean;
   onRun: () => Promise<void>;
-  askAnOfficer: string;
+  /** `null` where nothing is blocked, so there is nobody to ask. */
+  askAnOfficer: string | null;
 }) {
-  const denied = (
+  const denied = askAnOfficer ? (
     <p className="max-w-[15rem] text-[12.5px] text-muted-foreground">
       {askAnOfficer}
     </p>
-  );
+  ) : null;
 
   return (
     <Can permission="billing:manage" deniedFallback={denied}>

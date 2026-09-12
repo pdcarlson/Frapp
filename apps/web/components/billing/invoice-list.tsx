@@ -716,9 +716,18 @@ export function InvoiceList({ id }: { id?: string }) {
           */}
           <label className="flex w-fit cursor-pointer items-center gap-2 text-[12.5px] text-muted-foreground">
             <span className={dashboardCheckboxHitAreaClassName}>
+              {/*
+                No `aria-label`. The wrapping `<label>` already names this from
+                its visible text, and an `aria-label` overrides that — leaving
+                the accessible name ("Select all visible invoices") without the
+                words on screen ("Select all shown"), which is WCAG 2.5.3 and
+                breaks voice control: "click Select all shown" matches nothing.
+                The header cell this replaces needed the attribute because it
+                had no visible text; the flatten gave it words and should have
+                dropped the attribute with the same change.
+              */}
               <input
                 type="checkbox"
-                aria-label="Select all visible invoices"
                 className={dashboardTableCheckboxClassName}
                 checked={allSelected}
                 onChange={(event) => {
@@ -893,11 +902,16 @@ function OverdueSummary({
 }) {
   if (!failed && count === 0) return null;
 
+  /*
+    Not a live region, for the reason `billing-page.tsx`'s lapse banner gives:
+    this is durable content that is present whenever the chapter has overdue
+    invoices, not an announcement of something that just happened. Four polite
+    regions on one page load is a wall of speech, and the two that are really
+    about a transition — the loading state and `SubscriptionNotice`'s revoke —
+    are the ones worth keeping.
+  */
   return (
-    <p
-      role="status"
-      className="flex items-center gap-2 rounded-md border border-destructive/45 bg-destructive/[.13] px-3 py-2 text-[12.5px] text-destructive-text"
-    >
+    <p className="flex items-center gap-2 rounded-md border border-destructive/45 bg-destructive/[.13] px-3 py-2 text-[12.5px] text-destructive-text">
       <AlertCircle className="h-4 w-4 shrink-0" />
       {failed
         ? "Couldn't load the overdue list. Overdue badges and the Overdue filter are unavailable until it recovers."

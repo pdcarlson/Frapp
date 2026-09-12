@@ -1,4 +1,5 @@
 import { MODULE_CATALOG } from "@repo/org-archetypes";
+import { DASHBOARD_NAV_ITEMS } from "@/components/layout/nav-config";
 import { EYEBROW } from "@/components/ui/typography";
 import { ProChip } from "@/components/billing/pro-chip";
 
@@ -36,35 +37,97 @@ import { ProChip } from "@/components/billing/pro-chip";
  * [`deletion-checklist.md`](../../../../spec/ui/web-greenfield/deletion-checklist.md)
  * §9 already derived `/members` from.
  *
- * A server component: it reads a frozen constant and holds no state.
+ * A server component: it reads frozen constants and holds no state.
  */
 
+/**
+ * The paid modules this product actually ships a surface for.
+ *
+ * **`tier === "paid"` alone is the wrong filter, and the first cut of this file
+ * used it.** `MODULE_CATALOG` is the master plan's catalog, not a manifest of
+ * what is built: twenty entries carry `tier: "paid"`, and seven of them —
+ * `academics`, `philanthropy`, `risk`, `lines`, `networking`, `standards`,
+ * `serviceFirst` — have no controller, no route, no nav row and no
+ * `@RequireModule` anywhere in the repo. They are archetype flavour flags.
+ * Listing them under a heading reading "What the subscription unlocks", with a
+ * semantic `--success` dot and the words "Included", sells a president seven
+ * capabilities that do not exist — which is the same invention this lane
+ * refused one block up, when it omitted `4d`'s price and seat count rather
+ * than placeholder them.
+ *
+ * So the filter is "does a member have somewhere to go", and the maintained
+ * answer to that in `apps/web` is `nav-config.ts`: a module key on a nav item
+ * is a surface, and this app owns and updates that file. Deriving beats a
+ * hand-kept list, which would drift the first time a module shipped.
+ *
+ * Two deliberate adjustments to what the nav alone would produce:
+ *
+ * - **`dues` is added.** Its surface is this page's own invoice list rather
+ *   than a nav row of its own, so the nav cannot see it — but invoice writes
+ *   are genuinely subscription-gated (the `SubscriptionNotice` on this very
+ *   screen is that gate), and `4d` draws a "Dues and invoices (Stripe)" row.
+ *   Omitting it would understate what the subscription buys, on the page that
+ *   sells it.
+ * - **`billing` can never appear**, and would be actively self-contradicting
+ *   if it did. `BillingController` is class-level `@SubscriptionExempt()`
+ *   precisely so the chapter can reach the screen that ungates it
+ *   (`design-system/README.md` §5 rule 3), and the `/billing` nav row
+ *   correspondingly carries no `module` key. A "Billing — not included in
+ *   Free" row would tell an `incomplete` president that the page they are
+ *   standing on is locked behind the purchase they are making from it. The
+ *   nav derivation already excludes it; the test pins that it stays excluded.
+ *
+ * `rush` and `onboarding` fall out for the honest reason: the API gates `rush`
+ * but `apps/web` ships no route for it, so on this surface the subscription
+ * unlocks nothing a member can see.
+ */
+const SHIPPED_PAID_KEYS = new Set<string>([
+  ...DASHBOARD_NAV_ITEMS.flatMap((item) => (item.module ? [item.module] : [])),
+  "dues",
+]);
+
 const FREE_MODULES = MODULE_CATALOG.filter((entry) => entry.tier === "free");
-const PAID_MODULES = MODULE_CATALOG.filter((entry) => entry.tier === "paid");
+const PAID_MODULES = MODULE_CATALOG.filter(
+  (entry) => entry.tier === "paid" && SHIPPED_PAID_KEYS.has(entry.key),
+);
 
 /**
  * The board's `●` and `–`.
  *
  * `--success` for included, and that is a status rather than decoration: the
- * cell answers "does this chapter get it". The absent cell takes `--disabled`,
- * the role foundations §5 gives to "present but not available", instead of a
- * second semantic hue — a red dash would read as something having gone wrong.
+ * cell answers "does this chapter get it". The absent cell is **not** a second
+ * semantic hue — a red dash would read as something having gone wrong — and it
+ * is not `--disabled` either, which the first cut of this file used on
+ * foundations §5's "present but not available" reading. That token is
+ * `#57534C`, which measures **2.45:1** on `--background` and 2.28:1 on
+ * `--surface-1`, under the 4.5:1 text minimum `design-system/README.md` §6
+ * sets as a release gate. WCAG's inactive-control exemption does not cover it:
+ * this is informational content, not a disabled control. `--muted-foreground`
+ * is the adjacent role that clears it, at 7.47:1 and 6.95:1.
  *
- * The glyph is `aria-hidden` and the real answer is the visually hidden word
- * beside it, because a screen reader announcing "black circle" in a table of
- * fifty cells tells the listener nothing.
+ * **The glyph is `aria-hidden` and the accessible text names its column.** A
+ * screen reader announcing "black circle" twenty times tells the listener
+ * nothing, which is why the words are there — but "Included" alone was worse
+ * than nothing: this block is `<div>`s in a grid, with no table semantics and
+ * no header association, so a linear read of a paid row produced
+ * "Events · Pro · Not included · Included", whose most natural parse is the
+ * exact inverse of the fact. Naming the column in the cell is what makes each
+ * row self-describing, and it is cheaper than retrofitting table semantics
+ * onto a layout `4d` draws with none.
  */
-function Cell({ included }: { included: boolean }) {
+function Cell({ included, column }: { included: boolean; column: string }) {
   return (
     <span
       className={
         included
           ? "text-center text-success"
-          : "text-center text-disabled"
+          : "text-center text-muted-foreground"
       }
     >
       <span aria-hidden="true">{included ? "●" : "–"}</span>
-      <span className="sr-only">{included ? "Included" : "Not included"}</span>
+      <span className="sr-only">
+        {included ? `Included in ${column}` : `Not included in ${column}`}
+      </span>
     </span>
   );
 }
@@ -87,10 +150,16 @@ export function PlanMatrix() {
           flattened routes already use: `4d` draws no row rules, no zebra and no
           cell borders, and the only thing a `<table>` would add here is a
           layout algorithm that fights the fixed column widths the board
-          specifies. The header is a row with `role="row"` semantics carried by
-          the visible labels; each data row states its own verdict in words via
-          `Cell`, so the columns do not have to be associated by header to be
-          understood.
+          specifies.
+
+          **That costs header association, and `Cell` pays for it rather than
+          this comment waving it away.** An earlier draft of this block claimed
+          the header carried `role="row"` semantics; it does not, there is no
+          `role` attribute in this file, and the claim was the reason the cells
+          were left announcing a bare "Included". Each cell now names its own
+          column in its visually hidden text, so a row reads
+          "Events, Pro, not included in Free, included in Pro" with no header
+          to remember. The visible header row stays a visual label.
         */}
         <div
           className={`grid min-h-9 grid-cols-[1fr_72px_72px] items-center gap-2 bg-surface-1 px-4 text-[12.5px] font-semibold text-muted-foreground sm:grid-cols-[1fr_120px_120px]`}
@@ -104,8 +173,8 @@ export function PlanMatrix() {
           <span className="min-w-0 text-sm">
             {FREE_MODULES.map((entry) => entry.label).join(", ")}
           </span>
-          <Cell included />
-          <Cell included />
+          <Cell included column="Free" />
+          <Cell included column="Pro" />
         </div>
 
         {PAID_MODULES.map((entry) => (
@@ -114,8 +183,8 @@ export function PlanMatrix() {
               <span className="truncate">{entry.label}</span>
               <ProChip />
             </span>
-            <Cell included={false} />
-            <Cell included />
+            <Cell included={false} column="Free" />
+            <Cell included column="Pro" />
           </div>
         ))}
       </div>

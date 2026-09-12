@@ -172,11 +172,17 @@ function PastDueBanner({ status }: { status: string | null }) {
   if (status === null) return null;
   if (subscriptionStatusKind(status) !== "destructive") return null;
 
+  /*
+    Not a live region, deliberately. A `role="status"` announces a *change*,
+    and this never changes after mount: it is durable page content that is
+    simply present whenever the chapter is lapsed. Marking it one put a third
+    polite announcement into the queue a screen-reader user hears on arrival,
+    behind the loading state and ahead of the invoice list's own notices — for
+    a sentence that is the second thing on the page anyway, right under the
+    heading, and that they will reach by reading.
+  */
   return (
-    <p
-      role="status"
-      className="flex items-center gap-2 rounded-md border border-destructive/45 bg-destructive/[.13] px-3 py-2 text-sm text-destructive-text"
-    >
+    <p className="flex items-center gap-2 rounded-md border border-destructive/45 bg-destructive/[.13] px-3 py-2 text-sm text-destructive-text">
       <AlertTriangle className="h-4 w-4 shrink-0" />
       {status === "canceled"
         ? "This chapter's subscription is canceled and the chapter is read-only."

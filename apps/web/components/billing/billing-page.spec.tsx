@@ -142,17 +142,18 @@ describe("the route is flush on the shell", () => {
 });
 
 describe("the lapse banner, this page only (4d note 4)", () => {
+  const LAPSE = /past due|read-only/i;
+
   it("says nothing at all while the subscription is healthy", () => {
     render(<BillingPage />);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText(LAPSE)).not.toBeInTheDocument();
   });
 
   it("adds one line when the chapter is past due", () => {
     chapter.pastDue();
     render(<BillingPage />);
 
-    const banner = screen.getByRole("status");
-    expect(banner).toHaveTextContent(/past due/i);
+    const banner = screen.getByText(/past due/i);
     expect(banner.className).toContain("border-destructive");
   });
 
@@ -163,7 +164,17 @@ describe("the lapse banner, this page only (4d note 4)", () => {
     chapter.canceled();
     render(<BillingPage />);
 
-    expect(screen.getByRole("status")).toHaveTextContent(/read-only/i);
+    expect(screen.getByText(/read-only/i)).toBeInTheDocument();
+  });
+
+  it("is not a live region, because it never announces a change", () => {
+    // Durable page content that is simply present whenever the chapter is
+    // lapsed. Marking it `role="status"` queued a third polite announcement
+    // on arrival, for a sentence sitting directly under the heading.
+    chapter.pastDue();
+    render(<BillingPage />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("stays quiet for a chapter that never started", () => {
@@ -173,18 +184,18 @@ describe("the lapse banner, this page only (4d note 4)", () => {
     chapter.incomplete();
     render(<BillingPage />);
 
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText(LAPSE)).not.toBeInTheDocument();
   });
 
   it("stays quiet when the status is unresolved", () => {
     // A blocked explanation from `null` asserts a reason nothing proved.
     chapter.loading();
     render(<BillingPage />);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText(LAPSE)).not.toBeInTheDocument();
 
     chapter.unreadable();
     render(<BillingPage />);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText(LAPSE)).not.toBeInTheDocument();
   });
 });
 

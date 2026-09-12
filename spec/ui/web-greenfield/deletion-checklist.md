@@ -502,9 +502,22 @@ The plan matrix keeps `4d`'s **shape** — two columns, "what you have now" and 
 adds" — and fills it from `MODULE_CATALOG`, which is what `4d` note 3 asks for ("rows read from the
 module catalog"). Its grouping follows the board's own rule: rows that share a verdict are grouped
 (`4d` puts "Events, Tasks, Points, Polls" on one line) and each paid module gets its own, because
-each is a distinct thing the chapter is being sold. Here that is one grouped free row and twenty
-paid ones. Pinned in `plan-matrix.spec.tsx` against the catalog itself, so transcribing the board's
-rows back in is a test failure rather than a review catch.
+each is a distinct thing the chapter is being sold.
+
+**`tier === "paid"` is not the row filter, and the first cut of this lane used it.** The catalog is
+the master plan's, not a manifest of what is built: twenty entries are `tier: "paid"` and seven of
+them (`academics`, `philanthropy`, `risk`, `lines`, `networking`, `standards`, `serviceFirst`) have
+no controller, no route, no nav row and no `@RequireModule` anywhere in the repo. Under a heading
+reading "What the subscription unlocks", with a `--success` dot and the word "Included", each was a
+promise of a capability that does not exist — the same invention this lane refused one block up
+when it omitted `4d`'s price and seat count rather than placeholder them. The filter is now "does a
+member have somewhere to go", derived from `nav-config.ts`'s `module` keys, plus `dues` (its
+surface is this page's own invoice list) and never `billing` (`BillingController` is class-level
+`@SubscriptionExempt()`, so a "Billing — not included in Free" row would tell an `incomplete`
+president that the page they are standing on is locked behind the purchase they are making from
+it). Nine rows, not twenty. Pinned in `plan-matrix.spec.tsx` against the catalog and the nav, so
+both transcribing the board's rows back in and re-widening the filter are test failures rather than
+review catches.
 
 ### The two invoice lists were one list
 
@@ -563,9 +576,17 @@ already uses for the attendance roster.
 - [x] Members without billing rights get `4b`'s "Ask an officer", naming the action their chapter's
       status actually needs. It replaces "A chapter officer with `billing:manage` can complete
       checkout and unlock these features" — a permission key quoted at the one person who cannot act
-      on it. All three non-granted `<Can>` branches render it, for the reason
-      `subscription-gate.tsx`'s own `DefaultRecovery` gives: naming someone who can fix it beats
-      naming nobody
+      on it. **Only `deniedFallback` carries it**, and an earlier cut of this line said the
+      opposite: it claimed all three non-granted `<Can>` branches render it, by analogy with
+      `subscription-gate.tsx`'s `DefaultRecovery` ("naming someone who can fix it beats naming
+      nobody"). That analogy is about a *notice*, whose job is to name a recovery; this slot is the
+      action itself, and `can.tsx` documents the three branches as three different facts. Passing
+      the copy to `fallback` told a treasurer holding `billing:manage` to ask an officer for the
+      length of their own permission fetch, and passing it to `offlineFallback` said it permanently,
+      with no Retry. `fallback` is back to `null` and `offlineFallback` to the gate's own §10
+      control-slot state. **And `active` passes no copy at all**: `4b` writes "Ask an officer" for a
+      *locked* row, and on a healthy chapter nothing is blocked, so an officer without
+      `billing:manage` gets the plan and its status and no invented errand
 - [x] Stripe stays **blocking** and nothing is optimistic. Both actions `await mutateAsync`, disable
       their own button for the duration and hand off with `window.location.assign`. Neither moves
       the status chip; the chip reports the chapter record and nothing else, which is what the #860
@@ -582,6 +603,21 @@ already uses for the attendance roster.
       the verdict column beside it is the semantic `--success` dot
 - [x] Whole-screen `OfflineState`/`LoadingState` swapped for the **nested** family with `sole`, the
       same swap §9 made and for the same reason: the whole-screen variants paint `--card`
+- [x] Every verdict cell in the matrix names its own column in its visually hidden text
+      ("Not included in Free"), because `4d` draws this block with no table semantics and a linear
+      read of "Events · Pro · Not included · Included" parses most naturally as the inverse of the
+      fact. An earlier draft asserted in a comment that the header carried `role="row"` semantics;
+      it did not, and that false claim is what left the cells announcing a bare "Included"
+- [x] The matrix's "not included" dash is `--muted-foreground` (7.47:1 on `--background`), not
+      `--disabled` (**2.45:1**, under §6's 4.5:1 release gate). WCAG's inactive-control exemption
+      does not cover it: the dash is informational content, not a disabled control
+- [x] Two live regions on the route, not four. The lapse banner and the overdue summary are durable
+      page content rather than announcements of a change, so neither is `role="status"`; what keeps
+      it is the loading state and `SubscriptionNotice`, which are about transitions
+- [x] The select-all checkbox takes its name from its visible label. It kept an
+      `aria-label="Select all visible invoices"` from the table header cell it replaces — which had
+      no visible text — so once the flatten put "Select all shown" beside it the accessible name no
+      longer contained the visible words (WCAG 2.5.3, and a dropped voice command)
 - [x] No em dash in user-facing copy on this route, verified by stripping comments and grepping what
       remains. **Two characters survive and neither is prose**: the matrix's `–` for "not included",
       which is `aria-hidden` with the word "Not included" beside it and is the glyph `4d` itself

@@ -356,6 +356,21 @@ describe("overdue availability, the two thresholds (#1621)", () => {
 });
 
 describe("bulk selection and CSV export", () => {
+  it("names the select-all checkbox with the words on screen (WCAG 2.5.3)", () => {
+    // It kept `aria-label="Select all visible invoices"` from the table header
+    // cell it replaces, which had no visible text. Once the flatten put
+    // "Select all shown" beside it, the accessible name no longer contained
+    // the visible words and "click Select all shown" matched nothing.
+    render(<InvoiceList />);
+
+    expect(
+      screen.getByRole("checkbox", { name: /select all shown/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "Select all visible invoices" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("exports exactly the selected rows", async () => {
     render(<InvoiceList />);
 
