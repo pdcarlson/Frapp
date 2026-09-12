@@ -130,8 +130,9 @@ describe("settings semester rollover subscription gating", () => {
   });
 
   it("leaves the accent-color write alone too", async () => {
-    // Lives on the Theme tab, so it only mounts once that tab is selected —
-    // and it patches `chapter`, another `@FreeTier` route.
+    // Lives on the Accent tab (board `4d`'s name for what was Theme), so it
+    // only mounts once that tab is selected — and it patches `chapter`,
+    // another `@FreeTier` route.
     chapter.incomplete();
     render(<SettingsPage />);
 

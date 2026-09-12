@@ -1,6 +1,8 @@
 # Chapter Settings
 
-The settings surface is the chapter's configuration home. It is organized as a **settings rail** with ten tabs: **Org, Modules, Roles, Fields, Workflows, Dues, Theme, Privacy, Beta, Audit**. This file covers the cross-cutting behavior plus the **Org**, **Modules**, **Privacy**, and **Beta** tabs; the customization-heavy tabs (Theme, Roles, Fields, Workflows, Dues) are specced in [`customization.md`](customization.md).
+The settings surface is the chapter's configuration home. It is organized as a **settings rail**, in the order board `4d` draws, with **Danger zone pinned last**. The rail's membership is `SETTINGS_TAB_VALUES` in `apps/web/components/settings/settings-page.tsx` and is not restated here — a hand-copied list of ten tab names is how this paragraph came to name two that no longer exist. This file covers the cross-cutting behavior plus the **Chapter** (formerly Org), **Modules** and **Privacy** tabs; the customization-heavy tabs (Accent, Roles, Fields, Workflows, Dues) are specced in [`customization.md`](customization.md).
+
+Two renames and one split landed with the greenfield Admin lane ([#2146](https://github.com/pdcarlson/Frapp/issues/2146)), and the `?tab=` deep-link values did **not** change with the labels: **Org** is labelled "Chapter" (`?tab=org`), **Theme** is labelled "Accent" (`?tab=theme`), and Org's semester and billing/danger cards moved to their own **Semester** (`?tab=semester`) and **Danger zone** (`?tab=danger`) entries.
 
 Related canon lives in:
 
@@ -10,7 +12,7 @@ Related canon lives in:
 - [`../billing.md`](../billing.md) — dues invoicing.
 - [`../data-retention.md`](../data-retention.md) — pseudonymous analytics + the chapter opt-out surfaced by the Privacy tab.
 
-## Org Tab
+## Chapter Tab (`?tab=org`)
 
 - Identity fields: name, university, Greek letters, designation, school short, founded year, donation URL.
 - **Archetype** is selectable from the eight supported archetypes. Switching archetype **resets modules, role pack, and vocabulary** to the new archetype's defaults; identity, branding, and custom fields are kept. The switch is confirmed before applying because of the reset.
@@ -37,9 +39,11 @@ Related canon lives in:
 
 ## Beta Tab
 
-> **Not yet built, and there is no longer a renderer.** The API contract below exists; the UI does
-> not. The Beta tab renders a coming-soon placeholder (`COMING_SOON_TABS` in
-> `apps/web/components/settings/settings-page.tsx`).
+> **Not yet built, and there is no longer a renderer or a rail entry.** The API contract below
+> exists; the UI does not. The Beta tab used to render a coming-soon placeholder; the greenfield
+> Admin lane ([#2146](https://github.com/pdcarlson/Frapp/issues/2146)) deleted that stub, its
+> `COMING_SOON_TABS` constant and its rail entry, on the same "generated chrome advertising unbuilt
+> work" reading that took `beta-badge.tsx`. Whoever builds this tab adds the rail entry back.
 >
 > The dashboard shell used to paint the badge from a hardcoded `BETA_CONFIG` constant, so every
 > signed-in user saw a sidebar pill regardless of what was saved. The greenfield shell
@@ -61,6 +65,6 @@ Related canon lives in:
 - **Audit-write on save:** a settings PATCH that **changes something** writes a row to `chapter_audit_log`. Each audit row is created `member_visible = true` and is mirrored to the `#chapter-audit` channel via the audit bridge. Read this as one row per *effective change*, not one row per request.
 - **The two writers differ on a no-op save, and neither is "one row per request".** The core-profile `PATCH /chapters/current` writes **no** row when its diff is empty. `PATCH /chapters/:id/config` returns early only when its *update payload* is empty, which is not the same test: it assigns `branding`, `vocabulary`, `enabled_modules` and `beta_config` whenever the DTO merely carries the key, so a client that re-sends an unchanged jsonb object still gets a row whose `diff` has `from` equal to `to` (#1605). Do not assume a row means something changed, and do not assume a save without changes produced no row.
 - **Audit writes are not transactional with the mutation they describe** (#1599). The row is inserted after the change commits, so an insert failure surfaces as a `500` on a change that persisted. Whether an identical retry then recovers the record depends on the writer: on the core-profile route the diff is now empty and nothing is written, so the change stays unaudited; on the config route a re-sent jsonb field writes a `from`-equals-`to` row. Do not build a compliance check on the assumption that every mutation has a row.
-- The Audit tab presents a paginated, filterable table of `chapter_audit_log` rows (filter by actor, action type, date range), with per-row expansion of the change `diff`.
+- **The Audit tab is not built, and has no rail entry.** When it lands it presents a paginated, filterable table of `chapter_audit_log` rows (filter by actor, action type, date range), with per-row expansion of the change `diff`. It rendered a coming-soon placeholder until [#2146](https://github.com/pdcarlson/Frapp/issues/2146) deleted that stub with the Beta one above. Not to be confused with the **Points** admin Audit tab, which is built and is a different surface.
 - **Who sees which rows (#1773).** `GET /v1/audit-log` returns **only `member_visible` rows to every caller except the chapter's President**, who sees all of them, exec-only included. "President" is the member holding the chapter's seeded `PRESIDENT` system role — the one role that may carry the wildcard — not any permission a custom role can be minted with, so a custom role holding `chapter-config:view` + `members:view` reads the same member-visible history the `#chapter-audit` mirror shows. The filter is applied in the API (`ChapterAuditLogService.list` → the repository's `member_visible = true` predicate, which is what `idx_audit_log_chapter_visible` exists for); `chapter_audit_log` carries no SELECT policy because the service-role query is the only reader. A chapter with no President role (orphaned, or mid-transfer) has no exec-only readers until one exists.
 - **`member_visible` is togglable per row, president-only.** Toggling `member_visible` **off retracts** the corresponding `#chapter-audit` message for non-president members **and** drops the row from their `GET /v1/audit-log` reads; toggling it back **on re-posts** it and restores the row. The toggle itself is not built yet; the read-side rule above is, so the toggle cannot ship visibly present and silently ineffective.
