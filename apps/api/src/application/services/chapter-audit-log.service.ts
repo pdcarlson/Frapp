@@ -130,7 +130,7 @@ export class ChapterAuditLogService {
     const limit = clampListLimit(options.limit);
 
     // Parsed ONLY to validate, and — for the two range bounds — to compare;
-    // see `instantOrThrow` for why every timestamp still reaches the
+    // see `parseIsoInstant` for why every timestamp still reaches the
     // repository as the caller's original string.
     instantOrThrow('before', options.before);
     const startsAt = instantOrThrow('start_date', options.startDate);

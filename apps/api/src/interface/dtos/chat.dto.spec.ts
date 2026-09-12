@@ -73,7 +73,8 @@ describe('GetChannelMessagesQueryDto', () => {
   });
 
   // Regex-valid, calendar-invalid: the pipe is the shape gate. ChatService
-  // calls parseIsoInstant so 2026-02-30 becomes a 400 rather than Postgres 22008.
+  // calls instantOrThrow (which parses through parseIsoInstant) so 2026-02-30
+  // becomes a 400 rather than Postgres 22008.
   it('accepts a regex-shaped before that names a day that does not exist', async () => {
     await expect(
       transform({ before: '2026-02-30T00:00:00Z' }),

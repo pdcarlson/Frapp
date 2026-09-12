@@ -19,9 +19,12 @@ describe('instantOrThrow', () => {
     );
   });
 
-  // The three shapes `@IsISO8601()` accepts and a `timestamptz` bound must not:
-  // a bare date, an offset-less time, and a form JS cannot parse. Plus the
-  // calendar-invalid day, which reaches Postgres as `22008` — a 500 on a 400.
+  // The first five rows are what `@IsISO8601()` lets through and a
+  // `timestamptz` bound must not — verified against validator.js, not assumed:
+  // a bare date, an offset-less time, basic format, an hour-only offset, and a
+  // calendar-invalid day that reaches Postgres as `22008`, a 500 on what is a
+  // 400. The last two are rejected by both validators and are here to cover the
+  // regex itself; do not read the table as an inventory of what gets past a pipe.
   it.each([
     ['a bare date', '2026-01-31'],
     ['an offset-less time', '2026-01-31T12:00:00'],

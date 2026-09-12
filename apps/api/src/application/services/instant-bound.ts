@@ -13,18 +13,30 @@ import {
  * wrong answer for any of these: a dropped bound WIDENS the result set, so
  * the caller gets rows outside the window they asked for, behind a `200`,
  * with no way to tell. A dropped cursor re-serves the page they already had.
- * The DTO rejects these shapes first; this is the guard for a direct call.
+ *
+ * **How much of a backstop this is depends on the route.** The chapter-audit-log
+ * and chat DTOs pin their bounds with `@Matches(ISO_INSTANT_REGEX)`
+ * (`chapter-audit-log.dto.ts`, `chat.dto.ts`), so there this is the guard for a
+ * direct, non-HTTP call. `points.dto.ts`'s `before` carries the looser
+ * `@IsISO8601()` — the validator `iso-instant.ts` exists to be narrower than,
+ * and which accepts every shape this function rejects except an outright
+ * non-date — so on that route this is the FIRST rejector, not a second one.
+ * Do not delete a call here on the reasoning that the pipe already ran. #2168
+ * proposes closing that DTO gap; until it lands, this is the only guard there.
  *
  * Lives in `application/` rather than beside `parseIsoInstant`: the parse rule
  * is domain code and returns `null`, and turning that into an HTTP status is
- * the boundary's job — `domain/` must not import the NestJS framework. This is
- * the one place that translation is written, so every list route that takes an
- * instant bound rejects the same shapes with the same message.
+ * the boundary's job — `domain/` must not import the NestJS framework.
  *
- * The returned epoch is for COMPARING bounds only. The value handed to the
- * repository is always the caller's original string: re-serializing it would
- * truncate a `timestamptz`'s microseconds to milliseconds and drop
- * same-millisecond rows off a `created_at` cursor (#1832).
+ * Scope: this is the one translation of the **instant** rule — an ISO 8601
+ * date-time with an explicit UTC offset. It is not the only date bound the API
+ * takes: `ServiceEntryService.assertValidDateRange` translates a bare
+ * `YYYY-MM-DD` range with its own message, because those columns are dates and
+ * a time on them is wrong. Do not fold the two together.
+ *
+ * The returned epoch is for COMPARING bounds only — see `parseIsoInstant` for
+ * why the value handed to the repository is always the caller's original
+ * string.
  *
  * @param label the wire name of the parameter, used verbatim in the 400 message
  */

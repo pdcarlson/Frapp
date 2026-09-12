@@ -49,7 +49,9 @@ const CAPTURE =
  *
  * Note this is for COMPARING two bounds. The value handed to Postgres is
  * always the caller's original string — re-serializing it would truncate a
- * `timestamptz`'s microseconds to milliseconds and drop same-millisecond rows.
+ * `timestamptz`'s microseconds to milliseconds and drop same-millisecond rows
+ * (#1832). This paragraph is that rule's one home; callers point here rather
+ * than restating it.
  */
 export function parseIsoInstant(value: string): number | null {
   const m = CAPTURE.exec(value);
