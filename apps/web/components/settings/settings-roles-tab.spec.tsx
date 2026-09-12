@@ -13,6 +13,7 @@ const mockSaveDefaultRole = vi.fn();
 const mockUseCatalog = vi.fn();
 const mockUseMembers = vi.fn();
 const mockUpdateRole = vi.fn();
+const mockPermissions = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -26,6 +27,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   usePermissionsCatalog: () => mockUseCatalog(),
   useMembers: () => mockUseMembers(),
   useUpdateRole: () => ({ mutateAsync: mockUpdateRole, isPending: false }),
+  // The matrix reads `roles:manage` itself rather than taking the tab's
+  // `canManage` (which is `chapter-config:manage`) — the API guards
+  // `PATCH /v1/roles/:id` on the former.
+  useMyPermissions: () => ({
+    data: { permissions: mockPermissions() },
+    isPending: false,
+    isError: false,
+  }),
 }));
 
 vi.mock("@/lib/providers/network-provider", () => ({
@@ -99,8 +108,14 @@ describe("SettingsRolesTab", () => {
       isError: false,
       refetch: vi.fn(),
     });
-    mockUseMembers.mockReturnValue({ data: [], isPending: false, isError: false });
+    mockUseMembers.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+      isSuccess: true,
+    });
     mockUpdateRole.mockResolvedValue({});
+    mockPermissions.mockReturnValue(["roles:manage", "chapter-config:manage"]);
   });
 
   it("names the role pack in the header rather than as a view of its own", () => {
@@ -143,6 +158,28 @@ describe("SettingsRolesTab", () => {
     expect(screen.queryByText("n/a")).not.toBeInTheDocument();
   });
 
+  it("shows no member count at all when the members read has not landed", () => {
+    // Not "0". An officer auditing who holds the President role would read a
+    // zero as a fact, and act on it.
+    mockUseMembers.mockReturnValue({
+      data: undefined,
+      isPending: false,
+      isError: true,
+      isSuccess: false,
+    });
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
+    );
+
+    expect(screen.getByRole("columnheader", { name: "Member" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: /0 members/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("flips a cell straight to the API, with no Save step", async () => {
     // `4e` pin 2: "Click flips and saves". The permission it sends is the
     // role's existing set plus the one clicked — never the whole catalog.
@@ -160,6 +197,42 @@ describe("SettingsRolesTab", () => {
     expect(mockUpdateRole).toHaveBeenCalledWith({
       id: "role-member",
       body: { permissions: ["members:view", "events:create"] },
+    });
+  });
+
+  it("composes a second flip on top of the first, not on top of stale props", async () => {
+    /*
+     * The race the optimistic overlay exists for. `useUpdateRole`'s
+     * `onSuccess` fires `invalidateQueries` without returning it, so
+     * `mutateAsync` resolves before the refetched roles arrive — the `roles`
+     * prop here never changes at all, standing in for that window. Without the
+     * overlay the second PATCH would rebuild from the original
+     * `["members:view"]` and silently drop the grant the first one made.
+     */
+    const user = userEvent.setup();
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG}
+        defaultInviteRoleId={null}
+        onSaveDefaultInviteRole={mockSaveDefaultRole}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "EVENTS_CREATE for Member" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "MEMBERS_VIEW for Member" }),
+    );
+
+    expect(mockUpdateRole).toHaveBeenNthCalledWith(1, {
+      id: "role-member",
+      body: { permissions: ["members:view", "events:create"] },
+    });
+    // The revoke is applied to the array the first call sent, so
+    // `events:create` survives.
+    expect(mockUpdateRole).toHaveBeenNthCalledWith(2, {
+      id: "role-member",
+      body: { permissions: ["events:create"] },
     });
   });
 
@@ -207,6 +280,9 @@ describe("SettingsRolesTab", () => {
   });
 
   it("leaves the cells read-only for a caller who cannot manage roles", () => {
+    // `roles:manage` specifically. A caller holding `chapter-config:manage`
+    // alone must not get live cells: every click would 403.
+    mockPermissions.mockReturnValue(["chapter-config:manage"]);
     render(
       <SettingsRolesTab
         archetypeKey="ifc"

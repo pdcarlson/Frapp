@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useUpdateRole } from "@repo/hooks";
-import { cn, getErrorMessage } from "@/lib/utils";
+import { cn, getErrorMessage, initials } from "@/lib/utils";
+import { EYEBROW } from "@/components/ui/typography";
 import { useToast } from "@/hooks/use-toast";
 
 export type MatrixRole = {
@@ -22,8 +23,12 @@ export type MatrixCatalogEntry = {
 type Props = {
   roles: MatrixRole[];
   catalog: MatrixCatalogEntry[];
-  /** Member count per role id, for the column headers' second line. */
-  memberCounts: Map<string, number>;
+  /**
+   * Member count per role id, for the column headers' second line. `null` when
+   * the members read has not landed: the header then says nothing rather than
+   * "0", which an officer auditing who holds a role would read as a fact.
+   */
+  memberCounts: Map<string, number> | null;
   /** Whether the viewer may flip a cell. Read-only otherwise. */
   canManage: boolean;
 };
@@ -76,9 +81,50 @@ export function RolesMatrix({
   const { toast } = useToast();
   const updateRole = useUpdateRole();
 
-  // The cell currently in flight, as `roleId:permission`. Board `4e` pin 2
-  // draws a focus ring on "the one being edited"; this is what that ring reads.
-  const [pendingCell, setPendingCell] = useState<string | null>(null);
+  /*
+   * **An optimistic overlay, and it is a correctness device, not polish.**
+   *
+   * `toggle` builds the next permission array from the `role.permissions` it
+   * was rendered with. `useUpdateRole`'s `onSuccess` fires
+   * `invalidateQueries` without returning it, so `mutateAsync` resolves
+   * *before* the refetched roles reach this component — which means two flips
+   * on the same role in quick succession would both start from the original
+   * array, and the second would silently drop the first. Board `4e` asks for
+   * exactly that workflow ("click flips and saves", swept across a role).
+   *
+   * So each flip records what it sent, subsequent flips read through it, and
+   * the entry is dropped once the server's own copy agrees. A failed flip
+   * drops its entry immediately, so the cell snaps back to the truth rather
+   * than showing a grant that never landed.
+   */
+  const [overlay, setOverlay] = useState<Record<string, string[]>>({});
+
+  // The cell in flight, for the focus ring board `4e` pin 2 draws on "the one
+  // being edited".
+  const [pending, setPending] = useState<{
+    roleId: string;
+    permission: string;
+  } | null>(null);
+
+  /*
+   * Reconciled during render rather than in an effect. An entry whose sent
+   * array now matches the server's is indistinguishable from no entry at all,
+   * so dropping it is a pure derivation — and doing it here means no
+   * `setState` in an effect, and no render where a stale entry could mask a
+   * change another officer made to the same role.
+   */
+  const liveOverlay = useMemo(() => {
+    if (Object.keys(overlay).length === 0) return overlay;
+    const next: Record<string, string[]> = {};
+    for (const role of roles) {
+      const sent = overlay[role.id];
+      if (sent && !sameMembers(sent, role.permissions)) next[role.id] = sent;
+    }
+    return next;
+  }, [overlay, roles]);
+
+  const permissionsOf = (role: MatrixRole) =>
+    liveOverlay[role.id] ?? role.permissions;
 
   const columns = useMemo(
     () =>
@@ -95,17 +141,26 @@ export function RolesMatrix({
   const groups = useMemo(() => groupByModule(catalog), [catalog]);
 
   async function toggle(role: MatrixRole, permission: string, held: boolean) {
-    const cell = `${role.id}:${permission}`;
-    setPendingCell(cell);
+    const current = permissionsOf(role);
     const next = held
-      ? role.permissions.filter((p) => p !== permission)
-      : [...role.permissions, permission];
+      ? current.filter((p) => p !== permission)
+      : [...current, permission];
+
+    setOverlay((prev) => ({ ...prev, [role.id]: next }));
+    setPending({ roleId: role.id, permission });
     try {
       await updateRole.mutateAsync({
         id: role.id,
         body: { permissions: next },
       });
     } catch (error) {
+      // Drop the overlay entry rather than leaving it to be reconciled: the
+      // write failed, so the server's copy is already the truth.
+      setOverlay((prev) => {
+        const reverted = { ...prev };
+        delete reverted[role.id];
+        return reverted;
+      });
       toast({
         title: `Couldn't update ${role.name}`,
         description: getErrorMessage(
@@ -115,7 +170,7 @@ export function RolesMatrix({
         variant: "destructive",
       });
     } finally {
-      setPendingCell(null);
+      setPending(null);
     }
   }
 
@@ -144,7 +199,15 @@ export function RolesMatrix({
             Permission
           </span>
           {columns.map((role) => {
-            const count = memberCounts.get(role.id) ?? 0;
+            /*
+             * A role with no members has no map entry, so an absent entry is
+             * genuinely 0 once the read has landed. `null` is reserved for
+             * "the members read has not landed" — the whole map being null.
+             * Collapsing the two would print "0 members" for every role on a
+             * failed fetch.
+             */
+            const count =
+              memberCounts === null ? null : (memberCounts.get(role.id) ?? 0);
             return (
               <div
                 key={role.id}
@@ -152,7 +215,11 @@ export function RolesMatrix({
                 // Named explicitly rather than from contents. The count and the
                 // initials chip are both inside, so a computed name would read
                 // "EB Exec board 4" — and the initials are decorative.
-                aria-label={`${role.name}, ${count} ${count === 1 ? "member" : "members"}`}
+                aria-label={
+                  count === null
+                    ? role.name
+                    : `${role.name}, ${count} ${count === 1 ? "member" : "members"}`
+                }
                 className="px-1 text-center"
               >
                 <span
@@ -169,7 +236,7 @@ export function RolesMatrix({
                 <span
                   className={cn(
                     "block truncate text-xs font-semibold",
-                    role.permissions.includes("*") && "text-accent-text",
+                    permissionsOf(role).includes("*") && "text-accent-text",
                   )}
                   title={role.name}
                 >
@@ -184,13 +251,31 @@ export function RolesMatrix({
         </div>
 
         {groups.map((group) => (
-          <div key={group.label}>
+          // `rowgroup`, not a bare `<div>`. An element with no role sitting
+          // between `role="table"` and its `role="row"` children is not
+          // reliably transparent for ARIA table ownership; `rowgroup` is the
+          // role that legitimately holds rows, and it is what `<tbody>` maps to.
+          <div key={group.label} role="rowgroup">
             <div
               role="row"
-              className="grid h-8 items-center border-t border-border bg-background pl-4 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"
+              // `EYEBROW` for the same reason the settings drawer takes it:
+              // one section-label recipe, on the §7 scale.
+              className={cn(
+                "grid h-8 items-center border-t border-border bg-background pl-4 text-muted-foreground",
+                EYEBROW,
+              )}
               style={{ gridTemplateColumns }}
             >
-              <span role="rowheader">{group.label}</span>
+              {/*
+                The label is the row's only cell, in a grid track-listed for
+                every role column. Without `aria-colspan` a screen reader
+                walking column-wise counts one cell here against N+1 on a
+                permission row and reads the table as truncated at every module
+                boundary.
+              */}
+              <span role="rowheader" aria-colspan={columns.length + 1}>
+                {group.label}
+              </span>
             </div>
             {group.entries.map((entry) => (
               <div
@@ -211,7 +296,6 @@ export function RolesMatrix({
                   const held =
                     wildcard || role.permissions.includes(entry.permission);
                   const locked = wildcard || !canManage;
-                  const cell = `${role.id}:${entry.permission}`;
                   const label = `${entry.key || entry.permission} for ${role.name}`;
 
                   if (locked) {
@@ -247,7 +331,7 @@ export function RolesMatrix({
                         type="button"
                         aria-pressed={held}
                         aria-label={label}
-                        disabled={pendingCell !== null}
+                        disabled={pending?.roleId === role.id}
                         onClick={() =>
                           void toggle(role, entry.permission, held)
                         }
@@ -255,7 +339,8 @@ export function RolesMatrix({
                           "grid h-[22px] w-[22px] place-items-center rounded-[7px] leading-none transition",
                           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                           held ? "text-accent-text" : "text-muted-foreground",
-                          pendingCell === cell &&
+                          pending?.roleId === role.id &&
+                            pending.permission === entry.permission &&
                             "border border-accent-border shadow-[0_0_0_3px_hsl(var(--ring)/0.25)]",
                         )}
                       >
@@ -271,14 +356,6 @@ export function RolesMatrix({
       </div>
     </div>
   );
-}
-
-/** First letters of the first two words, so "Exec board" reads "EB" (`4e`). */
-function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0]!.slice(0, 2);
-  return (words[0]![0]! + words[1]![0]!).toUpperCase();
 }
 
 const MODULE_LABELS: Record<string, string> = {
@@ -317,4 +394,11 @@ function groupByModule(
   }
 
   return order.map((label) => ({ label, entries: byLabel.get(label)! }));
+}
+
+/** Order-insensitive membership equality, for reconciling the overlay. */
+function sameMembers(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const set = new Set(b);
+  return a.every((value) => set.has(value));
 }

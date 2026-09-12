@@ -9,7 +9,6 @@ import {
   useCurrentChapter,
   useDeleteRole,
   useMembers,
-  usePermissionsCatalog,
   usePresidencyClaimStatus,
   useRoles,
   useTransferPresidency,
@@ -195,7 +194,6 @@ export function RolesAndPermissionsPage() {
   const { confirm, confirmDialog } = useConfirmDialog();
   const { isOffline } = useNetwork();
   const rolesQuery = useRoles();
-  const catalogQuery = usePermissionsCatalog();
   const membersQuery = useMembers();
   const createRole = useCreateRole();
   const updateRole = useUpdateRole();
@@ -357,7 +355,6 @@ export function RolesAndPermissionsPage() {
 
   function retryQueries() {
     void rolesQuery.refetch();
-    void catalogQuery.refetch();
   }
 
   /*
@@ -386,11 +383,18 @@ export function RolesAndPermissionsPage() {
     only thing these two are gated on.
   */
   const paused =
-    (rolesQuery.isPending && rolesQuery.fetchStatus === "paused") ||
-    (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
+    rolesQuery.isPending && rolesQuery.fetchStatus === "paused";
 
   let body: ReactNode;
-  if (isOffline && anyReadUncached(rolesQuery, catalogQuery)) {
+  /*
+   * **`rolesQuery` only.** This screen used to conjoin the permissions catalog
+   * into every branch, because its permission checklist could not render
+   * without it. The checklist is the `4e` matrix's now, and nothing left here
+   * reads the catalog — so keeping it in the gate meant a slow or failed
+   * `GET /v1/roles/permissions-catalog` hid role rename, create, delete and
+   * the presidency transfer, none of which need it.
+   */
+  if (isOffline && anyReadUncached(rolesQuery)) {
     body = (
       <OfflineState
         title="Roles unavailable offline"
@@ -398,9 +402,9 @@ export function RolesAndPermissionsPage() {
         onRetry={retryQueries}
       />
     );
-  } else if (rolesQuery.isLoading || catalogQuery.isLoading || paused) {
+  } else if (rolesQuery.isLoading || paused) {
     body = <LoadingState message="Loading roles and permissions..." />;
-  } else if (rolesQuery.isError || catalogQuery.isError) {
+  } else if (rolesQuery.isError) {
     body = (
       <ErrorState
         title="Couldn't load roles"
@@ -411,15 +415,16 @@ export function RolesAndPermissionsPage() {
   } else {
     body = (
       <div className="space-y-6">
-        <header>
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Roles & Permissions
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Build chapter-specific roles from the system permissions catalog.
-            System roles cannot be deleted, but their permissions are editable.
-          </p>
-        </header>
+        {/*
+          "Roles & Permissions" at 24/600 with a description under it was this
+          screen's title when it was a route of its own. It is a section of the
+          Roles settings tab now, under that tab's own "Roles" heading, so a
+          second 24px "Roles & Permissions" was the same word twice at the same
+          weight. It names what this section actually does instead, and the
+          description goes: permissions are not built here any more, and "system
+          roles cannot be deleted" is said by the absent delete button.
+        */}
+        <h3 className="text-base font-bold">Manage roles</h3>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
           <Card>
@@ -507,7 +512,8 @@ export function RolesAndPermissionsPage() {
                 {activeRole ? `Edit ${activeRole.name}` : "Select a role to edit"}
               </CardTitle>
               <CardDescription>
-                Toggle permissions from the system catalog. Changes take effect
+                Rename, recolour or reorder this role. Its permissions are set
+                in the matrix above. Changes take effect
                 on the next request for every member holding this role.
               </CardDescription>
             </CardHeader>

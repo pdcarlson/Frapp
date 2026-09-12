@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { EYEBROW } from "@/components/ui/typography";
+import { CHIP } from "@/components/chat/chip";
 
 /**
  * Board `4c`: the per-page settings drawer.
@@ -109,10 +111,14 @@ export function PageSettingsSection({
   const labelId = useId();
   return (
     <section aria-labelledby={labelId}>
-      <h3
-        id={labelId}
-        className="mb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground"
-      >
+      {/*
+        `EYEBROW`, not the board's literal 11px/0.1em. `typography.ts` holds the
+        repo's section-label recipe at `caption` (12.5/0.12em) precisely because
+        11px is off the §7 scale, and it exists because this string had already
+        been copied twelve times. A thirteenth copy 1.5px off every other
+        section label in the app is the drift that module is there to stop.
+      */}
+      <h3 id={labelId} className={cn("mb-2 text-muted-foreground", EYEBROW)}>
         {label}
       </h3>
       <div className="flex flex-col gap-1.5">{children}</div>
@@ -159,12 +165,15 @@ export function PageSettingsRoleChip({
   tone?: "role" | "everyone";
 }) {
   return (
+    // `CHIP` rather than a fresh literal: its own docstring is about the
+    // eleventh and twelfth copies of this geometry quietly becoming different
+    // chips, and `pro-chip.tsx` already cites that reasoning one lane over.
     <span
       className={cn(
-        "inline-flex h-[26px] items-center rounded-[9px] px-2.5 text-[12.5px] font-semibold",
+        CHIP.base,
         tone === "role"
-          ? "border border-accent-border bg-accent-subtle text-accent-text"
-          : "bg-muted text-foreground",
+          ? CHIP.accent
+          : "border-transparent bg-muted text-foreground",
       )}
     >
       {children}

@@ -32,6 +32,7 @@ import {
 } from "@/components/shared/table-controls";
 import { asArray, getErrorMessage, parseGuardedInt } from "@/lib/utils";
 import { normalizeRoleOptions } from "@/lib/roles";
+import { can } from "@repo/validation";
 import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
 import {
   RolesMatrix,
@@ -44,6 +45,7 @@ import {
   useUpdateCustomRole,
   useDeleteCustomRole,
   useMembers,
+  useMyPermissions,
   usePermissionsCatalog,
   useRoles,
 } from "@repo/hooks";
@@ -122,7 +124,14 @@ export function SettingsRolesTab({
 
   return (
     <div className="space-y-8">
-      <RolesMatrixSection canManage={canManage} packLabel={packLabel} />
+      {/*
+        No `canManage` here. That prop is `chapter-config:manage`, which is what
+        the config PATCH behind the default-invite-role control needs; the
+        matrix PATCHes `/v1/roles/:id`, guarded by `roles:manage`
+        (`rbac.controller.ts`). They are separately grantable, so the section
+        reads its own.
+      */}
+      <RolesMatrixSection packLabel={packLabel} />
 
       {/*
         Role lifecycle: create, rename, recolour, reorder, delete, and the
@@ -152,14 +161,19 @@ export function SettingsRolesTab({
  * fetches, and all three are exactly the reads that let this tab render when
  * the chapter-config call is refused.
  */
-function RolesMatrixSection({
-  canManage,
-  packLabel,
-}: {
-  canManage: boolean;
-  packLabel: string | null;
-}) {
+function RolesMatrixSection({ packLabel }: { packLabel: string | null }) {
   const { isOffline } = useNetwork();
+  /*
+   * **`roles:manage`, not the tab's `canManage`.** A cell PATCHes
+   * `/v1/roles/:id`, which `rbac.controller.ts` guards with `ROLES_MANAGE`;
+   * the tab's `canManage` is `chapter-config:manage`, which guards the config
+   * blob. A chapter can mint a role holding either without the other, so
+   * crossing them breaks both ways: a `roles:manage` holder would find the
+   * product's only permission editor read-only, and a `chapter-config:manage`
+   * holder would get live cells that 403 on every click.
+   */
+  const { data: permissionsPayload } = useMyPermissions();
+  const canManage = can("roles:manage", permissionsPayload?.permissions);
   const rolesQuery = useRoles();
   const catalogQuery = usePermissionsCatalog();
   const membersQuery = useMembers();
@@ -172,7 +186,10 @@ function RolesMatrixSection({
     () => normalizeCatalog(catalogQuery.data),
     [catalogQuery.data],
   );
+  // `null` until the members read lands, so a column header shows no count
+  // rather than "0 members" for a role that may well have some.
   const memberCounts = useMemo(() => {
+    if (!membersQuery.isSuccess) return null;
     const counts = new Map<string, number>();
     for (const member of asArray<{ role_ids?: string[] }>(membersQuery.data)) {
       for (const roleId of member.role_ids ?? []) {
@@ -180,7 +197,7 @@ function RolesMatrixSection({
       }
     }
     return counts;
-  }, [membersQuery.data]);
+  }, [membersQuery.data, membersQuery.isSuccess]);
 
   const header = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">

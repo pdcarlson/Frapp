@@ -37,6 +37,14 @@ vi.mock("@repo/hooks", () => ({
   // which roles hold each `geofences:*` permission.
   useRoles: () => ({ data: [], isPending: false, isError: false }),
   usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
+  // Drives the `4c` gear beside the page title. Read as a boolean rather than
+  // through a second `<Can>`, so `can-fallback.spec.tsx`'s per-surface lookup
+  // still finds this file's screen-level gate.
+  useMyPermissions: () => ({
+    data: { permissions: ["geofences:manage"] },
+    isPending: false,
+    isError: false,
+  }),
   useGeofences: () => ({
     data: [ZONE],
     isPending: false,

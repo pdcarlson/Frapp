@@ -7,6 +7,7 @@ import {
   useCreateGeofence,
   useDeleteGeofence,
   useGeofences,
+  useMyPermissions,
   useUpdateGeofence,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ import {
 } from "@/components/shared/async-states";
 import { PageHeader } from "@/components/layout/page-header";
 import { StudyZonesSettingsDrawer } from "@/components/geofences/study-zones-settings-drawer";
+import { can } from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import {
   SubscriptionNotice,
@@ -128,6 +130,12 @@ export function GeofencesAdminPage() {
   // the server guard returns early for GET, so a lapsed chapter still sees its
   // zones.
   const gate = useSubscriptionGate();
+  // Drives the `4c` gear only. The screen-level `<Can>` below is still the
+  // gate for the page body; this is the same permission read as a boolean,
+  // because a second `<Can>` on the same permission in one file makes
+  // `can-fallback.spec.tsx`'s per-surface lookup ambiguous.
+  const { data: permissionsPayload } = useMyPermissions();
+  const canManageZones = can("geofences:manage", permissionsPayload?.permissions);
   const { confirm, confirmDialog } = useConfirmDialog();
   const geofencesQuery = useGeofences();
   const createGeofence = useCreateGeofence();
@@ -355,17 +363,20 @@ export function GeofencesAdminPage() {
       */}
       {/*
         `4c` pin 1: the gear sits beside the page title and "shows only for
-        roles that hold that page's manage permission". `<Can>` is that gate;
-        the drawer itself is read-only today, but a control that appears for
-        members who cannot act still reads as an offer.
+        roles that hold that page's manage permission".
+
+        **Read through `can()` rather than a second `<Can>`.** The screen-level
+        gate below already carries `permission="geofences:manage"` in this file,
+        and `can-fallback.spec.tsx` finds a surface's gate by exactly that
+        string — a second one would shadow it in the ledger's lookup and the
+        screen gate's offline copy would stop being checked. The gear is also
+        the wrong shape for that gate's contract: it is a 30px control slot with
+        nothing to recover to, so it has no `offlineFallback` to give, and it
+        simply does not render until the permission read resolves.
       */}
       <PageHeader
         title="Study Zones"
-        actions={
-          <Can permission="geofences:manage" deniedFallback={null} fallback={null}>
-            <StudyZonesSettingsDrawer />
-          </Can>
-        }
+        actions={canManageZones ? <StudyZonesSettingsDrawer /> : null}
       />
       <Can
         permission="geofences:manage"

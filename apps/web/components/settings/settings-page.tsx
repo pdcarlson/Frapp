@@ -982,7 +982,13 @@ function SettingsPageContent() {
               archetypeKey={archetypeKey}
               canManage={canManage}
               catalog={permissionsCatalog}
-              configUnavailable={orgConfigQuery.isError}
+              // Pending as well as error. `renderConfigGated` used to block on
+              // both; covering only the error case would render the
+              // default-invite-role picker as "No default" while the config
+              // read is still in flight, which is indistinguishable from a
+              // chapter that never set one — and picking a role there would
+              // overwrite the real default the response was about to deliver.
+              configUnavailable={orgConfigQuery.isError || orgConfigQuery.isPending}
               defaultInviteRoleId={config?.default_invite_role_id ?? null}
               isSavingConfig={pendingConfigKeys.has("default_invite_role_id")}
               onSaveDefaultInviteRole={(roleId) =>
