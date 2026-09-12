@@ -178,3 +178,69 @@ describe("MessageTimeline reply quotes (#489)", () => {
     expect(onReply).toHaveBeenCalledWith(PARENT);
   });
 });
+
+/**
+ * #2145: the loading state is the one frame on this route that a cold load and
+ * every channel switch both pass through, so its geometry is the geometry the
+ * timeline shifts by.
+ *
+ * These assert the shape rather than a rendered pixel count, which is what a
+ * jsdom harness can honestly know: jsdom computes no layout, so a test here can
+ * only check that the placeholder is built from the same box metrics as a real
+ * row, not that the two measure the same. The measured half is in the PR — the
+ * reason these exist at all is that the *cause* is checkable cheaply and the
+ * effect is not.
+ */
+describe("MessageTimeline loading state (#2145)", () => {
+  it("reserves row geometry instead of drawing a card", () => {
+    // The `LoadingState` this replaced was `min-h-52 rounded-xl border bg-card`
+    // — a 208px centred panel standing in for a full column of rows. `1s`:
+    // "the rest of the window is skeleton with reserved geometry", and zero CLS
+    // above the composer.
+    const { container } = renderTimeline([], { isLoading: true });
+
+    expect(container.querySelector(".rounded-xl")).toBeNull();
+    expect(container.querySelector(".min-h-52")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+
+    const rows = container.querySelectorAll(".px-5.pb-1");
+    expect(rows.length).toBeGreaterThan(0);
+    // The metrics `MessageItem` draws: 32px avatar gutter, 10px gap, and the
+    // header/grouped padding pair. A skeleton that drifts from these moves the
+    // first real row by the difference.
+    for (const row of rows) {
+      expect(row.className).toContain("gap-2.5");
+      expect(row.className).toMatch(/\bpt-4\b|\bpt-1\b/);
+      expect(row.querySelector(".w-8")).not.toBeNull();
+    }
+  });
+
+  it("draws both grouped and headed rows, as a real channel does", () => {
+    // A run of same-author messages is most of a channel, and a grouped row has
+    // no avatar and no name line. An all-headed skeleton would reserve more
+    // height than the rows that replace it.
+    const { container } = renderTimeline([], { isLoading: true });
+
+    const rows = [...container.querySelectorAll(".px-5.pb-1")];
+    expect(rows.some((r) => r.className.includes("pt-4"))).toBe(true);
+    expect(rows.some((r) => r.className.includes("pt-1"))).toBe(true);
+  });
+
+  it("is bottom-aligned, where the timeline actually opens", () => {
+    // `initialTopMostItemIndex` is the last row and the composer is pinned
+    // below, so content arrives against the bottom edge. Reserving the space at
+    // the top would be the right amount in the wrong place.
+    const { container } = renderTimeline([], { isLoading: true });
+
+    expect(container.querySelector(".justify-end")).not.toBeNull();
+  });
+
+  it("hides itself from assistive tech, which chat-shell announces instead", () => {
+    // Ten anonymous rectangles are no use read aloud, and `chat-shell.tsx` owns
+    // one `role="status"` for the whole cold load — announcing here too would
+    // read the same event twice.
+    const { container } = renderTimeline([], { isLoading: true });
+
+    expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
+  });
+});

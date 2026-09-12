@@ -40,7 +40,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 // Onboarding gates render their own dialogs off their own queries; neither is
 // part of the shell's chrome contract.
-vi.mock("@/components/onboarding/chapter-wizard", () => ({
+vi.mock("@/components/onboarding/chapter-wizard-gate", () => ({
   ChapterWizardGate: () => null,
 }));
 vi.mock("@/components/onboarding/onboarding-tutorial", () => ({

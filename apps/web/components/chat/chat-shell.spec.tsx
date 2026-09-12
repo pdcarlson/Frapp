@@ -11,6 +11,15 @@ const { channelsQueryState } = vi.hoisted(() => ({
   channelsQueryState: { value: {} as Record<string, unknown> },
 }));
 
+/**
+ * The persisted chapter id, which is `null` in the server-rendered HTML and
+ * until zustand rehydrates. Mutable so the no-chapter suite can drive the state
+ * every cold load actually starts in; reset in that block's `afterEach`.
+ */
+const { chapterStoreState } = vi.hoisted(() => ({
+  chapterStoreState: { value: "chapter-1" as string | null },
+}));
+
 const {
   mockScrollToMessage,
   mockRefetch,
@@ -172,8 +181,9 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chapter-1" }),
+  useChapterStore: (
+    selector: (s: { activeChapterId: string | null }) => unknown,
+  ) => selector({ activeChapterId: chapterStoreState.value }),
 }));
 
 vi.mock("@/lib/auth/use-frapp-user", () => ({
@@ -368,7 +378,10 @@ vi.mock("./message-timeline", async () => {
       </div>
     );
   });
-  return { MessageTimeline };
+  const MessageTimelineSkeleton = () => (
+    <div data-testid="message-timeline-skeleton" />
+  );
+  return { MessageTimeline, MessageTimelineSkeleton };
 });
 
 import { ChatShell } from "./chat-shell";
@@ -1333,6 +1346,70 @@ describe("ChatShell greenfield grammar (#2142)", () => {
     expect(
       screen.getByRole("region", { name: "Channels" }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * #2145: the state the *server* renders.
+ *
+ * `activeChapterId` comes from a persisted zustand store that initializes to
+ * `null`, so every cold load — for a member with a chapter and one without
+ * alike — renders this branch first. It used to return a lone 208px card in
+ * place of the whole route, and hydration then replaced that card with the
+ * two-column frame: the largest layout shift on `/chat`, on the happy path.
+ * `1s` puts "channel column chrome" in the 0ms set and budgets zero CLS above
+ * the composer.
+ */
+describe("ChatShell before the chapter store rehydrates (#2145)", () => {
+  afterEach(() => {
+    chapterStoreState.value = "chapter-1";
+  });
+
+  it("renders the frame, not a card in place of it", () => {
+    chapterStoreState.value = null;
+    render(<ChatShell />);
+
+    // The clause this is here for: the channel column's chrome exists at 0ms.
+    expect(
+      screen.getByRole("region", { name: "Channels" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("channel-list-skeleton")).toBeInTheDocument();
+  });
+
+  it("keeps the copy true in both states it covers", () => {
+    // On screen before rehydration AND when the member really has no chapter,
+    // so it has to be an instruction rather than a claim about the account —
+    // `profile-panel.tsx` owns that reasoning for the same window.
+    chapterStoreState.value = null;
+    render(<ChatShell />);
+
+    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
+  });
+
+  it("does not announce a channel load that is not happening", () => {
+    // The skeleton is shared with the `loading` state, but the announcement is
+    // not: a member with no chapter would otherwise be told "Loading channels"
+    // about a fetch that never starts.
+    chapterStoreState.value = null;
+    render(<ChatShell />);
+
+    expect(screen.queryByText("Loading channels")).toBeNull();
+  });
+
+  it("swaps content inside a frame that was already up", () => {
+    // The regression this pins is a re-render, not a first render: the frame
+    // present before the chapter id lands must be the same frame that holds the
+    // real list after it, or the swap is the shift.
+    chapterStoreState.value = null;
+    const { rerender } = render(<ChatShell />);
+    const before = screen.getByRole("region", { name: "Channels" });
+
+    chapterStoreState.value = "chapter-1";
+    rerender(<ChatShell />);
+
+    expect(screen.getByRole("region", { name: "Channels" })).toBe(before);
+    expect(screen.getByTestId("channel-list")).toBeInTheDocument();
+    expect(screen.queryByText("No chapter selected")).toBeNull();
   });
 });
 

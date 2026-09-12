@@ -8,6 +8,7 @@ import {
   useState,
   type ChangeEvent,
 } from "react";
+import dynamic from "next/dynamic";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -42,6 +43,7 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 // `use-chat-channel` boundary before #544 added `warning`.
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 import { useToast } from "@/hooks/use-toast";
+import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
@@ -49,7 +51,6 @@ import {
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
 import { QuotedMessage } from "./reply-quote";
-import { SlashPalette } from "./slash-palette";
 import {
   createMentionSuggestion,
   type MentionRosterEntry,
@@ -59,6 +60,24 @@ import {
   parseSlashInput,
   type SlashCommand,
 } from "@repo/chat-integrations";
+
+/**
+ * `cmdk` and a Radix Dialog, fetched when the palette is first summoned.
+ *
+ * The palette opens from typing `/` or from the toolbar's ⌘ button, so on most
+ * cold loads it is never opened at all — but the eager import put its whole
+ * dependency chain in the chunk that has to parse before the composer is
+ * focusable, which `1s` budgets at 400ms. It is one of the five surfaces the
+ * board names as `chat-extras`.
+ *
+ * Kept out of `slash-palette.tsx` itself so `slash-palette.spec.tsx` still
+ * renders the real component synchronously; the composer is the thing that
+ * knows when it is wanted, so the boundary belongs at this call site.
+ */
+const SlashPalette = dynamic(
+  () => import("./slash-palette").then((m) => m.SlashPalette),
+  { ssr: false },
+);
 
 /**
  * The message the next send replies to, already resolved to a label and a
@@ -500,6 +519,17 @@ export function Composer({
         setPalette((prev) => (prev.open ? { open: false, query: "" } : prev));
       }
     },
+    onCreate() {
+      // `1s`: "composer focusable <= 400ms". This is the moment it becomes
+      // true — `immediatelyRender: false` means the editor is null through the
+      // first render, so a member cannot type until ProseMirror has mounted its
+      // contenteditable, whatever the composer shell around it looks like.
+      //
+      // Deliberately `onCreate` and not an effect on `editor`: an effect fires
+      // on the render *after* the editor exists, which is a frame later and on
+      // the wrong side of the thing being measured.
+      markColdLoad(COLD_LOAD_MARKS.composerFocusable);
+    },
     immediatelyRender: false,
   });
 
@@ -512,6 +542,25 @@ export function Composer({
       emitUpdate: false,
     });
   }, [draft, editor]);
+
+  /*
+    Mount-once latch for the lazily-fetched palette above.
+
+    A bare `{palette.open ? <SlashPalette/> : null}` would fetch on first open
+    just the same, but it would also unmount on close — and `ui/dialog.tsx`
+    animates its exit (`data-[state=closed]:animate-out`), so every close would
+    be cut off mid-fade. Latching means only the very first open differs from
+    today, and that one is already waiting on a network fetch.
+
+    Adjusted during render rather than in an effect: React re-runs the component
+    before the browser paints, so the palette mounts in the same frame the state
+    flips. In an effect it would cost an extra committed frame, on the one open
+    that is already the slowest.
+  */
+  const [paletteMounted, setPaletteMounted] = useState(false);
+  if (palette.open && !paletteMounted) {
+    setPaletteMounted(true);
+  }
 
   // Radix's default `onCloseAutoFocus` returns focus to whatever rendered
   // `<DialogTrigger>` — this palette has none, since it opens from typing "/"
@@ -1006,23 +1055,25 @@ export function Composer({
           You&rsquo;re offline — messages send when you reconnect.
         </p>
       ) : null}
-      <SlashPalette
-        open={palette.open}
-        initialQuery={palette.query}
-        onQueryChange={(query) => setPalette((prev) => ({ ...prev, query }))}
-        isModuleEnabled={isModuleEnabled}
-        recruitmentVocab={recruitmentVocab}
-        status={slashCommandsStatus}
-        onRetry={onRetrySlashCommands}
-        onSelect={onPaletteSelect}
-        onOpenChange={(open) =>
-          setPalette((prev) => ({
-            ...prev,
-            open,
-            query: open ? prev.query : "",
-          }))
-        }
-      />
+      {paletteMounted ? (
+        <SlashPalette
+          open={palette.open}
+          initialQuery={palette.query}
+          onQueryChange={(query) => setPalette((prev) => ({ ...prev, query }))}
+          isModuleEnabled={isModuleEnabled}
+          recruitmentVocab={recruitmentVocab}
+          status={slashCommandsStatus}
+          onRetry={onRetrySlashCommands}
+          onSelect={onPaletteSelect}
+          onOpenChange={(open) =>
+            setPalette((prev) => ({
+              ...prev,
+              open,
+              query: open ? prev.query : "",
+            }))
+          }
+        />
+      ) : null}
     </div>
   );
 }

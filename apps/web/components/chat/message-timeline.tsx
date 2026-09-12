@@ -1,18 +1,105 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import {
   EmptyState,
   ErrorState,
-  LoadingState,
+  Skeleton,
 } from "@/components/shared/async-states";
 import { useTapRevealedMessage } from "@/hooks/use-tap-revealed-message";
+import { cn } from "@/lib/utils";
+import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import { MessageItem } from "./message-item";
 import type { ChatMessage, ReplayRequest } from "@repo/chat-core/types";
 import { authorGroupingKey, useAuthorAvatars } from "@repo/hooks";
 
 const GROUPING_GAP_MS = 5 * 60 * 1000;
+
+/**
+ * Widths cycled rather than randomised, for the reason `channel-list.tsx`
+ * records one column over: a skeleton that reshuffles on every render flickers,
+ * and under Strict Mode it would differ between the two passes.
+ *
+ * The `false` entries are grouped rows — a run by the same author, which is
+ * what a real channel mostly is. They carry no avatar and no header, so the
+ * pattern reserves the gutter without drawing into it.
+ */
+const SKELETON_ROWS: readonly (readonly [boolean, string])[] = [
+  [true, "w-[62%]"],
+  [false, "w-[38%]"],
+  [true, "w-[45%]"],
+  [true, "w-[70%]"],
+  [false, "w-[52%]"],
+  [false, "w-[30%]"],
+  [true, "w-[58%]"],
+  [true, "w-[40%]"],
+  [false, "w-[66%]"],
+  [true, "w-[48%]"],
+] as const;
+
+/**
+ * The cold-load and channel-switch placeholder for the timeline.
+ *
+ * This replaced a `LoadingState` card, and the swap is the whole point rather
+ * than a restyle. `1s` budgets **zero CLS above the composer** and asks for
+ * "skeleton with reserved geometry"; a centred `min-h-52` card in a
+ * `rounded-xl` border is neither. It occupied a different box from the rows it
+ * stood in for, so every first visit to a channel — and `use-chat-channel.ts`
+ * keys its query per channel, so *every channel* is a first visit once — paid a
+ * shift when the real rows replaced it. That is precisely the "no CLS
+ * regressions on channel switch" clause, and it was firing on the happy path.
+ *
+ * Three things make the geometry actually reserved rather than merely
+ * skeleton-shaped:
+ *
+ * - **Same box metrics as `MessageItem`.** `px-5`, `pb-1`, `pt-4` on a row that
+ *   shows a header and `pt-1` on a grouped one, a `w-8` avatar gutter and a
+ *   `gap-2.5` beside it. Copied deliberately: a placeholder whose padding is
+ *   "close enough" moves the first real row by the difference.
+ * - **Bottom-aligned.** The timeline opens at its end (`initialTopMostItemIndex`
+ *   is the last row) with the composer pinned below it, so content arrives
+ *   against the bottom edge. A top-aligned skeleton would reserve the right
+ *   *amount* of space in the wrong *place* and shift everything on swap.
+ * - **`overflow-hidden`, not a scroller.** It stands in for a full column, so
+ *   the run of rows is deliberately longer than most viewports; letting it
+ *   scroll would add a scrollbar that the real virtualized list then removes.
+ *
+ * `aria-hidden`, like `ChannelListSkeleton`: ten anonymous rectangles are no
+ * use to a screen reader. The audible half of the cold load is announced once,
+ * by the `role="status"` region `chat-shell.tsx` owns for exactly this reason.
+ */
+export function MessageTimelineSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      className="flex h-full flex-col justify-end overflow-hidden"
+    >
+      {SKELETON_ROWS.map(([showHeader, width], index) => (
+        <div
+          key={index}
+          // The row metrics `MessageItem` draws, restated so the swap is a
+          // repaint and not a reflow.
+          className={cn("flex gap-2.5 px-5 pb-1", showHeader ? "pt-4" : "pt-1")}
+        >
+          <div className="w-8 shrink-0">
+            {showHeader ? <Skeleton className="h-8 w-8 rounded-full" /> : null}
+          </div>
+          <div className="flex min-w-0 max-w-[86%] flex-1 flex-col items-start gap-1.5">
+            {showHeader ? <Skeleton className="ml-1 h-[13px] w-24" /> : null}
+            <Skeleton className={cn("h-[13px]", width)} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * Virtuoso owns the scroller's DOM and types both wrappers as `div`, so the
@@ -183,6 +270,28 @@ export const MessageTimeline = forwardRef<
 ) {
   const virtuoso = useRef<VirtuosoHandle | null>(null);
 
+  /*
+    `1s`: "cached channel readable <= 400ms".
+
+    In an effect, not in the render body, and both halves of that are deliberate.
+    An effect runs after React has committed the rows to the DOM, which is what
+    "readable" means; marking during render would timestamp the moment React
+    began producing them and quietly under-report the budget it exists to check.
+    And a mark is a side effect, so the render path is the wrong place for it
+    regardless — under Strict Mode the double render calls it twice, and only
+    `markColdLoad`'s own dedupe would be holding the number together.
+
+    Excluding `loadError` matters more than it looks. A channel that failed to
+    load is not readable, and counting it would fold fast failures into the same
+    metric as fast successes — the one direction that makes a latency number look
+    better the more often the product breaks. An *empty* channel does count: it
+    is readable, it just has nothing in it.
+  */
+  const readable = !isLoading && !loadError;
+  useEffect(() => {
+    if (readable) markColdLoad(COLD_LOAD_MARKS.channelReadable);
+  }, [readable]);
+
   // One batched request for every distinct imported-author avatar visible in
   // this window, rather than one per message (#1231). A miss (no avatar, out
   // of chapter, or unsigned) just means that row keeps its initials fallback.
@@ -264,7 +373,7 @@ export const MessageTimeline = forwardRef<
   );
 
   if (isLoading) {
-    return <LoadingState message="Loading messages…" />;
+    return <MessageTimelineSkeleton />;
   }
   if (loadError) {
     return (

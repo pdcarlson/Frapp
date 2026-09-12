@@ -20,7 +20,6 @@ import {
 } from "@repo/org-archetypes";
 import {
   DIRECTORY_MIN_QUERY_LENGTH,
-  useAccessibleChapters,
   useChapterDirectorySearch,
   useCreateInvite,
   useEmailInvites,
@@ -119,32 +118,6 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
     return () => clearTimeout(id);
   }, [value, delayMs]);
   return debounced;
-}
-
-/**
- * First-officer onboarding wizard (Chunk 03). Fires when a signed-in user has
- * no chapters. Turns "I just signed up" into "I'm in #general with my chapter
- * set up": directory autofill → archetype → identity → invite, then routes to
- * /chat?channel=general. All writes go through the cold-path onboarding
- * endpoint — never the chat Edge Functions.
- */
-export function ChapterWizardGate() {
-  const chaptersQuery = useAccessibleChapters();
-  const [open, setOpen] = useState(false);
-
-  const memberships = asArray<unknown>(chaptersQuery.data);
-  // Trigger: the user has zero chapter memberships. Once opened, the wizard
-  // owns its own lifecycle (the membership count flips to 1 mid-flow after the
-  // chapter is created), so we never auto-close it from here.
-  const hasNoChapters = chaptersQuery.isSuccess && memberships.length === 0;
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- latch the wizard open; auto-close on membership flip would unmount an in-progress create
-    if (hasNoChapters) setOpen(true);
-  }, [hasNoChapters]);
-
-  if (!open) return null;
-  return <ChapterWizard onComplete={() => setOpen(false)} />;
 }
 
 export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
