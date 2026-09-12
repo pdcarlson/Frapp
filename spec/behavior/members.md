@@ -7,7 +7,7 @@ The `members` module is always-on (free tier). Every chapter has a searchable me
 - The directory is searchable across **name, email, and custom-field values**. Custom-field search is **visibility-scoped** — a viewer can only match on field values they are permitted to see.
 - Filters: role, class/line/cohort (rendered via the chapter vocabulary term), and status.
 - Search also supports name, role, and join date.
-- The directory paginates at **25 rows per page** in both the table and card layouts; the pager renders only when the filtered set exceeds one page.
+- The directory paginates at **25 rows per page**; the pager renders only when the filtered set exceeds one page. (Web renders one flush list; the table and card layouts this line used to name were deleted by the greenfield Directory lane, [#2146](https://github.com/pdcarlson/Frapp/issues/2146).)
 
 ## Profiles
 

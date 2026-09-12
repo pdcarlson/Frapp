@@ -53,7 +53,10 @@ import {
 } from "@/components/documents/resources-glyphs";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
-import { denseRowControlClassName } from "@/components/shared/table-controls";
+import {
+  denseListClassName,
+  denseRowControlClassName,
+} from "@/components/shared/table-controls";
 import {
   UPLOAD_FIELD_CLASS,
   UPLOAD_SHEET_BUTTON_CLASS,
@@ -1222,17 +1225,12 @@ export function DocumentsPage() {
               */
               /*
                 The board's list grammar (`4d`): a top hairline per row and
-                nothing else — no card, no zebra, no per-row fill. `divide-y`
-                gives the same rule between rows; `border-t` on the block adds
-                the one above the first, so the list reads as a set rather than
-                as rows that happen to be adjacent.
-
-                `divide-border`, undiluted: `divide-border/70` measures 1.169:1
-                where the token itself measures 1.253:1, and neither clears the
-                3:1 non-text floor — `components.md` §2, "a hairline's alpha is
-                not a free parameter".
+                nothing else — no card, no zebra, no per-row fill. The recipe,
+                and the reason its hairline is undiluted, now live on
+                `denseListClassName`; the Directory lane extracted them when it
+                became the third and fourth copy of the same string.
               */
-              <ul className="divide-y divide-border border-t border-border">
+              <ul className={denseListClassName}>
                 {visible.map((doc) => (
                   /*
                     Two lines, not three, and 8px of padding rather than 12. The

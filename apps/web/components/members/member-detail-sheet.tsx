@@ -23,11 +23,11 @@ import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
@@ -43,7 +43,11 @@ type CustomFieldValue = {
 };
 
 function formatCustomValue(field: CustomFieldValue): string {
-  if (field.value === null || field.value === "") return "—";
+  // Not an em dash. Board `1t` lists "em dashes in UI copy" under gone, and a
+  // placeholder glyph is a character a screen reader has to announce standing
+  // in for nothing at all. This tile is a label over a value, so the value says
+  // it is unset rather than drawing a mark that means it.
+  if (field.value === null || field.value === "") return "Not set";
   if (field.type === "boolean") {
     return field.value === "true" ? "Yes" : "No";
   }
@@ -170,6 +174,7 @@ export function MemberDetailSheet({
   const router = useRouter();
   const { userId: currentUserId, isLoading: isCurrentUserLoading } = useFrappUser();
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
   const [selectedCustomRoleIds, setSelectedCustomRoleIds] = useState<string[]>([]);
 
@@ -298,9 +303,25 @@ export function MemberDetailSheet({
 
   async function handleRemoveMember() {
     if (!memberId) return;
-    const confirmed = window.confirm(
-      `Remove ${displayName} from this chapter? They can rejoin only with a new invite.`,
-    );
+    /*
+      `window.confirm` until this lane: board `1t` lists "All window.confirm →
+      r20 dialog" under replaced, `design-system/README.md` §2 bans
+      browser-chrome dialogs on every surface, and the shared control that
+      implements §9's "Destructive button with a Secondary cancel" has existed
+      since the Chapter Ops slice. This was the one call site left on a
+      Directory route, and the worst-placed of them: a native OS prompt
+      rendered on top of a Radix sheet.
+
+      `confirmLabel` names the verb and its object rather than saying "Confirm"
+      (`writing.md` §2), which also keeps this screen's own suite unambiguous
+      next to the footer's "Remove member" trigger.
+    */
+    const confirmed = await confirm({
+      title: `Remove ${displayName}?`,
+      description: "They can rejoin only with a new invite.",
+      confirmLabel: "Remove from chapter",
+      tone: "destructive",
+    });
     if (!confirmed) return;
 
     try {
@@ -369,15 +390,28 @@ export function MemberDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+      {/*
+        The narration paragraph under the title is deleted, not restyled:
+        "Review member profile context and update chapter role assignments."
+        named the two things the sheet visibly contains, to a reader already
+        looking at both. Board `1t` lists page-narration paragraphs under gone,
+        and `1j` gives a sheet "no instructional paragraph".
+
+        `aria-describedby={undefined}` is load-bearing rather than a tidy-up,
+        the same way it is on `UploadSheetContent`: with no `SheetDescription`
+        rendered, Radix warns on every open for a `Content` that points at a
+        description id that does not exist.
+      */}
+      <SheetContent
+        side="right"
+        aria-describedby={undefined}
+        className="w-full overflow-y-auto sm:max-w-xl"
+      >
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <DirectoryGlyph className="h-5 w-5" />
             {displayName}
           </SheetTitle>
-          <SheetDescription>
-            Review member profile context and update chapter role assignments.
-          </SheetDescription>
         </SheetHeader>
 
         {!usingPreviewData &&
@@ -437,7 +471,8 @@ export function MemberDetailSheet({
           <div className="rounded-md border border-border p-3">
             <p className="text-[12.5px] text-muted-foreground">Points</p>
             <p className="mt-1 text-sm">
-              {typeof points === "number" ? points : "—"}
+              {/* Same rule as `formatCustomValue` above: a word, not a mark. */}
+              {typeof points === "number" ? points : "Not recorded"}
             </p>
           </div>
         </div>
@@ -540,6 +575,22 @@ export function MemberDetailSheet({
             Remove member
           </Button>
         </SheetFooter>
+        {/*
+          Inside `SheetContent` so the confirmation renders above the sheet that
+          opened it rather than behind its overlay.
+
+          Not a claim about focus returning. `useConfirmDialog`'s dialog opens
+          from a plain `onClick` with no `DialogTrigger`, so on the ordinary
+          cancel path — where the opener is still connected and enabled —
+          `handleCloseAutoFocus` returns early and Radix focuses its absent
+          trigger, which lands focus on `<body>` while this sheet is still open
+          and modal. That is a pre-existing property of the shared control,
+          shared with every other caller, and widening its `openerUsable` test
+          is a change to that control rather than to this route. Recorded here
+          so the next reader does not take the old wording ("hands focus to the
+          dialog and back") as a property they can rely on.
+        */}
+        {confirmDialog}
       </SheetContent>
     </Sheet>
   );

@@ -123,9 +123,21 @@ Implementation: `PermissionsOffline` (`apps/web/components/shared/async-states.t
 |---|---|---|
 | Loading | — | `Loading chapter members...` |
 | Loading (supporting queries) | — | `Loading chapter members...` — the roles-and-points load uses the *same* string. A second, differently-worded loading state for one screen is what this table exists to prevent. |
-| Empty | `No members match this view` | `Try a broader search or invite your first members to populate this directory.` |
-| Error | `Unable to load live member records` | `The members workflow no longer falls back to preview data. Verify your chapter access and API health, then retry.` |
-| Offline | `Members directory unavailable offline` | `Reconnect to load live membership records and role updates.` |
+| Empty | `No actives yet` | `Actives appear here once they join.` |
+| No results (filters) | `No actives match the filters` | `Clear a filter to see more.` |
+| No results (search) | `No match for “<query>”` | `Check the spelling, or widen the filters.` |
+| Error | `Couldn't load members` | `Check your chapter access and API health.` |
+| Error (roles and points) | `Couldn't load roles and points` | `Filtering, sorting and assignment need both.` |
+| Offline | `Members unavailable offline` | `Reconnect to load the roster.` |
+
+**Rewritten by the greenfield Directory lane ([#2146](https://github.com/pdcarlson/Frapp/issues/2146)), and the row count is the change.** Five rows became seven for two reasons, both from the framework board's state rule (`3b`): *"Empty = accent tile + tinted CTA. No results = neutral tile, names the query"*, under a section eyebrow that budgets a status line at **six words**.
+
+- **Empty and no-results were one row doing two jobs.** `No members match this view` / `Try a broader search or invite your first members to populate this directory.` had to cover a chapter with no roster *and* a search that matched nothing, so it asserted neither and instructed the reader in both. The split is the one the Points table below already makes between an empty leaderboard and a search that matched nothing, for the same reason: a filtered view that matches nothing is not a claim about the data.
+- **The descriptions state a fact instead of giving an instruction**, except in the no-results hint slot, where the board's own drawn hint is an instruction (`Check the spelling`).
+- **`actives`, not `members`,** in the two titles about the list itself: it is the word the tab and the section label above the list already use, and it is what the shipped mobile Directory renders for the same state (`apps/mobile/app/(tabs)/directory.tsx`). The error and offline rows keep `members`, because those are about the *records*, not about the tab.
+- **The old error string named a concept that no longer exists.** "The members workflow no longer falls back to preview data" described the removal of a preview mode to a member who never saw one; `stateMicrocopy.members.preview*` had already lost both its readers.
+
+Implementation: `apps/web/lib/state-microcopy.ts`. The no-results title is assembled at the call site because it quotes the live query.
 
 ### Events (dashboard)
 
@@ -405,10 +417,16 @@ confirm.
 | State | Title | Description |
 |---|---|---|
 | Loading | — | `Loading alumni directory...` |
-| Empty | `No alumni match this view` | `Ask alumni to fill in their graduation year, city, and company on their profile, or loosen the filters above.` |
-| Error | `Couldn't load alumni` | `Confirm your chapter access and retry. Alumni visibility respects the same permission checks as the member directory.` |
-| Offline | `Alumni directory unavailable offline` | `Reconnect to load alumni records and filters.` |
-| No chapter selected | `Alumni directory` | `Select an active chapter to browse alumni records.` |
+| Empty | `No alumni yet` | `Graduated members appear here.` |
+| No results (filters) | `No alumni match the filters` | `Clear a field to see more.` |
+| Error | `Couldn't load alumni` | `Check your chapter access.` |
+| Offline | `Alumni unavailable offline` | `Reconnect to load alumni records.` |
+| No chapter selected | `No chapter selected` | `Pick a chapter to browse alumni.` |
+
+Rewritten by the same lane and on the same rule as the Members table above; the reasoning is not repeated here. Two things specific to this half:
+
+- **The no-chapter state changed shape, not just wording.** It was the one state on this route rendered as a bare `<Card>` with a title and a sentence rather than through the §10 state family, and on a page the lane left with no cards it would have been the only card on the screen. It is an `EmptyState` now, so its title names the condition (`No chapter selected`) rather than the screen (`Alumni directory`).
+- **The error description dropped a true sentence on purpose.** "Alumni visibility respects the same permission checks as the member directory" is a fact about the API, offered to a member who is looking at a failure they cannot diagnose. `Check your chapter access.` is the half they can act on.
 
 ### Profile (dashboard)
 

@@ -290,6 +290,176 @@ most likely to need to revisit, which is why it is stated rather than left in th
 | An `error` slot on the sheet's plain field | `1j` draws "Semester is required" under a metadata field, so the grammar is specified — but no metadata field on either screen can produce it: both state that every field except the file is optional. The prop, and the `aria-invalid`/`aria-describedby` helper that has to go with it, were written first and had **zero** callers, exercised only by their own test. Removed. The lane that adds the first required metadata field adds the recipe back against a field that uses it |
 | `nested-states.tsx`'s own framing | The four nested states still draw their own bordered block, which on a now-flat page reads as a small card. They are shared across every route, so re-pitching them is a change to that family and not to these two screens |
 
+
+## 9. Directory: actives and alumni — lane 5
+
+Written as the lane landed, in the same shape as §8, and for the same reason: the board draws
+**no Directory page body**. `4a` is the *chat* members column, not this route. So the page grammar
+is **derived** — from `1f` pin 2 (one toolbar row, no wrapper card, no description paragraph),
+`1t`'s Events row read one route over ("header card, description, filter card, table card, … card
+title, checkbox column — gone"), `4d`/`4e`'s table rule (top-border dividers, no zebra, no per-row
+fill) and `3b`'s state rule. That derivation is the part a later lane is most likely to revisit,
+which is why it is stated rather than left in the diff.
+
+This lane is **Directory only**. Finance/Billing and Admin/settings are the other two thirds of
+[#2146](https://github.com/pdcarlson/Frapp/issues/2146) and are not touched here.
+
+### Where the row geometry comes from, and why it is not lane 4's
+
+`4a` draws the only member row in the file: **34px, r8, 24px avatar, 10px gap**, name on one
+truncating line. `4d`'s 40px row is a plan matrix, not a member. 34 is not a Tailwind step and
+`min-h-9` (36) is the adjacent one, so a member row is `min-h-9` with `pointer-coarse:min-h-11`.
+
+That is deliberately **not** lane 4's flat `min-h-11` document row, and the difference is not an
+oversight in either direction:
+
+| | `/documents`, `/backwork` | `/members` |
+| --- | --- | --- |
+| Row is itself a control | No — the row is text plus trailing buttons | **Yes** — the row opens the member |
+| Lines | Two | One |
+| Height | `min-h-11` flat (44) | `min-h-9` + `pointer-coarse:min-h-11` (36 / 44) |
+
+§2's floor is about **touch targets**, and its own carve-out reads "compact 34px controls are
+web/pointer-only". `pointer-coarse` is that carve-out expressed in CSS — the mechanism
+`denseRowControlClassName`, `dashboardCheckboxHitAreaClassName` and lane 4's own folder rail already
+use. A mouse gets the board's density; a finger gets the full 44.
+
+### What was deleted
+
+| File | What went | Note |
+| ---- | --------- | ---- |
+| `members-directory.tsx` | Three `<Card>`s — the filter card, the bulk-actions card, the results card | With four `CardTitle`/`CardDescription` blocks between them. "Members Directory" and "Member Records" both named a list the reader was looking at |
+| `members-directory.tsx` | The narration paragraph "Search and review chapter membership records." | Board: page-narration paragraphs, removed outright |
+| `members-directory.tsx` | The whole `<Table>` — header row, six columns, four `SortableHead` buttons | Replaced by a flush `<ul>`. The shared `Table` primitive is now unused on this route, as it is on lane 4's two |
+| `members-directory.tsx` | The checkbox **column** (`<th>`, the `w-12` cell) | `1t`, Events row. The capability survives: the checkbox is the row's leading element, and the select-all keeps a header of its own above the list — see the acceptance item below for why it is **not** in the selection bar |
+| `members-directory.tsx` | The table/card **view toggle** and the entire card-grid view | See "What this lane did NOT do" for why this one is a deletion rather than a restyle |
+| `members-directory.tsx` | The trailing "View details" Secondary button on every row | The row is the control (`4a`: "Click a row → profile popover"). A 44px button inside a 36px row sets the row's height on its own |
+| `members-directory.tsx` | Four sortable column headers | One sort `<select>` in the toolbar row, carrying all eight (key, direction) pairs |
+| `alumni-directory.tsx` | N + 2 `<Card>`s — a no-chapter guard card, a filter card, and **one card per alumnus** | The per-alumnus cards are rows in the same list the actives half renders |
+| `alumni-directory.tsx` | The narration paragraph, and the "ALUMNI" badge on every row | A per-row tag reading ALUMNI on every row of the list the Alumni tab opens states one fact three times |
+| `directory-glyphs.tsx` | `AlumniGlyph` | Sole consumer was that badge. `iconography.md` §6.2.3 moved in the same change, per its own §6.3 |
+| `presence-dot.tsx` | The `decorative` prop and the self-naming `role="img"` branch | Same condition as `AlumniGlyph`, and it would have been easy to miss: the labelled variant existed for the table cell and the card tile, both deleted here, so the one surviving caller — a row that *is* a button — passes `decorative` and spells the status into its own `aria-label`. Left in place it would have been a second accessibility contract with no call site and no test |
+| `member-detail-sheet.tsx` | `SheetDescription`, and the route's one `window.confirm` | `1t`: "All `window.confirm` → r20 dialog — replaced". It was the worst-placed of them: a native OS prompt over a Radix sheet |
+| `invite-member-dialog.tsx` | `DialogDescription`, and the error banner's second sentence | `1j`: "no instructional paragraph" |
+| `state-microcopy.ts` | `members.preview*` | Both keys had lost their readers when the preview fallback went; the error string that named the concept went with them |
+
+- [x] Wrapper cards deleted on both halves; both sit on `--background` with flush lists
+- [x] Narration paragraphs deleted, not restyled, on both halves and in both overlays
+- [x] Rows at the board's member geometry: `min-h-9` / `pointer-coarse:min-h-11`, 24px avatar,
+      `·`-joined meta line, bounded fields before the free-text one
+- [x] `divide-y divide-border border-t border-border` — and **extracted**. Lane 4 spelled it twice;
+      this lane would have been copies three and four, so it now lives on `denseListClassName` in
+      `components/shared/table-controls.ts` and all four lists import it. The **row** recipe is
+      deliberately not extracted — see the table above for why the two rows are different objects
+- [x] FITFO empties: one state became three (empty / filtered / searched), per `3b`'s
+      "Empty = … No results = neutral tile, names the query" and its six-word status budget.
+      `writing.md` §7's Members and Alumni tables moved in the same change, as
+      [`README.md`](README.md) §2's scope note requires
+- [x] `--gold-ask-*` untouched and still not merged into `--accent-*`. This lane's accent uses are
+      the row hover (`accent-subtle`), the selected row (`accent-subtle-hover` + `accent-text`) and
+      the selection bar, all of which retint per chapter as product UI should. Its only consumer,
+      `ask-pill.tsx`, is not in the diff, so L-05 does not fire
+- [x] Whole-screen `EmptyState`/`ErrorState`/`LoadingState`/`OfflineState` swapped for the
+      **nested** family with `sole`, on both halves. Not a technicality: the whole-screen variants
+      paint `--card`, so a route that had just deleted three `<Card>`s would have gone on drawing one
+      on every empty, error, loading and offline path. `elevation-contrast.spec.ts` argues the same
+      side from the other end, and its docblock names that assertion as "the one that should fail if
+      someone restores the Card for consistency". Lane 4 moved `/documents` and `/backwork` across
+      for this reason. The one exception is alumni's **no-chapter** branch, which keeps the
+      whole-screen variant because it genuinely replaces a page rather than a list — the same
+      exception `backwork-page.tsx` already carries
+- [x] `<MemberDetailSheet>` renders inside the success branch, where every other `useConfirmDialog`
+      caller renders its dialog. **Recorded because an earlier draft of this lane did the opposite
+      and was wrong**: it hoisted the sheet out of the state branches to stop
+      `await confirm(...)` hanging when a background refetch unmounted its host mid-confirmation.
+      That hazard does not exist here — `ConfirmDialogHost` carries
+      `useEffect(() => () => onSettle(null))` for exactly this, and
+      `confirm-dialog.spec.tsx`'s "resolves null when the caller stops rendering the dialog" pins it
+      against the early-return shape by name. The hoist also cost something real: a sheet that
+      outlives its own query looks up `activeMember` in a `sortedMembers` that is empty in precisely
+      those branches, so it rendered an unknown member with its roles cleared and a Save that
+      silently no-opped. A primitive that already solves a problem is the first thing to check
+      before restructuring a caller around it.
+
+      The state branches themselves are **unchanged** — scoping them to the list region the way
+      lane 4 does would leave the search input mounted while offline, which rewrites the recorded
+      reason ([#1621](https://github.com/pdcarlson/Frapp/issues/1621)) that this screen's Retry
+      clears the search term, and that is a resilience change rather than a chrome one
+- [x] The select-all sits in the list header, rendered whenever there are rows (so not on the
+      empty, loading, error or offline paths, where it would have nothing to select), and **not**
+      in the selection bar. Also a
+      corrected draft: inside the bar it was a control conditioned on its own output — unreachable
+      until a row had been ticked individually, and self-destroying when used, since unticking it
+      empties the selection and unmounts the bar around the checkbox holding focus, dropping a
+      keyboard user to `<body>`. The header is what the deleted `<th>` was, minus the column labels
+      and the four sort buttons a flush list has no room for
+- [x] Rows stack rather than hide below `sm`. A draft put the meta line behind `hidden sm:block`,
+      which at the 375px floor this repo measures put the role, join date and email in **no** form
+      at all: `display:none` removes text from the accessibility tree too, so on the actives half
+      the row's `aria-label` was the only survivor, and on the alumni half — a deliberately
+      non-interactive row with no `aria-label` and no detail surface — class year, company and city
+      existed nowhere in the product on a phone. Lane 4's document row already stacks
+      (`flex-col … sm:flex-row`); both rows here now do the same. The alumni **bio** also left the
+      `·` join for a line of its own: lane 4's "free text last" rule assumes the free-text field
+      trails one short date and a folder name, and with three fields ahead of it in half a row an
+      ellipsis took the bio entirely, at every width, with no detail surface to recover it from
+- [x] No em dash left in rendered copy on this route. **Four sites, one defect, two different
+      fixes** — `"—"` standing in for a value that is absent. In a row's meta line (an unparseable
+      join date, a member with no role) nothing replaces it: the line is a `·`-joined list of the
+      facts that exist, so an absent fact is absent from the line. In the detail sheet's field tiles
+      (an unset custom field, a member with no points) the tile is a *label over a value*, so
+      dropping the value would leave a label naming nothing — those say `Not set` and
+      `Not recorded`. A lone glyph is in both cases a character a screen reader has to announce
+      standing in for nothing at all. The fifth occurrence, `"Directory — Signet"` in the route's
+      `metadata.title`, is **left**: every dashboard route spells its browser-tab title that way,
+      lane 4 touched two of them and left both, and changing one of many is a worse state than
+      changing none
+
+- [x] 375px floor held on `/members` under `tests/visual/responsive-floor.spec.ts`, and **it covers
+      more here than §8's equivalent claim does** — an earlier draft of this line said the opposite
+      and was wrong in a way worth recording, because the mistake is the one
+      [`../design-system/README.md`](../design-system/README.md) §4 names by name. That draft
+      reasoned that a sessionless harness renders the *loading* state, so neither the populated row
+      nor the toolbar row is measured. But `useMembers`, `useRoles` and `useLeaderboard` are all
+      `enabled: !!chapterId`, and **a disabled query is not a loading state**: under TanStack v5
+      `isLoading` is `isPending && isFetching`, which is false when `fetchStatus` is `idle`. So
+      `/members` falls past every guard and renders the **toolbar row plus the `No actives yet`
+      empty state** — which is exactly what the `Invite` assertion in
+      `members-directory.spec.tsx` pins, and what the Invite row under "What this lane did NOT do"
+      below says ("It still renders above every empty state"). §8's claim about `/documents` is true
+      for a reason that does not transfer: `useDocuments` has no `enabled` gate at all.
+
+      What the gate therefore proves: the shell, the tab row, the page header, the toolbar row —
+      its four wrapping `<select>`s, the search field and the Invite button — and the empty state
+      all hold 375px. What it still does **not** exercise is a **populated row**, which needs a
+      seeded session (the work §8 already scopes). The rows are structurally safe by construction:
+      the meta line stacks rather than hiding below `sm`, and every flex child carries `min-w-0` or
+      `shrink-0`. One pre-existing property is worth naming since the toolbar is now measured: a
+      native `<select>`'s intrinsic width is its longest `<option>`, so a chapter with a very long
+      role name widens `Role: …` without bound. That is unchanged from the surface this replaces
+
+### What this lane did NOT do, deliberately
+
+| Left | Why |
+| ---- | --- |
+| Invite in `PageHeader`'s `actions`, where lane 4 put Upload | `1f` pin 2 does put the primary action in the page toolbar row, and lane 4 obeyed it — behind `<Can permission="chapter_docs:upload">`. This route has no `<Can>` (next row), so an unguarded trigger in `PageHeader` mounts `InviteMemberDialog` on **every** path and on the **Alumni** tab, firing `useInvites` (`GET /v1/invites`, gated on `members:invite`) for every visitor — the guaranteed-403-per-visit shape `member-detail-sheet.tsx` already guards `useCustomRoles` against. It sits at the trailing edge of the actives list's own toolbar row instead: same row grammar, mounts exactly when it mounts today, and it is the honest home anyway, since the alumni tab has no invite. It still renders above every empty state, which is what lets those states carry no CTA |
+| A `<Can>` gate on the invite trigger, the bulk-assign controls or the row checkboxes | The route has **no** `<Can>` anywhere today; the only client mirror of `members:view` is the nav entry. Adding a permission read changes what a member sees, which is behavior, not chrome. It is a real divergence from [`../design-system/README.md`](../design-system/README.md) §5 rule 4 — **not** `components.md` §5, which is Badges and chips — and is filed as [#2170](https://github.com/pdcarlson/Frapp/issues/2170), which also carries the guaranteed-403 `useInvites` call the Invite row above only narrows |
+| The underline tab row → the board's segmented toggle | The board draws **no** horizontal tab bar (`grep -c 'border-bottom:2px'` returns 0). Its two tab shapes are `4d`'s left rail, for a settings page with six sections, and `1f`'s Calendar/List *view toggle*, which switches two renderings of one dataset. Actives and alumni are two datasets behind two queries, so neither frame is about this control — and where the board is silent, `components.md` §6 is explicit ("underline style only — no segmented pill controls") and the primitives slice already deleted a segmented rail here. Re-adding it would reverse that on the strength of a frame that is not about it |
+| Deleting the page's own search field, as lane 3 deleted the channel list's | `1b` pin 5 and `1a` pin 9 delete *per-column* search in favour of the top bar's find. The find bar navigates to `/members`; it does not narrow it, and this input is wired to `GET /v1/members/search`, a **server-side** search over the whole roster. Deleting it moves a capability. `/documents` and `/backwork` kept theirs for the same reason |
+| An alumni detail sheet | Alumni rows were a dead end before this lane and still are. There is no alumni detail surface in `apps/web` for a row to open, and adding one is a capability |
+| Folding `CHAT_CONTROL_CLASS` into `denseRowControlClassName` | Unchanged from §8: still the same string in two files, still a chat edit |
+| Finance/Billing and Admin/settings | The other two thirds of #2146, and separate PRs by the issue's own "can split PRs" |
+
+**The card-grid view is a deletion, not a restyle, and that is the one judgement call here.** Three
+reasons, in order of weight. Its tile is a `rounded-lg border` box per member — the wrapper card
+this lane removes everywhere else, so "restyling" it means deleting its card and then it is a worse
+list. It shows strictly *less* than the row (no email, no actions, no checkbox), and its missing
+checkbox was a live defect: selection was unreachable in card view while the bulk bar still rendered
+above it. And its whole content is restated in a hand-maintained `aria-label` that has to be kept in
+sync with the tile by hand. It is chrome — a second rendering of one list, not a route, a
+permission or a data contract — so it is inside this checklist's scope, but it is the item most
+worth a second opinion.
+
 ---
 
 ## What this checklist does not cover

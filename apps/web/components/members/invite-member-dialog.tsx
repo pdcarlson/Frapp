@@ -21,7 +21,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -76,7 +75,8 @@ function normalizeInvites(input: unknown): InviteRow[] {
         token: candidate.token,
         role: candidate.role,
         expires_at: candidate.expires_at,
-        used_at: typeof candidate.used_at === "string" ? candidate.used_at : null,
+        used_at:
+          typeof candidate.used_at === "string" ? candidate.used_at : null,
       },
     ];
   });
@@ -140,12 +140,17 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
       .flatMap((role: unknown) => {
         if (!role || typeof role !== "object") return [];
         const candidate = role as Record<string, unknown>;
-        if (typeof candidate.id !== "string" || typeof candidate.name !== "string") {
+        if (
+          typeof candidate.id !== "string" ||
+          typeof candidate.name !== "string"
+        ) {
           return [];
         }
         return [{ id: candidate.id, name: candidate.name }];
       })
-      .sort((first: RoleRow, second: RoleRow) => first.name.localeCompare(second.name));
+      .sort((first: RoleRow, second: RoleRow) =>
+        first.name.localeCompare(second.name),
+      );
 
     return roles;
   }, [rolesQuery.data]);
@@ -220,7 +225,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const isSubmitting =
     createInviteMutation.isPending || createBatchInvitesMutation.isPending;
 
-  const activeInviteRows = inviteRows.filter((invite) => invite.used_at === null);
+  const activeInviteRows = inviteRows.filter(
+    (invite) => invite.used_at === null,
+  );
 
   /**
    * Reopening starts a fresh invite, so the chapter default applies again
@@ -249,7 +256,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     try {
       let created: InviteRow[] = [];
       if (inviteCount <= 1) {
-        const result = await createInviteMutation.mutateAsync({ role: roleName });
+        const result = await createInviteMutation.mutateAsync({
+          role: roleName,
+        });
         created = normalizeInvites(result);
       } else {
         const result = await createBatchInvitesMutation.mutateAsync({
@@ -275,7 +284,10 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     } catch (error) {
       toast({
         title: "Could not generate invite",
-        description: getErrorMessage(error, "Something went wrong. Please retry."),
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
         variant: "destructive",
       });
     }
@@ -310,7 +322,10 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     } catch (error) {
       toast({
         title: "Could not revoke invite",
-        description: getErrorMessage(error, "Something went wrong. Please retry."),
+        description: getErrorMessage(
+          error,
+          "Something went wrong. Please retry.",
+        ),
         variant: "destructive",
       });
     }
@@ -319,23 +334,50 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
+      {/*
+        The instructional paragraph under the title is deleted, not restyled.
+        Board `1j` gives a sheet "no instructional paragraph" and `1t` lists
+        page-narration under gone; this one ("Generate a join link and assign a
+        default role before members join.") narrated the two controls directly
+        beneath it, which name themselves.
+
+        `aria-describedby={undefined}` for the reason `UploadSheetContent`
+        carries it: with no `DialogDescription` rendered, Radix warns on every
+        open for a `Content` pointing at a description id nothing renders.
+      */}
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-h-[88vh] overflow-y-auto sm:max-w-2xl"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <InviteGlyph className="h-5 w-5" />
             Invite members
           </DialogTitle>
-          <DialogDescription>
-            Generate a join link and assign a default role before members join.
-          </DialogDescription>
         </DialogHeader>
 
         {hasLiveDataError ? (
           <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning/[.13] p-3 text-[12.5px] text-warning">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            {/*
+              This banner is the **only** explanation for two disabled controls
+              — `hasLiveDataError` greys out Generate and every Revoke, and
+              `gate.controlProps` supplies a `title` only when offline and an
+              `aria-describedby` only for the subscription gate, so neither
+              disabled button carries a reason of its own. An earlier draft of
+              this lane cut it to four words on the board's "status ≤ 6 words"
+              budget; that budget is for a state *tile*, and applying it here
+              left a dimmed primary action with nothing anywhere saying why.
+              That is `design-system/README.md` §5 **rule 2** — "Say why, and
+              say what fixes it. A disabled control with no explanation is its
+              own dead end" — and not rule 4, which is the separate
+              disable-rather-than-hide rule this control already follows.
+
+              What did go is the instruction to fix the API, which is not
+              something the reader can act on from this dialog.
+            */}
             <div>
-              Live invite data could not load. Resolve the underlying API error before issuing
-              chapter invites.
+              Invite data could not load, so issuing and revoking are paused.
             </div>
           </div>
         ) : null}
@@ -376,7 +418,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
               )}
               className="w-full"
             >
-              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {isSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
               Generate
             </Button>
           </div>
@@ -394,12 +438,18 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                   className="flex items-center justify-between gap-2 rounded-md border border-accent-border bg-accent-subtle-hover p-2"
                 >
                   <div className="min-w-0">
-                    <p className="truncate font-mono text-[12.5px]">{invite.token}</p>
+                    <p className="truncate font-mono text-[12.5px]">
+                      {invite.token}
+                    </p>
                     <p className="text-[12.5px] text-muted-foreground">
                       {invite.role} • expires {formatDate(invite.expires_at)}
                     </p>
                   </div>
-                  <Button size="sm" variant="secondary" onClick={() => handleCopyInvite(invite)}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleCopyInvite(invite)}
+                  >
                     <Copy className="h-3.5 w-3.5" />
                     Copy link
                   </Button>
@@ -437,7 +487,11 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => handleCopyInvite(invite)}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleCopyInvite(invite)}
+                  >
                     <Copy className="h-3.5 w-3.5" />
                     Copy link
                   </Button>

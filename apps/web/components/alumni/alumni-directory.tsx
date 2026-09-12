@@ -1,27 +1,25 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlumniGlyph, SearchGlyph } from "@/components/members/directory-glyphs";
+import { SearchGlyph } from "@/components/members/directory-glyphs";
 import { useAlumni } from "@repo/hooks";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { EYEBROW } from "@/components/ui/typography";
+import { EmptyState, anyReadUncached } from "@/components/shared/async-states";
+// The nested family for everything that replaces the *list*, on the reasoning
+// `members-directory.tsx` spells out: the whole-screen variants paint `--card`,
+// and this lane just deleted every card on the route. The no-chapter branch
+// below is the one exception and says why in place.
 import {
-  EmptyState,
-  ErrorState,
-  anyReadUncached,
-  LoadingState,
-  OfflineState,
-} from "@/components/shared/async-states";
+  NestedEmpty,
+  NestedError,
+  NestedLoading,
+  NestedOffline,
+} from "@/components/shared/nested-states";
+import { denseListClassName } from "@/components/shared/table-controls";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, initials } from "@/lib/utils";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -38,6 +36,24 @@ type AlumniRow = {
   email: string | null;
 };
 
+/**
+ * The alumni half of the Directory.
+ *
+ * **Flat, not carded, and the card count is the point.** This screen used to
+ * render N + 2 `<Card>`s: a no-chapter guard card, a filter card, and one card
+ * per alumnus in a three-column grid. Board `1t` deletes the filter card and
+ * the table card one route over, and `1f` pin 2 gives a route's body one
+ * toolbar row with "no wrapper card, no description paragraph" — so the filter
+ * card's heading survives as the `EYEBROW` section label, its narration
+ * paragraph is deleted outright, and the per-alumnus cards become rows in the
+ * same flush list the actives half renders.
+ *
+ * **The rows stay non-interactive.** Actives rows open a detail sheet; there is
+ * no alumni detail surface anywhere in `apps/web` for a row to open, and adding
+ * one is a capability rather than chrome. So an alumnus is a row of facts, as
+ * it was a card of facts, and the dead end this list has always been is
+ * recorded rather than quietly widened.
+ */
 export function AlumniDirectory() {
   const { isOffline } = useNetwork();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
@@ -57,10 +73,11 @@ export function AlumniDirectory() {
     company: committed.company,
   });
 
-  const alumni = useMemo(
-    () => asArray<AlumniRow>(query.data),
-    [query.data],
-  );
+  const alumni = useMemo(() => asArray<AlumniRow>(query.data), [query.data]);
+  // A committed filter is the difference between "this chapter has no alumni"
+  // and "nothing matched what you asked for" — the two states the board draws
+  // separately (`3b`), which this screen used to answer with one string.
+  const filtered = Object.values(committed).some(Boolean);
 
   function applyFilters(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -80,15 +97,22 @@ export function AlumniDirectory() {
   }
 
   if (!activeChapterId) {
+    /*
+      The state family, not a bare `<Card>` with a title and a sentence: this
+      was the one state on the route drawn by hand, and on a page with no cards
+      left it would have been the only card on the screen.
+
+      **The whole-screen variant, unlike every other state on this half**, and
+      lane 4 sets the precedent (`backwork-page.tsx` keeps `EmptyState` for
+      exactly this early return). The others replace a *list* inside a page
+      that still has a toolbar above it; this one replaces the page. There is
+      no chapter, so there is nothing for a toolbar to filter.
+    */
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Alumni directory</CardTitle>
-          <CardDescription>
-            Select an active chapter to browse alumni records.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <EmptyState
+        title="No chapter selected"
+        description="Pick a chapter to browse alumni."
+      />
     );
   }
 
@@ -100,9 +124,10 @@ export function AlumniDirectory() {
    */
   if (isOffline && anyReadUncached(query)) {
     return (
-      <OfflineState
-        title="Alumni directory unavailable offline"
-        description="Reconnect to load alumni records and filters."
+      <NestedOffline
+        sole
+        title="Alumni unavailable offline"
+        description="Reconnect to load alumni records."
         onRetry={() => {
           /*
            * Clearing the filters is the escape hatch, not a nicety. Committing
@@ -133,138 +158,197 @@ export function AlumniDirectory() {
   }
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle className="text-xl">Alumni directory</CardTitle>
-            <CardDescription>
-              Searchable list of alumni brothers with optional self-reported
-              graduation year, city, and company fields.
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="grid gap-3 md:grid-cols-4"
-            onSubmit={applyFilters}
-            aria-label="Filter alumni"
+    <section aria-labelledby="alumni-list-label" className="space-y-3">
+      {/*
+        One toolbar row: the list's name and count on the left, its filter form
+        on the right, on the page surface. `1f` pin 2.
+
+        The three fields keep **visible** `EYEBROW` labels, inline rather than
+        stacked in a four-column grid. An earlier draft made them `sr-only` and
+        moved the label text into the placeholders — which is the
+        placeholder-as-label regression: the accessible name survives, but a
+        placeholder disappears the moment a value is typed, leaving three
+        identical 160px boxes reading `2018 | Austin | Acme` with nothing saying
+        which is which. The placeholders go back to carrying the format hint,
+        which is the job only they can do.
+      */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <h2
+            id="alumni-list-label"
+            className={`${EYEBROW} truncate text-muted-foreground`}
           >
-            <div className="grid gap-1">
-              <label
-                htmlFor="alumni-grad-year"
-                className={`${EYEBROW} text-muted-foreground`}
-              >
-                Graduation year
-              </label>
-              <Input
-                id="alumni-grad-year"
-                value={graduationYear}
-                onChange={(event) => setGraduationYear(event.target.value)}
-                placeholder="e.g. 2018"
-                inputMode="numeric"
-              />
-            </div>
-            <div className="grid gap-1">
-              <label
-                htmlFor="alumni-city"
-                className={`${EYEBROW} text-muted-foreground`}
-              >
-                City
-              </label>
-              <Input
-                id="alumni-city"
-                value={cityFilter}
-                onChange={(event) => setCityFilter(event.target.value)}
-                placeholder="Austin, Chicago, …"
-              />
-            </div>
-            <div className="grid gap-1">
-              <label
-                htmlFor="alumni-company"
-                className={`${EYEBROW} text-muted-foreground`}
-              >
-                Company
-              </label>
-              <Input
-                id="alumni-company"
-                value={companyFilter}
-                onChange={(event) => setCompanyFilter(event.target.value)}
-                placeholder="Employer or industry"
-              />
-            </div>
-            <div className="flex items-end gap-2">
-              <Button type="submit" className="gap-2">
-                <SearchGlyph className="h-4 w-4" />
-                Apply filters
-              </Button>
-              <Button type="button" variant="secondary" onClick={clearFilters}>
-                Clear
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+            Alumni
+          </h2>
+          {query.isSuccess ? (
+            <p className="shrink-0 text-[12.5px] text-muted">
+              {alumni.length} alum{alumni.length === 1 ? "" : "ni"}
+            </p>
+          ) : null}
+        </div>
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={applyFilters}
+          aria-label="Filter alumni"
+        >
+          <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
+            <Label
+              htmlFor="alumni-grad-year"
+              className={`${EYEBROW} text-muted-foreground`}
+            >
+              Graduation year
+            </Label>
+            <Input
+              id="alumni-grad-year"
+              value={graduationYear}
+              onChange={(event) => setGraduationYear(event.target.value)}
+              placeholder="e.g. 2018"
+              inputMode="numeric"
+              className="h-11 w-full sm:w-40"
+            />
+          </div>
+          <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
+            <Label
+              htmlFor="alumni-city"
+              className={`${EYEBROW} text-muted-foreground`}
+            >
+              City
+            </Label>
+            <Input
+              id="alumni-city"
+              value={cityFilter}
+              onChange={(event) => setCityFilter(event.target.value)}
+              placeholder="Austin, Chicago, …"
+              className="h-11 w-full sm:w-40"
+            />
+          </div>
+          <div className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
+            <Label
+              htmlFor="alumni-company"
+              className={`${EYEBROW} text-muted-foreground`}
+            >
+              Company
+            </Label>
+            <Input
+              id="alumni-company"
+              value={companyFilter}
+              onChange={(event) => setCompanyFilter(event.target.value)}
+              placeholder="Employer or industry"
+              className="h-11 w-full sm:w-40"
+            />
+          </div>
+          <Button type="submit" size="sm" className="gap-2">
+            <SearchGlyph className="h-4 w-4" />
+            Apply filters
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={clearFilters}
+          >
+            Clear
+          </Button>
+        </form>
+      </div>
 
       {query.isPending ? (
-        <LoadingState message="Loading alumni directory..." />
+        <NestedLoading sole message="Loading alumni directory..." />
       ) : query.isError ? (
-        <ErrorState
+        <NestedError
+          sole
           title="Couldn't load alumni"
-          description="Confirm your chapter access and retry. Alumni visibility respects the same permission checks as the member directory."
+          description="Check your chapter access."
           onRetry={() => void query.refetch()}
         />
       ) : alumni.length === 0 ? (
-        <EmptyState
-          title="No alumni match this view"
-          description="Ask alumni to fill in their graduation year, city, and company on their profile, or loosen the filters above."
-        />
+        filtered ? (
+          <NestedEmpty
+            sole
+            title="No alumni match the filters"
+            description="Clear a field to see more."
+          />
+        ) : (
+          <NestedEmpty
+            sole
+            title="No alumni yet"
+            description="Graduated members appear here."
+          />
+        )
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        /*
+          The actives list's row grammar, minus the two things an alumnus does
+          not have: a checkbox (there is no bulk action here) and a presence dot
+          (alumni are not on the chapter socket). Same `divide-y` + `border-t`
+          rule, same 36/44 row, same `·`-joined meta line with the free-text
+          field last so a long bio is what an ellipsis takes.
+
+          `role="list"` for the reason `members-directory.tsx` spells out:
+          flexing the `<li>` drops the semantics WebKit reads off it.
+        */
+        <ul role="list" className={denseListClassName}>
           {alumni.map((alum) => {
             const id = alum.id ?? alum.user_id;
             const name = alum.display_name ?? "Unnamed alum";
-            const primaryLine = alum.graduation_year
-              ? `Class of ${alum.graduation_year}`
-              : "Graduation year not listed";
-            const secondaryLine = [alum.current_company, alum.current_city]
-              .filter((value): value is string => Boolean(value))
-              .join(" • ");
+            /*
+              The bounded fields only. The bio used to ride at the end of this
+              join on lane 4's "free text last" rule, and that rule does not
+              transfer: on `/documents` the description trails one short date
+              and a folder name, where here three fields precede it in half a
+              row, so an ellipsis took the bio in full at every width — and
+              unlike a document, an alumnus has no detail surface to recover it
+              from. It gets its own line below.
+            */
+            const meta = [
+              alum.graduation_year ? `Class of ${alum.graduation_year}` : null,
+              alum.current_company,
+              alum.current_city,
+            ]
+              .filter(Boolean)
+              .join(" · ");
             return (
-              <Card key={id}>
-                <CardContent className="flex items-start gap-3 pt-4">
-                  <Avatar className="flex-none">
-                    {alum.avatar_url ? (
-                      <AvatarImage src={alum.avatar_url} alt="" />
-                    ) : null}
-                    <AvatarFallback>{initials(alum.display_name)}</AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-base font-semibold">{name}</p>
-                      <Badge variant="outline" className="gap-1 uppercase">
-                        <AlumniGlyph className="h-3.5 w-3.5" />
-                        Alumni
-                      </Badge>
-                    </div>
-                    <p className="text-[12.5px] text-muted-foreground">{primaryLine}</p>
-                    {secondaryLine ? (
-                      <p className="text-[12.5px] text-muted-foreground">
-                        {secondaryLine}
-                      </p>
-                    ) : null}
-                    {alum.bio ? (
-                      <p className="mt-2 line-clamp-3 text-base text-muted-foreground">
-                        {alum.bio}
-                      </p>
-                    ) : null}
+              <li
+                key={id}
+                className="flex min-h-9 items-start gap-2.5 px-2 py-1 pointer-coarse:min-h-11"
+              >
+                <Avatar className="mt-0.5 h-6 w-6 shrink-0">
+                  {alum.avatar_url ? (
+                    <AvatarImage src={alum.avatar_url} alt="" />
+                  ) : null}
+                  <AvatarFallback className="text-[9px]">
+                    {initials(alum.display_name)}
+                  </AvatarFallback>
+                </Avatar>
+                {/*
+                  Name over meta below `sm`, side by side above it. An earlier
+                  draft hid the meta line on a phone (`hidden sm:block`), which
+                  on this half was total: the row is deliberately
+                  non-interactive and carries no `aria-label`, and `display:none`
+                  removes text from the accessibility tree — so class year,
+                  company and city existed in no form anywhere in the product
+                  below 640px, on the screen whose entire purpose is those three
+                  fields.
+                */}
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <div className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-3">
+                    <span className="min-w-0 truncate text-sm font-semibold sm:flex-1">
+                      {name}
+                    </span>
+                    <span className="min-w-0 truncate text-[12.5px] text-muted sm:flex-1">
+                      {meta}
+                    </span>
                   </div>
-                </CardContent>
-              </Card>
+                  {alum.bio ? (
+                    <p className="line-clamp-1 text-[12.5px] text-muted">
+                      {alum.bio}
+                    </p>
+                  ) : null}
+                </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
-    </div>
+    </section>
   );
 }
