@@ -124,9 +124,17 @@ a fresh context with empty `localStorage`, so the persisted
 `frapp-active-chapter` key is missing and `useChapterStore.activeChapterId` is
 `null` (`apps/web/lib/stores/chapter-store.ts`). Several routes therefore render
 an empty state or a "Select an active chapter" card rather than their populated
-content — `/chat` and `/backwork` early-return before their real surfaces mount,
-and `/points` is the one route whose fix for #1142 lives inside `<main>` and does
-render for real.
+content — `/backwork` early-returns before its real surface mounts, and `/points`
+is the one route whose fix for #1142 lives inside `<main>` and does render for
+real.
+
+`/chat` stopped being one of them in [#2145](https://github.com/pdcarlson/Frapp/issues/2145):
+its whole-route early return was folded into a `no-chapter` state the frame
+renders, so the sessionless run now measures the real two-column layout — both
+48px column headers, the channels column and its hairline, the thread column's
+`h1`, its reconnect pill and its `⋯` menu — with a "No chapter selected" card
+where the timeline goes. That is more coverage than before, not less, and it is
+why the floor number for this route is now measuring something worth measuring.
 
 That is a real limit, not a formality: a route whose *populated* table overflows
 at 375px while its empty state does not would still pass. Seeding an active

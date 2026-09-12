@@ -62,6 +62,39 @@ import {
 } from "@repo/chat-integrations";
 
 /**
+ * The composer's outer box with nothing live in it.
+ *
+ * `1s` puts "composer shell" in the 0ms set beside the nav and the channel
+ * column, and until this existed the thread column had nothing there during a
+ * cold load: `chat-shell.tsx` gates `<Composer>` on `activeChannel`, which is
+ * derived from the channel list, so no composer exists until that query
+ * resolves. The timeline skeleton above it is bottom-aligned — chat opens at its
+ * end — so the composer arriving pushed every placeholder row up by its own
+ * height, a shift of over a hundred pixels directly above the composer, which is
+ * the one place the contract budgets at zero.
+ *
+ * It lives here rather than in `chat-shell.tsx` so there is one home for the
+ * geometry. The classes below are the real composer's, and a change to either
+ * that is not made to the other reintroduces exactly the shift this removes:
+ * `border-t` + `p-3` outside, the `rounded-md border p-2` well, the editor's
+ * `min-h-[40px]`, and the `mt-2` toolbar row at `h-8`.
+ *
+ * Deliberately inert and `aria-hidden`. A focusable-looking control that cannot
+ * take a message is worse than an obvious placeholder, and the row is announced
+ * once by the timeline's own status region rather than twice.
+ */
+export function ComposerSkeleton() {
+  return (
+    <div className="border-t border-border p-3" aria-hidden="true">
+      <div className="rounded-md border border-input bg-surface-1 p-2">
+        <div className="min-h-[40px]" />
+        <div className="mt-2 h-8" />
+      </div>
+    </div>
+  );
+}
+
+/**
  * `cmdk` and a Radix Dialog, fetched when the palette is first summoned.
  *
  * The palette opens from typing `/` or from the toolbar's ⌘ button, so on most
@@ -463,6 +496,11 @@ export function Composer({
     open: false,
     query: "",
   });
+
+  // Hoisted above `useEditor` so `onCreate` can honour it — the early return
+  // that reads it next is ~400 lines down, but Tiptap builds the editor from
+  // here regardless of whether anything ever renders it. See `onCreate`.
+  const resolvedCanPost = canPost ?? !isReadOnly;
   const sendRef = useRef<() => void>(() => {});
   const editor = useEditor({
     extensions: [
@@ -520,15 +558,30 @@ export function Composer({
       }
     },
     onCreate() {
-      // `1s`: "composer focusable <= 400ms". This is the moment it becomes
-      // true — `immediatelyRender: false` means the editor is null through the
-      // first render, so a member cannot type until ProseMirror has mounted its
-      // contenteditable, whatever the composer shell around it looks like.
-      //
-      // Deliberately `onCreate` and not an effect on `editor`: an effect fires
-      // on the render *after* the editor exists, which is a frame later and on
-      // the wrong side of the thing being measured.
-      markColdLoad(COLD_LOAD_MARKS.composerFocusable);
+      /*
+        `1s`: "composer focusable <= 400ms". This is the moment it becomes true —
+        `immediatelyRender: false` means the editor is null through the first
+        render, so a member cannot type until ProseMirror has mounted its
+        contenteditable, whatever the shell around it looks like.
+
+        `onCreate` rather than an effect on `editor`, because an effect fires on
+        the render *after* the editor exists — a frame later, on the wrong side
+        of the thing being measured.
+
+        The `resolvedCanPost` guard is not belt-and-braces. `useEditor` builds an
+        Editor from its own effect whether or not `<EditorContent>` is ever
+        rendered, so without it this fires in every channel the member cannot
+        post in — and the early return ~400 lines down means no contenteditable
+        exists in the document at all there. An alumnus, for whom ordinary
+        channels come back `can_post: false`, would have recorded "composer
+        focusable" on a load where the composer never was; and because the mark
+        is once-per-document, the real one in `#alumni` a moment later would then
+        never be recorded. The budget would report success on exactly the loads
+        that never met it.
+      */
+      if (resolvedCanPost) {
+        markColdLoad(COLD_LOAD_MARKS.composerFocusable);
+      }
     },
     immediatelyRender: false,
   });
@@ -864,8 +917,8 @@ export function Composer({
   // caller that only passes `isReadOnly` (predating this prop, or a channel
   // row that hasn't gone through the server's capability projection yet)
   // must still get the old read-only-blocks-everyone behavior rather than a
-  // falsely-live composer.
-  const resolvedCanPost = canPost ?? !isReadOnly;
+  // falsely-live composer. (`resolvedCanPost` is computed near `useEditor`
+  // above, which needs it too.)
   if (!resolvedCanPost) {
     return (
       <p className="border-t border-border px-4 py-3 text-[12.5px] text-muted-foreground">

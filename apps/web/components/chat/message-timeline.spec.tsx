@@ -201,7 +201,6 @@ describe("MessageTimeline loading state (#2145)", () => {
 
     expect(container.querySelector(".rounded-xl")).toBeNull();
     expect(container.querySelector(".min-h-52")).toBeNull();
-    expect(screen.queryByRole("status")).toBeNull();
 
     const rows = container.querySelectorAll(".px-5.pb-1");
     expect(rows.length).toBeGreaterThan(0);
@@ -212,6 +211,33 @@ describe("MessageTimeline loading state (#2145)", () => {
       expect(row.className).toContain("gap-2.5");
       expect(row.className).toMatch(/\bpt-4\b|\bpt-1\b/);
       expect(row.querySelector(".w-8")).not.toBeNull();
+    }
+  });
+
+  it("reserves the message BUBBLE, not a bare line", () => {
+    /*
+      The assertion the first version of this suite was missing, and the reason
+      it shipped a skeleton that reserved about half the height it stood in for.
+
+      Every other test here checks the row *wrapper*, whose classes were correct
+      all along. The height lives in the body: `TextRenderer` draws
+      `mt-1 px-4 py-3 leading-[25px]` inside a bordered bubble — 55px for one
+      line — where the skeleton drew a 13px bar. jsdom computes no layout, so
+      nothing measurable goes red; the only durable check is that the placeholder
+      is built from the same box declarations as the thing it replaces.
+    */
+    const { container } = renderTimeline([], { isLoading: true });
+
+    const bubbles = container.querySelectorAll(".px-4.py-3");
+    expect(bubbles.length).toBe(
+      container.querySelectorAll(".px-5.pb-1").length,
+    );
+    for (const bubble of bubbles) {
+      // `TextRenderer`'s box, class for class.
+      expect(bubble.className).toContain("mt-1");
+      expect(bubble.className).toContain("border");
+      // The line box inside it, not a 13px text-line placeholder.
+      expect(bubble.querySelector(".h-\\[25px\\]")).not.toBeNull();
     }
   });
 
@@ -235,12 +261,22 @@ describe("MessageTimeline loading state (#2145)", () => {
     expect(container.querySelector(".justify-end")).not.toBeNull();
   });
 
-  it("hides itself from assistive tech, which chat-shell announces instead", () => {
-    // Ten anonymous rectangles are no use read aloud, and `chat-shell.tsx` owns
-    // one `role="status"` for the whole cold load — announcing here too would
-    // read the same event twice.
-    const { container } = renderTimeline([], { isLoading: true });
+  it("hides the blocks from assistive tech but still announces the load", () => {
+    // Both halves, because the first without the second is a regression rather
+    // than a feature. The `LoadingState` this replaced carried `role="status"`
+    // and a "Loading messages…" caption; an `aria-hidden` skeleton on its own
+    // would have made every channel switch silent to a screen reader, and
+    // `chat-shell.tsx`'s announcer says "Loading channels", which is a
+    // different event.
+    renderTimeline([], { isLoading: true });
 
-    expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Loading messages");
+    expect(status).toHaveClass("sr-only");
+
+    // The rectangles themselves stay hidden: ten anonymous blocks read aloud
+    // are noise, and the region above is what carries the meaning.
+    const skeleton = document.querySelector('[aria-hidden="true"].justify-end');
+    expect(skeleton).not.toBeNull();
   });
 });

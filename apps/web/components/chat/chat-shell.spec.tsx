@@ -293,6 +293,7 @@ vi.mock("./composer", () => ({
       </div>
     );
   },
+  ComposerSkeleton: () => <div data-testid="composer-skeleton" />,
 }));
 // The four header popovers are now four panels behind one `ChannelMenu` (the
 // `⋯` control), so the shell wires their jump callbacks through that one
@@ -1350,66 +1351,132 @@ describe("ChatShell greenfield grammar (#2142)", () => {
 });
 
 /**
- * #2145: the state the *server* renders.
+ * #2145: what a cold load renders before anything has resolved.
  *
- * `activeChapterId` comes from a persisted zustand store that initializes to
- * `null`, so every cold load — for a member with a chapter and one without
- * alike — renders this branch first. It used to return a lone 208px card in
- * place of the whole route, and hydration then replaced that card with the
- * two-column frame: the largest layout shift on `/chat`, on the happy path.
- * `1s` puts "channel column chrome" in the 0ms set and budgets zero CLS above
- * the composer.
+ * `/chat` used to server-render a lone 208px "No chapter selected" card in place
+ * of the whole route: `activeChapterId` comes from a persisted zustand store
+ * that initializes to `null`, so a member WITH a chapter was indistinguishable
+ * from one without, and hydration then replaced that card with the two-column
+ * frame. `1s` puts "channel column chrome" in the 0ms set and budgets zero CLS
+ * above the composer.
  */
-describe("ChatShell before the chapter store rehydrates (#2145)", () => {
+describe("ChatShell cold load, before anything resolves (#2145)", () => {
   afterEach(() => {
     chapterStoreState.value = "chapter-1";
+    channelsQueryState.value = {};
   });
 
   it("renders the frame, not a card in place of it", () => {
     chapterStoreState.value = null;
+    channelsQueryState.value = { isPending: true, data: undefined };
     render(<ChatShell />);
 
-    // The clause this is here for: the channel column's chrome exists at 0ms.
     expect(
       screen.getByRole("region", { name: "Channels" }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("channel-list-skeleton")).toBeInTheDocument();
   });
 
-  it("keeps the copy true in both states it covers", () => {
-    // On screen before rehydration AND when the member really has no chapter,
-    // so it has to be an instruction rather than a claim about the account —
-    // `profile-panel.tsx` owns that reasoning for the same window.
-    chapterStoreState.value = null;
-    render(<ChatShell />);
-
-    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
-  });
-
-  it("does not announce a channel load that is not happening", () => {
-    // The skeleton is shared with the `loading` state, but the announcement is
-    // not: a member with no chapter would otherwise be told "Loading channels"
-    // about a fetch that never starts.
-    chapterStoreState.value = null;
-    render(<ChatShell />);
-
-    expect(screen.queryByText("Loading channels")).toBeNull();
-  });
-
   it("swaps content inside a frame that was already up", () => {
     // The regression this pins is a re-render, not a first render: the frame
-    // present before the chapter id lands must be the same frame that holds the
-    // real list after it, or the swap is the shift.
+    // present before the list lands must be the same frame that holds it after,
+    // or the swap is the shift.
     chapterStoreState.value = null;
+    channelsQueryState.value = { isPending: true, data: undefined };
     const { rerender } = render(<ChatShell />);
     const before = screen.getByRole("region", { name: "Channels" });
 
     chapterStoreState.value = "chapter-1";
+    channelsQueryState.value = {};
     rerender(<ChatShell />);
 
     expect(screen.getByRole("region", { name: "Channels" })).toBe(before);
     expect(screen.getByTestId("channel-list")).toBeInTheDocument();
+  });
+});
+
+/**
+ * #2145: the channel list decides, not the persisted chapter id.
+ *
+ * The first cut of `channelsPaneState` short-circuited on `!activeChapterId`
+ * ahead of everything else, which read as harmless and was not. `useChannels()`
+ * takes no chapter argument — no `enabled` gate, `["channels"]` as its whole
+ * query key — and the API resolves a sole membership server-side, so the list
+ * arrives while the store field is still `null`. Ordering the state on the field
+ * therefore hid the rail and the timeline over the top of data that had already
+ * loaded, while `activeChannel` (derived from `channels`) resolved anyway.
+ */
+describe("ChatShell with channels but no persisted chapter (#2145)", () => {
+  afterEach(() => {
+    chapterStoreState.value = "chapter-1";
+  });
+
+  it("renders the timeline rather than a no-chapter card", () => {
+    chapterStoreState.value = null;
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("message-timeline")).toBeInTheDocument();
     expect(screen.queryByText("No chapter selected")).toBeNull();
+  });
+
+  it("never mounts a composer under a card that says to pick a chapter", () => {
+    /*
+      The concrete defect: the member got a working composer beneath "Pick an
+      active chapter to load its channels", with no timeline above it. They could
+      type, send into #general, and never see the result — and the unchanged
+      `markChannelRead` effect stamped their read cursor for messages that were
+      never on screen. Asserted as an invariant rather than against the old
+      ordering, so any future short-circuit that reintroduces it fails here.
+    */
+    chapterStoreState.value = null;
+    render(<ChatShell />);
+
+    const sawNoChapterCard = screen.queryByText("No chapter selected") !== null;
+    const sawComposer = screen.queryByTestId("composer") !== null;
+
+    expect(sawNoChapterCard && sawComposer).toBe(false);
+  });
+});
+
+/**
+ * #2145: "no chapter" as a terminal state, which is the only thing it can
+ * honestly mean once the query has settled with nothing.
+ */
+describe("ChatShell with no chapter and no channels (#2145)", () => {
+  afterEach(() => {
+    chapterStoreState.value = "chapter-1";
+    channelsQueryState.value = {};
+  });
+
+  it("says so, inside the frame rather than in place of it", () => {
+    chapterStoreState.value = null;
+    channelsQueryState.value = { data: [], isPending: false };
+    render(<ChatShell />);
+
+    // Phrased as an instruction, not a claim about the account —
+    // `profile-panel.tsx` owns that reasoning for the same window.
+    expect(screen.getByText("No chapter selected")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Channels" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not shimmer a channel list that will never arrive", () => {
+    // Terminal: the query has settled, so a placeholder here would have no exit
+    // and would shimmer for as long as the tab stayed open.
+    chapterStoreState.value = null;
+    channelsQueryState.value = { data: [], isPending: false };
+    render(<ChatShell />);
+
+    expect(screen.queryByTestId("channel-list-skeleton")).toBeNull();
+  });
+
+  it("does not announce a channel load that is not happening", () => {
+    chapterStoreState.value = null;
+    channelsQueryState.value = { data: [], isPending: false };
+    render(<ChatShell />);
+
+    expect(screen.queryByText("Loading channels")).toBeNull();
   });
 });
 

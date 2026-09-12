@@ -28,8 +28,9 @@ silently a second opinion:
 | CLS above the composer | 0 | CLS — Sentry `browserTracingIntegration`, sampled |
 
 `1s` also fixes the split those budgets assume: a **shell** chunk (layout, nav, top bar, find), a
-**chat** chunk (timeline, composer, renderers) and a lazy **chat-extras** tier (emoji picker, slash
-palette, mention list; its Ask drawer and thread panel no longer exist —
+**chat** chunk (timeline, composer, renderers) and a lazy **chat-extras** tier (emoji picker and
+slash palette, both split; the mention list, deliberately not — see below; its Ask drawer and thread
+panel no longer exist —
 [#2142](https://github.com/pdcarlson/Frapp/issues/2142) deleted the thread panel, and Ask is a
 top-bar dialog in the shell).
 
@@ -91,15 +92,29 @@ report nothing locally or in CI, by design.
   (Sentry) or by hand.
 - **A persisted read cache.** `1s`'s "first chunk" clause reads the channel list and the last ~30
   messages from Dexie. No such cache exists: Dexie holds only the outbound `drafts` and `outbox`
-  tables, and TanStack Query is in-memory. See [`caching.md`](caching.md) — its 2026-09-10 correction
-  records that the persisted layer was specified, never built, and is tracked by
-  [#2097](https://github.com/pdcarlson/Frapp/issues/2097). Until it lands, "cached channel readable"
-  measures a network round trip.
+  tables, and TanStack Query is in-memory. So "cached channel readable" currently measures a network
+  round trip, and the 400ms budget should be read against that until something changes.
+
+  Two different absent things are easy to conflate here, so: [`caching.md`](caching.md)'s 2026-09-10
+  correction is about a `localStorage` `persistQueryClient` snapshot of the TanStack cache, and it
+  says that layer never existed **and is not intended** — a 24h snapshot would restore
+  `["user","me"]` and `["settings"]` after a sign-out or an account swap, which is a security
+  argument, not a scheduling one. The board's Dexie read cache is a different design and that
+  correction neither blesses nor rules it out. Whether the greenfield wants one is open, and this
+  page does not decide it.
 
 ## Optimization techniques in use
 
-- **Code splitting:** `next/dynamic` for the chat-extras tier and the onboarding wizard. Routes are
-  split by the App Router; they are not hand-written dynamic imports.
+- **Code splitting:** `next/dynamic` for the emoji picker, the slash palette and the onboarding
+  wizard. Routes are split by the App Router; they are not hand-written dynamic imports.
+
+  The board's `chat-extras` tier also names the **mention list**, which is deliberately *not* split:
+  `mention-list.tsx` pulls only `ui/avatar` and erased Tiptap types, all of which are in the shell
+  chunk already, so a dynamic boundary there buys indirection and no bytes — and
+  `mention-suggestion.ts` constructs it synchronously inside Tiptap's `onStart`, which an async
+  import would have to be contorted around. Stated rather than left implicit, because this page
+  exists as a correction of claims nobody checked: if a heavy dependency is ever added to that
+  component, it lands in the eager chat chunk and nothing will flag it.
 - **Tree shaking:** per-component ShadCN imports; `lucide-react` ships per-icon ESM with
   `"sideEffects": false`, so no `modularizeImports` is needed. `@repo/chat-core` is consumed through
   its 11 subpath exports rather than a root barrel.

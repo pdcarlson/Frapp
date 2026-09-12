@@ -28,10 +28,10 @@
  * `performance.getEntriesByName` lookup for a future harness — with no reporting
  * code, no new event schema, and nothing to keep in sync.
  *
- * The `measure` is what carries the number: a bare mark records a timestamp, and
- * the budget is a duration from navigation start. `measure` with no `start` runs
- * from the time origin, which for a cold load is exactly the interval `1s`
- * budgets.
+ * The `measure` is what makes the milestone legible as a duration rather than a
+ * timestamp — but read the note at the `measure` call before trusting the number
+ * Sentry shows: the span it becomes is offset by `requestStart`, and the
+ * authoritative value rides along in `detail` instead.
  *
  * ## Rules these follow
  *
@@ -68,21 +68,62 @@ const recorded = new Set<string>();
  * function was called rather than that the metric means what it claims.
  */
 export function markColdLoad(mark: ColdLoadMark): boolean {
+  /*
+    The server check comes BEFORE the dedupe set, and the order is the whole
+    point rather than tidiness.
+
+    `recorded` is module scope, and on the server a module is shared by every
+    request the process handles — not per request, the way it is per document in
+    a browser. So recording first and bailing second would let a single
+    server-side call latch the mark permanently: that Node instance would then
+    skip it for every member it served afterwards, and the metric would decay to
+    nothing as instances aged. Neither call site can reach here on the server
+    today (one is a `useEffect`, the other Tiptap's `onCreate` under
+    `immediatelyRender: false`), which is exactly what would make the failure
+    slow to notice.
+
+    `performance` does exist on the server, so this is a check for the wrong
+    *timeline* rather than for a missing API — a mark there measures against a
+    process start that belongs to no page and that nothing reads.
+  */
+  if (typeof window === "undefined") return false;
   if (recorded.has(mark)) return false;
   recorded.add(mark);
-
-  // Guarded rather than feature-detected once at module scope: `performance`
-  // exists on the server too, where `mark` would record against a timeline that
-  // belongs to no page and is never read.
-  if (typeof window === "undefined") return false;
 
   try {
     const api = window.performance;
     if (!api?.mark || !api.measure) return false;
-    api.mark(mark);
-    // No `start`, so the browser measures from the time origin — navigation
-    // start on a cold load, which is what the budget is stated against.
-    api.measure(mark, { start: 0, end: mark });
+
+    // `mark()` returns the entry it created, whose `startTime` is milliseconds
+    // from the time origin — navigation start on a cold load, which is the
+    // interval every `1s` budget is stated against. Older browsers return
+    // nothing; `now()` is the same clock and the same origin.
+    const entry = api.mark(mark);
+    const msFromTimeOrigin = entry?.startTime ?? api.now();
+
+    /*
+      `detail` is not decoration, and this is the subtle part of the file.
+
+      The obvious reading of the `measure` below is that Sentry receives the
+      from-origin interval. It does not. `_addMeasureSpans` in
+      `@sentry/browser-utils` starts the span at
+      `timeOrigin + Math.max(startTime, requestStart)` and ends it at
+      `timeOrigin + startTime + duration`, so for a measure anchored at 0 the
+      span's duration comes out as `duration - requestStart` — short by however
+      long redirect, DNS, TCP and TLS took, which on a real cold load is
+      routinely 100-400ms. The SDK is not hiding it (it stamps
+      `sentry.browser.measure_happened_before_request` on such a span), but the
+      error is systematically in the flattering direction and grows with how bad
+      the connection was. A budget that looks better the slower the network is
+      the one kind of wrong this file must not be.
+
+      So the authoritative number travels as `detail`, which
+      `_addDetailToSpanAttributes` copies onto the span verbatim: read
+      `sentry.browser.measure.detail.msFromTimeOrigin`, not the span duration.
+      Locally the `measure` entry's own `duration` is already correct, and that
+      is what devtools and `getEntriesByName` show.
+    */
+    api.measure(mark, { start: 0, end: mark, detail: { msFromTimeOrigin } });
     return true;
   } catch {
     // A measurement is never worth an exception on the render path.

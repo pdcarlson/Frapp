@@ -91,9 +91,28 @@ export function MessageTimelineSkeleton() {
           <div className="w-8 shrink-0">
             {showHeader ? <Skeleton className="h-8 w-8 rounded-full" /> : null}
           </div>
-          <div className="flex min-w-0 max-w-[86%] flex-1 flex-col items-start gap-1.5">
-            {showHeader ? <Skeleton className="ml-1 h-[13px] w-24" /> : null}
-            <Skeleton className={cn("h-[13px]", width)} />
+          <div className="flex min-w-0 max-w-[86%] flex-col items-start">
+            {showHeader ? (
+              // `message-item.tsx`'s author line: `ml-1`, 12.5px, baseline-aligned.
+              <div className="ml-1 flex items-baseline gap-2 text-[12.5px]">
+                <Skeleton className="h-[13px] w-24" />
+              </div>
+            ) : null}
+            {/*
+              The bubble, not a bare line — this is the half that decides whether
+              the geometry is actually reserved.
+
+              A message body is `TextRenderer`'s `mt-1 px-4 py-3
+              leading-[25px]` box with a hairline border: 4 + 1 + 12 + 25 + 12 + 1
+              = 55px for a single line. A 13px bar in its place reserved about a
+              quarter of that, so ten placeholder rows stood in for roughly half
+              the height they were replacing and the whole column jumped when the
+              real rows landed — the exact shift this component exists to prevent,
+              hidden inside a placeholder that looked right.
+            */}
+            <div className="mt-1 rounded-[18px] rounded-bl-[6px] border border-border px-4 py-3">
+              <Skeleton className={cn("h-[25px]", width)} />
+            </div>
           </div>
         </div>
       ))}
@@ -373,7 +392,33 @@ export const MessageTimeline = forwardRef<
   );
 
   if (isLoading) {
-    return <MessageTimelineSkeleton />;
+    return (
+      <>
+        {/*
+          The `LoadingState` this branch used to render carried `role="status"`,
+          `aria-busy` and a visible "Loading messages…" caption, so a screen
+          reader was told. `MessageTimelineSkeleton` is `aria-hidden` — ten
+          anonymous rectangles are no use read aloud — which would have left this
+          window silent, and it is not a rare window: `use-chat-channel` keys its
+          query per channel, so every first visit to a channel passes through it.
+
+          Its own region rather than a shared one, because the shell's announcer
+          one column over says "Loading channels", which is a different event.
+          The two never overlap — `chat-shell.tsx` mounts this timeline only once
+          `channelsPaneState` is `"ready"`, and renders its own skeleton in the
+          states before that — so there is no window in which both speak.
+
+          Not `aria-atomic`: this region holds one short string and nothing
+          re-renders inside it, so the default suffices, and the reasoning
+          `chat-shell.tsx` records against `aria-atomic` on a repainting list
+          applies here too.
+        */}
+        <div role="status" aria-live="polite" className="sr-only">
+          Loading messages
+        </div>
+        <MessageTimelineSkeleton />
+      </>
+    );
   }
   if (loadError) {
     return (

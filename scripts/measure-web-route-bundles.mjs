@@ -47,14 +47,45 @@
  *
  * Usage: `node scripts/measure-web-route-bundles.mjs [--json]`, after a build.
  */
-import { readFileSync, statSync, existsSync } from "node:fs";
-import { globSync } from "node:fs";
+import { readFileSync, statSync, existsSync, readdirSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const NEXT_DIR = join(ROOT, "apps/web/.next");
+
+/**
+ * Hand-rolled rather than `fs.globSync`, which is Node 22+.
+ *
+ * This repo declares `engines: { node: ">=20" }` and every CI job pins
+ * `node-version: 20`, so a glob here would throw at module-link time —
+ * `SyntaxError: does not provide an export named 'globSync'` — on the platform
+ * the repo actually supports, while passing on a 22 laptop. That failure mode
+ * matters more for this file than most: the numbers it prints are quoted in
+ * `spec/ui/resilience/performance-budgets.md` on the argument that they are
+ * reproducible, and a script a reviewer cannot run is not.
+ */
+function findManifests(dir) {
+  const found = [];
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    // A route tree that does not exist yet is not an error here; the caller
+    // reports "no manifests" once, with the remedy.
+    return found;
+  }
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      found.push(...findManifests(path));
+    } else if (entry.name === "page_client-reference-manifest.js") {
+      found.push(path);
+    }
+  }
+  return found;
+}
 
 /**
  * The manifest is executable JavaScript, not JSON: one assignment statement
@@ -81,11 +112,24 @@ function readManifest(path) {
   }
 }
 
+/**
+ * Memoized for the same reason `gzippedBytesOf` is: the shell-floor chunks are
+ * by definition in every route's list, so across ~20 routes this is asked for
+ * the same file dozens of times. One `statSync` in a try/catch rather than
+ * `existsSync` then `statSync`, which is two syscalls to answer one question.
+ */
+const sizeCache = new Map();
 function bytesOf(chunks) {
   let total = 0;
   for (const chunk of chunks) {
-    const path = join(NEXT_DIR, chunk);
-    if (existsSync(path)) total += statSync(path).size;
+    if (!sizeCache.has(chunk)) {
+      try {
+        sizeCache.set(chunk, statSync(join(NEXT_DIR, chunk)).size);
+      } catch {
+        sizeCache.set(chunk, 0);
+      }
+    }
+    total += sizeCache.get(chunk);
   }
   return total;
 }
@@ -130,15 +174,8 @@ if (!existsSync(NEXT_DIR)) {
  * identical numbers.
  */
 const byEntry = new Map();
-// `fs.globSync` resolves matches against `cwd` but returns them relative to it,
-// so the join is not optional.
-for (const match of globSync(
-  "server/app/**/page_client-reference-manifest.js",
-  {
-    cwd: NEXT_DIR,
-  },
-)) {
-  const manifest = readManifest(join(NEXT_DIR, match));
+for (const manifestPath of findManifests(join(NEXT_DIR, "server/app"))) {
+  const manifest = readManifest(manifestPath);
   const entries = manifest?.entryJSFiles;
   if (!entries) continue;
   for (const [entry, chunks] of Object.entries(entries)) {
@@ -166,8 +203,6 @@ if (routes.length === 0) {
   );
   process.exit(1);
 }
-
-routes.sort((a, b) => b.bytes - a.bytes);
 
 /**
  * The shell floor: chunks that appear on **every** dashboard route, so no route
@@ -226,8 +261,9 @@ if (process.argv.includes("--json")) {
     );
   }
   console.log(
-    "\n`own cost` excludes the shell floor above. Budgets:\n" +
-      "spec/ui/resilience/performance-budgets.md, and board `1s` — shell visible\n" +
-      "200ms, cached channel readable 400ms, composer focusable 400ms.",
+    "\n`own cost` excludes the shell floor above. These are measurements, not\n" +
+      "budgets — spec/ui/resilience/performance-budgets.md records them and states\n" +
+      "no byte threshold. The only budgets are board `1s`'s: shell visible 200ms,\n" +
+      "cached channel readable 400ms, composer focusable 400ms, zero CLS.",
   );
 }

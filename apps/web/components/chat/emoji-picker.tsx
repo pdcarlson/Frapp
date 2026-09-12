@@ -17,14 +17,28 @@ import dynamic from "next/dynamic";
  * exists inside an opened popover, and rendering it on the server would put the
  * library back on the critical path by another route.
  *
- * **No `loading` fallback, deliberately.** A placeholder here would be a
- * differently-sized box inside a popover that sizes to its content, so the
- * panel would open small and then jump — trading a chunk on the critical path
- * for a layout shift, which is the other half of the same contract. Radix keeps
- * the trigger's position; an empty popover for one frame does not move anything
- * around it.
+ * **The `loading` fallback is the panel's exact box, and it is not optional.**
+ * The first instinct here was to omit it, on the reasoning that an empty popover
+ * for one frame moves nothing. That reasoning was wrong in both halves. It is
+ * not one frame — it is a network round trip on a cold cache — and
+ * `PopoverContent` is `w-auto p-0`, so with no child the popover opens as a
+ * ~0x0 bordered dot beside the trigger: it reads as a broken button, and
+ * clicking again just toggles the empty box.
+ *
+ * The jump is worse than the dot. Floating UI places the popover against the
+ * trigger using the size it has *at open*, so a 0x0 box near the bottom of the
+ * viewport is placed below the trigger, and then the real 288x288 panel mounts,
+ * collides with the viewport edge and flips the whole popover above the trigger
+ * — under a pointer that has already started moving toward where it was. A
+ * reaction button on a message row is exactly that position. Reserving
+ * `h-72 w-72`, the panel's own size, costs nothing on the critical path and
+ * removes both symptoms; it is the same reserved-geometry argument this lane
+ * makes everywhere else, applied to a popover instead of a column.
  */
 export const EmojiPicker = dynamic(
   () => import("./emoji-picker-panel").then((m) => m.EmojiPickerPanel),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => <div className="h-72 w-72" aria-hidden="true" />,
+  },
 );
