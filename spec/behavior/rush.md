@@ -4,7 +4,7 @@ The recruitment module manages prospective members from first contact through bi
 
 ## Vocabulary
 
-- The module name and all member-facing copy render through the chapter's **vocabulary helper**, never a hardcoded "rush." The substitutable term is configured per chapter (rush / recruitment / intake) in the settings Org tab. The same vocabulary term names the slash command, the system channel label, and the dashboard.
+- The module name and all member-facing copy render through the chapter's **vocabulary helper**, never a hardcoded "rush." The substitutable term is configured per chapter (rush / recruitment / intake) in the settings Chapter tab (`?tab=org`). The same vocabulary term names the slash command, the system channel label, and the dashboard.
 
 ## Candidates
 

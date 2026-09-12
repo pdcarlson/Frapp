@@ -67,7 +67,6 @@ import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
-import { SettingsComingSoon } from "@/components/settings/settings-coming-soon";
 
 type Branding = {
   greek_letters?: string;
@@ -76,25 +75,63 @@ type Branding = {
   founded_at?: number;
 };
 
-// The vertical rail is the one place the §6 underline runs down the side
-// rather than along the bottom: on `lg` the list becomes a column with a right
-// hairline, so each item moves its 2px accent indicator to its right edge to
-// match. Below `lg` it is an ordinary horizontal underline row.
+// Board `4d`: rail rows are `height:34px;border-radius:10px;padding:0 10px`,
+// inactive `#A9A399`, active a filled gold chip (`background:#2A2410;
+// color:#F0CD5E;font-weight:600`) rather than the §6 2px edge indicator this
+// rail used to run down its side.
+//
+// **The fill is the chapter accent, not `--gold-ask-*`.** The board paints the
+// Ask pill and the active tab at the same hexes only because the demo tenant's
+// seed and the house gold coincide — the trap `tokens.md` §L-01 names and
+// `pro-chip.tsx` already refused once in this lane. Ask is fixed; a settings
+// tab is product UI and retints.
+//
+// **`--accent-subtle`/`--accent-text` are that retinting family. Plain
+// `--accent` is not**: it is the neutral hover surface (`signet.css:103`,
+// `#2A2621`), so `bg-accent` would paint the active tab a dead grey on every
+// chapter, gold included.
+//
+// Below `lg` the rail is still a horizontal wrap row, so the chip reads the
+// same either way — there is no underline variant to keep in sync any more.
 const RAIL_TRIGGER_CLASS =
-  "flex-1 justify-start lg:w-full lg:flex-none lg:-mr-px lg:mb-0 lg:border-b-0 lg:border-r-2 lg:px-3";
+  "h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-muted-foreground data-[state=active]:bg-accent-subtle data-[state=active]:font-semibold data-[state=active]:text-accent-text data-[state=active]:shadow-none lg:w-full lg:flex-none";
+
+const RAIL_DANGER_TRIGGER_CLASS =
+  "h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-destructive data-[state=active]:bg-destructive/15 data-[state=active]:font-semibold data-[state=active]:text-destructive data-[state=active]:shadow-none lg:mt-auto lg:w-full lg:flex-none";
 
 // Valid `?tab=` deep-link targets — mirrors the rail triggers below.
+//
+// Order is board `4d`'s: Chapter, Accent, Subscription, Modules, Roles, Join
+// code, Semester, Fields, Privacy, then Danger zone pinned last. Three
+// departures, each forced by what this product actually has:
+//
+// - **No `joincode`.** The board draws a Join code tab. `apps/web` has no
+//   join-code surface at all — a repo-wide grep for `join_code`, `joinCode`
+//   and `invite_code` returns nothing outside the API SDK. Building one is a
+//   capability, and this lane is chrome (`deletion-checklist.md` §8).
+// - **No `subscription`.** The board puts plan status behind this rail, but
+//   `/billing` is a route a member reaches to pay their own invoice — see the
+//   note in `billing-page.tsx`, which is why `4d`'s "Members never see this
+//   page" was already refused there. A tab would hide it from the members it
+//   is for. `/billing` stays a route; Danger zone links to the Stripe portal.
+// - **`dues` and `workflows` are ours.** The board draws neither. Both are
+//   live chapter configuration with no other home, so they keep rail entries,
+//   slotted after Fields where the board's own knob tabs sit.
+//
+// `beta` and `audit` are gone rather than reordered. They rendered
+// `SettingsComingSoon` stubs naming "Chunk 08" — generated chrome advertising
+// unbuilt work, which is exactly what this epic deletes.
 const SETTINGS_TAB_VALUES: readonly string[] = [
   "org",
+  "theme",
   "modules",
   "roles",
+  "semester",
   "fields",
-  "workflows",
   "dues",
-  "theme",
+  "workflows",
   "privacy",
-  "beta",
-  "audit",
+  "danger",
 ];
 
 // Fallback shown before the config query resolves. Mirrors the API's
@@ -111,30 +148,6 @@ const DEFAULT_DUES: OrgDues = {
   scholarship_pool_cents: 0,
 };
 
-// Tabs whose internals land in later chunks. The rail entry stays visible so
-// the full settings IA is legible (brief: "the remaining tabs are stubs").
-const COMING_SOON_TABS: ReadonlyArray<{
-  value: string;
-  label: string;
-  title: string;
-  description: string;
-  chunk: string;
-}> = [
-  {
-    value: "beta",
-    label: "Beta",
-    title: "Beta program",
-    description: "Build channel and feedback configuration.",
-    chunk: "Chunk 08",
-  },
-  {
-    value: "audit",
-    label: "Audit",
-    title: "Audit log",
-    description: "A member-visible record of who changed what.",
-    chunk: "Chunk 08",
-  },
-];
 
 /**
  * Names the surface a server-reported §8 contrast failure was measured
@@ -634,21 +647,29 @@ function SettingsPageContent() {
         keeps `{confirmDialog}` out from under its screens' early returns.
       */}
       {confirmDialog}
-      <header>
-        <p className="text-sm text-muted-foreground">
-          Configure your organization identity, modules, branding, and chapter
-          administration.
-        </p>
-      </header>
-
+      {/*
+        No description paragraph. "Configure your organization identity,
+        modules, branding, and chapter administration" restated the rail
+        immediately under it — `1f` pin 2 gives a route's body one toolbar row
+        with "no wrapper card, no description paragraph", and lane 4 and lane 5
+        deleted the same sentence off four other routes.
+      */}
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start"
       >
-        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-1 lg:w-56 lg:flex-col lg:flex-nowrap lg:items-stretch lg:border-b-0 lg:border-r">
+        {/*
+          Board `4d`: `width:200px`, `padding:12px 8px`, `gap:2px`, a right
+          hairline. `lg:w-[200px]` is that width exactly rather than the `w-56`
+          (224px) this rail used to take.
+        */}
+        <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-0.5 bg-transparent p-0 lg:w-[200px] lg:flex-col lg:flex-nowrap lg:items-stretch lg:self-stretch lg:border-r lg:border-border lg:px-2 lg:py-3">
           <TabsTrigger value="org" className={RAIL_TRIGGER_CLASS}>
-            Organization
+            Chapter
+          </TabsTrigger>
+          <TabsTrigger value="theme" className={RAIL_TRIGGER_CLASS}>
+            Accent
           </TabsTrigger>
           <TabsTrigger value="modules" className={RAIL_TRIGGER_CLASS}>
             Modules
@@ -656,26 +677,23 @@ function SettingsPageContent() {
           <TabsTrigger value="roles" className={RAIL_TRIGGER_CLASS}>
             Roles
           </TabsTrigger>
+          <TabsTrigger value="semester" className={RAIL_TRIGGER_CLASS}>
+            Semester
+          </TabsTrigger>
           <TabsTrigger value="fields" className={RAIL_TRIGGER_CLASS}>
             Fields
-          </TabsTrigger>
-          <TabsTrigger value="workflows" className={RAIL_TRIGGER_CLASS}>
-            Workflows
           </TabsTrigger>
           <TabsTrigger value="dues" className={RAIL_TRIGGER_CLASS}>
             Dues
           </TabsTrigger>
-          <TabsTrigger value="theme" className={RAIL_TRIGGER_CLASS}>
-            Theme
+          <TabsTrigger value="workflows" className={RAIL_TRIGGER_CLASS}>
+            Workflows
           </TabsTrigger>
           <TabsTrigger value="privacy" className={RAIL_TRIGGER_CLASS}>
             Privacy
           </TabsTrigger>
-          <TabsTrigger value="beta" className={RAIL_TRIGGER_CLASS}>
-            Beta
-          </TabsTrigger>
-          <TabsTrigger value="audit" className={RAIL_TRIGGER_CLASS}>
-            Audit
+          <TabsTrigger value="danger" className={RAIL_DANGER_TRIGGER_CLASS}>
+            Danger zone
           </TabsTrigger>
         </TabsList>
 
@@ -700,7 +718,15 @@ function SettingsPageContent() {
                 }
               />,
             )}
+          </TabsContent>
 
+          {/*
+            Board `4d` gives Semester its own rail entry. It used to be two
+            cards at the bottom of Organization, under the chapter profile and
+            above the danger card — three unrelated jobs on one tab, which is
+            why the tab needed a sentence explaining itself.
+          */}
+          <TabsContent value="semester" className="mt-0 space-y-6">
             <Can
               permission="semester:rollover"
               deniedFallback={null}
@@ -859,7 +885,15 @@ function SettingsPageContent() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
 
+          {/*
+            Board `4d` pin 1 pins Danger zone last, and this is what it holds:
+            the Stripe portal (where a chapter cancels) and the deactivation
+            route. It was the third card on Organization, which put "cancel the
+            subscription" one scroll under "set your founding year".
+          */}
+          <TabsContent value="danger" className="mt-0 space-y-6">
             <Card className="border-destructive/30">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-destructive">
@@ -928,22 +962,42 @@ function SettingsPageContent() {
             )}
           </TabsContent>
 
+          {/*
+            **Deliberately not `renderConfigGated`.** The nav's Roles row is
+            gated on `roles:manage` (`nav-config.ts`), but this page's config
+            read is gated on `chapter-config:view` — so a member holding the
+            first and not the second saw the Roles row, clicked it, and landed
+            on "Couldn't load chapter configuration". That combination is
+            freely constructible from the matrix below, and the board makes the
+            row a deep link into this tab (`4d` pin 1), so the deep link has to
+            actually arrive.
+
+            It does not need the gate: the matrix reads `useRoles` and
+            `usePermissionsCatalog`, neither of which is chapter config. Only
+            the default-invite-role picker is, and it degrades on its own —
+            `configUnavailable` hides that one control rather than the tab.
+          */}
           <TabsContent value="roles" className="mt-0">
-            {renderConfigGated(
-              <SettingsRolesTab
-                archetypeKey={archetypeKey}
-                canManage={canManage}
-                catalog={permissionsCatalog}
-                defaultInviteRoleId={config?.default_invite_role_id ?? null}
-                isSavingConfig={pendingConfigKeys.has("default_invite_role_id")}
-                onSaveDefaultInviteRole={(roleId) =>
-                  patchConfig(
-                    { default_invite_role_id: roleId },
-                    "Default invite role saved",
-                  )
-                }
-              />,
-            )}
+            <SettingsRolesTab
+              archetypeKey={archetypeKey}
+              canManage={canManage}
+              catalog={permissionsCatalog}
+              // Pending as well as error. `renderConfigGated` used to block on
+              // both; covering only the error case would render the
+              // default-invite-role picker as "No default" while the config
+              // read is still in flight, which is indistinguishable from a
+              // chapter that never set one — and picking a role there would
+              // overwrite the real default the response was about to deliver.
+              configUnavailable={orgConfigQuery.isError || orgConfigQuery.isPending}
+              defaultInviteRoleId={config?.default_invite_role_id ?? null}
+              isSavingConfig={pendingConfigKeys.has("default_invite_role_id")}
+              onSaveDefaultInviteRole={(roleId) =>
+                patchConfig(
+                  { default_invite_role_id: roleId },
+                  "Default invite role saved",
+                )
+              }
+            />
           </TabsContent>
 
           <TabsContent value="fields" className="mt-0">
@@ -1116,15 +1170,6 @@ function SettingsPageContent() {
             )}
           </TabsContent>
 
-          {COMING_SOON_TABS.map((tab) => (
-            <TabsContent key={tab.value} value={tab.value} className="mt-0">
-              <SettingsComingSoon
-                title={tab.title}
-                description={tab.description}
-                chunk={tab.chunk}
-              />
-            </TabsContent>
-          ))}
         </div>
       </Tabs>
     </div>
@@ -1141,7 +1186,7 @@ export function SettingsPage() {
         path too — the shell no longer supplies one (#2141), and the content
         below deliberately renders none of its own.
       */}
-      <PageHeader title="Chapter Settings" />
+      <PageHeader title="Chapter settings" />
       <Suspense fallback={<LoadingState message="Loading chapter settings..." />}>
         <SettingsPageContent />
       </Suspense>

@@ -48,7 +48,11 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  // `tab=semester`: board `4d` gives Semester its own rail entry, so the
+  // rollover form no longer sits at the bottom of the default Chapter tab.
+  // Landing the page on the tab under test is also what the nav's own deep
+  // links do.
+  useSearchParams: () => new URLSearchParams("tab=semester"),
 }));
 
 vi.mock("@/components/shared/can", () => ({

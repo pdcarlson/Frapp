@@ -24,6 +24,7 @@ const {
   roles,
   catalog,
   deleteRole,
+  updateRole,
   transferPresidency,
   currentChapter,
   presidencyClaimStatus,
@@ -45,6 +46,7 @@ const {
     fetchStatus: "fetching" as string,
   },
   deleteRole: { mutateAsync: vi.fn(), isPending: false },
+  updateRole: { mutateAsync: vi.fn(), isPending: false },
   transferPresidency: { mutateAsync: vi.fn(), isPending: false },
   // Defaults to "this chapter has a President" so the pre-existing tests
   // below render the page exactly as before — the claim banner opts itself
@@ -71,7 +73,7 @@ vi.mock("@repo/hooks", () => ({
   usePermissionsCatalog: () => ({ ...catalog, refetch: vi.fn() }),
   useMembers: () => ({ data: [], isPending: false, isError: false }),
   useCreateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateRole: () => updateRole,
   useDeleteRole: () => deleteRole,
   useTransferPresidency: () => transferPresidency,
   useCurrentChapter: () => currentChapter,
@@ -137,6 +139,7 @@ beforeEach(() => {
   mockOffline.value = false;
   permissions.value = ["roles:manage"];
   deleteRole.mutateAsync.mockReset().mockResolvedValue(undefined);
+  updateRole.mutateAsync.mockReset().mockResolvedValue(undefined);
   transferPresidency.mutateAsync.mockReset().mockResolvedValue(undefined);
   claimPresidency.mutateAsync.mockReset().mockResolvedValue(undefined);
   claimPresidency.isPending = false;
@@ -237,15 +240,38 @@ describe("the confirmations that replaced window.confirm", () => {
   });
 });
 
-describe("the wildcard the API will not let the client move", () => {
-  it("locks it on a system role rather than hiding the row", async () => {
+describe("permissions are not edited here any more", () => {
+  /*
+   * Board `4e` makes the roles x permissions matrix "the one place they're
+   * edited", so this screen's per-role checklist was deleted rather than left
+   * as a second way to set the same field. Two editors would also race: this
+   * one PATCHed the whole `permissions` array from a draft captured when the
+   * role was selected, so a save here after a flip in the matrix rolled the
+   * flip back.
+   *
+   * The wildcard lock this file used to assert moved with it —
+   * `settings-roles-tab.spec.tsx` covers it as "locks every cell of a role
+   * holding the wildcard".
+   */
+  it("offers no permission checkboxes on the selected role", async () => {
     const user = userEvent.setup();
     render(<RolesAndPermissionsPage />);
     await user.click(screen.getByRole("button", { name: /president/i }));
-    const wildcard = screen
-      .getAllByRole("checkbox")
-      .find((box) => box.getAttribute("disabled") !== null);
-    expect(wildcard).toBeDefined();
+
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+  });
+
+  it("omits permissions from the save payload entirely", async () => {
+    // Not "sends the unchanged array" — the key must be absent, so the API
+    // leaves the field alone and a concurrent matrix flip survives.
+    const user = userEvent.setup();
+    render(<RolesAndPermissionsPage />);
+    await user.click(screen.getByRole("button", { name: /president/i }));
+    await user.click(screen.getByRole("button", { name: /save role/i }));
+
+    await waitFor(() => expect(updateRole.mutateAsync).toHaveBeenCalled());
+    const payload = updateRole.mutateAsync.mock.calls[0]![0];
+    expect(payload.body).not.toHaveProperty("permissions");
   });
 });
 

@@ -9,7 +9,6 @@ import {
   useCurrentChapter,
   useDeleteRole,
   useMembers,
-  usePermissionsCatalog,
   usePresidencyClaimStatus,
   useRoles,
   useTransferPresidency,
@@ -49,10 +48,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
-import {
-  dashboardCheckboxHitAreaClassName,
-  dashboardTableCheckboxClassName,
-} from "@/components/shared/table-controls";
 import { signetDarkTokens } from "@repo/theme/signet";
 
 type Role = {
@@ -64,11 +59,6 @@ type Role = {
   display_order: number;
   color: string | null;
   created_at: string;
-};
-
-type PermissionCatalogEntry = {
-  key: string;
-  permission: string;
 };
 
 type MemberSummary = {
@@ -204,7 +194,6 @@ export function RolesAndPermissionsPage() {
   const { confirm, confirmDialog } = useConfirmDialog();
   const { isOffline } = useNetwork();
   const rolesQuery = useRoles();
-  const catalogQuery = usePermissionsCatalog();
   const membersQuery = useMembers();
   const createRole = useCreateRole();
   const updateRole = useUpdateRole();
@@ -212,10 +201,6 @@ export function RolesAndPermissionsPage() {
   const transferPresidency = useTransferPresidency();
 
   const roles = useMemo(() => asArray<Role>(rolesQuery.data), [rolesQuery.data]);
-  const catalog = useMemo(
-    () => asArray<PermissionCatalogEntry>(catalogQuery.data),
-    [catalogQuery.data],
-  );
   const members = useMemo(
     () => asArray<MemberSummary>(membersQuery.data),
     [membersQuery.data],
@@ -231,16 +216,10 @@ export function RolesAndPermissionsPage() {
   const [nameDraft, setNameDraft] = useState("");
   const [colorDraft, setColorDraft] = useState("");
   const [displayOrderDraft, setDisplayOrderDraft] = useState("");
-  const [permissionsDraft, setPermissionsDraft] = useState<Set<string>>(
-    new Set(),
-  );
 
   // Draft state for creating a new role.
   const [createName, setCreateName] = useState("");
   const [createColor, setCreateColor] = useState("");
-  const [createPermissions, setCreatePermissions] = useState<Set<string>>(
-    new Set(),
-  );
 
   // Presidency transfer draft.
   const [transferTargetMemberId, setTransferTargetMemberId] =
@@ -251,25 +230,6 @@ export function RolesAndPermissionsPage() {
     setNameDraft(role.name);
     setColorDraft(role.color ?? "");
     setDisplayOrderDraft(String(role.display_order ?? 0));
-    setPermissionsDraft(new Set(role.permissions ?? []));
-  }
-
-  function toggleDraftPermission(permission: string) {
-    setPermissionsDraft((prev) => {
-      const next = new Set(prev);
-      if (next.has(permission)) next.delete(permission);
-      else next.add(permission);
-      return next;
-    });
-  }
-
-  function toggleCreatePermission(permission: string) {
-    setCreatePermissions((prev) => {
-      const next = new Set(prev);
-      if (next.has(permission)) next.delete(permission);
-      else next.add(permission);
-      return next;
-    });
   }
 
   async function handleSaveRole() {
@@ -283,7 +243,11 @@ export function RolesAndPermissionsPage() {
           display_order: displayOrderDraft
             ? Number(displayOrderDraft)
             : undefined,
-          permissions: Array.from(permissionsDraft),
+          // **No `permissions` key.** This form no longer edits them, and
+          // sending the draft anyway would post whatever the role held when it
+          // was selected — so renaming a role after flipping its cells in the
+          // matrix would silently roll those flips back. The PATCH body's
+          // fields are all optional; omitting it leaves permissions alone.
         },
       });
       toast({
@@ -309,7 +273,10 @@ export function RolesAndPermissionsPage() {
       await createRole.mutateAsync({
         name: createName.trim(),
         color: createColor || undefined,
-        permissions: Array.from(createPermissions),
+        // Empty by design: the `4e` matrix grants permissions, and it is the
+        // only surface that does. The board's flow is "+ New role" then flip
+        // the new column's cells.
+        permissions: [],
       });
       toast({
         title: "Role created",
@@ -317,7 +284,6 @@ export function RolesAndPermissionsPage() {
       });
       setCreateName("");
       setCreateColor("");
-      setCreatePermissions(new Set());
     } catch (error) {
       toast({
         title: "Couldn't create role",
@@ -389,7 +355,6 @@ export function RolesAndPermissionsPage() {
 
   function retryQueries() {
     void rolesQuery.refetch();
-    void catalogQuery.refetch();
   }
 
   /*
@@ -418,11 +383,18 @@ export function RolesAndPermissionsPage() {
     only thing these two are gated on.
   */
   const paused =
-    (rolesQuery.isPending && rolesQuery.fetchStatus === "paused") ||
-    (catalogQuery.isPending && catalogQuery.fetchStatus === "paused");
+    rolesQuery.isPending && rolesQuery.fetchStatus === "paused";
 
   let body: ReactNode;
-  if (isOffline && anyReadUncached(rolesQuery, catalogQuery)) {
+  /*
+   * **`rolesQuery` only.** This screen used to conjoin the permissions catalog
+   * into every branch, because its permission checklist could not render
+   * without it. The checklist is the `4e` matrix's now, and nothing left here
+   * reads the catalog — so keeping it in the gate meant a slow or failed
+   * `GET /v1/roles/permissions-catalog` hid role rename, create, delete and
+   * the presidency transfer, none of which need it.
+   */
+  if (isOffline && anyReadUncached(rolesQuery)) {
     body = (
       <OfflineState
         title="Roles unavailable offline"
@@ -430,9 +402,9 @@ export function RolesAndPermissionsPage() {
         onRetry={retryQueries}
       />
     );
-  } else if (rolesQuery.isLoading || catalogQuery.isLoading || paused) {
+  } else if (rolesQuery.isLoading || paused) {
     body = <LoadingState message="Loading roles and permissions..." />;
-  } else if (rolesQuery.isError || catalogQuery.isError) {
+  } else if (rolesQuery.isError) {
     body = (
       <ErrorState
         title="Couldn't load roles"
@@ -443,15 +415,16 @@ export function RolesAndPermissionsPage() {
   } else {
     body = (
       <div className="space-y-6">
-        <header>
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Roles & Permissions
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Build chapter-specific roles from the system permissions catalog.
-            System roles cannot be deleted, but their permissions are editable.
-          </p>
-        </header>
+        {/*
+          "Roles & Permissions" at 24/600 with a description under it was this
+          screen's title when it was a route of its own. It is a section of the
+          Roles settings tab now, under that tab's own "Roles" heading, so a
+          second 24px "Roles & Permissions" was the same word twice at the same
+          weight. It names what this section actually does instead, and the
+          description goes: permissions are not built here any more, and "system
+          roles cannot be deleted" is said by the absent delete button.
+        */}
+        <h3 className="text-base font-bold">Manage roles</h3>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
           <Card>
@@ -539,7 +512,8 @@ export function RolesAndPermissionsPage() {
                 {activeRole ? `Edit ${activeRole.name}` : "Select a role to edit"}
               </CardTitle>
               <CardDescription>
-                Toggle permissions from the system catalog. Changes take effect
+                Rename, recolour or reorder this role. Its permissions are set
+                in the matrix above. Changes take effect
                 on the next request for every member holding this role.
               </CardDescription>
             </CardHeader>
@@ -575,61 +549,14 @@ export function RolesAndPermissionsPage() {
                     />
                   </div>
                 </div>
-                <div>
-                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Permissions ({permissionsDraft.size}/{catalog.length})
-                  </Label>
-                  <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-80 overflow-y-auto">
-                    {catalog
-                      // The wildcard renders only on a role that already
-                      // carries it. On the system President role it is locked
-                      // (the API rejects both introducing and stripping it —
-                      // the transfer flow moves it); on a legacy non-system
-                      // role it stays uncheckable-off so the API's cleanup
-                      // path (stripping `*`) is reachable from the UI.
-                      .filter(
-                        (entry) =>
-                          entry.permission !== "*" ||
-                          (activeRole?.permissions ?? []).includes("*"),
-                      )
-                      .map((entry) => {
-                        const lockedWildcard =
-                          entry.permission === "*" &&
-                          (activeRole?.is_system ?? true);
-                        return (
-                          <label
-                            key={entry.permission}
-                            className={
-                              lockedWildcard
-                                ? "flex items-center gap-2 text-sm opacity-70"
-                                : "flex cursor-pointer items-center gap-2 text-sm"
-                            }
-                            title={
-                              lockedWildcard
-                                ? "The wildcard moves only through the presidency-transfer flow"
-                                : undefined
-                            }
-                          >
-                            <span className={dashboardCheckboxHitAreaClassName}>
-                              <input
-                                type="checkbox"
-                                className={dashboardTableCheckboxClassName}
-                                checked={permissionsDraft.has(entry.permission)}
-                                disabled={lockedWildcard}
-                                onChange={() =>
-                                  toggleDraftPermission(entry.permission)
-                                }
-                              />
-                            </span>
-                            <code className="text-xs">{entry.permission}</code>
-                            <span className="text-xs text-muted-foreground">
-                              {entry.key}
-                            </span>
-                          </label>
-                        );
-                      })}
-                  </div>
-                </div>
+                {/*
+                  The permission checklist moved to the board `4e` matrix
+                  (`roles-matrix.tsx`), which edits every role at once and
+                  saves on click. Editing one role's permissions behind a
+                  list -> detail selection was the thing the matrix exists to
+                  replace, so it is deleted here rather than left as a second
+                  way to set the same field.
+                */}
               </CardContent>
             ) : (
               <CardContent className="text-sm text-muted-foreground">
@@ -691,38 +618,13 @@ export function RolesAndPermissionsPage() {
                   />
                 </div>
               </div>
-              <div>
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Permissions ({createPermissions.size}/{catalog.length})
-                </Label>
-                <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-60 overflow-y-auto">
-                  {catalog
-                    // New roles can never carry the wildcard (the API rejects
-                    // it), so don't offer the checkbox at all.
-                    .filter((entry) => entry.permission !== "*")
-                    .map((entry) => (
-                    <label
-                      key={entry.permission}
-                      className="flex cursor-pointer items-center gap-2 text-sm"
-                    >
-                      <span className={dashboardCheckboxHitAreaClassName}>
-                        <input
-                          type="checkbox"
-                          className={dashboardTableCheckboxClassName}
-                          checked={createPermissions.has(entry.permission)}
-                          onChange={() =>
-                            toggleCreatePermission(entry.permission)
-                          }
-                        />
-                      </span>
-                      <code className="text-xs">{entry.permission}</code>
-                      <span className="text-xs text-muted-foreground">
-                        {entry.key}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+              {/*
+                A new role starts with no permissions and is granted them in
+                the `4e` matrix, which is the board's own flow: "+ New role"
+                adds a column, then its cells are flipped. Carrying a second
+                checklist here would let a role be created with permissions
+                that the matrix is then the only place to change.
+              */}
             </CardContent>
             <CardFooter className="flex justify-end">
               <Button

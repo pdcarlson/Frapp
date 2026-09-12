@@ -127,7 +127,7 @@ describe("settings ?module= deep link", () => {
     // Leave Modules (its panel genuinely unmounts — Radix Content has no
     // forceMount) and come back. The URL never changes, exactly as in the real
     // flow, so `?module=dues` is still present on the return visit.
-    await user.click(screen.getByRole("tab", { name: /^theme$/i }));
+    await user.click(screen.getByRole("tab", { name: /^accent$/i }));
     await user.click(screen.getByRole("tab", { name: /^modules$/i }));
 
     expect(scrollSpy).toHaveBeenCalledTimes(1);

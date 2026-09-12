@@ -669,6 +669,135 @@ already uses for the attendance roster.
 
 ---
 
+## 11. Admin: chapter settings, Roles, Study Zones, Reports — lane 5
+
+The third of [#2146](https://github.com/pdcarlson/Frapp/issues/2146), and the one the board
+actually draws: `4d` frames the settings page, `4e` draws the Roles tab in full, and `4c` draws the
+per-page settings drawer. So unlike §8 and §9 this section derives little — but it departs from the
+board in five places, and each departure is the product refusing to be what the board drew.
+
+### The rail (`4d`)
+
+`4d` pin 1 is the whole brief: *"Settings sub-nav · one page, left tabs, Danger zone pinned last.
+Replaces the sidebar Roles row: Roles is a settings tab (also deep-linkable from the Admin group)."*
+
+| Deleted | Why |
+| ------- | --- |
+| The page-narration paragraph, "Configure your organization identity, modules, branding, and chapter administration" | It restated the rail immediately under it. `1f` pin 2 gives a route's body one toolbar row with "no wrapper card, no description paragraph" |
+| The **Beta** and **Audit** tabs | Both rendered `SettingsComingSoon` stubs naming "Chunk 08". Generated chrome advertising unbuilt work is the epic's own definition of what goes |
+| `settings-coming-soon.tsx` | Its last consumer went with them |
+| The 2px rail indicator | `4d` draws an active tab as a filled accent chip, not an edge rule |
+
+The **Organization** tab held three unrelated jobs — chapter profile, semester rollover, and a
+"Billing & danger zone" card — which is why it needed a sentence explaining itself. It is now
+**Chapter**, **Semester** and **Danger zone**, three rail entries, as `4d` draws them. Rail geometry
+is the board's: 200px (was `w-56`, 224px), 34px rows at radius 10, 2px gaps, Danger zone pinned by
+`mt-auto` and drawn destructive.
+
+**Two board tabs are deliberately not built.** This is `4d`'s equivalent of §10's "describes a
+product this codebase does not have":
+
+| Board tab | Why not |
+| --------- | ------- |
+| **Join code** | `apps/web` has no join-code surface at all — a repo-wide grep for `join_code`, `joinCode` and `invite_code` returns nothing outside the generated API SDK. Building one is capability, which the closing section of this document puts outside the greenfield |
+| **Subscription** | `4d` puts plan status behind this rail and captions it "Members never see this page". §10 already refused that caption, because `/billing` is gated on `billing:view` and a member reaches it to pay their own invoice. Making it a tab would hide it from the members it is for. `/billing` stays a route, and Danger zone keeps the Stripe portal link |
+
+**Two tabs the board does not draw are kept**: **Dues** and **Workflows**. Both are live chapter
+configuration with no other home, slotted after Fields. The board draws a simplified chapter; its
+rail is not an inventory of this product's settings.
+
+### Roles (`4e`)
+
+The board is emphatic that this is one surface — *"roles gate everything, so this is the one place
+they're edited"* — and the code had it as **four sub-tabs behind a second tab bar**: Pack, Matrix,
+Custom, Live roles. `?tab=roles` landed on **Pack**, a read-only list of archetype role names, so
+the deep link `4d` pin 1 asks for arrived somewhere that could not do anything.
+
+| Deleted | Replaced by |
+| ------- | ----------- |
+| `MatrixView`, the old capabilities × roles table | `roles-matrix.tsx`. The old one was **read-only**, and every pack-role cell rendered the literal string `n/a` because no client-side capability data exists for archetype roles. A grid that cannot be edited and cannot answer half its own cells is a diagram |
+| `PackView`, the read-only archetype list | The pack name it existed to show, as the header's "role pack" label — where `4e` draws it |
+| `roles-page.tsx`'s per-role permission checklist, in both the edit and create forms | The matrix. `4e` pin 2: "Click flips and saves" |
+| The sub-tab bar itself | One flat tab |
+
+`roles-page.tsx` is **not** deleted, and the distinction matters: it was never a duplicate of the
+matrix. It is the role *lifecycle* — create, rename, recolour, reorder, delete, presidency transfer,
+and the orphan-president claim banner — none of which `settings-roles-tab.tsx` reimplements. What it
+lost is the permission editing the matrix took.
+
+**Custom roles stay a section rather than matrix columns, and the board does not settle this.**
+`4e` pin 1 says "Custom roles append as columns", but `4e`'s columns are the `roles` table and
+custom roles are `chapter_custom_roles` — a different table, holding capabilities rather than
+permissions, enforced through the bridge model in
+[`../../behavior/rbac.md`](../../behavior/rbac.md). Appending them as columns would draw two
+incompatible grant models in one grid and imply that a cell in the wrong one is editable.
+
+**Two defects fixed rather than re-decided**, both found while reading the surface this lane
+replaces:
+
+- `handleSaveRole` PATCHed the whole `permissions` array from a draft captured when the role was
+  selected. With a second editor now writing the same field, renaming a role after changing its
+  permissions would have rolled those changes back. The key is now absent from the payload.
+- The nav's Roles row is gated on `roles:manage`; the settings page's config read is gated on
+  `chapter-config:view`. A member holding the first and not the second — freely constructible from
+  the matrix itself — saw the row, clicked it, and landed on "Couldn't load chapter configuration".
+  The Roles tab no longer sits inside that gate, which it never needed: the matrix reads `useRoles`
+  and `usePermissionsCatalog`, neither of which is chapter config. Only the default-invite-role
+  control degrades.
+
+### The per-page settings drawer (`4c`)
+
+Nothing like it existed. `page-settings-drawer.tsx` is the shared shell, in `layout/` because `4c`
+pin 1 says "same gear, same drawer, on every page" — the second adopter must not draw its own 400px
+panel.
+
+**It is a right-side `Sheet` at 400px, not the board's in-layout rail.** `4c` pin 2 says the drawer
+"takes the right slot like Ask and Notifications", and Notifications is already a right-side
+`Sheet` (`dashboard-notification-drawer.tsx`) — so this is the same primitive at the board's width
+rather than a second mechanism. Taking the rail literally would mean handing every settings-bearing
+route the full-bleed contract (§ the lane-3 note in [`README.md`](README.md)) and rebuilding its
+padding and scroll, which is a shell change and not a page one.
+
+**Study Zones gets Access and nothing else.** `4c` pin 4 scopes the other two sections precisely:
+"per-module knobs **the API already has** (check-in window, point value, announcement channel)".
+
+| `4c` section | On Study Zones |
+| ------------ | -------------- |
+| **Access** | Built. The chips are the live `roles` rows holding each `geofences:*` permission, read from the same hooks `4e` edits, with `4c`'s own footer — "Roles are managed in Roles" — linking out. Rows derive from the catalog's namespace, so a permission added later needs no edit here |
+| **Defaults** | **Not built.** A zone's numbers (`minutes_per_point`, `points_per_interval`, `min_session_minutes`, `pause_grace_minutes`) are columns on each zone, set per zone in its own forms. There is no chapter-level geofence config route to hang this on. Inventing one is capability; lifting the per-zone fields up would make four numbers that differ per polygon look like one chapter-wide setting |
+| **Posts to chat** | **Not built.** Same reason: no announcement-channel setting exists for this module |
+
+Both absences are pinned by a test, so a later lane adding a Defaults section has to delete the
+test that says why there wasn't one.
+
+### Study Zones and Reports, flush
+
+`4d`'s rail supplies no page body for either, and the board draws neither route, so the grammar is
+derived exactly as §8's and §9's were.
+
+| Route | Deleted |
+| ----- | ------- |
+| `/geofences` | The narration paragraph, "Draw a polygon from GPS coordinates, set the reward rate, and members can start tracked study sessions when they're inside the zone" — which explained the page to the one member who had already proved they know what it is by holding `geofences:manage` and navigating here |
+| `/reports` | The narration paragraph, and two wrapper cards. `1t` names this inventory exactly one route over: "header card, description, filter card, table card, card title". "Choose a report" named the control immediately under it; "Each report respects the same chapter + permission scoping as the rest of the dashboard" reassured the officer about something no other route stops to mention |
+
+The Preview card's description is **kept**, moved onto the page surface: it reports the row count
+actually returned and whether the export is partial. `1t` deletes a card's description *of itself*,
+not a line of state.
+
+### Left alone, deliberately
+
+| Not done | Why |
+| -------- | --- |
+| `/study` | The Admin nav's "Study Zones" points at `/geofences`. `/study` is "Study hours" in the **Chapter** group — a member-facing surface for starting a tracked session, not an admin one. Out of this slice |
+| The `/roles` redirect shim | Already a seven-line `redirect("/settings?tab=roles")` from #538, and `proxy.ts` still needs the prefix listed for auth to apply before the redirect runs. Deleting a route is a behavior change |
+| Replacing `window.confirm` | **Already done.** There is not one live `window.confirm` call left in `apps/web`; every grep hit is a doc comment or a spec string, and every confirmation already routes through `useConfirmDialog`. The `4c`/`4e` brief's line item had no work in it |
+| `/chat-admin` and `/discord-import` | Also in the Admin nav group, and neither is named by #2146's Admin slice ("Roles / Study Zones / Reports / chapter settings"). Two more routes is a second PR, not a wider one |
+| Restyling the `Switch` primitive to `4c`'s 36×22 | A shared primitive used across every surface. Lane 2's, not a page lane's |
+| A `?subtab=` param | The Roles tab has no sub-tabs left to address |
+| Arrow-key navigation in the `4e` matrix | Every editable cell is a real `<button>`, so the matrix is keyboard-reachable and operable — but at 7 roles × 40 permissions that is ~280 Tab stops, and the WAI-ARIA **grid** pattern (roving `tabindex`, arrow keys, `role="gridcell"`) is what a data shape this size actually calls for. It is a self-contained follow-up on a surface this lane is otherwise done with, and the board says nothing about it. Filed as [#2173](https://github.com/pdcarlson/Frapp/issues/2173) rather than folded in |
+
+---
+
 ## What this checklist does not cover
 
 Deleting a **route** or a **capability** is a behavior change, not chrome, and belongs to
