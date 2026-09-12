@@ -45,10 +45,7 @@ import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { CHAT_ARCHIVE_BUCKET } from '#domain/constants/storage';
 import { clampListLimit } from '#domain/constants/list-query-limits';
-import {
-  ISO_INSTANT_MESSAGE,
-  parseIsoInstant,
-} from '#domain/constants/iso-instant';
+import { instantOrThrow } from './instant-bound';
 import type {
   ChatChannel,
   ChatChannelView,
@@ -569,14 +566,7 @@ export class ChatService {
     options?: { limit?: number; before?: string; since?: string },
   ): Promise<ChatMessage[]> {
     await this.assertChannelAccess(channelId, chapterId, userId);
-    // Parsed ONLY to validate. The timestamp reaches the repository as the
-    // caller's original string: re-serializing would truncate timestamptz
-    // microseconds (#1832; same pin as chapter-audit-log / points).
-    if (options?.before !== undefined) {
-      if (parseIsoInstant(options.before) === null) {
-        throw new BadRequestException(`before ${ISO_INSTANT_MESSAGE}`);
-      }
-    }
+    instantOrThrow('before', options?.before);
     return this.messageRepo.findByChannel(channelId, {
       ...options,
       limit: clampListLimit(options?.limit),

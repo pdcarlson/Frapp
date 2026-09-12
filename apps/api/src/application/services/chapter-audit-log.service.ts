@@ -15,10 +15,7 @@ import {
 import { ChapterAuditLog } from '#domain/entities/chapter-audit-log.entity';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { clampListLimit } from '#domain/constants/list-query-limits';
-import {
-  ISO_INSTANT_MESSAGE,
-  parseIsoInstant,
-} from '#domain/constants/iso-instant';
+import { instantOrThrow } from './instant-bound';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 export interface RecordAuditEntryInput {
@@ -54,26 +51,6 @@ export interface ListChapterAuditLogInput {
  */
 export interface AuditLogViewer {
   roleIds: readonly string[];
-}
-
-/**
- * Epoch milliseconds for a caller-supplied bound, or `undefined` when the
- * caller omitted it. A value that is present but not a valid instant is a
- * 400 — never a silent drop.
- *
- * Silently dropping is what the `before` cursor used to do, and it is the
- * wrong answer for any of these: a dropped bound WIDENS the result set, so
- * the caller gets rows outside the window they asked for, behind a `200`,
- * with no way to tell. A dropped cursor re-serves the page they already had.
- * The DTO rejects these shapes first; this is the guard for a direct call.
- */
-function instantOrThrow(label: string, value?: string): number | undefined {
-  if (value === undefined) return undefined;
-  const epoch = parseIsoInstant(value);
-  if (epoch === null) {
-    throw new BadRequestException(`${label} ${ISO_INSTANT_MESSAGE}`);
-  }
-  return epoch;
 }
 
 /**
@@ -152,10 +129,9 @@ export class ChapterAuditLogService {
   ): Promise<ChapterAuditLog[]> {
     const limit = clampListLimit(options.limit);
 
-    // Parsed ONLY to validate and compare. Every timestamp reaches the
-    // repository as the caller's original string: `new Date(x).toISOString()`
-    // truncates a `timestamptz`'s microseconds to milliseconds, which can drop
-    // a same-millisecond row off the created_at cursor.
+    // Parsed ONLY to validate, and — for the two range bounds — to compare;
+    // see `instantOrThrow` for why every timestamp still reaches the
+    // repository as the caller's original string.
     instantOrThrow('before', options.before);
     const startsAt = instantOrThrow('start_date', options.startDate);
     const endsAt = instantOrThrow('end_date', options.endDate);

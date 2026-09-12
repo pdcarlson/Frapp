@@ -28,10 +28,7 @@ import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
 import { clampListLimit } from '#domain/constants/list-query-limits';
-import {
-  ISO_INSTANT_MESSAGE,
-  parseIsoInstant,
-} from '#domain/constants/iso-instant';
+import { instantOrThrow } from './instant-bound';
 import {
   resolveWindowSince,
   type PointsWindow,
@@ -222,16 +219,7 @@ export class PointsService {
   ): Promise<PointTransaction[]> {
     const limit = clampListLimit(options.limit);
 
-    // Parsed ONLY to validate. The timestamp reaches the repository as the
-    // caller's original string: `new Date(x).toISOString()` truncates a
-    // `timestamptz`'s microseconds to milliseconds, which can drop a
-    // same-millisecond row off the created_at cursor (#1832; same pin as
-    // chapter-audit-log.service.ts).
-    if (options.before !== undefined) {
-      if (parseIsoInstant(options.before) === null) {
-        throw new BadRequestException(`before ${ISO_INSTANT_MESSAGE}`);
-      }
-    }
+    instantOrThrow('before', options.before);
 
     return this.pointTxnRepo.findByChapterFiltered(chapterId, {
       userId: options.userId,
