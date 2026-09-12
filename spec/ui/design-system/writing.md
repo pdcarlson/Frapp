@@ -391,7 +391,9 @@ Channel seeding happens at chapter onboarding and has no billing prerequisite; [
 | Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
 | Error | `Couldn't load invoices` | `Verify your chapter access and API health, then retry.` |
 | Empty (filtered) | `No invoices match this filter` | `Try a different status, or clear the filter to see every invoice.` |
+| Loading (plan panel) | — | `Loading plan...` |
 | Offline | `Billing unavailable offline` | `Reconnect to sync subscription status and invoice balances.` |
+| Billing-status read failed | — | `Couldn't load this chapter's Stripe details.` (with a Retry; shown only to a `billing:view` holder, for whom the error is a failure rather than the ordinary 403) |
 | Overdue read failed | — | `Couldn't load the overdue list. Overdue badges and the Overdue filter are unavailable until it recovers.` |
 | Past due (page banner) | — | `This chapter's subscription is past due. Write actions stay blocked until payment clears.` |
 | Canceled (page banner) | — | `This chapter's subscription is canceled and the chapter is read-only.` |

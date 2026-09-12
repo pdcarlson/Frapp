@@ -493,6 +493,16 @@ Two rules follow, and they are the lane's main judgement call:
 - **Omit, never placeholder.** The five missing fields are not rendered at all. A meta row reading
   "Next charge —" claims we know there is one, which is the confidently-wrong signal §7 bans one
   surface over. Wiring them is an `IBillingProvider` change and a behavior issue, not a chrome lane.
+  **This rule was broken once inside this lane and is recorded rather than quietly fixed**: the
+  panel's `<h2>` — `4d`'s slot for the chapter's *current* plan — hardcoded the literal "Pro", so a
+  chapter that had never completed checkout read "Pro · Incomplete" above a matrix telling it every
+  paid module was locked. A hardcoded name is a placeholder that does not even degrade. The slot
+  now derives from `subscription_status`, which answers the question the panel actually needs:
+  `active`/`past_due` hold the subscription ("Pro"), `incomplete`/`canceled` hold nothing ("No
+  subscription" rather than "Free", because `subscriptionWriteState` returns `CANCELED` ahead of
+  its free-tier check, so a canceled chapter is read-only even for writes a never-subscribed one
+  could make), and `null` names the section rather than asserting a plan the chip is refusing to
+  assert.
 - **Sell nothing that cannot be bought.** There is no "Upgrade to Pro" button, because there is no
   Pro to upgrade *to* from a Starter that does not exist. The panel's primary action is the recovery
   for the status the chapter is actually in, which is #929's split: `past_due` → Portal,
@@ -564,8 +574,13 @@ already uses for the attendance roster.
 - [x] Plan status is on this page, in the `4d` panel — not a sidebar subscription card. Lane 2
       already deleted the nav's ("no account menu in the nav, no subscription card, no BETA row",
       `dashboard-shell.tsx`), so this is the other half of that removal landing
-- [x] The `4d` plan panel is the page's only framed block, and it takes the board's own
-      `--surface-1` / radius 16 / hairline rather than `<Card>`, which paints `--card` one rung up
+- [x] The `4d` plan panel takes the board's own `--surface-1` / radius 16 / hairline rather than
+      `<Card>`, which paints `--card` one rung up the ladder. **It is not the page's only framed
+      block**, and an earlier draft of this line said it was: the plan matrix beneath it is framed
+      too (radius 14 + hairline), which is exactly what `4d` draws at its own `:250`, and `4d`
+      draws a third frame on the "Who can see this page" row this lane leaves to Admin. The real
+      distinction is that no frame here is a `<Card>`: what the lane deleted is the `--card` fill,
+      not the hairline
 - [x] PRO chips at `4b`'s geometry — 18px, r5, 10.5/700, tracked 0.04em, outline with no fill — in
       their own module, not five overrides on `Badge` (28/8/12.5, filled)
 - [x] Past-due: the chip swaps to destructive and **one line** appears at the top of this page and
@@ -626,9 +641,15 @@ already uses for the attendance roster.
       "Payment received — activating your chapter" is now "Payment received, activating your
       chapter", pinned by a case that greps the rendered output
 - [x] `writing.md`'s Billing table updated in the same change: the Preview/unauthenticated row and
-      the Offline (permission check) row deleted with their strings, and the four new states added
-- [x] 92 cases across six files, green, and each carried invariant names the issue it came from
-      (#336/#1200, #707/#1196, #1621, #858/#1753, #860, #929, #1201)
+      the Offline (permission check) row deleted with their strings, and **seven** new states added
+      (offline, the plan panel's loading message, a failed billing-status read, the overdue read
+      failure, the two lapse banners, and the "Ask an officer" family). §7's rule is that strings
+      living inline at their surface component MUST still match these tables, so a new state with
+      no row is the ad-hoc divergence §7 exists to prevent
+- [x] 117 cases across six files, green, and each carried invariant names the issue it came from
+      (#336/#1200, #707/#1196, #1621, #858/#1753, #860, #929, #1201). The count is kept current on
+      purpose — §8 and §9's equivalent lines are what a later audit measures "did this lane's
+      coverage survive" against, and a stale one reads a gain as unexplained cases
 
 ### What this lane did NOT do, deliberately
 
@@ -643,6 +664,7 @@ already uses for the attendance roster.
 | `PayInvoiceDialog` | Unchanged. It is a Stripe Elements sheet, not chrome, and `1j` is about the upload sheet |
 | The Create invoice dialog's `DialogDescription` | §8 deleted the upload sheets' descriptions on `1j`'s "no instructional paragraph". This is the case §8 itself carved out for the folder dialog: a genuine description, because a draft invoice is invisible to the member until a second, separate action |
 | A `<Can>` around the whole invoice surface | There never was one — the surface is visible to every member who can reach the route, and only the officer half was gated. The one `<Can>` left wraps the Create trigger, and it is there for its **default** `offlineFallback`: an officer whose permission read is paused with nothing cached gets §10's control-slot "Offline, can't check your access" in that slot instead of a list that has quietly lost four buttons. `can-fallback.spec.tsx`'s `SURFACE_GATES` ledger loses its `invoice-admin-card` row for the same reason, with the removal justified in that file rather than silently dropped |
+| `4b`'s PRO chip on the page's own gated write buttons | `4b`'s third bullet says a button that hits a gated write "stays visible, disabled, and carries the same PRO chip", and this route has four of them (Create invoice, Send, Mark paid, Void). They are disabled with no chip, deliberately: `4b`'s chip means **"not in your plan"**, and that is not what blocks these. A `past_due` chapter *has* the plan and is behind on payment; a `canceled` one had it and ended it. Marking either "PRO" would state the wrong one of the two kinds of locked `4b` exists to keep distinct, and the surface already says the right thing through `SubscriptionNotice`. The chip belongs on a control gated by *entitlement*, which on this route is nothing and in the nav (`4b`'s own frame) is lane 2's |
 | Folding `CHAT_CONTROL_CLASS` into `denseRowControlClassName` | Unchanged from §8 and §9: still the same string in two files, still a chat edit |
 
 ---

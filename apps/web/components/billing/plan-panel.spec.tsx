@@ -701,3 +701,82 @@ describe("PlanMeta identity", () => {
     );
   });
 });
+
+describe("the panel names no plan the chapter does not hold", () => {
+  it("says Pro only for the two statuses that hold the subscription", () => {
+    for (const status of ["active", "past_due"]) {
+      setChapter(status);
+      const view = renderPanel();
+      expect(
+        screen.getByRole("heading", { name: "Pro" }),
+        status,
+      ).toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it("says No subscription for a chapter that has none", () => {
+    // The regression this guards: a hardcoded "Pro" put that word above an
+    // `Incomplete` chip and a matrix saying every paid module was locked —
+    // breaking the lane's own "omit, never placeholder" rule on the one field
+    // §10 names as having no source.
+    for (const status of ["incomplete", "canceled"]) {
+      setChapter(status);
+      const view = renderPanel();
+      expect(
+        screen.getByRole("heading", { name: "No subscription" }),
+        status,
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Pro" })).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it("names the section, not a plan, while the status is unestablished", () => {
+    setChapter(undefined, { isPending: true });
+    renderPanel();
+
+    expect(
+      screen.getByRole("heading", { name: "Subscription" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+  });
+
+  it("does not carry the board's page-title tracking on its plan name", () => {
+    // `4d:244` puts -0.3px on the 24px page title; `4d:245`'s 22px plan name
+    // has no letter-spacing. The title is not rendered on this route at all.
+    setChapter("active");
+    renderPanel();
+
+    const heading = screen.getByRole("heading", { name: "Pro" });
+    expect(heading.className).toContain("text-[22px]");
+    expect(heading.className).not.toContain("tracking-");
+  });
+});
+
+describe("cancelling in the Portal is a completed outcome, not a pending one", () => {
+  it("offers the restart action immediately instead of a 30s spinner", () => {
+    // The other half of the `active`-branch Portal button. Cancelling is the
+    // commonest reason to open the Portal from a healthy chapter, the webhook
+    // lands in seconds, and returning is a full page load — so the chapter
+    // reads back `canceled` with nothing left in flight.
+    setChapter("canceled");
+    setParam("returned");
+    renderPanel();
+
+    expect(
+      screen.queryByText(/checking stripe for your update/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /restart subscription/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("still waits out a past_due return, where the webhook really is in flight", () => {
+    setChapter("past_due");
+    setParam("returned");
+    renderPanel();
+
+    expect(screen.getByText(/checking stripe/i)).toBeInTheDocument();
+  });
+});

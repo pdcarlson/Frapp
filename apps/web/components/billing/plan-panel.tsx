@@ -44,6 +44,38 @@ function readOutcome(value: string | null): CheckoutOutcome {
 }
 
 /**
+ * The plan the chapter is **on**, which is the fact `4d` puts in this slot.
+ *
+ * The first cut of this file hardcoded the literal `Pro` here, and that was
+ * the one field the lane had committed in writing not to render: §10's own
+ * source table says plan tier has **no** source, and the rule it draws from
+ * that is "omit, never placeholder". A hardcoded name is a placeholder that
+ * does not even degrade — it reads as fact. A chapter that finished onboarding
+ * and never completed checkout got an `<h2>` reading "Pro" beside an
+ * `Incomplete` chip, above a matrix telling it every paid module was locked.
+ *
+ * The honest version is derivable after all, because the panel does not need
+ * a *tier catalog* to answer this — it needs to know whether the chapter holds
+ * the one subscription, and `subscription_status` says exactly that:
+ *
+ * - `active` and `past_due` hold it. `past_due` is a live subscription in
+ *   dunning, not an absent one.
+ * - `incomplete` never started and `canceled` is terminal, so neither holds
+ *   anything. "No subscription" rather than "Free", because `canceled` is not
+ *   the free tier: `subscriptionWriteState` returns `CANCELED` ahead of its
+ *   free-tier check, so a canceled chapter is read-only even for writes a
+ *   never-subscribed one could make.
+ * - `null` is unestablished, so it names the section rather than a plan. The
+ *   chip beside it already reads "Unknown"; a plan name here would be the
+ *   assertion the chip is refusing to make.
+ */
+function planName(status: string | null): string {
+  if (status === "active" || status === "past_due") return "Pro";
+  if (status === "incomplete" || status === "canceled") return "No subscription";
+  return "Subscription";
+}
+
+/**
  * Mirrors what `BillingService.getChapterBillingStatus` actually returns. The
  * Stripe identifiers have no other source; `subscription_status` on it is a
  * display fallback only (#841).
@@ -157,10 +189,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
   const createCheckout = useCreateCheckout();
   const createPortal = useCreatePortal();
 
-  const lapsed = status === "past_due" || status === "canceled";
-  // Which recovery this chapter gets. `lapsed` still covers both statuses for
-  // the returned-from-portal poll below; only `past_due` is actually routed to
-  // the Portal (#929) — see the block comment above.
+  // Which recovery this chapter gets (#929) — see the block comment above.
   const usesPortal = status === "past_due";
   // The statuses that recover *through* checkout. `canceled` joined this set
   // with #929, and it has to be named here as well as on the button: the
@@ -177,9 +206,20 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
   // Keyed on the status as well as the URL param: keying on the param alone let
   // a stale `/billing?checkout=success` bookmark hijack the screen of a chapter
   // that had since lapsed, hiding its recovery path.
+  //
+  // `returned` is narrowed to `past_due`, not `lapsed`, and that narrowing is
+  // the other half of the problem the `active`-branch Portal button created.
+  // Cancelling is the commonest reason to open the Portal from a healthy
+  // chapter, `customer.subscription.deleted` lands in seconds, and returning
+  // is a full page load — so the chapter reads back `canceled` and, under the
+  // old `lapsed` test, got a 30-second "Checking Stripe for your update"
+  // spinner in place of the Restart subscription button, for an outcome that
+  // had already completed exactly as asked. `past_due` is the one status a
+  // Portal visit actually leaves pending, because there the webhook that
+  // confirms the fixed payment really is still in flight.
   const awaiting =
     (outcome === "success" && usesCheckout) ||
-    (outcome === "returned" && lapsed);
+    (outcome === "returned" && status === "past_due");
 
   // Each tick schedules the next by advancing `attempt`, so the effect stops
   // on its own once the status flips or the budget runs out.
@@ -309,15 +349,22 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
           {/*
-            22/700 is `4d`'s plan name. It is an `<h2>`, not the route's `<h1>`:
-            `PageHeader` owns that, and one typographic anchor per screen is its
-            whole contract.
+            22/700, which is `4d`'s plan name (`:245`). **No `-0.3px`**: an
+            earlier cut carried it here on the strength of a comment claiming
+            it belonged to the plan name, and it does not — the board puts it
+            on the 24px *page title* one line up (`:244`, the word
+            "Subscription"), and its 22px plan name has no `letter-spacing` at
+            all. The title that tracking belongs to is not rendered on this
+            route anyway; `PageHeader` supplies the heading at 15/700.
+
+            An `<h2>`, not the route's `<h1>`: `PageHeader` owns that, and one
+            typographic anchor per screen is its whole contract.
           */}
           <h2
             id="plan-panel-heading"
-            className="text-[22px] font-bold leading-tight tracking-[-0.3px]"
+            className="text-[22px] font-bold leading-tight"
           >
-            Pro
+            {planName(status)}
           </h2>
           {/*
             The semantic chip, which `4d` note 4 swaps to destructive when the
