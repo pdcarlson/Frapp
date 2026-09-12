@@ -84,8 +84,14 @@ Billing, legal, and data-sensitive surfaces MUST:
 
 Examples:
 
-- `Showing preview billing data`
-- `Sign in to load live chapter subscription and invoice records`
+- `Showing preview event data`
+- `Sign in to load live event scheduling and attendance records`
+
+The billing pair that used to sit here (`Showing preview billing data` /
+`Sign in to load live chapter subscription and invoice records`) went with the
+greenfield Finance lane: an error on that route now degrades per read rather
+than through one page-wide preview banner, and a banner telling a signed-in
+member to sign in was the wrong sentence for the state it fired in.
 
 ## 7. Approved state microcopy
 
@@ -383,10 +389,24 @@ Channel seeding happens at chapter onboarding and has no billing prerequisite; [
 |---|---|---|
 | Loading | — | `Loading billing overview...` |
 | Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
-| Preview/unauthenticated | `Showing preview billing data` | `Sign in to load live chapter subscription and invoice records.` |
 | Error | `Couldn't load invoices` | `Verify your chapter access and API health, then retry.` |
 | Empty (filtered) | `No invoices match this filter` | `Try a different status, or clear the filter to see every invoice.` |
-| Offline (permission check) | `Can't confirm your access` | `Reconnect to check whether you can manage chapter invoices.` |
+| Offline | `Billing unavailable offline` | `Reconnect to sync subscription status and invoice balances.` |
+| Overdue read failed | — | `Couldn't load the overdue list. Overdue badges and the Overdue filter are unavailable until it recovers.` |
+| Past due (page banner) | — | `This chapter's subscription is past due. Write actions stay blocked until payment clears.` |
+| Canceled (page banner) | — | `This chapter's subscription is canceled and the chapter is read-only.` |
+| No billing rights | — | `Ask an officer to complete checkout.` / `…to update the payment method.` / `…to restart the subscription.` |
+
+Three rows left this table with the greenfield Finance lane. **Preview/unauthenticated**
+and its pair in §6 above went with the page-wide preview banner. **Offline
+(permission check)** (`Can't confirm your access` / `Reconnect to check whether
+you can manage chapter invoices.`) went with the officer invoice card: the
+invoice surface is no longer behind a screen-level `<Can>`, so the one gate
+left on it wraps a single control and takes §10's control-slot state
+(`Offline, can't check your access.`) rather than a card-shaped one. The
+**No billing rights** row is board `4b`'s "Ask an officer", which replaced a
+sentence that quoted the `billing:manage` permission key at the one person who
+cannot act on it.
 
 ### Dues (mobile, s11)
 

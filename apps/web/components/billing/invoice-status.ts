@@ -3,9 +3,10 @@ import type { BadgeKind } from "@/components/ui/badge";
 /**
  * Invoice and subscription state → the §5 badge kind that states it.
  *
- * One mapper because there were two, and they disagreed. `invoice-admin-card`
- * had a `statusVariant()` switch; `app/(dashboard)/billing/page.tsx` had an
- * inline ternary in the member-facing table. Both mapped `PAID` to `default` —
+ * One mapper because there were two, and they disagreed. The officer invoice
+ * card had a `statusVariant()` switch; the member-facing table on
+ * `/billing` had an inline ternary. (Both surfaces are now one
+ * `components/billing/invoice-list.tsx`.) Both mapped `PAID` to `default` —
  * the **chapter accent** — which `writing.md` §5 rules out directly: "status
  * labels render with the semantic status colors … status color is never
  * decorative".
@@ -27,11 +28,10 @@ import type { BadgeKind } from "@/components/ui/badge";
  * An earlier cut of this mapper carried an `OVERDUE` branch that could never be
  * reached.
  *
- * The parameter used to be `string` because one of the two call sites
- * (`app/(dashboard)/billing/page.tsx`) typed its rows loosely and compared
- * against `"OVERDUE"` — the dead comparison #1196/#707 was about. Both call
- * sites now type their rows against this same union, so the dead comparison
- * is a compile error if it comes back.
+ * The parameter used to be `string` because one of the two call sites typed
+ * its rows loosely and compared against `"OVERDUE"` — the dead comparison
+ * #1196/#707 was about. The surviving call site types its rows against this
+ * same union, so the dead comparison is a compile error if it comes back.
  */
 export function invoiceStatusKind(
   status: "DRAFT" | "OPEN" | "PAID" | "VOID",

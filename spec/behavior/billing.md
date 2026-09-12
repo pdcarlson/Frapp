@@ -50,9 +50,9 @@ This also repairs a case that was never a duplicate at all: on a **first** check
 
 **Reconciliation signal.** `handleCheckoutCompleted` still stores the incoming subscription (it is the one now billing the chapter; dropping it would hide a live subscription from the app), but logs at `error` with both ids when it replaces a different stored `subscription_id`, or when the session's customer differs from the stored one. The reference is therefore never replaced _silently_.
 
-**The refusal reaches clients as a `message`, not a `code`**, because `AllExceptionsFilter` drops `code` from every error response (#1020). The two refusal strings are stable and distinct so a client can map them; `subscription-checkout-card.tsx` routes on `subscription_status` directly rather than on the response.
+**The refusal reaches clients as a `message`, not a `code`**, because `AllExceptionsFilter` drops `code` from every error response (#1020). The two refusal strings are stable and distinct so a client can map them; `apps/web/components/billing/plan-panel.tsx` routes on `subscription_status` directly rather than on the response.
 
-**Client routing.** `past_due` → Portal. `canceled` → checkout. The web card enforces this as an affordance; both are now real server boundaries as well.
+**Client routing.** `past_due` → Portal. `canceled` → checkout. The web plan panel enforces this as an affordance; both are now real server boundaries as well.
 
 ## Billing Adapter Pattern
 

@@ -284,7 +284,7 @@ Alumni draws from the Directory file rather than one of its own: `/members`
 hosts both tabs, so they are one screen with one set of intents. It no longer
 contributes an intent of its own — see the note below the table. Billing has no
 file at all — its single in-screen intent is already the shell's Billing nav
-intent, so [`subscription-checkout-card.tsx`](../../../apps/web/components/billing/subscription-checkout-card.tsx)
+intent, so [`plan-panel.tsx`](../../../apps/web/components/billing/plan-panel.tsx)
 imports `BillingGlyph` directly. §1 rule 1 is about not redrawing, not about
 where an import points.
 
