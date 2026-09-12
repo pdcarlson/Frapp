@@ -265,15 +265,25 @@ describe("the branches this change did not touch", () => {
  * `<Can>` renders no container of its own, so the default `offlineFallback` is
  * the control-slot member of the §10 offline family — right for a gate
  * standing in for one button, wrong for a gate replacing a page or a card.
- * These eleven pass the card-shaped state instead. Listed rather than derived:
- * which of the two a gate is depends on what it wraps, which no grep decides.
+ * These pass the card-shaped state instead. Listed rather than derived: which
+ * of the two a gate is depends on what it wraps, which no grep decides.
  *
- * Three of them were missed on the first pass of this change and found by its
- * pre-push review — `invoice-admin-card` wraps the whole invoice surface,
- * `settings-page`'s rollover gate an entire `<Card>`, and `service-page`'s
- * approve gate the whole review queue. That is the argument for a ledger over
- * a heuristic: the mistake was in the classification, so the classification is
+ * Three were missed on the first pass of that change and found by its pre-push
+ * review — `settings-page`'s rollover gate wraps an entire `<Card>`,
+ * `service-page`'s approve gate the whole review queue, and `invoice-admin-card`
+ * the whole invoice surface. That is the argument for a ledger over a
+ * heuristic: the mistake was in the classification, so the classification is
  * what has to be written down.
+ *
+ * **`invoice-admin-card` has since left this list, by ceasing to exist.** The
+ * greenfield Finance lane merged it into `components/billing/invoice-list.tsx`,
+ * where there is no longer a gate standing in for the invoice surface: the
+ * surface is visible to every member who can reach `/billing` (they pay their
+ * own invoice there), and the gate that remains wraps the Create trigger
+ * alone. So it is a control-slot gate on the default, not a surface gate, and
+ * it moved to `CONSUMERS` rather than being dropped. Recorded because
+ * "a row disappeared from a ledger" is exactly the change this file exists to
+ * make someone justify.
  */
 const SURFACE_GATES: readonly { file: string; match: string }[] = [
   { file: "components/polls/polls-page.tsx", match: 'permission="polls:view_all"' },
@@ -281,7 +291,6 @@ const SURFACE_GATES: readonly { file: string; match: string }[] = [
   { file: "components/geofences/geofences-admin-page.tsx", match: 'permission="geofences:manage"' },
   { file: "components/roles/roles-page.tsx", match: 'permission="roles:manage"' },
   { file: "components/points/points-audit-card.tsx", match: 'permission="points:view_all"' },
-  { file: "components/billing/invoice-admin-card.tsx", match: 'permission="billing:manage"' },
   { file: "components/settings/settings-page.tsx", match: 'permission="semester:rollover"' },
   { file: "components/service/service-page.tsx", match: 'permission="service:approve"' },
 ];
@@ -294,8 +303,8 @@ const SURFACE_GATES: readonly { file: string; match: string }[] = [
  */
 const CONSUMERS: readonly string[] = [
   "components/backwork/backwork-page.tsx",
-  "components/billing/invoice-admin-card.tsx",
-  "components/billing/subscription-checkout-card.tsx",
+  "components/billing/invoice-list.tsx",
+  "components/billing/plan-panel.tsx",
   "components/chat/renderers/task-card.tsx",
   "components/documents/documents-page.tsx",
   "components/events/attendance-panel.tsx",

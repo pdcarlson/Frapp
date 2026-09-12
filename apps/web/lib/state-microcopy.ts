@@ -63,8 +63,5 @@ export const stateMicrocopy = {
     emptyTitle: "No invoices yet",
     emptyDescription:
       "Create your first invoice to start chapter dues collection.",
-    previewTitle: "Showing preview billing data",
-    previewDescription:
-      "Sign in to load live chapter subscription and invoice records.",
   },
 } as const;

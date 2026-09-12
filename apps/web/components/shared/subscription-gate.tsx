@@ -23,7 +23,7 @@ const OFFLINE_WRITE_REASON = "Reconnect to make changes.";
 
 /**
  * The reusable half of the §5 entitlement-gating standard
- * (`spec/ui/design-system/README.md`), extracted from `InvoiceAdminCard` so the
+ * (`spec/ui/design-system/README.md`), extracted from the invoice surface so the
  * remaining paid-ops surfaces do not each re-solve it (#841).
  *
  * `useSubscriptionWriteState` answers *whether the subscription permits* a
@@ -278,7 +278,7 @@ export type SubscriptionNoticeProps = {
  *
  * The recovery link is wrapped in `<Can permission="billing:manage">` — the
  * permission the checkout card itself requires
- * (`components/billing/subscription-checkout-card.tsx`), not the weaker
+ * (`components/billing/plan-panel.tsx`), not the weaker
  * `billing:view` that merely opens the screen. The member who hits this on
  * /tasks is usually neither, and offering them a link to a page where the
  * button is gated too is a second dead end rather than a recovery path.

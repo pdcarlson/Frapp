@@ -462,6 +462,213 @@ worth a second opinion.
 
 ---
 
+## 10. Finance: Billing and Subscription — lane 5
+
+Written as the lane landed, in the same shape as §8 and §9. Unlike those two, **the board does draw
+this page**: `4d` is Chapter settings → Subscription, and `4b` is the PRO marker it reuses. So the
+grammar here is taken rather than derived, and what needs stating is the two places the board
+describes a product this codebase does not have.
+
+This lane is **Finance/Billing only**. Directory landed in the PR before it; Admin/settings is the
+last third of [#2146](https://github.com/pdcarlson/Frapp/issues/2146).
+
+### The board draws a two-tier product, and there is one tier
+
+`4d` is a **Starter** chapter at "$3 per member / month · 42 members · renews Jan 5, 2027", paying by
+"Visa ····4242", with "Next charge $126.00" and an **Upgrade to Pro** primary. Measured against the
+contract, all of that is unavailable and most of it is unbuildable:
+
+| `4d` field | Source in this codebase |
+| ---------- | ----------------------- |
+| Plan tier (Starter vs Pro) | **None.** `MODULE_CATALOG` splits modules `tier: "free"` / `tier: "paid"`; a chapter holds the one subscription or does not |
+| Price, seats, next charge | **None.** No endpoint returns a price, a seat count or an upcoming invoice |
+| Renewal date | **None** |
+| Payment method brand and last4 | **None.** `IBillingProvider` has no method that reads a subscription back from Stripe |
+| Status | `chapters.subscription_status` — `incomplete` \| `active` \| `past_due` \| `canceled` |
+| Lapse date | `chapters.past_due_since` |
+| Customer / subscription id | `GET /v1/billing/status`, gated on `billing:view` |
+
+Two rules follow, and they are the lane's main judgement call:
+
+- **Omit, never placeholder.** The five missing fields are not rendered at all. A meta row reading
+  "Next charge —" claims we know there is one, which is the confidently-wrong signal §7 bans one
+  surface over. Wiring them is an `IBillingProvider` change and a behavior issue, not a chrome lane.
+  **This rule was broken once inside this lane and is recorded rather than quietly fixed**: the
+  panel's `<h2>` — `4d`'s slot for the chapter's *current* plan — hardcoded the literal "Pro", so a
+  chapter that had never completed checkout read "Pro · Incomplete" above a matrix telling it every
+  paid module was locked. A hardcoded name is a placeholder that does not even degrade. The slot
+  now derives from `subscription_status`, which answers the question the panel actually needs:
+  `active`/`past_due` hold the subscription ("Pro"), `incomplete`/`canceled` hold nothing ("No
+  subscription" rather than "Free", because `subscriptionWriteState` returns `CANCELED` ahead of
+  its free-tier check, so a canceled chapter is read-only even for writes a never-subscribed one
+  could make), and `null` names the section rather than asserting a plan the chip is refusing to
+  assert.
+- **Sell nothing that cannot be bought.** There is no "Upgrade to Pro" button, because there is no
+  Pro to upgrade *to* from a Starter that does not exist. The panel's primary action is the recovery
+  for the status the chapter is actually in, which is #929's split: `past_due` → Portal,
+  `canceled` → checkout, `incomplete` → checkout, `active` → the Portal as a secondary.
+
+The plan matrix keeps `4d`'s **shape** — two columns, "what you have now" and "what the paid tier
+adds" — and fills it from `MODULE_CATALOG`, which is what `4d` note 3 asks for ("rows read from the
+module catalog"). Its grouping follows the board's own rule: rows that share a verdict are grouped
+(`4d` puts "Events, Tasks, Points, Polls" on one line) and each paid module gets its own, because
+each is a distinct thing the chapter is being sold.
+
+**`tier === "paid"` is not the row filter, and the first cut of this lane used it.** The catalog is
+the master plan's, not a manifest of what is built: twenty entries are `tier: "paid"` and seven of
+them (`academics`, `philanthropy`, `risk`, `lines`, `networking`, `standards`, `serviceFirst`) have
+no controller, no route, no nav row and no `@RequireModule` anywhere in the repo. Under a heading
+reading "What the subscription unlocks", with a `--success` dot and the word "Included", each was a
+promise of a capability that does not exist — the same invention this lane refused one block up
+when it omitted `4d`'s price and seat count rather than placeholder them. The filter is now "does a
+member have somewhere to go", derived from `nav-config.ts`'s `module` keys, plus `dues` (its
+surface is this page's own invoice list) and never `billing` (`BillingController` is class-level
+`@SubscriptionExempt()`, so a "Billing — not included in Free" row would tell an `incomplete`
+president that the page they are standing on is locked behind the purchase they are making from
+it). Nine rows, not twenty. Pinned in `plan-matrix.spec.tsx` against the catalog and the nav, so
+both transcribing the board's rows back in and re-widening the filter are test failures rather than
+review catches.
+
+### The two invoice lists were one list
+
+The route rendered the same `useInvoices()` rows **twice** to anyone holding `billing:manage`: a
+"Member Invoices" card with a checkbox table, search, three count badges, CSV export and Pay, and
+directly beneath it `InvoiceAdminCard` with a second list of the same rows, its own status filter,
+overdue badges and the DRAFT/OPEN/VOID transitions. `GET /v1/invoices` returns the whole chapter to
+a `billing:view` holder and only the caller's own rows to everyone else, so the two were never
+showing different data — the two cards were the only thing making them look like two subjects.
+
+Flattening them does not resolve that, it exposes it: two bare identical lists stacked on one page
+is worse than what shipped. **So the flatten forces the merge**, and it is recorded here rather than
+left in the diff because it is the largest thing in the lane. Nothing is gated differently than it
+was: the officer half is still `billing:manage`, the member half is still open to anyone who can
+reach the route.
+
+One thing the merge could have broken quietly, and did not: `useMembers` (`GET /v1/members`, gated on
+`members:view`) used to fire only because `InvoiceAdminCard` mounted inside
+`<Can permission="billing:manage">`. Hoisting the list out of that wrapper would have fired a
+guaranteed 403 for every member on every visit, so the query is `enabled` on the same
+`can("billing:manage", …)` the officer column reads — the idiom `chat/renderers/event-card.tsx`
+already uses for the attendance roster.
+
+### What was deleted
+
+| File | What went | Note |
+| ---- | --------- | ---- |
+| `app/(dashboard)/billing/page.tsx` | The whole client body | Now a ten-line server shim with `metadata`, as lane 4's `/documents` and lane 5's `/members` already are |
+| — | The "Subscription Status" card and its three bordered id boxes | Plan status now lives in the `4d` panel. The boxes rendered "—" three times for every member, who cannot read `GET /v1/billing/status` at all |
+| — | `CardTitle`/`CardDescription`: "Monitor chapter billing health and member invoice progress.", "Track dues collection and overdue balances.", "Track chapter dues across every member. Stripe webhooks move invoices to PAID automatically." | Page-narration paragraphs, removed outright |
+| — | The `CardFooter`: "Stripe webhooks handle automatic PAID transitions. Manual Paid / Void buttons exist for corrections and cash-paid dues." | Narration explaining the UI to itself. The buttons say what they do |
+| — | The preview-data warning card, and `stateMicrocopy.billing.previewTitle` / `previewDescription` with it | "Showing preview billing data / Sign in to load live chapter subscription and invoice records" fired on `statusQuery.isError`, which for most members is the ordinary 403 — telling a signed-in member to sign in. Each read now degrades where it is. `writing.md` §6 and its Billing table moved in the same change, per [`README.md`](README.md) §2's scope note |
+| `subscription-checkout-card.tsx` | Deleted; absorbed into `plan-panel.tsx` | Every behaviour kept and re-pinned: the #860 bounded poll and its 10 × 3s budget, the #929 status→action split, the stale-`?checkout=success` guard, the fail-open on an unresolved status, and the deliberate absence of a checkout button on the timed-out branch |
+| `invoice-admin-card.tsx` | Deleted; absorbed into `invoice-list.tsx` | See above. The #707 overdue derivation and the #1621 two-threshold split came across intact |
+| — | The three `Open: n` / `Overdue: n` / `Paid: n` `Badge` pills | The last badge row on the page, and §8 deleted that shape one family over. Every number survives in the count line `/members` uses for "42 alumni" |
+| — | Two destructive overdue **cards** (`CardHeader` + `CardTitle` + `CardDescription` each, for one sentence each) | One line each now, on the page surface with the hairline `components.md` §2 makes the load-bearing edge |
+| — | The `<Table>` with its six `<TableHead>`s | `1t` one route over: "table card, … card title, checkbox column — gone". The checkbox stays, because CSV export is selection-driven and #336 made that real; it is a row control now rather than a column |
+| — | The Radix `Select` filter | One native `<select>` on `dashboardFilterSelectClassName`, which is the flattened routes' filter control. The page already had one; the card had the other |
+
+### Acceptance
+
+- [x] Route flush on the shell: no wrapper `<Card>` anywhere, page body on `--background`,
+      `PageHeader` on **every** path including offline
+- [x] Plan status is on this page, in the `4d` panel — not a sidebar subscription card. Lane 2
+      already deleted the nav's ("no account menu in the nav, no subscription card, no BETA row",
+      `dashboard-shell.tsx`), so this is the other half of that removal landing
+- [x] The `4d` plan panel takes the board's own `--surface-1` / radius 16 / hairline rather than
+      `<Card>`, which paints `--card` one rung up the ladder. **It is not the page's only framed
+      block**, and an earlier draft of this line said it was: the plan matrix beneath it is framed
+      too (radius 14 + hairline), which is exactly what `4d` draws at its own `:250`, and `4d`
+      draws a third frame on the "Who can see this page" row this lane leaves to Admin. The real
+      distinction is that no frame here is a `<Card>`: what the lane deleted is the `--card` fill,
+      not the hairline
+- [x] PRO chips at `4b`'s geometry — 18px, r5, 10.5/700, tracked 0.04em, outline with no fill — in
+      their own module, not five overrides on `Badge` (28/8/12.5, filled)
+- [x] Past-due: the chip swaps to destructive and **one line** appears at the top of this page and
+      nowhere else (`4d` note 4). It keys on `subscriptionStatusKind(status) === "destructive"`,
+      which is the existing definition of the lapsed states, so it also fires for `canceled` — a
+      generalisation of a note written against a two-state board, not a departure from it.
+      `incomplete` is `warning` and gets no banner; an unresolved status gets nothing at all
+- [x] Members without billing rights get `4b`'s "Ask an officer", naming the action their chapter's
+      status actually needs. It replaces "A chapter officer with `billing:manage` can complete
+      checkout and unlock these features" — a permission key quoted at the one person who cannot act
+      on it. **Only `deniedFallback` carries it**, and an earlier cut of this line said the
+      opposite: it claimed all three non-granted `<Can>` branches render it, by analogy with
+      `subscription-gate.tsx`'s `DefaultRecovery` ("naming someone who can fix it beats naming
+      nobody"). That analogy is about a *notice*, whose job is to name a recovery; this slot is the
+      action itself, and `can.tsx` documents the three branches as three different facts. Passing
+      the copy to `fallback` told a treasurer holding `billing:manage` to ask an officer for the
+      length of their own permission fetch, and passing it to `offlineFallback` said it permanently,
+      with no Retry. `fallback` is back to `null` and `offlineFallback` to the gate's own §10
+      control-slot state. **And `active` passes no copy at all**: `4b` writes "Ask an officer" for a
+      *locked* row, and on a healthy chapter nothing is blocked, so an officer without
+      `billing:manage` gets the plan and its status and no invented errand
+- [x] Stripe stays **blocking** and nothing is optimistic. Both actions `await mutateAsync`, disable
+      their own button for the duration and hand off with `window.location.assign`. Neither moves
+      the status chip; the chip reports the chapter record and nothing else, which is what the #860
+      poll exists to preserve
+- [x] `--gold-ask-*` untouched and still not merged into `--accent-*`. This lane's accent uses are
+      the PRO chip's border and text, the selection bar and the selected row — all product UI, all
+      retinting per chapter as they should. The board's PRO chip reads as fixed gold only because
+      its demo tenant is the house tenant, which is the trap [`tokens.md`](tokens.md) § L-01 names;
+      taking `--gold-ask-*` for it would have frozen it gold on every chapter and spent Ask's tokens
+      on something that is not Ask. `ask-pill.tsx` is not in the diff, so L-05 does not fire
+- [x] PRO takes the accent **because it is not a status**. `status-contrast.spec.ts` measures that
+      an accent badge is indistinguishable from a status badge under a green- or red-accented
+      chapter, and `writing.md` §5 bans status colour used decoratively. PRO states an entitlement;
+      the verdict column beside it is the semantic `--success` dot
+- [x] Whole-screen `OfflineState`/`LoadingState` swapped for the **nested** family with `sole`, the
+      same swap §9 made and for the same reason: the whole-screen variants paint `--card`
+- [x] Every verdict cell in the matrix names its own column in its visually hidden text
+      ("Not included in Free"), because `4d` draws this block with no table semantics and a linear
+      read of "Events · Pro · Not included · Included" parses most naturally as the inverse of the
+      fact. An earlier draft asserted in a comment that the header carried `role="row"` semantics;
+      it did not, and that false claim is what left the cells announcing a bare "Included"
+- [x] The matrix's "not included" dash is `--muted-foreground` (7.47:1 on `--background`), not
+      `--disabled` (**2.45:1**, under §6's 4.5:1 release gate). WCAG's inactive-control exemption
+      does not cover it: the dash is informational content, not a disabled control
+- [x] Two live regions on the route, not four. The lapse banner and the overdue summary are durable
+      page content rather than announcements of a change, so neither is `role="status"`; what keeps
+      it is the loading state and `SubscriptionNotice`, which are about transitions
+- [x] The select-all checkbox takes its name from its visible label. It kept an
+      `aria-label="Select all visible invoices"` from the table header cell it replaces — which had
+      no visible text — so once the flatten put "Select all shown" beside it the accessible name no
+      longer contained the visible words (WCAG 2.5.3, and a dropped voice command)
+- [x] No em dash in user-facing copy on this route, verified by stripping comments and grepping what
+      remains. **Two characters survive and neither is prose**: the matrix's `–` for "not included",
+      which is `aria-hidden` with the word "Not included" beside it and is the glyph `4d` itself
+      draws, and `—` as the unknown-value placeholder in the overdue count, which is the
+      convention the surface already used. One string was **rewritten** rather than passed over:
+      "Payment received — activating your chapter" is now "Payment received, activating your
+      chapter", pinned by a case that greps the rendered output
+- [x] `writing.md`'s Billing table updated in the same change: the Preview/unauthenticated row and
+      the Offline (permission check) row deleted with their strings, and **seven** new states added
+      (offline, the plan panel's loading message, a failed billing-status read, the overdue read
+      failure, the two lapse banners, and the "Ask an officer" family). §7's rule is that strings
+      living inline at their surface component MUST still match these tables, so a new state with
+      no row is the ad-hoc divergence §7 exists to prevent
+- [x] 117 cases across six files, green, and each carried invariant names the issue it came from
+      (#336/#1200, #707/#1196, #1621, #858/#1753, #860, #929, #1201). The count is kept current on
+      purpose — §8 and §9's equivalent lines are what a later audit measures "did this lane's
+      coverage survive" against, and a stale one reads a gain as unexplained cases
+
+### What this lane did NOT do, deliberately
+
+| Left | Why |
+| ---- | --- |
+| `4d`'s 200px Chapter settings rail | It is the Admin third of #2146. What is taken here is `4d`'s **page body**, on the route the product already has, with `PageHeader` supplying the title the rail would have. Whether `/billing` eventually redirects into a settings tab is that lane's call |
+| `4d`'s "Who can see this page and manage billing" role-chip row | It is `4c`'s per-page settings pattern, and there is no per-page settings drawer on this surface to put it in. Building one is Admin |
+| `4d`'s sub-line, "Billed to the chapter card. Members never see this page" | Narration, and **false here**: `/billing` is gated on `billing:view` and a member reaches it to pay their own invoice. That is precisely why `4b`'s "Ask an officer" has a job on this screen |
+| `4b`'s PRO chips and locked-module sheet **in the nav** | The nav is lane 2's surface. This lane's brief is "this page only", and the chip module it adds is the one the nav lane will import |
+| Seats, price, renewal, card and next charge | No data source, as above. An `IBillingProvider` change with its own issue, not a chrome lane |
+| The shared `DefaultRecovery`'s "Reopen the subscription from the billing portal" | #929 established that the Portal cannot resume a terminated subscription, so that sentence names a dead end — and `subscription-gate.tsx` says it on every gated surface in the app. Fixed **on this route** (both branches point at the plan panel, whose canceled action is a fresh checkout) and left alone on the other fourteen, because changing the shared default is a copy change across chat, tasks, events and documents and does not belong in a Finance PR. Flagged on the PR |
+| `PayInvoiceDialog` | Unchanged. It is a Stripe Elements sheet, not chrome, and `1j` is about the upload sheet |
+| The Create invoice dialog's `DialogDescription` | §8 deleted the upload sheets' descriptions on `1j`'s "no instructional paragraph". This is the case §8 itself carved out for the folder dialog: a genuine description, because a draft invoice is invisible to the member until a second, separate action |
+| A `<Can>` around the whole invoice surface | There never was one — the surface is visible to every member who can reach the route, and only the officer half was gated. The one `<Can>` left wraps the Create trigger, and it is there for its **default** `offlineFallback`: an officer whose permission read is paused with nothing cached gets §10's control-slot "Offline, can't check your access" in that slot instead of a list that has quietly lost four buttons. `can-fallback.spec.tsx`'s `SURFACE_GATES` ledger loses its `invoice-admin-card` row for the same reason, with the removal justified in that file rather than silently dropped |
+| `4b`'s PRO chip on the page's own gated write buttons | `4b`'s third bullet says a button that hits a gated write "stays visible, disabled, and carries the same PRO chip", and this route has four of them (Create invoice, Send, Mark paid, Void). They are disabled with no chip, deliberately: `4b`'s chip means **"not in your plan"**, and that is not what blocks these. A `past_due` chapter *has* the plan and is behind on payment; a `canceled` one had it and ended it. Marking either "PRO" would state the wrong one of the two kinds of locked `4b` exists to keep distinct, and the surface already says the right thing through `SubscriptionNotice`. The chip belongs on a control gated by *entitlement*, which on this route is nothing and in the nav (`4b`'s own frame) is lane 2's |
+| Folding `CHAT_CONTROL_CLASS` into `denseRowControlClassName` | Unchanged from §8 and §9: still the same string in two files, still a chat edit |
+
+---
+
 ## What this checklist does not cover
 
 Deleting a **route** or a **capability** is a behavior change, not chrome, and belongs to

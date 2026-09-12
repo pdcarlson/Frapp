@@ -7,7 +7,7 @@
  *
  * Billing has no file of its own in this slice. Its one in-screen intent —
  * the payment method on the checkout card — is already the shell's Billing nav
- * intent, so `subscription-checkout-card.tsx` imports `BillingGlyph` from
+ * intent, so `plan-panel.tsx` imports `BillingGlyph` from
  * `components/layout/nav-glyphs.tsx` directly. A module whose entire body is a
  * re-export is ceremony, and §1 rule 1 is about not redrawing, not about where
  * the import statement points.
