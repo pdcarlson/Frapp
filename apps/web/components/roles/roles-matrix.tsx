@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useUpdateRole } from "@repo/hooks";
 import { cn, getErrorMessage, initials } from "@/lib/utils";
 import { EYEBROW } from "@/components/ui/typography";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { useToast } from "@/hooks/use-toast";
 
 export type MatrixRole = {
@@ -337,11 +338,29 @@ export function RolesMatrix({
                         }
                         className={cn(
                           "grid h-[22px] w-[22px] place-items-center rounded-[7px] leading-none transition",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                          // `FOCUS_RING_OFFSET`, not a copy of it. A cell has
+                          // no border of its own for `FOCUS_RING` to swap, and
+                          // `focus.ts` keeps these as constants precisely
+                          // because copied strings drift.
+                          FOCUS_RING_OFFSET,
                           held ? "text-accent-text" : "text-muted-foreground",
+                          /*
+                           * `4e` pin 2's ring on "the one being edited", and
+                           * `ring-ring/25` is the repo's own recipe for it
+                           * (`focus.ts`).
+                           *
+                           * Not a hand-rolled `shadow-[...]` arbitrary value:
+                           * the ring token is stored as a complete colour, so
+                           * an arbitrary value that wraps it in a colour
+                           * function nests one colour inside another and
+                           * renders nothing at all (#1151). `packages/theme`'s
+                           * `tailwind.config.spec.ts` scans for that shape as
+                           * plain text — including in comments, so do not
+                           * spell the broken form out here.
+                           */
                           pending?.roleId === role.id &&
                             pending.permission === entry.permission &&
-                            "border border-accent-border shadow-[0_0_0_3px_hsl(var(--ring)/0.25)]",
+                            "border border-accent-border ring-[3px] ring-ring/25",
                         )}
                       >
                         <span aria-hidden="true">{held ? "●" : "○"}</span>
