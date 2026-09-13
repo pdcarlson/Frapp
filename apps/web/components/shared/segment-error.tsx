@@ -32,11 +32,11 @@ import { isChunkLoadError } from "@/lib/chunk-load-error";
  *
  * **The tempting stronger claim is wrong, and is worth writing down because the
  * first draft of this file shipped it.** It is not true that Retry "provably
- * cannot succeed" here. `retry()` re-renders the *segment*, and all three of
- * #2145's splits sit behind a closed-by-default trigger — a popover, the slash
- * palette, a modal — so the remount brings the page back with the lazy
- * component never rendered, and `/chat` returns intact. What is true is
- * narrower: `React.lazy` has memoised the rejection for the life of the
+ * cannot succeed" here. `retry()` re-renders the *segment*, and the two splits
+ * this boundary covers — the emoji picker's popover and the composer's slash
+ * palette — are opened by state the remount discards, so the page comes back
+ * with the lazy component never rendered and `/chat` returns intact. What is
+ * true is narrower: `React.lazy` has memoised the rejection for the life of the
  * document (`lib/chunk-load-error.ts` carries that evidence), so the *control*
  * that failed will fail again the moment it is touched. Retry restores the
  * page around a button that is still dead; Reload clears the condition. That is

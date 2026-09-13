@@ -27,14 +27,23 @@
  *
  * **Be precise about what that does and does not make true**, because the first
  * version of this module overstated it and the overstatement is seductive. It
- * does *not* follow that Retry is useless: `retry()` re-renders the segment,
- * and all three of #2145's splits sit behind a closed-by-default trigger (a
- * popover, the slash palette, a modal), so the remount brings the page back
- * with the lazy component never rendered at all. `/chat` returns intact. What
- * follows is only this: the *control* that failed will fail again the moment it
- * is used, for as long as this document lives. So Reload is the remedy that
- * clears the condition and Retry is the one that papers over it — a real
- * asymmetry, and a smaller one than "Retry cannot work".
+ * does *not* follow that Retry is useless. `retry()` re-renders the segment,
+ * and the two splits the route boundary covers — the emoji picker's popover and
+ * the composer's slash palette — are opened by state that the remount throws
+ * away, so the page comes back with the lazy component never rendered at all.
+ * `/chat` returns intact. What follows is only this: the *control* that failed
+ * will fail again the moment it is used, for as long as this document lives. So
+ * Reload is the remedy that clears the condition and Retry is the one that
+ * papers over it — a real asymmetry, and a smaller one than "Retry cannot
+ * work".
+ *
+ * The third split is the exception that proves it, and it is why
+ * `chapter-wizard-gate.tsx` needs a dismiss rather than only a retry: that
+ * gate's `open` latch lives *above* its own boundary, so a reset re-renders the
+ * wizard with the latch still true and the rejection lands again immediately.
+ * Whether Retry recovers anything depends on where the trigger's state sits
+ * relative to the boundary, which is worth checking before assuming either way
+ * at a new call site.
  *
  * Worth knowing before assuming a retry was simply never attempted: the
  * Turbopack runtime already makes one of its own, and it is narrower than it

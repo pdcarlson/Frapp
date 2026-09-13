@@ -589,11 +589,11 @@ title for what actually failed. The description and the action are the rows abov
   the remedy, which are §3's other two parts, so that is where the rows differ.
 - **The second row says `Reload` because only a reload clears the condition** — not because Retry
   cannot work. That stronger claim is wrong and was in the first draft of this section: `retry()`
-  re-renders the segment, and every `next/dynamic` split in `apps/web` sits behind a
-  closed-by-default trigger, so the remount brings the page back without re-rendering the lazy
-  component. What is true is narrower — `React.lazy` memoises the rejection for the life of the
-  document, so the *control* that failed stays dead until the document is replaced. Retry restores
-  the page around a broken button; Reload fixes it. Evidence in
+  re-renders the segment, and the two splits the route boundary covers are opened by state the
+  remount discards, so the page comes back without the lazy component rendering at all. What is true
+  is narrower — `React.lazy` memoises the rejection for the life of the document, so the *control*
+  that failed stays dead until the document is replaced. Retry restores the page around a broken
+  button; Reload fixes it. Evidence in
   [`apps/web/lib/chunk-load-error.ts`](../../../apps/web/lib/chunk-load-error.ts).
 - **The third row exists because `Reload` is actively harmful offline.** The same `ChunkLoadError`
   is raised for a chunk that was never fetched, and `apps/web` registers no service worker — so
