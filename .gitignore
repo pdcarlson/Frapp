@@ -50,6 +50,10 @@ supabase/.branches/
 # Misc
 .DS_Store
 *.pem
+# Apple private keys (Sign in with Apple / APNs `AuthKey_<KEYID>.p8`). `apps/mobile/`
+# already ignores these; the root did not, and the Apple SIWA runbook has a human
+# download one and feed it to a JWT generator, which can happen from any directory.
+*.p8
 
 # Local editor state (.cursor/mcp.json can carry credentials). Ignore everything under
 # .cursor/ EXCEPT the committed Cursor Cloud contract. The `.cursor/*` form (not `.cursor/`)

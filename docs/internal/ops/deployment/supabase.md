@@ -183,7 +183,7 @@ GoTrue's own provider callback (what you paste into Google Cloud / Apple, **not*
 
 #### Done / Not done
 
-Observation 2026-09-10 (owner confirmation, **names only**; values not opened). Secrets stay in the Google Cloud / Supabase dashboards. Did **not** Deploy. Tracker: #2120.
+Observation 2026-09-10 for the Google rows, **2026-09-13 for the Apple rows** (owner confirmation, **names only**; values not opened — the Apple rows were recorded while the owner drove the consoles). Secrets stay in the Google Cloud / Apple / Supabase dashboards. Dashboard-only: did **not** Deploy. Tracker: #2120.
 
 | Item | State |
 | --- | --- |
@@ -191,19 +191,108 @@ Observation 2026-09-10 (owner confirmation, **names only**; values not opened). 
 | Google provider enabled on hosted `frapp-staging` and `frapp-prod` | **Done** |
 | Automatic linking | **On** (a later Google/Apple identity can attach to an existing email/password or magic-link user; do not merge `public.users` rows — unique on `supabase_auth_id` only) |
 | Skip nonce (Google provider) | **Off** |
-| Allow users without email | **Off** |
+| Allow users without email — **Google** | **Off** |
+| Allow users without email — **Apple** | **On** (2026-09-13). Apple may omit the email claim on a later native grant; AuthSync then stores the `noreply+<auth-id>@users.invalid` placeholder ([`spec/architecture/README.md`](../../../../spec/architecture/README.md)). With this **Off**, GoTrue rejects that sign-in outright and the placeholder path is unreachable. Not an App Store requirement — Apple requires that a member be able to *hide* an address, and Hide My Email still returns a real `@privaterelay.appleid.com` relay address (deliverable **once the sending domain is registered** — see **Still open** below). |
 | Magic Link templates | **Untouched** — do not change them |
-| Apple Developer: App ID `live.frapp.mobile` + Sign in with Apple; Services ID; `.p8` uploaded in each project's Apple provider (key id, team id, Services ID) | **Not done** — remaining human work on #2120 |
+| Apple Developer: App ID `live.frapp.mobile` + Sign in with Apple; Services ID `live.frapp.mobile.web`; Sign in with Apple key | **Done** (2026-09-13) |
+| Apple provider enabled on hosted `frapp-staging` and `frapp-prod` | **Done** (2026-09-13) |
+| Apple **Sign in with Apple for Email Communication** source domains | **Not done** — #2191. Until both sending domains are registered, mail to a Hide My Email member is refused by Apple's relay. |
 | Custom Auth domain | **Later** — #2125 |
 | Native Google iOS/Android OAuth clients | **Later** — #2126. Mobile Google uses this Web client through the browser auth session. |
 
-**Remaining human console steps (Apple; names only; no secrets):**
+**Apple Sign in with Apple — what the console actually asks for**
 
-1. Apple Developer:
-   - App ID `live.frapp.mobile` → enable **Sign in with Apple**
-   - Services ID (web) with Return URL `https://<project-ref>.supabase.co/auth/v1/callback` for each hosted project
-   - Key with Sign in with Apple enabled; upload the `.p8` in the Supabase Apple provider (key id, team id, Services ID). Native SIWA uses the app's bundle id; web/browser fallback uses the Services ID.
-2. Confirm the redirect allow list still includes `https://app.frapp.live/**`, `https://app.staging.frapp.live/**`, and `frapp://**`.
-3. Do not add failing conformance that **Apple** is enabled until that list is done. Google kickoff can 2xx on hosted Auth now; Apple still maps to “This sign-in method isn't available yet.”
+Recorded 2026-09-13 from a guided walkthrough of the live consoles. An earlier
+version of this section said to *upload the `.p8` in the Supabase Apple
+provider*. **There is no `.p8` upload.** Supabase stores one field, `Secret Key
+(for OAuth)` — a JWT generated *from* the key file. The `.p8` never leaves the
+machine that downloaded it.
+
+1. **App ID** — Identifiers → `live.frapp.mobile` → enable **Sign in with
+   Apple** → Edit → *Enable as a primary App ID*. Leave the **Server-to-Server
+   Notification Endpoint blank**: Supabase Auth does not support it. Sign in
+   with Apple needs an **Explicit** bundle id; a wildcard App ID cannot carry
+   the capability. Changing capabilities invalidates existing provisioning
+   profiles — EAS regenerates them on the next build.
+2. **Services ID** — Identifiers → Services IDs → `live.frapp.mobile.web` →
+   enable SIWA → Configure → Primary App ID `live.frapp.mobile`. Both hosted
+   projects share this one Services ID. Domains and Return URLs are
+   **comma-delimited, not newline-delimited**; a newline is parsed as one
+   malformed value and the only feedback is "One or more domains are invalid".
+   - Domains: `hnoyzpidbmizhbqaiity.supabase.co,unttyvyfezddlyafcydh.supabase.co`
+   - Return URLs: the two `https://<project-ref>.supabase.co/auth/v1/callback`
+
+   Apple's domain-association file does not apply here — that belongs to the
+   Email Communication service, and a `supabase.co` host could not serve it in
+   any case. The Services ID **Description** is member-facing on the web
+   consent sheet, so it reads `Signet`, not an internal label. Saving is four
+   clicks deep (Next → Done → Continue → Save); stopping at Done loses the
+   configuration silently.
+3. **Key** — Keys → new key with Sign in with Apple → Primary App ID
+   `live.frapp.mobile` → Register. `AuthKey_<KEYID>.p8` downloads **once** and
+   cannot be re-fetched; Apple caps a team at two SIWA keys, and recovering from a
+   lost key means revoking it in the Apple console — which frees the slot — then
+   registering a replacement and re-generating the secret for both projects. It must never be committed to this repo. Note the Key ID; the
+   Team ID is the **App ID Prefix** shown on any App ID page (kept out of this
+   file for the same reason `eas.json` no longer names `appleTeamId` —
+   [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md)).
+4. **Secret** — generate the JWT with the client-side generator on
+   [Supabase's Apple provider guide](https://supabase.com/docs/guides/auth/social-login/auth-apple)
+   (Team ID + Services ID + Key ID + `.p8`; the generator does not work in
+   Safari). It is bound to the Services ID and team, **not** to a project, so
+   one generated value goes into both. **It expires every 6 months — generated
+   2026-09-13, so it must be regenerated by 2027-03-13**, after which web Apple
+   sign-in breaks with no deploy to correlate against. That date is derived from
+   Apple's 6-month cap, not read off the issued token; decode the JWT's own `exp`
+   to confirm it. Nothing asserts this expiry — neither conformance script checks
+   the Apple provider — so it is tracked only by **#2192**, and by nothing that
+   will surface on the day. A correct value starts
+   `eyJ`; one starting `-----BEGIN PRIVATE KEY-----` is the `.p8` pasted by
+   mistake and fails only at the first sign-in attempt.
+5. **Client IDs** — comma-separated, and the split is deliberate:
+   - `frapp-prod`: `live.frapp.mobile.web,live.frapp.mobile`
+   - `frapp-staging`: the same, plus `host.exp.Exponent`
+
+   The Services ID covers web/browser OAuth; the **bundle id** covers native
+   iOS, because [`apps/mobile/lib/apple-auth.ts`](../../../../apps/mobile/lib/apple-auth.ts)
+   calls `signInWithIdToken` and that token's audience is the bundle id. Omit it
+   and web sign-in works while native iOS fails. `host.exp.Exponent` is the Expo
+   Go app's **shared** bundle id, so it is **staging-only on purpose**: trusting
+   it in production would accept identity tokens that were not issued to this
+   app.
+6. Confirm each project's redirect allow list is unchanged — **confirm, do not
+   add**. The lists are **per-project** and are recorded in
+   [§ Auth settings](#auth-settings-hosted-dashboard-or-management-api); read them
+   there rather than from a second copy here. Neither project carries the other's
+   origin, and that is deliberate: `checkAuthRedirects` in
+   `scripts/ci/staging-conformance.mjs` asserts exactly `${siteUrl}/**` plus
+   `frapp://**`. Pasting the staging wildcard into production would let production
+   GoTrue redirect a member onto a staging host. This list governs where GoTrue
+   may send the member *afterward*; the `supabase.co/auth/v1/callback` URLs belong
+   on Apple's side, not in it.
+
+**Still open — Email Communication (#2191).** Register the sending domains under Apple →
+Services → **Sign in with Apple for Email Communication**. There are **two**, and
+[§ Auth settings](#auth-settings-hosted-dashboard-or-management-api) already names
+both: `mail.frapp.live` (prod Auth SMTP, and the invite sender in
+[`email.module.ts`](../../../../apps/api/src/modules/email/email.module.ts)) and
+`mail.staging.frapp.live` (staging Auth SMTP — the Resend keys are domain-scoped,
+so staging is a genuinely separate registration, not a duplicate). Until a domain
+is registered, Apple's relay refuses mail sent from it to a
+`@privaterelay.appleid.com` member. Expect that rejection in the **Resend
+delivery log** rather than as an application error — look there first, not at the
+API or the invite token. Not yet observed either way: no mail has been sent to a
+relay address from either domain.
+
+**Not proven — and not only for Apple.** The strongest evidence ever recorded for
+**Google** is that kickoff can 2xx on hosted Auth (2026-09-10): a redirect the
+provider accepted, *not* a completed round-trip. The Google rows above should not
+be read as a proven sign-in either. For Apple it is weaker still — no live Apple
+sign-in has been run against either project. The
+provider is enabled and configured; that is not the same as a verified
+round-trip on web or native iOS, and this table is not evidence of one. The
+earlier instruction not to assert that Apple is enabled is superseded by the
+rows above, but **conformance should still wait on an observed sign-in**, not on
+this section.
 
 ---
