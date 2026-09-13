@@ -16,4 +16,4 @@ This folder is the canonical UI spec for connection state, delivery, retry, form
 | [Supabase Realtime connection management](realtime-connection.md) | Lifecycle, channel subscriptions, cleanup. Polling copy is owned by message delivery. |
 | [Image and file upload resilience](uploads.md) | Signed-URL flow, progress, failure recovery. |
 | [Caching strategy](caching.md) | Layers, per-domain staleTime, invalidation triggers. |
-| [Performance budgets (web dashboard)](performance-budgets.md) | Budgets and optimization techniques for the admin web app. |
+| [Performance budgets (web dashboard)](performance-budgets.md) | The first-paint budgets board `1s` sets, the measured bundle sizes behind them, and how to re-measure. |

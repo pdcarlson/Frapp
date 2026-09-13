@@ -8,6 +8,7 @@ import {
   useState,
   type ChangeEvent,
 } from "react";
+import dynamic from "next/dynamic";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -42,6 +43,7 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 // `use-chat-channel` boundary before #544 added `warning`.
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 import { useToast } from "@/hooks/use-toast";
+import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
@@ -49,7 +51,6 @@ import {
 } from "@repo/validation";
 import { EmojiPicker } from "./emoji-picker";
 import { QuotedMessage } from "./reply-quote";
-import { SlashPalette } from "./slash-palette";
 import {
   createMentionSuggestion,
   type MentionRosterEntry,
@@ -59,6 +60,57 @@ import {
   parseSlashInput,
   type SlashCommand,
 } from "@repo/chat-integrations";
+
+/**
+ * The composer's outer box with nothing live in it.
+ *
+ * `1s` puts "composer shell" in the 0ms set beside the nav and the channel
+ * column, and until this existed the thread column had nothing there during a
+ * cold load: `chat-shell.tsx` gates `<Composer>` on `activeChannel`, which is
+ * derived from the channel list, so no composer exists until that query
+ * resolves. The timeline skeleton above it is bottom-aligned — chat opens at its
+ * end — so the composer arriving pushed every placeholder row up by its own
+ * height, a shift of over a hundred pixels directly above the composer, which is
+ * the one place the contract budgets at zero.
+ *
+ * It lives here rather than in `chat-shell.tsx` so there is one home for the
+ * geometry. The classes below are the real composer's, and a change to either
+ * that is not made to the other reintroduces exactly the shift this removes:
+ * `border-t` + `p-3` outside, the `rounded-md border p-2` well, the editor's
+ * `min-h-[40px]`, and the `mt-2` toolbar row at `h-8`.
+ *
+ * Deliberately inert and `aria-hidden`. A focusable-looking control that cannot
+ * take a message is worse than an obvious placeholder, and the row is announced
+ * once by the timeline's own status region rather than twice.
+ */
+export function ComposerSkeleton() {
+  return (
+    <div className="border-t border-border p-3" aria-hidden="true">
+      <div className="rounded-md border border-input bg-surface-1 p-2">
+        <div className="min-h-[40px]" />
+        <div className="mt-2 h-8" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * `cmdk` and a Radix Dialog, fetched when the palette is first summoned.
+ *
+ * The palette opens from typing `/` or from the toolbar's ⌘ button, so on most
+ * cold loads it is never opened at all — but the eager import put its whole
+ * dependency chain in the chunk that has to parse before the composer is
+ * focusable, which `1s` budgets at 400ms. It is one of the five surfaces the
+ * board names as `chat-extras`.
+ *
+ * Kept out of `slash-palette.tsx` itself so `slash-palette.spec.tsx` still
+ * renders the real component synchronously; the composer is the thing that
+ * knows when it is wanted, so the boundary belongs at this call site.
+ */
+const SlashPalette = dynamic(
+  () => import("./slash-palette").then((m) => m.SlashPalette),
+  { ssr: false },
+);
 
 /**
  * The message the next send replies to, already resolved to a label and a
@@ -444,6 +496,11 @@ export function Composer({
     open: false,
     query: "",
   });
+
+  // Hoisted above `useEditor` so `onCreate` can honour it — the early return
+  // that reads it next is ~400 lines down, but Tiptap builds the editor from
+  // here regardless of whether anything ever renders it. See `onCreate`.
+  const resolvedCanPost = canPost ?? !isReadOnly;
   const sendRef = useRef<() => void>(() => {});
   const editor = useEditor({
     extensions: [
@@ -500,6 +557,32 @@ export function Composer({
         setPalette((prev) => (prev.open ? { open: false, query: "" } : prev));
       }
     },
+    onCreate() {
+      /*
+        `1s`: "composer focusable <= 400ms". This is the moment it becomes true —
+        `immediatelyRender: false` means the editor is null through the first
+        render, so a member cannot type until ProseMirror has mounted its
+        contenteditable, whatever the shell around it looks like.
+
+        `onCreate` rather than an effect on `editor`, because an effect fires on
+        the render *after* the editor exists — a frame later, on the wrong side
+        of the thing being measured.
+
+        The `resolvedCanPost` guard is not belt-and-braces. `useEditor` builds an
+        Editor from its own effect whether or not `<EditorContent>` is ever
+        rendered, so without it this fires in every channel the member cannot
+        post in — and the early return ~400 lines down means no contenteditable
+        exists in the document at all there. An alumnus, for whom ordinary
+        channels come back `can_post: false`, would have recorded "composer
+        focusable" on a load where the composer never was; and because the mark
+        is once-per-document, the real one in `#alumni` a moment later would then
+        never be recorded. The budget would report success on exactly the loads
+        that never met it.
+      */
+      if (resolvedCanPost) {
+        markColdLoad(COLD_LOAD_MARKS.composerFocusable);
+      }
+    },
     immediatelyRender: false,
   });
 
@@ -512,6 +595,25 @@ export function Composer({
       emitUpdate: false,
     });
   }, [draft, editor]);
+
+  /*
+    Mount-once latch for the lazily-fetched palette above.
+
+    A bare `{palette.open ? <SlashPalette/> : null}` would fetch on first open
+    just the same, but it would also unmount on close — and `ui/dialog.tsx`
+    animates its exit (`data-[state=closed]:animate-out`), so every close would
+    be cut off mid-fade. Latching means only the very first open differs from
+    today, and that one is already waiting on a network fetch.
+
+    Adjusted during render rather than in an effect: React re-runs the component
+    before the browser paints, so the palette mounts in the same frame the state
+    flips. In an effect it would cost an extra committed frame, on the one open
+    that is already the slowest.
+  */
+  const [paletteMounted, setPaletteMounted] = useState(false);
+  if (palette.open && !paletteMounted) {
+    setPaletteMounted(true);
+  }
 
   // Radix's default `onCloseAutoFocus` returns focus to whatever rendered
   // `<DialogTrigger>` — this palette has none, since it opens from typing "/"
@@ -815,8 +917,8 @@ export function Composer({
   // caller that only passes `isReadOnly` (predating this prop, or a channel
   // row that hasn't gone through the server's capability projection yet)
   // must still get the old read-only-blocks-everyone behavior rather than a
-  // falsely-live composer.
-  const resolvedCanPost = canPost ?? !isReadOnly;
+  // falsely-live composer. (`resolvedCanPost` is computed near `useEditor`
+  // above, which needs it too.)
   if (!resolvedCanPost) {
     return (
       <p className="border-t border-border px-4 py-3 text-[12.5px] text-muted-foreground">
@@ -1006,23 +1108,25 @@ export function Composer({
           You&rsquo;re offline — messages send when you reconnect.
         </p>
       ) : null}
-      <SlashPalette
-        open={palette.open}
-        initialQuery={palette.query}
-        onQueryChange={(query) => setPalette((prev) => ({ ...prev, query }))}
-        isModuleEnabled={isModuleEnabled}
-        recruitmentVocab={recruitmentVocab}
-        status={slashCommandsStatus}
-        onRetry={onRetrySlashCommands}
-        onSelect={onPaletteSelect}
-        onOpenChange={(open) =>
-          setPalette((prev) => ({
-            ...prev,
-            open,
-            query: open ? prev.query : "",
-          }))
-        }
-      />
+      {paletteMounted ? (
+        <SlashPalette
+          open={palette.open}
+          initialQuery={palette.query}
+          onQueryChange={(query) => setPalette((prev) => ({ ...prev, query }))}
+          isModuleEnabled={isModuleEnabled}
+          recruitmentVocab={recruitmentVocab}
+          status={slashCommandsStatus}
+          onRetry={onRetrySlashCommands}
+          onSelect={onPaletteSelect}
+          onOpenChange={(open) =>
+            setPalette((prev) => ({
+              ...prev,
+              open,
+              query: open ? prev.query : "",
+            }))
+          }
+        />
+      ) : null}
     </div>
   );
 }

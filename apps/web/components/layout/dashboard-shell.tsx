@@ -18,7 +18,7 @@ import { AccountMenu } from "@/components/layout/account-menu";
 import { persistNavCollapsed } from "@/components/layout/nav-collapse";
 import { isFullBleedRoute } from "@/components/layout/full-bleed-routes";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
-import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard";
+import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { cn } from "@/lib/utils";

@@ -48,9 +48,14 @@ import {
 } from "./channel-list";
 import {
   MessageTimeline,
+  MessageTimelineSkeleton,
   type MessageTimelineHandle,
 } from "./message-timeline";
-import { Composer, notifyDispatchOutcome } from "./composer";
+import {
+  Composer,
+  ComposerSkeleton,
+  notifyDispatchOutcome,
+} from "./composer";
 import { DELETED_MESSAGE_PLACEHOLDER } from "./message-placeholders";
 import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
@@ -148,9 +153,10 @@ function ChannelHeaderMark({
  * step above it. The channels column is `--surface-1`, the ladder step foundations
  * §2 assigns to nav chrome, which is what the sidebar already uses.
  *
- * Every async branch still renders an explicit state, but only the no-chapter
- * branch replaces the route. The rest render inside the thread column with the
- * frame already up, which is what the board's first-paint contract asks for.
+ * Every async branch renders an explicit state, and none of them replaces the
+ * route: they render inside the thread column with the frame already up, which
+ * is what the board's first-paint contract asks for. The no-chapter branch was
+ * the last exception and is one too, as of #2145.
  */
 export function ChatShell({
   initialChannelId = null,
@@ -873,22 +879,6 @@ export function ChatShell({
     setLiveAnnouncement(`New message from ${author}`);
   }, [channel.messages, activeChannelId, userId, nameFor]);
 
-  if (!activeChapterId) {
-    // Padded by this route, not by the shell. `/chat` is full-bleed
-    // (`layout/full-bleed-routes.ts`), so `<main>` hands it the frame with no
-    // inset — which is what the two-column layout below wants and what a lone
-    // centred card very much does not: without this it renders hard against the
-    // nav's border and the top bar.
-    return (
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-        <EmptyState
-          title="No chapter selected"
-          description="Pick an active chapter to load its channels."
-        />
-      </div>
-    );
-  }
-
   /*
     From here the frame renders FIRST and every state renders inside it.
 
@@ -908,8 +898,9 @@ export function ChatShell({
       their own geometry instead, and the channel column's chrome is up
       immediately either way.
 
-    `!activeChapterId` above is the one gate that survives, because with no
-    chapter there is no frame to draw.
+    No gate survives. "No chapter yet" used to be one — see `channelsPaneState`
+    below for why it is now a state the frame renders rather than a return that
+    replaces it.
   */
   /*
     Keyed off what we HAVE, not off `isError`. TanStack Query keeps the last
@@ -920,6 +911,45 @@ export function ChatShell({
     the same reasoning for the same reason; this is that rule applied to the
     list itself.
   */
+  /*
+    `no-chapter` is LAST, and the ordering is the whole correctness of this
+    variable.
+
+    The state exists because `/chat` used to server-render a lone 208px "No
+    chapter selected" card with no channel column at all — `activeChapterId`
+    comes from a persisted zustand store that initializes to `null`, so in the
+    server-rendered HTML a member WITH a chapter was indistinguishable from one
+    without, and hydration replaced the card with the whole two-column frame.
+    That was the largest layout shift on the route and it fired on every cold
+    load. `1s` puts "channel column chrome" in the 0ms set and budgets zero CLS
+    above the composer; a card that becomes a layout is the opposite of both.
+
+    The first attempt at this put `no-chapter` first, which was wrong in a way
+    worth recording. `useChannels()` takes no chapter argument — no `enabled`
+    gate, and `["channels"]` as its whole query key (`packages/hooks/src/use-chat.ts`)
+    — and `chapter.guard.ts` resolves a sole membership server-side, so the
+    channel list arrives perfectly well while this store field is still null.
+    Short-circuiting on the field therefore said "no chapter" over the top of
+    real data: the rail and timeline stayed hidden while `activeChannel` (derived
+    from `channels`, not from the chapter id) resolved anyway, so the member got
+    a live composer under a "Pick an active chapter" card with no timeline — able
+    to send into #general, never shown the result, and `markChannelRead` stamping
+    their cursor for messages that were never on screen.
+
+    So the list decides. Having channels means ready, whatever the store says;
+    "no chapter" is only reached once the query has settled with nothing, where
+    it is a terminal explanation rather than a guess about a load still in
+    flight. That also removes the need to choose a placeholder for it: a cold
+    load is `loading` — `isPending` is true on the server and through hydration —
+    so the frame and its skeletons are what render at 0ms, which is what the
+    contract asked for in the first place.
+
+    Gating any of this on the store's `hasHydrated` was considered and rejected;
+    `profile-panel.tsx` records why at length. That flag never becomes true when
+    `localStorage` access throws (privacy modes, blocked site data), so it would
+    pin a permanent placeholder onto exactly the members for whom "no active
+    chapter" is actually true. Nothing here waits on a flag.
+  */
   const channelsPaneState =
     channels.length > 0
       ? "ready"
@@ -927,7 +957,9 @@ export function ChatShell({
         ? "loading"
         : channelsQuery.isError
           ? "error"
-          : "empty";
+          : !activeChapterId
+            ? "no-chapter"
+            : "empty";
   const timelineReady = channelsPaneState === "ready" && !requestedChannelMissing;
 
   return (
@@ -1015,6 +1047,18 @@ export function ChatShell({
           <h2 className="text-sm font-semibold text-foreground">Channels</h2>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {/*
+            Only `loading` shimmers, and `no-chapter` deliberately does not.
+
+            `loading` is now the state a cold load actually renders — see
+            `channelsPaneState` above — so this is the placeholder that carries
+            the contract's "channel column chrome" clause, and it resolves the
+            moment the list arrives. `no-chapter` is terminal by construction:
+            the query has already settled with nothing, so a placeholder there
+            would have no exit and would shimmer for as long as the tab stayed
+            open. That is the same defect `profile-panel.tsx` rejects
+            `hasHydrated` for, reached from the other side.
+          */}
           {channelsPaneState === "loading" ? <ChannelListSkeleton /> : null}
           {channelsPaneState === "ready" ? (
             <ChannelList
@@ -1243,12 +1287,30 @@ export function ChatShell({
         */}
         <OpsSetupNudge />
         {/*
-          The three states that used to replace the whole route now render
-          inside this column, so the channels column beside them stays usable:
-          a member who cannot load #general can still see and pick another
-          channel. FITFO copy, per `3b`: the status line is the title and stays
-          under six words, with a short second line and one action.
+          The four states that used to replace the whole route now render inside
+          this column, so the channels column beside them stays usable: a member
+          who cannot load #general can still see and pick another channel. FITFO
+          copy, per `3b`: the status line is the title and stays under six words,
+          with a short second line and one action.
+
+          `no-chapter` joined them in #2145 and is the one that fires on the
+          happy path — see `channelsPaneState` above.
         */}
+        {channelsPaneState === "no-chapter" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {/*
+              Phrased as an instruction, not as a claim about the account, and
+              `profile-panel.tsx` owns the reasoning: this copy is on screen both
+              before the store rehydrates and when the member really has no
+              chapter, so "Pick an active chapter" is true in both where "you
+              have no chapter" would be a confident falsehood in one.
+            */}
+            <EmptyState
+              title="No chapter selected"
+              description="Pick an active chapter to load its channels."
+            />
+          </div>
+        ) : null}
         {channelsPaneState === "error" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             <ErrorState
@@ -1284,10 +1346,36 @@ export function ChatShell({
           </div>
         ) : null}
         {channelsPaneState === "loading" ? (
-          // Reserved geometry, not a card: `1s` wants the shell and the
-          // composer shell up while the tail fills in, and a bordered loading
-          // panel here would be one more thing to swap out on arrival.
-          <div className="min-h-0 flex-1" aria-hidden="true" />
+          /*
+            Reserved geometry, not a card: `1s` wants the shell and the composer
+            shell up while the tail fills in, and a bordered loading panel here
+            would be one more thing to swap out on arrival.
+
+            It draws the same skeleton `MessageTimeline` draws one state later,
+            and sharing it is the point rather than a convenience. A cold load
+            crosses both branches — channels pending here, then messages pending
+            there — and while this was a blank `<div>` the crossing was itself a
+            shift: an empty column became ten rows of placeholder became ten rows
+            of text. Now only the last of those three is a change.
+          */
+          <>
+            <div className="min-h-0 flex-1">
+              {/*
+                Bare, unlike `MessageTimeline`'s use of the same skeleton, which
+                pairs it with a "Loading messages" region. Here the channel list
+                is what is loading, and the announcer above already says so —
+                adding a second region would read one event twice.
+              */}
+              <MessageTimelineSkeleton />
+            </div>
+            {/*
+              The composer's box, held open while the channel list resolves.
+              Without it the bottom-aligned skeleton above sits flush against the
+              viewport and every row jumps when `<Composer>` finally mounts —
+              `ComposerSkeleton` owns why, and owns the geometry.
+            */}
+            <ComposerSkeleton />
+          </>
         ) : null}
         {timelineReady ? (
         <>

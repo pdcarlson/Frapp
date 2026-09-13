@@ -50,6 +50,12 @@ const FAMILY = [
   "components/profile/profile-panel.tsx",
   "components/profile/profile-glyphs.tsx",
   "components/onboarding/chapter-wizard.tsx",
+  // Split out of `chapter-wizard.tsx` by #2145 so the wizard could go behind
+  // `next/dynamic`. Added here deliberately, which is what this ledger is for:
+  // "a glob silently stops covering a file that moves" cuts both ways, and half
+  // a governed file moving to a new path is exactly the case that would
+  // otherwise drop out of coverage without a single test going red.
+  "components/onboarding/chapter-wizard-gate.tsx",
   "components/onboarding/onboarding-tutorial.tsx",
   "components/onboarding/step-dots.tsx",
 ] as const;

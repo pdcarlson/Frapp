@@ -151,7 +151,15 @@ describe("Composer slash-command trigger (#396)", () => {
     await user.click(trigger);
 
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
+    // `findBy`, not `getBy`: the palette is a `next/dynamic` boundary now
+    // (`cmdk` and a Radix Dialog are `chat-extras` under the board's `1s`
+    // split), so the first open resolves a module before the dialog exists.
+    // `aria-expanded` above flips synchronously either way — the state that
+    // drives it is the composer's, not the palette's.
+    expect(await screen.findByRole("dialog")).toHaveAttribute(
+      "aria-modal",
+      "true",
+    );
   });
 });
 
