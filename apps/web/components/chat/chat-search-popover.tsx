@@ -308,7 +308,7 @@ function ChatSearchResults({
     <>
       {timedOut ? (
         <p className="border-b border-border px-3 py-2 text-[12.5px] text-muted-foreground">
-          Search timed out — some matches may be missing.
+          Search timed out. Some matches may be missing.
         </p>
       ) : null}
       {/*

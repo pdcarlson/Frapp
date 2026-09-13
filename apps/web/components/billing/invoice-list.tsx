@@ -424,7 +424,7 @@ export function InvoiceList({ id }: { id?: string }) {
                   : undefined
               }
             >
-              {overdueUnavailable ? "—" : overdueCount} overdue
+              {overdueUnavailable ? "overdue unknown" : `${overdueCount} overdue`}
             </span>{" "}
             · {paidCount} paid
           </p>

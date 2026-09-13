@@ -106,7 +106,7 @@ export function BookmarksPanel({
         </p>
       ) : bookmarks.length === 0 ? (
         <p className="px-3 py-4 text-[12.5px] text-muted-foreground">
-          Nothing saved yet. Save a message to keep it here — only you can see
+          Nothing saved yet. Save a message to keep it here. Only you can see
           your bookmarks.
         </p>
       ) : (

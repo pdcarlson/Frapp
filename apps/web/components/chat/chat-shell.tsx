@@ -1450,7 +1450,7 @@ export function ChatShell({
                 toast({
                   title: "Couldn't retry that command",
                   description:
-                    "The retry didn't go through. Check the points ledger before running the command again — running it again would record the points twice.",
+                    "The retry didn't go through. Check the points ledger before running the command again. A second run would record the points twice.",
                 });
               }
             }}

@@ -957,11 +957,26 @@ replays the same failed render against the same cache.
       `/points`, `/profile`, `/chat-admin`, `/study`, `/discord-import`, `/no-access` and the
       onboarding overlays. Verified with a JS/TSX-aware lexer rather than a line grep, because this
       repo's comment prose is heavily em-dashed and a naive sweep is 93% false positives
-- [ ] **Em dashes remain in product copy on routes lanes 2 to 5 already flushed** — `/chat`,
-      `/settings`, `/billing`, `/reports`, `/backwork`. Left alone deliberately: they sit on other
-      lanes' surfaces and this lane's scope is the untouched routes. §10's claim that Finance was
-      "verified by stripping comments and grepping what remains. Two characters survive and neither
-      is prose" is **wrong**, and is corrected in place there
+- [x] **Em dashes cleared from product copy on the routes lanes 2 to 5 flushed** — `/chat`,
+      `/settings` (including Roles & Permissions and the Modules tab), `/billing`, `/reports`,
+      `/backwork`. Deferred by this lane deliberately, since they sat on other lanes' surfaces;
+      swept once those lanes landed. §10's claim that Finance was "verified by stripping comments
+      and grepping what remains. Two characters survive and neither is prose" is **wrong**, and is
+      corrected in place there.
+
+      24 strings across 13 components, found with a lexer and confirmed by a second, independently
+      written one — the two agreed on all 33 product-copy sites and differed only on two JSDoc lines,
+      which is the false-positive rate a line grep cannot distinguish. 23 are prose and take a full
+      stop, a comma or a colon. The 24th is not prose at all: `/billing`'s open/overdue/paid count
+      line rendered a bare `—` as the overdue figure whenever that read had not answered, with the
+      explanation in a `title` tooltip a touch user cannot reach. It now reads `overdue unknown`,
+      which keeps what the two tests pinning that glyph were actually asserting — unknown rather
+      than zero — and states the degraded read where it can be seen. The same placeholder-glyph
+      pattern was already removed from `/members` and the plan panel, each with a test naming it
+
+      The writing.md §7 carve-out held here too: the nine approved strings still carrying an em dash
+      on these routes were left alone, including both halves of the connection-state copy and the
+      rollover confirmation. Rewriting one is a writing.md change with its own review
 
 The [`../design-system/writing.md`](../design-system/writing.md) §7 carve-out held: the only em
 dashes left on the swept routes are `Once members check in — or you record attendance manually —

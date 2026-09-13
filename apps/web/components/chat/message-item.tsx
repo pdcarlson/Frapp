@@ -733,7 +733,7 @@ export function MessageItem({
           {isRecorded ? (
             <p className="ml-1 mt-1 text-[12.5px] text-muted-foreground">
               {message._error ??
-                "Recorded — the chat card didn't post. Don't run this command again."}
+                "Recorded, but the chat card didn't post. Don't run this command again."}
             </p>
           ) : null}
           {isFailed ? (

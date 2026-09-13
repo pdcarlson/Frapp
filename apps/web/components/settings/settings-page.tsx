@@ -741,7 +741,7 @@ function SettingsPageContent() {
                   <CardTitle>Start a new semester</CardTitle>
                   <CardDescription>
                     Archives the current leaderboard period with a label and
-                    date range. Points keep accumulating — the leaderboard just
+                    date range. Points keep accumulating. The leaderboard just
                     resets its default window.
                   </CardDescription>
                 </CardHeader>
@@ -936,7 +936,7 @@ function SettingsPageContent() {
                 <p className="flex items-start gap-2 text-sm text-muted-foreground">
                   <Trash2 className="mt-0.5 h-4 w-4 shrink-0" />
                   Chapter deactivation is a supported-by-Signet action. Contact
-                  support from the billing portal — data is preserved
+                  support from the billing portal. Data is preserved
                   indefinitely in read-only mode (see privacy policy).
                 </p>
               </CardContent>
