@@ -18,6 +18,18 @@ export class LogoUploadUrlDto {
   content_type: string;
 }
 
+export class LogoUploadUrlResponseDto {
+  @ApiProperty({
+    description: 'Short-lived signed URL; PUT the bytes to it.',
+  })
+  upload_url: string;
+
+  @ApiProperty({
+    description: 'Storage path to send back on the confirm-logo call.',
+  })
+  storage_path: string;
+}
+
 export class ConfirmLogoDto {
   @ApiProperty({ description: 'Storage path returned from logo-url' })
   @IsString()

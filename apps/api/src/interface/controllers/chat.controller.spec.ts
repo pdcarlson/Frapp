@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { InternalServerErrorException } from '@nestjs/common';
 import { ChatController } from './chat.controller';
 import { ChatService } from '../../application/services/chat.service';
 import { RbacService } from '../../application/services/rbac.service';
@@ -25,6 +26,7 @@ describe('ChatController', () => {
       getChannel: jest.fn(),
       createChannel: jest.fn(),
       getMessages: jest.fn(),
+      requestChatUploadUrl: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -182,6 +184,66 @@ describe('ChatController', () => {
           since: '44444444-4444-4444-8444-444444444444',
         },
       );
+    });
+  });
+
+  // #2130 — this 201 used to pass the camelCase service ticket straight
+  // through with no response DTO, so OpenAPI documented it as empty and the
+  // composer read it through an `as unknown as` cast. These pin the mapping.
+  describe('requestUploadUrl', () => {
+    const dto = { filename: 'photo.png', content_type: 'image/png' };
+
+    it('maps the camelCase service ticket onto the snake_case wire contract', async () => {
+      (service.requestChatUploadUrl as jest.Mock).mockResolvedValue({
+        signedUrl: 'https://storage.example/put',
+        storagePath: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
+        messageId: 'msg-1',
+      });
+
+      const result = await controller.requestUploadUrl(
+        'chan-1',
+        'ch-1',
+        'user-1',
+        dto,
+      );
+
+      expect(service.requestChatUploadUrl).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'user-1',
+        dto.filename,
+        dto.content_type,
+        undefined,
+      );
+      expect(result).toEqual({
+        upload_url: 'https://storage.example/put',
+        storage_path: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
+        message_id: 'msg-1',
+      });
+    });
+
+    it('fails closed when the service omits the signed URL', async () => {
+      (service.requestChatUploadUrl as jest.Mock).mockResolvedValue({
+        signedUrl: '',
+        storagePath: 'chapters/ch-1/chat/chan-1/msg-1/photo.png',
+        messageId: 'msg-1',
+      });
+
+      await expect(
+        controller.requestUploadUrl('chan-1', 'ch-1', 'user-1', dto),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+
+    it('fails closed when the service omits the storage path', async () => {
+      (service.requestChatUploadUrl as jest.Mock).mockResolvedValue({
+        signedUrl: 'https://storage.example/put',
+        storagePath: '',
+        messageId: 'msg-1',
+      });
+
+      await expect(
+        controller.requestUploadUrl('chan-1', 'ch-1', 'user-1', dto),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
     });
   });
 });

@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  InternalServerErrorException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -13,6 +14,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -42,6 +44,7 @@ import {
   ReactionDto,
   ChatMessageActionDto,
   RequestChatUploadUrlDto,
+  ChatUploadUrlResponseDto,
   ChannelUnreadCountDto,
   SetChannelNotificationLevelDto,
   ChannelNotificationPreferenceDto,
@@ -533,13 +536,19 @@ export class ChatController {
   @ApiOperation({
     summary: 'Generate a signed upload URL for a chat file attachment',
   })
+  @ApiCreatedResponse({ type: ChatUploadUrlResponseDto })
   async requestUploadUrl(
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: RequestChatUploadUrlDto,
-  ) {
-    return this.chatService.requestChatUploadUrl(
+  ): Promise<ChatUploadUrlResponseDto> {
+    // Same mapping as BackworkController.requestUploadUrl (#2129) — the
+    // service ticket is camelCase, the wire contract is snake_case. This 201
+    // used to pass the service object straight through with no response DTO,
+    // so OpenAPI documented it as empty and the composer had to read it
+    // through an `as unknown as` cast.
+    const ticket = await this.chatService.requestChatUploadUrl(
       channelId,
       chapterId,
       userId,
@@ -547,6 +556,16 @@ export class ChatController {
       dto.content_type,
       dto.size_bytes,
     );
+    if (!ticket.signedUrl || !ticket.storagePath) {
+      throw new InternalServerErrorException(
+        'Storage did not return a signed upload URL or storage path.',
+      );
+    }
+    return {
+      upload_url: ticket.signedUrl,
+      storage_path: ticket.storagePath,
+      message_id: ticket.messageId,
+    };
   }
 
   // ── Read Receipts ────────────────────────────────────────────────────

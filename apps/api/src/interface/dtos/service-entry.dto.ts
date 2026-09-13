@@ -139,6 +139,23 @@ export class RequestProofUploadUrlDto {
   size_bytes?: number;
 }
 
+export class ProofUploadUrlResponseDto {
+  @ApiProperty({
+    description: 'Short-lived signed URL; PUT the bytes to it.',
+  })
+  upload_url: string;
+
+  @ApiProperty({
+    description: 'Storage path to send as proof_path on the create call.',
+  })
+  storage_path: string;
+
+  @ApiProperty({
+    description: 'Server-allocated proof id embedded in storage_path.',
+  })
+  proof_id: string;
+}
+
 /**
  * Filters for the admin service-entry queue. Every field is optional; the
  * unfiltered call is the previous behavior.

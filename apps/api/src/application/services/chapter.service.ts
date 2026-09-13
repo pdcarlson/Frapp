@@ -525,7 +525,7 @@ export class ChapterService {
     chapterId: string,
     filename: string,
     contentType: string,
-  ): Promise<{ signedUrl: string; storage_path: string }> {
+  ): Promise<{ signedUrl: string; storagePath: string }> {
     const ext = filename.includes('.')
       ? (filename.split('.').pop()?.toLowerCase() ?? 'png')
       : 'png';
@@ -550,7 +550,7 @@ export class ChapterService {
       contentType,
     );
 
-    return { signedUrl, storage_path: storagePath };
+    return { signedUrl, storagePath };
   }
 
   async confirmLogoUpload(

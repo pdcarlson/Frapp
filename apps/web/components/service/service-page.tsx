@@ -55,6 +55,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
+import { readSignedUpload } from "@/lib/signed-upload";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import {
@@ -221,19 +222,7 @@ export function ServiceHoursPage() {
           filename: proofFile.name,
           content_type: contentType,
         });
-        const signedUrl =
-          signed && typeof signed === "object" && "signedUrl" in signed
-            ? (signed as { signedUrl?: string }).signedUrl
-            : null;
-        const storagePath =
-          signed && typeof signed === "object" && "storagePath" in signed
-            ? (signed as { storagePath?: string }).storagePath
-            : null;
-        if (!signedUrl || !storagePath) {
-          throw new Error(
-            "Upload URL response missing signed URL or storage path.",
-          );
-        }
+        const { signedUrl, storagePath } = readSignedUpload(signed);
         const response = await fetch(signedUrl, {
           method: "PUT",
           body: proofFile,
