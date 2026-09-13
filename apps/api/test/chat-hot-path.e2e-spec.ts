@@ -1,8 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  INestApplication,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -14,6 +10,10 @@ import {
   createSupabaseQueryBuilder,
 } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
+import {
+  createGuardStubs,
+  PermissionsGuardStub,
+} from './helpers/guard-stubs.factory';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
@@ -49,32 +49,13 @@ import type {
 
 const V1 = '/v1';
 
-class AuthGuardStub implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const httpRequest = context.switchToHttp().getRequest();
-    httpRequest.supabaseUser = {
-      id: 'auth-user-1',
-      email: 'member@example.com',
-    };
-    return true;
-  }
-}
-
-class ChapterGuardStub implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const httpRequest = context.switchToHttp().getRequest();
-    httpRequest.appUser = { id: 'user-1' };
-    httpRequest.member = { id: 'member-1', role_ids: ['role-member'] };
-    httpRequest.chapterId = 'chapter-1';
-    return true;
-  }
-}
-
-class PermissionsGuardStub implements CanActivate {
-  canActivate(): boolean {
-    return true;
-  }
-}
+const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
+  authUserId: 'auth-user-1',
+  email: 'member@example.com',
+  appUserId: 'user-1',
+  roleIds: ['role-member'],
+  chapterId: 'chapter-1',
+});
 
 /**
  * HTTP-level coverage for the NestJS chat hot path — `ChatController` wired to

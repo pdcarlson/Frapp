@@ -20,7 +20,7 @@
  * The layers under test are documented in
  * `docs/internal/security/AUTHORIZATION_MODEL.md` §1.
  */
-import { CanActivate, INestApplication } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -30,6 +30,7 @@ import {
   createTableAwareSupabaseMock,
   type SeededTables,
 } from './helpers/supabase-mock.factory';
+import { PermissionsGuardStub } from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
 
@@ -59,12 +60,6 @@ const INVOICE_B = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const MEMBER_B_IN_A = 'abababab-abab-4aba-8aba-abababababab';
 const NOTIF_A = 'f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1';
 const NOTIF_B = 'f2f2f2f2-f2f2-42f2-82f2-f2f2f2f2f2f2';
-
-class AllowPermissionsGuard implements CanActivate {
-  canActivate(): boolean {
-    return true;
-  }
-}
 
 /** Fresh rows per test — the fake mutates its seed on writes. */
 function seed(): SeededTables {
@@ -242,7 +237,7 @@ describe('Cross-tenant isolation (e2e)', () => {
         }),
       )
       .overrideGuard(PermissionsGuard)
-      .useClass(AllowPermissionsGuard)
+      .useClass(PermissionsGuardStub)
       .compile();
 
     const instance = moduleFixture.createNestApplication();

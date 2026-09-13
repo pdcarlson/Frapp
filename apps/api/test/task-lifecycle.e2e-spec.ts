@@ -1,8 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  INestApplication,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -13,32 +9,20 @@ import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
+import {
+  createGuardStubs,
+  PermissionsGuardStub,
+} from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
 
-class AuthGuardStub implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    request.supabaseUser = { id: 'auth-user-1', email: 'member@example.com' };
-    return true;
-  }
-}
-
-class ChapterGuardStub implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    request.appUser = { id: 'user-1' };
-    request.member = { id: 'member-1', role_ids: ['role-admin'] };
-    request.chapterId = 'chapter-1';
-    return true;
-  }
-}
-
-class PermissionsGuardStub implements CanActivate {
-  canActivate(): boolean {
-    return true;
-  }
-}
+const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
+  authUserId: 'auth-user-1',
+  email: 'member@example.com',
+  appUserId: 'user-1',
+  roleIds: ['role-admin'],
+  chapterId: 'chapter-1',
+});
 
 describe('Task lifecycle (e2e)', () => {
   let app: INestApplication;

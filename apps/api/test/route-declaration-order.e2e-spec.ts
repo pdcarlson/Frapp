@@ -1,8 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  INestApplication,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -17,6 +13,10 @@ import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
+import {
+  createGuardStubs,
+  PermissionsGuardStub,
+} from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
 const CHAPTER_ID = 'chapter-1';
@@ -40,29 +40,13 @@ const CHAPTER_ID = 'chapter-1';
 describe('Route declaration order — a literal route must not be swallowed by :id (e2e)', () => {
   let app: INestApplication;
 
-  class AuthGuardStub implements CanActivate {
-    canActivate(context: ExecutionContext): boolean {
-      const req = context.switchToHttp().getRequest();
-      req.supabaseUser = { id: 'auth-1', email: 'member@example.com' };
-      return true;
-    }
-  }
-
-  class ChapterGuardStub implements CanActivate {
-    canActivate(context: ExecutionContext): boolean {
-      const req = context.switchToHttp().getRequest();
-      req.appUser = { id: 'member-1' };
-      req.member = { id: 'member-1', role_ids: ['role-exec'] };
-      req.chapterId = CHAPTER_ID;
-      return true;
-    }
-  }
-
-  class PermissionsGuardStub implements CanActivate {
-    canActivate(): boolean {
-      return true;
-    }
-  }
+  const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
+    authUserId: 'auth-1',
+    email: 'member@example.com',
+    appUserId: 'member-1',
+    roleIds: ['role-exec'],
+    chapterId: CHAPTER_ID,
+  });
 
   const chatServiceMock = {
     getUnreadCounts: jest.fn().mockResolvedValue([]),
