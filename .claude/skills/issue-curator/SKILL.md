@@ -168,9 +168,24 @@ worth filing.
 
 Beyond fixing what's broken, propose where to go next — inventive but concrete (a spike, a short
 design doc, a metric to add). **Ideate against the live epics, not just the codebase:** read the
-open `[Epic]` parent issues and propose self-contained next issues that advance them — attach such
+open epic parent issues and propose self-contained next issues that advance them — attach such
 an issue as a sub-issue of its epic so triage can place it. Label forward-looking items
 `area:research`.
+
+**Epics are titled two ways, so a literal `[Epic]` match misses one of them.** Both
+`[Epic] <name>` and `Epic: <name>` are in live use: a sweep of every open issue on 2026-09-13 found
+14 bracketed (#426–#432, #718, #720, #937, #1381, #1597, #1649, #2037) and exactly one colon-form
+(#2140). Match either, or find them by structure instead — `has_children: true` is what actually
+makes something an epic and does not depend on the title at all. Check "has open children"
+*separately* if you need it, rather than folding it into the definition: #432 is `has_children:
+true` with its only sub-issue closed.
+
+This bit the 2026-09-13 run, whose brackets-only reading skipped #2140 entirely — an epic whose
+seven lane PRs had all merged to `main` between 2026-09-10 and 2026-09-13 (#2152, #2161, #2163,
+#2164, #2171/#2172/#2174, #2178, #2179). Note the lane *issues* mostly stayed open as those PRs
+merged, so `sub_issues_summary` read 2/7 while the work was effectively done — a reason to read the
+PRs, not the checkboxes, when judging whether an epic still needs proposals. The same blind spot is
+in [`issue-triage`](../issue-triage/SKILL.md)'s epic-attach step, corrected in the same change.
 
 ### Lens 4 — Runtime & ops signals (best effort)
 
