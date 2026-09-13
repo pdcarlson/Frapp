@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync, readdirSync } from "node:fs";
 
 const { back, push, captureException } = vi.hoisted(() => ({
   back: vi.fn(),
@@ -26,6 +27,36 @@ import RouteError from "@/app/error";
 
 const CREST_ASSET = "/brand/signet-emblem-B.png";
 const CREST = /signet-emblem-B\.png/;
+
+/**
+ * Every `.tsx` under `apps/web`, walked rather than globbed.
+ *
+ * `fs.globSync` is Node 22+, and this repo declares `engines: { node: ">=20" }`
+ * with every CI job pinning `node-version: 20`. The first version of these two
+ * tests globbed, passed on a 22 laptop, and failed CI with `TypeError: globSync
+ * is not a function` — the exact trap `scripts/measure-web-route-bundles.mjs`
+ * had already hit and written up ("a glob here would throw at module-link time
+ * … on the platform the repo actually supports, while passing on a 22 laptop").
+ * Reaching for the glob was not a new discovery; it was not reading that note.
+ *
+ * `scripts/ci/__tests__/signet-web-titles.test.mjs` walks the same corpus with
+ * `readdirSync` for the same reason. This is that walker, and every API it uses
+ * predates Node 20 by several majors.
+ */
+const WEB_ROOT = `${__dirname}/../..`;
+
+function walkTsx(dir: string, prefix = ""): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === ".next") return [];
+      return walkTsx(`${dir}/${entry.name}`, rel);
+    }
+    if (!entry.isFile() || !entry.name.endsWith(".tsx")) return [];
+    if (entry.name.endsWith(".spec.tsx")) return [];
+    return [rel];
+  });
+}
 
 /** Every class the accent slot can reach. A crest carrying one is the defect. */
 const ACCENT_CLASS =
@@ -87,7 +118,7 @@ describe("the crest", () => {
     expect(container.querySelector("img")?.className).not.toMatch(/\bopacity-/);
   });
 
-  it("is the only crest art in apps/web", async () => {
+  it("is the only crest art in apps/web", () => {
     // `1k` allows crest art in one place, and its note adds "In-app empty
     // states stay crest-free". Matched on the **raster path**, not on
     // `CrestPage`: the rule is about the emblem reaching a surface, and a new
@@ -96,29 +127,26 @@ describe("the crest", () => {
     //
     // `signet-mark.tsx` is the one allowed non-terminal site. It is the 30/52px
     // chip `components.md` §7 defines, and `auth-screen.spec.tsx` guards it.
-    const { globSync, readFileSync } = await import("node:fs");
-    const root = `${__dirname}/../..`;
     const ALLOWED = [
       "components/auth/signet-mark.tsx",
       "components/shared/crest-page.tsx",
     ];
-    const painters = globSync("**/*.tsx", { cwd: root })
-      .filter((f) => !f.includes("node_modules") && !f.endsWith(".spec.tsx"))
-      .filter((f) => readFileSync(`${root}/${f}`, "utf8").includes(CREST_ASSET))
+    const painters = walkTsx(WEB_ROOT)
+      .filter((f) =>
+        readFileSync(`${WEB_ROOT}/${f}`, "utf8").includes(CREST_ASSET),
+      )
       .filter((f) => !ALLOWED.includes(f));
     expect(painters).toEqual([]);
   });
 
-  it("reaches exactly the two terminal routes", async () => {
+  it("reaches exactly the two terminal routes", () => {
     // Matched on the import statement, not the bare word: a docstring that
     // merely mentions `CrestPage` is a cross-reference, not a call site, and
     // failing on one would train the next person to loosen the test.
-    const { globSync, readFileSync } = await import("node:fs");
-    const root = `${__dirname}/../..`;
     const IMPORTS_CREST = /import\s*\{[^}]*\bCrestPage\b[^}]*\}\s*from/;
-    const importers = globSync("**/*.tsx", { cwd: root })
-      .filter((f) => !f.includes("node_modules") && !f.endsWith(".spec.tsx"))
-      .filter((f) => IMPORTS_CREST.test(readFileSync(`${root}/${f}`, "utf8")));
+    const importers = walkTsx(WEB_ROOT).filter((f) =>
+      IMPORTS_CREST.test(readFileSync(`${WEB_ROOT}/${f}`, "utf8")),
+    );
     expect(importers.sort()).toEqual(["app/error.tsx", "app/not-found.tsx"]);
   });
 });
