@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { DiscordImportPage } from "@/components/discord-import/discord-import-page";
 
-export const metadata = { title: "Discord Import — Signet" };
+export const metadata = { title: "Discord Import" };
 
 export default function DiscordImport() {
   // `DiscordImportPage` reads `useSearchParams()` (the `?discord=` outcome the

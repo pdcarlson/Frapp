@@ -192,11 +192,16 @@ highlight that shipped alongside it.
 
 ## 7. Standing bans
 
-Most of these already hold; the shadow one does not. The greenfield must not reintroduce any of
-them, and must close the one that is open.
+~~Most of these already hold; the shadow one does not. The greenfield must not reintroduce any of
+them, and must close the one that is open.~~
 
-- [ ] No `next-themes`, no theme switcher, no light palette. Signet web is dark-only
-- [ ] No live `dark:` variants
+**All six hold, as of lane 7.** The shadow row was the one open defect when this section was written
+and lane 3 closed it; the other five were unticked because nobody had run the pass, not because they
+were known to fail. Lane 7 ran it. The greenfield must not reintroduce any of them, and the evidence
+for each is below the list rather than left implied.
+
+- [x] No `next-themes`, no theme switcher, no light palette. Signet web is dark-only
+- [x] No live `dark:` variants
 - [x] No **live** `shadow-*`. Elevation is a lighter surface step. ~~**This one is not clean
       today.**~~ **The defect is closed by lane 3**, both halves. The two live sites
       (`apps/web/components/chat/mention-list.tsx:128` and `:140`) dropped their `shadow-md`, and
@@ -224,9 +229,42 @@ them, and must close the one that is open.
       draws nothing — `card.tsx` reasons about exactly this. It is dead class text on a lane 5
       surface and should go when that lane touches the file. What made the `md` case different, and
       a real defect rather than dead text, was that it had no token behind it at all
-- [ ] No legacy bone / bronze / Geist token on this surface
-- [ ] No unused component left under `apps/web/components/ui`
-- [ ] No customer-facing "Frapp" string or wordmark
+- [x] No legacy bone / bronze / Geist token on this surface
+- [x] No unused component left under `apps/web/components/ui`
+- [x] No customer-facing "Frapp" string or wordmark
+
+**The five rows above were ticked by lane 7, and how matters more than that they are ticked.** They
+had stood unticked with no lane recorded against them since this section was written, which reads as
+"nobody checked" rather than "checked and clean" — and this file's own §7 preamble says the greenfield
+"must not reintroduce any of them". Lane 7 is the last lane, so it ran the pass. Every command, so a
+reader can re-run it rather than trust the box:
+
+| Ban | Command | Result |
+| --- | ------- | ------ |
+| `next-themes` / switcher / light palette | `grep -rn next-themes --include=package.json .` · `grep -rn "prefers-color-scheme\|data-theme" packages/theme/src/signet.css apps/web/app/globals.css` | Not a dependency in any workspace. The only mentions in `apps/web` are three comments recording its #920 deletion. `signet.css` has one `:root`, no `prefers-color-scheme`, no `[data-theme]` |
+| Live `dark:` variants | `grep -rnoE '(class\|className)="[^"]*\bdark:[a-z-]+' apps/web/components apps/web/app --include=*.tsx` | No matches |
+| Legacy bone / bronze / Geist | `grep -rniE "\bbone\b\|\bbronze\b\|Geist" apps/web/components apps/web/app --include=*.tsx --include=*.ts --include=*.css` | No matches outside comments |
+| Unused `components/ui` | per-file: does anything outside the file itself import `components/ui/<name>` | Every file has at least one importer |
+| Customer-facing "Frapp" | `grep -rn Frapp apps/web/app apps/web/components --include=*.tsx` | **24 hits, none rendered.** Classified: code identifiers (`FrappProvider`, `useFrappUser`, and the `@/lib/providers/frapp-client-provider` specifier), which §2's naming row explicitly exempts; docstrings recording the #920 rename; and two `github.com/pdcarlson/Frapp/issues/...` URLs inside JSX comment blocks. No rendered string, no wordmark |
+
+Three honesty notes rather than a clean claim.
+
+The `components/ui` sweep matches the import **path string**, so a component reached only through a
+re-export or a dynamic specifier would read as used; it is the same shape of proof lane 3 used for
+`shadow-*` and carries the same limit.
+
+**The "Frapp" row was wrong in this file's first draft, and the review caught it.** It read "Only
+`FrappProvider` and `useFrappUser`" — a count taken from a `head -5` of a 24-line result, written up
+as though it were the whole result. The conclusion survives re-checking and the row above now states
+the real number and the classification behind it, but the original is the exact defect
+[`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md) names: a
+rewrite stating more than the evidence verified. A truncated grep is not a sweep.
+
+And ticking a box records that the ban held **on the date this lane ran**, which is what a checklist
+can assert — none of these five has a CI check behind it, so a later reintroduction would not be
+caught by anything but the next reader. The one exception is now the title lock,
+`scripts/ci/__tests__/signet-web-titles.test.mjs`, which lane 7 re-specified and which does gate the
+"Frapp" half for `apps/web/app/layout.tsx` in CI.
 
 ## 8. Resources: Documents and Backwork — lane 4
 
@@ -634,7 +672,15 @@ already uses for the attendance roster.
       no visible text — so once the flatten put "Select all shown" beside it the accessible name no
       longer contained the visible words (WCAG 2.5.3, and a dropped voice command)
 - [x] No em dash in user-facing copy on this route, verified by stripping comments and grepping what
-      remains. **Two characters survive and neither is prose**: the matrix's `–` for "not included",
+      remains. ~~**Two characters survive and neither is prose**~~ — **this claim was wrong, and lane
+      7's sweep is what caught it.** A third survives and it *is* prose:
+      `components/billing/pay-invoice-dialog.tsx:214`'s "Payment complete — this invoice is now
+      marked paid.", rendered on `/billing` through `invoice-list.tsx`. `git log` shows that file was
+      last touched by lane 1 and never by lane 5, so the sweep that produced this line did not reach
+      the dialog. It is left in place — lane 7's copy scope is the routes no lane touched — and the
+      record is corrected here rather than the sentence being quietly deleted, because a verification
+      claim that was not performed is worse than an unfixed string. The two that **are** correctly
+      described: the matrix's `–` for "not included",
       which is `aria-hidden` with the word "Not included" beside it and is the glyph `4d` itself
       draws, and `—` as the unknown-value placeholder in the overdue count, which is the
       convention the surface already used. One string was **rewritten** rather than passed over:
@@ -795,6 +841,137 @@ not a line of state.
 | Restyling the `Switch` primitive to `4c`'s 36×22 | A shared primitive used across every surface. Lane 2's, not a page lane's |
 | A `?subtab=` param | The Roles tab has no sub-tabs left to address |
 | Arrow-key navigation in the `4e` matrix | Every editable cell is a real `<button>`, so the matrix is keyboard-reachable and operable — but at 7 roles × 40 permissions that is ~280 Tab stops, and the WAI-ARIA **grid** pattern (roving `tabindex`, arrow keys, `role="gridcell"`) is what a data shape this size actually calls for. It is a self-contained follow-up on a surface this lane is otherwise done with, and the board says nothing about it. Filed as [#2173](https://github.com/pdcarlson/Frapp/issues/2173) rather than folded in |
+
+---
+
+## 12. Chapter accent, 404 and error polish — lane 7
+
+The last lane, and the only one that **adds** a surface rather than flattening one. Recorded in the
+same shape as the rest.
+
+### The accent was already end to end. One thing was not, and three claims about it were false
+
+The seed → semantic-token chain needed no repair: `deriveSignetPalette` emits thirteen roles,
+`signetAccentSemanticVars` bridges the seven the stylesheet declares, and `useChapterTheme()` writes
+exactly those seven onto `:root`. The declared accent slot and the applied set match 1:1, and
+`--primary-pressed` / `--accent-subtle-hover` follow through `color-mix()` without being written.
+
+- [x] **`::selection`**, which did not exist anywhere in the repo, so every surface fell through to
+      the user agent's system blue. It is **neutral**, not accent-wired, and the first cut of it was
+      the other way: review found `--primary` / `--primary-foreground` invisible on the chat self
+      bubble, which paints that exact pair. Value, pair and reasoning live at
+      [`../design-system/foundations.md`](../design-system/foundations.md) §13; the lane note is in
+      [`tokens.md`](tokens.md). **The board takes no position on it** — option `3a` does not mention
+      selection — so this is an extension, flagged as one rather than presented as a transcription
+- [x] The Accent tab's card description, **every clause of which was false**: it promised the accent
+      to "branded PDF reports" it has never reached (`report-pdf.renderer.ts` draws from five fixed
+      constants and the branding payload carries no colour), checked contrast "against white" a year
+      after [#1157](https://github.com/pdcarlson/Frapp/issues/1157) moved the check to the dark card,
+      conflated an unparseable hex with one that fails contrast (the first falls back, the second
+      **saves anyway** and discloses), and deferred the chapter palette to "Chunk 07" from inside
+      chunk 07. Rewritten and pinned in `settings-accent.spec.tsx`
+- [ ] The six `--signet-accent-*-alpha` roles are generated, persisted to `chapters.theme_palette`,
+      bridged to nothing and read by nothing on any surface. Not removed here: the shape is
+      persisted, so dropping them is a migration question rather than a token one
+
+### No-retint, which is the lock this lane was most likely to break
+
+The audit found the enforcement uneven in a way that is the opposite of what you would guess. The
+*mark* is the best-guarded asset in the repo — `check-brand-assets.mjs` reads pixels since
+[#2153](https://github.com/pdcarlson/Frapp/issues/2153), and `auth-screen.spec.tsx` pins the chip's
+className. What had no **policy** guard were the two families declared in `signet.css` itself.
+
+- [x] `--gold-ask-*`, `--gold-house`, `--gold-on-house` and `--scrollbar-*` asserted to be
+      self-contained colours, not reads of anything. The existing tests compared these values against
+      `signet.ts`, which is a *consistency* check between two files and stays green if both move
+      together
+- [x] `signetAccentSemanticVars`' key set asserted disjoint from that family. This is the single edit
+      that would retint every fixed token at once, and [`tokens.md`](tokens.md) L-01 names it as a
+      live trap ("A lane that merges them on the board's authority breaks the no-retint rule on every
+      chapter that picks an accent") without anything stating it as a rule
+- [x] The 260px crest asserted to carry no accent class and no filter, which
+      `auth-screen.spec.tsx` cannot see because it tests a different component
+- [ ] **`apps/web/app/favicon.ico` is still unguarded.** No script generates it and none checks it;
+      it is absent from `sync-brand-assets.mjs`'s pair list and from every roster in
+      `check-brand-assets.mjs`. A regressed favicon passes CI silently. Left for the asset pipeline
+      rather than folded in
+
+### 404 and error, board `1k`
+
+The board allows crest art in exactly one place. Both routes were missing entirely: an unmatched URL
+rendered Next's built-in fallback, which injects `body{color:#000;background:#fff}` and a system-ui
+stack, so a dark-only product's 404 shipped as black-on-white — the same defect the #920 slice fixed
+on `global-error` and left standing one boundary over, because nothing in `apps/web` calls
+`notFound()` and so nobody reached it from inside the product.
+
+- [x] `app/not-found.tsx` and `app/error.tsx`, both through one `CrestPage` recipe. A
+      `grep -rn CrestPage apps/web` is the proof that no empty state grew crest art, and
+      `crest-page.spec.tsx` asserts that inventory rather than describing it
+- [x] `error.tsx` reports to Sentry. Before it existed, every render error below the root layout
+      bubbled to `global-error`, which reports; catching them here without `captureException` would
+      have made the product look better and report less
+- [x] `writing.md` §7 carries both rows, in the same change
+
+Three places the board is transcribed rather than lifted, which is the standing rule from lane 2's
+scrollbars:
+
+| Board `1k` draws | Shipped | Why |
+| ---------------- | ------- | --- |
+| `opacity:.9` on the crest | full opacity | `#DDB844` at 90% over `#1A1A1A` composites to `#CAA840`, which is not the mark gold, on the surface that renders the mark largest. The board's own note — "at native colors, never recolored" — is the half that governs. Quiet is carried by the crest's `#1A1A1A` field sitting flush on a `--surface-1` page instead |
+| `border-radius:24px` | `rounded-2xl` (20) | [`../design-system/foundations.md`](../design-system/foundations.md) §8 locks the map at a 20 ceiling and calls an off-map radius "a defect, exactly as a raw hex value is" |
+| 40px buttons | `Button size="sm"` (44) | §9's touch floor is 44 on every platform and §3's ladder has no 40 step |
+
+One Next 16 API point worth not rediscovering: the error boundary's recovery prop is **`retry`**, not
+`reset`. Both exist, so reaching for `reset` from memory type-checks and ships the wrong behaviour —
+`retry()` re-fetches and re-renders, `reset()` re-renders without re-fetching, which is a Retry that
+replays the same failed render against the same cache.
+
+### Copy
+
+- [x] Seventeen route titles carried `"<Page> — Signet"`. Replaced by one `title.template` on the
+      root layout (`"%s · Signet"`, the separator the board uses throughout its own chrome), so no
+      route spells the product name. The default moved from `"Signet Admin Dashboard"` to `"Signet"`:
+      Admin is one permission-gated group in `nav-config.ts` and everything above it is a member
+      surface
+- [x] `scripts/ci/__tests__/signet-web-titles.test.mjs` **re-specified, not bumped.** It is a required
+      check and it asserted the old shape twice over: every route title had to *match* `/Signet/`, and
+      the root layout had to read `title: "Signet Admin Dashboard"`. Under a template the first is
+      unsatisfiable by design — a route that still says Signet renders it twice — so the per-route
+      assertion is now the **inverse**, and the "says Signet" half moved to the template, asserted
+      once where the name is actually spelled. The lock's self-check gained a row so that assertion
+      cannot be deleted, and its floor rose to 18
+- [x] `/points` gained `(dashboard)/points/layout.tsx`, whose only job is a title. It is the one real
+      nav destination whose page is `"use client"`, and a Client Component cannot export `metadata`;
+      without it the template change left that tab reading a bare `"Signet"` next to sixteen siblings
+      reading `<Page> · Signet`. The other metadata-less routes under `(dashboard)` are `redirect()`
+      shims and paint no tab
+- [x] `settings-modules-tab.tsx` shipped "Per-feature toggles arrive with Settings customization
+      (Chunk 07)." — the same anachronism as the Accent card's, one tab over on the same page, and
+      missed by the first pass because the sweep was scoped to the card being rewritten
+- [x] Every em dash in product copy on a route **no lane touched** — `/service`, `/tasks`, `/events`,
+      `/points`, `/profile`, `/chat-admin`, `/study`, `/discord-import`, `/no-access` and the
+      onboarding overlays. Verified with a JS/TSX-aware lexer rather than a line grep, because this
+      repo's comment prose is heavily em-dashed and a naive sweep is 93% false positives
+- [ ] **Em dashes remain in product copy on routes lanes 2 to 5 already flushed** — `/chat`,
+      `/settings`, `/billing`, `/reports`, `/backwork`. Left alone deliberately: they sit on other
+      lanes' surfaces and this lane's scope is the untouched routes. §10's claim that Finance was
+      "verified by stripping comments and grepping what remains. Two characters survive and neither
+      is prose" is **wrong**, and is corrected in place there
+
+The [`../design-system/writing.md`](../design-system/writing.md) §7 carve-out held: the only em
+dashes left on the swept routes are `Once members check in — or you record attendance manually —
+they'll show up here.` and `Reconnect to start a session — tracking needs a live location check.`,
+both approved strings that need their own writing.md change.
+
+### What this lane did NOT do, deliberately
+
+| Not done | Why |
+| -------- | --- |
+| Board `2e`'s live mini-shell preview in the accent picker | `2e` is the chapter-creation wizard, a whole frame (org picker, suggested colours, swatch row) that no lane in the table owns. Half of it is worse than none. The invariant `2e`'s caption states — "The Signet mark and ✦ Ask never change" — is instead in the product, in the Accent card's own copy, and pinned by a test |
+| An exact-fidelity preview | The generator is server-side by design: `@repo/chapter-theme`'s root barrel re-exports through a `./signet.js` specifier Turbopack cannot resolve ([`tokens.md`](tokens.md) §1), and it pulls `@radix-ui/colors`, `colorjs.io` and `bezier-easing`, which is a large client chunk for one admin tab a lane after [#2145](https://github.com/pdcarlson/Frapp/issues/2145) split bundles. The swatch stays an approximation, as it already was |
+| `global-error.tsx` taken to `1k` | It replaces the root layout and its docstring bans importing the component tree, which is what makes `error.tsx` above it safe to build from `Button` and `CrestPage`. Consolidating them would remove the backstop that justifies the other. Its `reset` prop is noted above and left |
+| A `(dashboard)/error.tsx` that keeps the nav | `1k` draws the error state full-page. A second boundary inside the shell would be a second answer to one question |
+| L-06 and L-07 | Both are open locks needing a design decision, not a token edit. See [`tokens.md`](tokens.md) |
 
 ---
 

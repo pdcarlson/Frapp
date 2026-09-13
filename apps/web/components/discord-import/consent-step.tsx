@@ -33,7 +33,7 @@ export function ConsentStep({
       <p className="text-sm text-muted-foreground">
         Before you export, post a notice in your Discord server saying the
         history is being archived into Signet, and give people a chance to
-        object. Signet cannot check that you did — this is on you.
+        object. Signet cannot check that you did. This is on you.
       </p>
 
       <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 text-sm">

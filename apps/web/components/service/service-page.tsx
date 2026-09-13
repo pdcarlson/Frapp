@@ -311,7 +311,7 @@ export function ServiceHoursPage() {
       tone: "destructive",
       comment: {
         label: "Comment for the member",
-        placeholder: "Optional — why was this rejected?",
+        placeholder: "Optional. Why was this rejected?",
       },
     });
     // `null` is cancel; a confirmed empty box is still a rejection.
@@ -450,7 +450,10 @@ export function ServiceHoursPage() {
                   <Plus className="h-4 w-4" /> Log service
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-lg" {...logDialog.contentProps}>
+              <DialogContent
+                className="sm:max-w-lg"
+                {...logDialog.contentProps}
+              >
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
                     <ServiceGlyph className="h-4 w-4" />
@@ -515,7 +518,9 @@ export function ServiceHoursPage() {
                     </div>
                   </div>
                   <div className="grid gap-1">
-                    <Label htmlFor="service-description">What did you do?</Label>
+                    <Label htmlFor="service-description">
+                      What did you do?
+                    </Label>
                     <Textarea
                       id="service-description"
                       rows={3}
@@ -572,8 +577,8 @@ export function ServiceHoursPage() {
         }
       />
       <p className="text-sm text-muted-foreground">
-        Members log hours; admins approve them for service points. Approved hours
-        also appear in chapter service reports.
+        Members log hours; admins approve them for service points. Approved
+        hours also appear in chapter service reports.
       </p>
 
       {/*
@@ -624,7 +629,7 @@ export function ServiceHoursPage() {
                     cannotApprove && gate.state.allowed && !gate.isPending;
                   const approveReasonId = `svc-approve-reason-${entry.id}`;
                   const approveBlockedReason = isOwnEntry
-                    ? "You can't approve your own hours \u2014 another admin has to review them."
+                    ? "You can't approve your own hours. Another admin has to review them."
                     : viewerLoading
                       ? "Checking who you are\u2026"
                       : "Couldn't confirm who you are, so approving is unavailable. Reload to try again.";
@@ -738,7 +743,7 @@ export function ServiceHoursPage() {
             />
           ) : history.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Nothing reviewed yet — PENDING entries above haven&apos;t been
+              Nothing reviewed yet. PENDING entries above haven&apos;t been
               approved or rejected.
             </p>
           ) : (
@@ -778,8 +783,8 @@ export function ServiceHoursPage() {
         </CardContent>
         <CardFooter className="text-[12.5px] text-muted-foreground">
           Approved hours automatically award service points at your
-          chapter&apos;s configured rate. A rejected entry stays on your history
-          — submit a fresh one when ready.
+          chapter&apos;s configured rate. A rejected entry stays on your
+          history. Submit a fresh one when ready.
         </CardFooter>
       </Card>
 

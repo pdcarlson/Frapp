@@ -459,7 +459,7 @@ export function StudyPage() {
       toast({
         title: "Study session started",
         description:
-          "Heartbeats fire every five minutes. Don't close this tab — closing it ends the session.",
+          "Heartbeats fire every five minutes. Keep this tab open. Closing it ends the session.",
       });
     } catch (error) {
       toast({
@@ -574,7 +574,7 @@ export function StudyPage() {
       <header>
         <p className="text-sm text-muted-foreground">
           Start a tracked study session inside a chapter study zone. Hiding the
-          tab pauses the session on the server — time stops counting, and if you
+          tab pauses the session on the server, so time stops counting. If you
           don&apos;t come back within the study zone&apos;s grace window the
           session expires with only the minutes you actually studied. Closing
           the tab ends it outright.
@@ -629,7 +629,7 @@ export function StudyPage() {
               ) : null}
               {geolocationError ? (
                 <Badge variant="destructive">
-                  Location error — the session may expire
+                  Location error: the session may expire
                 </Badge>
               ) : null}
             </div>
@@ -741,7 +741,7 @@ export function StudyPage() {
             )}
           </CardContent>
           <CardFooter className="text-[12.5px] text-muted-foreground">
-            Closing this tab ends the session — that&apos;s a deliberate web
+            Closing this tab ends the session. That&apos;s a deliberate web
             adaptation of the mobile foreground rule. Use the mobile app for
             longer sessions or when you expect to switch tabs frequently.
           </CardFooter>

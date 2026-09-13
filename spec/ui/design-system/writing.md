@@ -533,6 +533,34 @@ The two status rows are the reason this table exists. Both are routine, both wer
 
 This one replaces `Something went wrong` / `Try again`, which is §1's banned shape with none of §3's three parts — and it had shipped unstyled, since the boundary replaces the root layout and so loads neither the stylesheet nor the typeface unless it asks for them itself.
 
+### Terminal pages (`not-found`, `error`)
+
+The two full-page states the web greenfield added in lane 7
+([#2147](https://github.com/pdcarlson/Frapp/issues/2147)), drawn from framework board option `1k`.
+Both render through `apps/web/components/shared/crest-page.tsx`.
+
+| State | Code | Title | Description | Actions |
+|---|---|---|---|---|
+| Route not found (`app/not-found.tsx`) | `404` | `Nothing lives here.` | `The link is old, or points at a chapter you're not in.` | `Back to chat` (primary, `/chat`) · `Go back` |
+| Route error (`app/error.tsx`) | `500` | `Something broke on our side.` | `The error has been reported. Retrying usually clears it.` | `Retry` (primary) · `Back to chat` |
+
+Three things about these rows, none of them free choices:
+
+- **The 404's title and description are the board's own strings, transcribed.** They also happen to
+  satisfy §3 — what failed, why, what next — so nothing had to be reconciled. The two causes the
+  description names are the two that actually produce a 404 here: nothing in `apps/web` calls
+  `notFound()`, so this renders for stale and mistyped URLs.
+- **The 500's description is not the board's**, which gives only the title and "a Retry primary" for
+  this variant. §3's other two parts are written here, in `global-error`'s voice above, because a
+  reader still needs to know the failure was reported and what to do.
+- **These three are distinct rows, not one.** `global-error` above catches a failure in the root
+  layout itself and must not depend on the component tree; `error` catches everything below it and
+  may. Their copy differs because their situations do: one says the page is gone, the other says
+  retrying may work.
+
+Neither page uses an em dash, per
+[`../web-greenfield/README.md`](../web-greenfield/README.md) §2.
+
 ## 8. Mobile reliability labels
 
 Use these exact labels for operational state pills:

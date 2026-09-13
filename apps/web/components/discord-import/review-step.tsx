@@ -29,7 +29,7 @@ export function ReviewStep({
   return (
     <div className="space-y-4 text-sm">
       <p className="text-muted-foreground">
-        The import runs in the background. You can leave this page — progress is
+        The import runs in the background. You can leave this page. Progress is
         on the import list when you come back.
         {source === "bot"
           ? " Attachments are copied out of Discord as it goes, so a large server takes a while."
@@ -81,7 +81,7 @@ export function ReviewStep({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Everyone imports as {DEFAULT_SIGNET_ROLE.toLowerCase()} —{" "}
+        Everyone imports as {DEFAULT_SIGNET_ROLE.toLowerCase()}:{" "}
         {Object.keys(roleChoices).length > 0
           ? "your role notes are saved for promoting people afterwards."
           : "promote people from Settings → Roles once it finishes."}{" "}

@@ -1,7 +1,7 @@
 import { BillingPage } from "@/components/billing/billing-page";
 
 export const metadata = {
-  title: "Billing — Signet",
+  title: "Billing",
   description: "Chapter subscription, plan and member invoices.",
 };
 

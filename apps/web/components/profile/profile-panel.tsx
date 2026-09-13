@@ -154,8 +154,7 @@ export function ProfilePanel() {
    * their work and says nothing about it. Same shape as `<Can>`'s branch since
    * #1211, met on a form.
    */
-  const userPaused =
-    userQuery.isPending && userQuery.fetchStatus === "paused";
+  const userPaused = userQuery.isPending && userQuery.fetchStatus === "paused";
   if (isOffline && anyReadUncached(userQuery)) {
     return (
       <>
@@ -442,7 +441,10 @@ export function ProfilePanel() {
     );
   } else if (preferencesQuery.isLoading || preferencesPaused) {
     categoriesState = (
-      <NestedLoading message="Loading your notification settings..." lines={6} />
+      <NestedLoading
+        message="Loading your notification settings..."
+        lines={6}
+      />
     );
   } else if (preferencesQuery.isError && anyReadUncached(preferencesQuery)) {
     categoriesState = (
@@ -548,7 +550,8 @@ export function ProfilePanel() {
             {displayName}
           </h2>
           <p className="truncate text-sm text-muted-foreground">
-            {profile.email ?? "Update how your chapter sees you in the directory."}
+            {profile.email ??
+              "Update how your chapter sees you in the directory."}
           </p>
         </div>
       </header>
@@ -883,7 +886,7 @@ export function ProfilePanel() {
               */}
               {isNotificationCategoryKey("announcements") ? null : (
                 <p className="text-sm text-muted-foreground">
-                  Chapter announcements always arrive — they can carry
+                  Chapter announcements always arrive. They can carry
                   emergencies, so they are not switchable here.
                 </p>
               )}
@@ -949,8 +952,7 @@ export function ProfilePanel() {
           </Button>
           <div className="space-y-1.5 border-t border-border pt-4">
             <p className="text-sm text-muted-foreground">
-              Permanently deletes your account. You&apos;ll be asked to
-              confirm.
+              Permanently deletes your account. You&apos;ll be asked to confirm.
             </p>
             <Button
               variant="destructive"
