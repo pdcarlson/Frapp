@@ -1122,7 +1122,7 @@ describe('ChapterService', () => {
     );
     expect(result).toEqual({
       signedUrl: 'https://signed-upload.url',
-      storage_path: 'chapters/ch-1/branding/logo.png',
+      storagePath: 'chapters/ch-1/branding/logo.png',
     });
   });
 

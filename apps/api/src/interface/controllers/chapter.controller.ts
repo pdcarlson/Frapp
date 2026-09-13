@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  InternalServerErrorException,
   Param,
   Patch,
   Post,
@@ -11,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiTags,
   ApiOperation,
   ApiOkResponse,
@@ -38,6 +40,7 @@ import {
   CreateChapterDto,
   UpdateChapterDto,
   LogoUploadUrlDto,
+  LogoUploadUrlResponseDto,
   ConfirmLogoDto,
 } from '../dtos/chapter.dto';
 import { ChapterOnboardingDto } from '../dtos/chapter-onboarding.dto';
@@ -178,15 +181,31 @@ export class ChapterController {
     SystemPermissions.BILLING_MANAGE,
   )
   @ApiOperation({ summary: 'Generate signed upload URL for chapter logo' })
+  @ApiCreatedResponse({ type: LogoUploadUrlResponseDto })
   async requestLogoUploadUrl(
     @CurrentChapterId() chapterId: string,
     @Body() dto: LogoUploadUrlDto,
-  ) {
-    return this.chapterService.requestLogoUploadUrl(
+  ): Promise<LogoUploadUrlResponseDto> {
+    // Same mapping as BackworkController.requestUploadUrl (#2129). This one
+    // returned a *mixed* ticket (`signedUrl` + `storage_path`) with no
+    // response DTO, so neither casing was the documented contract. The
+    // service now speaks camelCase like every sibling and the wire is
+    // snake_case — matching ConfirmLogoDto.storage_path, which is where this
+    // path is sent straight back.
+    const ticket = await this.chapterService.requestLogoUploadUrl(
       chapterId,
       dto.filename,
       dto.content_type,
     );
+    if (!ticket.signedUrl || !ticket.storagePath) {
+      throw new InternalServerErrorException(
+        'Storage did not return a signed upload URL or storage path.',
+      );
+    }
+    return {
+      upload_url: ticket.signedUrl,
+      storage_path: ticket.storagePath,
+    };
   }
 
   @Post('current/logo')

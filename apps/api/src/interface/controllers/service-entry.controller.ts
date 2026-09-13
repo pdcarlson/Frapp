@@ -4,6 +4,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  InternalServerErrorException,
   Param,
   Patch,
   Post,
@@ -36,6 +37,7 @@ import {
   CreateServiceEntryResponseDto,
   ListServiceEntriesQueryDto,
   RequestProofUploadUrlDto,
+  ProofUploadUrlResponseDto,
   ReviewServiceEntryDto,
   ServiceLeaderboardQueryDto,
 } from '../dtos/service-entry.dto';
@@ -127,16 +129,32 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SERVICE_LOG)
   @ApiOperation({ summary: 'Get signed upload URL for a service proof file' })
+  @ApiCreatedResponse({ type: ProofUploadUrlResponseDto })
   async requestProofUploadUrl(
     @CurrentChapterId() chapterId: string,
     @Body() dto: RequestProofUploadUrlDto,
-  ) {
-    return this.serviceEntryService.requestProofUploadUrl({
+  ): Promise<ProofUploadUrlResponseDto> {
+    // Same mapping as BackworkController.requestUploadUrl (#2129) — the
+    // service ticket is camelCase, the wire contract is snake_case. This 201
+    // used to pass the service object straight through with no response DTO,
+    // so OpenAPI documented it as empty and service-page.tsx had to
+    // hand-narrow `signedUrl` / `storagePath` off an untyped body.
+    const ticket = await this.serviceEntryService.requestProofUploadUrl({
       chapterId,
       filename: dto.filename,
       contentType: dto.content_type,
       sizeBytes: dto.size_bytes,
     });
+    if (!ticket.signedUrl || !ticket.storagePath) {
+      throw new InternalServerErrorException(
+        'Storage did not return a signed upload URL or storage path.',
+      );
+    }
+    return {
+      upload_url: ticket.signedUrl,
+      storage_path: ticket.storagePath,
+      proof_id: ticket.proofId,
+    };
   }
 
   @Get(':id/proof-url')
