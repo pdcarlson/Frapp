@@ -1,7 +1,7 @@
 import { DirectoryPage } from "@/components/members/directory-page";
 
 export const metadata = {
-  title: "Directory — Signet",
+  title: "Directory",
   description: "Actives and alumni for the active chapter.",
 };
 

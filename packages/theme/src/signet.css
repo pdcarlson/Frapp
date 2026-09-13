@@ -264,6 +264,56 @@
   }
 }
 
+@layer base {
+  /*
+   * Text selection — the last piece of chrome with no Signet value at all.
+   *
+   * Nothing in this repo styled `::selection`, so every surface fell through to
+   * the user agent's default highlight: on a `#131211` app floor Chrome paints
+   * its system blue, which is the one colour on screen that belongs to neither
+   * the neutral ladder nor the chapter.
+   *
+   * ## It is neutral, and the first version of this rule was not
+   *
+   * The obvious wiring is `--primary` over `--primary-foreground`: it retints
+   * per chapter for free, and it is the one pair the accent engine *measures*
+   * (`--signet-accent-on-primary` against `--signet-accent-primary` at 4.5:1 for
+   * every seed, accent-engine.md §8). It is also wrong, and the review caught
+   * it: `components/chat/renderers/text-renderer.tsx` paints the viewer's own
+   * chat bubble `bg-primary text-primary-foreground` — the identical pair. A
+   * member dragging across their own message to copy it would see **nothing
+   * change**. The same collision hits every default `Button` label, the selected
+   * calendar day, and the accent swatch in Settings.
+   *
+   * Stepping the accent does not fix it either. `--accent-text` is accent-11
+   * against the bubble's accent-9: measured on the house seed that is
+   * `#E7C86B` on `#DDB844`, about 1.18:1, under the 1.2 the contrast fixture
+   * treats as imperceptible — and the text would move from
+   * `--primary-foreground` to `--background`, two near-blacks. Both halves of the
+   * highlight would be invisible on exactly the surface people select most.
+   *
+   * So selection takes the two ends of the neutral ladder. `--foreground` on
+   * `--background` is ~15:1, and neither end is ever painted by the accent
+   * engine, so the highlight cannot collide with any chapter's colour — on the
+   * self bubble it measures ~1.6:1 against the gold fill, which clears
+   * perceptibility, while the text pair it replaces goes from near-black-on-gold
+   * to near-black-on-near-white.
+   *
+   * **This is the scrollbar rule again** (§12, `foundations.md`): a piece of
+   * chrome that looks like it should carry the chapter and must not. The
+   * difference is the reason — the scrollbar is held back by the brand lock,
+   * selection by legibility over the accent itself.
+   *
+   * `::-moz-selection` is not duplicated: Firefox has supported unprefixed
+   * `::selection` since 62, and an invalid prefixed selector in the same rule
+   * list would drop the whole rule in every engine.
+   */
+  ::selection {
+    background-color: var(--foreground);
+    color: var(--background);
+  }
+}
+
 @layer components {
   /*
    * Scrollbars are GLOBAL board chrome, not a per-surface opt-in.

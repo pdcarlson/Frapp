@@ -247,3 +247,43 @@ Three rules, each for a reason the token values alone do not carry:
 - **Styling is global, not opt-in per region.** The web implementation is a rule on `*` (`packages/theme/src/signet.css`), not a class. The previous `.signet-scroll` opt-in was retired by the greenfield shell lane ([#2141](https://github.com/pdcarlson/Frapp/issues/2141)) because the framework board declares the bar at the root and calls it chrome; the class had zero call sites, so nothing regressed. The old objection that a blanket rule can land a low-opacity thumb on an unknown surface no longer applies, because both colors are now opaque.
 
 **Engine split, and why the board's own CSS is not copied verbatim.** The standard properties (`scrollbar-width` / `scrollbar-color`) and the WebKit pseudo-elements are mutually exclusive: since Chromium 121, a non-`auto` value for either standard property makes that element's `::-webkit-scrollbar-*` rules ignored outright. The board declares both together, which in Chrome and Edge silently discards the 8px width, the rounding and the track inset it also specifies. So the standard properties are scoped to `@supports not selector(::-webkit-scrollbar)` — true only in Firefox — and every other engine gets the pseudo-elements. All engines then render the board's intent rather than only the one that reads the shorthand.
+
+---
+
+## 13. Text selection
+
+A Signet surface paints its own `::selection`. Before the web greenfield's lane 7
+([#2147](https://github.com/pdcarlson/Frapp/issues/2147)) nothing specified it, so dragging across
+any text produced the user agent's default highlight, which on this ladder is a system blue that
+belongs to neither the neutral scale nor the chapter.
+
+| Property | Value | Role |
+|----------|-------|------|
+| `background-color` | `var(--foreground)` | the highlight behind selected text |
+| `color` | `var(--background)` | selected text itself |
+
+**It is neutral, and the accent is the wrong answer here for a measured reason.** The obvious wiring
+is `--primary` over `--primary-foreground`: it retints per chapter for free and it is the one pair
+the accent engine measures ([accent-engine.md](accent-engine.md) §8). It is also invisible on the
+surfaces the accent already paints. `apps/web/components/chat/renderers/text-renderer.tsx` draws the
+viewer's own chat bubble `bg-primary text-primary-foreground` — the identical pair — so selecting
+your own message to copy it would change nothing on screen; the same collision hits every default
+`Button` label and the selected calendar day. Stepping the accent does not rescue it: `--accent-text`
+is accent-11 against the bubble's accent-9, which on the house seed measures `#E7C86B` on `#DDB844`,
+about 1.18:1 — under the 1.2 §10's fixture treats as imperceptible — while the text would move
+between two near-blacks.
+
+So selection takes the two ends of the neutral ladder, which are ~15:1 apart and which the accent
+engine never writes. Against the gold self bubble the highlight still measures about 1.6:1, clearly
+perceptible, and the text pair under it goes from near-black-on-gold to near-black-on-near-white.
+
+**This is §12's rule again, for a different reason.** The scrollbar is chrome that looks like it
+should carry the chapter and must not, because the brand lock holds it at mark gold. Selection is
+chrome that looks like it should carry the chapter and must not, because the chapter's own colour is
+what it would have to be legible against.
+
+**The framework board takes no position on this.** Option `3a`'s token sheet does not mention
+selection, so this is an extension beyond what the board draws rather than a transcription of it;
+[`../web-greenfield/tokens.md`](../web-greenfield/tokens.md) records that as the lane note.
+`::-moz-selection` is deliberately not duplicated: Firefox has supported unprefixed `::selection`
+since 62, and an invalid prefixed selector in the same rule list would drop the rule in every engine.

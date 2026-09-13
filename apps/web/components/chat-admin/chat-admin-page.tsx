@@ -111,14 +111,18 @@ const CHANNEL_TYPE_LABEL: Record<ChannelType, string> = {
 };
 
 /** Only these are ever created or managed here — DMs are member-initiated. */
-const CREATABLE_TYPES: Extract<ChannelType, "PUBLIC" | "PRIVATE" | "ROLE_GATED">[] =
-  ["PUBLIC", "PRIVATE", "ROLE_GATED"];
+const CREATABLE_TYPES: Extract<
+  ChannelType,
+  "PUBLIC" | "PRIVATE" | "ROLE_GATED"
+>[] = ["PUBLIC", "PRIVATE", "ROLE_GATED"];
 
 /** Sentinel for "no category" — Radix `Select` rejects an empty-string item value. */
 const NO_CATEGORY = "__none__";
 
 /** Add/remove `value` from a `Set` state, without mutating the previous set. */
-function useToggleSet(setState: (updater: (prev: Set<string>) => Set<string>) => void) {
+function useToggleSet(
+  setState: (updater: (prev: Set<string>) => Set<string>) => void,
+) {
   return useCallback(
     (value: string) => {
       setState((prev) => {
@@ -153,7 +157,7 @@ function PermissionCheckboxGrid({
   if (catalogUnavailable) {
     return (
       <p className="mt-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
-        Couldn&apos;t load the permission catalog — you may be missing the{" "}
+        Couldn&apos;t load the permission catalog. You may be missing the{" "}
         <code>members:view</code> permission it requires. Existing selections
         are unaffected; ask your chapter president for access to change them.
       </p>
@@ -368,7 +372,8 @@ function ChatAdminBody() {
     if (selectedChannel.type === "ROLE_GATED" && permissionsDraft.size === 0) {
       toast({
         variant: "destructive",
-        description: "A role-gated channel needs at least one required permission.",
+        description:
+          "A role-gated channel needs at least one required permission.",
       });
       return;
     }
@@ -446,7 +451,8 @@ function ChatAdminBody() {
     if (createType === "ROLE_GATED" && createPermissions.size === 0) {
       toast({
         variant: "destructive",
-        description: "A role-gated channel needs at least one required permission.",
+        description:
+          "A role-gated channel needs at least one required permission.",
       });
       return;
     }
@@ -887,12 +893,17 @@ function ChatAdminBody() {
                   </div>
                   <div className="grid gap-1">
                     <Label htmlFor="ca-category">Category</Label>
-                    <Select value={categoryDraft} onValueChange={setCategoryDraft}>
+                    <Select
+                      value={categoryDraft}
+                      onValueChange={setCategoryDraft}
+                    >
                       <SelectTrigger id="ca-category">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={NO_CATEGORY}>Uncategorized</SelectItem>
+                        <SelectItem value={NO_CATEGORY}>
+                          Uncategorized
+                        </SelectItem>
                         {categories.map((category) => (
                           <SelectItem key={category.id} value={category.id}>
                             {category.name}
@@ -907,7 +918,9 @@ function ChatAdminBody() {
                   <Textarea
                     id="ca-description"
                     value={descriptionDraft}
-                    onChange={(event) => setDescriptionDraft(event.target.value)}
+                    onChange={(event) =>
+                      setDescriptionDraft(event.target.value)
+                    }
                     rows={2}
                   />
                 </div>
@@ -957,7 +970,9 @@ function ChatAdminBody() {
                             <p className="text-xs font-semibold text-foreground">
                               {resolveAuthorLabel(message, nameFor, null)}
                               <span className="ml-2 font-normal text-muted-foreground">
-                                {formatClock(message.pinned_at ?? message.created_at)}
+                                {formatClock(
+                                  message.pinned_at ?? message.created_at,
+                                )}
                               </span>
                             </p>
                             <p className="line-clamp-2 text-xs text-muted-foreground">

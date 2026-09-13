@@ -50,8 +50,8 @@ export function RoleMappingStep({
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Note which Signet role each Discord role corresponds to. This does not
-        grant anything — imported messages have no accounts behind them. It is a
-        worksheet for promoting people yourself once the archive is in.
+        grant anything, since imported messages have no accounts behind them. It
+        is a worksheet for promoting people yourself once the archive is in.
       </p>
 
       {roles.length === 0 ? (

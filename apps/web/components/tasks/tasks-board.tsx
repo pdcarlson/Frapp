@@ -129,7 +129,7 @@ const COLUMNS: {
     status: "OVERDUE",
     label: "Overdue",
     description: "Past due date and not yet complete.",
-    emptyDescription: "Nothing is past its due date — the good kind of empty.",
+    emptyDescription: "Nothing is past its due date. The good kind of empty.",
   },
 ];
 
@@ -293,7 +293,7 @@ export function TasksBoard() {
       tone: "destructive",
       comment: {
         label: "Comment for the assignee",
-        placeholder: "Optional — what still needs doing?",
+        placeholder: "Optional. What still needs doing?",
       },
     });
     // `null` is cancel; a confirmed empty box is still a rejection, which is the
@@ -726,8 +726,8 @@ export function TasksBoard() {
                 {column.status === "COMPLETED" ? (
                   <CardFooter className="text-[12.5px] text-muted-foreground">
                     Confirming a task awards its point reward (when set) to the
-                    assignee. You cannot confirm a task assigned to you —
-                    another admin has to.
+                    assignee. You cannot confirm a task assigned to you. Another
+                    admin has to.
                   </CardFooter>
                 ) : null}
               </Card>

@@ -5,7 +5,7 @@ import { StateTile } from "@/components/shared/async-states";
 import { Button } from "@/components/ui/button";
 
 export const metadata = {
-  title: "No access — Signet",
+  title: "No access",
   description: "You do not have access to the chapter dashboard right now.",
 };
 
@@ -24,7 +24,9 @@ export const metadata = {
  *    inside a `--card` is a hole rather than a tile. It takes the shared
  *    `StateTile` recipe now.
  * 3. `title: "No access — Frapp"` → Signet. Prose says Signet; only code
- *    identifiers, package names, domains and bundle ids stay `frapp`.
+ *    identifiers, package names, domains and bundle ids stay `frapp`. Lane 7
+ *    then took the suffix off entirely: the product name comes from the root
+ *    layout's title template now, so this route names only itself.
  */
 export default function NoAccessPage() {
   return (
@@ -44,7 +46,7 @@ export default function NoAccessPage() {
             the invited role.
           </li>
           <li>
-            If you recently lost access, sign out and back in — your permission
+            If you recently lost access, sign out and back in. Your permission
             set refreshes on the next request.
           </li>
         </ul>

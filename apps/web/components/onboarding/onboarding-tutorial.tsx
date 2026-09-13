@@ -63,7 +63,7 @@ const STEPS: Step[] = [
     id: "chat",
     title: "Chat",
     description:
-      "Chapter channels, DMs, and announcements live here. Realtime updates — no refresh needed.",
+      "Chapter channels, DMs, and announcements live here. Realtime updates, no refresh needed.",
     glyph: <ChatGlyph className={GLYPH} />,
   },
   {
@@ -77,14 +77,14 @@ const STEPS: Step[] = [
     id: "backwork",
     title: "Backwork",
     description:
-      "The chapter's academic library. Rich filters and signed-URL downloads — duplicates rejected automatically.",
+      "The chapter's academic library. Rich filters and signed-URL downloads, with duplicates rejected automatically.",
     glyph: <BackworkGlyph className={GLYPH} />,
   },
   {
     id: "study",
     title: "Study hours",
     description:
-      "Tracked study sessions earn points while you're inside a study zone. On the web, closing the tab ends the session — use mobile for longer blocks.",
+      "Tracked study sessions earn points while you're inside a study zone. On the web, closing the tab ends the session. Use mobile for longer blocks.",
     glyph: <StudyGlyph className={GLYPH} />,
   },
   {

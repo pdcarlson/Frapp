@@ -148,7 +148,6 @@ const DEFAULT_DUES: OrgDues = {
   scholarship_pool_cents: 0,
 };
 
-
 /**
  * Names the surface a server-reported §8 contrast failure was measured
  * against, for the fixed three checks `deriveSignetPalette` can return
@@ -988,7 +987,9 @@ function SettingsPageContent() {
               // read is still in flight, which is indistinguishable from a
               // chapter that never set one — and picking a role there would
               // overwrite the real default the response was about to deliver.
-              configUnavailable={orgConfigQuery.isError || orgConfigQuery.isPending}
+              configUnavailable={
+                orgConfigQuery.isError || orgConfigQuery.isPending
+              }
               defaultInviteRoleId={config?.default_invite_role_id ?? null}
               isSavingConfig={pendingConfigKeys.has("default_invite_role_id")}
               onSaveDefaultInviteRole={(roleId) =>
@@ -1033,11 +1034,49 @@ function SettingsPageContent() {
             <Card>
               <CardHeader>
                 <CardTitle>Accent color</CardTitle>
+                {/*
+                  Every clause of the copy this replaces was false, and the last
+                  one had become false by being delivered.
+
+                  - **"branded PDF reports"** — the accent has never reached a
+                    PDF. `report-pdf.renderer.ts` draws from five fixed
+                    constants (`INK`, `MUTED`, `RULE`, `HEAD_FILL`,
+                    `ZEBRA_FILL`) and the branding payload
+                    `report-export.service.ts` hands it is
+                    `{ chapterName, university, logo }` — no colour of any kind.
+                  - **"against white"** — #1157 moved the check to the dark card
+                    it actually renders on (`resolveChapterAccentColor` is
+                    called with `background: surface.card` a few hundred lines
+                    up). The code moved; the sentence did not.
+                  - **"invalid colors fall back to the Signet default"** —
+                    conflates two different outcomes. A hex the engine cannot
+                    parse falls back to `HOUSE_SEED`; a parseable colour that
+                    fails §8 contrast is **saved anyway** and disclosed in the
+                    three warnings below, because `chapter.service.ts` removed
+                    that gate deliberately ("gating it would reject 49 of the 50
+                    real chapters in the directory seed").
+                  - **"arrives in Chunk 07"** — this is chunk 07
+                    ([#2147](https://github.com/pdcarlson/Frapp/issues/2147)).
+
+                  An earlier draft of the replacement also claimed the accent
+                  paints "selected text". It does not, and the review is what
+                  caught it: `::selection` is deliberately the neutral ladder's
+                  two ends, because an accent-derived highlight is invisible on
+                  the accent-painted self bubble. See the rule's own comment in
+                  `packages/theme/src/signet.css`.
+
+                  The closing sentence is board `2e`'s own preview caption
+                  ("The Signet mark and ✦ Ask never change"), moved into the
+                  product. It is the one place an admin is choosing a colour, so
+                  it is the one place worth saying what the colour cannot reach.
+                  `settings-accent.spec.tsx` pins it against the tokens.
+                */}
                 <CardDescription>
-                  Shown on primary buttons, chat name tags, and branded PDF
-                  reports. Must meet WCAG AA contrast against white; invalid
-                  colors fall back to the Signet default. Full theme
-                  customization (chapter palette) arrives in Chunk 07.
+                  Paints primary buttons, your own chat bubbles and the
+                  nav&apos;s active item. Saving derives the rest of the palette
+                  from it, and contrast is checked against the dark surfaces it
+                  lands on. The Signet mark, the Ask pill and the scrollbars
+                  never change.
                 </CardDescription>
               </CardHeader>
               <form onSubmit={saveAccent}>
@@ -1169,7 +1208,6 @@ function SettingsPageContent() {
               />,
             )}
           </TabsContent>
-
         </div>
       </Tabs>
     </div>
@@ -1187,7 +1225,9 @@ export function SettingsPage() {
         below deliberately renders none of its own.
       */}
       <PageHeader title="Chapter settings" />
-      <Suspense fallback={<LoadingState message="Loading chapter settings..." />}>
+      <Suspense
+        fallback={<LoadingState message="Loading chapter settings..." />}
+      >
         <SettingsPageContent />
       </Suspense>
     </>

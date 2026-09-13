@@ -189,7 +189,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
         description:
           error instanceof Error
             ? error.message
-            : "Retry in a moment — your change hasn't been saved.",
+            : "Retry in a moment. Your change hasn't been saved.",
         variant: "destructive",
       });
       throw error;
@@ -365,10 +365,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
           listing it: a lone `SubscriptionNotice` child both may and must be
           `null` here.
         */}
-        <Can
-          permission="events:update"
-          offlineFallback={null}
-        >
+        <Can permission="events:update" offlineFallback={null}>
           <SubscriptionNotice gate={gate} feature="managing events" />
         </Can>
         {filteredRows.length === 0 ? (

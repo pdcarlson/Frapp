@@ -1,7 +1,7 @@
 import { ProfilePanel } from "@/components/profile/profile-panel";
 
 export const metadata = {
-  title: "Profile — Signet",
+  title: "Profile",
 };
 
 export default function ProfilePage() {

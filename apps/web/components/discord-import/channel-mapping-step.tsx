@@ -60,8 +60,8 @@ export function ChannelMappingStep({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Signet will not guess. Choose what happens to each channel — a
-        same-named Signet channel is not treated as an answer.
+        Signet will not guess. Choose what happens to each channel. A same-named
+        Signet channel is not treated as an answer.
       </p>
 
       <div className="space-y-3">
