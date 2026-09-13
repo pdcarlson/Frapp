@@ -167,6 +167,8 @@ fresh sandbox, or those imports report as `not-to-unresolvable`: dozens of "new 
 are none (observed 2026-09-02).
 `check:api-contract` regenerates `openapi.json` and `packages/api-sdk/src/types.ts` — run it only
 in Phase 3, and read a changed artifact as "this fix changed the contract", i.e. behaviour.
+`check:links` needs `npm run install:lychee` first (`AGENTS.md` § Lint, test, build, type-check says
+so; four runs paid that cost before this line existed).
 
 ### 0.4 Read what earlier runs already decided
 
