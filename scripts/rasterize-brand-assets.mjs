@@ -28,9 +28,12 @@ import {
   FIELD,
   FIELD_HEX,
   GOLD_HEX,
+  ICO_SIZES,
   assertGlyphCoverage,
+  assertIcoContains,
   assertLockedPair,
   assertSvgLocked,
+  buildIco,
   census,
   coverage,
   glyphCoverage,
@@ -250,7 +253,7 @@ async function main() {
   const glyphHi = await renderVector(GLYPH_SVG);
 
   // ── canonical: packages/brand-assets/assets ───────────────────────────────
-  let tile1024;
+  const tiles = new Map();
   for (const size of [16, 32, 48, 180, 1024]) {
     const buffer = await opaque(markHi, size);
     const stats = await emit(
@@ -258,8 +261,8 @@ async function main() {
       buffer,
       "opaque",
     );
+    tiles.set(size, buffer);
     if (size === 1024) {
-      tile1024 = buffer;
       console.log(
         `master: ${GOLD_HEX} ${((100 * stats.gold) / stats.total).toFixed(2)}%, ` +
           `${FIELD_HEX} ${((100 * stats.field) / stats.total).toFixed(2)}%, ` +
@@ -267,6 +270,17 @@ async function main() {
       );
     }
   }
+  const tile1024 = tiles.get(1024);
+
+  // The favicon container, packed from the buffers just audited rather than
+  // from a fresh render of its own. `favicon.ico` therefore cannot come to
+  // describe different artwork than the `app/icon.png` sitting beside it —
+  // which is precisely what the scaffold icon it replaces did, unnoticed,
+  // because no script wrote it and no gate read it.
+  const faviconPayloads = ICO_SIZES.map((size) => tiles.get(size));
+  const favicon = buildIco(faviconPayloads);
+  assertIcoContains(favicon, "signet-emblem-B.ico", faviconPayloads);
+  await write("packages/brand-assets/assets/signet-emblem-B.ico", favicon);
 
   await emit(
     "packages/brand-assets/assets/signet-emblem-B-glyph-1024.png",

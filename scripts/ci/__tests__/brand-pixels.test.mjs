@@ -31,18 +31,23 @@ import {
   GLYPH_COVERAGE_MIN,
   GOLD,
   GOLD_HEX,
+  ICO_SIZES,
   OFF_AXIS_MAX,
   RENDER_AGREEMENT_MIN,
   SYNCED,
   assertGlyphCoverage,
+  assertIcoContains,
   assertLockedPair,
   assertSvgLocked,
+  buildIco,
   census,
   coverage,
   coverageMask,
   glyphCoverage,
   maskIou,
   offAxis,
+  pngHeader,
+  readIco,
 } from "../../lib/brand-pixels.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -317,7 +322,10 @@ test("every canonical asset follows the package naming scheme", () => {
   // (`signet-emblem-B-*`, `app-icon`, `apple-icon`, `icon`, `favicon-*`), which
   // is how a "superseded" SVG and the shipping raster sat side by side without
   // anyone noticing they drew different artwork. One scheme, asserted.
-  const CANONICAL = /^signet-emblem-B(-glyph)?(-(?:16|32|48|96|180|512|1024))?\.(svg|png)$/;
+  // The `.ico` carries no `-<size>`: it is a container of three sizes, so any
+  // one of them in its name would be a lie. `readIco` is what states its
+  // contents, and `check:brand-assets` asserts them.
+  const CANONICAL = /^signet-emblem-B(-glyph)?(-(?:16|32|48|96|180|512|1024))?\.(svg|png|ico)$/;
   const VARIANT = /^signet-emblem-B-(glyph|rounded)\.svg$/;
   // `frapp-*` filenames are frozen by spec/ui/assets.md §1 ("frapp-* filenames
   // … stay as-is in code"), so the lockup keeps its name. It is the only
@@ -351,4 +359,148 @@ test("the sync manifest names files that exist, and the package exports them", (
     const rel = join("packages/brand-assets", target);
     assert.ok(existsSync(repo(rel)), `exports maps missing file ${target}`);
   }
+});
+
+// ── the favicon container ───────────────────────────────────────────────────
+//
+// `apps/web/app/favicon.ico` was the one brand surface with no generator and no
+// gate: it shipped Next's scaffold icon through green CI for as long as it
+// existed, because it appeared in neither the sync manifest nor any roster in
+// `check-brand-assets.mjs`.
+//
+// These stay decode-free like the rest of the suite — `pngHeader` reads the
+// `IHDR` field by field, so a hand-built 26-byte header is a PNG as far as the
+// container code is concerned, and the assertions that must read real pixels
+// live in `check:brand-assets`.
+
+/** The smallest buffer `pngHeader` accepts, with a distinguishing tail byte. */
+function fakePng(size, { colourType = 2, tail = 0 } = {}) {
+  const png = Buffer.alloc(27);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
+  png.write("IHDR", 12, "ascii");
+  png.writeUInt32BE(size, 16);
+  png.writeUInt32BE(size, 20);
+  png[24] = 8; // bit depth
+  png[25] = colourType;
+  png[26] = tail;
+  return png;
+}
+
+test("pngHeader reads IHDR and rejects anything that is not a PNG", () => {
+  assert.deepEqual(pngHeader(fakePng(48)), {
+    width: 48,
+    height: 48,
+    colourType: 2,
+  });
+  assert.equal(pngHeader(Buffer.alloc(64)), null);
+  assert.equal(pngHeader(Buffer.alloc(4)), null, "a truncated buffer is not a PNG");
+});
+
+test("buildIco round-trips through readIco", () => {
+  const payloads = ICO_SIZES.map((size) => fakePng(size, { tail: size }));
+  const entries = readIco(buildIco(payloads), "round-trip.ico");
+  assert.deepEqual(
+    entries.map((entry) => entry.width),
+    ICO_SIZES,
+  );
+  entries.forEach((entry, index) => {
+    assert.equal(entry.height, ICO_SIZES[index]);
+    assert.ok(entry.payload.equals(payloads[index]), "payload survives packing");
+  });
+});
+
+test("buildIco derives every directory field from the payload itself", () => {
+  // A caller cannot hand this function a size that disagrees with the image,
+  // because it is never asked for one — which is the failure `lying-entry`
+  // below has to be constructed by hand to produce.
+  const ico = buildIco([fakePng(256), fakePng(16, { colourType: 6 })]);
+  assert.equal(ico[6], 0, "256 is written as 0 — the one size that is not a byte");
+  assert.equal(ico.readUInt16LE(6 + 6), 24, "truecolour RGB is 24bpp");
+  assert.equal(ico.readUInt16LE(6 + 16 + 6), 32, "truecolour with alpha is 32bpp");
+});
+
+test("buildIco refuses an image an ICONDIRENTRY cannot describe", () => {
+  assert.throws(() => buildIco([]), /at least one image/);
+  assert.throws(() => buildIco([Buffer.alloc(64)]), /is not a PNG/);
+  assert.throws(() => buildIco([fakePng(512)]), /256 is the ceiling/);
+});
+
+test("readIco refuses every container shape that hides its contents", () => {
+  const good = buildIco(ICO_SIZES.map((size) => fakePng(size)));
+
+  assert.throws(() => readIco(Buffer.alloc(2), "x.ico"), /too short/);
+
+  const cursor = Buffer.from(good);
+  cursor.writeUInt16LE(2, 2);
+  assert.throws(() => readIco(cursor, "x.ico"), /resource type 2/);
+
+  const empty = Buffer.from(good);
+  empty.writeUInt16LE(0, 4);
+  assert.throws(() => readIco(empty, "x.ico"), /zero images/);
+
+  const overlong = Buffer.from(good);
+  overlong.writeUInt16LE(999, 4);
+  assert.throws(() => readIco(overlong, "x.ico"), /directory runs past the end/);
+
+  const offFile = Buffer.from(good);
+  offFile.writeUInt32LE(good.length + 1, 6 + 12);
+  assert.throws(() => readIco(offFile, "x.ico"), /not inside the file/);
+
+  // A payload sharp cannot open is a payload nothing in this repo can audit,
+  // and it is literally where the scaffold favicon's 16/32/48 images lived.
+  const dib = Buffer.from(good);
+  dib.writeUInt32BE(0x28000000, good.readUInt32LE(6 + 12));
+  assert.throws(() => readIco(dib, "x.ico"), /not a PNG payload/);
+
+  // A browser picks a size from the DIRECTORY, never from the payload, so an
+  // entry that misdeclares its image ships the wrong icon at every scale.
+  const lying = Buffer.from(good);
+  lying[6] = 64;
+  assert.throws(() => readIco(lying, "x.ico"), /listed as 64x16 but its PNG is 16x16/);
+});
+
+test("assertIcoContains rejects other artwork drawn in the locked pair", () => {
+  const payloads = ICO_SIZES.map((size) => fakePng(size, { tail: 1 }));
+  const ico = buildIco(payloads);
+  assert.deepEqual(
+    assertIcoContains(ico, "favicon.ico", payloads).map((e) => e.width),
+    ICO_SIZES,
+  );
+
+  // The case a pixel census structurally cannot catch: same sizes, same
+  // container, same brand colours, different mark. Byte equality against a
+  // raster that IS censused catches the colour and the artwork at once.
+  const impostor = buildIco(ICO_SIZES.map((size) => fakePng(size, { tail: 2 })));
+  assert.throws(
+    () => assertIcoContains(impostor, "favicon.ico", payloads),
+    /is not the committed signet-emblem-B-16\.png/,
+  );
+
+  assert.throws(
+    () => assertIcoContains(buildIco(payloads.slice(0, 2)), "favicon.ico", payloads),
+    /carries 16x16, 32x32; the favicon must carry 16x16, 32x32, 48x48/,
+  );
+});
+
+test("no icon file in a Next app escapes the sync manifest", () => {
+  // The regression this whole section exists for, stated as a property rather
+  // than as one path. `favicon.ico` was not forgotten on purpose — it was added
+  // by a scaffold, and nothing anywhere asked whether a new icon file under
+  // `app/` was gated. Now something does.
+  const ICON_FILE =
+    /^(favicon\.\w+|icon\d?\.\w+|apple-icon\d?\.\w+|apple-touch-icon\.\w+|opengraph-emblem\.\w+)$/;
+  const targets = new Set(SYNCED.flatMap((entry) => entry.targets));
+  const unguarded = [];
+  for (const app of ["apps/web/app", "apps/landing/app"]) {
+    for (const name of readdirSync(repo(app))) {
+      if (ICON_FILE.test(name) && !targets.has(`${app}/${name}`)) {
+        unguarded.push(`${app}/${name}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    unguarded,
+    [],
+    "every icon file a Next app serves must be generated and gated — add it to SYNCED and to sync-brand-assets.mjs's source",
+  );
 });

@@ -2,7 +2,7 @@
 /**
  * The CI gate over the committed Signet brand assets.
  *
- * Three independent properties, because before #2153 this script checked only
+ * Four independent properties, because before #2153 this script checked only
  * the first one and it proved nothing about the mark:
  *
  *   1. PARITY — synced Next app icons are byte-identical to their canonical
@@ -18,9 +18,14 @@
  *      channel shape their consumer requires, every glyph layer is non-empty,
  *      and the rasters are still a render of the committed vector.
  *
- * Hash parity is blind to 2 and 3: every file could agree perfectly with every
- * other file and still be the wrong colour, which is exactly the state #2153
- * found — a full pixel census of the pre-#2153 masters returned `#DDB844` in
+ *   4. CONTAINMENT — `favicon.ico` is a container, and it holds exactly the
+ *      censused favicon rasters. Nothing above can see inside an `.ico`, which
+ *      is how `apps/web/app/favicon.ico` shipped Next's scaffold icon through
+ *      green CI for as long as the file existed.
+ *
+ * Hash parity is blind to 2, 3 and 4: every file could agree perfectly with
+ * every other file and still be the wrong colour, which is exactly the state
+ * #2153 found — a full pixel census of the pre-#2153 masters returned `#DDB844` in
  * ZERO pixels while this script reported success.
  *
  * This reads pixels rather than trusting a re-run of `rasterize:brand-assets`,
@@ -36,9 +41,11 @@ import {
   FIELD,
   FIELD_HEX,
   GOLD_HEX,
+  ICO_SIZES,
   RENDER_AGREEMENT_MIN,
   SYNCED,
   assertGlyphCoverage,
+  assertIcoContains,
   assertLockedPair,
   assertSvgLocked,
   census,
@@ -54,6 +61,9 @@ const repo = (rel) => join(root, rel);
 const MASTER_SVG = "packages/brand-assets/assets/signet-emblem-B.svg";
 const GLYPH_SVG = "packages/brand-assets/assets/signet-emblem-B-glyph.svg";
 const MASTER_RASTER = "packages/brand-assets/assets/signet-emblem-B-1024.png";
+const FAVICON_ICO = "packages/brand-assets/assets/signet-emblem-B.ico";
+const canonicalRaster = (size) =>
+  `packages/brand-assets/assets/signet-emblem-B-${size}.png`;
 
 /** Every shipped vector. `requireField` is false for the crest-alone glyph. */
 const vectors = [
@@ -242,6 +252,46 @@ if (existsSync(repo(MASTER_SVG)) && existsSync(repo(MASTER_RASTER))) {
   }
 }
 
+// ── 5. The favicon container holds the censused rasters ─────────────────────
+// Properties 1-3 are all structurally blind to an `.ico`: parity only proves
+// the copy under `apps/` equals the canonical, and no census above ever opens
+// the container. That blind spot is not hypothetical — it is why
+// `apps/web/app/favicon.ico` sat on Next's scaffold icon, black-and-white
+// artwork nobody in this repo drew, while every run of this script passed.
+//
+// The payloads are audited BY INHERITANCE: they must be byte-identical to the
+// favicon rasters, which the opaque-raster census above reads. That inheritance
+// is asserted rather than assumed — drop one of those rasters from the census
+// roster and the favicon would quietly lose its pixel gate with nothing to say
+// so.
+for (const size of ICO_SIZES) {
+  if (!opaqueRasters.includes(canonicalRaster(size))) {
+    fail(
+      `${canonicalRaster(size)} is a favicon.ico payload but is not in the opaque-raster census — ` +
+        `the container check leans on that census for its pixels, so removing it here exempts the favicon too`,
+    );
+  }
+}
+
+const payloads = ICO_SIZES.map((size) => canonicalRaster(size));
+// `existsSync`, not `present`: a missing payload is already reported by the
+// census roster above, and the guard just overhead proves it is in that roster.
+// Reporting it twice would only make the real failure harder to read.
+if (
+  present(FAVICON_ICO, "run npm run rasterize:brand-assets") &&
+  payloads.every((rel) => existsSync(repo(rel)))
+) {
+  try {
+    assertIcoContains(
+      readFileSync(repo(FAVICON_ICO)),
+      FAVICON_ICO,
+      payloads.map((rel) => readFileSync(repo(rel))),
+    );
+  } catch (error) {
+    fail(String(error.message ?? error));
+  }
+}
+
 if (failed) {
   process.exit(1);
 }
@@ -249,5 +299,6 @@ console.log(
   `brand-assets: ${vectors.length} vectors paint ${GOLD_HEX} on ${FIELD_HEX}; ` +
     `${syncedCount} synced copies match canonical; ` +
     `${opaqueRasters.length} opaque rasters in the locked pair; ` +
-    `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty`,
+    `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty; ` +
+    `favicon.ico holds the ${ICO_SIZES.join("/")} rasters verbatim`,
 );

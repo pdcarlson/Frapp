@@ -344,6 +344,191 @@ export function coverageMask(data, channels, width, height) {
   return mask;
 }
 
+// ── The favicon container ───────────────────────────────────────────────────
+//
+// `apps/web/app/favicon.ico` was the last brand surface nothing generated and
+// nothing read. It shipped Next's scaffold icon — four entries of black-and-
+// white artwork nobody here drew — through every green CI, because it appeared
+// in neither `SYNCED` nor any roster in `check-brand-assets.mjs`.
+//
+// ICO is a CONTAINER, so the honest way to guard one is to guard what it
+// contains. The canonical `.ico` wraps the same 16/32/48 buffers the canonical
+// PNGs are written from, byte for byte, and the gate asserts that containment
+// rather than re-measuring the pixels: the payloads then inherit the census
+// those PNGs already go through, and the favicon fails both ways a bad one can
+// arrive — off-brand paint (their census) and on-brand paint of artwork we
+// never drew (this byte equality, which a census cannot see).
+//
+// PAYLOADS ARE PNG, NOT BMP/DIB. Every browser that matters has decoded
+// PNG-in-ICO for two decades, and it is the only payload shape that stays
+// auditable with the decoder already in this repo. A DIB payload would need a
+// second decoder written here, and a format nothing can read is exactly where
+// the scaffold icon hid.
+
+/**
+ * The sizes the container carries — the three favicon rasters
+ * `spec/ui/assets.md` §3 already names. A browser picks among them by the
+ * DIRECTORY entry, which is why `readIco` refuses one that misdeclares its
+ * payload.
+ */
+export const ICO_SIZES = [16, 32, 48];
+
+const ICO_HEADER_BYTES = 6;
+const ICO_ENTRY_BYTES = 16;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const PNG_COLOUR_TYPE_RGBA = 6;
+
+/**
+ * `IHDR` read straight out of a PNG buffer: signature, then a 4-byte chunk
+ * length and the `IHDR` tag, then width, height, bit depth, colour type.
+ * Returns null for anything that is not a PNG, which is how `readIco` rejects
+ * a DIB payload.
+ */
+export function pngHeader(buffer) {
+  if (buffer.length < 26 || !buffer.subarray(0, 8).equals(PNG_SIGNATURE)) {
+    return null;
+  }
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20),
+    colourType: buffer[25],
+  };
+}
+
+/**
+ * Packs already-audited PNG buffers into one `.ico`.
+ *
+ * Every directory field is derived from the payload's own `IHDR` rather than
+ * passed in alongside it. A caller cannot hand this function a size that
+ * disagrees with the image, because it is never asked for one.
+ */
+export function buildIco(payloads) {
+  if (payloads.length === 0) {
+    throw new Error("buildIco: an .ico must carry at least one image");
+  }
+  const directory = Buffer.alloc(
+    ICO_HEADER_BYTES + ICO_ENTRY_BYTES * payloads.length,
+  );
+  directory.writeUInt16LE(0, 0); // reserved
+  directory.writeUInt16LE(1, 2); // resource type: icon
+  directory.writeUInt16LE(payloads.length, 4);
+
+  let offset = directory.length;
+  payloads.forEach((png, index) => {
+    const ihdr = pngHeader(png);
+    if (!ihdr) {
+      throw new Error(`buildIco: image ${index} is not a PNG`);
+    }
+    if (ihdr.width > 256 || ihdr.height > 256) {
+      throw new Error(
+        `buildIco: image ${index} is ${ihdr.width}x${ihdr.height} — an ICONDIRENTRY holds one byte per axis, so 256 is the ceiling`,
+      );
+    }
+    const at = ICO_HEADER_BYTES + ICO_ENTRY_BYTES * index;
+    // A 0 in either axis means 256: the one value that does not fit a byte.
+    directory[at] = ihdr.width % 256;
+    directory[at + 1] = ihdr.height % 256;
+    directory[at + 2] = 0; // palette entries: none, this is truecolour
+    directory[at + 3] = 0; // reserved
+    directory.writeUInt16LE(1, at + 4); // colour planes
+    directory.writeUInt16LE(
+      ihdr.colourType === PNG_COLOUR_TYPE_RGBA ? 32 : 24,
+      at + 6,
+    );
+    directory.writeUInt32LE(png.length, at + 8);
+    directory.writeUInt32LE(offset, at + 12);
+    offset += png.length;
+  });
+
+  return Buffer.concat([directory, ...payloads]);
+}
+
+/**
+ * Parses an `.ico` and refuses every shape that would make its contents
+ * unreadable to this gate — which is the same thing as unauditable.
+ */
+export function readIco(buffer, label) {
+  const reject = (why) => {
+    throw new Error(`${label}: ${why}`);
+  };
+  if (buffer.length < ICO_HEADER_BYTES) {
+    reject("is too short to hold an ICONDIR");
+  }
+  if (buffer.readUInt16LE(0) !== 0) {
+    reject("has a non-zero reserved field — it is not an .ico");
+  }
+  const type = buffer.readUInt16LE(2);
+  if (type !== 1) {
+    reject(`declares resource type ${type}; an icon is type 1 (2 is a cursor)`);
+  }
+  const count = buffer.readUInt16LE(4);
+  if (count === 0) {
+    reject("declares zero images");
+  }
+  const directoryEnd = ICO_HEADER_BYTES + ICO_ENTRY_BYTES * count;
+  if (buffer.length < directoryEnd) {
+    reject(`declares ${count} images but the directory runs past the end of the file`);
+  }
+
+  const entries = [];
+  for (let index = 0; index < count; index += 1) {
+    const at = ICO_HEADER_BYTES + ICO_ENTRY_BYTES * index;
+    const width = buffer[at] || 256;
+    const height = buffer[at + 1] || 256;
+    const bytes = buffer.readUInt32LE(at + 8);
+    const offset = buffer.readUInt32LE(at + 12);
+    if (offset < directoryEnd || bytes === 0 || offset + bytes > buffer.length) {
+      reject(
+        `image ${index} claims ${bytes} bytes at offset ${offset}, which is not inside the file`,
+      );
+    }
+    const payload = buffer.subarray(offset, offset + bytes);
+    const ihdr = pngHeader(payload);
+    if (!ihdr) {
+      reject(
+        `image ${index} (${width}x${height}) is not a PNG payload — a DIB payload cannot be audited by anything in this repo, which is where the scaffold favicon hid`,
+      );
+    }
+    if (ihdr.width !== width || ihdr.height !== height) {
+      reject(
+        `image ${index} is listed as ${width}x${height} but its PNG is ${ihdr.width}x${ihdr.height} — a browser picks a size from the DIRECTORY, so a misdeclared entry ships the wrong icon at every scale`,
+      );
+    }
+    entries.push({ width, height, bytes, offset, payload });
+  }
+  return entries;
+}
+
+/**
+ * The assertion the exporter and the CI gate both run: this `.ico` is exactly
+ * these audited PNGs, in this order, and nothing else.
+ *
+ * Byte equality rather than a pixel census, deliberately. The census the
+ * canonical rasters go through cannot tell the locked pair from the locked pair
+ * drawn as a different mark, and "different artwork, same colours, shipped
+ * green" is the #2153 failure restated. Equality to a file that IS censused
+ * catches both halves at once.
+ */
+export function assertIcoContains(buffer, label, expected) {
+  const entries = readIco(buffer, label);
+  const describe = (list) => list.map((size) => `${size}x${size}`).join(", ");
+  const want = expected.map((png) => pngHeader(png)?.width ?? 0);
+  const got = entries.map((entry) => entry.width);
+  if (got.length !== want.length || got.some((size, i) => size !== want[i])) {
+    throw new Error(
+      `${label}: carries ${describe(got)}; the favicon must carry ${describe(want)} — run: npm run rasterize:brand-assets`,
+    );
+  }
+  entries.forEach((entry, index) => {
+    if (!entry.payload.equals(expected[index])) {
+      throw new Error(
+        `${label}: its ${entry.width}x${entry.height} image is not the committed signet-emblem-B-${entry.width}.png — the favicon is drawing artwork no other surface draws\n  run: npm run rasterize:brand-assets`,
+      );
+    }
+  });
+  return entries;
+}
+
 /**
  * The canonical -> synced manifest, in one place.
  *
@@ -368,5 +553,12 @@ export const SYNCED = [
       "apps/web/public/brand/signet-emblem-B.png",
       "apps/landing/app/opengraph-emblem.png",
     ],
+  },
+  {
+    // The favicon Next serves at `/favicon.ico`. It is the same mark as
+    // `app/icon.png` beside it, in the container older browsers and every
+    // bookmark bar ask for by that fixed name.
+    canonical: "packages/brand-assets/assets/signet-emblem-B.ico",
+    targets: ["apps/web/app/favicon.ico"],
   },
 ];
