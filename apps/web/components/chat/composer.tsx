@@ -662,7 +662,7 @@ export function Composer({
         return {
           title: `/${slashToken(command)} needs a connection`,
           description:
-            "Slash commands aren't queued. Your text is still here — send it when you're back online.",
+            "Slash commands aren't queued. Your text is still here. Send it when you're back online.",
         };
       }
       // A slash command posts a card, which has nowhere to hang a file.
