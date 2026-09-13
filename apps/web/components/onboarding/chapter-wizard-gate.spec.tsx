@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
@@ -16,6 +17,10 @@ const { chapters } = vi.hoisted(() => ({
   chapters: { data: [] as unknown[], isSuccess: true },
 }));
 vi.mock("@repo/hooks", () => ({ useAccessibleChapters: () => chapters }));
+
+vi.mock("@/lib/providers/network-provider", () => ({
+  useNetwork: () => ({ isOffline: false }),
+}));
 
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
 
@@ -50,23 +55,42 @@ describe("the chapter wizard gate's own boundary", () => {
     // No `expect(...).toThrow`: the point is that rendering does NOT throw.
     render(<ChapterWizardGate />);
 
-    expect(await screen.findByText("Couldn't load this page")).toBeTruthy();
-    // The stale-chunk remedy, not the Retry that cannot re-run a settled
-    // `React.lazy` payload.
+    // The title names the wizard, not "this page": the page behind this dialog
+    // rendered fine, and §3 asks the title for what actually failed.
+    await screen.findByRole("dialog");
+    // Two nodes carry it — Radix's title (the dialog's accessible name) and the
+    // card's own heading — and both must be the same one spelling.
+    const headings = screen.getAllByRole("heading", { level: 2 });
+    expect(headings.length).toBeGreaterThan(0);
+    for (const heading of headings) {
+      expect(heading.textContent).toBe("Couldn't open chapter setup");
+    }
     expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     expect(captureException).toHaveBeenCalledOnce();
   });
 
-  it("states the failure rather than degrading to nothing", async () => {
-    // A member reaching this gate has no chapter, and the wizard is their only
-    // way out of that. Silently rendering `null` would leave them on an empty
-    // dashboard with no dialog and no reason given.
+  it("is a real dialog, so it is announced and focus-managed", async () => {
     wizard.throws = chunkLoadError();
-    const { container } = render(<ChapterWizardGate />);
+    render(<ChapterWizardGate />);
 
-    await screen.findByText("Couldn't load this page");
-    expect(container.textContent).not.toBe("");
+    // The hand-rolled scrim this replaced had no role and no accessible name,
+    // so a screen-reader user got a silent overlay.
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+  });
+
+  it("can be dismissed, so a repeating error is not a lockout", async () => {
+    // The lockout this fixes: on a non-chunk error Retry re-renders the wizard,
+    // it throws identically, and the overlay returns — and navigating away
+    // re-mounts the gate on the new route, which throws again. Without a
+    // dismiss, a member with no chapter could not reach the app at all.
+    wizard.throws = new TypeError("a deterministic bug in the wizard");
+    render(<ChapterWizardGate />);
+
+    await screen.findByRole("dialog");
+    await userEvent.click(screen.getByRole("button", { name: /close/i }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("renders the wizard untouched when nothing fails", () => {

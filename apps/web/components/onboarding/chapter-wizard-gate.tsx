@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { catchError } from "next/error";
 import { useAccessibleChapters } from "@repo/hooks";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SegmentError } from "@/components/shared/segment-error";
 import { asArray } from "@/lib/utils";
 
@@ -73,41 +74,92 @@ const ChapterWizard = dynamic(
  * between the two boundaries is 4.8 KB raw, 1.7 KB gzipped. That is spent here
  * deliberately rather than saved: `catchError` is the documented API for this
  * exact case, and the hand-rolled version silently loses both of the behaviours
- * named above. #2145's 51.6 KB win keeps ~89% of its gzipped value, and the
- * alternative is recorded here so the trade can be re-opened with numbers
- * rather than re-derived.
+ * named above.
+ *
+ * Stated against #2145 rather than against this file's own delta, because that
+ * is the comparison someone re-opening this will want: of its 51.6 KB raw win
+ * 40.8 KB survives (79%), and of its 15.4 KB gzipped win 10.8 KB survives
+ * (70%). The gzipped share is the worse of the two and is the one to quote. The
+ * hand-rolled alternative is recorded above so that trade can be re-opened with
+ * numbers rather than re-derived.
  *
  * ## Why the fallback is visible rather than `null`
  *
  * Degrading to nothing is the cheaper option and it is wrong here. This gate
  * renders for members with no chapter at all, and the wizard is the only route
  * out of that state — it *is* the onboarding. Swallowing the failure would hand
- * a brand-new member an empty dashboard, no dialog, and no reason given, which
- * is a worse outcome than the full-page error this change is replacing rather
- * than a better one. So the failure is stated, with the button that can
- * actually clear it.
+ * a brand-new member an empty dashboard, no dialog, and no reason given.
  *
- * The overlay is what makes it visible: the gate is mounted in the shell's
- * chrome rather than in its content column, so an unpositioned card would paint
- * somewhere arbitrary in the layout. Fixed and centred, it stands where the
- * dialog it replaces would have stood.
+ * ## Why it is a real `Dialog` and must stay dismissible
  *
- * `fixed inset-0 z-50 bg-black/55` is `DialogOverlay`'s own scrim, copied
- * rather than approximated — this stands in for a dialog, so it belongs on the
- * dialog layer at the dialog's weight. The raw `black` is the reason it is not
- * an opacity wash over a token: `family-call-sites.spec.ts` bans diluting a
- * design token (`bg-background/80` fires it), and `dialog.tsx` and `sheet.tsx`
- * both paint this exact scrim for that reason.
+ * The first draft was a hand-rolled `fixed inset-0 z-50 bg-black/55` div
+ * copying `DialogOverlay`'s paint. That was a lockout, and the path is worth
+ * recording because it is not obvious: on a **non-chunk** error the only
+ * control was Retry, `catchError` implements Retry as a refresh plus a boundary
+ * reset, the wizard re-renders, throws identically, and the scrim returns.
+ * Navigating away is no escape either — `CatchError.getDerivedStateFromProps`
+ * clears the error on a pathname change, the shell re-renders the gate on the
+ * new route, and it throws again. A scrim with no dismiss, over every route,
+ * for a member who cannot get past it: strictly worse than the full-page error
+ * this change replaces, which at least had a working Reload.
+ *
+ * Reusing the primitive fixes that and more. `DialogContent`'s close control is
+ * the escape hatch — dismissing to a chapterless dashboard is a poor place to
+ * be, but it is navigable, and being able to reach the account menu and sign
+ * out is the difference between degraded and trapped. It also brings the focus
+ * trap, focus restore, `Escape`, `role="dialog"` and the `aria-modal` the
+ * hand-rolled version had none of: that version moved focus nowhere and
+ * announced nothing, so a screen-reader user got a silent scrim.
+ *
+ * It costs nothing on the shell path this file spends twenty lines budgeting:
+ * `dashboard-shell.tsx` already imports `components/ui/sheet.tsx`, which pulls
+ * `@radix-ui/react-dialog`, so the primitives are in the shell chunk either
+ * way.
+ *
+ * `open` is local state rather than the gate's own `open`, deliberately: the
+ * gate's flag is the *trigger* ("this member has no chapter"), and conflating
+ * dismissing an error with having onboarded would stop the wizard ever being
+ * offered again this session.
+ *
+ * The title is overridden because the default names the wrong subject. The page
+ * behind this dialog rendered perfectly well; what failed is the wizard.
  */
-const ChapterWizardBoundary = catchError<{ children?: React.ReactNode }>(
-  (_props, { error, retry }) => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6">
-      <div className="w-full max-w-[400px]">
-        <SegmentError error={error} retry={retry} />
-      </div>
-    </div>
-  ),
-);
+const WIZARD_FAILURE_TITLE = "Couldn't open chapter setup";
+
+function ChapterWizardFailure({
+  error,
+  retry,
+}: {
+  error: unknown;
+  retry: () => void;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="max-w-md border-none bg-transparent p-0 shadow-none">
+        {/*
+          Radix derives the dialog's accessible name from `DialogTitle` and
+          warns without one. It is `sr-only` because the card below already
+          shows this string as its heading — one spelling, rendered twice for
+          two different consumers rather than written twice.
+        */}
+        <DialogTitle className="sr-only">{WIZARD_FAILURE_TITLE}</DialogTitle>
+        <SegmentError error={error} retry={retry} title={WIZARD_FAILURE_TITLE} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// No type argument: `catchError<P>`'s `P` is the *fallback's* props, and the
+// returned component already gets `children` from its own return type. Writing
+// `<{ children?: React.ReactNode }>` claims the fallback receives children when
+// `catch-error.js` destructures them off (`({ children, ...props })`) and
+// forwards only the rest — so it would type a later `_props.children` as
+// `ReactNode` while handing it `undefined` at runtime, with no compile error.
+const ChapterWizardBoundary = catchError((_props, { error, retry }) => (
+  <ChapterWizardFailure error={error} retry={retry} />
+));
 
 /**
  * First-officer onboarding wizard (Chunk 03). Fires when a signed-in user has

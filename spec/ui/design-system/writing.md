@@ -553,10 +553,13 @@ Three things about these rows, none of them free choices:
 - **The 500's description is not the board's**, which gives only the title and "a Retry primary" for
   this variant. §3's other two parts are written here, in `global-error`'s voice above, because a
   reader still needs to know the failure was reported and what to do.
-- **These three are distinct rows, not one.** `global-error` above catches a failure in the root
-  layout itself and must not depend on the component tree; `error` catches everything below it and
+- **These are distinct rows, not one.** `global-error` above catches a failure in the root
+  layout itself and must not depend on the component tree; `error` catches what reaches it and
   may. Their copy differs because their situations do: one says the page is gone, the other says
-  retrying may work.
+  retrying may work. Since [#2175](https://github.com/pdcarlson/Frapp/issues/2175), `app/error.tsx`
+  is no longer the catch-all for everything below the root layout — the degraded-segment boundary
+  below takes everything under the dashboard layout first, which leaves the 500 crest for the
+  pre-auth routes and anything that outruns the inner boundary.
 
 Neither page uses an em dash, per
 [`../web-greenfield/README.md`](../web-greenfield/README.md) §2.
@@ -564,8 +567,9 @@ Neither page uses an em dash, per
 ### Degraded segment (`(dashboard)/error.tsx`)
 
 The fourth boundary, added by [#2175](https://github.com/pdcarlson/Frapp/issues/2175) once `#2145`'s
-`next/dynamic` splits gave the dashboard a way to fail one region at a time. It renders §10's Error
-card, not `crest-page.tsx`: the shell above it is still working, so this is a region that failed
+`next/dynamic` splits gave the dashboard a way to fail one region at a time. It renders
+[components.md](components.md) §10's Error card, not `crest-page.tsx`: the shell above it is still
+working, so this is a region that failed
 rather than a page that is gone. Both rows are implemented by
 [`apps/web/components/shared/segment-error.tsx`](../../../apps/web/components/shared/segment-error.tsx),
 which the route boundary and the chapter wizard gate's own boundary both render.
@@ -574,22 +578,35 @@ which the route boundary and the chapter wizard gate's own boundary both render.
 |---|---|---|---|
 | Segment render error | `Couldn't load this page` | `The error has been reported. Retrying usually clears it.` | `Retry` |
 | Stale chunk (`ChunkLoadError`) | `Couldn't load this page` | `This usually means a new version shipped while the tab was open. Reload to pick it up.` | `Reload` |
+| Stale chunk, **offline** | `Couldn't load this page` | `You're offline, so part of this page couldn't load. Retry once you're back.` | `Retry` |
 
-- **One title, two descriptions, two actions.** §3 asks the title for *what failed*, and from the
-  member's side both rows failed identically: this part of the page did not load. What differs is the
-  reason and the remedy, which are §3's other two parts, so that is where the rows differ.
-- **The second row exists because Retry cannot serve it.** A rejected `next/dynamic` chunk is a
-  settled `React.lazy` payload, and React re-throws the cached rejection without calling the loader
-  again, so a Retry button on this row would be a control that provably cannot succeed. The
-  reasoning and its evidence are in
+The wizard gate's boundary renders the same component with one substitution — the title becomes
+`Couldn't open chapter setup`, because the page behind that dialog rendered fine and §3 asks the
+title for what actually failed. The description and the action are the rows above, unchanged.
+
+- **One title, three descriptions.** §3 asks the title for *what failed*, and from the member's side
+  every row failed identically: this part of the page did not load. What differs is the reason and
+  the remedy, which are §3's other two parts, so that is where the rows differ.
+- **The second row says `Reload` because only a reload clears the condition** — not because Retry
+  cannot work. That stronger claim is wrong and was in the first draft of this section: `retry()`
+  re-renders the segment, and every `next/dynamic` split in `apps/web` sits behind a
+  closed-by-default trigger, so the remount brings the page back without re-rendering the lazy
+  component. What is true is narrower — `React.lazy` memoises the rejection for the life of the
+  document, so the *control* that failed stays dead until the document is replaced. Retry restores
+  the page around a broken button; Reload fixes it. Evidence in
   [`apps/web/lib/chunk-load-error.ts`](../../../apps/web/lib/chunk-load-error.ts).
+- **The third row exists because `Reload` is actively harmful offline.** The same `ChunkLoadError`
+  is raised for a chunk that was never fetched, and `apps/web` registers no service worker — so
+  reloading cannot fetch the document and would replace a working, cache-backed dashboard with the
+  browser's own offline page. It states the connection rather than a failure, which is the posture
+  the "(global)" offline rows above take.
 - **"usually" is load-bearing in the second description.** §3 wants the reason only *if known*, and a
   `ChunkLoadError` is typically a rotated build hash but can be a dropped connection. Naming the
   deploy as fact would be inventing one.
 - **It borrows the route error's description for the first row** rather than writing a fifth variant
   of the same sentence, because the situation is the same one: reported, and worth retrying.
 
-Neither row uses an em dash, for the reason the terminal pages above do not.
+No row uses an em dash, for the reason the terminal pages above do not.
 
 ## 8. Mobile reliability labels
 

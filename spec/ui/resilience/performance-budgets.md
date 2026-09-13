@@ -43,15 +43,21 @@ posture `npm run test:cov` has — and nothing in CI runs it. Freezing a number 
 is a decision about which routes get pinned at what, and this greenfield is mid-rebuild with several
 lanes still moving the answer.
 
-As of #2145, on `main`:
+As of [#2175](https://github.com/pdcarlson/Frapp/issues/2175):
 
 | | Entry JS | Gzipped |
 |---|---|---|
-| Shell floor (every dashboard route) | 898 KB | 242 KB |
-| `/chat` | 1,724 KB | 497 KB |
-| Next-largest route (`/settings`) | 1,038 KB | 282 KB |
+| Shell floor (every dashboard route) | 909 KB | 247 KB |
+| `/chat` | 1,733 KB | 501 KB |
+| Next-largest route (`/settings`) | 1,045 KB | 285 KB |
 
-`/chat` carries ~826 KB of its own on top of the floor, nearly all of it one chunk holding
+The previous row, as of [#2145](https://github.com/pdcarlson/Frapp/issues/2145), was 898 KB / 242 KB
+on the floor. #2175 put the segment error boundary and its surface on the shell path, which is where
+those 11 KB went, and [`chapter-wizard-gate.tsx`](../../../apps/web/components/onboarding/chapter-wizard-gate.tsx)
+carries the breakdown and the cheaper alternative that was measured and not taken. Both rows are kept
+because the instruction below is to compare before and after, which needs a before.
+
+`/chat` carries ~824 KB of its own on top of the floor, nearly all of it one chunk holding
 `@tiptap` + ProseMirror, `react-virtuoso`, and the `react-markdown` / `remark` / `micromark` chain.
 That is the board's **chat** chunk and it is correctly eager: the timeline has to be readable and
 the composer focusable inside 400ms, so neither can wait on a second request.

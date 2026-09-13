@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { isChunkLoadError } from "@/lib/chunk-load-error";
 
 /**
- * The classifier decides which of two buttons a member is offered, and one of
- * them provably cannot work for the other's failure (`chunk-load-error.ts`).
- * So the cases below are not a shape check — each one is a real error a
- * bundler or a browser actually produces.
+ * The classifier decides which remedy a member is offered, and only one of them
+ * clears a stale chunk (`chunk-load-error.ts`). So the cases below are not a
+ * shape check — each one is a real error a bundler or a browser actually
+ * produces.
  */
 describe("isChunkLoadError", () => {
   it("matches the error Turbopack throws, by name", () => {

@@ -22,11 +22,19 @@
  * payload._result`. The loader is never invoked a second time.
  *
  * `next/dynamic` holds one such payload per `dynamic()` call, in a module-level
- * binding, so it lives as long as the document does. Retry therefore re-throws
- * the *cached* error instantly, as many times as it is pressed, and only a
- * reload builds a fresh payload against a fresh build manifest. That is the
- * whole asymmetry: a stale chunk wants Reload, every other render error wants
- * Retry.
+ * binding, so it lives as long as the document does. Only a reload builds a
+ * fresh payload against a fresh build manifest.
+ *
+ * **Be precise about what that does and does not make true**, because the first
+ * version of this module overstated it and the overstatement is seductive. It
+ * does *not* follow that Retry is useless: `retry()` re-renders the segment,
+ * and all three of #2145's splits sit behind a closed-by-default trigger (a
+ * popover, the slash palette, a modal), so the remount brings the page back
+ * with the lazy component never rendered at all. `/chat` returns intact. What
+ * follows is only this: the *control* that failed will fail again the moment it
+ * is used, for as long as this document lives. So Reload is the remedy that
+ * clears the condition and Retry is the one that papers over it — a real
+ * asymmetry, and a smaller one than "Retry cannot work".
  *
  * Worth knowing before assuming a retry was simply never attempted: the
  * Turbopack runtime already makes one of its own, and it is narrower than it
@@ -60,8 +68,9 @@
  * fetch dynamically imported module"), with no name to match, and that is the
  * shape any future bundler change would most likely produce. Matching it costs
  * nothing and fails safe in the direction that matters: a false positive offers
- * Reload where Retry would also have worked, while a false negative offers the
- * one button this module exists to prove cannot succeed.
+ * Reload where Retry would have been enough, while a false negative leaves a
+ * member retrying their way around a control that stays dead until they reload
+ * of their own accord.
  *
  * `cause` is walked for the same reason — the Turbopack runtime attaches the
  * underlying failure as `cause` when it has one, and a wrapper added upstream
@@ -85,28 +94,50 @@ const CHUNK_LOAD_MESSAGES = [
 /** Deep enough for a wrapper or two, shallow enough to never be the problem. */
 const MAX_CAUSE_DEPTH = 4;
 
+/**
+ * ## Why the whole walk is inside a `try`
+ *
+ * Because this runs during an error boundary's *fallback* render, on a value
+ * the boundary did not create. Next says so itself, in `catch-error.js`:
+ * "TODO(NAR-804): Docs say this is an Error object, but we don't guarantee
+ * that." Reading `.name`, `.message` or `.cause` is three property gets on an
+ * arbitrary value, and a getter that throws — or a revoked Proxy, which throws
+ * on every trap — would turn a *caught* error into a fresh throw from inside
+ * the component meant to contain it.
+ *
+ * That failure is not cosmetic: a throw in `(dashboard)/error.tsx` is not
+ * caught by `(dashboard)/error.tsx`, so it escalates to `app/error.tsx` and
+ * paints the full-page crest, which is precisely the outcome #2175 exists to
+ * remove. It also loses the report, because the throw happens in render and the
+ * reporting effect never commits. So the classifier is total: anything it
+ * cannot inspect is simply not a chunk error, and the surface still renders.
+ */
 export function isChunkLoadError(error: unknown): boolean {
-  for (let depth = 0, current = error; depth < MAX_CAUSE_DEPTH; depth += 1) {
-    if (typeof current !== "object" || current === null) return false;
+  try {
+    for (let depth = 0, current = error; depth < MAX_CAUSE_DEPTH; depth += 1) {
+      if (typeof current !== "object" || current === null) return false;
 
-    const { name, message, cause } = current as {
-      name?: unknown;
-      message?: unknown;
-      cause?: unknown;
-    };
+      const { name, message, cause } = current as {
+        name?: unknown;
+        message?: unknown;
+        cause?: unknown;
+      };
 
-    if (name === CHUNK_LOAD_ERROR_NAME) return true;
+      if (name === CHUNK_LOAD_ERROR_NAME) return true;
 
-    if (typeof message === "string") {
-      const haystack = message.toLowerCase();
-      if (CHUNK_LOAD_MESSAGES.some((needle) => haystack.includes(needle))) {
-        return true;
+      if (typeof message === "string") {
+        const haystack = message.toLowerCase();
+        if (CHUNK_LOAD_MESSAGES.some((needle) => haystack.includes(needle))) {
+          return true;
+        }
       }
+
+      if (cause === undefined || cause === current) return false;
+      current = cause;
     }
 
-    if (cause === undefined || cause === current) return false;
-    current = cause;
+    return false;
+  } catch {
+    return false;
   }
-
-  return false;
 }

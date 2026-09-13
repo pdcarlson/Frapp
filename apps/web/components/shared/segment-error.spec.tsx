@@ -14,6 +14,11 @@ Object.defineProperty(window, "location", {
   writable: true,
 });
 
+const { network } = vi.hoisted(() => ({ network: { isOffline: false } }));
+vi.mock("@/lib/providers/network-provider", () => ({
+  useNetwork: () => network,
+}));
+
 import { SegmentError } from "@/components/shared/segment-error";
 import DashboardSegmentError from "@/app/(dashboard)/error";
 
@@ -26,15 +31,17 @@ function chunkLoadError() {
 beforeEach(() => {
   captureException.mockClear();
   reload.mockClear();
+  network.isOffline = false;
 });
 
 /**
  * #2175. The contract has two halves, and the second is the one worth a suite:
- * a rejected chunk must not be offered the Retry that Next's `retry()` cannot
- * satisfy, because `React.lazy` memoises the rejection and re-throws it without
- * ever calling the loader again (`lib/chunk-load-error.ts` carries the
- * evidence). A test that only checked "an error renders an error card" would
- * pass with both buttons wired to the wrong remedy.
+ * which remedy each class of failure is offered. A stale chunk gets Reload
+ * because `React.lazy` memoises the rejection for the life of the document, so
+ * only replacing the document revives the control that failed; an offline
+ * member gets Retry instead, because reloading with no service worker would
+ * strand them. A test that only checked "an error renders an error card" would
+ * pass with every button wired to the wrong remedy.
  */
 describe("SegmentError", () => {
   it("offers Reload for a stale chunk, and reloads the document", async () => {
@@ -44,8 +51,8 @@ describe("SegmentError", () => {
     await userEvent.click(screen.getByRole("button", { name: "Reload" }));
 
     expect(reload).toHaveBeenCalledOnce();
-    // The half that actually protects the member: `retry()` here would be a
-    // button that re-runs the same rejected import and fails identically.
+    // `retry()` would bring the page back but leave the control that failed
+    // still dead, because the lazy payload stays settled for this document.
     expect(retry).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
@@ -83,6 +90,52 @@ describe("SegmentError", () => {
     );
   });
 
+  it("never offers Reload to an offline member", async () => {
+    // The case that made this branch necessary: offline, the chunk was simply
+    // never fetched, and apps/web registers no service worker — so a reload
+    // cannot fetch the document and would replace a working cache-backed
+    // dashboard with the browser's offline page, with no way back.
+    network.isOffline = true;
+    const retry = vi.fn();
+    render(<SegmentError error={chunkLoadError()} retry={retry} />);
+
+    expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(reload).not.toHaveBeenCalled();
+    expect(retry).toHaveBeenCalledOnce();
+    expect(screen.getByText(/You're offline/)).toBeTruthy();
+  });
+
+  it("reports one event per error, however often the boundary remounts", () => {
+    // A boundary reset tears the fallback subtree down and rebuilds it, so a
+    // mount-scoped effect re-reported the same error on every Retry press and,
+    // for the gate's copy, on every dashboard navigation.
+    const error = chunkLoadError();
+    const { unmount } = render(<SegmentError error={error} retry={vi.fn()} />);
+    unmount();
+    render(<SegmentError error={error} retry={vi.fn()} />);
+
+    expect(captureException).toHaveBeenCalledOnce();
+  });
+
+  it("renders rather than throwing when the thrown value fights back", () => {
+    // `catch-error.js` does not guarantee an Error. A throwing getter here
+    // would escape the boundary that is meant to contain it and escalate to the
+    // full-page crest — the exact outcome this change removes.
+    const hostile = {
+      name: "Error",
+      get message(): string {
+        throw new TypeError("message getter blew up");
+      },
+    };
+
+    expect(() =>
+      render(<SegmentError error={hostile} retry={vi.fn()} />),
+    ).not.toThrow();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
   it("states what failed and what to do, per writing.md §3", () => {
     render(<SegmentError error={chunkLoadError()} retry={vi.fn()} />);
 
@@ -97,6 +150,29 @@ describe("SegmentError", () => {
 });
 
 describe("the (dashboard) segment boundary", () => {
+  it("renders the route's h1, which it takes over from PageHeader", () => {
+    // It renders instead of the page, and PageHeader owns the route's only h1
+    // now that the shell's was deleted. Left at ErrorState's default h2, the
+    // document would have no level-1 heading at all.
+    render(<DashboardSegmentError error={new Error("boom")} retry={vi.fn()} />);
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Couldn't load this page",
+    );
+  });
+
+  it("keeps a gutter, so the card is not flush on a full-bleed route", () => {
+    // `<main>` drops its padding entirely on a full-bleed route, so on /chat —
+    // the route this change is motivated by — a bare card painted against the
+    // nav rail and the viewport edge.
+    const { container } = render(
+      <DashboardSegmentError error={new Error("boom")} retry={vi.fn()} />,
+    );
+
+    expect(container.firstElementChild?.className).toMatch(/\bp-4\b/);
+    expect(container.firstElementChild?.className).toMatch(/\bmax-w-md\b/);
+  });
+
   it("degrades to §10's card rather than a second full-page crest", () => {
     // The whole point of the file: `app/error.tsx` paints `CrestPage`, which is
     // `min-h-screen` with the 260px raster. Rendered under a shell that is
