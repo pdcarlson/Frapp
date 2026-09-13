@@ -110,6 +110,30 @@ place: that package's `index.ts` re-exports through a `./signet.js` specifier Tu
 resolve, so the import type-checks and passes vitest and then fails `next build`. Both constants
 carry the same value. Reaching for the more obvious-looking one reintroduces a build failure.
 
+### What lane 7 added
+
+One value, and it is the only token this directory records that the framework board does not draw:
+`::selection`, which had no Signet value anywhere in the repo, so every surface fell through to the
+user agent's system blue.
+
+**The value, the pair and the reasoning live at
+[`../design-system/foundations.md`](../design-system/foundations.md) §13**, which is the home the
+standard gives a token role. Restating them here would be a second copy of a fact that already has
+one — the defect [`DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md)
+names, and the one the first draft of this section committed.
+
+Two things that are this file's to record, because they are about the *lane* rather than the token:
+
+- **Option `3a` says nothing about selection.** So unlike every other value in §1, this is an
+  extension beyond the board rather than a transcription of it. If Design wants a different
+  treatment, §13 is the entry to argue with and nothing in the board contradicts it.
+- **It is deliberately *not* on the accent slot, and the first version of it was.** Wiring it to
+  `--primary` / `--primary-foreground` retints for free and inherits §8's measured contrast, which
+  is why it was written that way; review found it invisible on the accent-painted chat self bubble,
+  which is the surface people select most. That is the same shape as L-01's Ask-family trap — a
+  pairing that is correct on the house tenant and wrong everywhere the accent moves — reached from
+  the other direction.
+
 ---
 
 ## 2. Open locks
@@ -121,7 +145,9 @@ L-01 is **closed** as of 2026-09-11 and kept in place rather than deleted: it is
 board settles, three other locks cite it, and the comparison it now carries is the only record of
 where the board and the theme package disagree. L-08 is **closed** too, by
 [#2153](https://github.com/pdcarlson/Frapp/issues/2153) re-exporting the mark — not by the board,
-which only restated the spec. The rest are open.
+which only restated the spec. **L-05 is closed as of 2026-09-13** by lane 7
+([#2147](https://github.com/pdcarlson/Frapp/issues/2147)), in the direction that leaves its tokens
+standing. L-02, L-03, L-04, L-06, L-07 and L-09 are open.
 
 L-08 and L-09 reached past this epic, so they carry issues —
 [#2153](https://github.com/pdcarlson/Frapp/issues/2153), now closed, and
@@ -267,11 +293,23 @@ is too broad for this lane.
 The epic names the commit target `spec/ui/web-shell/`; this is `web-greenfield/`. One of the two
 should win. See [`README.md`](README.md) §3.
 
-### L-05 — The `gold-ask-*` family may lose its only consumer
+### L-05 — CLOSED 2026-09-13. The `gold-ask-*` family kept its only consumer
 
 If lane 3 or 7 removes the Ask pill, three tokens go with it — `--gold-ask-fill`, `--gold-ask-border`
 and `--gold-ask-text`. Tracked on the [deletion checklist](deletion-checklist.md) §4 rather than
 pre-emptively removed here.
+
+**Neither lane removed it.** Lane 2 rebuilt the pill to the board's 34px/r10 top-bar geometry and
+kept it on `--gold-ask-*` (§4), and lane 7 had no reason to revisit that. The lock closes in the
+direction that leaves the family standing.
+
+Lane 7 did change the family's *status*, though, and in the opposite direction from deletion: L-01's
+warning that the board's Ask family and its `--accent-*` family are identical **only because the demo
+tenant is the house tenant** was a live trap with nothing enforcing it. It is now a test.
+`signet.css.spec.ts` asserts that every fixed token is a self-contained colour rather than a read of
+anything, and that `signetAccentSemanticVars`' key set is disjoint from that family — which is the
+single edit that would retint all of them at once. See
+[deletion-checklist.md](deletion-checklist.md) §12.
 
 ---
 

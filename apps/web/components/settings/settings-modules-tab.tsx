@@ -317,7 +317,7 @@ function ModuleRow({
             ))}
           </ul>
           <p className="mt-2 text-xs text-muted-foreground">
-            Per-feature toggles arrive with Settings customization (Chunk 07).
+            Per-feature toggles are not built yet.
           </p>
         </div>
       ) : null}

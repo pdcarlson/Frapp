@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { deriveSignetPalette, signetAccentSemanticVars } from "@repo/chapter-theme";
+import {
+  deriveSignetPalette,
+  signetAccentSemanticVars,
+} from "@repo/chapter-theme";
 import { describe, expect, it } from "vitest";
 
 import { getSignetCssVars, signetDarkTokens } from "./signet";
@@ -54,7 +57,9 @@ function declaredIn(source: string): Map<string, string> {
   const block = source.match(/^\s*:root\s*\{([\s\S]*?)^\s*\}/m);
   if (!block?.[1]) throw new Error("signet.css has no :root block");
   const declarations = new Map<string, string>();
-  for (const [, name, value] of block[1].matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)) {
+  for (const [, name, value] of block[1].matchAll(
+    /^\s*(--[\w-]+):\s*([^;]+);/gm,
+  )) {
     declarations.set(name!, value!.replace(/\s+/g, " ").trim());
   }
   return declarations;
@@ -205,15 +210,18 @@ describe("every token the presets read is defined as a complete color", () => {
     expect(webExtension.length).toBeGreaterThan(10);
   });
 
-  it.each(referenced)("%s is defined in signet.css as a complete color", (token) => {
-    const value = root.get(token);
-    expect(
-      value,
-      `a Tailwind color key reads ${token} but signet.css never defines it — ` +
-        "on the Signet surface the class compiles to nothing (#1145)",
-    ).toBeDefined();
-    expect(isCompleteColor(value!), `${token} is "${value}"`).toBe(true);
-  });
+  it.each(referenced)(
+    "%s is defined in signet.css as a complete color",
+    (token) => {
+      const value = root.get(token);
+      expect(
+        value,
+        `a Tailwind color key reads ${token} but signet.css never defines it — ` +
+          "on the Signet surface the class compiles to nothing (#1145)",
+      ).toBeDefined();
+      expect(isCompleteColor(value!), `${token} is "${value}"`).toBe(true);
+    },
+  );
 
   it("defines every radius token the preset reads", () => {
     // Both halves: the shared preset's scale keys, and the Signet-only ones
@@ -224,7 +232,9 @@ describe("every token the presets read is defined as a complete color", () => {
       config.theme!.extend!.borderRadius as Record<string, string>,
     ).map((value) => String(value).match(/var\((--[\w-]+)\)/)?.[1]);
     const webOnly = [
-      ...readFileSync(WEB_TAILWIND, "utf8").matchAll(/var\((--radius-[\w-]+)\)/g),
+      ...readFileSync(WEB_TAILWIND, "utf8").matchAll(
+        /var\((--radius-[\w-]+)\)/g,
+      ),
     ].map((m) => m[1]!);
 
     expect(webOnly.length).toBeGreaterThan(0);
@@ -310,5 +320,138 @@ describe("each surface imports exactly its own system", () => {
   it("apps/landing imports the legacy stylesheet and not signet.css", () => {
     expect(landing).toMatch(imports("globals"));
     expect(landing).not.toMatch(/signet\.css/);
+  });
+});
+
+/*
+ * ============================================================================
+ * The no-retint boundary, as a test rather than as four docstrings.
+ * ============================================================================
+ *
+ * `spec/ui/brand-identity.md` §2: the mark and logo MUST NOT take the chapter
+ * accent, ever. `spec/ui/web-greenfield/README.md` §2 restates it precisely
+ * because it is "the lock a greenfield lane is most likely to break by
+ * accident, wiring the mark to `--primary` with everything else."
+ *
+ * What was already covered, stated accurately because the first draft of this
+ * block did not: the blocks above compare every declared value against
+ * `signet.ts`, so editing `signet.css` alone to read `var(--primary)` already
+ * failed. That is a **consistency** check between two files, and it holds only
+ * while one of them stays right.
+ *
+ * What it does not cover, and what these three tests add:
+ *
+ * 1. **Both files moving together.** Setting `scrollbar.thumb` to
+ *    `"var(--primary)"` in `signet.ts` and letting `signet.css` follow leaves
+ *    the two in perfect agreement and every existing assertion green. The rule
+ *    is that these values are self-contained colours, so it is asserted as a
+ *    rule rather than inferred from a match.
+ * 2. **The bridge's key set.** `signetAccentSemanticVars` is the only thing
+ *    that turns a chapter seed into semantic token names. Adding a fixed-family
+ *    key to it retints that token on every chapter at once, and is caught today
+ *    only indirectly — by a value assertion that happens to notice, and would
+ *    not if the mapped value coincided with the house default, which for the
+ *    house tenant it does. `tokens.md` L-01 names this exact trap ("A lane that
+ *    merges them on the board's authority breaks the no-retint rule on every
+ *    chapter that picks an accent") and nothing stated it as a rule.
+ * 3. **`::selection`**, which had no value, no token and no test before lane 7.
+ */
+describe("the fixed families cannot be wired to the accent slot", () => {
+  /** Every token the brand lock keeps out of the accent engine. */
+  const FIXED = [
+    "--gold-house",
+    "--gold-on-house",
+    "--gold-ask-fill",
+    "--gold-ask-border",
+    "--gold-ask-text",
+    "--scrollbar-thumb",
+    "--scrollbar-thumb-hover",
+    "--scrollbar-track",
+  ] as const;
+
+  it.each(FIXED)("%s is a literal, not a read of anything", (token) => {
+    const value = root.get(token);
+    expect(value, `${token} is not declared in signet.css`).toBeDefined();
+    // Deliberately stricter than "does not mention --primary". A `color-mix()`
+    // of the slot, a `var(--accent-text)`, or an indirection through a token
+    // that is itself derived would all retint; only a self-contained colour
+    // cannot. This is the same shape as the `--primary-pressed` guard above,
+    // inverted.
+    expect(value).not.toMatch(/var\(/);
+    expect(value).toMatch(SIMPLE_COLOR);
+  });
+
+  it("the accent bridge emits no key that lands on one of them", () => {
+    // The structural half. `signetAccentSemanticVars` is the only thing that
+    // turns a chapter seed into semantic token names, and
+    // `use-chapter-theme.ts` writes exactly its output onto `:root`. So the
+    // whole no-retint guarantee for every token in this file reduces to: that
+    // function's key set never intersects the fixed set. Adding
+    // `"--gold-ask-fill": palette[...]` to the bridge is the one edit that
+    // breaks the lock everywhere at once, and it now fails here.
+    const applied = Object.keys(
+      signetAccentSemanticVars(deriveSignetPalette("#9B4DD6").palette),
+    );
+    expect(
+      applied.filter((key) => (FIXED as readonly string[]).includes(key)),
+    ).toEqual([]);
+  });
+
+  it("the scrollbar is the locked brand pair, not a near-miss of it", () => {
+    // `#2153` is the precedent: three nearly-but-not-quite golds on one screen
+    // survived for months because every copy was a separate literal and no
+    // test compared them. These read from `signet.ts`, which is the token
+    // source, so a re-pitch there moves the assertion with it.
+    expect(root.get("--scrollbar-thumb")).toBe(
+      signetDarkTokens.color.gold.seed,
+    );
+    expect(root.get("--scrollbar-track")).toBe(
+      signetDarkTokens.color.surface.surface1,
+    );
+  });
+});
+
+describe("text selection is neutral, and deliberately so", () => {
+  // The one piece of chrome that had no Signet value at all before lane 7: an
+  // unstyled `::selection` falls through to the user agent's system blue.
+  const rule = css.match(/::selection\s*\{([^}]*)\}/);
+
+  it("exists", () => {
+    expect(rule?.[1]).toBeDefined();
+  });
+
+  it("takes the two ends of the neutral ladder", () => {
+    expect(rule![1]).toMatch(/background-color:\s*var\(--foreground\)/);
+    expect(rule![1]).toMatch(/color:\s*var\(--background\)/);
+  });
+
+  it("does not read the accent slot, which would vanish on the self bubble", () => {
+    // The regression this guards is the first version of the rule.
+    // `text-renderer.tsx` paints the viewer's own chat bubble
+    // `bg-primary text-primary-foreground`; a selection wired to that same pair
+    // changes nothing when you drag across your own message. Stepping to
+    // `--accent-text` does not help either \u2014 accent-11 on accent-9 measures
+    // ~1.18:1 on the house seed, under the fixture's perceptibility floor.
+    for (const token of [
+      "--primary",
+      "--primary-hover",
+      "--primary-foreground",
+      "--accent-subtle",
+      "--accent-border",
+      "--accent-text",
+      "--ring",
+    ]) {
+      expect(rule![1]).not.toContain(token);
+    }
+  });
+
+  it("cannot collide, because neither end is reachable by the engine", () => {
+    // The structural half: `--foreground` and `--background` are outside the
+    // bridge's output, so no chapter seed can move either one onto the other.
+    const applied = Object.keys(
+      signetAccentSemanticVars(deriveSignetPalette("#9B4DD6").palette),
+    );
+    expect(applied).not.toContain("--foreground");
+    expect(applied).not.toContain("--background");
   });
 });

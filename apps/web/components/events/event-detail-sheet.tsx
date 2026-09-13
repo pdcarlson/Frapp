@@ -325,7 +325,7 @@ export function EventDetailSheet({
                     {checkInZoneName ? checkInZoneName : "Zone set"}
                   </Badge>
                   <span className="text-sm text-muted-foreground">
-                    {checkInZonePoints} points — members must be inside to check
+                    {checkInZonePoints} points. Members must be inside to check
                     in
                   </span>
                 </div>
@@ -339,7 +339,7 @@ export function EventDetailSheet({
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  No zone — members can check in from anywhere
+                  No zone, so members can check in from anywhere
                 </p>
               )}
             </div>
@@ -396,9 +396,7 @@ export function EventDetailSheet({
               {/* Same plain-text convention as chat's TextRenderer (#369 owns
                   a real markdown renderer if that lands later) — preserve the
                   line breaks admins typed instead of collapsing them. */}
-              <p className="whitespace-pre-wrap break-words text-sm">
-                {notes}
-              </p>
+              <p className="whitespace-pre-wrap break-words text-sm">{notes}</p>
             </div>
           ) : null}
 

@@ -40,7 +40,7 @@ export function SourceStep({
       hint: "Recommended",
       detail: botAvailable
         ? "Add the Signet bot to your server and we read the history for you. Nothing to download, nothing to upload. You will need the Manage Server permission in Discord."
-        : "Not available in this environment. Use the export upload instead — it does the same job.",
+        : "Not available in this environment. Use the export upload instead, which does the same job.",
       disabled: !botAvailable,
     },
     {

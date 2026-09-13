@@ -107,7 +107,8 @@ function normalizeHex(value: string | undefined, fallback: string): string {
 function parseFoundedYear(raw: string): number | undefined {
   if (!raw.trim()) return undefined;
   const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed < 1776 || parsed > 9999) return undefined;
+  if (!Number.isFinite(parsed) || parsed < 1776 || parsed > 9999)
+    return undefined;
   return parsed;
 }
 
@@ -140,9 +141,9 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const [copied, setCopied] = useState(false);
   const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [emailInput, setEmailInput] = useState("");
-  const [emailStatus, setEmailStatus] = useState<
-    "idle" | "sending" | "sent"
-  >("idle");
+  const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent">(
+    "idle",
+  );
   const [emailFailures, setEmailFailures] = useState<string[]>([]);
   const [emailSentCount, setEmailSentCount] = useState(0);
 
@@ -216,12 +217,13 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       });
       const id =
         chapter && typeof chapter === "object" && "id" in chapter
-          ? (chapter as { id?: string }).id ?? null
+          ? ((chapter as { id?: string }).id ?? null)
           : null;
       if (id) await selectChapter(id);
       toast({
         title: "Chapter created",
-        description: "Your chapter is set up. Invite your members to start chatting.",
+        description:
+          "Your chapter is set up. Invite your members to start chatting.",
       });
       setStep("invite");
     } catch (error) {
@@ -238,7 +240,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       const invite = await createInvite.mutateAsync({ role: INVITE_ROLE });
       const token =
         invite && typeof invite === "object" && "token" in invite
-          ? (invite as { token?: string }).token ?? null
+          ? ((invite as { token?: string }).token ?? null)
           : null;
       if (!token) throw new Error("Invite did not return a token.");
       const origin =
@@ -247,7 +249,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     } catch (error) {
       toast({
         title: "Unable to create invite link",
-        description: getErrorMessage(error, "You can invite members later from Members."),
+        description: getErrorMessage(
+          error,
+          "You can invite members later from Members.",
+        ),
         variant: "destructive",
       });
     }
@@ -299,11 +304,11 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       });
       const failed =
         result && typeof result === "object" && "failed" in result
-          ? (result as { failed?: string[] }).failed ?? []
+          ? ((result as { failed?: string[] }).failed ?? [])
           : [];
       const invites =
         result && typeof result === "object" && "invites" in result
-          ? (result as { invites?: unknown[] }).invites ?? []
+          ? ((result as { invites?: unknown[] }).invites ?? [])
           : [];
       setEmailFailures(failed);
       setEmailSentCount(invites.length - failed.length);
@@ -446,7 +451,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
               ) : null}
 
               {step === "identity" ? (
-                <Button onClick={submitChapter} disabled={!canSubmit || onboardChapter.isPending}>
+                <Button
+                  onClick={submitChapter}
+                  disabled={!canSubmit || onboardChapter.isPending}
+                >
                   {onboardChapter.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
@@ -593,7 +601,7 @@ function FindStep({
         <div>
           <p className="text-sm font-medium">Not in our directory?</p>
           <p className="text-xs text-muted-foreground">
-            New colony or a small org — enter your details by hand.
+            New colony or a small org? Enter your details by hand.
           </p>
         </div>
         <Button variant="secondary" onClick={onManual}>
@@ -711,7 +719,7 @@ function IdentityStep({
       <p className="text-sm text-muted-foreground">
         {isManual
           ? "Tell us about your chapter. We'll add it to our directory backlog so the next officer finds it."
-          : "Confirm your chapter details — everything is editable."}
+          : "Confirm your chapter details. Everything is editable."}
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -841,7 +849,7 @@ function IdentityStep({
           >
             Privacy Policy
           </a>
-          . Member-uploaded Backwork is shared voluntarily — see our{" "}
+          . Member-uploaded Backwork is shared voluntarily. See our{" "}
           <a
             href={`${LEGAL_BASE_URL}/ferpa`}
             target="_blank"
@@ -887,7 +895,7 @@ function InviteStep({
       <p className="text-sm text-muted-foreground">
         Share a join link so your chapter can hop into{" "}
         <span className="font-medium text-foreground">#general</span>. This step
-        is optional — you can always invite members later.
+        is optional. You can always invite members later.
       </p>
 
       {inviteLink ? (
@@ -901,7 +909,11 @@ function InviteStep({
               className="font-mono"
               value={inviteLink}
             />
-            <Button variant="secondary" onClick={onCopy} aria-label="Copy invite link">
+            <Button
+              variant="secondary"
+              onClick={onCopy}
+              aria-label="Copy invite link"
+            >
               {copied ? (
                 <Check className="h-4 w-4 text-primary" />
               ) : (
@@ -934,7 +946,9 @@ function InviteStep({
             size="sm"
             variant="secondary"
             onClick={onSendEmails}
-            disabled={emailStatus === "sending" || emailInput.trim().length === 0}
+            disabled={
+              emailStatus === "sending" || emailInput.trim().length === 0
+            }
           >
             {emailStatus === "sending" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -945,7 +959,9 @@ function InviteStep({
           </Button>
         </div>
 
-        {emailStatus === "sent" && emailFailures.length === 0 && emailSentCount > 0 ? (
+        {emailStatus === "sent" &&
+        emailFailures.length === 0 &&
+        emailSentCount > 0 ? (
           <p className="text-sm text-muted-foreground">
             Sent {emailSentCount} invite{emailSentCount === 1 ? "" : "s"}.
           </p>
@@ -954,11 +970,11 @@ function InviteStep({
         {emailFailures.length > 0 ? (
           <div className="rounded-md border border-border p-3 text-sm">
             <p className="font-semibold text-destructive-text">
-              {emailFailures.length} invite{emailFailures.length === 1 ? "" : "s"} could
-              not be emailed
+              {emailFailures.length} invite
+              {emailFailures.length === 1 ? "" : "s"} could not be emailed
             </p>
             <p className="mt-1 text-muted-foreground">
-              Their invite links were still created — share the link above, or
+              Their invite links were still created. Share the link above, or
               retry these addresses.
             </p>
             <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto text-xs text-muted-foreground">
@@ -972,8 +988,8 @@ function InviteStep({
 
       <p className="text-xs text-muted-foreground">
         Signet collects pseudonymous usage analytics (on by default) to fix bugs
-        and improve the product — never message content. You can turn it off
-        anytime in Settings → Privacy.
+        and improve the product. It never collects message content. You can turn
+        it off anytime in Settings → Privacy.
       </p>
 
       {!inviteLink ? (

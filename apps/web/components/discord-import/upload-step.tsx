@@ -437,7 +437,7 @@ export function UploadStep({
           <p className="font-semibold text-destructive-text">
             {failures.length + unattempted} file(s) did not upload
             {unattempted > 0
-              ? ` — ${unattempted} of them were never attempted, because the upload stopped early`
+              ? `, ${unattempted} of them were never attempted because the upload stopped early`
               : null}
           </p>
           {/*
@@ -450,7 +450,7 @@ export function UploadStep({
             <p className="mt-1 text-destructive-text">{mintFailure}</p>
           ) : (
             <p className="mt-1 text-muted-foreground">
-              Pick the folder again to retry — Signet re-sends only what is
+              Pick the folder again to retry. Signet re-sends only what is
               missing. Files over 100 MB cannot be imported.
             </p>
           )}

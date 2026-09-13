@@ -36,7 +36,8 @@ import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { formatLocaleDateTime as formatTimestamp } from "@repo/formatting";
 
-type Category = "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+type Category =
+  "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
 
 type TransactionRow = {
   id?: string;
@@ -197,7 +198,7 @@ export function PointsAuditCard() {
                   admin may make up to{" "}
                   {pointsPolicy.adjustment_rate_limit_per_hour} adjustments per
                   hour. Both limits are chapter-configurable, and a flag records
-                  the threshold in force when the adjustment was made — changing
+                  the threshold in force when the adjustment was made. Changing
                   it does not re-evaluate existing rows.
                 </>
               ) : (
@@ -315,7 +316,7 @@ export function PointsAuditCard() {
                     // shows one, which is what the leaderboard's pasted-id
                     // search exists to receive.
                     const name = row.user_id
-                      ? nameFor(String(row.user_id)) ?? String(row.user_id)
+                      ? (nameFor(String(row.user_id)) ?? String(row.user_id))
                       : "Unknown member";
                     const sign = (row.amount ?? 0) >= 0 ? "+" : "";
                     return (
@@ -325,8 +326,12 @@ export function PointsAuditCard() {
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-semibold">{name}</span>
-                            <Badge variant="outline">{row.category ?? "UNKNOWN"}</Badge>
+                            <span className="text-sm font-semibold">
+                              {name}
+                            </span>
+                            <Badge variant="outline">
+                              {row.category ?? "UNKNOWN"}
+                            </Badge>
                             {flagged ? (
                               <Badge variant="destructive" className="gap-1">
                                 <AlertTriangle className="h-3 w-3" />
