@@ -11,6 +11,7 @@ import { configureApp } from '../src/bootstrap';
 import {
   createGuardStubs,
   PermissionsGuardStub,
+  STUB_MEMBER_ID,
 } from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
@@ -91,9 +92,13 @@ describe('Membership + roles (e2e)', () => {
       .expect(201)
       .expect({ success: true });
 
+    // STUB_MEMBER_ID, not a bare literal: this pins that the actor comes from
+    // the guard-resolved membership row (`@CurrentMember()`) rather than the
+    // request body, so it must move with the stub's member id, never be edited
+    // to match it.
     expect(rbacServiceMock.transferPresidency).toHaveBeenCalledWith(
       'chapter-1',
-      'member-1',
+      STUB_MEMBER_ID,
       TARGET_MEMBER_ID,
     );
   });
