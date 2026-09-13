@@ -274,11 +274,12 @@ for (const size of ICO_SIZES) {
 }
 
 const payloads = ICO_SIZES.map((size) => canonicalRaster(size));
-// `existsSync`, not `present`: a missing payload is already reported by the
-// census roster above, and the guard just overhead proves it is in that roster.
-// Reporting it twice would only make the real failure harder to read.
+// `existsSync` throughout, never `present`: every file this section reads is
+// already reported when missing — the `.ico` by the SYNCED parity loop that now
+// carries it, the three payloads by the census roster above. Reporting either
+// twice, with two differently worded hints, only buries the real failure.
 if (
-  present(FAVICON_ICO, "run npm run rasterize:brand-assets") &&
+  existsSync(repo(FAVICON_ICO)) &&
   payloads.every((rel) => existsSync(repo(rel)))
 ) {
   try {

@@ -964,19 +964,36 @@ replays the same failed render against the same cache.
       and grepping what remains. Two characters survive and neither is prose" is **wrong**, and is
       corrected in place there.
 
-      24 strings across 13 components, found with a lexer and confirmed by a second, independently
+      24 strings across 16 components, found with a lexer and confirmed by a second, independently
       written one — the two agreed on all 33 product-copy sites and differed only on two JSDoc lines,
-      which is the false-positive rate a line grep cannot distinguish. 23 are prose and take a full
-      stop, a comma or a colon. The 24th is not prose at all: `/billing`'s open/overdue/paid count
-      line rendered a bare `—` as the overdue figure whenever that read had not answered, with the
-      explanation in a `title` tooltip a touch user cannot reach. It now reads `overdue unknown`,
-      which keeps what the two tests pinning that glyph were actually asserting — unknown rather
-      than zero — and states the degraded read where it can be seen. The same placeholder-glyph
-      pattern was already removed from `/members` and the plan panel, each with a test naming it
+      which is the false-positive rate a line grep cannot distinguish.
+
+      21 are prose and take a full stop, a comma or a colon. **Three are not prose, and each needed
+      its own answer rather than a blanket comma.** `/billing`'s open/overdue/paid count line
+      rendered a bare `—` as the overdue figure whenever that read had not answered — every cold
+      load, since the overdue query is not in the page's loading gate — with the explanation in a
+      `title` tooltip a touch user cannot reach; it now reads `overdue unknown`, which keeps what the
+      two tests pinning that glyph were actually asserting (unknown rather than zero) and states the
+      degraded read where it can be seen. `/reports`' PDF-ready toast title takes a parenthetical.
+      `/reports`' event-picker `<option>` label takes one too, and that one is the trap: a middle dot
+      was the obvious separator and is wrong here, because an `<option>`'s accessible name is its
+      flattened text and every other visual `·` in `apps/web` is wrapped in
+      `<span aria-hidden="true">` for exactly that reason — a wrapper an `<option>` cannot carry
 
       The writing.md §7 carve-out held here too: the nine approved strings still carrying an em dash
       on these routes were left alone, including both halves of the connection-state copy and the
       rollover confirmation. Rewriting one is a writing.md change with its own review
+- [ ] **`@repo/chat-core`'s dispatch notices still carry em dashes, and they render on `/chat`**
+      ([#2184](https://github.com/pdcarlson/Frapp/issues/2184)).
+      Nine strings in `packages/chat-core/src/dispatch.ts` — the five `*_RECORDED_ROW_NOTE`
+      constants, three `*_CARD_LOST_WARNING`s and `REPLAY_ACCEPTED_WARNING`. These are what a member
+      actually reads when a slash command's card fails to post: they arrive as `message._error`, and
+      the `message-item.tsx` string this lane fixed is only the fallback for when `_error` is
+      **absent**. So the normal path still shows one. Not swept here because the package is shared
+      with `apps/mobile`, which the §2 lock does not reach — rewriting them is a two-surface copy
+      decision, not a greenfield sweep. The same boundary is why `apps/mobile`'s `RECORDED_NOTE` was
+      updated in this change: `delivery-status.ts`'s docblock states that one string mirrors web's
+      "so the surfaces cannot drift", so the lock moving web's hand moved mobile's with it
 
 The [`../design-system/writing.md`](../design-system/writing.md) §7 carve-out held: the only em
 dashes left on the swept routes are `Once members check in — or you record attendance manually —

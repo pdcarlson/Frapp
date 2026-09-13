@@ -101,7 +101,7 @@ function buildEventOptions(data: unknown): PickerOption[] {
       const name = String(event.name ?? "Untitled event");
       return {
         id,
-        label: `${name} · ${formatLocaleDateTime(event.start_time)}`,
+        label: `${name} (${formatLocaleDateTime(event.start_time)})`,
       };
     })
     .filter((option): option is PickerOption => option !== null);
