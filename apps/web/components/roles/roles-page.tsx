@@ -591,7 +591,7 @@ export function RolesAndPermissionsPage() {
           <CardHeader>
             <CardTitle className="text-lg">Create a custom role</CardTitle>
             <CardDescription>
-              Custom roles can be deleted later. Permissions are additive — the
+              Custom roles can be deleted later. Permissions are additive. The
               member also keeps every permission from their other roles.
             </CardDescription>
           </CardHeader>
@@ -659,7 +659,7 @@ export function RolesAndPermissionsPage() {
             </CardTitle>
             <CardDescription>
               Move the President role to another member. Only the current
-              president can initiate this — the API rejects anyone else.
+              president can initiate this. The API rejects anyone else.
             </CardDescription>
           </CardHeader>
           <CardContent>

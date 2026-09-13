@@ -101,7 +101,7 @@ function buildEventOptions(data: unknown): PickerOption[] {
       const name = String(event.name ?? "Untitled event");
       return {
         id,
-        label: `${name} — ${formatLocaleDateTime(event.start_time)}`,
+        label: `${name} (${formatLocaleDateTime(event.start_time)})`,
       };
     })
     .filter((option): option is PickerOption => option !== null);
@@ -203,7 +203,7 @@ function PickerField({
       </select>
       {query.isError ? (
         <p className="text-xs text-destructive">
-          Couldn&apos;t load {noun} — enter an id manually below, or leave both
+          Couldn&apos;t load {noun}. Enter an id manually below, or leave both
           blank for a chapter-wide report, or{" "}
           <button
             type="button"
@@ -216,7 +216,7 @@ function PickerField({
         </p>
       ) : !query.isPending && options.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No {noun} yet — every report will be chapter-wide.
+          No {noun} yet. Every report will be chapter-wide.
         </p>
       ) : null}
       <details className="text-xs text-muted-foreground">
@@ -231,7 +231,7 @@ function PickerField({
         />
         {value && !matchesOption ? (
           <p className="mt-1">
-            Not in the list above — the report will still scope to this id.
+            Not in the list above. The report will still scope to this id.
           </p>
         ) : null}
       </details>
@@ -564,7 +564,7 @@ export function ReportsPage() {
       }
       toast({
         title: payload.truncated
-          ? `${reportLabel[kind]} PDF ready — incomplete`
+          ? `${reportLabel[kind]} PDF ready (incomplete)`
           : `${reportLabel[kind]} PDF ready`,
         variant: payload.truncated ? "destructive" : undefined,
         // Prefer the server's note over the row cap. A roster truncated by the

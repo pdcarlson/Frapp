@@ -13,6 +13,7 @@
     "./signet-emblem-B-48.png": "./assets/signet-emblem-B-48.png",
     "./signet-emblem-B-32.png": "./assets/signet-emblem-B-32.png",
     "./signet-emblem-B-16.png": "./assets/signet-emblem-B-16.png",
+    "./signet-emblem-B.ico": "./assets/signet-emblem-B.ico",
     "./frapp-lockup.svg": "./assets/frapp-lockup.svg"
   },
   "files": [

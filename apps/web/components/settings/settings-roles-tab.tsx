@@ -361,7 +361,7 @@ function DefaultInviteRoleCard({
         {isDangling ? (
           <p className="text-[12.5px] text-warning">
             The configured default role no longer exists. Pick another, or
-            leave it — new invites fall back to the Member role.
+            leave it. New invites fall back to the Member role.
           </p>
         ) : null}
         {rolesQuery.isError ? (

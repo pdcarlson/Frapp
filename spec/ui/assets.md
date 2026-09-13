@@ -33,7 +33,7 @@ The product mark NEVER takes the chapter accent, and chapter accent applies insi
 
 All canonical files live in **`@repo/brand-assets`** (`packages/brand-assets/assets/`):
 
-Canonical assets are named **`signet-emblem-B[-glyph|-rounded][-<size>].<svg|png>`**. `-glyph` is the crest alone on transparent, `-rounded` is the crest on a tile with the app-icon corner radius, no suffix is the square full-bleed master, and `-<size>` is a raster's edge length in px. `frapp-lockup.svg` is the one exception, because §1 freezes `frapp-*` filenames. `scripts/ci/__tests__/brand-pixels.test.mjs` asserts the scheme.
+Canonical assets are named **`signet-emblem-B[-glyph|-rounded][-<size>].<svg|png|ico>`**. `-glyph` is the crest alone on transparent, `-rounded` is the crest on a tile with the app-icon corner radius, no suffix is the square full-bleed master, and `-<size>` is a raster's edge length in px. The `.ico` carries no `-<size>`: it is a container of three, so naming one would be a lie. `frapp-lockup.svg` is the one exception, because §1 freezes `frapp-*` filenames. `scripts/ci/__tests__/brand-pixels.test.mjs` asserts the scheme.
 
 | File                             | Format          | Use                                                                        |
 | -------------------------------- | --------------- | -------------------------------------------------------------------------- |
@@ -45,6 +45,7 @@ Canonical assets are named **`signet-emblem-B[-glyph|-rounded][-<size>].<svg|png
 | `signet-emblem-B-glyph-1024.png` | PNG 1024² RGBA  | Crest alone on transparent, no dark fringe on light surfaces                |
 | `signet-emblem-B-180.png`        | PNG 180² RGB    | Apple touch icon, synced into both Next apps                                |
 | `signet-emblem-B-48.png` / `-32` / `-16` | PNG RGB | Favicon sizes; `-32` is the Next App Router favicon source (`app/icon.png`) |
+| `signet-emblem-B.ico`            | ICO 16/32/48 RGBA | `apps/web/app/favicon.ico` — those three rasters with an opaque alpha channel. **RGBA is not optional:** Turbopack builds this file and its ICO decoder refuses a non-RGBA payload, failing the web production build |
 
 All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 units tall — so the same path data is reused **verbatim** and cannot drift between them. Only the viewBox *width* differs (`frapp-lockup.svg` is 3360 wide because it carries the wordmark beside the tile), and each file's intrinsic `width`/`height` must keep the viewBox's aspect or every raster renders distorted. `check:brand-assets` asserts all of it. That drift is exactly what #2153 was: a "superseded" SVG and the shipping raster drew different artwork, authored in one commit, disagreeing from birth.
 
@@ -62,9 +63,10 @@ Requirements:
 | What                                  | Path                                                                                                   |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Vector master                         | `packages/brand-assets/assets/signet-emblem-B.svg` (plus `signet-emblem-B-glyph.svg`) |
-| Source rasters                        | `packages/brand-assets/assets/signet-emblem-B-1024.png`, `-180.png`, `-32.png` (all generated) |
+| Source rasters                        | `packages/brand-assets/assets/signet-emblem-B-1024.png`, `-180.png`, `-48.png`, `-32.png`, `-16.png`, and `signet-emblem-B.ico` (all generated) |
 | Synced tab icons                      | `apps/landing/app/icon.png`, `apps/web/app/icon.png`                                                   |
 | Synced Apple touch icons              | `apps/landing/app/apple-icon.png`, `apps/web/app/apple-icon.png`                                       |
+| Synced favicon                        | `apps/web/app/favicon.ico` — the 16/32/48 container; `apps/landing` serves `icon.png` only            |
 | In-app / lockup tile                | `apps/landing/public/brand/signet-emblem-B.png`, `apps/web/public/brand/signet-emblem-B.png`           |
 | Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — emblem raster + Signet word. Tile/crest are `#1A1A1A` / `#DDB844`. |
 | OG image                              | `apps/landing/app/opengraph-image.tsx`                                                                 |
@@ -72,10 +74,10 @@ Requirements:
 | Command | Effect |
 | ------- | ------ |
 | `npm run rasterize:brand-assets` (root; runs `scripts/rasterize-brand-assets.mjs`) | Renders every canonical raster and every Expo raster from the SVG master. Refuses an SVG that paints anything but the locked pair, and refuses an empty or solid Android monochrome layer. |
-| `npm run sync:brand-assets` (root; runs `scripts/sync-brand-assets.mjs`) | Copies the 32², 180², and 1024² rasters into both Next apps under the names Next and the components expect |
-| `npm run check:brand-assets` (root; runs `scripts/check-brand-assets.mjs`) | Two gates. **Parity:** synced copies must be byte-identical to their canonical source. **Pixels:** every committed raster must be drawn in the locked pair, and every glyph layer must be non-empty — hash parity alone is blind to both, which is how #2153 shipped green. Runs in CI (`.github/workflows/ci.yml`) |
+| `npm run sync:brand-assets` (root; runs `scripts/sync-brand-assets.mjs`) | Copies the 32², 180², and 1024² rasters and the `.ico` into the Next apps under the names Next and the components expect. It walks `SYNCED` in `scripts/lib/brand-pixels.mjs` — the same list the gate asserts parity along, so a destination cannot be copied without also being gated |
+| `npm run check:brand-assets` (root; runs `scripts/check-brand-assets.mjs`) | Three gates. **Parity:** synced copies must be byte-identical to their canonical source. **Pixels:** every committed raster must be drawn in the locked pair, and every glyph layer must be non-empty — hash parity alone is blind to both, which is how #2153 shipped green. **Containment:** every `favicon.ico` payload must be RGBA (Turbopack fails the build otherwise), must sit under a directory entry that does not misdeclare it, and its RGB plane must be byte-identical to the canonical raster of that size; nothing else can see inside a container, which is how `apps/web/app/favicon.ico` shipped Next's scaffold icon. Runs in CI (`.github/workflows/ci.yml`) |
 
-The check covers tab icons and Apple touch icons. The React lockup component and the public lockup copy are aligned manually via the checklist in §8.
+The check covers tab icons, Apple touch icons, and the favicon container. The React lockup component and the public lockup copy are aligned manually via the checklist in §8.
 
 ---
 

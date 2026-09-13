@@ -145,7 +145,7 @@ export function BackworkTaxonomyDrawer() {
         title: "Unable to delete",
         description: getErrorMessage(
           error,
-          "It may still have resources attached — try merging it into another entry instead.",
+          "It may still have resources attached. Try merging it into another entry instead.",
         ),
         variant: "destructive",
       });
@@ -211,7 +211,7 @@ export function BackworkTaxonomyDrawer() {
             <SheetTitle>Manage departments &amp; professors</SheetTitle>
             <SheetDescription>
               Rename, merge, or delete entries created from uploads. Deleting is
-              blocked while any resource still references an entry — merge it
+              blocked while any resource still references an entry. Merge it
               into another one first.
             </SheetDescription>
           </SheetHeader>

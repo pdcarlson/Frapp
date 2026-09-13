@@ -891,10 +891,17 @@ className. What had no **policy** guard were the two families declared in `signe
       chapter that picks an accent") without anything stating it as a rule
 - [x] The 260px crest asserted to carry no accent class and no filter, which
       `auth-screen.spec.tsx` cannot see because it tests a different component
-- [ ] **`apps/web/app/favicon.ico` is still unguarded.** No script generates it and none checks it;
-      it is absent from `sync-brand-assets.mjs`'s pair list and from every roster in
-      `check-brand-assets.mjs`. A regressed favicon passes CI silently. Left for the asset pipeline
-      rather than folded in
+- [x] **`apps/web/app/favicon.ico` is generated and gated.** It shipped Next's scaffold icon —
+      25,931 bytes of black-and-white artwork nobody here drew — because it was in neither
+      `sync-brand-assets.mjs`'s pair list nor any roster in `check-brand-assets.mjs`.
+      `rasterize:brand-assets` now packs it from renders of the same vector master, and the gate
+      asserts *containment*: PNG payloads only, RGBA (Turbopack's ICO decoder refuses anything else
+      and fails the web production build — found by CI on the first push of this work, not by
+      reasoning), directory entries that match their images, and each payload's RGB plane
+      byte-identical to the canonical raster of its size. Parity alone could not have done
+      it — nothing else in that script can see inside a container, so an on-brand `.ico` of the
+      wrong mark passed every property it had. `sync-brand-assets.mjs` now walks `SYNCED` rather
+      than its own parallel lists, which is what let the two disagree in the silent direction
 
 ### 404 and error, board `1k`
 
@@ -952,11 +959,43 @@ replays the same failed render against the same cache.
       `/points`, `/profile`, `/chat-admin`, `/study`, `/discord-import`, `/no-access` and the
       onboarding overlays. Verified with a JS/TSX-aware lexer rather than a line grep, because this
       repo's comment prose is heavily em-dashed and a naive sweep is 93% false positives
-- [ ] **Em dashes remain in product copy on routes lanes 2 to 5 already flushed** — `/chat`,
-      `/settings`, `/billing`, `/reports`, `/backwork`. Left alone deliberately: they sit on other
-      lanes' surfaces and this lane's scope is the untouched routes. §10's claim that Finance was
-      "verified by stripping comments and grepping what remains. Two characters survive and neither
-      is prose" is **wrong**, and is corrected in place there
+- [x] **Em dashes cleared from product copy on the routes lanes 2 to 5 flushed** — `/chat`,
+      `/settings` (including Roles & Permissions and the Modules tab), `/billing`, `/reports`,
+      `/backwork`. Deferred by this lane deliberately, since they sat on other lanes' surfaces;
+      swept once those lanes landed. §10's claim that Finance was "verified by stripping comments
+      and grepping what remains. Two characters survive and neither is prose" is **wrong**, and is
+      corrected in place there.
+
+      24 strings across 16 components, found with a lexer and confirmed by a second, independently
+      written one — the two agreed on all 33 product-copy sites and differed only on two JSDoc lines,
+      which is the false-positive rate a line grep cannot distinguish.
+
+      21 are prose and take a full stop, a comma or a colon. **Three are not prose, and each needed
+      its own answer rather than a blanket comma.** `/billing`'s open/overdue/paid count line
+      rendered a bare `—` as the overdue figure whenever that read had not answered — every cold
+      load, since the overdue query is not in the page's loading gate — with the explanation in a
+      `title` tooltip a touch user cannot reach; it now reads `overdue unknown`, which keeps what the
+      two tests pinning that glyph were actually asserting (unknown rather than zero) and states the
+      degraded read where it can be seen. `/reports`' PDF-ready toast title takes a parenthetical.
+      `/reports`' event-picker `<option>` label takes one too, and that one is the trap: a middle dot
+      was the obvious separator and is wrong here, because an `<option>`'s accessible name is its
+      flattened text and every other visual `·` in `apps/web` is wrapped in
+      `<span aria-hidden="true">` for exactly that reason — a wrapper an `<option>` cannot carry
+
+      The writing.md §7 carve-out held here too: the nine approved strings still carrying an em dash
+      on these routes were left alone, including both halves of the connection-state copy and the
+      rollover confirmation. Rewriting one is a writing.md change with its own review
+- [ ] **`@repo/chat-core`'s dispatch notices still carry em dashes, and they render on `/chat`**
+      ([#2184](https://github.com/pdcarlson/Frapp/issues/2184)).
+      Nine strings in `packages/chat-core/src/dispatch.ts` — the five `*_RECORDED_ROW_NOTE`
+      constants, three `*_CARD_LOST_WARNING`s and `REPLAY_ACCEPTED_WARNING`. These are what a member
+      actually reads when a slash command's card fails to post: they arrive as `message._error`, and
+      the `message-item.tsx` string this lane fixed is only the fallback for when `_error` is
+      **absent**. So the normal path still shows one. Not swept here because the package is shared
+      with `apps/mobile`, which the §2 lock does not reach — rewriting them is a two-surface copy
+      decision, not a greenfield sweep. The same boundary is why `apps/mobile`'s `RECORDED_NOTE` was
+      updated in this change: `delivery-status.ts`'s docblock states that one string mirrors web's
+      "so the surfaces cannot drift", so the lock moving web's hand moved mobile's with it
 
 The [`../design-system/writing.md`](../design-system/writing.md) §7 carve-out held: the only em
 dashes left on the swept routes are `Once members check in — or you record attendance manually —
