@@ -3025,6 +3025,271 @@ describe('ChatService', () => {
 
       expect(result.signedUrl).toBeDefined();
     });
+
+    /**
+     * The verdicts these three pin are covered by the parity table below too.
+     * What only they can assert is that the denial happens *before* the URL is
+     * signed: parity compares thrown-or-not, so a mint reordered to sign first
+     * and authorize second would still read `denied` and stay green while the
+     * object had already been handed out.
+     */
+    describe('refuses to sign before authorizing (#2186)', () => {
+      it('denies a read-only channel to a caller without announcements:post', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          is_read_only: true,
+        });
+
+        await expect(
+          service.requestChatUploadUrl(
+            'ch-chan-1',
+            'ch-1',
+            'user-1',
+            'photo.png',
+            'image/png',
+          ),
+        ).rejects.toThrow(ForbiddenException);
+
+        // The point of the fix: no URL is minted, so no bytes can land.
+        expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
+      });
+
+      it('denies an archived channel, which is frozen against every writer', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          type: 'GROUP_DM',
+          member_ids: ['user-1', 'user-2'],
+          archived_at: '2026-01-02T00:00:00.000Z',
+        });
+
+        await expect(
+          service.requestChatUploadUrl(
+            'ch-chan-1',
+            'ch-1',
+            'user-1',
+            'photo.png',
+            'image/png',
+          ),
+        ).rejects.toThrow(ForbiddenException);
+
+        expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
+      });
+
+      it('denies an alumni member in an operational channel', async () => {
+        mockRbac.hasAlumniRole.mockResolvedValue(true);
+
+        await expect(
+          service.requestChatUploadUrl(
+            'ch-chan-1',
+            'ch-1',
+            'user-1',
+            'photo.png',
+            'image/png',
+          ),
+        ).rejects.toThrow(ForbiddenException);
+
+        expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  /**
+   * Minting an upload URL and sending a message are the same authorization
+   * question, so for any channel and any caller the two must reach the same
+   * verdict. Each row asserts both halves of that: the verdict itself, and that
+   * mint and send arrived at it together.
+   *
+   * Both halves earn their place. Pinning only the verdict would miss the two
+   * drifting apart in a direction the table did not anticipate; asserting only
+   * that they agree would pass if someone loosened both at once, which is how
+   * #2186 would come back. Note the table guards over-tightening as much as
+   * under-tightening — the DM, private, and role-gated rows fail if the mint
+   * starts refusing callers `sendMessage` still accepts.
+   */
+  describe('mint and send agree', () => {
+    type Verdict = 'allowed' | 'denied';
+
+    /**
+     * Scores only the channel-access 403 as a denial. `sendMessage` can throw
+     * `ForbiddenException` for a second, unrelated reason (`SERVER_ONLY_KINDS`)
+     * that the mint has no counterpart for, so treating every 403 as an
+     * authorization answer would let two different refusals read as agreement.
+     * Anything else — a 404, a validation error, a mock left unprimed — is a
+     * broken test rather than a verdict, and rethrowing surfaces it as one.
+     */
+    const CHANNEL_ACCESS_DENIED = 'You do not have access to this channel';
+
+    const verdictOf = async (
+      call: () => Promise<unknown>,
+    ): Promise<Verdict> => {
+      try {
+        await call();
+        return 'allowed';
+      } catch (error) {
+        if (
+          error instanceof ForbiddenException &&
+          error.message === CHANNEL_ACCESS_DENIED
+        ) {
+          return 'denied';
+        }
+        throw error;
+      }
+    };
+
+    const cases: {
+      name: string;
+      channel: Partial<ChatChannel>;
+      permissions?: string[];
+      isAlumni?: boolean;
+      expected: Verdict;
+    }[] = [
+      {
+        name: 'an ordinary member in a public channel',
+        channel: {},
+        expected: 'allowed',
+      },
+      {
+        name: 'a participant in a private channel',
+        channel: { type: 'PRIVATE', member_ids: ['user-1', 'user-2'] },
+        expected: 'allowed',
+      },
+      {
+        name: 'a non-participant in a private channel',
+        channel: { type: 'PRIVATE', member_ids: ['user-2'] },
+        expected: 'denied',
+      },
+      {
+        name: 'a participant in a DM',
+        channel: { type: 'DM', member_ids: ['user-1', 'user-2'] },
+        expected: 'allowed',
+      },
+      {
+        name: 'a participant in a group DM',
+        channel: { type: 'GROUP_DM', member_ids: ['user-1', 'user-2'] },
+        expected: 'allowed',
+      },
+      {
+        name: 'a member without announcements:post in a read-only channel',
+        channel: { is_read_only: true },
+        expected: 'denied',
+      },
+      {
+        name: 'an officer holding announcements:post in a read-only channel',
+        channel: { is_read_only: true },
+        permissions: ['announcements:post'],
+        expected: 'allowed',
+      },
+      {
+        name: 'the President in a read-only channel',
+        channel: { is_read_only: true },
+        permissions: ['*'],
+        expected: 'allowed',
+      },
+      {
+        name: 'a member in an archived channel',
+        channel: { archived_at: '2026-01-02T00:00:00.000Z' },
+        expected: 'denied',
+      },
+      {
+        // Read-only as well as archived, so the wildcard actually reaches the
+        // predicate: on a plain PUBLIC channel `assertChannelAccess` skips the
+        // permission lookup entirely, and the row would prove nothing about `*`
+        // beating the archive freeze because `*` would never be loaded.
+        name: 'the President in an archived read-only channel (no override exists)',
+        channel: {
+          is_read_only: true,
+          archived_at: '2026-01-02T00:00:00.000Z',
+        },
+        permissions: ['*'],
+        expected: 'denied',
+      },
+      {
+        name: 'a member lacking the permission a role-gated channel requires',
+        channel: { type: 'ROLE_GATED', required_permissions: ['exec:manage'] },
+        expected: 'denied',
+      },
+      {
+        name: 'a member holding the permission a role-gated channel requires',
+        channel: { type: 'ROLE_GATED', required_permissions: ['exec:manage'] },
+        permissions: ['exec:manage'],
+        expected: 'allowed',
+      },
+      {
+        name: 'an alumni member in an operational channel',
+        channel: {},
+        isAlumni: true,
+        expected: 'denied',
+      },
+      {
+        // A private channel is operational too. This row is what would catch
+        // `ALUMNI_POSTABLE_CHANNEL_TYPES` being widened to PRIVATE: the rows
+        // below cannot, because a channel that is alumni-postable by type
+        // short-circuits the alumni lookup before the predicate ever sees it.
+        name: 'an alumni member in a private channel they belong to',
+        channel: { type: 'PRIVATE', member_ids: ['user-1', 'user-2'] },
+        isAlumni: true,
+        expected: 'denied',
+      },
+      {
+        name: 'an alumni member in a DM',
+        channel: { type: 'DM', member_ids: ['user-1', 'user-2'] },
+        isAlumni: true,
+        expected: 'allowed',
+      },
+      {
+        name: 'an alumni member in the alumni channel',
+        channel: {
+          type: 'ROLE_GATED',
+          required_permissions: ['alumni:post'],
+        },
+        permissions: ['alumni:post'],
+        isAlumni: true,
+        expected: 'allowed',
+      },
+      {
+        name: 'an alumni member who is also President',
+        channel: {},
+        permissions: ['*'],
+        isAlumni: true,
+        expected: 'allowed',
+      },
+    ];
+
+    it.each(cases)(
+      'agrees on $name',
+      async ({ channel, permissions, isAlumni, expected }) => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          ...channel,
+        });
+        mockRbac.getEffectivePermissions.mockResolvedValue(permissions ?? []);
+        mockRbac.hasAlumniRole.mockResolvedValue(isAlumni ?? false);
+        mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+          'https://storage.example.com/signed-url',
+        );
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        const mint = await verdictOf(() =>
+          service.requestChatUploadUrl(
+            'ch-chan-1',
+            'ch-1',
+            'user-1',
+            'photo.png',
+            'image/png',
+          ),
+        );
+        const send = await verdictOf(() =>
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Hello world',
+          }),
+        );
+
+        expect({ mint, send }).toEqual({ mint: expected, send: expected });
+      },
+    );
   });
 
   // ── Notification triggers ──────────────────────────────────────────
