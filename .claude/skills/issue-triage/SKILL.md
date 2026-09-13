@@ -131,7 +131,11 @@ each:
    carries no `Blocked by` body line, and has burned repeated ranked sessions that each re-derive
    the same blocker and release. A comment would not have stopped it.
 5. **Epic attach.** Attach as a sub-issue (`sub_issue_write`) when it clearly belongs to an open
-   `[Epic]`. If none fit, leave it standalone.
+   epic. If none fit, leave it standalone. **Match both title forms** — `[Epic] <name>` and
+   `Epic: <name>` are both in live use, so a brackets-only reading skips the colon form, and
+   `has_children: true` is the structural check that does not depend on the title at all. Verified
+   2026-09-13 by a sweep of every open issue: 14 epics carry the bracketed form, and exactly one
+   (#2140) carries the colon form — so a bracketed match silently declines to attach anything to it.
 6. **Promote or hold:**
    - `suggestion`-owned **or** clearly well-formed and actionable → **remove the `triage` label**
      (that is the promotion to Backlog).
