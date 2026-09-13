@@ -3020,6 +3020,12 @@ export interface components {
             /** @description MIME content type (e.g. image/png) */
             content_type: string;
         };
+        LogoUploadUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send back on the confirm-logo call. */
+            storage_path: string;
+        };
         ConfirmLogoDto: {
             /** @description Storage path returned from logo-url */
             storage_path: string;
@@ -3435,6 +3441,14 @@ export interface components {
             /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
             size_bytes?: number;
         };
+        ChatUploadUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send back as the attachment path when posting the message. */
+            storage_path: string;
+            /** @description Server-allocated message id embedded in storage_path. */
+            message_id: string;
+        };
         SetChannelNotificationLevelDto: {
             /**
              * @description all = every message; mentions = only when you are mentioned (default); off = muted, though @mentions still notify.
@@ -3716,6 +3730,14 @@ export interface components {
             content_type: string;
             /** @description File size in bytes, if known. Rejected server-side against the upload size ceiling when present. */
             size_bytes?: number;
+        };
+        ProofUploadUrlResponseDto: {
+            /** @description Short-lived signed URL; PUT the bytes to it. */
+            upload_url: string;
+            /** @description Storage path to send as proof_path on the create call. */
+            storage_path: string;
+            /** @description Server-allocated proof id embedded in storage_path. */
+            proof_id: string;
         };
         CreateServiceEntryDto: {
             /** @description Date of service (YYYY-MM-DD) */
@@ -4516,7 +4538,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LogoUploadUrlResponseDto"];
+                };
             };
         };
     };
@@ -6087,7 +6111,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChatUploadUrlResponseDto"];
+                };
             };
         };
     };
@@ -7179,7 +7205,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ProofUploadUrlResponseDto"];
+                };
             };
         };
     };

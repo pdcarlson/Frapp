@@ -327,6 +327,24 @@ export class RequestChatUploadUrlDto {
   size_bytes?: number;
 }
 
+export class ChatUploadUrlResponseDto {
+  @ApiProperty({
+    description: 'Short-lived signed URL; PUT the bytes to it.',
+  })
+  upload_url: string;
+
+  @ApiProperty({
+    description:
+      'Storage path to send back as the attachment path when posting the message.',
+  })
+  storage_path: string;
+
+  @ApiProperty({
+    description: 'Server-allocated message id embedded in storage_path.',
+  })
+  message_id: string;
+}
+
 export class ChannelUnreadCountDto {
   @ApiProperty({ format: 'uuid' })
   channel_id: string;

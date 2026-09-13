@@ -43,6 +43,7 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 // `use-chat-channel` boundary before #544 added `warning`.
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 import { useToast } from "@/hooks/use-toast";
+import { readSignedUpload } from "@/lib/signed-upload";
 import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
 import {
   MAX_UPLOAD_LABEL,
@@ -764,16 +765,13 @@ export function Composer({
         return;
       }
       try {
-        const response = (await requestUploadUrl.mutateAsync({
+        const signed = await requestUploadUrl.mutateAsync({
           id: channelId,
           body: { filename: file.name, content_type: inspected.contentType },
-        })) as unknown as {
-          signedUrl: string;
-          storagePath: string;
-          messageId: string;
-        };
+        });
+        const { signedUrl, storagePath } = readSignedUpload(signed);
         await uploadSignedUrl.mutateAsync({
-          signedUrl: response.signedUrl,
+          signedUrl,
           file,
         });
         // A pending chip, not text spliced into the body. The old behaviour
@@ -786,7 +784,7 @@ export function Composer({
         setPending((current) => [
           ...current,
           {
-            storagePath: response.storagePath,
+            storagePath,
             filename: file.name,
             contentType: inspected.contentType,
             byteSize: file.size,

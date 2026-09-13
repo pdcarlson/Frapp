@@ -1,9 +1,18 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter, mockFrappUser } = vi.hoisted(() => ({
+const {
+  mockCurrentChapter,
+  mockFrappUser,
+  mockRequestProofUpload,
+  mockCreateEntry,
+  mockToast,
+} = vi.hoisted(() => ({
+  mockRequestProofUpload: vi.fn(),
+  mockCreateEntry: vi.fn(),
+  mockToast: vi.fn(),
   mockCurrentChapter: vi.fn(),
   mockFrappUser: vi.fn(),
 }));
@@ -43,10 +52,10 @@ vi.mock("@repo/hooks", () => ({
     isError: false,
   }),
   useMembers: () => ({ data: [] }),
-  useCreateServiceEntry: () => ({ mutateAsync: vi.fn() }),
+  useCreateServiceEntry: () => ({ mutateAsync: mockCreateEntry }),
   useReviewServiceEntry: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteServiceEntry: () => ({ mutateAsync: vi.fn() }),
-  useRequestServiceProofUploadUrl: () => ({ mutateAsync: vi.fn() }),
+  useRequestServiceProofUploadUrl: () => ({ mutateAsync: mockRequestProofUpload }),
   useGetServiceProofUrl: () => ({ mutateAsync: vi.fn(), isPending: false }),
   // Chapter policy only decides whether the proof input is `required`; it has
   // no bearing on the gate, so the neutral (unloaded) branch is enough here.
@@ -62,7 +71,7 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
 
 // `useFrappUser` reads `useCurrentUser`/`useViewerUserId` out of `@repo/hooks`,
 // which is stubbed wholesale above, so it is stubbed at its own module instead.
@@ -319,5 +328,114 @@ describe("ServiceHoursPage self-approval affordance", () => {
     expect(
       screen.queryByText(/can't approve your own hours/i),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * #2130 — the proof mint used to return a camelCase ticket through an
+ * undocumented 201, and this page hand-narrowed `signedUrl` / `storagePath`
+ * off an untyped body. It now goes through `readSignedUpload`, the same helper
+ * Backwork and Documents use, which reads only the documented snake_case
+ * contract. Nothing covered this path before, so a wire-name change could
+ * regress it silently.
+ */
+describe("ServiceHoursPage proof upload ticket contract", () => {
+  const openLogDialog = async () => {
+    await userEvent.click(screen.getByRole("button", { name: /log service/i }));
+    return screen.getByRole("dialog");
+  };
+
+  const attachProof = (dialog: HTMLElement) => {
+    const file = new File(["%PDF-1.4"], "receipt.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(within(dialog).getByLabelText(/proof file/i), {
+      target: { files: [file] },
+    });
+  };
+
+  const submit = async (dialog: HTMLElement) =>
+    userEvent.click(
+      within(dialog).getByRole("button", { name: /submit for approval/i }),
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFrappUser.mockReturnValue({ userId: "u-1", isLoading: false });
+    // A paying chapter — the submit control is gated on subscription state,
+    // and this suite is about the upload ticket, not the gate.
+    chapter.active();
+    mockCreateEntry.mockResolvedValue(undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200 })) as unknown as typeof fetch,
+    );
+  });
+
+  // Nothing in this repo's vitest config sets `unstubGlobals`/`restoreMocks`,
+  // and `tests/setup.ts` restores nothing either, so a stubbed `fetch` would
+  // otherwise outlive this suite and be inherited by any describe appended
+  // after it.
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("PUTs the proof to the snake_case upload_url and sends storage_path as proof_path", async () => {
+    mockRequestProofUpload.mockResolvedValue({
+      upload_url: "https://storage.example/put",
+      storage_path: "chapters/chap-1/service/proof-1/receipt.pdf",
+      proof_id: "proof-1",
+    });
+
+    render(<ServiceHoursPage />);
+    const dialog = await openLogDialog();
+    await userEvent.type(
+      within(dialog).getByLabelText(/what did you do/i),
+      "Campus cleanup",
+    );
+    attachProof(dialog);
+    await submit(dialog);
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        "https://storage.example/put",
+        expect.objectContaining({ method: "PUT" }),
+      ),
+    );
+    await waitFor(() =>
+      expect(mockCreateEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          proof_path: "chapters/chap-1/service/proof-1/receipt.pdf",
+        }),
+      ),
+    );
+  });
+
+  it("rejects a camelCase-only ticket rather than uploading to undefined", async () => {
+    mockRequestProofUpload.mockResolvedValue({
+      signedUrl: "https://storage.example/put",
+      storagePath: "chapters/chap-1/service/proof-1/receipt.pdf",
+      proofId: "proof-1",
+    });
+
+    render(<ServiceHoursPage />);
+    const dialog = await openLogDialog();
+    await userEvent.type(
+      within(dialog).getByLabelText(/what did you do/i),
+      "Campus cleanup",
+    );
+    attachProof(dialog);
+    await submit(dialog);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description:
+            "Upload URL response missing signed URL or storage path.",
+        }),
+      ),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mockCreateEntry).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Tiptap's ProseMirror view does not render document content into jsdom's
 // contenteditable node in this repo's test environment (see chat-shell.spec.tsx's
@@ -9,17 +9,25 @@ import { describe, it, expect, vi } from "vitest";
 // below is tested directly and needs none of this; only the "fresh mount"
 // integration test near the bottom needs `useEditor` stubbed, to capture the
 // real `Placeholder` extension Composer wires it into.
-const { capturedExtensions, mockRequestUploadUrl, mockUploadSignedUrl } =
+const { capturedExtensions, mockRequestUploadUrl, mockUploadSignedUrl, mockToast } =
   vi.hoisted(() => ({
     capturedExtensions: [] as unknown[][],
+    mockToast: vi.fn(),
     // Resolves a real response shape. Returning bare `vi.fn()` (undefined) made
-    // `handleAttach` throw on `response.storagePath` and toast instead of
-    // staging a chip, so no test could ever reach the attachment branch.
-    mockRequestUploadUrl: vi.fn(async () => ({
-      signedUrl: "https://example.test/upload",
-      storagePath: "chapters/c/chat/ch/m/notes.pdf",
-      messageId: "m",
-    })),
+    // `handleAttach` throw and toast instead of staging a chip, so no test
+    // could ever reach the attachment branch. The wire names are snake_case
+    // (#2130) — `readSignedUpload` rejects a camelCase-only ticket, which is
+    // the whole point of the shared helper.
+    // Typed `unknown` on purpose: `readSignedUpload` takes `unknown` and the
+    // contract tests below feed it malformed tickets (a camelCase-only body,
+    // a body with no upload_url) to prove it rejects them.
+    mockRequestUploadUrl: vi.fn(
+      async (): Promise<unknown> => ({
+        upload_url: "https://example.test/upload",
+        storage_path: "chapters/c/chat/ch/m/notes.pdf",
+        message_id: "m",
+      }),
+    ),
     mockUploadSignedUrl: vi.fn(async () => undefined),
   }));
 
@@ -41,7 +49,7 @@ vi.mock("@repo/hooks", () => ({
   useUploadSignedUrl: () => ({ mutateAsync: mockUploadSignedUrl }),
   useChapterRoster: () => ({ data: [] }),
 }));
-vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: mockToast }) }));
 
 const { captureException } = vi.hoisted(() => ({
   captureException: vi.fn(),
@@ -578,3 +586,89 @@ describe("Composer help and controls (#2142)", () => {
   });
 });
 
+
+/**
+ * #2130 — the chat mint used to return a camelCase ticket through an
+ * undocumented 201, and the composer read it with an `as unknown as` cast, so
+ * a wire-name change would have surfaced as a silently undefined storagePath
+ * rather than a failure. The client now goes through `readSignedUpload`, the
+ * same helper Backwork and Documents use, which reads only the documented
+ * snake_case contract.
+ */
+describe("Composer attachment ticket contract", () => {
+  const fileInputOf = (container: HTMLElement) =>
+    container.querySelector('input[type="file"]') as HTMLInputElement;
+
+  const attach = async (container: HTMLElement) => {
+    const file = new File(["%PDF-1.4"], "notes.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(fileInputOf(container), { target: { files: [file] } });
+  };
+
+  beforeEach(() => {
+    mockToast.mockClear();
+    mockUploadSignedUrl.mockClear();
+    mockRequestUploadUrl.mockClear();
+  });
+
+  it("PUTs the bytes to the snake_case upload_url", async () => {
+    mockRequestUploadUrl.mockResolvedValueOnce({
+      upload_url: "https://storage.example/put",
+      storage_path: "chapters/c/chat/ch/m/notes.pdf",
+      message_id: "m",
+    });
+
+    const { container } = render(<Composer {...baseProps()} />);
+    await attach(container);
+
+    await waitFor(() =>
+      expect(mockUploadSignedUrl).toHaveBeenCalledWith(
+        expect.objectContaining({ signedUrl: "https://storage.example/put" }),
+      ),
+    );
+    expect(mockToast).not.toHaveBeenCalled();
+  });
+
+  it("toasts when the ticket omits the signed URL", async () => {
+    mockRequestUploadUrl.mockResolvedValueOnce({
+      storage_path: "chapters/c/chat/ch/m/notes.pdf",
+      message_id: "m",
+    });
+
+    const { container } = render(<Composer {...baseProps()} />);
+    await attach(container);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't upload file",
+          description:
+            "Upload URL response missing signed URL or storage path.",
+        }),
+      ),
+    );
+    expect(mockUploadSignedUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects a camelCase-only ticket rather than staging an undefined path", async () => {
+    mockRequestUploadUrl.mockResolvedValueOnce({
+      signedUrl: "https://storage.example/put",
+      storagePath: "chapters/c/chat/ch/m/notes.pdf",
+      messageId: "m",
+    });
+
+    const { container } = render(<Composer {...baseProps()} />);
+    await attach(container);
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description:
+            "Upload URL response missing signed URL or storage path.",
+        }),
+      ),
+    );
+    expect(mockUploadSignedUrl).not.toHaveBeenCalled();
+  });
+});
