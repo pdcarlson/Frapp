@@ -2,7 +2,7 @@
 /**
  * The CI gate over the committed Signet brand assets.
  *
- * Three independent properties, because before #2153 this script checked only
+ * Four independent properties, because before #2153 this script checked only
  * the first one and it proved nothing about the mark:
  *
  *   1. PARITY — synced Next app icons are byte-identical to their canonical
@@ -18,9 +18,16 @@
  *      channel shape their consumer requires, every glyph layer is non-empty,
  *      and the rasters are still a render of the committed vector.
  *
- * Hash parity is blind to 2 and 3: every file could agree perfectly with every
- * other file and still be the wrong colour, which is exactly the state #2153
- * found — a full pixel census of the pre-#2153 masters returned `#DDB844` in
+ *   4. CONTAINMENT — `favicon.ico` is a container, and every payload in it is
+ *      the canonical raster of its size plus an opaque alpha channel: same
+ *      paint, same artwork, in the RGBA shape Turbopack's ICO decoder requires.
+ *      Nothing above can see inside an `.ico`, which is how
+ *      `apps/web/app/favicon.ico` shipped Next's scaffold icon through green CI
+ *      for as long as the file existed.
+ *
+ * Hash parity is blind to 2, 3 and 4: every file could agree perfectly with
+ * every other file and still be the wrong colour, which is exactly the state
+ * #2153 found — a full pixel census of the pre-#2153 masters returned `#DDB844` in
  * ZERO pixels while this script reported success.
  *
  * This reads pixels rather than trusting a re-run of `rasterize:brand-assets`,
@@ -36,9 +43,12 @@ import {
   FIELD,
   FIELD_HEX,
   GOLD_HEX,
+  ICO_SIZES,
   RENDER_AGREEMENT_MIN,
   SYNCED,
   assertGlyphCoverage,
+  assertFullyOpaque,
+  assertIcoShape,
   assertLockedPair,
   assertSvgLocked,
   census,
@@ -54,6 +64,9 @@ const repo = (rel) => join(root, rel);
 const MASTER_SVG = "packages/brand-assets/assets/signet-emblem-B.svg";
 const GLYPH_SVG = "packages/brand-assets/assets/signet-emblem-B-glyph.svg";
 const MASTER_RASTER = "packages/brand-assets/assets/signet-emblem-B-1024.png";
+const FAVICON_ICO = "packages/brand-assets/assets/signet-emblem-B.ico";
+const canonicalRaster = (size) =>
+  `packages/brand-assets/assets/signet-emblem-B-${size}.png`;
 
 /** Every shipped vector. `requireField` is false for the crest-alone glyph. */
 const vectors = [
@@ -242,6 +255,74 @@ if (existsSync(repo(MASTER_SVG)) && existsSync(repo(MASTER_RASTER))) {
   }
 }
 
+// ── 5. The favicon container ────────────────────────────────────────────────
+// Properties 1-3 are all structurally blind to an `.ico`: parity only proves
+// the copy under `apps/` equals the canonical, and no census above ever opens
+// the container. That blind spot is not hypothetical — it is why
+// `apps/web/app/favicon.ico` sat on Next's scaffold icon, black-and-white
+// artwork nobody in this repo drew, while every run of this script passed.
+//
+// Two properties, because the container cannot simply re-use the canonical
+// buffers. Turbopack's ICO decoder requires RGBA payloads and fails the web
+// production build on anything else, while the canonical rasters must stay
+// opaque RGB for the store icon. So the payloads carry the same paint with an
+// opaque alpha channel, and this asserts exactly that: the RGBA SHAPE the
+// toolchain needs, and RGB PLANE equality with the canonical raster of the same
+// size — which is what a census alone can never prove, since the locked pair
+// drawn as a different mark censuses identically.
+const payloads = ICO_SIZES.map((size) => canonicalRaster(size));
+// `existsSync` throughout, never `present`: every file this section reads is
+// already reported when missing — the `.ico` by the SYNCED parity loop that now
+// carries it, the canonical rasters by the census roster above. Reporting
+// either twice, with two differently worded hints, only buries the real failure.
+if (
+  existsSync(repo(FAVICON_ICO)) &&
+  payloads.every((rel) => existsSync(repo(rel)))
+) {
+  try {
+    const entries = assertIcoShape(
+      readFileSync(repo(FAVICON_ICO)),
+      FAVICON_ICO,
+      ICO_SIZES,
+    );
+    const rgb = async (input) => {
+      const { data, info } = await sharp(input)
+        .removeAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      return { data, info };
+    };
+    for (const [index, entry] of entries.entries()) {
+      // Alpha first, and on its own: the comparison below strips it, so this is
+      // the only place anything measures the channel the payload carries.
+      const withAlpha = await sharp(entry.payload)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      assertFullyOpaque(
+        withAlpha.data,
+        withAlpha.info.channels,
+        `${FAVICON_ICO}[${entry.width}]`,
+      );
+      const payload = await rgb(entry.payload);
+      const canonical = await rgb(readFileSync(repo(payloads[index])));
+      assertLockedPair(
+        census(payload.data, payload.info.channels, payload.info.width, payload.info.height, 255),
+        `${FAVICON_ICO}[${entry.width}]`,
+        { edge: entry.width },
+      );
+      if (!payload.data.equals(canonical.data)) {
+        fail(
+          `${FAVICON_ICO}: its ${entry.width}x${entry.width} payload is not ${payloads[index]} with an opaque alpha channel — ` +
+            `the favicon is drawing artwork no other surface draws\n  run: npm run rasterize:brand-assets`,
+        );
+      }
+    }
+  } catch (error) {
+    fail(String(error.message ?? error));
+  }
+}
+
 if (failed) {
   process.exit(1);
 }
@@ -249,5 +330,6 @@ console.log(
   `brand-assets: ${vectors.length} vectors paint ${GOLD_HEX} on ${FIELD_HEX}; ` +
     `${syncedCount} synced copies match canonical; ` +
     `${opaqueRasters.length} opaque rasters in the locked pair; ` +
-    `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty`,
+    `${glyphLayers.length + monochromeLayers.length} glyph layers non-empty; ` +
+    `favicon.ico holds the ${ICO_SIZES.join("/")} rasters as RGBA`,
 );

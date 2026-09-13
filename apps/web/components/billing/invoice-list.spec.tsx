@@ -259,7 +259,7 @@ describe("overdue derivation (#707/#1196)", () => {
     overdueQuery.isError = true;
     render(<InvoiceList />);
 
-    expect(screen.getByText(/— overdue/)).toBeInTheDocument();
+    expect(screen.getByText(/overdue unknown/)).toBeInTheDocument();
     expect(screen.queryByText(/\d+ overdue/)).not.toBeInTheDocument();
     expect(overdueOption()).toBeDisabled();
   });
@@ -273,7 +273,7 @@ describe("overdue derivation (#707/#1196)", () => {
     overdueQuery.fetchStatus = "fetching";
     render(<InvoiceList />);
 
-    expect(screen.getByText(/— overdue/)).toBeInTheDocument();
+    expect(screen.getByText(/overdue unknown/)).toBeInTheDocument();
     expect(overdueOption()).toBeDisabled();
   });
 
