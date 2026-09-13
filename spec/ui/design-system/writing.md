@@ -561,6 +561,36 @@ Three things about these rows, none of them free choices:
 Neither page uses an em dash, per
 [`../web-greenfield/README.md`](../web-greenfield/README.md) §2.
 
+### Degraded segment (`(dashboard)/error.tsx`)
+
+The fourth boundary, added by [#2175](https://github.com/pdcarlson/Frapp/issues/2175) once `#2145`'s
+`next/dynamic` splits gave the dashboard a way to fail one region at a time. It renders §10's Error
+card, not `crest-page.tsx`: the shell above it is still working, so this is a region that failed
+rather than a page that is gone. Both rows are implemented by
+[`apps/web/components/shared/segment-error.tsx`](../../../apps/web/components/shared/segment-error.tsx),
+which the route boundary and the chapter wizard gate's own boundary both render.
+
+| State | Title | Description | Action |
+|---|---|---|---|
+| Segment render error | `Couldn't load this page` | `The error has been reported. Retrying usually clears it.` | `Retry` |
+| Stale chunk (`ChunkLoadError`) | `Couldn't load this page` | `This usually means a new version shipped while the tab was open. Reload to pick it up.` | `Reload` |
+
+- **One title, two descriptions, two actions.** §3 asks the title for *what failed*, and from the
+  member's side both rows failed identically: this part of the page did not load. What differs is the
+  reason and the remedy, which are §3's other two parts, so that is where the rows differ.
+- **The second row exists because Retry cannot serve it.** A rejected `next/dynamic` chunk is a
+  settled `React.lazy` payload, and React re-throws the cached rejection without calling the loader
+  again, so a Retry button on this row would be a control that provably cannot succeed. The
+  reasoning and its evidence are in
+  [`apps/web/lib/chunk-load-error.ts`](../../../apps/web/lib/chunk-load-error.ts).
+- **"usually" is load-bearing in the second description.** §3 wants the reason only *if known*, and a
+  `ChunkLoadError` is typically a rotated build hash but can be a dropped connection. Naming the
+  deploy as fact would be inventing one.
+- **It borrows the route error's description for the first row** rather than writing a fifth variant
+  of the same sentence, because the situation is the same one: reported, and worth retrying.
+
+Neither row uses an em dash, for the reason the terminal pages above do not.
+
 ## 8. Mobile reliability labels
 
 Use these exact labels for operational state pills:

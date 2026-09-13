@@ -198,10 +198,24 @@ export function ErrorState({
   title = "Unable to load data",
   description = "Please retry in a moment.",
   onRetry,
+  actionLabel = "Retry",
 }: {
   title?: string;
   description?: string;
   onRetry?: () => void;
+  /**
+   * The action's label. Defaults to Retry, which is what §10's table names and
+   * what every caller before #2175 wanted.
+   *
+   * It is a label rather than a second component because the recovery this
+   * family offers is not always a retry: a stale chunk is fixed by reloading
+   * the document and provably *not* by re-rendering (see
+   * `lib/chunk-load-error.ts`), so the segment boundary needs a Reload here.
+   * §10 specs the Error variant's action as one Secondary button and requires
+   * this family to differ in colour rather than in shape — so the button that
+   * says Reload must be the same button, not a new one beside it.
+   */
+  actionLabel?: string;
 }) {
   return (
     // The one sanctioned semantic border (§10) — 28% of danger, not a solid.
@@ -215,7 +229,7 @@ export function ErrorState({
         // §10 names Secondary for retry, deliberately: an error surface must not
         // use the chapter accent, which rules out both Primary and Tinted.
         <Button variant="secondary" size="sm" onClick={onRetry}>
-          Retry
+          {actionLabel}
         </Button>
       ) : null}
     </div>
