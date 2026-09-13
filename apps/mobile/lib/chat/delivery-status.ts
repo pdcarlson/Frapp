@@ -28,7 +28,7 @@ export const UNCONFIRMED_NOTE = "Not confirmed";
 
 /** Fallback when the row carries no `_error`. Web's recorded note. */
 export const RECORDED_NOTE =
-  "Recorded — the chat card didn't post. Don't run this command again.";
+  "Recorded, but the chat card didn't post. Don't run this command again.";
 
 /**
  * Discriminated chrome for one row. `status` is `MessageStatus` itself, so a

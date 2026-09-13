@@ -15,19 +15,19 @@ Before [#2153](https://github.com/pdcarlson/Frapp/issues/2153) the source of tru
 Canonical assets follow one scheme, asserted by `scripts/ci/__tests__/brand-pixels.test.mjs`:
 
 ```
-signet-emblem-B[-glyph|-rounded][-<size>].<svg|png>
+signet-emblem-B[-glyph|-rounded][-<size>].<svg|png|ico>
 ```
 
 | Part      | Meaning                                                                 |
 | --------- | ----------------------------------------------------------------------- |
 | `-glyph`  | crest alone on a **transparent** field — no charcoal tile                |
 | `-rounded`| crest on a charcoal tile with the app-icon corner radius                 |
-| `-<size>` | raster edge length in px. Vectors carry no size.                         |
+| `-<size>` | raster edge length in px. Vectors carry no size, and neither does the `.ico` — it is a container of three sizes, so naming one would be a lie. |
 | *(none)*  | the master: crest on a square, full-bleed charcoal field                 |
 
 **One exception:** `frapp-lockup.svg` keeps its name. [`spec/ui/assets.md`](../../spec/ui/assets.md) §1 freezes `frapp-*` filenames (`"frapp-* filenames, @repo/brand-assets, and frapp.live domains stay as-is in code"`), so renaming it is a separate decision that has to change that rule first.
 
-Names written into `apps/` are **not** ours: `app/icon.png` and `app/apple-icon.png` are Next App Router file conventions, `public/brand/signet-emblem-B.png` is the path the components request, and the Expo names are fixed by `apps/mobile/app.json`. `sync-brand-assets.mjs` renames on copy.
+Names written into `apps/` are **not** ours: `app/icon.png`, `app/apple-icon.png` and `app/favicon.ico` are Next App Router file conventions, `public/brand/signet-emblem-B.png` is the path the components request, and the Expo names are fixed by `apps/mobile/app.json`. `sync-brand-assets.mjs` renames on copy.
 
 ## Contents
 
@@ -43,6 +43,7 @@ Names written into `apps/` are **not** ours: `app/icon.png` and `app/apple-icon.
 | `signet-emblem-B-48.png`       | PNG 48² RGB    | Favicon                                                    |
 | `signet-emblem-B-32.png`       | PNG 32² RGB    | Favicon; source for Next `app/icon.png`                    |
 | `signet-emblem-B-16.png`       | PNG 16² RGB    | Favicon                                                    |
+| `signet-emblem-B.ico`          | ICO 16/32/48 RGBA | Next `app/favicon.ico`; those three rasters with an opaque alpha channel — Turbopack's ICO decoder requires RGBA |
 
 All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 units tall — so the same path data is reused **verbatim** and cannot drift between them; the test asserts byte-equal path strings. Only the viewBox *width* differs: the lockup is `0 0 3360 1024` because it carries the wordmark beside the tile, and each file's intrinsic `width`/`height` must keep its viewBox aspect or every raster renders distorted. That drift is what #2153 was: a "superseded" SVG and the shipping raster drew different artwork, in the same commit, from birth.
 
@@ -54,7 +55,7 @@ All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 un
 
 ## Consumers
 
-- **Next.js:** `npm run rasterize:brand-assets` then `npm run sync:brand-assets` from the repo root updates `app/icon.png`, `app/apple-icon.png`, and `public/brand/signet-emblem-B.png` in `landing` and `web`. Both apps also run sync on `prebuild`.
+- **Next.js:** `npm run rasterize:brand-assets` then `npm run sync:brand-assets` from the repo root updates `app/icon.png`, `app/apple-icon.png`, `public/brand/signet-emblem-B.png`, and `web`'s `app/favicon.ico`. Both apps also run sync on `prebuild`. What gets copied where is `SYNCED` in [`scripts/lib/brand-pixels.mjs`](../../scripts/lib/brand-pixels.mjs) — the sync script and the CI gate both walk that one list, so a destination cannot be copied without also being gated.
 - **Landing header:** `apps/landing/components/frapp-lockup.tsx` (tile + Signet word).
 - **Web auth:** `apps/web/components/auth/signet-mark.tsx`.
 - **Expo:** rasters under `apps/mobile/assets/images/` — see [`spec/ui/assets.md`](../../spec/ui/assets.md) §7.

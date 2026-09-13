@@ -93,7 +93,7 @@ export function SettingsModulesTab({
         <CardDescription>
           {enabledCount} of {MODULE_CATALOG.length} modules enabled. Disabling a
           module hides it from the sidebar and chat slash commands and mutes its
-          system channel. Re-enabling restores everything — data is never
+          system channel. Re-enabling restores everything. Data is never
           deleted.
         </CardDescription>
       </CardHeader>

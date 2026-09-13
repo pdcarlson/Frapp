@@ -58,7 +58,7 @@ const OPTIONS: {
   {
     level: "off",
     label: "Mute",
-    description: "No notifications — but @mentions still reach you.",
+    description: "No notifications, but @mentions still reach you.",
   },
 ];
 
