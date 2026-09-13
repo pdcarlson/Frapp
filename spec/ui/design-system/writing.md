@@ -570,7 +570,7 @@ The fourth boundary, added by [#2175](https://github.com/pdcarlson/Frapp/issues/
 `next/dynamic` splits gave the dashboard a way to fail one region at a time. It renders
 [components.md](components.md) §10's Error card, not `crest-page.tsx`: the shell above it is still
 working, so this is a region that failed
-rather than a page that is gone. Both rows are implemented by
+rather than a page that is gone. All three rows are implemented by
 [`apps/web/components/shared/segment-error.tsx`](../../../apps/web/components/shared/segment-error.tsx),
 which the route boundary and the chapter wizard gate's own boundary both render.
 
@@ -584,9 +584,11 @@ The wizard gate's boundary renders the same component with one substitution — 
 `Couldn't open chapter setup`, because the page behind that dialog rendered fine and §3 asks the
 title for what actually failed. The description and the action are the rows above, unchanged.
 
-- **One title, three descriptions.** §3 asks the title for *what failed*, and from the member's side
-  every row failed identically: this part of the page did not load. What differs is the reason and
-  the remedy, which are §3's other two parts, so that is where the rows differ.
+- **One title across the three rows, and a second only where the subject changes.** §3 asks the
+  title for *what failed*, and from the member's side every row above failed identically: this part
+  of the page did not load. What differs between them is the reason and the remedy, which are §3's
+  other two parts. The wizard gate's substitution is not a fourth row — it is the same three rows on
+  a surface where "this page" names the wrong thing.
 - **The second row says `Reload` because only a reload clears the condition** — not because Retry
   cannot work. That stronger claim is wrong and was in the first draft of this section: `retry()`
   re-renders the segment, and the two splits the route boundary covers are opened by state the

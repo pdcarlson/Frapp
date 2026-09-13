@@ -1,6 +1,9 @@
 "use client";
 
+import { usePathname } from "next/navigation";
+import { isFullBleedRoute } from "@/components/layout/full-bleed-routes";
 import { SegmentError } from "@/components/shared/segment-error";
+import { cn } from "@/lib/utils";
 
 /**
  * The `(dashboard)` segment's error boundary — #2175.
@@ -56,18 +59,29 @@ import { SegmentError } from "@/components/shared/segment-error";
  * and the reference names it the exception ("In most cases, you should use
  * `retry()` instead").
  *
- * ## The wrapper is not decoration
+ * ## The wrapper is not decoration, and its padding is conditional
  *
  * The first draft rendered the state bare, for parity with
  * `(dashboard)/loading.tsx` in the same slot. That parity argument only holds
  * on the padded routes. `<main>` drops its gutter entirely on a full-bleed
  * route (`dashboard-shell.tsx`: `fullBleed ? "overflow-hidden" : "... px-4 py-4
  * sm:px-6"`), so on `/chat` — the route this whole change is motivated by — the
- * card painted flush against the nav rail, the top bar and the viewport edge,
- * full width and pinned to the top. `p-4` here is inert where `<main>` already
- * pads and is the whole gutter where it does not; `max-w-md` stops a 208px card
- * stretching the width of a 1440px display, which is the other half of what
- * `CrestPage` was doing for free before.
+ * card painted flush against the nav rail, the top bar and the viewport edge.
+ *
+ * The second draft fixed that with an unconditional `p-4`, on the reasoning
+ * that it would be "inert where `<main>` already pads". **CSS padding is
+ * additive, so that was simply false**: on `/members` it made a 32px inset
+ * where the skeleton it replaces sits at 16px, which is precisely the
+ * loading-to-error jump the first draft refused to create. So the gutter is
+ * asked for only where there is not one already, from the same helper the shell
+ * itself uses — one answer to "is this route full-bleed", not two that can
+ * drift.
+ *
+ * `max-w-md` is unconditional and does differ from the skeleton, deliberately:
+ * a skeleton is content-shaped and belongs at content width (§10: "the skeleton
+ * mirrors the layout it becomes"), while this is a short message in a fixed
+ * §10 card, and stretching one across a 1440px display is what `CrestPage` was
+ * quietly preventing before.
  *
  * ## It renders the `h1`
  *
@@ -86,8 +100,10 @@ export default function DashboardSegmentError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  const fullBleed = isFullBleedRoute(usePathname());
+
   return (
-    <div className="w-full max-w-md p-4">
+    <div className={cn("w-full max-w-md", fullBleed && "p-4")}>
       <SegmentError error={error} retry={retry} headingLevel="h1" />
     </div>
   );

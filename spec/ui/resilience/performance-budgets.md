@@ -57,6 +57,12 @@ those 11 KB went, and [`chapter-wizard-gate.tsx`](../../../apps/web/components/o
 carries the breakdown and the cheaper alternative that was measured and not taken. Both rows are kept
 because the instruction below is to compare before and after, which needs a before.
 
+The per-route totals move by less than the floor does (`/settings` +7 KB, `/chat` +9 KB against the
+floor's +11 KB) even though each total contains the floor. That is not a transcription error: the two
+rows are separate production builds and Turbopack re-chunks between them, so a module can move
+between a route's own chunk and the shared floor. Compare rows to rows, not deltas to deltas, and
+re-run the script rather than subtracting.
+
 `/chat` carries ~824 KB of its own on top of the floor, nearly all of it one chunk holding
 `@tiptap` + ProseMirror, `react-virtuoso`, and the `react-markdown` / `remark` / `micromark` chain.
 That is the board's **chat** chunk and it is correctly eager: the timeline has to be readable and

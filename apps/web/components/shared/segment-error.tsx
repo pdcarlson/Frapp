@@ -56,9 +56,16 @@ import { isChunkLoadError } from "@/lib/chunk-load-error";
  * could offer. `apps/web` registers no service worker, so a reload cannot fetch
  * the document at all: it would replace a working, cache-backed dashboard with
  * the browser's own offline page, and there would be no way back until the
- * connection returned. So when `useNetwork()` says offline, the surface says
- * so and offers Retry, which costs nothing and works the moment the connection
- * does.
+ * connection returned. So when the browser link is down the surface says so and
+ * offers Retry, which costs nothing and works the moment the connection does.
+ *
+ * It gates on `linkOnline` rather than `isOffline`, and the difference is not
+ * pedantic: `isOffline` also goes true after three failed `/health` probes, so
+ * an API outage on a perfectly good link would put "You're offline" in front of
+ * a member who can disprove it by opening a tab, *and* withhold the Reload that
+ * would have fixed their stale chunk. The question this branch is asking is
+ * whether a reload could fetch the document, which is exactly what `linkOnline`
+ * answers and what its own docstring reserves it for.
  *
  * ## Reporting
  *
@@ -80,20 +87,24 @@ const REPORTED = new WeakSet<object>();
 /**
  * The one spelling of the title, written once.
  *
- * `writing.md` §7 pins it as the part that does **not** vary between the two
- * rows, so two literals would be a fork the tests could not see: each branch's
- * assertion would pass against its own copy while the table stopped being true.
+ * `writing.md` §7 pins it as the part that does **not** vary across the three
+ * rows, so a literal per branch would be a fork the tests could not see: each
+ * branch's assertion would pass against its own copy while the table stopped
+ * being true. The wizard gate overrides it via the `title` prop, which is a
+ * different surface naming a different failure rather than a second spelling of
+ * this one.
  */
 const SEGMENT_ERROR_TITLE = "Couldn't load this page";
 
 /**
  * The copy and the remedy for one error, resolved in one place.
  *
- * Exported because a call site that renders this surface inside a dialog needs
- * the title for the dialog's accessible name, and the alternative — retyping it
- * at that call site — is the fork this module exists to avoid.
+ * Not exported. An earlier draft exported it so the wizard gate could take the
+ * title for its dialog's accessible name, but that gate names a different
+ * failure ("Couldn't open chapter setup") and passes it in through `title`
+ * instead, so the export had no consumer and its stated reason was false.
  */
-export function segmentErrorCopy(
+function segmentErrorCopy(
   error: unknown,
   isOffline = false,
 ): {
@@ -158,8 +169,14 @@ export function SegmentError({
   title?: string;
   headingLevel?: "h1" | "h2";
 }) {
-  const { isOffline } = useNetwork();
-  const copy = segmentErrorCopy(error, isOffline);
+  // `linkOnline`, not `isOffline`: the question here is whether a reload
+  // could fetch the document, which is a browser-link question. `isOffline`
+  // also goes true after three failed `/health` probes, so an API outage on a
+  // working link would make this surface tell the member they are offline —
+  // a claim they can disprove by opening a tab — and withhold the one remedy
+  // that would have worked. The field's own docstring draws this line.
+  const { linkOnline } = useNetwork();
+  const copy = segmentErrorCopy(error, !linkOnline);
   const { description, actionLabel, isChunkError, shouldReload } = copy;
 
   useEffect(() => {

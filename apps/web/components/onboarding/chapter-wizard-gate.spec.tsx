@@ -19,7 +19,7 @@ const { chapters } = vi.hoisted(() => ({
 vi.mock("@repo/hooks", () => ({ useAccessibleChapters: () => chapters }));
 
 vi.mock("@/lib/providers/network-provider", () => ({
-  useNetwork: () => ({ isOffline: false }),
+  useNetwork: () => ({ linkOnline: true }),
 }));
 
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard-gate";
@@ -91,6 +91,26 @@ describe("the chapter wizard gate's own boundary", () => {
     await userEvent.click(screen.getByRole("button", { name: /close/i }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("stays dismissed when the boundary resets, not just for one route", async () => {
+    // The dismissal lives above the boundary for this reason. Held inside the
+    // fallback it reset whenever `CatchError` cleared its error on a pathname
+    // change, so the wizard re-threw on the next route and the dialog came
+    // back — one dismissal per route, forever. `rerender` stands in for that
+    // cycle: the gate re-renders, the wizard would throw again, and the gate
+    // must still be suppressed.
+    wizard.throws = new TypeError("a deterministic bug in the wizard");
+    const { rerender, container } = render(<ChapterWizardGate />);
+
+    await screen.findByRole("dialog");
+    await userEvent.click(screen.getByRole("button", { name: /close/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    rerender(<ChapterWizardGate />);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container.innerHTML).toBe("");
   });
 
   it("renders the wizard untouched when nothing fails", () => {

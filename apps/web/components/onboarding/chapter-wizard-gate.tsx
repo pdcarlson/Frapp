@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { catchError } from "next/error";
 import { useAccessibleChapters } from "@repo/hooks";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { SegmentError } from "@/components/shared/segment-error";
 import { asArray } from "@/lib/utils";
 
@@ -116,27 +121,39 @@ const ChapterWizard = dynamic(
  * `@radix-ui/react-dialog`, so the primitives are in the shell chunk either
  * way.
  *
- * `open` is local state rather than the gate's own `open`, deliberately: the
- * gate's flag is the *trigger* ("this member has no chapter"), and conflating
- * dismissing an error with having onboarded would stop the wizard ever being
- * offered again this session.
+ * **The dismissal is owned by the gate, not by this fallback**, and the second
+ * draft got that wrong in a way worth recording. Held as `useState` in here it
+ * reset on every navigation — `CatchError` clears its error on a pathname
+ * change, the wizard re-throws on the new route, and the fallback remounts
+ * with the flag back to its initial value. The dialog therefore came back over
+ * every route and had to be dismissed again each time, which is better than the
+ * lockout it replaced but is not the "navigable" this paragraph claimed. Lifted
+ * above the boundary, in `ChapterWizardGate`, it survives that cycle.
  *
  * The title is overridden because the default names the wrong subject. The page
  * behind this dialog rendered perfectly well; what failed is the wizard.
  */
 const WIZARD_FAILURE_TITLE = "Couldn't open chapter setup";
+/**
+ * Deliberately generic: the card below states the *specific* remedy, which
+ * varies with the error, and duplicating that branch here would be a second
+ * place for it to drift. This names the surface so the announcement is not
+ * bare; `SegmentError` owns what to do about it.
+ */
+const WIZARD_FAILURE_DESCRIPTION =
+  "Chapter setup could not be opened. The card below says what to do next.";
 
 function ChapterWizardFailure({
   error,
   retry,
+  onDismiss,
 }: {
   error: unknown;
   retry: () => void;
+  onDismiss: () => void;
 }) {
-  const [open, setOpen] = useState(true);
-
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open onOpenChange={(next) => !next && onDismiss()}>
       <DialogContent className="max-w-md border-none bg-transparent p-0 shadow-none">
         {/*
           Radix derives the dialog's accessible name from `DialogTitle` and
@@ -145,21 +162,34 @@ function ChapterWizardFailure({
           two different consumers rather than written twice.
         */}
         <DialogTitle className="sr-only">{WIZARD_FAILURE_TITLE}</DialogTitle>
+        {/*
+          Radix wires `aria-describedby` only when a description is present and
+          omits it silently otherwise, so without this the dialog announces its
+          title and nothing about the remedy — on a surface whose whole point is
+          telling a member what to do next. `sr-only` because the card renders
+          the same sentence visibly; `slash-palette.tsx` does this for the same
+          reason.
+        */}
+        <DialogDescription className="sr-only">
+          {WIZARD_FAILURE_DESCRIPTION}
+        </DialogDescription>
         <SegmentError error={error} retry={retry} title={WIZARD_FAILURE_TITLE} />
       </DialogContent>
     </Dialog>
   );
 }
 
-// No type argument: `catchError<P>`'s `P` is the *fallback's* props, and the
-// returned component already gets `children` from its own return type. Writing
-// `<{ children?: React.ReactNode }>` claims the fallback receives children when
-// `catch-error.js` destructures them off (`({ children, ...props })`) and
-// forwards only the rest — so it would type a later `_props.children` as
-// `ReactNode` while handing it `undefined` at runtime, with no compile error.
-const ChapterWizardBoundary = catchError((_props, { error, retry }) => (
-  <ChapterWizardFailure error={error} retry={retry} />
-));
+// `catchError<P>`'s `P` is the *fallback's* props, which is exactly what
+// `onDismiss` is — `catch-error.js` strips `children` off and forwards the rest
+// to the fallback, so this is the sanctioned channel for handing the boundary
+// something from above it. Do not add `children` to `P`: the returned component
+// already accepts it from its own return type, and declaring it here would type
+// a later `props.children` as `ReactNode` while handing it `undefined`.
+const ChapterWizardBoundary = catchError<{ onDismiss: () => void }>(
+  ({ onDismiss }, { error, retry }) => (
+    <ChapterWizardFailure error={error} retry={retry} onDismiss={onDismiss} />
+  ),
+);
 
 /**
  * First-officer onboarding wizard (Chunk 03). Fires when a signed-in user has
@@ -171,6 +201,7 @@ const ChapterWizardBoundary = catchError((_props, { error, retry }) => (
 export function ChapterWizardGate() {
   const chaptersQuery = useAccessibleChapters();
   const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   const memberships = asArray<unknown>(chaptersQuery.data);
   // Trigger: the user has zero chapter memberships. Once opened, the wizard
@@ -183,9 +214,19 @@ export function ChapterWizardGate() {
     if (hasNoChapters) setOpen(true);
   }, [hasNoChapters]);
 
-  if (!open) return null;
+  // `dismissed` lives here, above the boundary, and that placement is the whole
+  // point of it. Held inside the fallback it reset on every navigation, because
+  // `CatchError` clears its error on a pathname change and the wizard re-throws
+  // on the new route — so a member was made to dismiss the same failure once
+  // per route for the rest of the session. Above the boundary it survives that
+  // cycle and the dismissal means what it says.
+  //
+  // It is deliberately not `setOpen(false)`: `open` is the gate's trigger, and
+  // spending it here would make "I dismissed an error" indistinguishable from
+  // "I finished onboarding" if the wizard later recovers.
+  if (!open || dismissed) return null;
   return (
-    <ChapterWizardBoundary>
+    <ChapterWizardBoundary onDismiss={() => setDismissed(true)}>
       <ChapterWizard onComplete={() => setOpen(false)} />
     </ChapterWizardBoundary>
   );
