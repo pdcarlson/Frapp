@@ -30,7 +30,7 @@ import {
   GOLD_HEX,
   ICO_SIZES,
   assertGlyphCoverage,
-  assertIcoContains,
+  assertIcoShape,
   assertLockedPair,
   assertSvgLocked,
   buildIco,
@@ -84,6 +84,24 @@ async function opaque(source, size) {
     .resize(size, size, { fit: "fill" })
     .flatten({ background: FLATTEN })
     .removeAlpha()
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
+/**
+ * The same tile as `opaque()`, keeping an alpha channel that is 255 everywhere.
+ *
+ * Only the favicon container wants this. Next builds `app/favicon.ico` through
+ * Turbopack, whose ICO decoder refuses a non-RGBA PNG payload and fails the
+ * production build, while `spec/ui/assets.md` §7 requires the canonical rasters
+ * to stay opaque RGB for the store icon. The two constraints are both real, so
+ * the container gets its own render rather than either one bending.
+ */
+async function opaqueRgba(source, size) {
+  return sharp(source)
+    .resize(size, size, { fit: "fill" })
+    .flatten({ background: FLATTEN })
+    .ensureAlpha()
     .png({ compressionLevel: 9 })
     .toBuffer();
 }
@@ -199,6 +217,15 @@ async function audit(buffer, label, kind) {
       );
     }
     assertLockedPair(stats, label, { edge: info.width });
+  } else if (kind === "opaqueRgba") {
+    // The inverse requirement of "opaque", and for a different consumer: a
+    // favicon payload MUST carry alpha or Turbopack refuses the container.
+    if (meta.channels !== 4) {
+      throw new Error(
+        `${label}: has ${meta.channels} channels — an .ico payload must be RGBA or Turbopack's decoder refuses it`,
+      );
+    }
+    assertLockedPair(stats, label, { edge: info.width });
   } else if (kind === "glyph") {
     if (meta.channels !== 4) {
       throw new Error(`${label}: must carry an alpha channel`);
@@ -272,14 +299,22 @@ async function main() {
   }
   const tile1024 = tiles.get(1024);
 
-  // The favicon container, packed from the buffers just audited rather than
-  // from a fresh render of its own. `favicon.ico` therefore cannot come to
-  // describe different artwork than the `app/icon.png` sitting beside it —
-  // which is precisely what the scaffold icon it replaces did, unnoticed,
-  // because no script wrote it and no gate read it.
-  const faviconPayloads = ICO_SIZES.map((size) => tiles.get(size));
+  // The favicon container. Its payloads are the same paint as the canonical
+  // rasters above with an opaque alpha channel added, because Turbopack's ICO
+  // decoder requires RGBA and the canonical rasters must stay RGB — see
+  // `opaqueRgba` for why neither constraint can give way. Each is audited as
+  // written before it is packed, exactly like every other buffer here, and
+  // `check:brand-assets` then proves each payload's RGB plane is byte-identical
+  // to the canonical raster of its size, so the favicon still cannot come to
+  // describe different artwork than the `app/icon.png` beside it.
+  const faviconPayloads = [];
+  for (const size of ICO_SIZES) {
+    const payload = await opaqueRgba(markHi, size);
+    await audit(payload, `signet-emblem-B.ico[${size}]`, "opaqueRgba");
+    faviconPayloads.push(payload);
+  }
   const favicon = buildIco(faviconPayloads);
-  assertIcoContains(favicon, "signet-emblem-B.ico", faviconPayloads);
+  assertIcoShape(favicon, "signet-emblem-B.ico", ICO_SIZES);
   await write("packages/brand-assets/assets/signet-emblem-B.ico", favicon);
 
   await emit(

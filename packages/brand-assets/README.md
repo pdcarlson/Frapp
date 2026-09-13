@@ -43,7 +43,7 @@ Names written into `apps/` are **not** ours: `app/icon.png`, `app/apple-icon.png
 | `signet-emblem-B-48.png`       | PNG 48² RGB    | Favicon                                                    |
 | `signet-emblem-B-32.png`       | PNG 32² RGB    | Favicon; source for Next `app/icon.png`                    |
 | `signet-emblem-B-16.png`       | PNG 16² RGB    | Favicon                                                    |
-| `signet-emblem-B.ico`          | ICO 16/32/48   | Next `app/favicon.ico`; a container of the three PNGs above |
+| `signet-emblem-B.ico`          | ICO 16/32/48 RGBA | Next `app/favicon.ico`; those three rasters with an opaque alpha channel — Turbopack's ICO decoder requires RGBA |
 
 All four SVGs are written in the same coordinate frame — origin `0 0`, 1024 units tall — so the same path data is reused **verbatim** and cannot drift between them; the test asserts byte-equal path strings. Only the viewBox *width* differs: the lockup is `0 0 3360 1024` because it carries the wordmark beside the tile, and each file's intrinsic `width`/`height` must keep its viewBox aspect or every raster renders distorted. That drift is what #2153 was: a "superseded" SVG and the shipping raster drew different artwork, in the same commit, from birth.
 

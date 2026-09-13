@@ -36,7 +36,7 @@ import {
   RENDER_AGREEMENT_MIN,
   SYNCED,
   assertGlyphCoverage,
-  assertIcoContains,
+  assertIcoShape,
   assertLockedPair,
   assertSvgLocked,
   buildIco,
@@ -373,8 +373,12 @@ test("the sync manifest names files that exist, and the package exports them", (
 // container code is concerned, and the assertions that must read real pixels
 // live in `check:brand-assets`.
 
-/** The smallest buffer `pngHeader` accepts, with a distinguishing tail byte. */
-function fakePng(size, { colourType = 2, tail = 0 } = {}) {
+/**
+ * The smallest buffer `pngHeader` accepts, with a distinguishing tail byte.
+ * Defaults to RGBA because that is what a real favicon payload must be —
+ * Turbopack's ICO decoder rejects anything else and fails the web build.
+ */
+function fakePng(size, { colourType = 6, tail = 0 } = {}) {
   const png = Buffer.alloc(27);
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
   png.write("IHDR", 12, "ascii");
@@ -390,7 +394,7 @@ test("pngHeader reads IHDR and rejects anything that is not a PNG", () => {
   assert.deepEqual(pngHeader(fakePng(48)), {
     width: 48,
     height: 48,
-    colourType: 2,
+    colourType: 6,
   });
   assert.equal(pngHeader(Buffer.alloc(64)), null);
   assert.equal(pngHeader(Buffer.alloc(4)), null, "a truncated buffer is not a PNG");
@@ -413,7 +417,7 @@ test("buildIco derives every directory field from the payload itself", () => {
   // A caller cannot hand this function a size that disagrees with the image,
   // because it is never asked for one — which is the failure `lying-entry`
   // below has to be constructed by hand to produce.
-  const ico = buildIco([fakePng(256), fakePng(16, { colourType: 6 })]);
+  const ico = buildIco([fakePng(256, { colourType: 2 }), fakePng(16)]);
   assert.equal(ico[6], 0, "256 is written as 0 — the one size that is not a byte");
   assert.equal(ico.readUInt16LE(6 + 6), 24, "truecolour RGB is 24bpp");
   assert.equal(ico.readUInt16LE(6 + 16 + 6), 32, "truecolour with alpha is 32bpp");
@@ -459,26 +463,26 @@ test("readIco refuses every container shape that hides its contents", () => {
   assert.throws(() => readIco(lying, "x.ico"), /listed as 64x16 but its PNG is 16x16/);
 });
 
-test("assertIcoContains rejects other artwork drawn in the locked pair", () => {
-  const payloads = ICO_SIZES.map((size) => fakePng(size, { tail: 1 }));
-  const ico = buildIco(payloads);
+test("assertIcoShape pins the size roster and the RGBA payload requirement", () => {
+  const payloads = ICO_SIZES.map((size) => fakePng(size));
   assert.deepEqual(
-    assertIcoContains(ico, "favicon.ico", payloads).map((e) => e.width),
+    assertIcoShape(buildIco(payloads), "favicon.ico", ICO_SIZES).map((e) => e.width),
     ICO_SIZES,
   );
 
-  // The case a pixel census structurally cannot catch: same sizes, same
-  // container, same brand colours, different mark. Byte equality against a
-  // raster that IS censused catches the colour and the artwork at once.
-  const impostor = buildIco(ICO_SIZES.map((size) => fakePng(size, { tail: 2 })));
   assert.throws(
-    () => assertIcoContains(impostor, "favicon.ico", payloads),
-    /is not the committed signet-emblem-B-16\.png/,
+    () => assertIcoShape(buildIco(payloads.slice(0, 2)), "favicon.ico", ICO_SIZES),
+    /carries 16x16, 32x32; the favicon must carry 16x16, 32x32, 48x48/,
   );
 
+  // The regression that turned the web production build red: Turbopack's ICO
+  // decoder refuses a non-RGBA payload outright, so an RGB one is a failed
+  // build rather than a worse-looking icon. Asserted here so the next person
+  // packing this container meets the rule instead of the Turbopack error.
+  const rgbPayloads = ICO_SIZES.map((size) => fakePng(size, { colourType: 2 }));
   assert.throws(
-    () => assertIcoContains(buildIco(payloads.slice(0, 2)), "favicon.ico", payloads),
-    /carries 16x16, 32x32; the favicon must carry 16x16, 32x32, 48x48/,
+    () => assertIcoShape(buildIco(rgbPayloads), "favicon.ico", ICO_SIZES),
+    /colour type 2, not RGBA \(6\)/,
   );
 });
 

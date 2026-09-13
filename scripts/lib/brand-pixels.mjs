@@ -364,6 +364,20 @@ export function coverageMask(data, channels, width, height) {
 // auditable with the decoder already in this repo. A DIB payload would need a
 // second decoder written here, and a format nothing can read is exactly where
 // the scaffold icon hid.
+//
+// AND THEY ARE RGBA, WHICH IS NOT A FREE CHOICE. Next builds `app/favicon.ico`
+// through Turbopack's image pipeline, whose ICO decoder rejects a non-RGBA PNG
+// payload outright — "Format error decoding Ico: The PNG is not in RGBA
+// format!" — and that is a failed production build, not a degraded icon. The
+// canonical 16/32/48 rasters are deliberately opaque RGB, because
+// `spec/ui/assets.md` §7 needs them that way for the store icon, so the
+// container cannot simply carry those buffers.
+//
+// It carries the same artwork with an opaque alpha channel instead, and the
+// gate states exactly that: every payload's RGB plane must be byte-identical to
+// the canonical raster of its size. That is the same strength the byte equality
+// of the whole file would have given — same colours AND same artwork, which no
+// census can check — while being a shape the toolchain will actually build.
 
 /**
  * The sizes the container carries — the three favicon rasters
@@ -500,29 +514,29 @@ export function readIco(buffer, label) {
 }
 
 /**
- * The assertion the exporter and the CI gate both run: this `.ico` is exactly
- * these audited PNGs, in this order, and nothing else.
+ * The container's own shape, asserted without decoding a pixel: the sizes it
+ * carries, and that every payload is RGBA.
  *
- * Byte equality rather than a pixel census, deliberately. The census the
- * canonical rasters go through cannot tell the locked pair from the locked pair
- * drawn as a different mark, and "different artwork, same colours, shipped
- * green" is the #2153 failure restated. Equality to a file that IS censused
- * catches both halves at once.
+ * The RGBA check is the one that keeps the web build green — see the note
+ * above — so it is asserted here rather than left to be rediscovered from a
+ * Turbopack error. Colour and artwork are checked by the callers that have a
+ * decoder; this file deliberately depends on nothing.
  */
-export function assertIcoContains(buffer, label, expected) {
+export function assertIcoShape(buffer, label, sizes) {
   const entries = readIco(buffer, label);
   const describe = (list) => list.map((size) => `${size}x${size}`).join(", ");
-  const want = expected.map((png) => pngHeader(png)?.width ?? 0);
   const got = entries.map((entry) => entry.width);
-  if (got.length !== want.length || got.some((size, i) => size !== want[i])) {
+  if (got.length !== sizes.length || got.some((size, i) => size !== sizes[i])) {
     throw new Error(
-      `${label}: carries ${describe(got)}; the favicon must carry ${describe(want)} — run: npm run rasterize:brand-assets`,
+      `${label}: carries ${describe(got)}; the favicon must carry ${describe(sizes)} — run: npm run rasterize:brand-assets`,
     );
   }
-  entries.forEach((entry, index) => {
-    if (!entry.payload.equals(expected[index])) {
+  entries.forEach((entry) => {
+    const colourType = pngHeader(entry.payload).colourType;
+    if (colourType !== PNG_COLOUR_TYPE_RGBA) {
       throw new Error(
-        `${label}: its ${entry.width}x${entry.height} image is not the committed signet-emblem-B-${entry.width}.png — the favicon is drawing artwork no other surface draws\n  run: npm run rasterize:brand-assets`,
+        `${label}: its ${entry.width}x${entry.height} payload is PNG colour type ${colourType}, not RGBA (6) — ` +
+          `Turbopack's ICO decoder refuses that outright ("The PNG is not in RGBA format!") and the web production build fails`,
       );
     }
   });

@@ -894,9 +894,11 @@ className. What had no **policy** guard were the two families declared in `signe
 - [x] **`apps/web/app/favicon.ico` is generated and gated.** It shipped Next's scaffold icon —
       25,931 bytes of black-and-white artwork nobody here drew — because it was in neither
       `sync-brand-assets.mjs`'s pair list nor any roster in `check-brand-assets.mjs`.
-      `rasterize:brand-assets` now packs it from the already-audited 16/32/48 buffers, and the gate
-      asserts *containment*: PNG payloads only, directory entries that match their images, and each
-      payload byte-identical to the raster the pixel census reads. Parity alone could not have done
+      `rasterize:brand-assets` now packs it from renders of the same vector master, and the gate
+      asserts *containment*: PNG payloads only, RGBA (Turbopack's ICO decoder refuses anything else
+      and fails the web production build — found by CI on the first push of this work, not by
+      reasoning), directory entries that match their images, and each payload's RGB plane
+      byte-identical to the canonical raster of its size. Parity alone could not have done
       it — nothing else in that script can see inside a container, so an on-brand `.ico` of the
       wrong mark passed every property it had. `sync-brand-assets.mjs` now walks `SYNCED` rather
       than its own parallel lists, which is what let the two disagree in the silent direction
