@@ -1,8 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  INestApplication,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -12,33 +8,22 @@ import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
+import {
+  createGuardStubs,
+  PermissionsGuardStub,
+  STUB_MEMBER_ID,
+} from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
 const TARGET_MEMBER_ID = '44444444-4444-4444-8444-444444444444';
 
-class AuthGuardStub implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    request.supabaseUser = { id: 'auth-user-1', email: 'member@example.com' };
-    return true;
-  }
-}
-
-class ChapterGuardStub implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    request.appUser = { id: 'user-1' };
-    request.member = { id: 'member-1', role_ids: ['role-president'] };
-    request.chapterId = 'chapter-1';
-    return true;
-  }
-}
-
-class PermissionsGuardStub implements CanActivate {
-  canActivate(): boolean {
-    return true;
-  }
-}
+const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
+  authUserId: 'auth-user-1',
+  email: 'member@example.com',
+  appUserId: 'user-1',
+  roleIds: ['role-president'],
+  chapterId: 'chapter-1',
+});
 
 describe('Membership + roles (e2e)', () => {
   let app: INestApplication;
@@ -107,9 +92,13 @@ describe('Membership + roles (e2e)', () => {
       .expect(201)
       .expect({ success: true });
 
+    // STUB_MEMBER_ID, not a bare literal: this pins that the actor comes from
+    // the guard-resolved membership row (`@CurrentMember()`) rather than the
+    // request body, so it must move with the stub's member id, never be edited
+    // to match it.
     expect(rbacServiceMock.transferPresidency).toHaveBeenCalledWith(
       'chapter-1',
-      'member-1',
+      STUB_MEMBER_ID,
       TARGET_MEMBER_ID,
     );
   });

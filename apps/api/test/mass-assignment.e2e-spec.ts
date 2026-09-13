@@ -1,8 +1,4 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  INestApplication,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -14,6 +10,10 @@ import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
+import {
+  createGuardStubs,
+  PermissionsGuardStub,
+} from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
 
@@ -34,33 +34,17 @@ function reasons(body: unknown): string {
   return Array.isArray(message) ? message.join(' | ') : String(message ?? '');
 }
 
-class AuthGuardStub implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const req = context.switchToHttp().getRequest();
-    req.supabaseUser = { id: 'auth-admin-1', email: 'admin@example.com' };
-    return true;
-  }
-}
-
-class ChapterGuardStub implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
-    const req = context.switchToHttp().getRequest();
-    req.appUser = { id: 'admin-1' };
-    req.member = { id: 'member-1', role_ids: ['role-exec'] };
-    // Deliberately NOT the x-chapter-id header the tests send. The real guard
-    // sets this only after confirming a membership row, and @CurrentChapterId()
-    // reads it rather than the header — this asymmetry is what makes the
-    // "scoped to the request chapter" assertions below meaningful.
-    req.chapterId = GUARD_CHAPTER_ID;
-    return true;
-  }
-}
-
-class PermissionsGuardStub implements CanActivate {
-  canActivate(): boolean {
-    return true;
-  }
-}
+const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
+  authUserId: 'auth-admin-1',
+  email: 'admin@example.com',
+  appUserId: 'admin-1',
+  roleIds: ['role-exec'],
+  // Deliberately NOT the x-chapter-id header the tests send. The real guard
+  // sets this only after confirming a membership row, and @CurrentChapterId()
+  // reads it rather than the header — this asymmetry is what makes the
+  // "scoped to the request chapter" assertions below meaningful.
+  chapterId: GUARD_CHAPTER_ID,
+});
 
 /**
  * "Never trust the client" as an executable contract (#849).
