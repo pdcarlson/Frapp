@@ -9,15 +9,24 @@ import type {
  *
  * `appUser` and `member` are the canonical `RequestContext` types rather than a
  * local restatement, so a field added to or renamed on either reaches this file
- * by reference instead of by someone remembering. Two caveats, both deliberate:
+ * by reference instead of by someone remembering. Three caveats, all deliberate,
+ * and each one a place where that reference does *not* do the work:
  *
- * - `supabaseUser` is narrowed. The real field is Supabase's `User`, which has a
- *   dozen required properties (`app_metadata`, `aud`, `created_at`, …) that no
- *   route under test reads; declaring it in full would force every call site to
- *   build a fake `User` or cast. `analytics-identity.e2e-spec.ts:31` narrows it
- *   the same way for the same reason. A spec that needs `user_metadata` — which
- *   `AuthSyncInterceptor` does read — must widen this, not cast past it.
- * - This is documentation strength, not gate strength. `apps/api/test` sits
+ * - **`supabaseUser` is not the real type.** Supabase's `User` has five required
+ *   members — `id`, `app_metadata`, `user_metadata`, `aud`, `created_at` — none
+ *   of which any route these stubs serve reads, so declaring it in full would
+ *   make every call site build a fake `User` or cast past it. Note the shape
+ *   below is not a strict narrowing: `email` is *optional* on the real `User`
+ *   and required here, because every current caller supplies one. A spec that
+ *   needs `user_metadata` (`AuthSyncInterceptor` reads it) has to widen this.
+ * - **`ChapterGuardStub` writes a subset of `member`.** The real `ChapterGuard`
+ *   selects `id, role_ids, custom_role_ids, chapter_id` and assigns the whole
+ *   row; this writes `{ id, role_ids }`. `custom_role_ids` is optional on
+ *   `MemberContext`, so the canonical type will **not** flag its absence: a spec
+ *   that keeps the real `PermissionsGuard` for a custom-role-gated route must
+ *   set it itself, or `permissions.guard.ts` resolves zero custom roles and the
+ *   route 403s for a reason that has nothing to do with the assertion.
+ * - **This is documentation strength, not gate strength.** `apps/api/test` sits
  *   outside the only typecheck the repo gates on — `tsconfig.build.json`
  *   excludes `test` and every spec file — and ts-jest transpiles without type
  *   checking, so nothing here fails CI on a type error. Tracked as a standing
@@ -83,17 +92,29 @@ export const STUB_MEMBER_ID = 'member-1';
  *
  * **Two e2e specs deliberately do not use this**, and the exceptions are named
  * here so the claim above is checkable rather than vacuous:
- * `settings-quiet-hours-tz.e2e-spec.ts` sets `appUser` inside its *auth* stub
- * because `PATCH /v1/settings` carries only the class-level `SupabaseAuthGuard`
- * and its `ChapterGuard` override never runs; `analytics-identity.e2e-spec.ts`
- * needs a mutable `jwtClaims` per test. Neither shape is expressible here, and
- * widening this factory to cover them would be the speculative kind of
- * machinery. A guard-chain change has to reach all three.
  *
- * These stubs supply `chapterId` unconditionally, so a spec using them **cannot
- * catch a tenancy regression** — `cross-tenant-isolation.e2e-spec.ts` is the
- * suite that runs the real `ChapterGuard` for that, and it overrides only
- * `PermissionsGuard`.
+ * - `settings-quiet-hours-tz.e2e-spec.ts`. `PATCH /v1/settings` carries only the
+ *   class-level `SupabaseAuthGuard`, so a `ChapterGuardStub` would never run —
+ *   and `appUser` there comes from neither stub but from the class-level
+ *   `AuthSyncInterceptor`, which runs *after* the guards and overwrites
+ *   `request.appUser` with `{ id }` from `AuthService.syncUser`. Setting
+ *   `appUser` in a guard stub on that route is dead code; the spec mocks
+ *   `AuthService` instead, and says so at its own provider list.
+ * - `analytics-identity.e2e-spec.ts` needs a mutable `jwtClaims` per test, which
+ *   a returned class cannot express.
+ *
+ * Widening this factory to cover either would be machinery with one user, so a
+ * guard-chain change has to reach all three files.
+ *
+ * **What these stubs do and do not prove about tenancy.** They supply `chapterId`
+ * unconditionally, so no spec using them can catch a regression in
+ * `ChapterGuard`'s *own* resolution — the membership lookup never runs.
+ * `cross-tenant-isolation.e2e-spec.ts` is the suite for that, and it overrides
+ * only `PermissionsGuard`. What a spec using these stubs *can* still catch is a
+ * handler trusting the client's `x-chapter-id` header over guard context (#849),
+ * and `mass-assignment.e2e-spec.ts` does exactly that by passing a `chapterId`
+ * deliberately unequal to the header its requests send. Do not "tidy" that value
+ * to match the header: the asymmetry is the assertion.
  */
 export function createGuardStubs(identity: GuardStubIdentity): {
   AuthGuardStub: Type<CanActivate>;
