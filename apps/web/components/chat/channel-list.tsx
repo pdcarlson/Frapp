@@ -284,7 +284,7 @@ export function ChannelList({
   if (channels.length === 0) {
     return (
       <p className="rounded-lg border border-border px-3 py-4 text-center text-[12.5px] text-muted-foreground">
-        All caught up — start a channel to begin chatting.
+        All caught up. Start a channel to begin chatting.
       </p>
     );
   }

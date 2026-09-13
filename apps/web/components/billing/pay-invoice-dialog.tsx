@@ -211,7 +211,7 @@ export function PayInvoiceDialog({
           <div className="space-y-4">
             <p className="text-sm" role="status">
               {outcome.settled
-                ? "Payment complete — this invoice is now marked paid."
+                ? "Payment complete. This invoice is now marked paid."
                 : "Payment received. Your chapter's records update as soon as the confirmation lands, usually within a minute."}
             </p>
             <Button className="w-full" onClick={() => onOpenChange(false)}>

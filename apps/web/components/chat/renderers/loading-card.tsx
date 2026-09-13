@@ -49,9 +49,9 @@ export function LoadingCard({ message }: LoadingCardProps) {
     >
       <p className={cn(EYEBROW, "text-muted-foreground")}>
         {isRecorded
-          ? `${message.content || "That command"} — recorded, chat card missing`
+          ? `${message.content || "That command"}: recorded, chat card missing`
           : isUnconfirmed
-            ? `${message.content || "That command"} — outcome unknown`
+            ? `${message.content || "That command"}: outcome unknown`
             : message.content || "Working on it…"}
       </p>
       {isTerminal ? null : (
