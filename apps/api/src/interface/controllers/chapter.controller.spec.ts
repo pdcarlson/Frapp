@@ -25,6 +25,7 @@ jest.mock('@repo/chapter-theme', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { InternalServerErrorException } from '@nestjs/common';
 import { ChapterController } from './chapter.controller';
 import { ChapterService } from '../../application/services/chapter.service';
 import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
@@ -255,18 +256,22 @@ describe('ChapterController', () => {
   });
 
   describe('requestLogoUploadUrl', () => {
-    it('should call chapterService.requestLogoUploadUrl with correct parameters', async () => {
-      const chapterId = 'chapter-1';
-      const dto: LogoUploadUrlDto = {
-        filename: 'logo.png',
-        content_type: 'image/png',
-      };
-      const expectedResult = {
-        upload_url: 'http://example.com/upload',
-        storage_path: 'branding/logo.png',
-      } as any;
+    const chapterId = 'chapter-1';
+    const dto: LogoUploadUrlDto = {
+      filename: 'logo.png',
+      content_type: 'image/png',
+    };
 
-      chapterService.requestLogoUploadUrl.mockResolvedValue(expectedResult);
+    // The previous version of this block mocked `{ upload_url, storage_path }`
+    // — a shape the service never returned — and asserted the controller
+    // echoed it back. It would have passed no matter what the wire names
+    // were. These assert the real service ticket mapping onto the documented
+    // DTO, so dropping a field fails the suite.
+    it('maps the camelCase service ticket onto the snake_case wire contract', async () => {
+      chapterService.requestLogoUploadUrl.mockResolvedValue({
+        signedUrl: 'https://storage.example/put',
+        storagePath: 'chapters/chapter-1/branding/logo.png',
+      });
 
       const result = await controller.requestLogoUploadUrl(chapterId, dto);
 
@@ -275,7 +280,32 @@ describe('ChapterController', () => {
         dto.filename,
         dto.content_type,
       );
-      expect(result).toEqual(expectedResult);
+      expect(result).toEqual({
+        upload_url: 'https://storage.example/put',
+        storage_path: 'chapters/chapter-1/branding/logo.png',
+      });
+    });
+
+    it('fails closed when the service omits the signed URL', async () => {
+      chapterService.requestLogoUploadUrl.mockResolvedValue({
+        signedUrl: '',
+        storagePath: 'chapters/chapter-1/branding/logo.png',
+      });
+
+      await expect(
+        controller.requestLogoUploadUrl(chapterId, dto),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+
+    it('fails closed when the service omits the storage path', async () => {
+      chapterService.requestLogoUploadUrl.mockResolvedValue({
+        signedUrl: 'https://storage.example/put',
+        storagePath: '',
+      });
+
+      await expect(
+        controller.requestLogoUploadUrl(chapterId, dto),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
     });
   });
 

@@ -422,7 +422,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoUploadUrlResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2866,7 +2873,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatUploadUrlResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4714,7 +4728,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProofUploadUrlResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -7517,6 +7538,23 @@
           "content_type"
         ]
       },
+      "LogoUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send back on the confirm-logo call."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path"
+        ]
+      },
       "ConfirmLogoDto": {
         "type": "object",
         "properties": {
@@ -8839,6 +8877,28 @@
           "content_type"
         ]
       },
+      "ChatUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send back as the attachment path when posting the message."
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Server-allocated message id embedded in storage_path."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path",
+          "message_id"
+        ]
+      },
       "SetChannelNotificationLevelDto": {
         "type": "object",
         "properties": {
@@ -9643,6 +9703,28 @@
         "required": [
           "filename",
           "content_type"
+        ]
+      },
+      "ProofUploadUrlResponseDto": {
+        "type": "object",
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "description": "Short-lived signed URL; PUT the bytes to it."
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path to send as proof_path on the create call."
+          },
+          "proof_id": {
+            "type": "string",
+            "description": "Server-allocated proof id embedded in storage_path."
+          }
+        },
+        "required": [
+          "upload_url",
+          "storage_path",
+          "proof_id"
         ]
       },
       "CreateServiceEntryDto": {
