@@ -36,6 +36,7 @@ import {
   RENDER_AGREEMENT_MIN,
   SYNCED,
   assertGlyphCoverage,
+  assertFullyOpaque,
   assertIcoShape,
   assertLockedPair,
   assertSvgLocked,
@@ -483,6 +484,28 @@ test("assertIcoShape pins the size roster and the RGBA payload requirement", () 
   assert.throws(
     () => assertIcoShape(buildIco(rgbPayloads), "favicon.ico", ICO_SIZES),
     /colour type 2, not RGBA \(6\)/,
+  );
+});
+
+test("assertFullyOpaque catches a favicon payload with transparency", () => {
+  // The gap the RGBA rework opened, and the reason this predicate exists. The
+  // gate compares RGB planes with alpha stripped, and `assertIcoShape` reads
+  // the IHDR colour-type BYTE — a declaration, not a measurement. So a payload
+  // carrying canonical RGB under a transparency gradient satisfied both and
+  // passed clean; built and run against the real gate, it did exactly that.
+  const opaque = Buffer.from([1, 2, 3, 255, 4, 5, 6, 255]);
+  assert.doesNotThrow(() => assertFullyOpaque(opaque, 4, "favicon.ico[16]"));
+
+  const holed = Buffer.from([1, 2, 3, 255, 4, 5, 6, 128]);
+  assert.throws(
+    () => assertFullyOpaque(holed, 4, "favicon.ico[16]"),
+    /50\.2% opaque/,
+  );
+
+  // A 3-channel buffer has no alpha to be wrong about, so this must not invent
+  // a failure by reading past the pixel.
+  assert.doesNotThrow(() =>
+    assertFullyOpaque(Buffer.from([1, 2, 3, 4, 5, 6]), 3, "rgb.png"),
   );
 });
 

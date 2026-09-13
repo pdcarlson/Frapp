@@ -29,6 +29,7 @@ import {
   FIELD_HEX,
   GOLD_HEX,
   ICO_SIZES,
+  assertFullyOpaque,
   assertGlyphCoverage,
   assertIcoShape,
   assertLockedPair,
@@ -225,6 +226,7 @@ async function audit(buffer, label, kind) {
         `${label}: has ${meta.channels} channels — an .ico payload must be RGBA or Turbopack's decoder refuses it`,
       );
     }
+    assertFullyOpaque(data, info.channels, label);
     assertLockedPair(stats, label, { edge: info.width });
   } else if (kind === "glyph") {
     if (meta.channels !== 4) {

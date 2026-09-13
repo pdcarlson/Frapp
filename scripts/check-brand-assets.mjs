@@ -47,6 +47,7 @@ import {
   RENDER_AGREEMENT_MIN,
   SYNCED,
   assertGlyphCoverage,
+  assertFullyOpaque,
   assertIcoShape,
   assertLockedPair,
   assertSvgLocked,
@@ -292,6 +293,17 @@ if (
       return { data, info };
     };
     for (const [index, entry] of entries.entries()) {
+      // Alpha first, and on its own: the comparison below strips it, so this is
+      // the only place anything measures the channel the payload carries.
+      const withAlpha = await sharp(entry.payload)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      assertFullyOpaque(
+        withAlpha.data,
+        withAlpha.info.channels,
+        `${FAVICON_ICO}[${entry.width}]`,
+      );
       const payload = await rgb(entry.payload);
       const canonical = await rgb(readFileSync(repo(payloads[index])));
       assertLockedPair(

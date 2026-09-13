@@ -514,6 +514,28 @@ export function readIco(buffer, label) {
 }
 
 /**
+ * Every pixel of a favicon payload must be fully opaque.
+ *
+ * The alpha channel exists only to satisfy Turbopack's decoder; the artwork is
+ * the same full-bleed tile as `app/icon.png`. Asserted separately because
+ * nothing else can see it: the RGB-plane comparison the gate runs strips alpha
+ * before comparing, and `assertIcoShape` reads the IHDR colour-type BYTE, which
+ * is a declaration rather than a measurement. A payload carrying canonical RGB
+ * under a transparency gradient satisfies both and renders as a favicon full of
+ * holes — verified against this gate before this check existed.
+ */
+export function assertFullyOpaque(data, channels, label) {
+  if (channels < 4) return;
+  for (let i = 3; i < data.length; i += channels) {
+    if (data[i] !== 255) {
+      throw new Error(
+        `${label}: a pixel is ${((data[i] / 255) * 100).toFixed(1)}% opaque — an .ico payload carries alpha only because Turbopack's decoder demands the channel, and every pixel of it must be fully opaque`,
+      );
+    }
+  }
+}
+
+/**
  * The container's own shape, asserted without decoding a pixel: the sizes it
  * carries, and that every payload is RGBA.
  *
