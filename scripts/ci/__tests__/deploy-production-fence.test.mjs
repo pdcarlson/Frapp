@@ -277,6 +277,36 @@ describe("the SHA-trim step (run 34234768094)", () => {
     assert.match(after, /DEPLOY_SHA:\s*\$\{\{\s*steps\.sha\.outputs\.sha\s*\}\}/);
     assert.match(text, /sha:\s*\$\{\{\s*needs\.deploy\.outputs\.sha\s*\}\}/);
   });
+
+  // The assertion above is satisfied by a SINGLE match anywhere in the file, so it
+  // stayed green for the whole life of the Vercel BUILD step while that step passed
+  // no DEPLOY_SHA at all — the upload step's copy was carrying it. Run 34892839657
+  // is what that produced: "DEPLOY_SHA environment variable is required", after the
+  // reviewer approval, the `npm ci` and the Vercel CLI install, on the one path no
+  // rehearsal can reach (the dry run skips this step by `if:`).
+  //
+  // deploy-vercel.mjs calls requireEnv("DEPLOY_SHA") BEFORE it branches on
+  // DEPLOY_PHASE, so the value is required in every phase — build included, where it
+  // is injected as VERCEL_GIT_COMMIT_SHA so the web/landing Sentry release matches
+  // the deployed commit. It cannot be defaulted from the ambient GITHUB_SHA: that is
+  // the DISPATCHED ref's tip rather than the deploy SHA, a step-level `GITHUB_SHA:`
+  // is silently ignored by Actions (reserved prefix), and defaulting would make the
+  // post-upload githubCommitSha assertion compare a wrong value against itself and
+  // pass. So assert it per CALL SITE.
+  it("every deploy-vercel.mjs call site passes DEPLOY_SHA", () => {
+    const text = readFileSync(WORKFLOW, "utf8");
+    const steps = text.split(/\n      - name: /).slice(1);
+    const callSites = steps.filter((step) => /run: node scripts\/ci\/deploy-vercel\.mjs/.test(step));
+    assert.ok(callSites.length >= 2, `expected a build and an upload call site, found ${callSites.length}`);
+    for (const step of callSites) {
+      const label = step.slice(0, step.indexOf("\n"));
+      assert.match(
+        step,
+        /DEPLOY_SHA:\s*\$\{\{\s*steps\.sha\.outputs\.sha\s*\}\}/,
+        `step "${label}" runs deploy-vercel.mjs without DEPLOY_SHA`,
+      );
+    }
+  });
 });
 
 describe("SHA validation runs before the production environment (run 34234768094)", () => {
