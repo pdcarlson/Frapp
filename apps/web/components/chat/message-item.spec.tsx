@@ -263,9 +263,10 @@ describe("MessageItem action cluster docking", () => {
     // looks right and is not: `safe` falls back to `start`, and `start` for
     // `justify-content` is writing-mode relative rather than flex relative, so
     // reversing the main axis moves the hug and leaves the fallback on the
-    // physical left. Measured in Chromium, a max-width incoming bubble then put
-    // the cluster 320px past the right of the thread column. Flipping the
-    // direction moves both keywords together.
+    // physical left, off the side of the pane. This assertion is the spelling
+    // only — jsdom computes no layout, so it cannot see that difference. The
+    // browser check behind it, and its one honest limit, are recorded on
+    // `ACTION_TRACK` in `message-item.tsx`; do not restate the figure here.
     expect(track.getAttribute("dir")).toBe("rtl");
     expect(track.className).not.toContain("flex-row-reverse");
     // ...and the cluster opts back out, or its own chips would reverse with it.

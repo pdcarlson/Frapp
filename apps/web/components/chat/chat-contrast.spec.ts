@@ -206,9 +206,12 @@ describe("the in-bubble mention chip", () => {
    * ground, so the pair measures identically on every bubble in every chapter.
    */
   it("keeps chip text AA on the chip's own fill", () => {
-    expect(ratio(MENTION_CHIP.text, MENTION_CHIP.fill)).toBeGreaterThanOrEqual(
-      AA_TEXT,
-    );
+    // Pinned to the measured value, not just to the floor: `components.md` §11
+    // quotes this number, and a ratio asserted only as ">= 4.5" lets the doc's
+    // figure go quietly wrong the next time either half of the pair moves.
+    const measured = ratio(MENTION_CHIP.text, MENTION_CHIP.fill);
+    expect(measured).toBeCloseTo(5.54, 2);
+    expect(measured).toBeGreaterThanOrEqual(AA_TEXT);
   });
 
   it("measures the same on every chapter bubble, because the fill is opaque", () => {
@@ -227,14 +230,22 @@ describe("the in-bubble mention chip", () => {
     }
   });
 
-  it("would have caught the alpha version, on the seeds it breaks", () => {
+  it("would have caught the alpha version, on every seed", () => {
     // The regression this exists for, kept as a measurement rather than a
-    // comment: the same hue as a 13% tint over a pale accent bubble leaves its
-    // own text far under AA. This is what an "it's just the §5 tint recipe"
-    // simplification would ship.
-    const palest = accentRolesFor("#FFFFFF")["--primary"]!;
-    const composited = tint(MENTION_CHIP.text, palest);
-    expect(ratio(MENTION_CHIP.text, composited)).toBeLessThan(AA_TEXT);
+    // comment: the same hue as a 13% tint composites over the bubble, so its
+    // own text's contrast becomes a per-tenant accident. This is what an "it's
+    // just the §5 tint recipe" simplification would ship — and the spread is
+    // the argument, so both ends are pinned. `components.md` §11 quotes them.
+    const ratios = SEEDS.map((seed) => {
+      const bubble = accentRolesFor(seed)["--primary"]!;
+      return ratio(MENTION_CHIP.text, tint(MENTION_CHIP.text, bubble));
+    });
+
+    expect(Math.max(...ratios)).toBeCloseTo(4.32, 2);
+    expect(Math.min(...ratios)).toBeCloseTo(1.03, 2);
+    // Not one seed in the corpus reaches AA. The opaque pair clears it on all
+    // of them, which is the whole trade.
+    expect(Math.max(...ratios)).toBeLessThan(AA_TEXT);
   });
 
   it("is not the mention red, which has no lifted tone to render as text", () => {

@@ -80,12 +80,41 @@ export const SEMANTIC = signetDarkTokens.color.semantic;
  * green against a constant that no longer ships. `--destructive-text` was that
  * literal until the mention chip needed two more of them.
  */
-const SIGNET_CSS = readFileSync(
+const SIGNET_CSS_PATH = join(
   // `__dirname`, not `import.meta.url`: these run under the jsdom environment,
   // where `import.meta.url` is not a `file:` URL and `readFileSync` rejects it.
-  join(__dirname, "..", "..", "..", "packages", "theme", "src", "signet.css"),
-  "utf8",
+  __dirname,
+  "..",
+  "..",
+  "..",
+  "packages",
+  "theme",
+  "src",
+  "signet.css",
 );
+
+/**
+ * Read at module scope, so a failure here takes down every spec that imports
+ * this file — eight of them — before a single test body runs. That is the right
+ * behaviour (the fixtures are worthless if the stylesheet moved) but a bare
+ * `ENOENT` across eight suites at once does not say why, and the traversal
+ * above assumes both ends stayed put. So the message names the assumption.
+ */
+function readSignetCss(): string {
+  try {
+    return readFileSync(SIGNET_CSS_PATH, "utf8");
+  } catch (cause) {
+    throw new Error(
+      `Could not read the Signet stylesheet at ${SIGNET_CSS_PATH}. ` +
+        "These fixtures resolve it relative to `apps/web/tests/`; if either " +
+        "that directory or `packages/theme/src/signet.css` moved, fix the " +
+        "path here rather than re-hardcoding the token values it parses.",
+      { cause },
+    );
+  }
+}
+
+const SIGNET_CSS = readSignetCss();
 
 function cssToken(name: string): string {
   const value = new RegExp(`${name}:\\s*([^;]+);`).exec(SIGNET_CSS)?.[1];

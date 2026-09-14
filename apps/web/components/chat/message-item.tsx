@@ -139,9 +139,9 @@ export interface MessageItemProps {
  * because the one thing the cluster needs — "end at the bubble's edge" — is a
  * length no `absolute` inset can name: the column shrink-wraps its bubble, so
  * its width is content, and CSS has no way to reference a sibling's edge. As a
- * `flex-1` track it *is* the leftover, whatever the bubble's width turns out to
- * be, so the cluster's outer edge and the bubble's edge are the same line at
- * every message length.
+ * `flex-1` track it *is* the leftover, whatever the message block's width turns
+ * out to be, so the cluster's outer edge and that block's edge are the same
+ * line at every message length. (Block, not bubble — see the limit below.)
  *
  * - **`h-0`** so the strip contributes no height and the row stays exactly as
  *   compact as it was before the cluster existed. `items-start` goes with it:
@@ -166,10 +166,18 @@ export interface MessageItemProps {
  * `safe` is defined as falling back to **`start`**, and `start` for
  * `justify-content` is writing-mode relative, not flex relative. Reversing the
  * main axis moves the hug but leaves the fallback on the physical left, so a
- * max-width incoming bubble sent the cluster off the right of the pane —
- * measured at 320px past the thread column before this was `rtl`. Flipping the
- * *direction* moves both at once, because both keywords are resolved against
- * it. The cluster carries `dir="ltr"` so its own chips do not reverse with it.
+ * max-width incoming bubble sends the cluster off the right of the pane
+ * instead. Flipping the *direction* moves both at once, because both keywords
+ * are resolved against it. The cluster carries `dir="ltr"` so its own chips do
+ * not reverse with it.
+ *
+ * That was settled by rendering this component into Chromium 2026-09-14 with a
+ * throwaway harness — an 820px thread column, `flex-row-reverse` on the track:
+ * the cluster's right edge landed 300px past the column's. **Nothing in the
+ * repo re-measures it.** jsdom computes no layout, so `message-item.spec.tsx`
+ * can only pin the spelling this arrived at, and `tests/visual/` is the
+ * responsive floor suite whose config argues against a second spec. Treat the
+ * figure as the reason for the `rtl`, not as a maintained measurement.
  *
  * One honest limit: the track ends at the **message column's** edge, and on a
  * short incoming message the widest thing in that column is the `Name · time`
@@ -673,7 +681,7 @@ export function MessageItem({
       <div
         role="listitem"
         className={cn(
-          "group/message relative flex items-start justify-end gap-2.5 px-5 pb-1",
+          "group/message flex items-start justify-end gap-2.5 px-5 pb-1",
           showHeader ? "pt-4" : "pt-1",
         )}
         data-status={message._status}
@@ -758,7 +766,7 @@ export function MessageItem({
     <div
       role="listitem"
       className={cn(
-        "group/message relative flex gap-2.5 px-5 pb-1",
+        "group/message flex gap-2.5 px-5 pb-1",
         showHeader ? "pt-4" : "pt-1",
       )}
       data-status={message._status}

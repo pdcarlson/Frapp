@@ -63,7 +63,10 @@ const ALLOWED_ELEMENTS = ["p", "strong", "em", "code", "pre", "a", "br", "mark"]
 export function MessageMarkdown({ content }: { content: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkBreaks, remarkMentionChips]}
+      // The mention plugin needs the RAW body, not the decoded text remark
+      // hands it — `&#64;Jane` is a mention to the renderer and to nobody
+      // else. See `remark-mention-chips.ts`.
+      remarkPlugins={[remarkBreaks, [remarkMentionChips, { content }]]}
       allowedElements={ALLOWED_ELEMENTS}
       unwrapDisallowed
       components={{

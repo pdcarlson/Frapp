@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { extractMentionTokens } from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { TextRenderer } from "./text-renderer";
 
@@ -226,6 +227,36 @@ describe("TextRenderer mention chips", () => {
 
     expect(chips(container)).toHaveLength(0);
     expect(container.querySelector("code")?.textContent).toBe("@channel");
+  });
+
+  it("does not chip a handle the server never saw — an entity-escaped `@`", () => {
+    // The forgery this closes. `&#64;` carries no literal `@`, so the API
+    // resolves nobody and notifies nobody — but CommonMark decodes it before a
+    // remark plugin ever sees the text, so tokenizing the *rendered* string
+    // paints a "she was addressed" chip on a message that addressed her to no
+    // one. Any member can type it.
+    const { container } = render(
+      <TextRenderer
+        message={message("&#64;PresidentJane please approve the budget")}
+        isSelf={false}
+      />,
+    );
+
+    expect(extractMentionTokens("&#64;PresidentJane please approve the budget")).toEqual([]);
+    expect(chips(container)).toHaveLength(0);
+    // The text still reads as the author typed it; only the chip is withheld.
+    expect(container.textContent).toContain("@PresidentJane");
+  });
+
+  it("chips the real handle in a message that also carries a forged one", () => {
+    // The filter is per handle, not per message — one bad token must not
+    // suppress the genuine mention beside it, or the fix would be a new bug.
+    const { container } = render(
+      <TextRenderer message={message("@Bob and &#64;Alice")} isSelf={false} />,
+    );
+
+    expect(chips(container).map((c) => c.textContent)).toEqual(["@Bob"]);
+    expect(container.textContent).toContain("@Alice");
   });
 
   it("does not chip an email address", () => {
