@@ -198,24 +198,53 @@ export function ErrorState({
   title = "Unable to load data",
   description = "Please retry in a moment.",
   onRetry,
+  actionLabel = "Retry",
+  headingLevel = "h2",
 }: {
   title?: string;
   description?: string;
   onRetry?: () => void;
+  /**
+   * The action's label. Defaults to Retry, which is what §10's Action row
+   * names as the default and what every caller before #2175 wanted.
+   *
+   * It is a label rather than a second component because the recovery this
+   * family offers is not always a retry: a stale chunk is fixed by reloading
+   * the document and provably *not* by re-rendering (see
+   * `lib/chunk-load-error.ts`), so the segment boundary needs a Reload here.
+   * §10 specs the Error variant's action as one Secondary button and requires
+   * this family to differ in colour rather than in shape — so the button that
+   * says Reload must be the same button, not a new one beside it.
+   */
+  actionLabel?: string;
+  /**
+   * The heading level. `h2` everywhere it has ever been used — this state sits
+   * under a `PageHeader` that owns the route's `h1`.
+   *
+   * `h1` exists for the one caller that *replaces* that header rather than
+   * sitting beneath it: `(dashboard)/error.tsx` renders instead of the page, so
+   * leaving it at `h2` would leave the document with no level-1 heading at all,
+   * which is the failure `page-header.tsx` names ("a page that mounts this only
+   * on its success path loses its heading exactly when the member is most
+   * lost"). The full-page boundary it took over from renders an `h1`, so this
+   * keeps that rather than quietly dropping it.
+   */
+  headingLevel?: "h1" | "h2";
 }) {
+  const Heading = headingLevel;
   return (
     // The one sanctioned semantic border (§10) — 28% of danger, not a solid.
     <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-xl border border-destructive/[.28] bg-card p-4 text-center">
       <StateTile tone="destructive">
         <AlertTriangle className="h-6 w-6" />
       </StateTile>
-      <h2 className="text-base font-bold">{title}</h2>
+      <Heading className="text-base font-bold">{title}</Heading>
       <p className="max-w-[220px] text-sm text-muted-foreground">{description}</p>
       {onRetry ? (
         // §10 names Secondary for retry, deliberately: an error surface must not
         // use the chapter accent, which rules out both Primary and Tinted.
         <Button variant="secondary" size="sm" onClick={onRetry}>
-          Retry
+          {actionLabel}
         </Button>
       ) : null}
     </div>
