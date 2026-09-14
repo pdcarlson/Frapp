@@ -54,8 +54,16 @@ production** with a commit SHA:
 > `release` / `report` (`needs:` keys those); the UI labels now say migrate-then-ship,
 > mint-tag, and summarize. **Amended 2026-09-08:** an unscoped `validate` job now runs first
 > (confirm / trim / `validate-deploy-sha.mjs`); `release` and `report` still consume
-> `needs.deploy.outputs.*`. `run-name` is `{scope} {sha}`. `dry_run_only` still does not cover
-> the Vercel path (those steps carry `if: !inputs.dry_run_only`).
+> `needs.deploy.outputs.*`.
+>
+> **Amended 2026-09-14** — both claims this paragraph used to make about `run-name` and
+> `dry_run_only` are superseded. It said `run-name` is `{scope} {sha}` and that `dry_run_only`
+> "still does not cover the Vercel path (those steps carry `if: !inputs.dry_run_only`)".
+> A dry run now **does** cover the Vercel build: `npm ci`, the Vercel CLI install and
+> `DEPLOY_PHASE=build` are gated on `scope != 'migrations-only'` alone. The upload, the
+> migration apply, the Render deploy and the health check are still real-run only, so the
+> shipping path is unchanged. `run-name` now prefixes `DRY RUN · ` when `dry_run_only` is set,
+> because the two used to render identical rows in the Actions list.
 >
 > The similarly named **Deploy API** workflow is staging only (`deploy-api.yml`,
 > `frapp-api-staging` after green CI on `main`). Its alert-issue title is an exact-match lookup

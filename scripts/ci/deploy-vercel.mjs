@@ -657,21 +657,85 @@ export function parseDeployPhase(raw) {
   );
 }
 
+// ── The environment contract, as data ───────────────────────────────────────
+//
+// `main()` below is the only consumer at RUNTIME, and it reads perfectly well
+// as the six `requireEnv` calls it used to be. The reason the list is a table
+// is that a second reader needs it: the workflow guard in
+// `__tests__/deploy-vercel-env-contract.test.mjs` asserts that every workflow
+// step invoking this script actually supplies what that step's phase requires,
+// and a guard that RESTATES the list cannot track it.
+//
+// #2265 is what the restated version costs. The guard before it asserted that
+// `DEPLOY_SHA` matched somewhere in `deploy-production.yml`; the upload step's
+// copy satisfied it, so the Vercel BUILD step carried none for its entire life
+// — surfaced by run 34892839657, after a reviewer approval had been spent, on
+// the one step no dry run could reach. Deriving the list from here means that
+// adding a `requireEnv` to this file tightens the workflow guard in the same
+// commit, instead of leaving a second place for someone to remember.
+
+/** Required in every phase. */
+export const REQUIRED_ENV_ALWAYS = Object.freeze([
+  "VERCEL_WEB_PROJECT_ID",
+  "VERCEL_LANDING_PROJECT_ID",
+  "VERCEL_API_KEY",
+  "VERCEL_TEAM_ID",
+  // The build phase needs this as genuinely as the upload does, which is the
+  // detail #2265 turned on: it is injected as `VERCEL_GIT_COMMIT_SHA` during
+  // `vercel build` so the web and landing Sentry `release` names the deployed
+  // commit. It cannot be defaulted from the ambient `GITHUB_SHA` — on a
+  // dispatch that is the DISPATCHED ref's tip, not the deploy SHA.
+  "DEPLOY_SHA",
+]);
+
+/**
+ * Required on top of the above, per phase.
+ *
+ * Keyed by every value `parseDeployPhase` can return, so `requiredEnvForPhase`
+ * can treat an unknown phase as a programming error rather than as "nothing
+ * extra required" — the fail-open reading that would let a new phase ship with
+ * no guard at all.
+ */
+export const REQUIRED_ENV_BY_PHASE = Object.freeze({
+  [DEPLOY_PHASE_BUILD]: Object.freeze(["VERCEL_BUILD_STASH_DIR"]),
+  [DEPLOY_PHASE_UPLOAD]: Object.freeze(["VERCEL_BUILD_STASH_DIR"]),
+  [DEPLOY_PHASE_ALL]: Object.freeze([]),
+});
+
+/** Every environment variable this script requires when run in `phase`. */
+export function requiredEnvForPhase(phase) {
+  const extra = REQUIRED_ENV_BY_PHASE[phase];
+  if (!extra) {
+    throw new Error(
+      `No environment contract recorded for DEPLOY_PHASE '${phase}'. Add one to ` +
+        `REQUIRED_ENV_BY_PHASE rather than letting the phase run unguarded.`,
+    );
+  }
+  return [...REQUIRED_ENV_ALWAYS, ...extra];
+}
+
 // ── CLI entry ───────────────────────────────────────────────────────────────
 
 async function main() {
   const target = parseDeployTarget(process.env.DEPLOY_TARGET);
   const phase = parseDeployPhase(process.env.DEPLOY_PHASE);
 
+  // Read through the same table the workflow guard asserts against, so the
+  // contract has exactly one definition. The table's order is the order the
+  // calls used to be in, which keeps "which variable is missing" stable for
+  // anyone reading a failed run.
+  const env = {};
+  for (const name of requiredEnvForPhase(phase)) env[name] = requireEnv(name);
+
   const projects = [
-    { projectId: requireEnv("VERCEL_WEB_PROJECT_ID"), label: "frapp-web" },
-    { projectId: requireEnv("VERCEL_LANDING_PROJECT_ID"), label: "frapp-landing" },
+    { projectId: env.VERCEL_WEB_PROJECT_ID, label: "frapp-web" },
+    { projectId: env.VERCEL_LANDING_PROJECT_ID, label: "frapp-landing" },
   ];
 
-  const apiKey = requireEnv("VERCEL_API_KEY");
-  const teamId = requireEnv("VERCEL_TEAM_ID");
-  const sha = requireEnv("DEPLOY_SHA");
-  const stashRoot = phase === DEPLOY_PHASE_ALL ? null : requireEnv("VERCEL_BUILD_STASH_DIR");
+  const apiKey = env.VERCEL_API_KEY;
+  const teamId = env.VERCEL_TEAM_ID;
+  const sha = env.DEPLOY_SHA;
+  const stashRoot = phase === DEPLOY_PHASE_ALL ? null : env.VERCEL_BUILD_STASH_DIR;
 
   if (phase === DEPLOY_PHASE_BUILD) {
     const built = await buildVercelProjects({ apiKey, projects, sha, target, teamId, stashRoot });
