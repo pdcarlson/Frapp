@@ -67,7 +67,7 @@ composed with **B** or **C** for per-row reads.
 | `billing` | `GET /status`, `POST /checkout`, `POST /portal` | A+C+P `billing:view` / `billing:manage`; `@SubscriptionExempt` | A — chapter is the subject |
 | `chapters/:id/config` | `GET`, `PATCH`, `POST /:id/theme-palette` | A+C+P `chapter-config:view` / `…:manage`\|`*` | A — data always comes from the guard-resolved chapter; `:id` disagreeing with it is rejected with `403 chapter.context.mismatch` (`chapter-config.controller.ts:45,64,80`, `assertMatchesActiveChapter`). See §5.1 |
 | `documents` | `POST /upload-url`, `POST /`, `GET /`, `GET /folders`, `POST /folders`, `PATCH /folders/:id`, `DELETE /folders/:id`, `GET /:id`, `DELETE /:id` | A+C+P `members:view`, `chapter_docs:upload` / `…:manage` | B — `findById(id, chapterId)` |
-| `channels` (chat) | 23 routes incl. `GET/POST /:id/messages`, `PATCH/DELETE /messages/:messageId`, pins, reactions, `POST /:id/upload-url` | A+C+P `members:view`, `channels:create` / `channels:manage` | B for categories; **C** for channels and messages — the list filters through `filterAccessibleChannels` and `GET /:id` through `assertChannelAccess` (`chat.service.ts:263-290`), messages via `assertMessageAccess` → `assertChannelAccess` (`chat.service.ts:702-753`). The `channels:manage` mutations resolve chapter-scoped only, by design |
+| `channels` (chat) | 23 routes incl. `GET/POST /:id/messages`, `PATCH/DELETE /messages/:messageId`, pins, reactions, `POST /:id/upload-url` | A+C+P `members:view`, `channels:create` / `channels:manage` | B for categories; **C** for channels and messages — the list filters through `filterAccessibleChannels` and `GET /:id` through `assertChannelAccess` (`getChannels`/`getChannel`, `chat.service.ts:286,305`), messages via `assertMessageAccess` → `assertChannelAccess` (`chat.service.ts:896`). The `channels:manage` mutations resolve chapter-scoped only, by design. **The bucket routes here are gated below the route guard, not by it**: `members:view` admits any member and cannot see which channel is in play, so what decides whether bytes may land is `assertChannelAccess(…, 'post')` inside `requestChatUploadUrl` — the same gate `sendMessage` applies, so mint and send cannot diverge (#2186) — and the attachment/avatar download mints gate on `assertChannelAccess` likewise (`chat.service.ts:1742,1876`). See §4 |
 | `custom-fields` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter-config:view` on `GET`; the three writes override to `…:manage`\|`*` | B |
 | `custom-roles` | `GET`, `POST`, `PATCH /:id`, `DELETE /:id` | A+C+P `chapter-config:view` on `GET`; the three writes override to `…:manage`\|`*` | B — `findByIds(ids, chapterId)` |
 | `audit-log` | `GET` | A+C+P `chapter-config:view` **and** `members:view` (route-level, merged via `PermissionsGuard`'s AND); **row visibility by role identity, not permission** — callers who do not hold the chapter's seeded `PRESIDENT` role get `member_visible = true` rows only (#1773) | A — chapter is the subject; read-only, `chapter_audit_log`'s RLS carries no SELECT policy so only this service-role-backed query can ever return rows, and `ChapterAuditLogService.list` is where the member-visibility filter the migration comment promised is actually applied |
@@ -298,9 +298,21 @@ brought into IaC by #690 — their pre-migration public/private state is tracked
 
 **No bucket in this repo carries storage RLS policies**, and that is deliberate rather than an
 omission: reads are API-issued signed URLs, which do not consult RLS at all, and direct client access
-stays denied by default. A bucket's protection is therefore **entirely** the route guard that decides
-whether to mint a URL. Do not read `chat-archive`'s lack of RLS as making it weaker than its
-siblings; none of them have it.
+stays denied by default. A bucket's protection is therefore **entirely** whatever decides to mint a
+URL — which is **not** always the route guard. Read that as "find what gates the mint", never "read
+the decorator": where the guard admits every member and cannot see which object is in play, the real
+gate is a service-layer check below it, and the two answers differ. Three buckets are gated that way
+today, so it is the norm rather than a quirk:
+
+| Bucket | Route guard | What actually gates the mint |
+| --- | --- | --- |
+| `chat` | `members:view` | `assertChannelAccess(…, 'post')` in `requestChatUploadUrl` — the same gate `sendMessage` applies, so mint and send cannot diverge (#2186) |
+| `chat-archive` | `members:view` | `assertChannelAccess` in the attachment and author-avatar download mints (`chat.service.ts:1742,1876`) |
+| `service` | `members:view` | the owner-or-admin check in `ServiceEntryService.getProofDownloadUrl`, so one member cannot pull another's proof |
+
+The general rule the first of these came from: **every step of a multi-step write authorizes as the
+write, never as the read that precedes it.** A mint is a step. Do not read `chat-archive`'s lack of
+RLS as making it weaker than its siblings; none of them have it.
 
 **Object-path obscurity is not a second layer — treat every path as guessable.** This is the
 inverse of a tempting reading of the paragraph above. The worked case is in
