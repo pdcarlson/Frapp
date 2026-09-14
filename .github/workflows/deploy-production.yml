@@ -478,6 +478,7 @@ jobs:
           VERCEL_TEAM_ID: ${{ env.VERCEL_TEAM_ID }}
           DEPLOY_TARGET: production
           DEPLOY_PHASE: build
+          DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
           VERCEL_BUILD_STASH_DIR: ${{ runner.temp }}/vercel-builds
         run: node scripts/ci/deploy-vercel.mjs
 
