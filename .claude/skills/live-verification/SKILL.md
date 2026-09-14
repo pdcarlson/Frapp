@@ -57,10 +57,27 @@ is, because that same hook is what launches bringup about a second before the pr
 not evidence the probe did not run.** If the file is genuinely missing (laptop session, or bringup did not run),
 generate it: `bash scripts/cloud-sandbox-egress-probe.sh`.
 
+**Check `probe_ok` before anything else.** `false` means the probe could not run at all —
+`hosts[]` is empty and so are `staging_reachable` and `production_blocked_as_expected`. Those
+empty arrays look exactly like "nothing was reachable" and mean nothing of the kind: it is
+the inconclusive row below, applied to every host at once. Re-run the probe
+(`bash scripts/cloud-sandbox-egress-probe.sh`).
+
+If it still cannot run, report the live check under the **`blocked` tier** ([§7](#7-reporting))
+— never `passed` — and name the reason the manifest actually gives you: *the probe could not
+run (`python3` unavailable / no writable temp dir / the builder failed)*. Do **not** name a
+missing allowlist line, and do not file a human-only blocker against the environment: nothing
+was probed, so there is no evidence the network is involved at all. Two different things share
+the word `blocked` here — the §7 reporting tier ("could not run, reason named") and the
+manifest `status` in the table below (a refused connection). A `probe_ok: false` manifest is
+the first and not the second.
+
+With `probe_ok: true`, read each host's `status`:
+
 | Manifest `status` | Meaning | Do |
 | ----------------- | ------- | -- |
 | `reachable` | the host answered (any HTTP code). `302` and `404` mean the *socket* worked, not that Signet HTML loaded. On staging web/landing a 302 is often Vercel Authentication — see [§3](#vercel-authentication) | Proceed to the next gate; do not claim the UI loaded |
-| `blocked` | proxy refused CONNECT — host not allowlisted | Stop. Report as environment config (below) |
+| `blocked` | the connection was refused at the connect layer. Usually a policy denial, but curl exits 35 and 7 are grouped in too, so **a host that is simply down looks identical** and nothing in the sandbox separates them | Stop. Report it as not reachable and name the host. Only call it environment config (below) once you have checked the allowlist line is genuinely absent |
 | `timeout` / `no_dns` / `unknown` | the probe **could not tell** | Neither proceed nor report a block. Re-run the probe; if it stays inconclusive, say so in those words |
 
 That last row is the one that gets misread. An inconclusive probe is not a block, and
@@ -72,13 +89,22 @@ answered — treat that as a stop-everything finding, not as extra capability.
 `curl -sS "$HTTPS_PROXY/__agentproxy/status"` remains ground truth for which host the proxy
 refused, under `recentRelayFailures`.
 
-When egress is off, that is a **human-only blocker** — an allowlist is dashboard config, not
-something an agent can work around. Say exactly which line is missing, quoting
+When egress is genuinely off, that is a **human-only blocker** — an allowlist is dashboard
+config, not something an agent can work around. Say exactly which line is missing, quoting
 [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress),
 and file it per [`file-follow-up`](../file-follow-up/SKILL.md). Do not silently fall back to
 the local stack and report the check as done — that is the silent-coverage failure
 `scripts/ci/staging-conformance.mjs` was written to stop. A check that could not run is
 **blocked**, never **passed**.
+
+"Genuinely off" is a higher bar than a `blocked` status. The probe groups curl exits 56, 35
+and 7, so **a staging host that is merely down reports `blocked` too, and nothing in the
+sandbox separates the two** — the proxy's own `detail` reads `policy denial or upstream
+failure`. The tier is `blocked` either way, and `blocked` obliges you to name the reason; what
+it does not entitle you to is naming the *wrong* one. Do not assert the allowlist is at fault
+unless you have checked the line is actually absent from the environment. "`api-staging` did
+not answer" is always reportable; "`api-staging` is not allowlisted" needs evidence. Same rule,
+same wording, in [`CLOUD_SANDBOX.md`'s `blocked` row](../../../docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress).
 
 ## 2. Never point at production
 
@@ -98,7 +124,9 @@ The Supabase row is the dangerous one: **nothing in either ref says which is whi
 type a `supabase.co` host from memory or from a doc. Resolve it from one of the two sources
 that *name* the project: `mcp__Supabase__list_projects`, or the `staging_supabase` entry in
 `.cloud-sandbox-capabilities.json`, which carries the label `frapp-staging Supabase`
-alongside the URL. Do **not** reach for `SUPABASE_URL` in `apps/*/.env.local` — in a cloud
+alongside the URL — but only on a `probe_ok: true` manifest; a degraded one has an empty
+`hosts[]` and cannot resolve anything, so fall back to `mcp__Supabase__list_projects` rather
+than to memory. Do **not** reach for `SUPABASE_URL` in `apps/*/.env.local` — in a cloud
 sandbox bringup writes the *local* stack there (`http://127.0.0.1:54321`), so it answers a
 different question than the one you are asking. If you cannot say out loud which project a
 ref belongs to, you do not yet know enough to send it a request.
