@@ -44,6 +44,16 @@ search.
 > saved and reviewers still open the support URL — those fetches now succeed. The app
 > talks to `api.frapp.live`, whose `/health` and `/health/ready` also return 200 on the
 > same check.
+>
+> **That reading is dated, not current.** As of 2026-09-14 the production API is live
+> but serving commit `0ca478e` (2026-09-08) — 160 commits behind `main` — and
+> `frapp-prod` has 76 of the repo's 81 migrations
+> (`mcp__Render__list_deploys` on `srv-d6lqu41aae7s73f62df0`;
+> `mcp__Supabase__list_migrations` on `unttyvyfezddlyafcydh`). Production also has no
+> Resend key, so invite emails do not send there — the commit currently deployed is
+> titled "fix: do not claim invite email was sent when production has no Resend key".
+> **Re-check before submitting**; a 200 on `/health` says the service is up, not that
+> it matches the app.
 
 ## As submitted — App Store Connect (recorded 2026-09-14)
 
