@@ -61,8 +61,15 @@ generate it: `bash scripts/cloud-sandbox-egress-probe.sh`.
 `hosts[]` is empty and so are `staging_reachable` and `production_blocked_as_expected`. Those
 empty arrays look exactly like "nothing was reachable" and mean nothing of the kind: it is
 the inconclusive row below, applied to every host at once. Re-run the probe
-(`bash scripts/cloud-sandbox-egress-probe.sh`); if it still cannot run, say so in those
-words and treat the live check as **blocked**, never as failed.
+(`bash scripts/cloud-sandbox-egress-probe.sh`); if it still cannot run, report the live check
+as **could not run** and say "unknown" in those words.
+
+Do **not** report it as `blocked`. That word has a specific meaning in the table below — the
+proxy refused CONNECT, i.e. the host is not allowlisted — and §1's tail turns it into an
+action: file a human-only blocker naming the missing line. On a `probe_ok: false` manifest
+nothing was ever probed, so that issue would send the owner to fix an allowlist that may be
+perfectly correct. The reporting tier is still "blocked" in the sense that the *check* did
+not run, and you must not claim a pass; the *cause* is unknown, not the network.
 
 With `probe_ok: true`, read each host's `status`:
 
@@ -107,7 +114,9 @@ The Supabase row is the dangerous one: **nothing in either ref says which is whi
 type a `supabase.co` host from memory or from a doc. Resolve it from one of the two sources
 that *name* the project: `mcp__Supabase__list_projects`, or the `staging_supabase` entry in
 `.cloud-sandbox-capabilities.json`, which carries the label `frapp-staging Supabase`
-alongside the URL. Do **not** reach for `SUPABASE_URL` in `apps/*/.env.local` — in a cloud
+alongside the URL — but only on a `probe_ok: true` manifest; a degraded one has an empty
+`hosts[]` and cannot resolve anything, so fall back to `mcp__Supabase__list_projects` rather
+than to memory. Do **not** reach for `SUPABASE_URL` in `apps/*/.env.local` — in a cloud
 sandbox bringup writes the *local* stack there (`http://127.0.0.1:54321`), so it answers a
 different question than the one you are asking. If you cannot say out loud which project a
 ref belongs to, you do not yet know enough to send it a request.

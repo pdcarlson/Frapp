@@ -45,8 +45,8 @@ TIMEOUT="${FRAPP_EGRESS_PROBE_TIMEOUT:-8}"
 # below calls this before exiting, so a bringup that reached this script always leaves a
 # readable file behind.
 #
-# Absence was the actual harm in #2205, not the syntax error. Four places -- AGENT_INFRA.md
-# (twice), CLOUD_SANDBOX.md, and live-verification/SKILL.md -- tell agents to read this file
+# Absence was the actual harm in #2205, not the syntax error. AGENT_INFRA.md,
+# CLOUD_SANDBOX.md and live-verification/SKILL.md all tell agents to read this file
 # INSTEAD of probing hosts by hand, and they frame its absence as impossible. A session that
 # finds nothing therefore has no sanctioned reading for what it is looking at, and the
 # likely move is the hand-rolled curl the file exists to prevent. Making the file
@@ -67,7 +67,7 @@ TIMEOUT="${FRAPP_EGRESS_PROBE_TIMEOUT:-8}"
 # that is exactly the "stray quote silently producing invalid JSON" the builder exists to
 # avoid, and this function has no JSON encoder to protect it.
 write_unknown_manifest() {
-  local reason="$1" now=""
+  local reason="${1:-unspecified}" now=""
   # printf is a bash BUILTIN and `%(...)T` is its builtin clock; `cat` and `date` are not.
   # That matters because this function's whole job is to work on the paths where the
   # environment is already degraded -- one caller above is `mktemp` failing, and a PATH
@@ -79,10 +79,19 @@ write_unknown_manifest() {
   # `Z` would be a lie on any host that is not already UTC. The builder above gets this for
   # free from datetime.timezone.utc.
   TZ=UTC printf -v now '%(%Y-%m-%dT%H:%M:%SZ)T' -1 2>/dev/null || now=""
+  # `%(...)T` is bash 4.2+. macOS ships bash 3.2 as /bin/bash, where the above yields the
+  # format string rather than a date, so validate the shape and fall back to `date` there.
+  # Order matters: the builtin is tried FIRST so the no-coreutils case still stamps, and
+  # `date` is only reached on an old bash, which in practice has a PATH.
+  case "$now" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-*Z) ;;
+    *) now="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" || now="" ;;
+  esac
 
-  # One printf per line rather than one big quoted blob: the JSON here is full of double
-  # quotes, and a single interpolated string would need every one of them backslashed --
-  # which is its own quoting hazard, in a file that already lost four days to one.
+  # One printf per line rather than one big format string. Not for escaping reasons -- a
+  # single-quoted bash word holds double quotes just fine, so a multi-line format would need
+  # no backslashes either -- but so that each field is edited, and reviewed, on its own line
+  # with its own value beside it.
   #
   # `summary` names the cause, the warning gives the reading. They deliberately do not
   # restate each other: session-start.sh prints the summary and then every warning, and its
@@ -282,8 +291,18 @@ inconclusive = sum(1 for h in hosts if h["ok"] is None)
 # failure, proxy hiccup) is NOT evidence that a host is unreachable -- saying "NOT
 # reachable" there would send a session to work around a block that may not exist, which
 # is the same could-not-run-reported-as-a-result error this manifest exists to prevent.
+# The `not staging_total` branch is load-bearing, not defensive noise. An EMPTY spec block --
+# a broken or absent `sed` in the fold, say -- gives staging_total == 0 and reachable == [],
+# and every comparison below then reads as unanimous: `len(reachable) == staging_total` is
+# 0 == 0, which claimed "deployed staging reachable; production correctly blocked" off ZERO
+# probes, with empty warnings and empty hosts. That is the single most dangerous sentence
+# this file can emit and nothing downstream would have contradicted it. The `else` is no
+# safer in that state -- it asserts NOT reachable, equally unearned. With no host results
+# there is only one true answer, and it is the same one an all-inconclusive run gets.
 if has_security:
     summary = "EGRESS: production is reachable -- allowlist regression, see warnings"
+elif not staging_total:
+    summary = "EGRESS: could not determine -- the probe produced no host results at all (a broken fold, or an empty probe table), NOT proof that staging is blocked"
 elif len(reachable) == staging_total:
     summary = "EGRESS: deployed staging reachable (api/web/landing/supabase); production correctly blocked"
 elif reachable:
@@ -325,28 +344,72 @@ PY
 # fixed and that guard can finally fire, it must say what it caught: a manifest that is
 # silently not there is the precise failure mode this probe exists to prevent, and it is
 # how #2205 stayed invisible.
-if {
+# The fold is materialised to a file rather than piped straight into python3, and that is
+# load-bearing under `set -o pipefail`: a pipeline's status is the RIGHTMOST non-zero one,
+# so a non-zero LEFT side poisons it even when python3 exits 0. The group's status is its
+# last command -- the `for` loop -- whose final `[ -e "$f" ] && cat "$f"` is FALSE whenever
+# the glob matches nothing (no result files: every probe_one died, or the disk filled).
+# Piped, that made the failure branch fire on a run where python3 had just written a
+# perfectly good manifest, and the branch then replaced it with an empty-`hosts` UNKNOWN --
+# strictly less information than the "could not determine" answer the builder produces for
+# exactly that case. Splitting the two makes the `if` test purely python3's verdict.
+FOLD="$TMPDIR_PROBE/fold"
+{
   printf '%s' "$PROBES" | sed '/^$/d'
   printf '\036'
   for f in "$RESULTS_DIR"/*; do [ -e "$f" ] && cat "$f"; done
-} | python3 "$BUILDER" 2>"$TMPDIR_PROBE/builder.err"; then
+} >"$FOLD" 2>/dev/null
+
+# Clear the manifest first, so "is there a manifest below" answers "did THIS run write one"
+# rather than "has any run ever written one". Without it a stale file from an earlier run in
+# the same container satisfies every check below, and the session reads a previous
+# allowlist's answer as current -- the staleness the SessionStart hook already guards against
+# with its lock-mtime test, which this script would otherwise undercut.
+rm -f "$MANIFEST" 2>/dev/null || true
+
+builder_rc=0
+python3 "$BUILDER" <"$FOLD" 2>"$TMPDIR_PROBE/builder.err" || builder_rc=$?
+
+# The FILE is the contract, not the exit code, so both are checked and they are checked
+# separately. json.dump runs BEFORE the builder's two trailing print()s, so a failure in the
+# reporting tail leaves a complete, correct manifest on disk -- and that failure is biased
+# toward the runs worth keeping: the only non-ASCII bytes in the program are the `§` in the
+# SECURITY and "NOT reachable" warnings, which are emitted only when a host MISSES its
+# expectation, so an ASCII stdout encoding erases exactly the run that found a production
+# host answering. Overwriting a good manifest there would be worse than the bug this script
+# was fixed to solve.
+if [ -s "$MANIFEST" ] && python3 -m json.tool "$MANIFEST" >/dev/null 2>&1; then
+  [ "$builder_rc" -eq 0 ] && exit 0
+  cs_log "WARN: the manifest builder exited ${builder_rc} AFTER writing a complete manifest (its reporting tail failed). Keeping the manifest; it is the real answer."
+  if [ -r "$TMPDIR_PROBE/builder.err" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] && cs_log "WARN:   $line"
+    done <"$TMPDIR_PROBE/builder.err"
+  fi
   exit 0
 fi
 
-cs_log "WARN: the egress capability manifest builder failed; recording capability as UNKNOWN."
-# Guarded on readability: this branch is also reached when the pipeline failed because the
-# redirect itself could not be created (temp dir pulled out from under us), and an
-# unguarded `done < missing-file` would add a bare bash error to a log that is already
-# reporting a failure.
+if [ "$builder_rc" -eq 0 ]; then
+  cs_log "WARN: the manifest builder exited 0 but left no usable manifest; recording capability as UNKNOWN."
+else
+  cs_log "WARN: the egress capability manifest builder failed; recording capability as UNKNOWN."
+fi
+# Guarded on readability: this branch is also reached when the redirect itself could not be
+# created (temp dir pulled out from under us), and an unguarded `done < missing-file` would
+# add a bare bash error to a log that is already reporting a failure. The `|| [ -n "$line" ]`
+# keeps a final line that has no trailing newline.
 if [ -r "$TMPDIR_PROBE/builder.err" ]; then
-  while IFS= read -r line; do
+  while IFS= read -r line || [ -n "$line" ]; do
     [ -n "$line" ] && cs_log "WARN:   $line"
   done <"$TMPDIR_PROBE/builder.err"
 fi
 
-# The builder may have failed midway through json.dump and left a truncated file. Overwrite
-# it: a half-written manifest is worse than an honest UNKNOWN one, because the hook's reader
-# swallows a JSONDecodeError and says nothing at all.
+# Reached only when this run left no parseable manifest -- the builder died before or during
+# json.dump, or wrote nothing at all. The `rm -f` above means there is nothing here to
+# preserve, which is the point: this file answers "what can this session reach NOW", and the
+# documented reason to re-run the probe by hand is "after changing the allowlist"
+# (CLOUD_SANDBOX.md), so a previous run's answer is precisely the one about to be wrong.
+# UNKNOWN loses information and stays true; stale data keeps information and lies.
 write_unknown_manifest "manifest builder failed"
 
 exit 0
