@@ -162,9 +162,41 @@ travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records that arithmet
 
 ## Cached channel readable
 
+**Correction (2026-09-14, later the same day, [#2243](https://github.com/pdcarlson/Frapp/issues/2243)):
+every number in this section predates a change in what the mark measures, and the `1s` clause below
+is no longer fully served.** `readable` in
+[`message-timeline.tsx`](../../../apps/web/components/chat/message-timeline.tsx) now also requires a
+resolved viewer id, so the mark waits on `GET /v1/users/me`. Two consequences, in the order they
+matter:
+
+- **The rank-1 clause is not met on the warm path.** `1s` asks for the cached rows to "render real;
+  the rest of the window is skeleton with reserved geometry" — and until identity lands the *whole*
+  window is now skeleton, so nothing renders real from the cache. That outranks the latency: § First
+  paint puts `1s` at rank 1 in the trust order, above this file. It is a deliberate trade, not an
+  oversight — the rows it withholds were painting the member's own messages as another member's, and
+  §11 specs no third bubble shape to draw an unattributed row in — but it is a regression against
+  the clause and is tracked as such, not as tuning.
+- **The abort check below no longer means what it is cited for.** It aborted `**/v1/channels**` and
+  saw the rows paint from Dexie — and it still passes, because that glob does not match
+  `/v1/users/me`. But the rows now wait on that request too, so it no longer establishes that the
+  cached timeline is readable without the network. Re-running it with identity blocked as well is
+  part of #2249; until then this page does not have a network-independent-rows result, and must not
+  be read as if it did.
+
+Direction known, magnitude unmeasured: neither arm was re-run. The cold arm should not move —
+[`use-user.ts`](../../../packages/hooks/src/use-user.ts)'s `["user","me"]` query has no `enabled`
+gate and is issued on mount, while the messages fetch
+([`use-chat-channel.ts`](../../../apps/web/lib/chat/use-chat-channel.ts)) is `enabled: !!channelId`
+and cannot start until a channel id exists, so identity has strictly longer to land than the rows it
+gates. The warm arm is the one at risk. **Re-measuring it does not need anything that does not
+exist**: the by-hand procedure below produced these numbers with Playwright driving a signed-in
+session, and what § What is not measured, and why records as missing is a signed-in harness in *CI*,
+not a signed-in session. [#2249](https://github.com/pdcarlson/Frapp/issues/2249) tracks re-measuring
+and restoring a local-first warm paint, and carries the options with what each costs.
+
 `1s`'s "first chunk" clause — the channel list and the last ~30 messages read from Dexie — is built
-as of 2026-09-14. Until then this page recorded it as absent and said "cached channel readable"
-therefore measured a network round trip, which it did.
+as of 2026-09-14, subject to the correction above. Until then this page recorded it as absent and
+said "cached channel readable" therefore measured a network round trip, which it did.
 
 **One half of the clause is served differently from how it is worded, and the difference is
 visible in a miss.** `1s` says "channel list + **last active channel id** from cache"; the shell's
@@ -205,7 +237,8 @@ subscriptions. That cost is not isolated by this measurement.
 spread, which is the #2176 shell doing its job: it never waited on the channel list, so a cache for
 the channel list cannot move it either way.
 
-Three qualifications, because a number without them is worth less than none:
+Three qualifications, because a number without them is worth less than none — and a fourth,
+larger than all of them, in the correction at the top of this section:
 
 - **This is a sandbox VM on localhost, not a device on a network.** It is a controlled A/B of one
   variable, not a field measurement. The 400ms budget is a field budget and Sentry
