@@ -53,7 +53,7 @@ import {
 } from "./message-timeline";
 import {
   Composer,
-  ComposerSkeleton,
+  ComposerShell,
   notifyDispatchOutcome,
 } from "./composer";
 import { DELETED_MESSAGE_PLACEHOLDER } from "./message-placeholders";
@@ -962,6 +962,26 @@ export function ChatShell({
             : "empty";
   const timelineReady = channelsPaneState === "ready" && !requestedChannelMissing;
 
+  /**
+   * Whether focus is in `ComposerShell` right now — the one thing the upgrade
+   * to `<Composer>` cannot recover for itself.
+   *
+   * A ref, and spent by whoever reads it. State would have to be cleared after
+   * the handoff (otherwise every later remount — `<Composer>` is keyed on
+   * channel id and name, #1014 — would inherit the intent and pull the caret
+   * back out of whatever the member was doing), and the only place to clear it
+   * is an effect, which is `react-hooks/set-state-in-effect`. Spending it on
+   * read makes it one-shot by construction: `claimShellFocus` answers `true`
+   * exactly once, to the first editor built after the member was typing in the
+   * shell.
+   */
+  const shellFocus = useRef(false);
+  const claimShellFocus = useCallback(() => {
+    const had = shellFocus.current;
+    shellFocus.current = false;
+    return had;
+  }, []);
+
   return (
     /*
       Flush columns, 100vh, independent scroll (`1b` — the board counts the app
@@ -1369,12 +1389,33 @@ export function ChatShell({
               <MessageTimelineSkeleton />
             </div>
             {/*
-              The composer's box, held open while the channel list resolves.
-              Without it the bottom-aligned skeleton above sits flush against the
-              viewport and every row jumps when `<Composer>` finally mounts —
-              `ComposerSkeleton` owns why, and owns the geometry.
+              The composer, before there is a channel to send to.
+
+              It holds the box open — without it the bottom-aligned skeleton
+              above sits flush against the viewport and every row jumps when
+              `<Composer>` mounts — and since #2176 it also takes focus and
+              takes text, which is the clause `1s` budgets at 400ms and the only
+              one #2145 could not close. `ComposerShell` owns both the geometry
+              and why.
+
+              Only in this branch. The other terminal states (`error`, `empty`,
+              `no-chapter`, and a requested channel that matched nothing) are not
+              waiting for anything: a composer there would be a control with
+              nowhere to send, which the release gate calls a dead end.
             */}
-            <ComposerSkeleton />
+            <ComposerShell
+              // Straight into the channel's draft, with no channel yet. That is
+              // not a trick: `useChannelDraft` stores what it is given either
+              // way and only *masks* `draft` while `channelId` is `null`, so the
+              // text is already there to be read on the render that mounts
+              // `<Composer>`. The ordering that makes that safe — and the two
+              // texts it has to settle when Dexie answers late — is in
+              // `lib/chat/use-channel-draft.ts`.
+              onTextChange={channel.setDraft}
+              onFocusChange={(focused) => {
+                shellFocus.current = focused;
+              }}
+            />
           </>
         ) : null}
         {timelineReady ? (
@@ -1497,6 +1538,11 @@ export function ChatShell({
             // `draft`-sync effect below corrects it — tracked as #1497,
             // pre-existing and not introduced by this `key`.
             key={`${activeChannel.id}:${activeChannelName}`}
+            // Carried across the upgrade only, and only if the member was
+            // actually typing in the shell. Called from Tiptap's `onCreate`,
+            // never during render, and it answers `true` at most once — see
+            // `claimShellFocus` above and `Composer`'s own prop doc.
+            claimShellFocus={claimShellFocus}
             channelId={activeChannel.id}
             channelName={activeChannelName}
             isDirect={
