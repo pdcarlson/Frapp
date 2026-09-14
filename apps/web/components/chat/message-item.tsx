@@ -133,6 +133,55 @@ export interface MessageItemProps {
 }
 
 /**
+ * The strip the hover/focus action cluster rides, beside the bubble.
+ *
+ * It is a flex sibling of the message column rather than an `absolute` box,
+ * because the one thing the cluster needs — "end at the bubble's edge" — is a
+ * length no `absolute` inset can name: the column shrink-wraps its bubble, so
+ * its width is content, and CSS has no way to reference a sibling's edge. As a
+ * `flex-1` track it *is* the leftover, whatever the bubble's width turns out to
+ * be, so the cluster's outer edge and the bubble's edge are the same line at
+ * every message length.
+ *
+ * - **`h-0`** so the strip contributes no height and the row stays exactly as
+ *   compact as it was before the cluster existed. `items-start` goes with it:
+ *   the default `stretch` would squash the cluster to the strip's zero height
+ *   rather than letting it overflow, which is the whole trick.
+ * - **`min-w-0`** so a cluster wider than the leftover overflows the track
+ *   instead of forcing the track open and shrinking the bubble.
+ * - **`justify-end-safe`** is the part that earns its keep. Plain `justify-end`
+ *   pins the cluster's outer edge to the bubble's edge, which is the hug — but
+ *   a bubble at its 86% maximum leaves a track far narrower than the cluster,
+ *   and the overflow would then run off the far side of the thread column and
+ *   out of the pane. `safe` falls the alignment back to `start` exactly when
+ *   the content would overflow, so a cluster that cannot fit beside the bubble
+ *   lands flush against the lane and overlaps the bubble instead of escaping
+ *   it. Overlapping is why the cluster carries an opaque fill and a z-index.
+ *
+ * The incoming variant sets `dir="rtl"` on the track rather than flipping to
+ * `justify-start`, and the reason is the part a browser had to settle. That
+ * track sits on the bubble's *right*, so its hug is "align to the track's left
+ * edge" and its fallback has to be the track's right edge — the mirror of the
+ * self side. `flex-row-reverse` looks like it should do that and does not:
+ * `safe` is defined as falling back to **`start`**, and `start` for
+ * `justify-content` is writing-mode relative, not flex relative. Reversing the
+ * main axis moves the hug but leaves the fallback on the physical left, so a
+ * max-width incoming bubble sent the cluster off the right of the pane —
+ * measured at 320px past the thread column before this was `rtl`. Flipping the
+ * *direction* moves both at once, because both keywords are resolved against
+ * it. The cluster carries `dir="ltr"` so its own chips do not reverse with it.
+ *
+ * One honest limit: the track ends at the **message column's** edge, and on a
+ * short incoming message the widest thing in that column is the `Name · time`
+ * meta line rather than the bubble, so the cluster hugs the meta line and sits
+ * a little clear of the bubble itself. Closing that last gap would need the
+ * track nested inside the column, where its leftover is the column's width
+ * rather than the lane's — which would put the cluster into its fallback on
+ * almost every message. The block edge is the right trade.
+ */
+const ACTION_TRACK = "flex h-0 min-w-0 flex-1 items-start justify-end-safe";
+
+/**
  * A single message row, in the two shapes `components.md` §11 draws.
  *
  * **Incoming:** 32px avatar leading, `Name · time` caption *above* the bubble
@@ -412,8 +461,17 @@ export function MessageItem({
    *   is lifted by the same two variants that lift the opacity.
    * - **It must not reserve space.** In flow, every confirmed message grew a
    *   permanent ~32px strip, which is most of the compactness the 5-minute
-   *   grouping exists to buy. It is absolutely positioned against the row
-   *   instead, on the side away from the bubble's tail.
+   *   grouping exists to buy. It rides a zero-height track beside the bubble
+   *   instead (`ACTION_TRACK` below), so it contributes no height at all.
+   *
+   * **The cluster attaches to the bubble, not to the lane.** It used to be
+   * `absolute top-0 left-5` / `right-5` against the *row*, which is the full
+   * width of the thread column — so it docked to the lane's edge and only
+   * happened to touch the bubble when the bubble was at its 86% maximum. On
+   * every shorter message, which is most of them, a right-aligned self bubble
+   * got a cluster stranded against the far left of the lane with nothing under
+   * it. The track below ends at the bubble's edge, so the cluster tracks the
+   * bubble at every width.
    *
    * `:hover`/`:focus-within` still reach nothing on a coarse pointer, which
    * left the cluster genuinely unreachable there (#1193) — `isTapRevealed`
@@ -421,8 +479,19 @@ export function MessageItem({
    */
   const actions = showActions && !isEditing ? (
     <div
+      // A labelled group rather than a bare `div`: these controls all act on
+      // one message, and without the grouping a screen reader announces
+      // "Reply, Save, Edit, Delete" with nothing saying what they belong to —
+      // on a virtualized list of them. Not `role="toolbar"`, which would
+      // promise arrow-key roving this does not implement.
+      role="group"
+      aria-label="Message actions"
+      // The incoming track runs `rtl` so its safe fallback lands on the right
+      // edge (see `ACTION_TRACK`); without this the cluster's own chips would
+      // reverse along with it.
+      dir="ltr"
       className={cn(
-        "absolute top-0 z-10 flex items-center gap-1.5 rounded-sm bg-background p-1",
+        "relative z-10 flex items-center gap-1.5 rounded-sm bg-background p-1",
         "transition-opacity",
         "group-hover/message:pointer-events-auto group-hover/message:opacity-100",
         "group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100",
@@ -435,7 +504,6 @@ export function MessageItem({
         isTapRevealed
           ? "pointer-events-auto opacity-100"
           : "pointer-events-none opacity-0",
-        selfBubble ? "left-5" : "right-5",
       )}
     >
       <ReactionQuickPick
@@ -605,7 +673,7 @@ export function MessageItem({
       <div
         role="listitem"
         className={cn(
-          "group/message relative flex flex-col items-end px-5 pb-1",
+          "group/message relative flex items-start justify-end gap-2.5 px-5 pb-1",
           showHeader ? "pt-4" : "pt-1",
         )}
         data-status={message._status}
@@ -614,7 +682,6 @@ export function MessageItem({
         <div className="flex max-w-[86%] flex-col items-end">
           {isEditing ? editForm : renderer}
           {reactions}
-          {actions}
           {/*
             The self caption and the delivery state are one line, per §11 —
             but only the *state* half is a live region. Wrapping the timestamp
@@ -672,6 +739,17 @@ export function MessageItem({
             </div>
           ) : null}
         </div>
+        {/*
+          Self bubbles are right-aligned, so the track — and with it the action
+          cluster — falls on the bubble's left edge, the side away from the tail
+          and away from the delivery caption under it.
+
+          `order-first` rather than writing it first: the cluster acts on the
+          message, so it has to come *after* the message for a screen reader and
+          for the tab sequence, exactly as it does on an incoming row. Source
+          order is the reading order on both sides; `order` moves the pixels.
+        */}
+        <div className={cn(ACTION_TRACK, "order-first")}>{actions}</div>
       </div>
     );
   }
@@ -717,7 +795,6 @@ export function MessageItem({
         ) : null}
         {renderer}
         {reactions}
-        {actions}
         <div role="status" aria-live="polite" aria-atomic="true">
           {isPending ? (
             <p className="ml-1 mt-1 flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
@@ -762,6 +839,15 @@ export function MessageItem({
           ) : null}
         </div>
         {unconfirmedFooter}
+      </div>
+      {/*
+        Incoming bubbles are left-aligned behind the avatar, so their track is
+        the leftover on the right and the cluster hugs the bubble's right edge.
+        `rtl` is what makes `justify-end-safe` mean that on this side — see
+        `ACTION_TRACK`.
+      */}
+      <div dir="rtl" className={ACTION_TRACK}>
+        {actions}
       </div>
     </div>
   );

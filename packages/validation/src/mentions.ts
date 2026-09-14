@@ -78,13 +78,53 @@ function fold(value: string): string {
  */
 const MIN_PREFIX_LENGTH = 2;
 
+/** Where one `@`-token sits in a message body. */
+export interface MentionSpan {
+  /** Index of the `@` itself. */
+  start: number;
+  /** Index one past the token's last character. */
+  end: number;
+  /** The token, without the leading `@` — what the resolver matches on. */
+  token: string;
+}
+
+/**
+ * Every `@`-token in a message body **with its position**, in source order.
+ *
+ * The positional twin of `extractMentionTokens`, and the reason this module is
+ * shared at all: a surface that highlights mentions in rendered text needs to
+ * know which characters to wrap, and re-deriving that from its own regex is how
+ * a highlight starts disagreeing with the resolution that actually sent the
+ * notification — a message that paints `@Sam` as a mention nobody was notified
+ * about, or the reverse. Both functions walk `MENTION_TOKEN`, so they cannot.
+ *
+ * Unlike `extractMentionTokens` this does **not** deduplicate: three `@jane`s
+ * in a sentence are three spans, because all three are on screen. It applies
+ * the same `MAX_TOKEN_LENGTH` rejection, so a run the resolver refuses to
+ * resolve is also a run nothing highlights.
+ *
+ * A span says only "this is a mention-shaped token". Whether it resolves to a
+ * member needs `matchMentionCandidate` and a roster, which a renderer holding
+ * nothing but `content` does not have — see `resolveMentions` for that half.
+ */
+export function findMentionSpans(content: string): MentionSpan[] {
+  const spans: MentionSpan[] = [];
+  for (const match of content.matchAll(MENTION_TOKEN)) {
+    const token = match[1];
+    if (!token || token.length > MAX_TOKEN_LENGTH) continue;
+    // `match.index` is the `@`: the lookbehind is zero-width, so it does not
+    // move the match start.
+    const start = match.index;
+    spans.push({ start, end: start + 1 + token.length, token });
+  }
+  return spans;
+}
+
 /** Every distinct `@`-token in a message body, in order of first appearance. */
 export function extractMentionTokens(content: string): string[] {
   const seen = new Set<string>();
   const tokens: string[] = [];
-  for (const match of content.matchAll(MENTION_TOKEN)) {
-    const token = match[1];
-    if (!token || token.length > MAX_TOKEN_LENGTH) continue;
+  for (const { token } of findMentionSpans(content)) {
     const key = token.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);

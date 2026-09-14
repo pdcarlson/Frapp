@@ -359,6 +359,14 @@ describe("each surface imports exactly its own system", () => {
 describe("the fixed families cannot be wired to the accent slot", () => {
   /** Every token the brand lock keeps out of the accent engine. */
   const FIXED = [
+    // The mention family states "you were addressed" and must read identically
+    // in every chapter (foundations §5), so it is locked out of the engine for
+    // the same reason the gold family is — including the in-body chip, whose
+    // whole guarantee is that its text/fill ratio does not move per tenant.
+    "--mention",
+    "--mention-foreground",
+    "--mention-chip",
+    "--mention-chip-text",
     "--gold-house",
     "--gold-on-house",
     "--gold-ask-fill",
