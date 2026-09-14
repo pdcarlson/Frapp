@@ -45,7 +45,8 @@
  * StrictMode's double-invoked effects.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { useChatScope } from "./chat-scope";
 import { useQueryClient, type QueryClient, type QueryKey } from "@tanstack/react-query";
 import { useChannels } from "@repo/hooks";
 import { emptyCache, mergeServerRows } from "@repo/chat-core/cache";
@@ -54,8 +55,6 @@ import {
   type ChannelCache,
   type ChatMessage,
 } from "@repo/chat-core/types";
-import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
-import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray } from "@/lib/utils";
 import type { ChatChannel } from "@/components/chat/channel-list";
 import {
@@ -96,24 +95,12 @@ function scopeKey(scope: FirstChunkScope | null): string | null {
  * The tenant whose rows this browser may read and write, or `null` until both
  * halves are known.
  *
- * Both come from local state rather than the network — the Supabase session
- * (`useAuthUserId`) and the persisted chapter store — which is the only reason
- * a cold load can read the cache before `GET /v1/channels` returns.
- *
- * Deliberately **not** gated on the chapter store's `hasHydrated`.
- * `profile-panel.tsx` records at length that the flag has three ways to stick
- * at `false` for the life of a session when `localStorage` throws; gating here
- * would silently disable the cache for exactly those members, and nothing else
- * in the chat shell waits on it either.
+ * Re-exported rather than derived here: the outbound drafts/outbox database
+ * (`offline-queue.ts`) keys on the same scope, and one definition is the whole
+ * point — see `chat-scope.ts` for why both halves come from local state, and
+ * why this is deliberately not gated on the chapter store's `hasHydrated`.
  */
-export function useFirstChunkScope(): FirstChunkScope | null {
-  const userId = useAuthUserId();
-  const chapterId = useChapterStore((state) => state.activeChapterId);
-  return useMemo(
-    () => (userId && chapterId ? { userId, chapterId } : null),
-    [userId, chapterId],
-  );
-}
+export { useChatScope as useFirstChunkScope };
 
 /**
  * `true` when the data in hand was fetched under the scope currently in effect.
@@ -341,7 +328,7 @@ export function seedFirstChunk(
  * put a full key scan between a cold load and the rows it exists to paint.
  */
 export function useFirstChunkCache(): void {
-  const scope = useFirstChunkScope();
+  const scope = useChatScope();
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -405,7 +392,7 @@ export function usePersistedChannelTail(
   messages: ChatMessage[],
   dataUpdatedAt: number,
 ): void {
-  const scope = useFirstChunkScope();
+  const scope = useChatScope();
 
   const writeTail = useCallback(
     (current: FirstChunkScope) => {

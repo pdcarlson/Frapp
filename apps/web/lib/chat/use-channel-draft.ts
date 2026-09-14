@@ -33,6 +33,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { clearDraft, loadDraft, saveDraft } from "./offline-queue";
+import { useChatDraftScope } from "./chat-scope";
 
 /** How long typing settles before it is written to Dexie. */
 const SAVE_DEBOUNCE_MS = 400;
@@ -55,6 +56,26 @@ export interface ChannelDraft {
 
 export function useChannelDraft(channelId: string | null): ChannelDraft {
   const [draftState, setDraftState] = useState("");
+  /*
+    Whose drafts these are (#2226). A draft row's primary key is
+    `[userId+channelId]`, so without a resolved scope there is no key to read or
+    write one under — and inventing one is exactly the cross-account bug the
+    scope exists to close.
+
+    Treated like a not-yet-known `channelId` throughout, because it behaves like
+    one: the text still lands in `draftState` and the composer is still usable,
+    only the Dexie half waits. The wait is short — `useAuthUserId` resolves from
+    the stored session — and a member typing inside it loses nothing, because
+    the effect below runs the moment the scope arrives and settles what they
+    typed against whatever was saved, the same way it already does for text
+    typed before a channel existed.
+
+    The draft scope, not the outbound one: it holds no `chapterId`, so it keeps
+    a stable identity across a chapter change and cannot re-run the restore
+    below for a reason drafts do not care about. `chat-scope.ts` spells out what
+    that re-run would cost.
+  */
+  const scope = useChatDraftScope();
 
   /**
    * The channel the member has typed into during this session, if any.
@@ -102,14 +123,26 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
    * preserve was dropped and then overwritten by the next debounced write.
    */
   const restoreEpoch = useRef(0);
+  /**
+   * Channels whose draft a send cleared before there was a scope to clear it
+   * under. Drained by the restore effect once one arrives.
+   */
+  const pendingClears = useRef(new Set<string>());
 
   useEffect(() => {
-    if (!channelId) return;
+    if (!channelId || !scope) return;
     /*
       Claim the shell's text for this channel synchronously, before the
       asynchronous restore below can race it. The text is already in
       `draftState`; all that is missing is the record of whose it is.
     */
+    if (pendingClears.current.delete(channelId)) {
+      // A send committed for this channel while unscoped; finish its clear
+      // before anything below can restore what it superseded.
+      void clearDraft(scope, channelId).catch(() => {
+        // Best-effort, like every other write here.
+      });
+    }
     const claimedFromShell = typedBeforeChannel.current;
     if (claimedFromShell) {
       typedBeforeChannel.current = false;
@@ -117,7 +150,7 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
     }
     let cancelled = false;
     const epoch = restoreEpoch.current;
-    loadDraft(channelId)
+    loadDraft(scope, channelId)
       .then((body) => {
         if (cancelled) return;
         // A send (or an explicit cancel) happened while this was in flight;
@@ -176,7 +209,7 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
           setDraftState(settled);
         }
         if (settled && settled !== body) {
-          void saveDraft(channelId, settled).catch(() => {
+          void saveDraft(scope, channelId, settled).catch(() => {
             // Best-effort, exactly like every other write here: a draft that
             // could not be persisted is not worth breaking the channel for.
           });
@@ -203,7 +236,7 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
       */
       typedFor.current = null;
     };
-  }, [channelId]);
+  }, [channelId, scope]);
 
   /*
     Masked, not cleared. `setDraftState` above runs with or without a channel,
@@ -233,21 +266,32 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
         typedBeforeChannel.current = true;
         return;
       }
+      /*
+        Claimed for this channel even when the scope has not resolved, and the
+        distinction matters. `typedBeforeChannel` means "this text belongs to
+        whichever channel we land in" — arming it while a channel *is* mounted
+        hands the text to whatever channel happens to be current when the scope
+        arrives. Type in #general, click #random inside that window, and the
+        settle branch above would merge #general's sentence into #random's
+        draft and write it there, one Enter away from posting it to the wrong
+        channel. The text belongs to this channel; only the write has to wait.
+      */
       typedFor.current = channelId;
       cancelPendingSave();
+      if (!scope) return;
       saveTimer.current = setTimeout(() => {
         // `.catch` and not a bare `void`: `db.drafts.put` rejects under storage
         // pressure and in Safari's private mode, and an unhandled rejection
         // here reaches Sentry as an unhandled error once per typing burst,
         // carrying no channel context and describing nothing anyone can act on.
-        void saveDraft(channelId, body).catch(() => {
+        void saveDraft(scope, channelId, body).catch(() => {
           // Best-effort. The draft is still in memory; losing the write is not
           // worth an error report.
         });
       }, SAVE_DEBOUNCE_MS);
 
     },
-    [channelId, cancelPendingSave],
+    [channelId, scope, cancelPendingSave],
   );
 
   const clearAfterSend = useCallback(async () => {
@@ -256,14 +300,25 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
     latest.current = "";
     setDraftState("");
     if (!channelId) return;
+    if (!scope) {
+      /*
+        Sent before the scope resolved, so there is no key to delete under yet.
+        Record it rather than dropping it: without this the row stays on disk
+        and the member meets a draft they already sent, restored over an empty
+        composer the next time they open the channel. The effect above drains
+        this the moment a scope arrives.
+      */
+      pendingClears.current.add(channelId);
+      return;
+    }
     // Same Dexie drafts table `sendMessage` already cleared best-effort. A
     // second fault must not reject a send that already posted (#1718).
     try {
-      await clearDraft(channelId);
+      await clearDraft(scope, channelId);
     } catch {
       // Best-effort — in-flight saveDraft races are why this call exists.
     }
-  }, [channelId]);
+  }, [channelId, scope]);
 
   return { draft, setDraft, cancelPendingSave, clearAfterSend };
 }

@@ -5,9 +5,11 @@
 **Schema (`frapp-chat` IndexedDB):**
 
 ```text
-drafts(channelId PK, body, updatedAt)
-outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queuedAt, status: "queued"|"failed", lastError?)
+drafts([userId+channelId] PK, body, updatedAt)
+outbox([userId+chapterId+clientId] PK, channelId, body, kind?, payload?, replyToId?, attempts, queuedAt, status: "queued"|"failed", lastError?)
 ```
+
+Both primary keys lead with the **Supabase auth uid** of the member who wrote the row ([#2226](https://github.com/pdcarlson/Frapp/issues/2226)). Before that they were `channelId` and `clientId` alone, and on a shared browser the boot flush sent one member's queued messages under the next member's token. Keying, not clearing, is the boundary — the rows deliberately survive a sign-out, because they are unsent messages. Why the outbox carries `chapterId` and drafts do not, and what the migration drops, are in [`spec/ui/resilience/caching.md`](../../ui/resilience/caching.md#cache-layers).
 
 - **Drafts** are written debounced from the composer (Tiptap text via `editor.getText()`, _not_ the editor JSON — keeps the schema stable across editor upgrades). Restored on tab reload so a mid-compose user never loses input.
 - **Outbox** rows are enqueued _before_ the chat-send POST; the row's `clientId` doubles as `chat_messages.client_message_id`, which the NestJS chat controller dedupes on (ADR-03, ADR-11). On success the row is dequeued; on a `4xx` it moves to `failed` with an inline Retry/Discard affordance; on network/5xx it stays `queued`. The flush loop iterates `queued` rows oldest-first and **sequentially** so message order is preserved end-to-end.

@@ -2,12 +2,28 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { clearDraft, loadDraft, saveDraft } = vi.hoisted(() => ({
+import type { ChatDraftScope } from "./chat-scope";
+
+/**
+ * Whose drafts these are (#2226). Every Dexie call this hook makes now leads
+ * with a scope, and the assertions below check it is passed through rather than
+ * dropped — a draft written without one, or under the wrong one, is the
+ * cross-account read `offline-queue.spec.ts` tests against the real schema.
+ */
+const SCOPE: ChatDraftScope = { userId: "auth-alice" };
+
+const { clearDraft, loadDraft, saveDraft, scope } = vi.hoisted(() => ({
   clearDraft: vi.fn(async () => undefined),
-  loadDraft: vi.fn<(channelId: string) => Promise<string>>(async () => ""),
+  loadDraft: vi.fn<
+    (scope: { userId: string }, channelId: string) => Promise<string>
+  >(async () => ""),  
   saveDraft: vi.fn(async () => undefined),
+  scope: vi.fn<() => { userId: string } | null>(() => ({
+    userId: "auth-alice",
+  })),
 }));
 vi.mock("./offline-queue", () => ({ clearDraft, loadDraft, saveDraft }));
+vi.mock("./chat-scope", () => ({ useChatDraftScope: scope }));
 
 import { useChannelDraft } from "./use-channel-draft";
 
@@ -17,6 +33,7 @@ describe("useChannelDraft", () => {
     saveDraft.mockClear();
     loadDraft.mockReset();
     loadDraft.mockResolvedValue("");
+    scope.mockReturnValue(SCOPE);
   });
 
   afterEach(() => {
@@ -95,7 +112,7 @@ describe("useChannelDraft", () => {
       const { result, rerender } = renderHook(({ id }) => useChannelDraft(id), {
         initialProps: { id: "chan-1" },
       });
-      await waitFor(() => expect(loadDraft).toHaveBeenCalledWith("chan-1"));
+      await waitFor(() => expect(loadDraft).toHaveBeenCalledWith(SCOPE, "chan-1"));
       act(() => result.current.setDraft("for chan-1"));
 
       loadDraft.mockResolvedValue("saved for chan-2");
@@ -113,7 +130,7 @@ describe("useChannelDraft", () => {
         is skipped and `draftState` is still holding *B's* text — so A's
         composer opens showing B's draft, and pressing Enter posts it into A.
       */
-      loadDraft.mockImplementation(async (id: string) =>
+      loadDraft.mockImplementation(async (_scope, id: string) =>
         id === "chan-1" ? "for chan-1" : "for chan-2",
       );
       const { result, rerender } = renderHook(({ id }) => useChannelDraft(id), {
@@ -261,6 +278,7 @@ describe("useChannelDraft", () => {
 
       await waitFor(() =>
         expect(saveDraft).toHaveBeenCalledWith(
+          SCOPE,
           "chan-1",
           "does anyone have the recording",
         ),
@@ -280,7 +298,102 @@ describe("useChannelDraft", () => {
 
       act(() => void vi.advanceTimersByTime(400));
       expect(saveDraft).toHaveBeenCalledTimes(1);
-      expect(saveDraft).toHaveBeenCalledWith("chan-1", "hel");
+      expect(saveDraft).toHaveBeenCalledWith(SCOPE, "chan-1", "hel");
+    });
+
+    it("keeps unscoped text with its own channel, not the next one (#2226)", async () => {
+      /*
+        The regression an earlier revision of #2226 shipped. With a channel
+        mounted but no scope yet, `setDraft` armed `typedBeforeChannel` — the
+        "belongs to whichever channel we land in" flag — so switching channels
+        inside that window handed one channel's sentence to another, merged it
+        into that channel's saved draft, and wrote it to disk one Enter away
+        from being posted to the wrong place. Same class as #1497.
+      */
+      scope.mockReturnValue(null);
+      loadDraft.mockImplementation(async (_s, id: string) =>
+        id === "chan-2" ? "chan-2's own draft" : "",
+      );
+      const { result, rerender } = renderHook(({ id }) => useChannelDraft(id), {
+        initialProps: { id: "chan-1" as string | null },
+      });
+
+      act(() => result.current.setDraft("see you at 8"));
+
+      // The scope arrives while the member is now looking at chan-2.
+      scope.mockReturnValue(SCOPE);
+      rerender({ id: "chan-2" });
+
+      /*
+        Wait on the settled state, not on `loadDraft` merely having been called:
+        the restore applies a promise later, so asserting straight after the
+        call races it. (That chan-1's text is briefly still on screen during the
+        switch is #1497, which this hook deliberately leaves alone — the claim
+        under test is what reaches disk.)
+      */
+      await waitFor(() => expect(result.current.draft).toBe("chan-2's own draft"));
+      expect(loadDraft).toHaveBeenCalledWith(SCOPE, "chan-2");
+      // chan-1's sentence must not have been merged into chan-2's draft.
+      expect(saveDraft).not.toHaveBeenCalledWith(
+        SCOPE,
+        "chan-2",
+        expect.stringContaining("see you at 8"),
+      );
+    });
+
+    it("still clears a draft sent before the scope resolved (#2226)", async () => {
+      /*
+        Otherwise the row outlives the message that superseded it: the member
+        sends, the composer empties, and the next visit to the channel restores
+        a draft they already posted.
+      */
+      scope.mockReturnValue(null);
+      const { result, rerender } = renderHook(() => useChannelDraft("chan-1"));
+
+      await act(async () => {
+        await result.current.clearAfterSend();
+      });
+      expect(clearDraft).not.toHaveBeenCalled();
+
+      scope.mockReturnValue(SCOPE);
+      rerender();
+
+      await waitFor(() =>
+        expect(clearDraft).toHaveBeenCalledWith(SCOPE, "chan-1"),
+      );
+    });
+
+    it("saves nothing until the member's scope has resolved (#2226)", () => {
+      /*
+        A draft row's key is `[userId+channelId]`, so before the session
+        resolves there is no key to write one under. The keystrokes stay in
+        memory — the composer is still usable — and nothing reaches disk
+        unattributed.
+      */
+      vi.useFakeTimers();
+      scope.mockReturnValue(null);
+      const { result } = renderHook(() => useChannelDraft("chan-1"));
+
+      act(() => result.current.setDraft("typed before the session resolved"));
+      act(() => void vi.advanceTimersByTime(400));
+
+      expect(saveDraft).not.toHaveBeenCalled();
+      expect(loadDraft).not.toHaveBeenCalled();
+      // Still on screen: masking the write must not mask the text.
+      expect(result.current.draft).toBe("typed before the session resolved");
+    });
+
+    it("restores the saved draft once the scope arrives", async () => {
+      scope.mockReturnValue(null);
+      loadDraft.mockResolvedValue("saved earlier");
+      const { result, rerender } = renderHook(() => useChannelDraft("chan-1"));
+      expect(loadDraft).not.toHaveBeenCalled();
+
+      scope.mockReturnValue(SCOPE);
+      rerender();
+
+      await waitFor(() => expect(result.current.draft).toBe("saved earlier"));
+      expect(loadDraft).toHaveBeenCalledWith(SCOPE, "chan-1");
     });
 
     it("saves nothing while there is no channel to save it under", () => {
@@ -315,7 +428,7 @@ describe("useChannelDraft", () => {
       });
 
       expect(result.current.draft).toBe("");
-      expect(clearDraft).toHaveBeenCalledWith("chan-1");
+      expect(clearDraft).toHaveBeenCalledWith(SCOPE, "chan-1");
     });
 
     it("does not reject a send that already posted when the table throws (#1718)", async () => {
