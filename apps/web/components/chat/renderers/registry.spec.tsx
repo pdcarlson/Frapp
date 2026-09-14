@@ -94,9 +94,14 @@ function message(kind: string, overrides: Partial<ChatMessage> = {}): ChatMessag
   } as ChatMessage;
 }
 
-/** The bubble is the only thing in the tree carrying the locked 18px radius. */
+/**
+ * The bubble names itself. It used to be found by the locked 18px radius, which
+ * was "the only thing in the tree carrying it" until the inline editor began
+ * standing in for the bubble at that same radius (#2235) — and the skeleton in
+ * `message-timeline.tsx` already wore it before that.
+ */
 function hasBubble(container: HTMLElement): boolean {
-  return container.querySelector('[class*="rounded-[18px]"]') !== null;
+  return container.querySelector('[data-slot="bubble"]') !== null;
 }
 
 describe("the renderer registry and the layout predicate agree", () => {

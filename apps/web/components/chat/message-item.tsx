@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +31,26 @@ export interface MessageItemProps {
    * distinguish "loading" from "no avatar".
    */
   avatarUrl?: string;
-  viewerId: string | null;
+  /**
+   * The signed-in member's `users.id`, and it is **known** — never `null`.
+   *
+   * Non-nullable deliberately: the nullable version of this prop was the
+   * own-message mis-ID bug (#2243), not a loose type around it. `isMine` read
+   * `!!viewerId && sender_id === viewerId`, so an identity that had not arrived
+   * yet collapsed to a confident `false` and every row took the incoming shape —
+   * the viewer's own included, with `resolveAuthorLabel` skipping its "You"
+   * branch. Where the roster had not landed either, which is the same moment on
+   * a cold load, that fell through to `Member bf1a2c` for the viewer's own name
+   * and `authorInitialsFallback` drew `BF` beside it: both halves of that are
+   * the member's own uuid, read back to them as somebody else.
+   *
+   * `null` is not a third bubble shape to fall back to: `components.md` §11
+   * specs exactly two, self and incoming, and which one a row takes is decided
+   * by this id. So a row cannot be drawn before it is in hand — `MessageTimeline`
+   * holds its skeleton until then, and this type is what stops a later caller
+   * from quietly reopening the hole.
+   */
+  viewerId: string;
   showHeader: boolean;
   /**
    * Resolves a `users.id` to a display name, or `null` when unresolvable.
@@ -207,7 +226,9 @@ const ACTION_TRACK = "flex h-0 min-w-0 flex-1 items-start justify-end-safe";
  * has in the flow rather than sided.
  *
  * The viewer identity comes from the session (`viewerId`); the row never
- * trusts a literal sender id for "this is mine" comparisons.
+ * trusts a literal sender id for "this is mine" comparisons. It is also always
+ * *resolved* by the time a row renders — see `viewerId` on the props — because
+ * an unresolved one has no shape in §11 to render as.
  */
 export function MessageItem({
   message,
@@ -232,7 +253,16 @@ export function MessageItem({
   isTapRevealed,
   onToggleTapReveal,
 }: MessageItemProps) {
-  const isMine = !!viewerId && message.sender_id === viewerId;
+  // `sender_id` is nullable — an imported archive row names its author in
+  // `author_name` and has no roster entry — so the sender is checked before the
+  // comparison rather than relying on `viewerId` being a string. Dropping the old
+  // `!!viewerId &&` guard removed the thing that used to make `null === null`
+  // false, and that combination fails *open*: it would feed `canDelete` and
+  // offer Edit and Delete on every imported message. The gate upstream means a
+  // falsy `viewerId` should never arrive, but "should never" is the wrong
+  // strength of argument for a permission affordance, and an authorless row is
+  // genuinely nobody's own message whatever the viewer id is.
+  const isMine = !!message.sender_id && message.sender_id === viewerId;
   // Resolved for every sender including the viewer: the label says "You" for its
   // own row, but the avatar still needs the initials — falling through to a uuid
   // slice there would draw `11` next to "You" beside `AC` next to "Alice Chen".
@@ -273,6 +303,51 @@ export function MessageItem({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
 
+  /*
+   * Two focus hand-backs, each a ref plus an effect rather than a `.focus()` in
+   * the handler, because both have to outlive the commit that causes them. Refs
+   * rather than state because nothing renders from them, and setting state from
+   * the effect that reads it is the cascading render `react-hooks` forbids.
+   *
+   * **Closing the editor returns focus to Edit — but only from the keyboard.**
+   * `disabled` and unmounting both drop focus to `<body>`, so without this the
+   * next Tab restarts at the top of the document rather than at the row the
+   * member was just editing, on a list that may be 200 rows long. It cannot be
+   * done inline: the action cluster is unmounted for as long as the editor is
+   * open (`showActions && !isEditing` below), so at the moment Cancel, Escape
+   * or a save fires there is no Edit button to focus; the effect runs once it
+   * has remounted.
+   *
+   * The keyboard gate is not fussiness. The cluster is revealed by
+   * `group-focus-within/message`, so focusing Edit *pins it open* — and a
+   * member who dismissed the editor with the mouse has their pointer somewhere
+   * else entirely and would be left with four controls painted over that
+   * message until focus happened to move again. `event.detail === 0` is how a
+   * click gets told apart from a pointer one: keyboard activation of a button
+   * reports no clicks.
+   *
+   * **A save that fails returns focus to the field**, unconditionally — the
+   * editor stays open (so the cluster is still unmounted and there is nothing
+   * to pin), the draft survives, and without this the caret does not: the
+   * member is told to try again in a form they must first click back into. It
+   * cannot be done from the `catch`, where the field is still disabled; it
+   * re-enables only on the render `finally` schedules.
+   */
+  const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const editFieldRef = useRef<HTMLTextAreaElement | null>(null);
+  const restoreFocusOnExit = useRef(false);
+  const restoreFocusOnFailedSave = useRef(false);
+  useEffect(() => {
+    if (isEditing || !restoreFocusOnExit.current) return;
+    restoreFocusOnExit.current = false;
+    editTriggerRef.current?.focus();
+  }, [isEditing]);
+  useEffect(() => {
+    if (isSavingEdit || !restoreFocusOnFailedSave.current) return;
+    restoreFocusOnFailedSave.current = false;
+    editFieldRef.current?.focus();
+  }, [isSavingEdit]);
+
   // A row is not remounted by a content update — it's the same component
   // instance, keyed by id (`message-timeline.tsx`) — so an untouched-but-open
   // editor would otherwise keep showing what `message.content` was *when Edit
@@ -299,19 +374,24 @@ export function MessageItem({
     setIsEditing(true);
   }
 
-  function cancelEdit() {
+  /** `fromKeyboard` decides the focus hand-back — see the refs above. */
+  function cancelEdit(fromKeyboard: boolean) {
+    restoreFocusOnExit.current = fromKeyboard;
     setIsEditing(false);
   }
 
-  async function saveEdit() {
+  async function saveEdit(fromKeyboard: boolean) {
     const trimmed = editValue.trim();
     if (trimmed.length === 0 || !onEdit) return;
     setIsSavingEdit(true);
     try {
       await onEdit(message.id, trimmed);
+      restoreFocusOnExit.current = fromKeyboard;
       setIsEditing(false);
     } catch {
-      // The action already toasted; stay in edit mode so the draft survives.
+      // The action already toasted; stay in edit mode so the draft survives —
+      // and hand the caret back to it, which `disabled` took away.
+      restoreFocusOnFailedSave.current = true;
     } finally {
       setIsSavingEdit(false);
     }
@@ -401,30 +481,37 @@ export function MessageItem({
       />
     ) : null;
 
+  /*
+    Attachments render under the body for every kind, not inside the text
+    renderer: a file is a property of the message, not of how its body is
+    drawn, and a deleted message must not offer downloads of what it used to
+    carry. The component itself no-ops on a zero count, so this costs nothing
+    for the overwhelming majority of messages.
+  */
+  const attachments =
+    message.is_deleted || message.attachment_count === 0 ? null : (
+      <MessageAttachments
+        channelId={message.channel_id}
+        messageId={message.id}
+        count={message.attachment_count}
+      />
+    );
+
+  const bubble = (
+    <MessageRenderer
+      message={message}
+      viewerId={viewerId}
+      isSelf={isMine}
+      isConfirmed={isConfirmed}
+      onAct={onAct ?? (() => {})}
+    />
+  );
+
   const renderer = (
     <>
       {replyQuote}
-      <MessageRenderer
-        message={message}
-        viewerId={viewerId}
-        isSelf={isMine}
-        isConfirmed={isConfirmed}
-        onAct={onAct ?? (() => {})}
-      />
-      {/*
-        Attachments render under the body for every kind, not inside the text
-        renderer: a file is a property of the message, not of how its body is
-        drawn, and a deleted message must not offer downloads of what it used to
-        carry. The component itself no-ops on a zero count, so this costs nothing
-        for the overwhelming majority of messages.
-      */}
-      {message.is_deleted || message.attachment_count === 0 ? null : (
-        <MessageAttachments
-          channelId={message.channel_id}
-          messageId={message.id}
-          count={message.attachment_count}
-        />
-      )}
+      {bubble}
+      {attachments}
     </>
   );
 
@@ -554,6 +641,7 @@ export function MessageItem({
         <button
           type="button"
           className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+          ref={editTriggerRef}
           onClick={startEdit}
         >
           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
@@ -573,10 +661,29 @@ export function MessageItem({
     </div>
   ) : null;
 
+  /**
+   * The inline editor that takes the bubble's place in the row.
+   *
+   * **It is the bubble, in draft.** Not a dialog, not a popover, not a floating
+   * card: it renders in the message block where the bubble was, at the block's
+   * width, between the same reply quote and attachment list. §11 draws no
+   * editor — this is the undrawn case, and the nearest drawn pattern is the
+   * bubble itself, so the editor borrows the locked bubble radius (18 with the
+   * self tail corner at 6, `foundations.md` §8) and the *incoming* bubble's
+   * neutral card fill and hairline. Neutral rather than `--primary`: a draft is
+   * not yet a message, and a textarea on the chapter accent would have to
+   * re-solve the contrast pair that `text-renderer.tsx` gets for free.
+   *
+   * `w-full` here is only half the contract and is inert without the other
+   * half — see the `w-full` on the self column below, which is what gives this
+   * percentage a definite width to resolve against.
+   */
   const editForm = (
-    <div className="flex w-full flex-col gap-1.5 rounded-lg border border-border bg-card p-2">
+    <div className="mt-1 flex w-full flex-col gap-1.5 rounded-[18px] rounded-br-[6px] border border-border bg-card p-2">
       <Textarea
         autoFocus
+        ref={editFieldRef}
+        aria-label="Edit message"
         value={editValue}
         onChange={(event) => {
           setEditValue(event.target.value);
@@ -585,21 +692,54 @@ export function MessageItem({
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
-            cancelEdit();
+            cancelEdit(true);
           }
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
-            void saveEdit();
+            void saveEdit(true);
           }
         }}
         disabled={isSavingEdit}
-        className="min-h-[60px] resize-none"
+        /*
+          Width comes from the block; height comes from the draft.
+
+          `leading-[25px]` and the horizontal padding are not cosmetic — they
+          are what makes the draft wrap where the message wrapped. The bubble
+          draws 16/25 body type inside `px-4` (`text-renderer.tsx`), so the
+          editor has to put its text column on the same two numbers: `px-2`
+          inside the wrapper's `p-2` is the bubble's 16px, and without the
+          explicit line box the field would fall back to `text-base`'s 24 and
+          re-wrap a six-line message to seven on the way in. Measured on an
+          860px thread column, that moves the field's text column from 201px to
+          704px against the bubble's 708px — the last 4px are the wrapper's
+          hairline and the field's own, which the bubble does not pay on the
+          self side, and are a quarter of a character.
+
+          `field-sizing-content` then grows the field with what is typed, so a
+          message that rendered as six lines is edited as six lines rather than
+          through a porthole — a box made full-width that still had to be
+          scrolled would only have moved the unreadability onto the other axis.
+          It is a progressive enhancement, and the one part of this change that
+          is: an engine without `field-sizing` keeps exactly today's fixed 60px
+          floor, which is why the floor stays 60 rather than rising to §4's
+          `min-h-24` (a form field's resting height — a field that grows wants
+          the smaller floor, or the shortest message becomes the tallest jump).
+          Width, unlike height, degrades nowhere.
+
+          `max-h-40` is the composer's own cap for a growing chat field
+          (`COMPOSER_INPUT_CLASS`), and it is an absolute length deliberately:
+          this field lives inside the timeline's scroller, which is always
+          shorter than the viewport, so a `vh` cap would let a long draft push
+          Save and Cancel below the fold on a short window. Past it the field
+          scrolls, as any textarea does.
+        */
+        className="field-sizing-content max-h-40 min-h-[60px] resize-none px-2 leading-[25px]"
       />
       <div className="flex items-center justify-end gap-1.5">
         <button
           type="button"
           className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
-          onClick={cancelEdit}
+          onClick={(event) => cancelEdit(event.detail === 0)}
           disabled={isSavingEdit}
         >
           Cancel
@@ -607,7 +747,7 @@ export function MessageItem({
         <button
           type="button"
           className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
-          onClick={() => void saveEdit()}
+          onClick={(event) => void saveEdit(event.detail === 0)}
           disabled={isSavingEdit || editValue.trim().length === 0}
         >
           {isSavingEdit ? (
@@ -687,8 +827,44 @@ export function MessageItem({
         data-status={message._status}
         onClick={handleRowTap}
       >
-        <div className="flex max-w-[86%] flex-col items-end">
-          {isEditing ? editForm : renderer}
+        {/*
+          The message block, and the one element that owns its width.
+
+          **Read mode hugs; edit mode fills.** §11 caps a bubble at 86% of the
+          thread column and hugs its content below that, and the column gets
+          that for free by shrink-wrapping — a flex item with no width is sized
+          from its content, and the bubble's content is the message. Swapping a
+          `<textarea>` in under that rule is what produced the postage stamp:
+          a textarea's `width: 100%` is circular inside a shrink-to-fit parent,
+          so it falls back to the intrinsic `cols` width and the *column* sizes
+          itself from that instead. Measured in Chromium on an 860px thread
+          column, a bubble at the 86% cap — 740px — became a 249px editor on
+          the way in, and snapped back to 740px on the way out.
+
+          `w-full` while editing replaces "as wide as your content" with "as
+          wide as a bubble may be", which the `max-w-[86%]` beside it then caps
+          to exactly the track the bubble already had. So the editor is never
+          narrower than the bubble it replaced: at the cap it is the same width
+          to the pixel, and below the cap it opens up to the width the message
+          is about to be allowed to grow into.
+
+          **It has to stay conditional.** Filling in read mode too would look
+          identical — every child here is shrink-wrapped by `items-end` — but
+          the sibling action track is `flex-1` on the leftover, so a permanently
+          full-width block would strand the cluster at the lane edge on every
+          short message, which is the exact regression §11's "attaches to the
+          message, not to the lane" rule names. Edit mode is safe from it only
+          because the cluster is unmounted for the duration.
+        */}
+        <div
+          className={cn(
+            "flex max-w-[86%] flex-col items-end",
+            isEditing && "w-full",
+          )}
+        >
+          {replyQuote}
+          {isEditing ? editForm : bubble}
+          {attachments}
           {reactions}
           {/*
             The self caption and the delivery state are one line, per §11 —

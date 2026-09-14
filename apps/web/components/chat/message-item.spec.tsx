@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { MessageItem, type MessageItemProps } from "./message-item";
-import type { ChatMessage } from "@repo/chat-core/types";
+import { reactionActionType, type ChatMessage } from "@repo/chat-core/types";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { reducer } from "@/hooks/use-toast";
 
@@ -124,9 +124,7 @@ describe("MessageItem author rendering", () => {
  */
 describe("MessageItem bubble sides", () => {
   function bubbleOf(container: HTMLElement): HTMLElement {
-    const found = container.querySelector<HTMLElement>(
-      '[class*="rounded-\\[18px\\]"]',
-    );
+    const found = container.querySelector<HTMLElement>('[data-slot="bubble"]');
     if (!found) throw new Error("no bubble rendered");
     return found;
   }
@@ -197,9 +195,7 @@ describe("MessageItem action cluster docking", () => {
   }
 
   function bubbleColumn(container: HTMLElement): HTMLElement {
-    const bubble = container.querySelector<HTMLElement>(
-      '[class*="rounded-\\[18px\\]"]',
-    );
+    const bubble = container.querySelector<HTMLElement>('[data-slot="bubble"]');
     if (!bubble?.parentElement) throw new Error("no bubble rendered");
     return bubble.parentElement;
   }
@@ -1221,5 +1217,345 @@ describe("MessageItem recorded rows (#1789)", () => {
 
     expect(screen.getByText(/don't run this command again/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The inline editor is the bubble, in draft — not a second, smaller surface
+ * floating over it.
+ *
+ * The regression, seen on staging: entering edit collapsed the message block to
+ * a "postage stamp" narrower than the message it was editing. The cause is a
+ * sizing rule the row otherwise depends on. §11 caps a bubble at 86% of the
+ * thread column and hugs its content below that, and the self column gets the
+ * hug for free by shrink-wrapping — but a shrink-to-fit box makes a percentage
+ * width circular, so the `w-full` on both the edit form and the `<textarea>`
+ * inside it resolves to `auto`, and the column ends up sized from the
+ * textarea's `cols=20` intrinsic width instead of from the message.
+ *
+ * jsdom computes no layout, so — exactly as the action-cluster suite above — the
+ * assertions below pin the structure that *produces* the width rather than
+ * measured pixels: the editor is inside the same block the bubble uses, and
+ * that block stops hugging while the editor is open. The pixels behind that
+ * were measured once, 2026-09-14, by rendering this row into Chromium against
+ * this app's own compiled Tailwind on a 900px lane (860px thread column): a
+ * bubble at the 86% cap is 740px and its editor was 249px — the same 249 for a
+ * 2-character message and a 2,000-character one — and 740px again with the
+ * fill. As with `ACTION_TRACK`, nothing in this repo re-measures those figures,
+ * and they scale with the thread column: treat "one fixed box at every length"
+ * as the reason for the structure, not the pixel pair as a maintained number.
+ */
+describe("MessageItem inline editor width", () => {
+  /**
+   * The message block — found by its position, deliberately, not by the class
+   * under test. A row has exactly two children: the block and the zero-height
+   * action track it is measured against, and the track is always the one
+   * carrying `h-0`. Querying the block by `max-w-[86%]` instead would make
+   * every assertion about the cap a restatement of the selector that found it,
+   * and deleting the cap would surface as "no block rendered" rather than as
+   * the cap being gone.
+   */
+  function messageBlock(container: HTMLElement): HTMLElement {
+    const row = container.querySelector<HTMLElement>('[role="listitem"]');
+    if (!row) throw new Error("no message row rendered");
+    const block = [...row.children].find(
+      (child): child is HTMLElement =>
+        child instanceof HTMLElement && !child.className.includes("h-0"),
+    );
+    if (!block) throw new Error("no message block rendered");
+    return block;
+  }
+
+  /** The edit surface itself — the element the textarea is wrapped in. */
+  function editSurface(): HTMLElement {
+    const field = screen.getByRole("textbox");
+    if (!field.parentElement) throw new Error("editor is not mounted");
+    return field.parentElement;
+  }
+
+  async function openEditor(content = "hello") {
+    const user = userEvent.setup();
+    const rendered = renderItemWithProps({
+      message: message({ sender_id: VIEWER, content }),
+      onEdit: vi.fn().mockResolvedValue(undefined),
+    });
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    return { user, ...rendered };
+  }
+
+  it("edits in the row itself, never in a dialog or a popover", async () => {
+    const { container } = await openEditor();
+
+    // A dialog or popover portals out of the row, so the row would no longer
+    // contain the field — and the editor would be free to take a width that has
+    // nothing to do with the message underneath it. This is the assertion that
+    // fails if anyone answers the width problem by floating the editor instead
+    // of putting it where the bubble was.
+    const row = container.querySelector('[role="listitem"]');
+    expect(row).not.toBeNull();
+    expect(row).toContainElement(screen.getByRole("textbox"));
+    expect(messageBlock(container)).toContainElement(screen.getByRole("textbox"));
+    // Queried through `screen`, not `container`: Radix portals a Dialog or a
+    // Popover to `document.body`, a *sibling* of the container RTL renders
+    // into, so a container-scoped query for one is null whether or not it is
+    // there — a tripwire that cannot trip.
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("fills the message block instead of letting the textarea size it", async () => {
+    const { container } = await openEditor();
+
+    // `w-full` replaces "as wide as your content" — which in edit mode means
+    // the textarea's 20-character intrinsic width — with "as wide as a bubble
+    // may be", which the cap beside it then limits to the track the bubble
+    // already had.
+    expect(messageBlock(container).className).toContain("w-full");
+    expect(messageBlock(container).className).toContain("max-w-[86%]");
+  });
+
+  it("fills the block with the editor, not just the block", async () => {
+    await openEditor();
+
+    // The contract has two halves and needs both. Widening only the block
+    // leaves the editor shrink-wrapping the textarea inside a correct block,
+    // and `items-end` then pins the same stamp to the block's right edge — the
+    // bug, with the surrounding layout fixed around it. Widening only the
+    // editor does nothing at all, since its percentage has nothing definite to
+    // resolve against.
+    expect(editSurface().className).toContain("w-full");
+  });
+
+  it("keeps the editor wearing the bubble's chrome", async () => {
+    await openEditor();
+
+    // The locked bubble radius and the sender's tail corner: the editor stands
+    // where the bubble stood, so a different shape is a jump of its own. These
+    // are the values §11 locks, and the spec bullet now claims them — without
+    // this, a tidy-up back to a generic radius is green in CI and the only
+    // thing left contradicting it is prose.
+    expect(editSurface().className).toContain("rounded-[18px]");
+    expect(editSurface().className).toContain("rounded-br-[6px]");
+    // Grows with the draft instead of scrolling a fixed box, and wraps where
+    // the bubble wrapped — same line box, same text column.
+    expect(screen.getByRole("textbox").className).toContain(
+      "field-sizing-content",
+    );
+    expect(screen.getByRole("textbox").className).toContain("leading-[25px]");
+  });
+
+  it("hands the width back to the message when the editor closes", async () => {
+    const { container, user } = await openEditor();
+    expect(messageBlock(container).className).toContain("w-full");
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    // Read mode has to hug again, and not because the bubble looks different
+    // filled — every child here is shrink-wrapped by `items-end`, so it would
+    // not. The sibling action track is `flex-1` on the leftover beside the
+    // block, so a block left permanently full-width would strand the cluster at
+    // the lane edge on every short message: the #2210 hug, undone from the
+    // other side. Edit mode escapes that only because the cluster is unmounted
+    // for the duration.
+    expect(messageBlock(container).className).not.toContain("w-full");
+  });
+
+  it("keeps the reply quote in place while editing", async () => {
+    const user = userEvent.setup();
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER, reply_to_id: "msg-parent" }),
+      replyParent: message({ id: "msg-parent", content: "the original" }),
+      onEdit: vi.fn(),
+    });
+    expect(screen.getByText("the original")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+
+    // Only the *body* becomes editable. A quote is a property of the message,
+    // not of how its text is drawn, and it is not what is being edited —
+    // dropping it was the other half of the jump, since the block also lost
+    // whatever width the quote was contributing. The attachment list rides the
+    // same rung of the block and is covered by the same change, but it cannot
+    // be mounted here: `MessageAttachments` resolves signed URLs through
+    // `useFrappClient` and needs a provider this suite does not stand up.
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    expect(screen.getByText("the original")).toBeInTheDocument();
+  });
+
+  it("gives the field a name of its own", async () => {
+    await openEditor();
+
+    // The row has no visible label to point at, so without this the one control
+    // a member is asked to type into announces as an unnamed text field.
+    expect(
+      screen.getByRole("textbox", { name: /edit message/i }),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Keyboard and focus for the inline editor. Escape and Enter already worked and
+ * were untested; the focus hand-back did not exist — Cancel dropped focus to
+ * `<body>`, which on a virtualized timeline means the next Tab starts over at
+ * the top of the document rather than at the message the member was just
+ * editing.
+ */
+describe("MessageItem inline editor keyboard", () => {
+  async function openEditor(content = "hello") {
+    const user = userEvent.setup();
+    const onEdit = vi.fn().mockResolvedValue(undefined);
+    const rendered = renderItemWithProps({
+      message: message({ id: "msg-kb", sender_id: VIEWER, content }),
+      onEdit,
+    });
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    return { user, onEdit, ...rendered };
+  }
+
+  it("closes on Escape without saving", async () => {
+    const { user, onEdit } = await openEditor();
+
+    await user.type(screen.getByRole("textbox"), " world");
+    await user.keyboard("{Escape}");
+
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("hello")).toBeInTheDocument();
+  });
+
+  it("returns focus to Edit when the editor is dismissed from the keyboard", async () => {
+    const { user } = await openEditor();
+
+    await user.keyboard("{Escape}");
+
+    // The cluster is unmounted for the whole time the editor is open, so the
+    // button being focused here did not exist at the moment Escape fired — the
+    // hand-back has to survive that commit and land after the remount.
+    expect(screen.getByRole("button", { name: /edit/i })).toHaveFocus();
+  });
+
+  it("returns focus to Edit after a keyboard save too", async () => {
+    const { user, onEdit } = await openEditor();
+
+    await user.keyboard("{Enter}");
+
+    // Saving is the *common* way out of the editor, so skipping the hand-back
+    // here left the usual path with the defect the rare one was fixed for:
+    // `disabled` drops focus to the body while the request is in flight, and
+    // the next Tab then restarts at the top of a 200-row timeline.
+    expect(onEdit).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /edit/i })).toHaveFocus();
+  });
+
+  it("does not pin the hover cluster open when the mouse dismissed the editor", async () => {
+    const { user } = await openEditor();
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    // The action cluster is revealed by `group-focus-within`, so focusing Edit
+    // holds it open. That is what a keyboard user wants and the opposite of
+    // what a member who just clicked Cancel wants — their pointer is somewhere
+    // else, and they would be left with four controls painted over the message
+    // until focus happened to move again. A real click reports `detail >= 1`;
+    // keyboard activation of a button reports 0.
+    expect(screen.getByRole("button", { name: /edit/i })).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
+  });
+
+  it("hands the caret back to the field when a save fails", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn().mockRejectedValue(new Error("network error"));
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER, content: "hello" }),
+      onEdit,
+    });
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    await user.type(screen.getByRole("textbox"), " world");
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    // The editor stays open with the draft — already covered above — but
+    // `disabled` blurred the field for the duration of the request, so being
+    // told to try again used to mean clicking back into the form first.
+    expect(screen.getByRole("textbox")).toHaveValue("hello world");
+    expect(screen.getByRole("textbox")).toHaveFocus();
+  });
+
+  it("refuses to save a draft emptied down to whitespace", async () => {
+    const { user, onEdit } = await openEditor();
+
+    await user.clear(screen.getByRole("textbox"));
+    await user.type(screen.getByRole("textbox"), "   ");
+
+    // Deleting a message is a different control with a different authorization
+    // (`channels:manage` overrides ownership there and not here), so emptying
+    // the field must not become a back door to it. Enter is gated by the same
+    // `saveEdit` guard as the button, not only by the button's `disabled`.
+    expect(screen.getByRole("button", { name: /save/i })).toBeDisabled();
+    await user.keyboard("{Enter}");
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it("saves on Enter and keeps Shift+Enter for a newline", async () => {
+    const { user, onEdit } = await openEditor();
+
+    await user.type(screen.getByRole("textbox"), " one{Shift>}{Enter}{/Shift}two");
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(screen.getByRole("textbox")).toHaveValue("hello one\ntwo");
+
+    await user.keyboard("{Enter}");
+
+    expect(onEdit).toHaveBeenCalledWith("msg-kb", "hello one\ntwo");
+  });
+});
+
+/**
+ * Whose reaction a chip is (#2243).
+ *
+ * `mine` used to be `viewerId ? group.userIds.includes(viewerId) : false`, which
+ * on an unresolved viewer is the same confident `false` that mis-drew the bubble
+ * — but with a worse consequence than a side. A chip that reads unlit does not
+ * merely look wrong: its click handler sends `onReact`, so tapping the reaction
+ * you already left adds a second one instead of removing yours. `viewerId` is
+ * non-nullable now and the ternary is gone; these pin the behaviour it was
+ * guarding, which nothing asserted before.
+ *
+ * Targeted by the `N, including you` label rather than the emoji text, because
+ * `ReactionQuickPick` renders the same glyph in the hover row under a different
+ * label (`React with 👍`).
+ */
+describe("MessageItem reaction chip ownership (#2243)", () => {
+  it("lights the viewer's own reaction and removes it on click", async () => {
+    const onReact = vi.fn();
+    const onUnreact = vi.fn();
+    renderItemWithProps({
+      message: message({ reactions: { [reactionActionType("👍")]: [VIEWER] } }),
+      onReact,
+      onUnreact,
+    });
+
+    const chip = screen.getByRole("button", { name: /including you/i });
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(chip);
+
+    expect(onUnreact).toHaveBeenCalledWith("msg-1", "👍");
+    expect(onReact).not.toHaveBeenCalled();
+  });
+
+  it("leaves someone else's reaction unlit and adds to it on click", async () => {
+    const onReact = vi.fn();
+    const onUnreact = vi.fn();
+    renderItemWithProps({
+      message: message({ reactions: { [reactionActionType("👍")]: [OTHER] } }),
+      onReact,
+      onUnreact,
+    });
+
+    const chip = screen.getByRole("button", { name: /reaction, 1\. Click to react/i });
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(chip);
+
+    expect(onReact).toHaveBeenCalledWith("msg-1", "👍");
+    expect(onUnreact).not.toHaveBeenCalled();
   });
 });
