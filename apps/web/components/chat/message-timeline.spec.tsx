@@ -280,3 +280,133 @@ describe("MessageTimeline loading state (#2145)", () => {
     expect(skeleton).not.toBeNull();
   });
 });
+
+/**
+ * The own-message mis-ID on load (#2243).
+ *
+ * `viewerId` decides which of the two shapes `components.md` §11 draws a bubble
+ * in, and it arrives on its own clock — `GET /v1/users/me`, which the first
+ * chunk's Dexie read (#2227) regularly beats. It used to arrive as `null` into a
+ * row that treated `null` as "not mine", so on staging the signed-in member's
+ * own messages painted as a stranger's: left, incoming chrome, and labelled with
+ * the first six hex of their own uuid because `resolveAuthorLabel` had skipped
+ * its "You" branch.
+ *
+ * These assert the *absence* of that paint rather than the presence of a
+ * skeleton, because the skeleton is the current answer and not the requirement.
+ * Anything that draws a row before identity lands has to guess which side it
+ * goes on, and the bug is the guess.
+ */
+describe("MessageTimeline identity gate (#2243)", () => {
+  const bubbles = () =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-slot="bubble"]'));
+
+  it("paints no row at all while the viewer is unknown", () => {
+    renderTimeline([message({ sender_id: VIEWER, content: "mine" })], {
+      viewerId: null,
+    });
+
+    // The whole of the fix: a row the member wrote is not drawn as somebody
+    // else's, and the way it is not drawn as somebody else's is that it is not
+    // drawn yet.
+    expect(bubbles()).toHaveLength(0);
+    expect(screen.queryByText("mine")).not.toBeInTheDocument();
+    // `Member 111111` and `11` are `memberFallbackLabel` and
+    // `authorInitialsFallback` reading the *viewer's own* id back to them — the
+    // "Member … · BF" staging reported, spelled with this file's uuids. Asserted
+    // here rather than in a test of their own: with no rows drawn they cannot
+    // appear whatever those helpers produce, so alone they would pin nothing.
+    expect(screen.queryByText("Member 111111")).not.toBeInTheDocument();
+    expect(screen.queryByText("11")).not.toBeInTheDocument();
+  });
+
+  it("shows a load failure rather than burying it behind the identity gate", () => {
+    // An expired session is the likeliest route to an unresolved viewer, and it
+    // takes out the messages fetch with the same 401. The error has a retry; the
+    // skeleton has no exit, so the error has to win.
+    renderTimeline([message({ sender_id: VIEWER })], {
+      viewerId: null,
+      loadError: new Error("401"),
+    });
+
+    expect(screen.getByText("Couldn't load messages")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("still paints another member's row as incoming once identity settles", () => {
+    // The positive half, and not implied by the own-row case: a gate that opened
+    // into *every* row taking the self shape would pass every assertion above.
+    renderTimeline([message({ sender_id: ALICE, content: "from alice" })], {
+      viewerId: VIEWER,
+    });
+
+    const [bubble] = bubbles();
+    expect(bubble?.className).toContain("bg-card");
+    expect(bubble?.className).toContain("border-border");
+    expect(bubble?.className).toContain("rounded-bl-[6px]");
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
+  });
+
+  it("withholds an incoming row too, not just the member's own", () => {
+    // Not an over-reach: while the viewer is unknown *any* row could be theirs,
+    // so there is no subset that is safe to draw early. Asserted so a later
+    // optimisation cannot narrow the gate to "own rows only" — which is
+    // undecidable at exactly the moment it would have to decide.
+    renderTimeline([message({ sender_id: ALICE, content: "from alice" })], {
+      viewerId: null,
+    });
+
+    expect(bubbles()).toHaveLength(0);
+    expect(screen.queryByText("from alice")).not.toBeInTheDocument();
+  });
+
+  it("still tells a screen reader the timeline is loading", () => {
+    // The gate reuses the `isLoading` branch, so it inherits that branch's
+    // announcer rather than going silent — an unresolved viewer is a load in
+    // progress, and #2145 already ruled that a silent one is a regression.
+    renderTimeline([message({ sender_id: VIEWER })], { viewerId: null });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading messages");
+  });
+
+  it("paints the member's own row as theirs once identity settles", () => {
+    // The other half of the bar: withholding must be transient. A gate that
+    // never opened would trade a wrong author for a permanent skeleton.
+    const rows = [message({ sender_id: VIEWER, content: "mine" })];
+    const { rerender } = render(
+      <MessageTimeline
+        channelId="chan-1"
+        messages={rows}
+        viewerId={null}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+      />,
+    );
+    expect(bubbles()).toHaveLength(0);
+
+    rerender(
+      <MessageTimeline
+        channelId="chan-1"
+        messages={rows}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+      />,
+    );
+
+    const [bubble] = bubbles();
+    expect(bubble).toBeDefined();
+    // §11's self pair and the right tail — never the incoming card fill, which
+    // is what the row resolved to before the gate existed.
+    expect(bubble?.className).toContain("bg-primary");
+    expect(bubble?.className).toContain("rounded-br-[6px]");
+    expect(bubble?.className).not.toContain("border-border");
+    expect(screen.queryByText("Member 111111")).not.toBeInTheDocument();
+  });
+});

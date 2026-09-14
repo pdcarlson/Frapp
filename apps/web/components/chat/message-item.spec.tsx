@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { MessageItem, type MessageItemProps } from "./message-item";
-import type { ChatMessage } from "@repo/chat-core/types";
+import { reactionActionType, type ChatMessage } from "@repo/chat-core/types";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { reducer } from "@/hooks/use-toast";
 
@@ -1504,5 +1504,58 @@ describe("MessageItem inline editor keyboard", () => {
     await user.keyboard("{Enter}");
 
     expect(onEdit).toHaveBeenCalledWith("msg-kb", "hello one\ntwo");
+  });
+});
+
+/**
+ * Whose reaction a chip is (#2243).
+ *
+ * `mine` used to be `viewerId ? group.userIds.includes(viewerId) : false`, which
+ * on an unresolved viewer is the same confident `false` that mis-drew the bubble
+ * — but with a worse consequence than a side. A chip that reads unlit does not
+ * merely look wrong: its click handler sends `onReact`, so tapping the reaction
+ * you already left adds a second one instead of removing yours. `viewerId` is
+ * non-nullable now and the ternary is gone; these pin the behaviour it was
+ * guarding, which nothing asserted before.
+ *
+ * Targeted by the `N, including you` label rather than the emoji text, because
+ * `ReactionQuickPick` renders the same glyph in the hover row under a different
+ * label (`React with 👍`).
+ */
+describe("MessageItem reaction chip ownership (#2243)", () => {
+  it("lights the viewer's own reaction and removes it on click", async () => {
+    const onReact = vi.fn();
+    const onUnreact = vi.fn();
+    renderItemWithProps({
+      message: message({ reactions: { [reactionActionType("👍")]: [VIEWER] } }),
+      onReact,
+      onUnreact,
+    });
+
+    const chip = screen.getByRole("button", { name: /including you/i });
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(chip);
+
+    expect(onUnreact).toHaveBeenCalledWith("msg-1", "👍");
+    expect(onReact).not.toHaveBeenCalled();
+  });
+
+  it("leaves someone else's reaction unlit and adds to it on click", async () => {
+    const onReact = vi.fn();
+    const onUnreact = vi.fn();
+    renderItemWithProps({
+      message: message({ reactions: { [reactionActionType("👍")]: [OTHER] } }),
+      onReact,
+      onUnreact,
+    });
+
+    const chip = screen.getByRole("button", { name: /reaction, 1\. Click to react/i });
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(chip);
+
+    expect(onReact).toHaveBeenCalledWith("msg-1", "👍");
+    expect(onUnreact).not.toHaveBeenCalled();
   });
 });
