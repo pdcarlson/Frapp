@@ -330,7 +330,15 @@ elif len(reachable) == staging_total:
 elif reachable:
     summary = "EGRESS: staging partially reachable (%d of %d); %s" % (len(reachable), staging_total, prod_clause)
 elif staging_inconclusive:
-    summary = "EGRESS: could not determine -- every probe was inconclusive (network or proxy issue), NOT proof that staging is blocked"
+    # Reached when nothing answered AND at least one staging host could not be probed, which
+    # includes the MIXED case (some refused, some timed out) -- so this does not claim every
+    # probe was inconclusive. It only takes one unmeasured host to make "staging is blocked"
+    # an overstatement, and that is the whole claim being withheld here.
+    summary = (
+        "EGRESS: could not determine -- no staging host answered, and %d of %d could not be "
+        "probed at all (network or proxy issue). NOT proof that staging is blocked"
+        % (staging_inconclusive, staging_total)
+    )
 else:
     summary = "EGRESS: deployed staging NOT reachable -- local stack only"
 
