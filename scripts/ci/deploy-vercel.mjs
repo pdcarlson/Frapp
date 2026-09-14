@@ -696,7 +696,7 @@ export const REQUIRED_ENV_ALWAYS = Object.freeze([
  * extra required" — the fail-open reading that would let a new phase ship with
  * no guard at all.
  */
-export const REQUIRED_ENV_BY_PHASE = Object.freeze({
+const REQUIRED_ENV_BY_PHASE = Object.freeze({
   [DEPLOY_PHASE_BUILD]: Object.freeze(["VERCEL_BUILD_STASH_DIR"]),
   [DEPLOY_PHASE_UPLOAD]: Object.freeze(["VERCEL_BUILD_STASH_DIR"]),
   [DEPLOY_PHASE_ALL]: Object.freeze([]),
@@ -735,7 +735,10 @@ async function main() {
   const apiKey = env.VERCEL_API_KEY;
   const teamId = env.VERCEL_TEAM_ID;
   const sha = env.DEPLOY_SHA;
-  const stashRoot = phase === DEPLOY_PHASE_ALL ? null : env.VERCEL_BUILD_STASH_DIR;
+  // `?? null`, not a second `phase === ALL` test: the table above already owns
+  // which phases have a stash, so re-deriving it here would be a second copy of
+  // the one fact this commit made single-sourced.
+  const stashRoot = env.VERCEL_BUILD_STASH_DIR ?? null;
 
   if (phase === DEPLOY_PHASE_BUILD) {
     const built = await buildVercelProjects({ apiKey, projects, sha, target, teamId, stashRoot });

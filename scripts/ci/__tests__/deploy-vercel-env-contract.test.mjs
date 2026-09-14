@@ -64,13 +64,18 @@ const SCRIPT = "scripts/ci/deploy-vercel.mjs";
 function allCallSites(script) {
   return readdirSync(WORKFLOW_DIR)
     .filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"))
-    .flatMap((f) => workflowSteps(join(WORKFLOW_DIR, f), f))
+    .flatMap((f) => workflowSteps(join(WORKFLOW_DIR, f)))
     .filter((step) => step.body.includes(script))
     .map((step) => ({ ...step, phase: parseDeployPhase(step.env.get("DEPLOY_PHASE")) }));
 }
 
 describe("every deploy-vercel.mjs call site satisfies the script's env contract", () => {
-  const sites = allCallSites(SCRIPT);
+  // Called inside each `it`, never in the describe body. `parseDeployPhase`
+  // throws by design on an unrecognised DEPLOY_PHASE, and a throw during suite
+  // CONSTRUCTION prints `not ok` but exits 0 on Node 22 — so the one edit this
+  // file exists to catch would instead delete every assertion in it and leave
+  // `ci-scripts-tests` green. Inside an `it`, the same throw fails the run.
+  const sites = () => allCallSites(SCRIPT);
 
   // The negative control. Every assertion below is a loop over `sites`, and a
   // loop over an empty list passes — so a reader-side regression (a rename, an
@@ -79,12 +84,12 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
   // about, one level up, so it gets an explicit floor.
   it("finds the call sites it is supposed to be guarding", () => {
     assert.ok(
-      sites.length >= 3,
+      sites().length >= 3,
       `expected at least 3 deploy-vercel.mjs call sites (production build, production ` +
-        `upload, staging), found ${sites.length}: ${sites.map((s) => s.name).join(", ") || "none"}`,
+        `upload, staging), found ${sites().length}: ${sites().map((s) => s.name).join(", ") || "none"}`,
     );
 
-    const production = sites.filter((s) => s.workflowFile === "deploy-production.yml");
+    const production = sites().filter((s) => s.workflowFile === "deploy-production.yml");
     assert.equal(production.length, 2, "deploy-production.yml should have a build and an upload call site");
     assert.deepEqual(
       production.map((s) => s.phase).sort(),
@@ -93,7 +98,7 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
     );
 
     assert.ok(
-      sites.some((s) => s.workflowFile === "deploy-vercel-staging.yml" && s.phase === DEPLOY_PHASE_ALL),
+      sites().some((s) => s.workflowFile === "deploy-vercel-staging.yml" && s.phase === DEPLOY_PHASE_ALL),
       "the staging caller should run the unphased (all) path",
     );
   });
@@ -101,7 +106,7 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
   // The generalisation of the #2265 guard: not `DEPLOY_SHA` alone, and not
   // production alone.
   it("supplies every variable the call site's phase requires", () => {
-    for (const site of sites) {
+    for (const site of sites()) {
       for (const name of requiredEnvForPhase(site.phase)) {
         assert.ok(
           site.env.has(name),
@@ -116,7 +121,7 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
   // missing. A step that declares `DEPLOY_SHA:` with nothing after it reads as
   // present to the assertion above and fails identically at runtime.
   it("declares no required variable as an empty value", () => {
-    for (const site of sites) {
+    for (const site of sites()) {
       for (const name of requiredEnvForPhase(site.phase)) {
         assert.notEqual(
           site.env.get(name),
@@ -131,13 +136,35 @@ describe("every deploy-vercel.mjs call site satisfies the script's env contract"
   // The specific regression #2265 fixed, pinned by name so a future refactor of
   // the loops above cannot quietly stop covering it.
   it("still covers the exact #2265 case: the production build step passes DEPLOY_SHA", () => {
-    const build = sites.find(
+    const build = sites().find(
       (s) => s.workflowFile === "deploy-production.yml" && s.phase === DEPLOY_PHASE_BUILD,
     );
     assert.ok(build, "no production build-phase call site found");
     assert.equal(build.env.get("DEPLOY_SHA"), "${{ steps.sha.outputs.sha }}");
   });
+
+  // `DEPLOY_SHA` is `${{ steps.sha.outputs.sha }}`, and the `steps` context does
+  // NOT exist in a job-level `env:`. So this value is only correct at STEP
+  // level — and because the reader merges three scopes, a well-meant "stop
+  // repeating it five times" refactor that hoists it to the job would satisfy
+  // every other assertion here while making the workflow fail at dispatch, on
+  // the only path to production. The merged map is right for everything else;
+  // this is the exception it cannot express.
+  it("declares steps.* values on the step itself, where that context exists", () => {
+    for (const site of sites()) {
+      for (const [name, value] of site.env) {
+        if (!/\bsteps\./.test(value)) continue;
+        assert.ok(
+          site.stepEnv.has(name),
+          `${site.workflowFile} step "${site.name}" inherits ${name}="${value}" from a job- or ` +
+            `workflow-level env:, but the \`steps\` context is not available there. GitHub would ` +
+            `refuse the workflow at dispatch.`,
+        );
+      }
+    }
+  });
 });
+
 
 describe("the env contract table", () => {
   it("covers every phase parseDeployPhase can return", () => {
