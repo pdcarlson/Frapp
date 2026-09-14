@@ -36,6 +36,21 @@
  * then would file one tenant's channel list under another's key, which is the
  * cross-tenant leak this whole design exists to make impossible.
  *
+ * ## The viewer id is a paint input, and only that
+ *
+ * The cached `users.id` this returns decides which of `components.md` §11's two
+ * bubble shapes a row takes, and nothing else. It is deliberately **not** fed to
+ * `chatRealtime.configure` or to `flushOutbox`'s `ctx.userId`, which are the
+ * write paths — a queued message's `senderId`, a reaction's `user_id`, a
+ * presence `track()`. Those keep waiting on the live value.
+ *
+ * The asymmetry is the same one `chat-scope.ts` draws between the read cache
+ * and the outbox, pointed the other way. Painting a row against an id that is
+ * this member's but a round trip old is correct; *writing* under it commits the
+ * product to a claim about authorship, and there the cost of being wrong is not
+ * a repaint. Nothing about identity resolving early makes a send safer, so the
+ * sends were left where they were.
+ *
  * `canPersist` closes it without needing to know about that ordering: a row is
  * written only when the data in hand was fetched at or after the moment the
  * current scope became current. Stale rows carry an older `dataUpdatedAt` by
@@ -45,10 +60,10 @@
  * StrictMode's double-invoked effects.
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useChatScope } from "./chat-scope";
 import { useQueryClient, type QueryClient, type QueryKey } from "@tanstack/react-query";
-import { useChannels } from "@repo/hooks";
+import { useChannels, useCurrentUser, useViewerUserId } from "@repo/hooks";
 import { emptyCache, mergeServerRows } from "@repo/chat-core/cache";
 import {
   chatMessagesKey,
@@ -62,6 +77,8 @@ import {
   readFirstChunk,
   writeChannelList,
   writeChannelTail,
+  writeViewerId,
+  type CachedViewerIdRow,
   type FirstChunk,
   type FirstChunkScope,
 } from "./first-chunk-cache";
@@ -318,8 +335,17 @@ export function seedFirstChunk(
 
 /**
  * Mounted once, by `ChatProvider`. Seeds this tenant's rows into the
- * `QueryClient`, prunes every other tenant's, and keeps the channel list
- * written.
+ * `QueryClient`, prunes every other tenant's, keeps the channel list and the
+ * viewer's `users.id` written — and **returns that id** when this scope has one
+ * cached.
+ *
+ * Returning it rather than seeding it is the whole shape of the identity half.
+ * The rows go into the `QueryClient` because that is where their live
+ * equivalents live and a seed there is indistinguishable from a fetch
+ * resolving. The id has no such home: its live equivalent is `["user","me"]`,
+ * which holds a whole profile that this cache does not have and must not fake.
+ * So it comes back as a value, and `chat-provider.tsx` publishes it to the
+ * surface that paints with it.
  *
  * **Seed first, prune after.** The prune is the backstop for a wipe that never
  * landed (`first-chunk-cache.ts` § `pruneForeignScopes`) — but it protects
@@ -327,9 +353,29 @@ export function seedFirstChunk(
  * and cannot reach a foreign key in the first place. Running it in front would
  * put a full key scan between a cold load and the rows it exists to paint.
  */
-export function useFirstChunkCache(): void {
+export function useFirstChunkCache(): string | null {
   const scope = useChatScope();
   const queryClient = useQueryClient();
+  /*
+    The whole row, not the bare id, and the scope it was written under is
+    re-checked on every render below.
+
+    State outlives the scope that produced it. On a same-tab account swap the
+    tree is not remounted — `dropCacheWhenIdentityChanges` clears the
+    `QueryClient` and `wipeFirstChunkCache` deletes the database, but this
+    component keeps rendering, so a bare `string` here would still be the
+    outgoing member's `users.id` for every commit until the re-read resolved.
+    Member B's rows can arrive from the network inside that window, and painting
+    them against A's id is the bug this change exists to avoid committing in a
+    new place.
+
+    Carrying the row makes the check a render-time comparison instead of an
+    effect race: the value is disowned on the very render the scope changes, and
+    no cleanup has to run first.
+  */
+  const [cachedViewer, setCachedViewer] = useState<CachedViewerIdRow | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!scope) return;
@@ -337,6 +383,18 @@ export function useFirstChunkCache(): void {
     void (async () => {
       const chunk = await readFirstChunk(scope);
       if (cancelled) return;
+      /*
+        Before the seed, not after — and in the same synchronous block, which is
+        what matters most.
+
+        React batches both updates into one commit, so the rows and the id that
+        attributes them reach the timeline together and there is no pass where
+        it holds cached history it cannot place. Ahead of `seedFirstChunk`
+        because that call is allowed to throw (the swallow below), and an id
+        skipped by somebody else's failure would hold the gate shut over rows
+        that did seed.
+      */
+      setCachedViewer(chunk.viewer);
       try {
         seedFirstChunk(queryClient, chunk);
       } catch {
@@ -376,6 +434,70 @@ export function useFirstChunkCache(): void {
   );
 
   usePersistUnderScope(scope, channelsUpdatedAt, writeChannels);
+
+  /*
+    The same arrangement for identity: another observer on `["user","me"]`, not
+    another request. `ChatProvider` and `useChatChannel` already mount that key
+    through `useFrappUser`, and TanStack dedupes — so this costs an observer and
+    keeps the write beside the read.
+
+    `useViewerUserId` rather than a narrowing of our own: `/v1/users/me` carries
+    no response schema, so `user.id` does not compile, and `use-user.ts` owns the
+    one runtime narrowing both apps read. A second copy here would be a second
+    thing to keep in step with a shape neither of us controls.
+
+    **This writes the id and never seeds `["user","me"]` with it.** That key's
+    consumers read a whole profile; a row holding one field would be a worse bug
+    than the one being fixed, and `caching.md`'s objection to a persister is
+    precisely that it resurrects that key. Nothing here touches it.
+  */
+  const liveViewerId = useViewerUserId();
+  const viewerUpdatedAt = useCurrentUser().dataUpdatedAt;
+
+  const writeViewer = useCallback(
+    (current: FirstChunkScope) => {
+      /*
+        Guarded here as well as inside `writeViewerId`, and not redundantly: the
+        store refuses an empty id, and this refuses to *call* it at all while
+        identity is unknown. `usePersistUnderScope` fires on a changed
+        `dataUpdatedAt`, which a `["user","me"]` error also produces — writing
+        then would stamp a fresh `cachedAt` on nothing.
+      */
+      if (!liveViewerId) return;
+      void writeViewerId(current, liveViewerId, viewerUpdatedAt);
+    },
+    [liveViewerId, viewerUpdatedAt],
+  );
+
+  usePersistUnderScope(scope, viewerUpdatedAt, writeViewer);
+
+  /*
+    Disowned unless the scope that wrote it is still the scope in effect.
+
+    `readFirstChunk` cannot return another tenant's row — the key rules it out —
+    so this is not a second boundary against a foreign read. It is the boundary
+    against a *stale* one: the row was correct when it was read, and this says it
+    stops counting the moment the identity it was read under does. `scope` going
+    `null` (a sign-out, or an offline session whose token has expired) disowns it
+    too, which is the read cache's standing posture — go cold on uncertainty.
+
+    **What it does not cover, stated because the obvious reading is that it
+    does.** This governs the *cached* half only. `useChatViewerId` returns
+    `live ?? cached`, so during a same-tab account swap the live half still
+    outranks whatever this returns — and `["user","me"]` is not account-scoped,
+    which is precisely why `dropCacheWhenIdentityChanges` clears it and why this
+    cache keys on the auth uid instead. An observer can serve the outgoing
+    member's `users.id` for the commit between that clear and the subtree's next
+    render. That window predates this change and is unchanged by it: before
+    #2249 the shell read `useViewerUserId()` directly and had exactly the same
+    exposure. Nothing here widens it, and nothing here closes it either.
+  */
+  return cachedViewer &&
+    scope &&
+    cachedViewer.userId === scope.userId &&
+    cachedViewer.chapterId === scope.chapterId
+    ? cachedViewer.viewerUserId
+    : null;
 }
 
 /**

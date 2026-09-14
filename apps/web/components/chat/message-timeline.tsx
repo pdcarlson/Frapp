@@ -446,10 +446,24 @@ export const MessageTimeline = forwardRef<
     It only covers the *correlated* failure, which is the common one rather than
     the only one: `/v1/users/me` can fail alone (it is the route carrying
     `AuthSyncInterceptor`, so it writes where the chat routes only read), and
-    offline it is not attempted at all, since only mutations are configured
-    `networkMode: "always"`. Either leaves this branch unreached and the skeleton
-    standing. That gap is #2251's, not this branch's — it needs the identity
-    query's own error state plumbed in, which no surface here has today.
+    offline it does not answer either. Both leave this branch unreached and the
+    skeleton standing. That gap is #2251's, not this branch's — it needs the
+    identity query's own error state plumbed in, which no surface here has today.
+
+    The offline half used to be written here as "not attempted at all, since only
+    mutations are configured `networkMode: "always"`". The `networkMode` half is
+    right and the conclusion is half right (#2249): whether the query *pauses*
+    turns on TanStack's `onlineManager`, which starts `#online = true` and moves
+    only on the window's `online`/`offline` events — it never reads
+    `navigator.onLine`. A link that drops after load pauses it; a document
+    restored from bfcache while already offline still believes it is online, so
+    the fetch runs and fails. One never settles and one settles to an error with
+    no `data`, and only the second is reachable by the retry above.
+
+    What closed the common case is not this branch. A viewer id cached beside the
+    first chunk (#2249, `lib/chat/viewer-id.tsx`) resolves identity from disk in
+    both, so the gate opens on the rows the member already has instead of waiting
+    on a request that is not coming.
 
     A load error and a pending load are mutually exclusive for this query anyway
     (`use-chat-channel.ts` reports `isLoading` as `query.isPending`, which is

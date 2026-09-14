@@ -26,6 +26,7 @@ import {
   toCacheableRows,
   writeChannelList,
   writeChannelTail,
+  writeViewerId,
   type FirstChunkScope,
 } from "./first-chunk-cache";
 import { wipeFirstChunkCache } from "./first-chunk-wipe";
@@ -396,6 +397,135 @@ describe("what is written", () => {
   });
 });
 
+/*
+  The viewer id row (#2249).
+
+  Same file as the rows above and for the same reason the header gives: the
+  claim is about the *primary key*, so it is put in front of a real key-range
+  query rather than a stand-in that keys the way its author believed.
+
+  What makes this row worth its own block is that getting it wrong is not a cold
+  load. `users.id` decides which of `components.md` §11's two bubble shapes a row
+  takes, so a viewer id served under the wrong scope is the #2243 mis-ID again
+  with a cache behind it instead of a race — a member's own history painted as
+  somebody else's, or worse, another member's id painted as theirs.
+*/
+describe("cached viewer id", () => {
+  /* `users.id`, deliberately unlike the `auth-*` uids the rows are keyed on. */
+  const ALICE_VIEWER = "user-alice";
+  const BOB_VIEWER = "user-bob";
+
+  it("reads back the id it wrote for the same member and chapter", async () => {
+    await writeViewerId(ALICE, ALICE_VIEWER, AT);
+
+    const chunk = await readFirstChunk(ALICE);
+
+    expect(chunk.viewer?.viewerUserId).toBe(ALICE_VIEWER);
+  });
+
+  it("does not serve one member's viewer id to another on the same browser", async () => {
+    // The whole reason this row is allowed to exist. If Bob could read Alice's
+    // `users.id`, the cache would paint Alice's messages as Bob's own — the
+    // exact cross-account authorship bug the keying exists to make impossible,
+    // and strictly worse than the race #2255 fixed.
+    await writeViewerId(ALICE, ALICE_VIEWER, AT);
+
+    const chunk = await readFirstChunk(BOB);
+
+    expect(chunk.viewer).toBeNull();
+  });
+
+  it("keeps each member's own id when both have signed in on this browser", async () => {
+    // Not implied by the test above: a single shared row that simply got
+    // overwritten by the second writer would also return `null` for nobody, and
+    // would return *Bob's* id to Alice. Asserted both ways round.
+    await writeViewerId(ALICE, ALICE_VIEWER, AT);
+    await writeViewerId(BOB, BOB_VIEWER, AT);
+
+    expect((await readFirstChunk(ALICE)).viewer?.viewerUserId).toBe(
+      ALICE_VIEWER,
+    );
+    expect((await readFirstChunk(BOB)).viewer?.viewerUserId).toBe(BOB_VIEWER);
+  });
+
+  it("does not serve one chapter's viewer id under another chapter", async () => {
+    // `users.id` does not depend on the chapter, so this row could have been
+    // keyed on the uid alone. It is not, and this pins that: the scope is the
+    // same one the rows it attributes are keyed on, which is what lets it ride
+    // the wipe and the prune with no second rule to keep right.
+    await writeViewerId(ALICE, ALICE_VIEWER, AT);
+
+    const chunk = await readFirstChunk(ALICE_ELSEWHERE);
+
+    expect(chunk.viewer).toBeNull();
+  });
+
+  it("stops serving an id older than the max age", async () => {
+    await writeViewerId(ALICE, ALICE_VIEWER, AT - FIRST_CHUNK_MAX_AGE_MS - 1);
+
+    const chunk = await readFirstChunk(ALICE);
+
+    // The one way this row goes stale without its key changing is an account
+    // deleted and recreated under the same auth uid, which mints a new
+    // `users.id`. The age bound is what stops that lasting.
+    expect(chunk.viewer).toBeNull();
+  });
+
+  it("serves the id even when the channel list has expired", async () => {
+    // Deliberately not gated on the rail the way a tail is. A tail needs the
+    // list to vouch for its `channelId`, which is the one part of its key the
+    // scope does not attest; the viewer id's whole key *is* the scope. Gating
+    // it would withhold the id in the case it is most needed — fresh tails
+    // under an expired rail would paint rows with no side to put them on.
+    await writeChannelList(ALICE, RAIL, AT - FIRST_CHUNK_MAX_AGE_MS - 1);
+    await writeViewerId(ALICE, ALICE_VIEWER, AT);
+
+    const chunk = await readFirstChunk(ALICE);
+
+    expect(chunk.channels).toBeNull();
+    expect(chunk.viewer?.viewerUserId).toBe(ALICE_VIEWER);
+  });
+
+  it("refuses an empty id rather than deleting the good row it has", async () => {
+    // An empty id means "identity has not resolved", which is what a missing
+    // row already says. Deleting on it would throw away a usable id on the
+    // strength of a value that means nothing — and the next warm load would pay
+    // the round trip this cache exists to remove.
+    await writeViewerId(ALICE, ALICE_VIEWER, AT);
+    await writeViewerId(ALICE, "", AT + 1);
+
+    expect((await readFirstChunk(ALICE)).viewer?.viewerUserId).toBe(
+      ALICE_VIEWER,
+    );
+  });
+
+  it("is dropped by the prune when it belongs to another scope", async () => {
+    // The backstop half of the wipe pair has to know about this table too — a
+    // `bulkDelete` over two of three tables leaves exactly the row that decides
+    // authorship sitting on a shared machine.
+    await writeViewerId(ALICE, ALICE_VIEWER, AT);
+    await writeViewerId(BOB, BOB_VIEWER, AT);
+
+    await pruneForeignScopes(BOB);
+
+    expect((await readFirstChunk(BOB)).viewer?.viewerUserId).toBe(BOB_VIEWER);
+    expect((await readFirstChunk(ALICE)).viewer).toBeNull();
+  });
+
+  it("is gone after the wipe a sign-out fires", async () => {
+    // `wipeFirstChunkCache` deletes the whole database rather than clearing
+    // named tables, so a new row type rides it — asserted rather than assumed,
+    // because "the wipe covers it" is the kind of claim that stays true only
+    // while nobody moves the row to another database.
+    await writeViewerId(ALICE, ALICE_VIEWER, AT);
+
+    resetFirstChunkCacheForTests();
+    await wipeFirstChunkCache();
+
+    expect((await readFirstChunk(ALICE)).viewer).toBeNull();
+  });
+});
+
 describe("degrading", () => {
   it("answers empty rather than throwing when IndexedDB is unavailable", async () => {
     // Private windows and blocked site data. `use-channel-draft.ts` already
@@ -409,9 +539,13 @@ describe("degrading", () => {
       await expect(readFirstChunk(ALICE)).resolves.toEqual({
         channels: null,
         tails: [],
+        viewer: null,
       });
       await expect(
         writeChannelList(ALICE, RAIL, AT),
+      ).resolves.toBeUndefined();
+      await expect(
+        writeViewerId(ALICE, "user-alice", AT),
       ).resolves.toBeUndefined();
       await expect(pruneForeignScopes(ALICE)).resolves.toBeUndefined();
     } finally {
