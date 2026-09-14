@@ -33,6 +33,7 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { asArray, cn } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
 import { useToast } from "@/hooks/use-toast";
 import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -375,7 +376,9 @@ export function ChatShell({
       return selectedChannelId;
     }
     if (channels.length === 0) return null;
-    return channels.find((ch) => ch.name === "general")?.id ?? channels[0]!.id;
+    // Shared with the first-chunk cache, which pins this channel's tail against
+    // eviction — the two rules have to be one rule or the cache misses here.
+    return coldLoadDefaultChannelId(channels);
   }, [selectedChannelId, channels, requestedChannelMissing]);
 
   const activeChannel = useMemo(

@@ -135,16 +135,23 @@ function fitToContent(node: HTMLTextAreaElement): void {
  * it" — and budgets **composer focusable <= 400ms**. `chat-shell.tsx` gates
  * `<Composer>` on `activeChannel`, which is derived from the channel list, so
  * before #2176 nothing in the thread column could take focus until
- * `GET /v1/channels` resolved. The budget was therefore gated on a network
- * round trip, and with no persisted read cache
- * (`spec/ui/resilience/performance-budgets.md` § What is not measured, and why) that
- * round trip happens on every cold load.
+ * `GET /v1/channels` resolved, so the budget was gated on a network round trip.
+ *
+ * The first-chunk read cache
+ * ([`lib/chat/first-chunk-cache.ts`](../../lib/chat/first-chunk-cache.ts))
+ * has since made that round trip skippable on a warm load — but it does not
+ * retire this component, and the two are independent on purpose. A cold cache,
+ * a first-ever visit, a wiped profile or a blocked IndexedDB all still wait on
+ * the network, and the measured split says so: `composer-focusable` is the same
+ * ~186ms with the cache warm or cold, because the shell never waited on the
+ * channel list in the first place
+ * (`spec/ui/resilience/performance-budgets.md` § Cached channel readable).
  *
  * ## Why a `<textarea>` and not an early Tiptap editor
  *
  * Because this one is focusable *before hydration*. It is ordinary markup in
  * the SSR payload, so the browser can focus it and accept keystrokes from first
- * paint — with `/chat` carrying ~825 KB of its own eager JS, that is a long way
+ * paint — with `/chat` carrying ~830 KB of its own eager JS, that is a long way
  * ahead of the first client commit. Tiptap cannot do this: `useEditor` runs
  * `immediatelyRender: false`, so no contenteditable exists until the editor is
  * constructed on the client, and constructing one here would mean paying for
