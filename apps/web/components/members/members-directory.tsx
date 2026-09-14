@@ -208,10 +208,10 @@ export function MembersDirectory() {
   const usingSearch = deferredQuery.length > 0;
   const activeQuery = usingSearch ? searchQuery : membersQuery;
 
-  const members = useMemo(() => {
-    const raw = activeQuery.data;
-    return Array.isArray(raw) ? (raw as MemberRow[]) : [];
-  }, [activeQuery.data]);
+  const members = useMemo(
+    () => asArray<MemberRow>(activeQuery.data),
+    [activeQuery.data],
+  );
 
   const roleOptions = useMemo<RoleOption[]>(() => {
     return asArray<Record<string, unknown>>(rolesQuery.data).flatMap((role) => {
