@@ -37,7 +37,15 @@ FRAPP_SEED_LOG_PREFIX='[cloud-sandbox]'
 
 DONE_SENTINEL="$ROOT/.cloud-sandbox-up.done"
 FAILED_SENTINEL="$ROOT/.cloud-sandbox-up.failed"
-rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL"
+EGRESS_MANIFEST="$ROOT/.cloud-sandbox-capabilities.json"
+# The manifest is cleared with the sentinels for the same reason they are: all three answer
+# "what happened in THIS run", and the sandbox filesystem is cached for ~7 days, so a
+# container can start with a week-old one already on disk. Without this, a probe that dies
+# before writing (the #2205 shape: a parse error, so bash exits 2 and the script's own
+# fallbacks never run) leaves the previous answer in place, and every doc now tells sessions
+# to read that file instead of probing by hand. A stale "production correctly blocked" is
+# the one reading that must never outlive the run that earned it.
+rm -f "$DONE_SENTINEL" "$FAILED_SENTINEL" "$EGRESS_MANIFEST"
 
 fail() {
   cs_log "ERROR: $1"
@@ -58,12 +66,34 @@ fail() {
 #   2. It finishes in about a second, so the answer is ready long before the ~60-90s
 #      bringup lands `.done`. Nothing waiting on `.done` can observe a missing manifest.
 #
-# Non-fatal by construction — the probe cannot return non-zero (see its header). Invoked
-# with `|| true` anyway so a future edit breaking that promise degrades to "no manifest"
-# instead of taking down bringup for every session, including the ones that never touch
-# staging.
+# Non-fatal by construction — the probe cannot return non-zero (see its header). It used to
+# be invoked with `|| true` as a belt-and-braces guard on that promise; the checks below
+# replaced it, because `|| true` also discarded the evidence when the promise WAS broken.
+# That is exactly what happened in #2205: the probe was unparseable, bash exited 2, and both
+# the exit code and the syntax error went into the same bit bucket for four days. Bringup
+# still must not die here — egress is optional, and this script runs with no `set -e` — so
+# the replacement warns and continues rather than failing.
 cs_log "Probing deployed-environment egress..."
-bash "$ROOT/scripts/cloud-sandbox-egress-probe.sh" >/dev/null || true
+# Only stdout is redirected. The probe's stdout is its human-readable summary, which is for
+# someone running it by hand — the manifest is the interface here. Its stderr is left to
+# flow straight into this script's stderr, i.e. into /tmp/cloud-sandbox-up.log, so every
+# cs_log line and any Python traceback lands on disk AS IT IS WRITTEN. An earlier draft
+# buffered stderr into a temp file and replayed it after the probe returned; that loses the
+# whole lot if bringup is killed mid-probe (the session-start hook explicitly handles a
+# bringup that was paused or reclaimed), which is the run whose diagnosis matters most.
+egress_rc=0
+bash "$ROOT/scripts/cloud-sandbox-egress-probe.sh" >/dev/null || egress_rc=$?
+
+# Two independent things can go wrong, and the exit code alone catches only one of them.
+# Neither check is fatal — egress is optional, and AGENTS.md treats a bringup abort as an
+# environment-config failure the session cannot fix — but neither is silent any more.
+if [ "$egress_rc" -ne 0 ]; then
+  cs_log "WARN: the egress probe exited ${egress_rc}. Its header contracts it never to return non-zero, so treat this as a bug in the probe itself, not as an environment problem. Bringup continues."
+fi
+if [ ! -s "$EGRESS_MANIFEST" ]; then
+  cs_log "WARN: no egress capability manifest at $EGRESS_MANIFEST."
+  cs_log "WARN: the probe writes an UNKNOWN manifest even when it cannot probe, so an ABSENT one means it never got that far — a parse error or a kill, not a network result. Sessions are told to read that file instead of probing hosts by hand; until it exists, treat deployed-staging reachability as UNKNOWN (not as blocked). Re-run: bash scripts/cloud-sandbox-egress-probe.sh"
+fi
 
 # Write apps/api/.env.local and apps/web/.env.local from the live local Supabase status
 # (plus Stripe env vars for the API). Real Stripe test keys are used when present;

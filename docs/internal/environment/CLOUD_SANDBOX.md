@@ -595,14 +595,36 @@ the one most likely to fall back on live staging. It also means the manifest is 
 within about a second, long before the ~60–90s bringup lands `.done`.
 
 ```bash
-# Read the answer
+# Read the answer — check `probe_ok` first (see below); `false` means it could not run
 python3 -m json.tool .cloud-sandbox-capabilities.json
 
 # Re-probe after changing the allowlist (or on a laptop, where bringup never ran)
 bash scripts/cloud-sandbox-egress-probe.sh
 ```
 
-The manifest reports three outcomes, and the distinction is the point:
+**The manifest is always written.** Every failure path in the probe writes one, including
+the ones where it could not probe anything at all (no `python3`, no writable temp dir, a
+builder that threw). **`probe_ok` tells you which kind you are holding**, and it is the one
+key worth branching on without reading prose:
+
+| `probe_ok` | Means |
+| ---------- | ----- |
+| `true` | the probe ran. `hosts[]` carries a real result per host; read it as below |
+| `false` | the probe **could not run**. `hosts[]`, `staging_reachable` and `production_blocked_as_expected` are all empty, and `summary` names the reason |
+
+The empty arrays on a `probe_ok: false` manifest are the trap: they are shaped exactly like
+"nothing was reachable" and mean nothing of the kind. **An UNKNOWN manifest is not evidence
+that staging is blocked, and not evidence that production is unreachable** — the negative
+assertion did not run either. Re-run the probe, or say "unknown" in those words.
+
+This is why absence is no longer a state you should ever see after a bringup that reached
+the probe. It used to be the *only* state: `scripts/cloud-sandbox-egress-probe.sh` was
+unparseable from #2110 until #2205, bringup invoked it as `… >/dev/null || true`, and every
+session ran with no manifest while this section told it one existed. A missing file now
+means bringup never got that far — check `/tmp/cloud-sandbox-up.log`, where the probe's exit
+code and stderr are both reported.
+
+The manifest reports three outcomes for each host, and the distinction is the point:
 
 | `status` | Means |
 | -------- | ----- |
