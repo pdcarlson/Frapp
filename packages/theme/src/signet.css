@@ -91,6 +91,28 @@
      * foundations §5. */
     --mention: #E5484D;
     --mention-foreground: #FFFFFF;
+    /* The in-body mention chip — the "you were addressed" treatment *inside* a
+     * message bubble, which components.md §11 carried as a TODO-DESIGN until
+     * this pair settled it. NOT the mention red above, and deliberately: that
+     * token is a badge fill carrying white text, and foundations §5 states
+     * outright that "a future surface that renders mention red **as text** needs
+     * a lifted tone first; it does not have one today". This one does render as
+     * text, so it takes the amber the Design bar chose instead.
+     *
+     * **Opaque, where §5's tint recipe would use 13% alpha, and that is the
+     * whole point.** A chat mention lands inside a bubble, and the self bubble
+     * is `--primary` — a per-chapter colour that can be anything from `#006400`
+     * to `#FFFFFF`. An alpha tint composites over whatever that is, so the chip
+     * text's contrast would be a per-tenant accident: the same message would be
+     * 6.5:1 in one chapter and 1.1:1 in the next. An opaque chip carries its own
+     * ground, so the pair below measures the same on every bubble in every
+     * chapter. `chat-contrast.spec.ts` asserts both halves of that.
+     *
+     * The fill is §5's tint recipe at a heavier 20% over `--card`, resolved to a
+     * literal: the recipe's look on the surface a mention usually sits on, with
+     * the alpha taken out. Fixed and never accent-derived, like the red. */
+    --mention-chip: #4C3A1A;
+    --mention-chip-text: #FAA81A;
 
     /* ── Neutral interactive fills (ShadCN compat) ────────────────
      * `secondary` is the Secondary-button recipe (components.md §3):

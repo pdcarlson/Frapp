@@ -30,7 +30,7 @@ import {
   SlashCommandGlyph,
 } from "./chat-glyphs";
 import { cn } from "@/lib/utils";
-import { CHAT_CONTROL_CLASS } from "./chip";
+import { CHAT_CONTROL_CLASS, MENTION_CHIP } from "./chip";
 import {
   useChapterRoster,
   useRequestChatUploadUrl,
@@ -755,9 +755,12 @@ export function Composer({
         placeholder: composerPlaceholder(channelName, isDirect),
       }),
       Mention.configure({
-        HTMLAttributes: {
-          class: "rounded bg-accent-subtle px-1 text-accent-text",
-        },
+        // The same chip the timeline paints (`chip.ts`), not a second recipe.
+        // It used to be an accent tint here, which meant a handle changed
+        // colour the instant you pressed Enter — and worse, the accent tint is
+        // exactly the paint a self bubble's own fill is derived from, so the
+        // authored mention and the sent one could not both read.
+        HTMLAttributes: { class: MENTION_CHIP },
         // Same shape as the submit keymap below: `createMentionSuggestion`
         // only reads `rosterRef.current` later, inside `items()` callbacks
         // invoked from keystroke events — never synchronously during render.
