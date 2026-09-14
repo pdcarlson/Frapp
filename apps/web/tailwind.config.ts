@@ -88,6 +88,12 @@ const config: Config = {
         mention: {
           DEFAULT: colorVar("--mention"),
           foreground: colorVar("--mention-foreground"),
+          // The in-body mention chip (§11). CSS-only tokens, like the two
+          // `-text` lifts above: `signetDarkTokens` is what `apps/mobile`
+          // reads, and mobile draws no in-bubble mention highlight yet, so
+          // shipping them there would claim a treatment no screen implements.
+          chip: colorVar("--mention-chip"),
+          "chip-text": colorVar("--mention-chip-text"),
         },
         gold: {
           house: colorVar("--gold-house"),

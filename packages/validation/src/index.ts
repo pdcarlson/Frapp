@@ -781,10 +781,11 @@ export type { ActivationMilestone } from "./analytics";
 // client-supplied list would be forgeable.
 export {
   extractMentionTokens,
+  findMentionSpans,
   matchMentionCandidate,
   resolveMentions,
 } from "./mentions";
-export type { MentionCandidate } from "./mentions";
+export type { MentionCandidate, MentionSpan } from "./mentions";
 
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export {
