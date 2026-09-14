@@ -51,14 +51,16 @@ function trackedShellScripts() {
     .split("\0")
     .filter(Boolean);
   return files.filter((rel) => {
-    if (rel.endsWith(".sh")) return true;
+    // Read first, extension second: a tracked .sh that is missing from the worktree (renamed
+    // or removed without staging, a dangling symlink) would otherwise reach `bash -n` and be
+    // reported as a syntax error, which reads as a regression rather than a dirty checkout.
     let head = "";
     try {
       head = readFileSync(join(repoRoot, rel), "utf8").slice(0, 200).split("\n", 1)[0];
     } catch {
-      return false; // deleted, or not a regular readable file
+      return false;
     }
-    return /^#!.*\b(ba)?sh\b/.test(head);
+    return rel.endsWith(".sh") || /^#!.*\b(ba)?sh\b/.test(head);
   });
 }
 
@@ -108,17 +110,20 @@ test("the egress probe keeps its Python builder in a quoted heredoc, not `python
 // One helper, used by every case below. `process.env` is inherited so a version-managed
 // python3 (asdf/mise shims need $HOME) still resolves; the no-PATH cases override PATH
 // explicitly, which is the only variable they need to control.
-function runProbe(t, { curlStub, env = {}, expectManifest = true } = {}) {
+function runProbe(t, { curlStub, stubs = {}, env = {}, expectManifest = true } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "egress-probe-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
+  const allStubs = { ...(curlStub ? { curl: curlStub } : {}), ...stubs };
   let pathPrefix = "";
-  if (curlStub) {
+  if (Object.keys(allStubs).length > 0) {
     const bin = join(dir, "bin");
     mkdirSync(bin, { recursive: true });
-    const stub = join(bin, "curl");
-    writeFileSync(stub, curlStub);
-    chmodSync(stub, 0o755);
+    for (const [name, body] of Object.entries(allStubs)) {
+      const stub = join(bin, name);
+      writeFileSync(stub, body);
+      chmodSync(stub, 0o755);
+    }
     pathPrefix = `${bin}:`;
   }
 
@@ -244,25 +249,58 @@ test("an UNKNOWN manifest reads as unknown, never as 'staging is blocked'", (t) 
   );
 });
 
-test("the SessionStart hook does not advertise live checks off an UNKNOWN manifest", (t) => {
-  // Drives the hook's ACTUAL renderer rather than re-implementing its gate here. That gate
-  // carries a comment explaining why it is not keyed on `staging_reachable` alone, so it is
-  // a live design decision; a JS copy of it would pass while the real one drifted.
-  const { dir } = runProbe(t, { env: { PATH: "/nonexistent" } });
-  const hook = join(repoRoot, ".claude", "hooks", "session-start.sh");
+// Drives the hook's ACTUAL renderer rather than re-implementing its gate. That gate carries
+// a comment explaining why it is not keyed on `staging_reachable` alone, so it is a live
+// design decision; a JS copy would keep passing while the real one drifted.
+const HOOK = join(repoRoot, ".claude", "hooks", "session-start.sh");
+const NUDGE = /Live checks against deployed staging are available/;
+
+function renderHookSummary(dir) {
+  const extract = `sed -n '/^egress_summary()/,/^}/p' ${JSON.stringify(HOOK)}`;
   const rendered = spawnSync(
     "bash",
-    ["-c", `set -u; ROOT=${JSON.stringify(dir)}; source <(sed -n '/^egress_summary()/,/^}/p' ${JSON.stringify(hook)}); egress_summary`],
+    ["-c", `set -u; ROOT=${JSON.stringify(dir)}; source <(${extract}); egress_summary`],
     { encoding: "utf8" },
   );
-
   assert.equal(rendered.status, 0, `hook renderer failed: ${rendered.stderr}`);
-  assert.match(rendered.stdout, /capability UNKNOWN/, "the hook must surface the UNKNOWN summary");
-  assert.doesNotMatch(
-    rendered.stdout,
-    /Live checks against deployed staging are available/,
-    "the nudge must never fire off a manifest that verified nothing",
+  return rendered.stdout;
+}
+
+test("the SessionStart hook does not advertise live checks off an UNKNOWN manifest", (t) => {
+  const { dir } = runProbe(t, { env: { PATH: "/nonexistent" } });
+  const out = renderHookSummary(dir);
+
+  assert.match(out, /capability UNKNOWN/, "the hook must surface the UNKNOWN summary");
+  assert.doesNotMatch(out, NUDGE, "the nudge must never fire off a manifest that verified nothing");
+});
+
+test("the nudge is suppressed by warnings, not only by an empty staging_reachable", (t) => {
+  // The gate is `staging_reachable and not warnings`. A probe_ok:false manifest fails the
+  // FIRST clause, so the UNKNOWN test above passes even if the second is deleted. This is
+  // the case that pins it: one host reachable, one not — `staging_reachable` is truthy and
+  // a warning exists, which is exactly when the nudge would contradict a "NOT reachable"
+  // line printed two clauses earlier.
+  const dir = mkdtempSync(join(tmpdir(), "egress-partial-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(
+    join(dir, ".cloud-sandbox-capabilities.json"),
+    JSON.stringify({
+      generated_at: "2026-09-14T20:00:00Z",
+      probe_ok: true,
+      summary: "EGRESS: staging partially reachable (1 of 4); production correctly blocked",
+      staging_reachable: ["staging API (Render)"],
+      production_blocked_as_expected: ["PRODUCTION API", "PRODUCTION web", "PRODUCTION Supabase"],
+      warnings: ["staging web dashboard is NOT reachable."],
+      hosts: [],
+      docs: "docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress",
+      skill: ".claude/skills/live-verification/SKILL.md",
+    }),
   );
+
+  const out = renderHookSummary(dir);
+  assert.match(out, /partially reachable/, "the summary must still render");
+  assert.match(out, /NOT reachable/, "the warning must still render");
+  assert.doesNotMatch(out, NUDGE, "a manifest carrying a warning must not advertise live checks");
 });
 
 test("generated_at is real UTC, not the host's local clock wearing a Z", (t) => {
@@ -293,22 +331,12 @@ test("no host results never becomes an all-clear", (t) => {
   // "deployed staging reachable; production correctly blocked" off zero probes. The `else`
   // was no safer: it asserted NOT reachable, equally unearned. Stub `sed` to emit nothing so
   // the fold's spec block arrives empty, exactly as a broken sed would.
-  const dir = mkdtempSync(join(tmpdir(), "egress-nofold-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const bin = join(dir, "bin");
-  mkdirSync(bin, { recursive: true });
-  writeFileSync(join(bin, "sed"), "#!/usr/bin/env bash\nexit 0\n");
-  chmodSync(join(bin, "sed"), 0o755);
-  writeFileSync(join(bin, "curl"), "#!/usr/bin/env bash\nprintf '000'\nexit 56\n");
-  chmodSync(join(bin, "curl"), 0o755);
-
-  const result = spawnSync("/bin/bash", [PROBE], {
-    cwd: dir,
-    encoding: "utf8",
-    env: { ...process.env, CLAUDE_PROJECT_DIR: dir, PATH: `${bin}:${process.env.PATH}` },
+  const { manifest } = runProbe(t, {
+    stubs: {
+      sed: "#!/usr/bin/env bash\nexit 0\n",
+      curl: "#!/usr/bin/env bash\nprintf '000'\nexit 56\n",
+    },
   });
-  assert.equal(result.status, 0, `stderr:\n${result.stderr}`);
-  const manifest = JSON.parse(readFileSync(join(dir, ".cloud-sandbox-capabilities.json"), "utf8"));
 
   assert.doesNotMatch(
     manifest.summary,
@@ -344,24 +372,110 @@ test("a builder that writes the manifest then dies reporting keeps the manifest"
   );
 });
 
-test("bringup surfaces a probe that fails instead of swallowing it", () => {
-  // `bash … >/dev/null || true` reported neither the exit code nor the syntax error for
-  // four days. Pin what replaced it.
-  const src = readFileSync(join(repoRoot, "scripts", "cloud-sandbox-up.sh"), "utf8");
+test("production is never reported blocked on probes that did not complete", (t) => {
+  // "production correctly blocked" is a negative SECURITY assertion, earned only when every
+  // production host was observed refusing. A prod host that TIMED OUT is ok:null — not
+  // blocked, just unmeasured — so a proxy that blackholes instead of returning 403, or one
+  // probe_one child lost in the seven-way fan-out, used to leave
+  // production_blocked_as_expected empty while the headline still announced prod was
+  // blocked. The hook prints summary first, so that headline is what an agent reads.
+  const { manifest } = runProbe(t, {
+    curlStub: `#!/usr/bin/env bash
+url="\${!#}"
+case "$url" in
+  *//api.frapp.live/*|*//app.frapp.live*|*unttyvyfezddlyafcydh*) printf '000'; exit 28 ;;
+  *) printf '200'; exit 0 ;;
+esac
+`,
+  });
+
+  assert.deepEqual(manifest.production_blocked_as_expected, [], "nothing was verified blocked");
   assert.doesNotMatch(
-    src,
-    /cloud-sandbox-egress-probe\.sh" >\/dev\/null \|\| true/,
-    "the probe invocation must not discard its exit status again",
+    manifest.summary,
+    /production correctly blocked/,
+    "an unmeasured production host must not be summarised as correctly blocked",
   );
-  assert.match(src, /egress_rc=\$\?/, "bringup must capture the probe's exit code");
-  assert.match(
-    src,
-    /if \[ ! -s "\$EGRESS_MANIFEST" \]; then/,
-    "bringup must warn when no manifest was produced at all",
+  assert.match(manifest.summary, /production NOT verified/);
+  for (const h of manifest.hosts.filter((x) => x.expected === "blocked")) {
+    assert.equal(h.ok, null, `${h.key} timed out, so it is unknown — neither pass nor fail`);
+  }
+});
+
+test("production blocked IS reported when every prod host actually refused", (t) => {
+  const { manifest } = runProbe(t, { curlStub: HEALTHY_CURL });
+  assert.equal(manifest.production_blocked_as_expected.length, 3);
+  assert.match(manifest.summary, /production correctly blocked/);
+});
+
+// Runs bringup's egress stanza for real against a stub probe. An earlier version of this
+// test asserted only that certain tokens appeared in the source, which both WARN bodies
+// could be deleted without failing — the #2205 silence would have survived its own guard.
+function runBringupEgressStanza(t, probeBody) {
+  const dir = mkdtempSync(join(tmpdir(), "bringup-egress-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "scripts"), { recursive: true });
+  writeFileSync(join(dir, "scripts", "cloud-sandbox-egress-probe.sh"), probeBody);
+
+  const up = join(repoRoot, "scripts", "cloud-sandbox-up.sh");
+  const extract = `sed -n '/^cs_log "Probing deployed-environment egress/,/^# Write apps/p' ${JSON.stringify(up)} | sed '$d'`;
+  const harness = [
+    "set -uo pipefail",
+    `cs_log() { printf '[cloud-sandbox] %s\\n' "$*" >&2; }`,
+    `ROOT=${JSON.stringify(dir)}`,
+    `EGRESS_MANIFEST="$ROOT/.cloud-sandbox-capabilities.json"`,
+    `source <(${extract})`,
+  ].join("\n");
+
+  const result = spawnSync("bash", ["-c", harness], { encoding: "utf8" });
+  assert.equal(result.status, 0, `the egress stanza must never abort bringup:\n${result.stderr}`);
+  return result.stderr;
+}
+
+test("bringup reports a probe that exits non-zero, and replays its stderr", (t) => {
+  // The #2205 shape exactly: unparseable script, bash exits 2, syntax error on stderr.
+  const stderr = runBringupEgressStanza(
+    t,
+    `#!/usr/bin/env bash
+printf 'line 172: syntax error near unexpected token\n' >&2
+exit 2
+`,
   );
+
+  assert.match(stderr, /line 172: syntax error/, "the probe's own stderr must reach the bringup log");
+  assert.match(stderr, /WARN: the egress probe exited 2/, "the exit code must be named");
+  assert.match(stderr, /no egress capability manifest/, "a missing manifest must be called out");
+});
+
+test("bringup reports a probe that exits 0 but writes no manifest", (t) => {
+  const stderr = runBringupEgressStanza(t, "#!/usr/bin/env bash\nexit 0\n");
+
+  assert.doesNotMatch(stderr, /exited 0/, "a zero exit is not itself a warning");
+  assert.match(stderr, /no egress capability manifest/);
+  assert.match(stderr, /treat deployed-staging reachability as UNKNOWN/);
+});
+
+test("bringup stays quiet when the probe succeeds", (t) => {
+  const stderr = runBringupEgressStanza(
+    t,
+    // The stub resolves its own repo root from BASH_SOURCE, exactly as the real probe does —
+    // bringup does not export $ROOT to the child.
+    `#!/usr/bin/env bash
+root="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
+printf '{"probe_ok":true}\n' >"$root/.cloud-sandbox-capabilities.json"
+exit 0
+`,
+  );
+
+  assert.doesNotMatch(stderr, /WARN/, "a healthy probe must produce no warnings — this is every session");
+});
+
+test("the manifest is cleared with the bringup sentinels", () => {
+  // Not behavioural: running this would require the whole bringup. The sentinel clear is one
+  // line and its absence is only observable across two runs in one container.
+  const src = readFileSync(join(repoRoot, "scripts", "cloud-sandbox-up.sh"), "utf8");
   assert.match(
     src,
     /rm -f "\$DONE_SENTINEL" "\$FAILED_SENTINEL" "\$EGRESS_MANIFEST"/,
-    "the manifest must be cleared with the sentinels so a stale one cannot answer for this run",
+    "a stale manifest must not be able to answer for this run",
   );
 });

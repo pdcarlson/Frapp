@@ -61,15 +61,16 @@ generate it: `bash scripts/cloud-sandbox-egress-probe.sh`.
 `hosts[]` is empty and so are `staging_reachable` and `production_blocked_as_expected`. Those
 empty arrays look exactly like "nothing was reachable" and mean nothing of the kind: it is
 the inconclusive row below, applied to every host at once. Re-run the probe
-(`bash scripts/cloud-sandbox-egress-probe.sh`); if it still cannot run, report the live check
-as **could not run** and say "unknown" in those words.
+(`bash scripts/cloud-sandbox-egress-probe.sh`).
 
-Do **not** report it as `blocked`. That word has a specific meaning in the table below — the
-proxy refused CONNECT, i.e. the host is not allowlisted — and §1's tail turns it into an
-action: file a human-only blocker naming the missing line. On a `probe_ok: false` manifest
-nothing was ever probed, so that issue would send the owner to fix an allowlist that may be
-perfectly correct. The reporting tier is still "blocked" in the sense that the *check* did
-not run, and you must not claim a pass; the *cause* is unknown, not the network.
+If it still cannot run, report the live check under the **`blocked` tier** ([§7](#7-reporting))
+— never `passed` — and name the reason the manifest actually gives you: *the probe could not
+run (`python3` unavailable / no writable temp dir / the builder failed)*. Do **not** name a
+missing allowlist line, and do not file a human-only blocker against the environment: nothing
+was probed, so there is no evidence the network is involved at all. Two different things share
+the word `blocked` here — the §7 reporting tier ("could not run, reason named") and the
+manifest `status` in the table below (a refused connection). A `probe_ok: false` manifest is
+the first and not the second.
 
 With `probe_ok: true`, read each host's `status`:
 
@@ -88,13 +89,22 @@ answered — treat that as a stop-everything finding, not as extra capability.
 `curl -sS "$HTTPS_PROXY/__agentproxy/status"` remains ground truth for which host the proxy
 refused, under `recentRelayFailures`.
 
-When egress is off, that is a **human-only blocker** — an allowlist is dashboard config, not
-something an agent can work around. Say exactly which line is missing, quoting
+When egress is genuinely off, that is a **human-only blocker** — an allowlist is dashboard
+config, not something an agent can work around. Say exactly which line is missing, quoting
 [`CLOUD_SANDBOX.md`](../../../docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress),
 and file it per [`file-follow-up`](../file-follow-up/SKILL.md). Do not silently fall back to
 the local stack and report the check as done — that is the silent-coverage failure
 `scripts/ci/staging-conformance.mjs` was written to stop. A check that could not run is
 **blocked**, never **passed**.
+
+"Genuinely off" is a higher bar than a `blocked` status. The probe groups curl exits 56, 35
+and 7, so **a staging host that is merely down reports `blocked` too, and nothing in the
+sandbox separates the two** — the proxy's own `detail` reads `policy denial or upstream
+failure`. The tier is `blocked` either way, and `blocked` obliges you to name the reason; what
+it does not entitle you to is naming the *wrong* one. Do not assert the allowlist is at fault
+unless you have checked the line is actually absent from the environment. "`api-staging` did
+not answer" is always reportable; "`api-staging` is not allowlisted" needs evidence. Same rule,
+same wording, in [`CLOUD_SANDBOX.md`'s `blocked` row](../../../docs/internal/environment/CLOUD_SANDBOX.md#live-staging-egress).
 
 ## 2. Never point at production
 

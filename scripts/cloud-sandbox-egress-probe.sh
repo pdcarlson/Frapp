@@ -257,7 +257,7 @@ for key in order:
     # "as expected" is deliberately not `status == expect`: a probe that could not run
     # (timeout, no_dns, unknown) is neither a pass nor a fail, and must never be folded
     # into the pass count. Same rule the live-verification skill states for checks
-    # generally -- a check that could not run is blocked, never passed.
+    # generally -- a check that could not run is never PASSED.
     if r["status"] == s["expect"]:
         entry["ok"] = True
         (reachable if s["expect"] == "reachable" else blocked_ok).append(s["label"])
@@ -284,8 +284,23 @@ for key in order:
     hosts.append(entry)
 
 staging_total = sum(1 for k in order if spec[k]["expect"] == "reachable")
+prod_total = sum(1 for k in order if spec[k]["expect"] == "blocked")
 has_security = any(w.startswith("SECURITY:") for w in warnings)
 inconclusive = sum(1 for h in hosts if h["ok"] is None)
+
+# The production half of the summary gets the same treatment as the staging half, for the
+# same reason. "production correctly blocked" is a NEGATIVE SECURITY ASSERTION, and it is
+# only earned when every production host was actually observed refusing the connection. A
+# prod host that TIMED OUT is ok:None -- not blocked, just unmeasured -- so a proxy that
+# blackholes instead of returning 403, or one probe_one child dying in the seven-way
+# fan-out, used to leave production_blocked_as_expected empty while the headline still
+# announced production was blocked. The hook prints the summary first, so that headline is
+# what an agent reads.
+prod_clause = (
+    "production correctly blocked"
+    if prod_total and len(blocked_ok) == prod_total
+    else "production NOT verified (its probes did not complete -- this is not a clean bill)"
+)
 
 # Three distinct outcomes, never collapsed into two. An inconclusive probe (timeout, DNS
 # failure, proxy hiccup) is NOT evidence that a host is unreachable -- saying "NOT
@@ -304,9 +319,9 @@ if has_security:
 elif not staging_total:
     summary = "EGRESS: could not determine -- the probe produced no host results at all (a broken fold, or an empty probe table), NOT proof that staging is blocked"
 elif len(reachable) == staging_total:
-    summary = "EGRESS: deployed staging reachable (api/web/landing/supabase); production correctly blocked"
+    summary = "EGRESS: deployed staging reachable (api/web/landing/supabase); %s" % prod_clause
 elif reachable:
-    summary = "EGRESS: staging partially reachable (%d of %d); production correctly blocked" % (len(reachable), staging_total)
+    summary = "EGRESS: staging partially reachable (%d of %d); %s" % (len(reachable), staging_total, prod_clause)
 elif inconclusive:
     summary = "EGRESS: could not determine -- every probe was inconclusive (network or proxy issue), NOT proof that staging is blocked"
 else:
