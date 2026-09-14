@@ -27,20 +27,28 @@ const {
   channelsResult,
   pruneForeignScopes,
   readFirstChunk,
+  viewerResult,
   writeChannelList,
   writeChannelTail,
+  writeViewerId,
 } = vi.hoisted(() => ({
   authUserId: { current: null as string | null },
   channelsResult: {
     current: { data: undefined as unknown, dataUpdatedAt: 0 },
   },
+  /** `["user","me"]` as the hooks expose it: the narrowed id and the stamp. */
+  viewerResult: {
+    current: { id: null as string | null, dataUpdatedAt: 0 },
+  },
   pruneForeignScopes: vi.fn(async () => undefined),
   readFirstChunk: vi.fn<() => Promise<FirstChunk>>(async () => ({
     channels: null,
     tails: [],
+    viewer: null,
   })),
   writeChannelList: vi.fn(async () => undefined),
   writeChannelTail: vi.fn(async () => undefined),
+  writeViewerId: vi.fn(async () => undefined),
 }));
 
 vi.mock("@/lib/auth/use-auth-user-id", () => ({
@@ -48,6 +56,8 @@ vi.mock("@/lib/auth/use-auth-user-id", () => ({
 }));
 vi.mock("@repo/hooks", () => ({
   useChannels: () => channelsResult.current,
+  useCurrentUser: () => viewerResult.current,
+  useViewerUserId: () => viewerResult.current.id,
 }));
 vi.mock("./first-chunk-cache", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -55,6 +65,7 @@ vi.mock("./first-chunk-cache", async (importOriginal) => ({
   readFirstChunk,
   writeChannelList,
   writeChannelTail,
+  writeViewerId,
 }));
 
 import {
@@ -72,6 +83,17 @@ const AT = Date.now();
 function listRow(channels: ChatChannel[], cachedAt = AT) {
   return { userId: "auth-alice", chapterId: "chapter-1", channels, cachedAt };
 }
+
+/** A cached `users.id` row for a scope — `viewerUserId` is not `userId`. */
+function viewerRow(
+  viewerUserId: string,
+  scope = { userId: "auth-alice", chapterId: "chapter-1" },
+  cachedAt = AT,
+) {
+  return { ...scope, viewerUserId, cachedAt };
+}
+
+const EMPTY_CHUNK: FirstChunk = { channels: null, tails: [], viewer: null };
 
 function message(id: string) {
   return normalizeRow({
@@ -101,8 +123,9 @@ function wrapper(client: QueryClient) {
 beforeEach(() => {
   authUserId.current = "auth-alice";
   channelsResult.current = { data: undefined, dataUpdatedAt: 0 };
+  viewerResult.current = { id: null, dataUpdatedAt: 0 };
   vi.clearAllMocks();
-  readFirstChunk.mockResolvedValue({ channels: null, tails: [] });
+  readFirstChunk.mockResolvedValue(EMPTY_CHUNK);
   act(() => useChapterStore.getState().setActiveChapterId("chapter-1"));
 });
 
@@ -134,7 +157,11 @@ describe("seedFirstChunk", () => {
   it("paints a cached channel list into the query the rail reads", () => {
     const client = makeClient();
 
-    seedFirstChunk(client, { channels: listRow([GENERAL, SOCIAL]), tails: [] });
+    seedFirstChunk(client, {
+      channels: listRow([GENERAL, SOCIAL]),
+      tails: [],
+      viewer: null,
+    });
 
     // `chat-shell.tsx` derives `channelsPaneState` from `channels.length > 0`,
     // so a seeded list is what moves the rail from `loading` to `ready`
@@ -148,6 +175,7 @@ describe("seedFirstChunk", () => {
 
     seedFirstChunk(client, {
       channels: null,
+      viewer: null,
       tails: [
         {
           userId: "auth-alice",
@@ -192,6 +220,7 @@ describe("seedFirstChunk", () => {
 
     seedFirstChunk(client, {
       channels: null,
+      viewer: null,
       tails: [
         {
           userId: "auth-alice",
@@ -228,6 +257,7 @@ describe("seedFirstChunk", () => {
 
     seedFirstChunk(client, {
       channels: null,
+      viewer: null,
       tails: [
         {
           userId: "auth-alice",
@@ -269,7 +299,11 @@ describe("seedFirstChunk", () => {
       .build(client, { queryKey: ["channels"] });
     void observer.fetch();
 
-    seedFirstChunk(client, { channels: listRow([GENERAL]), tails: [] });
+    seedFirstChunk(client, {
+      channels: listRow([GENERAL]),
+      tails: [],
+      viewer: null,
+    });
 
     expect(aborts).toBe(0);
   });
@@ -283,7 +317,11 @@ describe("seedFirstChunk", () => {
     const client = makeClient();
     client.setQueryData(["channels"], [SOCIAL]);
 
-    seedFirstChunk(client, { channels: listRow([GENERAL]), tails: [] });
+    seedFirstChunk(client, {
+      channels: listRow([GENERAL]),
+      tails: [],
+      viewer: null,
+    });
 
     expect(client.getQueryData(["channels"])).toEqual([SOCIAL]);
   });
@@ -298,7 +336,11 @@ describe("seedFirstChunk", () => {
     */
     const client = makeClient();
 
-    seedFirstChunk(client, { channels: listRow([GENERAL]), tails: [] });
+    seedFirstChunk(client, {
+      channels: listRow([GENERAL]),
+      tails: [],
+      viewer: null,
+    });
 
     expect(client.getQueryState(["channels"])?.isInvalidated).toBe(true);
   });
@@ -318,7 +360,7 @@ describe("useFirstChunkCache", () => {
     });
     readFirstChunk.mockImplementation(async () => {
       order.push("read");
-      return { channels: null, tails: [] };
+      return EMPTY_CHUNK;
     });
     const client = makeClient();
 
@@ -328,7 +370,11 @@ describe("useFirstChunkCache", () => {
   });
 
   it("seeds what it read into the query client", async () => {
-    readFirstChunk.mockResolvedValue({ channels: listRow([GENERAL]), tails: [] });
+    readFirstChunk.mockResolvedValue({
+      channels: listRow([GENERAL]),
+      tails: [],
+      viewer: null,
+    });
     const client = makeClient();
 
     renderHook(() => useFirstChunkCache(), { wrapper: wrapper(client) });
@@ -430,6 +476,205 @@ describe("useFirstChunkCache", () => {
 
     await waitFor(() => expect(pruneForeignScopes).toHaveBeenCalledTimes(2));
     expect(writeChannelList).not.toHaveBeenCalled();
+  });
+});
+
+/*
+  The identity half (#2249).
+
+  `first-chunk-cache.spec.ts` owns the claim that the *keys* isolate one
+  member's `users.id` from another's. This owns the claim that the id the hook
+  hands back is the one for the scope in effect **right now** — which is a
+  question about React holding state across a commit, and nothing to do with
+  storage.
+*/
+describe("useFirstChunkCache — cached viewer id", () => {
+  const ALICE_VIEWER = "user-alice";
+  const BOB_VIEWER = "user-bob";
+
+  it("hands back the cached id for this scope", async () => {
+    readFirstChunk.mockResolvedValue({
+      ...EMPTY_CHUNK,
+      viewer: viewerRow(ALICE_VIEWER),
+    });
+    const client = makeClient();
+
+    const { result } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+
+    // The point of the whole change: a resolved id with no `GET /v1/users/me`
+    // behind it, so `message-timeline.tsx`'s gate opens on the warm path.
+    await waitFor(() => expect(result.current).toBe(ALICE_VIEWER));
+  });
+
+  it("does not seed `[\"user\",\"me\"]` with it", async () => {
+    /*
+      The one thing #2249 rules out by name. That key's consumers —
+      `account-menu`, `profile-panel`, `billing-page` — read a whole profile, and
+      a row holding only an id would be a worse bug than the one being fixed. It
+      is also the key `caching.md` says a persister must never resurrect, so
+      touching it here would be the objection landing rather than being answered.
+    */
+    readFirstChunk.mockResolvedValue({
+      ...EMPTY_CHUNK,
+      viewer: viewerRow(ALICE_VIEWER),
+    });
+    const client = makeClient();
+
+    const { result } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current).toBe(ALICE_VIEWER));
+
+    expect(client.getQueryData(["user", "me"])).toBeUndefined();
+  });
+
+  it("disowns the id the moment the member changes, before the re-read lands", async () => {
+    /*
+      **The A-as-B guard, and the reason this is state-with-a-scope rather than a
+      bare string.**
+
+      A same-tab magic-link swap does not remount this tree. The `QueryClient` is
+      cleared and the database is wiped from an ancestor effect, but this
+      component keeps rendering — so a bare `string` would still be Alice's
+      `users.id` on every commit until the asynchronous re-read resolved. Bob's
+      rows can arrive from the network inside that window, and painting them
+      against Alice's id is the cross-account authorship bug with a cache behind
+      it instead of a race.
+
+      `readFirstChunk` is held unresolved here precisely to stand in that window
+      and prove the value is gone *without* waiting for anything.
+    */
+    readFirstChunk.mockResolvedValue({
+      ...EMPTY_CHUNK,
+      viewer: viewerRow(ALICE_VIEWER),
+    });
+    const client = makeClient();
+    const { result, rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current).toBe(ALICE_VIEWER));
+
+    // Bob signs in. Nothing resolves for him — the read never settles.
+    readFirstChunk.mockReturnValue(new Promise(() => {}));
+    authUserId.current = "auth-bob";
+    rerender();
+
+    expect(result.current).toBeNull();
+  });
+
+  it("disowns it on a chapter change too", async () => {
+    // Same member, so the id itself is still correct — but the rows it
+    // attributes were dropped wholesale by the chapter switch, and a cache that
+    // kept answering for a scope it was not read under is one rule away from
+    // the account-swap case above. It goes cold the same way.
+    readFirstChunk.mockResolvedValue({
+      ...EMPTY_CHUNK,
+      viewer: viewerRow(ALICE_VIEWER),
+    });
+    const client = makeClient();
+    const { result, rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current).toBe(ALICE_VIEWER));
+
+    readFirstChunk.mockReturnValue(new Promise(() => {}));
+    act(() => useChapterStore.getState().setActiveChapterId("chapter-2"));
+    rerender();
+
+    expect(result.current).toBeNull();
+  });
+
+  it("goes cold when the session does, rather than going sticky", async () => {
+    // The read cache's standing posture (`chat-scope.ts`): an outbox may not go
+    // cold on an uncertain identity because that loses a message, but a read
+    // cache must. No scope, no cached id, and the gate closes again.
+    readFirstChunk.mockResolvedValue({
+      ...EMPTY_CHUNK,
+      viewer: viewerRow(ALICE_VIEWER),
+    });
+    const client = makeClient();
+    const { result, rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+    await waitFor(() => expect(result.current).toBe(ALICE_VIEWER));
+
+    authUserId.current = null;
+    rerender();
+
+    expect(result.current).toBeNull();
+  });
+
+  it("writes the live id under the scope it resolved in", async () => {
+    const client = makeClient();
+    const { rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+
+    viewerResult.current = { id: ALICE_VIEWER, dataUpdatedAt: Date.now() + 1 };
+    rerender();
+
+    await waitFor(() =>
+      expect(writeViewerId).toHaveBeenCalledWith(
+        { userId: "auth-alice", chapterId: "chapter-1" },
+        ALICE_VIEWER,
+        expect.any(Number),
+      ),
+    );
+  });
+
+  it("does not write the outgoing member's id under the incoming member's key", async () => {
+    /*
+      The write-side half of the same boundary, and the one that would be a real
+      leak rather than a stale paint: `dropCacheWhenIdentityChanges` clears from
+      an *ancestor* effect and React flushes child effects first, so there is one
+      commit where this hook holds Bob's scope beside Alice's `["user","me"]`
+      row. Filing Alice's `users.id` under Bob's key there would make every
+      later read of Bob's cache hand back Alice's identity — from disk, durably.
+    */
+    const client = makeClient();
+    const { rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+    viewerResult.current = { id: ALICE_VIEWER, dataUpdatedAt: Date.now() + 1 };
+    rerender();
+    await waitFor(() => expect(writeViewerId).toHaveBeenCalled());
+    writeViewerId.mockClear();
+
+    // Bob's uid publishes. Alice's row is still the one in hand — same
+    // `dataUpdatedAt`, because nothing has resolved since the swap.
+    authUserId.current = "auth-bob";
+    rerender();
+
+    expect(writeViewerId).not.toHaveBeenCalled();
+
+    // And it stays refused until `["user","me"]` actually answers for Bob.
+    viewerResult.current = { id: BOB_VIEWER, dataUpdatedAt: Date.now() + 2 };
+    rerender();
+    await waitFor(() =>
+      expect(writeViewerId).toHaveBeenCalledWith(
+        { userId: "auth-bob", chapterId: "chapter-1" },
+        BOB_VIEWER,
+        expect.any(Number),
+      ),
+    );
+  });
+
+  it("does not write while identity is unresolved", async () => {
+    // `usePersistUnderScope` fires on a changed `dataUpdatedAt`, and a
+    // `["user","me"]` *error* produces one too. Writing then would stamp a fresh
+    // `cachedAt` on nothing and push the good row's expiry out with it.
+    const client = makeClient();
+    const { rerender } = renderHook(() => useFirstChunkCache(), {
+      wrapper: wrapper(client),
+    });
+
+    viewerResult.current = { id: null, dataUpdatedAt: Date.now() + 1 };
+    rerender();
+    await waitFor(() => expect(pruneForeignScopes).toHaveBeenCalled());
+
+    expect(writeViewerId).not.toHaveBeenCalled();
   });
 });
 
