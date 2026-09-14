@@ -2,6 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
+import { remarkMentionChips } from "./remark-mention-chips";
 import { cn } from "@/lib/utils";
 
 const SAFE_URL_SCHEMES = new Set(["http", "https", "mailto"]);
@@ -41,8 +42,14 @@ function isSafeHref(href: string): boolean {
  * images and tables aren't part of the spec'd set, and a message that opens
  * with `# ` shouldn't blow a chat bubble up into a heading. Disallowed
  * elements are unwrapped rather than dropped, so their text still shows.
+ *
+ * `mark` is on the list but is **not** part of that authored set: no CommonMark
+ * syntax produces one and raw HTML is never parsed, so the only thing that can
+ * emit a `mark` here is `remarkMentionChips` below. Leaving it off the list
+ * would unwrap every mention chip back to plain text — the allowlist is applied
+ * after the plugins run, not to the source.
  */
-const ALLOWED_ELEMENTS = ["p", "strong", "em", "code", "pre", "a", "br"];
+const ALLOWED_ELEMENTS = ["p", "strong", "em", "code", "pre", "a", "br", "mark"];
 
 /**
  * The shared safe renderer for `message.content` — a fenced-off subset of
@@ -56,7 +63,10 @@ const ALLOWED_ELEMENTS = ["p", "strong", "em", "code", "pre", "a", "br"];
 export function MessageMarkdown({ content }: { content: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkBreaks]}
+      // The mention plugin needs the RAW body, not the decoded text remark
+      // hands it — `&#64;Jane` is a mention to the renderer and to nobody
+      // else. See `remark-mention-chips.ts`.
+      remarkPlugins={[remarkBreaks, [remarkMentionChips, { content }]]}
       allowedElements={ALLOWED_ELEMENTS}
       unwrapDisallowed
       components={{
