@@ -1549,7 +1549,17 @@ export class ChatService {
     contentType: string,
     sizeBytes?: number,
   ) {
-    await this.assertChannelAccess(channelId, chapterId, userId);
+    // Authorized as a "post", for the same reason `editMessage` is: a signed
+    // URL lets the caller put bytes under this channel's storage prefix, so it
+    // must clear the gates that decide who may write here — the read-only /
+    // `announcements:post` gate, the Alumni lifecycle rule, and the
+    // archived-channel freeze. Issuing a *write* credential on a *read* check
+    // is the general form of the bug (#2186); the rule is that every step of a
+    // two-step write authorizes as the write, never as the read that precedes
+    // it. The mint is the first step and `sendMessage` is the second, so the
+    // two must agree — `chat.service.spec.ts` § "mint and send agree" is the
+    // test that keeps them agreeing.
+    await this.assertChannelAccess(channelId, chapterId, userId, 'post');
 
     const ext = filename.includes('.')
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
