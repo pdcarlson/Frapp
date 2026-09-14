@@ -63,7 +63,35 @@ fail() {
 # instead of taking down bringup for every session, including the ones that never touch
 # staging.
 cs_log "Probing deployed-environment egress..."
-bash "$ROOT/scripts/cloud-sandbox-egress-probe.sh" >/dev/null || true
+# stdout is the probe's human-readable summary and stays discarded — the manifest is the
+# interface. stderr is CAPTURED and replayed rather than left to flow: the probe fans out
+# seven curls in parallel, so its lines can interleave with anything else writing this log,
+# and capturing is what lets the checks below tell "the probe said nothing" from "the probe
+# said something". Replayed verbatim, because every line it emits already carries cs_log's
+# own [cloud-sandbox] tag and re-prefixing would double it.
+egress_err="$(mktemp 2>/dev/null)" || egress_err=""
+if [ -n "$egress_err" ]; then
+  bash "$ROOT/scripts/cloud-sandbox-egress-probe.sh" >/dev/null 2>"$egress_err"
+  egress_rc=$?
+  [ -s "$egress_err" ] && cat "$egress_err" >&2
+  rm -f "$egress_err"
+else
+  bash "$ROOT/scripts/cloud-sandbox-egress-probe.sh" >/dev/null
+  egress_rc=$?
+fi
+
+# The `|| true` this replaced reported NEITHER of the two things that can go wrong here, and
+# that silence is most of why #2205 survived four days: the probe was unparseable, bash exited
+# 2, and bringup discarded the exit code and the syntax error alike. Neither check is fatal —
+# egress is optional and AGENTS.md treats a bringup abort as an environment-config failure the
+# session cannot fix — but neither is silent any more.
+if [ "$egress_rc" -ne 0 ]; then
+  cs_log "WARN: the egress probe exited ${egress_rc}. Its header contracts it never to return non-zero, so treat this as a bug in the probe itself, not as an environment problem. Bringup continues."
+fi
+if [ ! -s "$ROOT/.cloud-sandbox-capabilities.json" ]; then
+  cs_log "WARN: no egress capability manifest at $ROOT/.cloud-sandbox-capabilities.json."
+  cs_log "WARN: the probe writes an UNKNOWN manifest even when it fails, so an ABSENT one means it never reached that point. Sessions are told to read that file instead of probing hosts by hand — until it exists, treat deployed-staging reachability as UNKNOWN (not as blocked). Re-run: bash scripts/cloud-sandbox-egress-probe.sh"
+fi
 
 # Write apps/api/.env.local and apps/web/.env.local from the live local Supabase status
 # (plus Stripe env vars for the API). Real Stripe test keys are used when present;

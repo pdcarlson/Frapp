@@ -57,6 +57,15 @@ is, because that same hook is what launches bringup about a second before the pr
 not evidence the probe did not run.** If the file is genuinely missing (laptop session, or bringup did not run),
 generate it: `bash scripts/cloud-sandbox-egress-probe.sh`.
 
+**Check `probe_ok` before anything else.** `false` means the probe could not run at all —
+`hosts[]` is empty and so are `staging_reachable` and `production_blocked_as_expected`. Those
+empty arrays look exactly like "nothing was reachable" and mean nothing of the kind: it is
+the inconclusive row below, applied to every host at once. Re-run the probe
+(`bash scripts/cloud-sandbox-egress-probe.sh`); if it still cannot run, say so in those
+words and treat the live check as **blocked**, never as failed.
+
+With `probe_ok: true`, read each host's `status`:
+
 | Manifest `status` | Meaning | Do |
 | ----------------- | ------- | -- |
 | `reachable` | the host answered (any HTTP code). `302` and `404` mean the *socket* worked, not that Signet HTML loaded. On staging web/landing a 302 is often Vercel Authentication — see [§3](#vercel-authentication) | Proceed to the next gate; do not claim the UI loaded |
