@@ -20,7 +20,24 @@ const QUICK_REACTIONS: readonly string[] = ["👍", "🙏", "✅", "🔥"] as co
 
 interface ReactionBarProps {
   reactions: ReactionState;
-  viewerId: string | null;
+  /**
+   * The viewer's `users.id`, known — `MessageItem` is the only caller and it is
+   * now reached only once identity has resolved (#2243).
+   *
+   * Non-nullable for the same reason the row's own prop is: a nullable viewer
+   * made `mine` below confidently `false`, so a chip the viewer had in fact
+   * reacted to drew unlit, unpressed, and labelled "Click to react."
+   *
+   * What that cost is *not* a duplicate reaction, and the distinction matters
+   * because two layers already prevent one. `react()` in
+   * `@repo/chat-core`'s `chat-client.ts` opens with `if (!ctx.userId) return`,
+   * and `ctx.userId` is this same unresolved viewer — so in that window the
+   * click was a silent no-op. Even with an id, the server inserts against a
+   * unique index on `(message_id, user_id, action_type)` and turns the conflict
+   * into `{ deduplicated: true }`. The defect was a chip that misreported the
+   * viewer's own state and then did nothing when pressed.
+   */
+  viewerId: string;
   onReact: (emoji: string) => void;
   onUnreact: (emoji: string) => void;
 }
@@ -67,7 +84,7 @@ export function ReactionChips({
       )}
     >
       {entries.map((group) => {
-        const mine = viewerId ? group.userIds.includes(viewerId) : false;
+        const mine = group.userIds.includes(viewerId);
         return (
           <button
             key={group.actionType}
@@ -115,9 +132,9 @@ export function ReactionQuickPick({
   return (
     <div className="flex items-center gap-1.5">
       {QUICK_REACTIONS.map((emoji) => {
-        const mine = viewerId
-          ? (reactions[actionTypeFromEmoji(emoji)] ?? []).includes(viewerId)
-          : false;
+        const mine = (reactions[actionTypeFromEmoji(emoji)] ?? []).includes(
+          viewerId,
+        );
         return (
           <button
             key={emoji}
