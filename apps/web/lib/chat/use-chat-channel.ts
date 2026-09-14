@@ -15,6 +15,7 @@ import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { useChannelDraft } from "./use-channel-draft";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
+import { asArray } from "@/lib/utils";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import {
   chatMessagesKey,
@@ -150,7 +151,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         { params: { path: { id: channelId }, query: { limit: 50 } } },
       );
       if (error) throw error;
-      const rows = Array.isArray(data) ? (data as RawChatMessage[]) : [];
+      const rows = asArray<RawChatMessage>(data);
       let cache = mergeServerRows(emptyCache(), rows);
       const messageIds = rows.map((row) => row.id).filter(Boolean);
       if (messageIds.length > 0) {
