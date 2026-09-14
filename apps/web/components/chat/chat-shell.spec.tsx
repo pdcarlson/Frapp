@@ -25,6 +25,7 @@ const {
   mockRefetch,
   mockUseChatChannel,
   mockComposerMount,
+  mockComposerMountProps,
   mockUseMyPermissions,
   searchHit,
 } = vi.hoisted(() => ({
@@ -32,6 +33,16 @@ const {
   mockRefetch: vi.fn(),
   mockUseChatChannel: vi.fn(),
   mockComposerMount: vi.fn(),
+  /**
+   * The props `<Composer>` was mounted with, captured at mount.
+   *
+   * Separate from `mockComposerMount` so its existing single-argument
+   * assertions keep reading cleanly. Captured at mount rather than read off the
+   * rendered DOM because that is the real component's semantics: `draft`
+   * becomes the editor's document and `claimShellFocus` is called once, both
+   * when Tiptap constructs the editor rather than during render.
+   */
+  mockComposerMountProps: vi.fn(),
   mockUseMyPermissions: vi.fn(() => ({
     data: { permissions: [] as string[] },
   })),
@@ -246,11 +257,18 @@ vi.mock("./channel-list", () => ({
 vi.mock("./composer", () => ({
   Composer: ({
     channelId,
+    draft,
+    claimShellFocus,
     onSend,
     replyTo,
     onCancelReply,
   }: {
     channelId: string;
+    // The shell-to-editor handoff (#2176) is entirely carried by these two:
+    // `draft` is what the real `useEditor` builds its document from, and
+    // `claimShellFocus` is the caret the shell's `<textarea>` was holding.
+    draft?: string;
+    claimShellFocus?: () => boolean;
     onSend?: (body: string, attachments: unknown[]) => void;
     replyTo?: {
       id: string;
@@ -264,10 +282,14 @@ vi.mock("./composer", () => ({
     // dep array would defeat by firing on every prop update too.
     useEffect(() => {
       mockComposerMount(channelId);
+      // Claimed here, not read in render — the real component calls this from
+      // Tiptap's `onCreate`, and the claim is what makes it one-shot.
+      mockComposerMountProps({ draft, focusClaimed: claimShellFocus?.() ?? false });
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     return (
-      <div data-testid="composer">
+      <div
+        data-testid="composer" data-draft={draft ?? ""}>
         {channelId}
         {/* The staged-reply seam (#489). The real Composer cannot be driven
             here (jsdom renders no ProseMirror view), so these expose the two
@@ -293,7 +315,26 @@ vi.mock("./composer", () => ({
       </div>
     );
   },
-  ComposerSkeleton: () => <div data-testid="composer-skeleton" />,
+  // A real `<textarea>`, not an inert box: what this suite asserts about
+  // `ComposerShell` is that the shell the cold load renders can be focused and
+  // typed into, and that what is typed reaches `<Composer>`. Its own rendering
+  // (geometry, Enter handling, surviving hydration) belongs to
+  // `composer.spec.tsx`, which drives the real component.
+  ComposerShell: ({
+    onTextChange,
+    onFocusChange,
+  }: {
+    onTextChange?: (text: string) => void;
+    onFocusChange?: (focused: boolean) => void;
+  }) => (
+    <textarea
+      data-testid="composer-shell"
+      aria-label="Message composer"
+      onChange={(event) => onTextChange?.(event.target.value)}
+      onFocus={() => onFocusChange?.(true)}
+      onBlur={() => onFocusChange?.(false)}
+    />
+  ),
 }));
 // The four header popovers are now four panels behind one `ChannelMenu` (the
 // `⋯` control), so the shell wires their jump callbacks through that one
@@ -388,7 +429,14 @@ vi.mock("./message-timeline", async () => {
 import { ChatShell } from "./chat-shell";
 
 function chatChannelResult(
-  overrides: Partial<{ isLoading: boolean; messages: typeof MESSAGES }> = {},
+  overrides: Partial<{
+    isLoading: boolean;
+    messages: typeof MESSAGES;
+    // The composer-shell handoff (#2176) runs through both of these: the shell
+    // writes with `setDraft`, and `draft` is what the editor is built from.
+    draft: string;
+    setDraft: (body: string) => void;
+  }> = {},
 ) {
   return {
     messages: overrides.messages ?? MESSAGES,
@@ -399,8 +447,8 @@ function chatChannelResult(
     unreact: vi.fn(),
     edit: vi.fn(),
     delete: vi.fn(),
-    draft: "",
-    setDraft: vi.fn(),
+    draft: overrides.draft ?? "",
+    setDraft: overrides.setDraft ?? vi.fn(),
     typingUsers: [],
     emitTyping: vi.fn(),
     connection: "live",
@@ -417,6 +465,7 @@ beforeEach(() => {
   mockUseChatChannel.mockReset();
   mockUseChatChannel.mockReturnValue(chatChannelResult());
   mockComposerMount.mockClear();
+  mockComposerMountProps.mockClear();
   mockUseMyPermissions.mockReset();
   mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
   mockBookmarkIsError.mockReturnValue(false);
@@ -1646,3 +1695,133 @@ describe("ChatShell narrow navigation (#2142)", () => {
   });
 });
 
+
+/**
+ * #2176: the composer shell, and its upgrade to the real editor.
+ *
+ * `1s` puts "composer shell" in the 0ms SSR set and budgets "composer focusable
+ * <= 400ms", but `<Composer>` is gated on `activeChannel` — derived from the
+ * channel list — so before this the budget was gated on a network round trip.
+ * These cases pin the two halves the shell cannot own itself: that what is
+ * typed into it reaches the channel's draft, and that focus follows it across
+ * the swap.
+ */
+describe("ChatShell composer shell and its upgrade (#2176)", () => {
+  afterEach(() => {
+    channelsQueryState.value = {};
+    chapterStoreState.value = "chapter-1";
+  });
+
+  it("puts a composer the member can type into on screen before the channel list resolves", () => {
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    expect(screen.getByTestId("composer-shell")).toBeInTheDocument();
+    // And not both at once — the real composer has no channel to address yet.
+    expect(screen.queryByTestId("composer")).toBeNull();
+  });
+
+  it("routes what is typed into the shell to the channel's draft", () => {
+    /*
+      `setDraft` and not a seed prop of its own. `useChatChannel` stores what it
+      is given whether or not there is a channel id and only masks `draft` until
+      there is one, so this single call is the entire handoff: the text is
+      already in place on the render that mounts `<Composer>`.
+    */
+    const setDraft = vi.fn();
+    mockUseChatChannel.mockReturnValue(chatChannelResult({ setDraft }));
+    channelsQueryState.value = { isPending: true, data: undefined };
+    render(<ChatShell />);
+
+    fireEvent.change(screen.getByTestId("composer-shell"), {
+      target: { value: "hello" },
+    });
+
+    expect(setDraft).toHaveBeenLastCalledWith("hello");
+  });
+
+  it("builds the editor from what was typed into the shell", () => {
+    // The other half of the handoff, from the editor's side: whatever
+    // `useChatChannel` is serving as `draft` when the channel lands is what
+    // `useEditor` builds its document from.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ draft: "typed while waiting" }),
+    );
+    render(<ChatShell />);
+
+    expect(mockComposerMountProps).toHaveBeenCalledWith(
+      expect.objectContaining({ draft: "typed while waiting" }),
+    );
+  });
+
+  it("carries focus into the editor when the member was typing in the shell", () => {
+    /*
+      Without this a member who starts typing during the channel round trip
+      loses focus to `document.body` the instant the list lands — mid-sentence,
+      and worse than the unfocusable skeleton this replaced.
+    */
+    channelsQueryState.value = { isPending: true, data: undefined };
+    const { rerender } = render(<ChatShell />);
+    fireEvent.focus(screen.getByTestId("composer-shell"));
+
+    channelsQueryState.value = {};
+    rerender(<ChatShell />);
+
+    expect(mockComposerMountProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusClaimed: true }),
+    );
+  });
+
+  it("does not take focus the member never gave the shell", () => {
+    // A member who is reading, or scrolling the channel rail, must not have the
+    // caret yanked into the composer when the list happens to land.
+    channelsQueryState.value = { isPending: true, data: undefined };
+    const { rerender } = render(<ChatShell />);
+
+    channelsQueryState.value = {};
+    rerender(<ChatShell />);
+
+    expect(mockComposerMountProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusClaimed: false }),
+    );
+  });
+
+  it("does not carry that focus into a later channel switch", () => {
+    // `chat-shell.tsx` keys `<Composer>` on channel id and name (#1014), so
+    // every switch is a fresh mount. Inheriting the shell's focus intent would
+    // pull the caret back into the composer on each one.
+    channelsQueryState.value = { isPending: true, data: undefined };
+    const { rerender } = render(<ChatShell />);
+    fireEvent.focus(screen.getByTestId("composer-shell"));
+
+    channelsQueryState.value = {};
+    rerender(<ChatShell />);
+    fireEvent.click(screen.getByTestId("pick-random"));
+
+    expect(mockComposerMountProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusClaimed: false }),
+    );
+  });
+
+  it("leaves no focusable composer in a state that will never get a channel", () => {
+    /*
+      A control with nowhere to send is the dead end the release gate forbids.
+      The shell earns its place only while something is still in flight; these
+      three states have settled with no channel to address.
+    */
+    for (const state of [
+      { isError: true, data: undefined },
+      { data: [], isPending: false },
+    ]) {
+      channelsQueryState.value = state;
+      const { unmount } = render(<ChatShell />);
+      expect(screen.queryByTestId("composer-shell")).toBeNull();
+      unmount();
+    }
+
+    chapterStoreState.value = null;
+    channelsQueryState.value = { data: [], isPending: false };
+    render(<ChatShell />);
+    expect(screen.queryByTestId("composer-shell")).toBeNull();
+  });
+});

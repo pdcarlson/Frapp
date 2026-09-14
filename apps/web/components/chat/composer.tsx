@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -44,7 +45,12 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 import { useToast } from "@/hooks/use-toast";
 import { readSignedUpload } from "@/lib/signed-upload";
-import { COLD_LOAD_MARKS, markColdLoad } from "@/lib/chat/cold-load-marks";
+import {
+  COLD_LOAD_MARKS,
+  markColdLoad,
+  markComposerFocusable,
+  noteComposerShellFocusable,
+} from "@/lib/chat/cold-load-marks";
 import {
   MAX_UPLOAD_LABEL,
   acceptAttribute,
@@ -63,33 +69,251 @@ import {
 } from "@repo/chat-integrations";
 
 /**
- * The composer's outer box with nothing live in it.
+ * The composer's geometry, in one place, so the shell and the real composer
+ * cannot drift apart.
  *
- * `1s` puts "composer shell" in the 0ms set beside the nav and the channel
- * column, and until this existed the thread column had nothing there during a
- * cold load: `chat-shell.tsx` gates `<Composer>` on `activeChannel`, which is
- * derived from the channel list, so no composer exists until that query
- * resolves. The timeline skeleton above it is bottom-aligned — chat opens at its
- * end — so the composer arriving pushed every placeholder row up by its own
- * height, a shift of over a hundred pixels directly above the composer, which is
- * the one place the contract budgets at zero.
+ * `1s` budgets **zero CLS above the composer**, and the composer is the bottom
+ * of a bottom-aligned column: chat opens at the end of the timeline, so a
+ * composer that changes height on arrival pushes every row above it. These four
+ * strings are the whole contract — the outer box, the framed well, the editable
+ * surface's height envelope, and the toolbar row — and both `ComposerShell` and
+ * `Composer` are built from them rather than from hand-copied class lists.
  *
- * It lives here rather than in `chat-shell.tsx` so there is one home for the
- * geometry. The classes below are the real composer's, and a change to either
- * that is not made to the other reintroduces exactly the shift this removes:
- * `border-t` + `p-3` outside, the `rounded-md border p-2` well, the editor's
- * `min-h-[40px]`, and the `mt-2` toolbar row at `h-8`.
- *
- * Deliberately inert and `aria-hidden`. A focusable-looking control that cannot
- * take a message is worse than an obvious placeholder, and the row is announced
- * once by the timeline's own status region rather than twice.
+ * They are constants rather than a shared wrapper component because the real
+ * composer's well also carries a focus ring and holds a reply strip and
+ * attachment chips above its editor. A wrapper that absorbed all of that would
+ * be the composer; a wrapper that absorbed only the outer `<div>` would leave
+ * the well — the part whose padding actually sets the height — free to drift.
  */
-export function ComposerSkeleton() {
+export const COMPOSER_BOX_CLASS = "border-t border-border p-3";
+export const COMPOSER_WELL_CLASS =
+  "rounded-md border border-input bg-surface-1 p-2 transition-colors";
+export const COMPOSER_INPUT_CLASS =
+  "min-h-[40px] max-h-40 overflow-y-auto text-base leading-[25px] focus:outline-none";
+/**
+ * The toolbar row's reserved height, for the shell that has no controls to put
+ * on it.
+ *
+ * `pointer-coarse:h-11` is not decoration and is not what `ComposerSkeleton`
+ * reserved: `CHAT_CONTROL_CLASS` is `h-8 pointer-coarse:h-11` and the Send
+ * button carries the same pair, so on a touch device the real row is 44px and
+ * the old skeleton reserved 32px — a 12px shift directly above the composer on
+ * exactly the devices least able to absorb it. `Composer` does not use this
+ * constant; its row's height is intrinsic. See the comment at that row.
+ */
+export const COMPOSER_TOOLBAR_CLASS = "mt-2 h-8 pointer-coarse:h-11";
+
+/** The accessible name the shell and the real editor share — see `ComposerShell`. */
+const COMPOSER_LABEL = "Message composer";
+
+/**
+ * Grow a `<textarea>` to its content, the way the editor that replaces it does.
+ *
+ * Not cosmetic, and not optional. `COMPOSER_INPUT_CLASS` gives both surfaces the
+ * same *envelope* — `min-h-[40px] max-h-40` — but a textarea does not grow
+ * inside it on its own, while ProseMirror's contenteditable does. Left alone,
+ * the shell stays one line tall while the member types five, and then
+ * `<Composer>` mounts, renders those five lines at their real height, and
+ * pushes the whole bottom-aligned timeline up — the exact shift `1s` budgets at
+ * zero and this component exists to remove. `max-h-40` still caps it in CSS, so
+ * past ten lines both surfaces scroll instead.
+ */
+function fitToContent(node: HTMLTextAreaElement): void {
+  node.style.height = "auto";
+  node.style.height = `${node.scrollHeight}px`;
+}
+
+/**
+ * The composer, before there is a channel to send to: a real `<textarea>` that
+ * takes focus and takes text, and hands both to `Composer` when the channel
+ * resolves.
+ *
+ * ## Why this exists at all
+ *
+ * `1s` puts **"composer shell"** in the 0ms SSR set beside the nav and the
+ * channel column — "static markup in the RSC payload; no client query gates
+ * it" — and budgets **composer focusable <= 400ms**. `chat-shell.tsx` gates
+ * `<Composer>` on `activeChannel`, which is derived from the channel list, so
+ * before #2176 nothing in the thread column could take focus until
+ * `GET /v1/channels` resolved. The budget was therefore gated on a network
+ * round trip, and with no persisted read cache
+ * (`spec/ui/resilience/performance-budgets.md` § What is not measured, and why) that
+ * round trip happens on every cold load.
+ *
+ * ## Why a `<textarea>` and not an early Tiptap editor
+ *
+ * Because this one is focusable *before hydration*. It is ordinary markup in
+ * the SSR payload, so the browser can focus it and accept keystrokes from first
+ * paint — with `/chat` carrying ~825 KB of its own eager JS, that is a long way
+ * ahead of the first client commit. Tiptap cannot do this: `useEditor` runs
+ * `immediatelyRender: false`, so no contenteditable exists until the editor is
+ * constructed on the client, and constructing one here would mean paying for
+ * ProseMirror twice and then throwing the first one away.
+ *
+ * ## Why it is uncontrolled
+ *
+ * No `value` prop, deliberately. Text typed before hydration lives only in the
+ * DOM node, and an uncontrolled `<textarea>` is the one shape React will not
+ * reconcile against a prop it thinks is authoritative. The parent still learns
+ * every keystroke through `onTextChange`, which is what survives this
+ * component's own unmount — see `chat-shell.tsx`, which holds the text, not
+ * this component.
+ *
+ * ## Why it does not submit
+ *
+ * There is no channel yet, so there is nothing a send could be addressed to.
+ * Enter is swallowed rather than allowed through: letting it insert a newline
+ * would silently convert "the member pressed send" into a stray leading blank
+ * line that arrives in the editor a moment later. Shift+Enter still breaks a
+ * line, which is what it does in the real composer.
+ *
+ * This replaces the inert `aria-hidden` `ComposerSkeleton` that #2145 added to
+ * hold the box open. That component's objection to a focusable placeholder —
+ * "a focusable-looking control that cannot take a message is worse than an
+ * obvious placeholder" — is answered rather than overruled: this one takes the
+ * message.
+ */
+export function ComposerShell({
+  onTextChange,
+  onFocusChange,
+}: {
+  /** Every keystroke, so the text outlives this component's unmount. */
+  onTextChange?: (text: string) => void;
+  /** Focus entering or leaving, so the upgrade knows whether to carry focus. */
+  onFocusChange?: (focused: boolean) => void;
+}) {
+  const input = useRef<HTMLTextAreaElement | null>(null);
+  /**
+   * Whether the member has pressed Enter with nothing to send to yet.
+   *
+   * `connection-state.md` does not allow a control to swallow an activation
+   * silently — "a control that silently ignores a click is the dead control",
+   * and the reason has to be *on the control* rather than a sentence somewhere
+   * near it. The `aria-describedby` below carries it for a screen reader from
+   * the first render; this makes it visible once the member has actually asked
+   * for something this composer cannot do yet.
+   */
+  const [pressedEnter, setPressedEnter] = useState(false);
+  const hintId = useId();
+
+  useEffect(() => {
+    /*
+      Recorded on mount rather than emitted on mount, and `cold-load-marks.ts`
+      owns why: the timestamp is the honest answer to "composer focusable", but
+      whether this load ever had a composer at all is not known until `can_post`
+      arrives with the channel. The mark is emitted later, back-dated to here.
+    */
+    noteComposerShellFocusable();
+
+    /*
+      Adopt whatever happened before React was here.
+
+      This is the half that makes "focusable at first paint" worth anything.
+      The textarea is in the SSR payload, so a member can focus it and type into
+      it while the chat chunk is still parsing — but `onChange` and `onFocus`
+      are React's, and React is not attached yet, so those keystrokes and that
+      focus exist only in the DOM. Nothing downstream would ever hear about
+      them, and the text would be dropped by the upgrade it was typed to
+      survive.
+
+      Reading the node once on mount is what bridges it. It is also why this
+      component is uncontrolled: React had to leave the value alone for there to
+      be anything here to read.
+    */
+    const node = input.current;
+    if (!node) return;
+    if (node.value) {
+      onTextChange?.(node.value);
+      /*
+        Pre-hydration text can be several lines, and a textarea cannot grow
+        without JS — so it has been scrolling inside a 40px box since the member
+        typed it, and one reflow when the bundle lands is unavoidable. Doing it
+        here takes that reflow at hydration rather than deferring it to the
+        Tiptap upgrade, where it would land on top of the swap. Not a
+        `useLayoutEffect`: this component renders on the server, where React
+        warns about one, and the reflow happens either way.
+      */
+      fitToContent(node);
+    }
+    if (document.activeElement === node) onFocusChange?.(true);
+    // Mount only, deliberately: this is about the gap before hydration, and
+    // re-running it on a changed callback would re-report stale keystrokes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
-    <div className="border-t border-border p-3" aria-hidden="true">
-      <div className="rounded-md border border-input bg-surface-1 p-2">
-        <div className="min-h-[40px]" />
-        <div className="mt-2 h-8" />
+    <div className={COMPOSER_BOX_CLASS}>
+      <div className={cn(COMPOSER_WELL_CLASS, FOCUS_RING_WITHIN)}>
+        <textarea
+          ref={input}
+          // `rows={1}` plus the shared min-height, not a rows-based height:
+          // `min-h-[40px]` is what the real editor uses, and matching it is the
+          // whole CLS argument above.
+          rows={1}
+          aria-label={COMPOSER_LABEL}
+          placeholder="Write a message"
+          // Not `composerPlaceholder(...)`: that needs a channel name, and the
+          // channel is exactly what has not arrived. The text changes once on
+          // upgrade, inside a box whose size does not.
+          className={cn(
+            COMPOSER_INPUT_CLASS,
+            "block w-full resize-none border-0 bg-transparent p-0 placeholder:text-muted-foreground",
+          )}
+          aria-describedby={hintId}
+          onChange={(event) => {
+            fitToContent(event.currentTarget);
+            onTextChange?.(event.target.value);
+          }}
+          onFocus={() => onFocusChange?.(true)}
+          onBlur={() => onFocusChange?.(false)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            /*
+              Never during IME composition. There, Enter commits the candidate
+              the member is composing — swallowing it makes Japanese, Chinese
+              and Korean input impossible to complete. `createSubmitKeymap`
+              below avoids this by being a ProseMirror extension with real
+              composition state; a DOM `keydown` is the "flaky" path its comment
+              warns about, so it has to ask.
+            */
+            if (event.nativeEvent.isComposing) return;
+            /*
+              Shift+Enter is swallowed too, which the real composer does not do.
+              A newline here would not survive the handoff intact:
+              `buildDocFromPlainText` splits the draft into one paragraph per
+              line and Tiptap's `getText` rejoins blocks with its default
+              `"\n\n"`, so every line break the shell contributes comes back
+              doubled — and doubles again on each save/restore cycle. That
+              asymmetry is older than this component and belongs to the draft
+              path generally; what is new is the shell being able to feed it, so
+              the shell stays single-line rather than widening the fix.
+            */
+            event.preventDefault();
+            setPressedEnter(true);
+          }}
+        />
+        {/*
+          The real toolbar's controls all need a channel (attach, slash
+          palette, send), so none of them can be here — a row of dead buttons is
+          the dead-end control the release gate forbids. The row is reserved
+          anyway, for the geometry, which leaves exactly the space this answer
+          needs: showing it costs no layout shift because the height was already
+          being held.
+        */}
+        <div className={cn(COMPOSER_TOOLBAR_CLASS, "flex items-center")}>
+          <p
+            id={hintId}
+            className={cn(
+              "truncate text-[12.5px] text-muted-foreground",
+              // Present from the first render either way, so `aria-describedby`
+              // always resolves and a screen reader hears why the composer
+              // cannot send before trying it.
+              !pressedEnter && "sr-only",
+            )}
+          >
+            Still opening your channels — you can keep typing.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -216,6 +440,24 @@ interface ComposerBaseProps {
    * pressing Enter offline silently discarded what you had typed.
    */
   isOffline?: boolean;
+  /**
+   * Ask whether this editor should take the caret the composer shell was
+   * holding — and spend the answer.
+   *
+   * A function rather than a boolean because the answer is true at most once
+   * per document, and the thing that must not happen is a later mount
+   * inheriting it: `<Composer>` is keyed on channel id and name (#1014), so
+   * every channel switch is a fresh editor, and one that grabbed focus would
+   * fight a member who clicked a channel and then reached for the timeline.
+   * `chat-shell.tsx` owns the flag and clears it on read.
+   *
+   * Called from `onCreate`, never during render. Without it, a member who
+   * starts typing during the channel-list round trip loses focus to
+   * `document.body` the instant the channel resolves — worse than the
+   * unfocusable skeleton #2176 replaced, because it interrupts someone
+   * mid-sentence.
+   */
+  claimShellFocus?: () => boolean;
 }
 
 /**
@@ -462,6 +704,7 @@ export function Composer({
   isOffline,
   replyTo,
   onCancelReply,
+  claimShellFocus,
 }: ComposerProps) {
   const { toast } = useToast();
   const requestUploadUrl = useRequestChatUploadUrl();
@@ -535,9 +778,8 @@ export function Composer({
         // `prose prose-sm` used to lead this list and did nothing at all —
         // `@tailwindcss/typography` is not installed in this app or in the
         // shared preset, so both classes compiled to no rules.
-        class:
-          "min-h-[40px] max-h-40 overflow-y-auto text-base leading-[25px] focus:outline-none",
-        "aria-label": "Message composer",
+        class: COMPOSER_INPUT_CLASS,
+        "aria-label": COMPOSER_LABEL,
       },
     },
     onUpdate({ editor }) {
@@ -561,30 +803,64 @@ export function Composer({
         setPalette((prev) => (prev.open ? { open: false, query: "" } : prev));
       }
     },
-    onCreate() {
+    onCreate({ editor }) {
       /*
-        `1s`: "composer focusable <= 400ms". This is the moment it becomes true —
-        `immediatelyRender: false` means the editor is null through the first
-        render, so a member cannot type until ProseMirror has mounted its
-        contenteditable, whatever the shell around it looks like.
+        Two milestones, one guard, and they are no longer the same number.
 
+        `composer-editor-ready` is this moment: `immediatelyRender: false` means
+        the editor is null through the first render, so rich text, mentions and
+        send do not exist until ProseMirror has mounted its contenteditable.
         `onCreate` rather than an effect on `editor`, because an effect fires on
         the render *after* the editor exists — a frame later, on the wrong side
         of the thing being measured.
 
-        The `resolvedCanPost` guard is not belt-and-braces. `useEditor` builds an
-        Editor from its own effect whether or not `<EditorContent>` is ever
-        rendered, so without it this fires in every channel the member cannot
-        post in — and the early return ~400 lines down means no contenteditable
-        exists in the document at all there. An alumnus, for whom ordinary
-        channels come back `can_post: false`, would have recorded "composer
-        focusable" on a load where the composer never was; and because the mark
-        is once-per-document, the real one in `#alumni` a moment later would then
+        `composer-focusable` is no longer this moment. `1s` budgets "composer
+        focusable <= 400ms" and puts "composer shell" in its 0ms set, and since
+        #2176 `ComposerShell` satisfies both without waiting for a channel.
+        `markComposerFocusable` back-dates the mark to when that shell mounted;
+        it is called from here only because *here* is where `can_post` is known.
+
+        That `resolvedCanPost` guard is not belt-and-braces, and it is why the
+        two calls sit together. `useEditor` builds an Editor from its own effect
+        whether or not `<EditorContent>` is ever rendered, so without it this
+        fires in every channel the member cannot post in — and the early return
+        ~400 lines down means no composer exists in the document at all there.
+        An alumnus, for whom ordinary channels come back `can_post: false`, would
+        record both milestones on a load that ended with an explanatory
+        paragraph where the composer should be; and because the marks are
+        once-per-document, the real ones in `#alumni` a moment later would then
         never be recorded. The budget would report success on exactly the loads
         that never met it.
       */
-      if (resolvedCanPost) {
-        markColdLoad(COLD_LOAD_MARKS.composerFocusable);
+      if (!resolvedCanPost) {
+        /*
+          Nothing to record and nothing to focus — and, critically, the claim
+          below must not be *spent* here either. `useEditor` builds an Editor
+          whether or not `<EditorContent>` is ever rendered, so this `onCreate`
+          runs for the alumnus whose `#general` came back `can_post: false`,
+          where the early return further down renders an explanatory paragraph
+          and no contenteditable at all. Claiming there would call `.focus()` on
+          a node that is not in the document (a no-op, so the caret lands on
+          `document.body`) and leave the claim false, so the real composer in
+          `#alumni` a moment later could not take it. That is the same failure
+          the marks are guarded against, one `if` further down.
+        */
+        return;
+      }
+      markComposerFocusable();
+      markColdLoad(COLD_LOAD_MARKS.composerEditorReady);
+      /*
+        Take the caret the shell was holding, if it was holding it.
+
+        `"end"` and not the default: this editor was built from `draft`, which
+        on the upgrade path is whatever the member typed into the shell, so the
+        caret belongs after their words rather than at position zero in the
+        middle of them. Here rather than `useEditor`'s `autofocus` option
+        because the answer is only correct once and reading it during render
+        would spend it on every re-render that happens to come first.
+      */
+      if (claimShellFocus?.()) {
+        editor.commands.focus("end");
       }
     },
     immediatelyRender: false,
@@ -941,7 +1217,7 @@ export function Composer({
   const attachPending = requestUploadUrl.isPending || uploadSignedUrl.isPending;
 
   return (
-    <div className="border-t border-border p-3" onKeyDown={handleHostKey}>
+    <div className={COMPOSER_BOX_CLASS} onKeyDown={handleHostKey}>
       {/*
         The well is `--surface-1` on the thread's `--background`, per the s05
         composer — one step up from the floor it sits on, which is how elevation
@@ -953,10 +1229,7 @@ export function Composer({
         composer had no visible focus indicator at all.
       */}
       <div
-        className={cn(
-          "rounded-md border border-input bg-surface-1 p-2 transition-colors",
-          FOCUS_RING_WITHIN,
-        )}
+        className={cn(COMPOSER_WELL_CLASS, FOCUS_RING_WITHIN)}
       >
         {/*
           The staged reply, above the input and above the attachment chips —
@@ -1019,6 +1292,14 @@ export function Composer({
           </ul>
         ) : null}
         <EditorContent editor={editor} />
+        {/*
+          No `COMPOSER_TOOLBAR_CLASS` here, and that is deliberate: this row's
+          height is intrinsic — `CHAT_CONTROL_CLASS` is `h-8` and
+          `pointer-coarse:h-11`, and the Send button matches. Pinning it to the
+          shell's reserved height would cap the coarse-pointer row at 32px and
+          overflow every touch target on it. The constant reserves what this row
+          *comes out as*; it does not set it.
+        */}
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             <Popover>
