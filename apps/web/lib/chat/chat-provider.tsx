@@ -25,6 +25,7 @@ import { flushOutbox } from "@repo/chat-core/chat-client";
 import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
 import { useFirstChunkCache } from "./use-first-chunk-cache";
+import { CachedViewerIdProvider } from "./viewer-id";
 import type { RawChatMessage } from "@repo/chat-core/types";
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
@@ -57,8 +58,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     surface, not once per pane, and because this is already the component that
     owns chat's boot-time side effects. It renders nothing and blocks nothing —
     a cold load with an empty cache is exactly the cold load we had before.
+
+    It also hands back the viewer's cached `users.id` (#2249), published below so
+    the timeline can attribute those rows without waiting on `GET /v1/users/me`.
+    One read, one commit: the id and the rows it places come out of the same
+    Dexie transaction, so there is no pass where the surface holds cached history
+    it cannot put a side on.
   */
-  useFirstChunkCache();
+  const cachedViewerId = useFirstChunkCache();
 
   // Configure the realtime manager exactly once per mount. Manager is a
   // module singleton; this just rebinds it to the current QueryClient /
@@ -122,5 +129,22 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     });
   }, [queryClient, apiClient, supabase, userId, toast, track, outbox]);
 
-  return <>{children}</>;
+  /*
+    Only the *cached* half is published; `useChatViewerId` layers the live value
+    over it. `viewer-id.tsx` has the argument — the short version is that a
+    context carrying the resolved id would hand `null` to anything rendered
+    outside this provider, which would be strictly worse than the behaviour this
+    change is replacing.
+
+    The live id above is **not** merged in here on purpose. It feeds
+    `chatRealtime.configure` and the outbox flush, which are writes — a queued
+    message's `senderId`, a reaction's `user_id`, a presence `track()` — and
+    those keep waiting for identity to actually resolve. A cached id is good
+    enough to choose a bubble's side; it is not a thing to sign a send with.
+  */
+  return (
+    <CachedViewerIdProvider value={cachedViewerId}>
+      {children}
+    </CachedViewerIdProvider>
+  );
 }

@@ -49,7 +49,27 @@ export function rendersAsBubble(message: { kind?: string | null }): boolean {
 
 export interface MessageRendererProps {
   message: ChatMessage;
-  viewerId: string | null;
+  /**
+   * The signed-in member's `users.id`, and it is **known** — never `null`.
+   *
+   * Non-nullable for the same reason `MessageItemProps.viewerId` is (#2255):
+   * `MessageItem` is the only caller, it is rendered only from behind
+   * `message-timeline.tsx`'s identity gate, and it already guarantees a resolved
+   * id. The nullable type was the last place in this subtree where an
+   * unresolved viewer could arrive and be read as a confident answer about one
+   * — and the cards below do read it that way: `poll-card` would tell a member
+   * who voted that they did not, and `task-card` would offer a `tasks:manage`
+   * viewer the Confirm control on their own completed task, which the server
+   * refuses (#1056).
+   *
+   * That is not reachable today, because nothing renders a card outside the
+   * gate. It typechecked, though, and four sibling surfaces
+   * (`pins-popover`, `bookmarks-popover`, `chat-search-popover`,
+   * `chat-admin-page`) already pass a literal `null` viewer to message chrome
+   * on purpose — so the next caller reaching for one of these cards from one of
+   * those would have compiled clean. Now it does not.
+   */
+  viewerId: string;
   isSelf: boolean;
   isConfirmed: boolean;
   onAct: (
