@@ -122,7 +122,6 @@ export function markColdLoad(
   */
   if (typeof window === "undefined") return false;
   if (recorded.has(mark)) return false;
-  recorded.add(mark);
 
   try {
     const api = window.performance;
@@ -132,15 +131,27 @@ export function markColdLoad(
     // from the time origin — navigation start on a cold load, which is the
     // interval every `1s` budget is stated against. Older browsers return
     // nothing; `now()` is the same clock and the same origin.
+    //
     // `startTime` is User Timing Level 3 and is how a milestone that happened
-    // earlier than its emission is recorded honestly rather than late. A
-    // browser too old to accept the options bag throws, and the `catch` below
-    // turns that into "no mark" rather than a wrong one.
+    // earlier than its emission is recorded honestly rather than late.
     const entry =
       options?.at === undefined
         ? api.mark(mark)
         : api.mark(mark, { startTime: options.at });
-    const msFromTimeOrigin = options?.at ?? entry?.startTime ?? api.now();
+
+    /*
+      Read the timestamp back off the entry rather than trusting `options.at`,
+      and the difference is not pedantry.
+
+      A UA that predates the options bag does not throw on it — WebIDL says an
+      unknown trailing argument is ignored — so it creates the mark at *now* and
+      returns happily. Trusting `options.at` there would ship a mark at 1800ms
+      and a `detail` claiming 350ms: two numbers in the same span that disagree,
+      with the channel round trip back inside the one Sentry charts. Reading the
+      entry makes the two agree in every case — precisely back-dated where the
+      UA supports it, honestly late where it does not.
+    */
+    const msFromTimeOrigin = entry?.startTime ?? options?.at ?? api.now();
 
     /*
       `detail` is not decoration, and this is the subtle part of the file.
@@ -164,6 +175,25 @@ export function markColdLoad(
       Locally the `measure` entry's own `duration` is already correct, and that
       is what devtools and `getEntriesByName` show.
     */
+    /*
+      Latched here — after the `mark` exists, before the `measure` is attempted.
+
+      Both neighbours are wrong. Latching before the `try` (which is what this
+      did) meant a `performance` disabled by privacy tooling consumed the
+      milestone's once-per-document slot while emitting nothing, and no later
+      call could retry; `composer-focusable` now comes from an `onCreate` that
+      runs again on the next channel, so that retry is real. Latching after the
+      `measure` is wrong the other way: an engine with the `mark` options bag
+      but not the `measure` one (Safari 14.0 coerces the object and throws)
+      would leave the name unlatched with a mark already on the timeline, and
+      every channel switch would append another — ten duplicate spans on the
+      pageload transaction, against this module's own once-per-page rule.
+
+      The mark is the milestone. Once it is on the timeline the slot is spent.
+    */
+    recorded.add(mark);
+    // The measure is what makes it legible as a duration, and is best-effort
+    // for the same reason everything here is: it is not worth an exception.
     api.measure(mark, { start: 0, end: mark, detail: { msFromTimeOrigin } });
     return true;
   } catch {

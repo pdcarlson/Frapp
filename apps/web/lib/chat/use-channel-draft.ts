@@ -73,6 +73,35 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
    * first channel id to arrive and is never true again.
    */
   const typedBeforeChannel = useRef(false);
+  /**
+   * A mirror of `draftState` that callbacks can read.
+   *
+   * The restore below has to settle two texts against each other from inside a
+   * promise, and a promise created in an effect closes over the render that
+   * created it. It must emphatically **not** read the shell's last keystroke:
+   * by the time Dexie answers, the editor has mounted and the member may have
+   * kept typing into it for a hundred milliseconds, and settling against the
+   * older value would throw all of that away and move their caret.
+   */
+  const latest = useRef("");
+  /**
+   * Bumped whenever something invalidates an in-flight Dexie restore.
+   *
+   * A send is the case that matters — and the *only* one. `loadDraft` is
+   * asynchronous (the first `getChatDB()` opens IndexedDB, routinely tens of
+   * milliseconds on a cold load) and the composer is usable before it answers,
+   * which is the whole point of the shell. A member who types and presses Enter
+   * straight away gets their message posted and the draft cleared, and then the
+   * restore lands and puts the text they just sent back into the composer,
+   * persisted. Comparing the epoch is how the restore learns it is answering a
+   * question nobody is asking any more.
+   *
+   * Deliberately not bumped by `cancelPendingSave`, which `setDraft` calls on
+   * every keystroke: doing that made the first character typed after the
+   * handoff cancel the restore, so the saved draft the settle below exists to
+   * preserve was dropped and then overwritten by the next debounced write.
+   */
+  const restoreEpoch = useRef(0);
 
   useEffect(() => {
     if (!channelId) return;
@@ -81,14 +110,20 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
       asynchronous restore below can race it. The text is already in
       `draftState`; all that is missing is the record of whose it is.
     */
-    if (typedBeforeChannel.current) {
+    const claimedFromShell = typedBeforeChannel.current;
+    if (claimedFromShell) {
       typedBeforeChannel.current = false;
       typedFor.current = channelId;
     }
     let cancelled = false;
+    const epoch = restoreEpoch.current;
     loadDraft(channelId)
       .then((body) => {
         if (cancelled) return;
+        // A send (or an explicit cancel) happened while this was in flight;
+        // whatever was on disk when it started is no longer what the composer
+        // should show.
+        if (restoreEpoch.current !== epoch) return;
         /*
           A persisted draft never overwrites text the member has already typed
           for this same channel.
@@ -97,8 +132,55 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
           holding the *outgoing* channel's text across a switch. That case has a
           different id in `typedFor` and is deliberately left alone here.
         */
-        if (typedFor.current === channelId) return;
-        setDraftState(body);
+        if (typedFor.current !== channelId) {
+          latest.current = body;
+          setDraftState(body);
+          return;
+        }
+        if (!claimedFromShell) return;
+        /*
+          Settle the shell's text against whatever was saved — and then persist
+          the result, which is the only moment it is safe to.
+
+          Two things would otherwise be destroyed here, quietly.
+
+          One: a saved draft the member was never shown. The shell cannot
+          display one, because it does not know the channel yet — so a member
+          returning to a half-written message sees an empty-looking composer,
+          types one character while the list loads, and that character replaces
+          yesterday's paragraph. Neither text can be dropped, so neither is: the
+          saved draft is restored and what they just typed follows it.
+          Surprising is a fair criticism of that; losing one of them silently is
+          not a trade this can make.
+
+          Two: the shell's own text, on a channel the member cannot post in.
+          `setDraft` schedules no write while `channelId` is null, and if the
+          resolved channel comes back `can_post: false` there is no editor to
+          fire another keystroke — so the text lives only in memory and the next
+          channel switch drops it. Writing it here gives it the same durability
+          it would have had if it had been typed a second later.
+
+          The write waits until now on purpose: `loadDraft` is still in flight
+          above, and saving at claim time would overwrite the very draft this is
+          trying not to lose.
+        */
+        const typed = latest.current;
+        const settled =
+          body && typed && typed !== body ? `${body}\n${typed}` : typed || body;
+        // Re-rendering for an unchanged value is waste, but the write below is
+        // not conditional on it: the common shell handoff settles to exactly
+        // what is already on screen and is precisely the case that still has
+        // nothing on disk.
+        if (settled !== typed) {
+          latest.current = settled;
+          setDraftState(settled);
+        }
+        if (settled && settled !== body) {
+          void saveDraft(channelId, settled).catch(() => {
+            // Best-effort, exactly like every other write here: a draft that
+            // could not be persisted is not worth breaking the channel for.
+          });
+        }
       })
       .catch((err) => {
         // IndexedDB read can throw in private mode / quota issues — degrade to
@@ -107,6 +189,19 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
       });
     return () => {
       cancelled = true;
+      /*
+        The claim is void the moment we leave the channel, and forgetting this
+        is worse than never having guarded at all.
+
+        `typedFor` means "the member typed this text, for this channel, during
+        this session". Once `channelId` changes, `draftState` belongs to
+        whatever channel comes next — so a stale claim would suppress the
+        restore on the way *back*. Type in `#general`, visit `#random`, return:
+        `loadDraft("general")` would resolve with the real draft and be
+        discarded because `typedFor` still said "general", leaving `#random`'s
+        text sitting in `#general`'s composer, ready to be sent there.
+      */
+      typedFor.current = null;
     };
   }, [channelId]);
 
@@ -129,6 +224,7 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
 
   const setDraft = useCallback(
     (body: string) => {
+      latest.current = body;
       setDraftState(body);
       if (!channelId) {
         // The composer shell, mid cold load. There is nothing to attribute the
@@ -140,13 +236,24 @@ export function useChannelDraft(channelId: string | null): ChannelDraft {
       typedFor.current = channelId;
       cancelPendingSave();
       saveTimer.current = setTimeout(() => {
-        void saveDraft(channelId, body);
+        // `.catch` and not a bare `void`: `db.drafts.put` rejects under storage
+        // pressure and in Safari's private mode, and an unhandled rejection
+        // here reaches Sentry as an unhandled error once per typing burst,
+        // carrying no channel context and describing nothing anyone can act on.
+        void saveDraft(channelId, body).catch(() => {
+          // Best-effort. The draft is still in memory; losing the write is not
+          // worth an error report.
+        });
       }, SAVE_DEBOUNCE_MS);
+
     },
     [channelId, cancelPendingSave],
   );
 
   const clearAfterSend = useCallback(async () => {
+    restoreEpoch.current += 1;
+    typedBeforeChannel.current = false;
+    latest.current = "";
     setDraftState("");
     if (!channelId) return;
     // Same Dexie drafts table `sendMessage` already cleared best-effort. A

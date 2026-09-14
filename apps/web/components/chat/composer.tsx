@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -86,7 +87,7 @@ import {
  */
 export const COMPOSER_BOX_CLASS = "border-t border-border p-3";
 export const COMPOSER_WELL_CLASS =
-  "rounded-md border border-input bg-surface-1 p-2";
+  "rounded-md border border-input bg-surface-1 p-2 transition-colors";
 export const COMPOSER_INPUT_CLASS =
   "min-h-[40px] max-h-40 overflow-y-auto text-base leading-[25px] focus:outline-none";
 /**
@@ -106,6 +107,23 @@ export const COMPOSER_TOOLBAR_CLASS = "mt-2 h-8 pointer-coarse:h-11";
 const COMPOSER_LABEL = "Message composer";
 
 /**
+ * Grow a `<textarea>` to its content, the way the editor that replaces it does.
+ *
+ * Not cosmetic, and not optional. `COMPOSER_INPUT_CLASS` gives both surfaces the
+ * same *envelope* — `min-h-[40px] max-h-40` — but a textarea does not grow
+ * inside it on its own, while ProseMirror's contenteditable does. Left alone,
+ * the shell stays one line tall while the member types five, and then
+ * `<Composer>` mounts, renders those five lines at their real height, and
+ * pushes the whole bottom-aligned timeline up — the exact shift `1s` budgets at
+ * zero and this component exists to remove. `max-h-40` still caps it in CSS, so
+ * past ten lines both surfaces scroll instead.
+ */
+function fitToContent(node: HTMLTextAreaElement): void {
+  node.style.height = "auto";
+  node.style.height = `${node.scrollHeight}px`;
+}
+
+/**
  * The composer, before there is a channel to send to: a real `<textarea>` that
  * takes focus and takes text, and hands both to `Composer` when the channel
  * resolves.
@@ -119,14 +137,14 @@ const COMPOSER_LABEL = "Message composer";
  * before #2176 nothing in the thread column could take focus until
  * `GET /v1/channels` resolved. The budget was therefore gated on a network
  * round trip, and with no persisted read cache
- * (`spec/ui/resilience/performance-budgets.md` § What is not measured) that
+ * (`spec/ui/resilience/performance-budgets.md` § What is not measured, and why) that
  * round trip happens on every cold load.
  *
  * ## Why a `<textarea>` and not an early Tiptap editor
  *
  * Because this one is focusable *before hydration*. It is ordinary markup in
  * the SSR payload, so the browser can focus it and accept keystrokes from first
- * paint — with `/chat` carrying ~827 KB of eager chat chunk, that is a long way
+ * paint — with `/chat` carrying ~825 KB of its own eager JS, that is a long way
  * ahead of the first client commit. Tiptap cannot do this: `useEditor` runs
  * `immediatelyRender: false`, so no contenteditable exists until the editor is
  * constructed on the client, and constructing one here would mean paying for
@@ -165,6 +183,18 @@ export function ComposerShell({
   onFocusChange?: (focused: boolean) => void;
 }) {
   const input = useRef<HTMLTextAreaElement | null>(null);
+  /**
+   * Whether the member has pressed Enter with nothing to send to yet.
+   *
+   * `connection-state.md` does not allow a control to swallow an activation
+   * silently — "a control that silently ignores a click is the dead control",
+   * and the reason has to be *on the control* rather than a sentence somewhere
+   * near it. The `aria-describedby` below carries it for a screen reader from
+   * the first render; this makes it visible once the member has actually asked
+   * for something this composer cannot do yet.
+   */
+  const [pressedEnter, setPressedEnter] = useState(false);
+  const hintId = useId();
 
   useEffect(() => {
     /*
@@ -192,7 +222,19 @@ export function ComposerShell({
     */
     const node = input.current;
     if (!node) return;
-    if (node.value) onTextChange?.(node.value);
+    if (node.value) {
+      onTextChange?.(node.value);
+      /*
+        Pre-hydration text can be several lines, and a textarea cannot grow
+        without JS — so it has been scrolling inside a 40px box since the member
+        typed it, and one reflow when the bundle lands is unavoidable. Doing it
+        here takes that reflow at hydration rather than deferring it to the
+        Tiptap upgrade, where it would land on top of the swap. Not a
+        `useLayoutEffect`: this component renders on the server, where React
+        warns about one, and the reflow happens either way.
+      */
+      fitToContent(node);
+    }
     if (document.activeElement === node) onFocusChange?.(true);
     // Mount only, deliberately: this is about the gap before hydration, and
     // re-running it on a changed callback would re-report stale keystrokes.
@@ -217,19 +259,61 @@ export function ComposerShell({
             COMPOSER_INPUT_CLASS,
             "block w-full resize-none border-0 bg-transparent p-0 placeholder:text-muted-foreground",
           )}
-          onChange={(event) => onTextChange?.(event.target.value)}
+          aria-describedby={hintId}
+          onChange={(event) => {
+            fitToContent(event.currentTarget);
+            onTextChange?.(event.target.value);
+          }}
           onFocus={() => onFocusChange?.(true)}
           onBlur={() => onFocusChange?.(false)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-            }
+            if (event.key !== "Enter") return;
+            /*
+              Never during IME composition. There, Enter commits the candidate
+              the member is composing — swallowing it makes Japanese, Chinese
+              and Korean input impossible to complete. `createSubmitKeymap`
+              below avoids this by being a ProseMirror extension with real
+              composition state; a DOM `keydown` is the "flaky" path its comment
+              warns about, so it has to ask.
+            */
+            if (event.nativeEvent.isComposing) return;
+            /*
+              Shift+Enter is swallowed too, which the real composer does not do.
+              A newline here would not survive the handoff intact:
+              `buildDocFromPlainText` splits the draft into one paragraph per
+              line and Tiptap's `getText` rejoins blocks with its default
+              `"\n\n"`, so every line break the shell contributes comes back
+              doubled — and doubles again on each save/restore cycle. That
+              asymmetry is older than this component and belongs to the draft
+              path generally; what is new is the shell being able to feed it, so
+              the shell stays single-line rather than widening the fix.
+            */
+            event.preventDefault();
+            setPressedEnter(true);
           }}
         />
-        {/* Reserved, not rendered: the real toolbar's controls all need a
-            channel (attach, slash palette, send), and a row of dead buttons is
-            the dead-end control the release gate forbids. */}
-        <div className={COMPOSER_TOOLBAR_CLASS} />
+        {/*
+          The real toolbar's controls all need a channel (attach, slash
+          palette, send), so none of them can be here — a row of dead buttons is
+          the dead-end control the release gate forbids. The row is reserved
+          anyway, for the geometry, which leaves exactly the space this answer
+          needs: showing it costs no layout shift because the height was already
+          being held.
+        */}
+        <div className={cn(COMPOSER_TOOLBAR_CLASS, "flex items-center")}>
+          <p
+            id={hintId}
+            className={cn(
+              "truncate text-[12.5px] text-muted-foreground",
+              // Present from the first render either way, so `aria-describedby`
+              // always resolves and a screen reader hears why the composer
+              // cannot send before trying it.
+              !pressedEnter && "sr-only",
+            )}
+          >
+            Still opening your channels — you can keep typing.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -745,10 +829,23 @@ export function Composer({
         never be recorded. The budget would report success on exactly the loads
         that never met it.
       */
-      if (resolvedCanPost) {
-        markComposerFocusable();
-        markColdLoad(COLD_LOAD_MARKS.composerEditorReady);
+      if (!resolvedCanPost) {
+        /*
+          Nothing to record and nothing to focus — and, critically, the claim
+          below must not be *spent* here either. `useEditor` builds an Editor
+          whether or not `<EditorContent>` is ever rendered, so this `onCreate`
+          runs for the alumnus whose `#general` came back `can_post: false`,
+          where the early return further down renders an explanatory paragraph
+          and no contenteditable at all. Claiming there would call `.focus()` on
+          a node that is not in the document (a no-op, so the caret lands on
+          `document.body`) and leave the claim false, so the real composer in
+          `#alumni` a moment later could not take it. That is the same failure
+          the marks are guarded against, one `if` further down.
+        */
+        return;
       }
+      markComposerFocusable();
+      markColdLoad(COLD_LOAD_MARKS.composerEditorReady);
       /*
         Take the caret the shell was holding, if it was holding it.
 
@@ -1129,11 +1226,7 @@ export function Composer({
         composer had no visible focus indicator at all.
       */}
       <div
-        className={cn(
-          COMPOSER_WELL_CLASS,
-          "transition-colors",
-          FOCUS_RING_WITHIN,
-        )}
+        className={cn(COMPOSER_WELL_CLASS, FOCUS_RING_WITHIN)}
       >
         {/*
           The staged reply, above the input and above the attachment chips —

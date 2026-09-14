@@ -1405,10 +1405,12 @@ export function ChatShell({
             */}
             <ComposerShell
               // Straight into the channel's draft, with no channel yet. That is
-              // not a trick: `useChatChannel` stores what it is given either
-              // way and only *masks* `draft` while `channelId` is undefined, so
-              // the text is already there to be read on the render that mounts
-              // `<Composer>` — see the note at `draft` in `use-chat-channel.ts`.
+              // not a trick: `useChannelDraft` stores what it is given either
+              // way and only *masks* `draft` while `channelId` is `null`, so the
+              // text is already there to be read on the render that mounts
+              // `<Composer>`. The ordering that makes that safe — and the two
+              // texts it has to settle when Dexie answers late — is in
+              // `lib/chat/use-channel-draft.ts`.
               onTextChange={channel.setDraft}
               onFocusChange={(focused) => {
                 shellFocus.current = focused;

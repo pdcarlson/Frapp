@@ -91,18 +91,24 @@ It used to mean Tiptap, which made it unmeetable by construction: `<Composer>` i
 latency. `1s` budgets "composer focusable" and puts "composer **shell**" in its 0ms set, and `1e`
 pin 4 is more explicit still — "Composer live at first paint · typing is allowed before history
 loads; the outbox queues it". The shell is what satisfies those, so it is what the mark reports.
-Tiptap's timing is kept under its own name rather than dropped: `/chat`'s ~827 KB eager chunk is
-nearly all editor, and the shell's number is blind to it by design.
+Tiptap's timing is kept under its own name rather than dropped: the ~825 KB of its own that `/chat`
+carries (measured below) is mostly that editor, and the shell's number is blind to it by design.
 
-Two things the split makes true, stated here because neither is visible from the number alone:
+Three things the split makes true, none of them visible from the number alone:
 
-- **It is emitted later than it happened.** The decision to emit at all belongs to `resolvedCanPost`,
-  which is not known until the channel is — a member who cannot post gets no composer, and recording
-  "focusable" for that document would both be false and, since marks are once-per-document, consume
-  the slot before the real composer in `#alumni`. So `onCreate` emits, and
-  `performance.mark(name, { startTime })` back-dates the entry to when the shell mounted.
+- **It is emitted later than it happened.** The decision to emit belongs to `resolvedCanPost`, which
+  is not known until the channel is, so `onCreate` emits and the entry is back-dated to the shell.
+  Why that guard cannot move, and what the back-dating costs, is in `markComposerFocusable` in
+  [`cold-load-marks.ts`](../../../apps/web/lib/chat/cold-load-marks.ts) — one home, and it is the
+  file whose edit would falsify it.
 - **It under-reports the worst loads.** If the channel list never resolves, nothing emits, even
   though the shell was focusable the whole time. The alternative is the false-success case above.
+- **Not every sample is back-dated.** When no shell preceded the editor there is nothing to
+  back-date to and the mark is stamped at emission — i.e. it carries Tiptap's construction time
+  under the shell's name. That is a client-side navigation into `/chat` from another dashboard
+  route, where the channel list may already be cached and `<Composer>` mounts with no loading state
+  before it. So a rise in this number can mean the navigation mix changed rather than that the
+  shell got slower; `composer-editor-ready` is what separates the two.
 
 They need no reporting code. `@sentry/nextjs` is initialized with no `integrations` array, so the
 SDK defaults apply and `browserTracingIntegration` turns `mark` and `measure` entries into spans on
@@ -112,17 +118,13 @@ already the source of FCP, LCP, CLS, TTFB and INP — which is why this repo doe
 initialization is skipped entirely without `NEXT_PUBLIC_SENTRY_DSN`, so these are field metrics: they
 report nothing locally or in CI, by design.
 
-**Locally**, they are visible in the Performance panel and readable directly — select by
-`entryType`, because each name yields both a `mark` and a `measure`:
+**Locally**, they are visible in the Performance panel and readable directly:
+`performance.getEntriesByName("frapp.chat.channel-readable", "measure")[0].duration` — each name
+yields both a `mark` and a `measure`, and the second argument is what picks one.
 
-```js
-performance.getEntriesByName("frapp.chat.channel-readable")
-  .find((entry) => entry.entryType === "measure").duration
-```
-
-The `measure`'s own `duration` is the honest local number (the measure is anchored at `start: 0`).
-The Sentry *span* it becomes is not — it is short by `requestStart`, which is why the true interval
-travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records the arithmetic.
+That `duration` is the honest local number, because the measure is anchored at `start: 0`. The
+Sentry *span* it becomes is not: it is short by `requestStart`, which is why the true interval also
+travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records that arithmetic.
 
 ## What is not measured, and why
 
@@ -150,8 +152,11 @@ travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records the arithmeti
 - **That the composer shell is in the SSR payload.** It is focusable before hydration only because
   `/chat` renders dynamically, and it renders dynamically only because
   `app/(dashboard)/layout.tsx` awaits `cookies()`. On a static prerender the `<Suspense>` boundary in
-  `chat-page.tsx` would ship its fallback instead and nothing would fail. Checked by hand against a
-  running production server; `chat-page.tsx` carries the note.
+  `chat-page.tsx` would ship its fallback instead and nothing would fail, which is why this is listed
+  as unmeasured rather than assumed. Checked 2026-09-14 (#2176) by fetching the route from a running
+  production build — `npm run build -w apps/web && npm run start -w apps/web`, then `GET /chat` with
+  a session cookie — and grepping the HTML: `<textarea` and `aria-label="Message composer"` present,
+  `Loading chat` absent, 48,542 bytes. `chat-page.tsx` carries the same note at the boundary.
 
 ## Optimization techniques in use
 

@@ -182,6 +182,61 @@ describe("composer milestones (#2176)", () => {
     ).toHaveLength(1);
   });
 
+  it("trusts the entry over what it asked for, so the two numbers agree", () => {
+    /*
+      A UA that predates the `mark` options bag does not throw on it — an
+      unknown trailing argument is ignored — it just stamps the mark at *now*.
+      Trusting the requested time there would ship a mark at one timestamp and a
+      `detail` claiming another, with the channel round trip back inside the one
+      Sentry charts. Reading the entry back makes them agree either way.
+    */
+    const now = vi.spyOn(window.performance, "now").mockReturnValue(80);
+    const realMark = window.performance.mark.bind(window.performance);
+    vi.spyOn(window.performance, "mark").mockImplementation(
+      // The old one-argument signature, dropping the options it never knew —
+      // which still creates a real entry, stamped at its own "now".
+      ((name: string) => realMark(name)) as typeof window.performance.mark,
+    );
+    noteComposerShellFocusable();
+    now.mockReturnValue(1400);
+
+    expect(markComposerFocusable()).toBe(true);
+
+    // The assertion is agreement, not a particular number: whatever the UA
+    // actually stamped is what `detail` must carry. Asking for 80 and being
+    // given something else must not produce a span that claims 80.
+    const stamped = startTimeOf(COLD_LOAD_MARKS.composerFocusable);
+    const measure = window.performance.getEntriesByName(
+      COLD_LOAD_MARKS.composerFocusable,
+      "measure",
+    )[0] as PerformanceMeasure | undefined;
+    expect(
+      (measure?.detail as { msFromTimeOrigin?: number } | null)
+        ?.msFromTimeOrigin,
+    ).toBe(stamped);
+    expect(stamped).not.toBe(80);
+  });
+
+  it("leaves the milestone retryable when recording it fails", () => {
+    /*
+      The dedupe used to latch before the recording was attempted, so a
+      `performance` disabled by privacy tooling — or any throw in here — spent
+      the once-per-document slot and emitted nothing, with no way back. The
+      composer marks are emitted from an `onCreate` that runs again on the next
+      channel, which is exactly the retry that was being discarded.
+    */
+    const mark = vi
+      .spyOn(window.performance, "mark")
+      .mockImplementationOnce(() => {
+        throw new Error("blocked by privacy tooling");
+      });
+
+    expect(markColdLoad(COLD_LOAD_MARKS.channelReadable)).toBe(false);
+
+    mark.mockRestore();
+    expect(markColdLoad(COLD_LOAD_MARKS.channelReadable)).toBe(true);
+  });
+
   it("never throws when the Performance API is unavailable", () => {
     const performanceRef = window.performance;
     // @ts-expect-error — deliberately removing the API the guard exists for.

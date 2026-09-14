@@ -105,6 +105,169 @@ describe("useChannelDraft", () => {
     });
   });
 
+  describe("what the review caught (#2176)", () => {
+    it("restores this channel's saved draft when the member comes back to it", async () => {
+      /*
+        The guard that protects live typing must not outlive the visit. Type in
+        A, go to B, come back to A: if the claim is still standing, A's restore
+        is skipped and `draftState` is still holding *B's* text — so A's
+        composer opens showing B's draft, and pressing Enter posts it into A.
+      */
+      loadDraft.mockImplementation(async (id: string) =>
+        id === "chan-1" ? "for chan-1" : "for chan-2",
+      );
+      const { result, rerender } = renderHook(({ id }) => useChannelDraft(id), {
+        initialProps: { id: "chan-1" },
+      });
+      await waitFor(() => expect(result.current.draft).toBe("for chan-1"));
+      act(() => result.current.setDraft("typed in chan-1"));
+
+      rerender({ id: "chan-2" });
+      await waitFor(() => expect(result.current.draft).toBe("for chan-2"));
+      rerender({ id: "chan-1" });
+
+      await waitFor(() => expect(result.current.draft).toBe("for chan-1"));
+    });
+
+    it("does not resurrect a draft the member just sent", async () => {
+      /*
+        `loadDraft` opens IndexedDB, which on a cold load is slow enough that
+        the member can type and press Enter before it answers. The send clears
+        the draft and the Dexie row; a restore landing afterwards would put the
+        sent message back in the composer and persist it again.
+      */
+      let resolveLoad: (body: string) => void = () => {};
+      loadDraft.mockReturnValue(
+        new Promise<string>((resolve) => {
+          resolveLoad = resolve;
+        }),
+      );
+      const { result, rerender } = renderHook(({ id }) => useChannelDraft(id), {
+        initialProps: { id: null as string | null },
+      });
+      act(() => result.current.setDraft("on my way"));
+      rerender({ id: "chan-1" });
+
+      await act(async () => {
+        result.current.cancelPendingSave();
+        await result.current.clearAfterSend();
+      });
+      await act(async () => {
+        resolveLoad("");
+      });
+
+      expect(result.current.draft).toBe("");
+      expect(saveDraft).not.toHaveBeenCalled();
+    });
+
+    it("settles against what the member typed last, not what the shell had", async () => {
+      /*
+        The handoff is not the end of the typing. The editor mounts as soon as
+        the channel lands, and the member keeps going while Dexie is still
+        answering — settling against the shell's last keystroke would delete
+        everything since and move their caret.
+      */
+      let resolveLoad: (body: string) => void = () => {};
+      loadDraft.mockReturnValue(
+        new Promise<string>((resolve) => {
+          resolveLoad = resolve;
+        }),
+      );
+      const { result, rerender } = renderHook(({ id }) => useChannelDraft(id), {
+        initialProps: { id: null as string | null },
+      });
+      act(() => result.current.setDraft("running"));
+      rerender({ id: "chan-1" });
+      act(() => result.current.setDraft("running late, start without me"));
+
+      await act(async () => {
+        resolveLoad("");
+      });
+
+      expect(result.current.draft).toBe("running late, start without me");
+    });
+
+    it("keeps a saved draft the shell had no way to show", async () => {
+      /*
+        The shell cannot display a saved draft — it does not know the channel.
+        So a member returning to a half-written message sees an empty-looking
+        composer and types into it. Replacing yesterday's paragraph with one
+        character, invisibly, is not a trade this can make; both survive.
+      */
+      let resolveLoad: (body: string) => void = () => {};
+      loadDraft.mockReturnValue(
+        new Promise<string>((resolve) => {
+          resolveLoad = resolve;
+        }),
+      );
+      const { result, rerender } = renderHook(({ id }) => useChannelDraft(id), {
+        initialProps: { id: null as string | null },
+      });
+      act(() => result.current.setDraft("x"));
+      rerender({ id: "chan-1" });
+
+      await act(async () => {
+        resolveLoad("yesterday's paragraph");
+      });
+
+      expect(result.current.draft).toBe("yesterday's paragraph\nx");
+    });
+
+    it("keeps that saved draft even when the member types on after the handoff", async () => {
+      /*
+        The case the other two miss between them, and the one a bad fix passes.
+
+        "keeps a saved draft the shell had no way to show" never types after the
+        handoff, and "settles against what the member typed last" resolves with
+        an empty body — so a restore that is silently dropped is indistinguishable
+        from one that succeeded. Only typing *and* a non-empty saved draft
+        together can see it. This failed while `cancelPendingSave` bumped the
+        restore epoch, because `setDraft` calls it on every keystroke: the first
+        character after the handoff cancelled the restore, and the debounced
+        write then overwrote yesterday's draft with it.
+      */
+      let resolveLoad: (body: string) => void = () => {};
+      loadDraft.mockReturnValue(
+        new Promise<string>((resolve) => {
+          resolveLoad = resolve;
+        }),
+      );
+      const { result, rerender } = renderHook(({ id }) => useChannelDraft(id), {
+        initialProps: { id: null as string | null },
+      });
+      act(() => result.current.setDraft("hey"));
+      rerender({ id: "chan-1" });
+      act(() => result.current.setDraft("hey!"));
+
+      await act(async () => {
+        resolveLoad("See you at chapter tonight");
+      });
+
+      expect(result.current.draft).toBe("See you at chapter tonight\nhey!");
+    });
+
+    it("persists the shell's text, so a channel it cannot post to does not eat it", async () => {
+      /*
+        `setDraft` schedules no write while there is no channel, and a channel
+        that comes back `can_post: false` renders no editor to fire another
+        keystroke — so without this the text lives only in memory until the next
+        channel switch drops it.
+      */
+      const { result, rerender } = renderHook(({ id }) => useChannelDraft(id), {
+        initialProps: { id: null as string | null },
+      });
+      act(() => result.current.setDraft("does anyone have the recording"));
+      rerender({ id: "chan-1" });
+
+      await waitFor(() =>
+        expect(saveDraft).toHaveBeenCalledWith(
+          "chan-1",
+          "does anyone have the recording",
+        ),
+      );
+    });
+  });
+
   describe("persistence", () => {
     it("debounces the write rather than saving every keystroke", () => {
       vi.useFakeTimers();
