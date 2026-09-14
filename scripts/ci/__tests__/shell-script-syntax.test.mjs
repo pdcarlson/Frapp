@@ -100,9 +100,17 @@ test("the egress probe keeps its Python builder in a quoted heredoc, not `python
   );
   // The apostrophe that caused #2205. It must still be there, and still be harmless:
   // #2205's acceptance criteria explicitly forbid 'fixing' this by rewording.
+  //
+  // Asserted against the HEREDOC BODY, not the whole file. The script explains this hazard
+  // in a comment that necessarily quotes the same phrase, so a whole-file check is satisfied
+  // by the prose alone — the real warning string could be reworded, retiring the apostrophe,
+  // with this guard still green.
+  const heredoc = src.match(/cat >"\$BUILDER" <<'PY'\n([\s\S]*?)\nPY\n/);
+  assert.ok(heredoc, "could not locate the builder heredoc");
+  const pythonBody = heredoc[1];
   assert.ok(
-    src.includes("this session's environment dashboard"),
-    "the SECURITY warning wording from #2110 must be preserved verbatim",
+    pythonBody.includes("this session's environment dashboard"),
+    "the SECURITY warning wording from #2110 must be preserved verbatim in the Python, not just described in a comment",
   );
 });
 
@@ -399,6 +407,33 @@ esac
   for (const h of manifest.hosts.filter((x) => x.expected === "blocked")) {
     assert.equal(h.ok, null, `${h.key} timed out, so it is unknown — neither pass nor fail`);
   }
+});
+
+test("one unmeasured PROD host does not erase a definitive staging verdict", (t) => {
+  // The summary's fallback branch speaks only about staging, but its `inconclusive` count
+  // included production. So a single blackholed prod host (ok:null — the very case
+  // prod_clause exists for) replaced a measured "staging is not reachable" with "every probe
+  // was inconclusive", which is the opposite of what was observed, in the most likely real
+  // sandbox state: staging not allowlisted plus one prod host that never answers.
+  const { manifest } = runProbe(t, {
+    curlStub: `#!/usr/bin/env bash
+url="\${!#}"
+case "$url" in
+  *//api.frapp.live/*) printf '000'; exit 28 ;;
+  *) printf '000'; exit 56 ;;
+esac
+`,
+  });
+
+  assert.deepEqual(manifest.staging_reachable, [], "no staging host answered");
+  assert.match(
+    manifest.summary,
+    /deployed staging NOT reachable/,
+    "four measured refusals is a verdict, not an inconclusive run",
+  );
+  assert.doesNotMatch(manifest.summary, /every probe was inconclusive/);
+  // The prod host that never answered is still unknown, and still says so.
+  assert.equal(manifest.hosts.find((h) => h.key === "prod_api").ok, null);
 });
 
 test("production blocked IS reported when every prod host actually refused", (t) => {

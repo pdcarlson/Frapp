@@ -77,7 +77,7 @@ With `probe_ok: true`, read each host's `status`:
 | Manifest `status` | Meaning | Do |
 | ----------------- | ------- | -- |
 | `reachable` | the host answered (any HTTP code). `302` and `404` mean the *socket* worked, not that Signet HTML loaded. On staging web/landing a 302 is often Vercel Authentication — see [§3](#vercel-authentication) | Proceed to the next gate; do not claim the UI loaded |
-| `blocked` | proxy refused CONNECT — host not allowlisted | Stop. Report as environment config (below) |
+| `blocked` | the connection was refused at the connect layer. Usually a policy denial, but curl exits 35 and 7 are grouped in too, so **a host that is simply down looks identical** and nothing in the sandbox separates them | Stop. Report it as not reachable and name the host. Only call it environment config (below) once you have checked the allowlist line is genuinely absent |
 | `timeout` / `no_dns` / `unknown` | the probe **could not tell** | Neither proceed nor report a block. Re-run the probe; if it stays inconclusive, say so in those words |
 
 That last row is the one that gets misread. An inconclusive probe is not a block, and

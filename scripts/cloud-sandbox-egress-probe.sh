@@ -286,7 +286,14 @@ for key in order:
 staging_total = sum(1 for k in order if spec[k]["expect"] == "reachable")
 prod_total = sum(1 for k in order if spec[k]["expect"] == "blocked")
 has_security = any(w.startswith("SECURITY:") for w in warnings)
-inconclusive = sum(1 for h in hosts if h["ok"] is None)
+# Scoped to STAGING. This count picks the summary's fallback branch, and that branch speaks
+# only about staging reachability -- so counting production here let one blackholed prod host
+# (ok:None, the very case prod_clause exists for) overwrite a definitive "staging is not
+# reachable" verdict with "every probe was inconclusive". The production side is reported by
+# prod_clause and by the warnings, never by this.
+staging_inconclusive = sum(
+    1 for h in hosts if h["ok"] is None and spec[h["key"]]["expect"] == "reachable"
+)
 
 # The production half of the summary gets the same treatment as the staging half, for the
 # same reason. "production correctly blocked" is a NEGATIVE SECURITY ASSERTION, and it is
@@ -322,7 +329,7 @@ elif len(reachable) == staging_total:
     summary = "EGRESS: deployed staging reachable (api/web/landing/supabase); %s" % prod_clause
 elif reachable:
     summary = "EGRESS: staging partially reachable (%d of %d); %s" % (len(reachable), staging_total, prod_clause)
-elif inconclusive:
+elif staging_inconclusive:
     summary = "EGRESS: could not determine -- every probe was inconclusive (network or proxy issue), NOT proof that staging is blocked"
 else:
     summary = "EGRESS: deployed staging NOT reachable -- local stack only"
