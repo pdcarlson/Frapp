@@ -36,6 +36,24 @@ function ChatPageContent() {
  * QueryClient, api-sdk client, and active chapter id.
  */
 export function ChatPage() {
+  /*
+    This boundary's fallback must never be what the server sends.
+
+    `1s` puts "composer shell" in the 0ms set as "static markup in the RSC
+    payload", and `ComposerShell` (#2176) is only focusable before hydration
+    because it really is in that payload. A Suspense boundary around a
+    `useSearchParams()` consumer is exactly the thing Next.js resolves to its
+    fallback on a *static* prerender — which would ship `LoadingState` instead
+    of the shell, and the budget would go quietly back to being hydration-gated
+    with every test still green.
+
+    It does not, because `app/(dashboard)/layout.tsx` awaits `cookies()` for the
+    nav-collapse preference, which opts this whole segment into dynamic
+    rendering. That is a real dependency between two files that never mention
+    each other, and nothing enforces it: if that `cookies()` read ever moves or
+    is memoized away, check the `/chat` SSR payload still contains the
+    composer's `<textarea>` before assuming this still holds.
+  */
   return (
     <Suspense fallback={<LoadingState message="Loading chat..." />}>
       <ChatPageContent />

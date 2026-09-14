@@ -76,12 +76,33 @@ computes is the failure mode this page is a correction of.
 
 Two milestones in the table above are application facts that no RUM can infer, so
 [`apps/web/lib/chat/cold-load-marks.ts`](../../../apps/web/lib/chat/cold-load-marks.ts) emits them as
-`performance.mark` + `performance.measure`, once per document:
+`performance.mark` + `performance.measure`, once per document. A third is not a board clause and is
+there to keep a number the second one stopped carrying:
 
-| Name | Emitted from | Means |
-|------|--------------|-------|
-| `frapp.chat.channel-readable` | `message-timeline.tsx` | Real rows are committed to the DOM |
-| `frapp.chat.composer-focusable` | `composer.tsx` (`onCreate`) | The editor exists and can take focus |
+| Name | Timestamps | Emitted from | Means |
+|------|-----------|--------------|-------|
+| `frapp.chat.channel-readable` | itself | `message-timeline.tsx` | Real rows are committed to the DOM |
+| `frapp.chat.composer-focusable` | `ComposerShell`'s mount | `composer.tsx` (`onCreate`) | The composer can take focus and take text |
+| `frapp.chat.composer-editor-ready` | itself | `composer.tsx` (`onCreate`) | Tiptap exists: rich text, mentions, slash commands, send |
+
+**`composer-focusable` means the shell, not the editor** ([#2176](https://github.com/pdcarlson/Frapp/issues/2176)).
+It used to mean Tiptap, which made it unmeetable by construction: `<Composer>` is gated on
+`activeChannel`, so the number was gated on `GET /v1/channels` and largely reported channel-list
+latency. `1s` budgets "composer focusable" and puts "composer **shell**" in its 0ms set, and `1e`
+pin 4 is more explicit still — "Composer live at first paint · typing is allowed before history
+loads; the outbox queues it". The shell is what satisfies those, so it is what the mark reports.
+Tiptap's timing is kept under its own name rather than dropped: `/chat`'s ~827 KB eager chunk is
+nearly all editor, and the shell's number is blind to it by design.
+
+Two things the split makes true, stated here because neither is visible from the number alone:
+
+- **It is emitted later than it happened.** The decision to emit at all belongs to `resolvedCanPost`,
+  which is not known until the channel is — a member who cannot post gets no composer, and recording
+  "focusable" for that document would both be false and, since marks are once-per-document, consume
+  the slot before the real composer in `#alumni`. So `onCreate` emits, and
+  `performance.mark(name, { startTime })` back-dates the entry to when the shell mounted.
+- **It under-reports the worst loads.** If the channel list never resolves, nothing emits, even
+  though the shell was focusable the whole time. The alternative is the false-success case above.
 
 They need no reporting code. `@sentry/nextjs` is initialized with no `integrations` array, so the
 SDK defaults apply and `browserTracingIntegration` turns `mark` and `measure` entries into spans on
@@ -91,8 +112,17 @@ already the source of FCP, LCP, CLS, TTFB and INP — which is why this repo doe
 initialization is skipped entirely without `NEXT_PUBLIC_SENTRY_DSN`, so these are field metrics: they
 report nothing locally or in CI, by design.
 
-**Locally**, they are visible in the Performance panel and readable directly:
-`performance.getEntriesByName("frapp.chat.channel-readable", "measure")[0].duration`.
+**Locally**, they are visible in the Performance panel and readable directly — select by
+`entryType`, because each name yields both a `mark` and a `measure`:
+
+```js
+performance.getEntriesByName("frapp.chat.channel-readable")
+  .find((entry) => entry.entryType === "measure").duration
+```
+
+The `measure`'s own `duration` is the honest local number (the measure is anchored at `start: 0`).
+The Sentry *span* it becomes is not — it is short by `requestStart`, which is why the true interval
+travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records the arithmetic.
 
 ## What is not measured, and why
 
@@ -105,7 +135,8 @@ report nothing locally or in CI, by design.
 - **A persisted read cache.** `1s`'s "first chunk" clause reads the channel list and the last ~30
   messages from Dexie. No such cache exists: Dexie holds only the outbound `drafts` and `outbox`
   tables, and TanStack Query is in-memory. So "cached channel readable" currently measures a network
-  round trip, and the 400ms budget should be read against that until something changes.
+  round trip, and the 400ms budget should be read against that until something changes. Since #2176
+  this is true of "channel readable" **only**: the composer no longer waits on that round trip.
 
   Two different absent things are easy to conflate here, so: [`caching.md`](caching.md)'s 2026-09-10
   correction is about a `localStorage` `persistQueryClient` snapshot of the TanStack cache, and it
@@ -113,7 +144,14 @@ report nothing locally or in CI, by design.
   `["user","me"]` and `["settings"]` after a sign-out or an account swap, which is a security
   argument, not a scheduling one. The board's Dexie read cache is a different design and that
   correction neither blesses nor rules it out. Whether the greenfield wants one is open, and this
-  page does not decide it.
+  page does not decide it. ([#2097](https://github.com/pdcarlson/Frapp/issues/2097) is the
+  `persistQueryClient` correction and is closed; the board's Dexie read cache has no issue of its
+  own, which is why #2176's "Related: the persisted channel cache (#2097)" points at the wrong one.)
+- **That the composer shell is in the SSR payload.** It is focusable before hydration only because
+  `/chat` renders dynamically, and it renders dynamically only because
+  `app/(dashboard)/layout.tsx` awaits `cookies()`. On a static prerender the `<Suspense>` boundary in
+  `chat-page.tsx` would ship its fallback instead and nothing would fail. Checked by hand against a
+  running production server; `chat-page.tsx` carries the note.
 
 ## Optimization techniques in use
 
