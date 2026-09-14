@@ -170,6 +170,111 @@ describe("MessageItem bubble sides", () => {
 });
 
 /**
+ * The action cluster attaches to the **bubble**, not to the thread column.
+ *
+ * The regression, seen on staging: the cluster was `absolute top-0 left-5` on a
+ * self row and `right-5` on an incoming one, positioned against the row — which
+ * spans the whole lane. Those insets only land on the bubble when the bubble is
+ * at its 86% maximum; on every shorter message a right-aligned self bubble got
+ * its cluster stranded against the far left of the lane with nothing under it.
+ *
+ * jsdom computes no layout, so these assert the structure that *produces* the
+ * hug rather than measured pixels: the cluster rides a `flex-1` track whose
+ * width is the leftover beside the bubble, so its outer edge and the bubble's
+ * edge are the same line whatever the message's length. Nothing in this repo
+ * measures the rendered pixels — `tests/visual/` is the responsive floor suite
+ * and its config argues against adding a second spec there — so the geometry
+ * was verified once in a real browser when this landed, and what guards it from
+ * here is the structure below.
+ */
+describe("MessageItem action cluster docking", () => {
+  function cluster(container: HTMLElement): HTMLElement {
+    const found = container.querySelector<HTMLElement>(
+      '[role="group"][aria-label="Message actions"]',
+    );
+    if (!found) throw new Error("no action cluster rendered");
+    return found;
+  }
+
+  function bubbleColumn(container: HTMLElement): HTMLElement {
+    const bubble = container.querySelector<HTMLElement>(
+      '[class*="rounded-\\[18px\\]"]',
+    );
+    if (!bubble?.parentElement) throw new Error("no bubble rendered");
+    return bubble.parentElement;
+  }
+
+  it("never docks the cluster to the lane, on either side", () => {
+    for (const sender of [VIEWER, OTHER]) {
+      const { container, unmount } = renderItem(message({ sender_id: sender }));
+      const className = cluster(container).className;
+
+      // The three classes that *were* the bug. A cluster positioned against the
+      // row can only name the lane's edges, never the bubble's.
+      expect(className, sender).not.toContain("absolute");
+      expect(className, sender).not.toContain("left-5");
+      expect(className, sender).not.toContain("right-5");
+      unmount();
+    }
+  });
+
+  it("rides a leftover track that ends at the bubble's edge", () => {
+    for (const sender of [VIEWER, OTHER]) {
+      const { container, unmount } = renderItem(message({ sender_id: sender }));
+      const track = cluster(container).parentElement;
+
+      // `flex-1` is what makes the track *be* the leftover beside the bubble —
+      // an `absolute` box cannot name that width — and `justify-end-safe` is
+      // what pins the cluster to the far end of it (the hug) while falling back
+      // to the lane edge instead of overflowing the pane when a max-width
+      // bubble leaves no room.
+      expect(track?.className, sender).toContain("flex-1");
+      expect(track?.className, sender).toContain("justify-end-safe");
+      // Zero height, so the hug costs the row nothing — the compactness the
+      // 5-minute grouping buys is the reason this was never in flow.
+      expect(track?.className, sender).toContain("h-0");
+      unmount();
+    }
+  });
+
+  it("puts the cluster on the left of an own bubble — away from the tail", () => {
+    const { container } = renderItem(message({ sender_id: VIEWER }));
+    const track = cluster(container).parentElement!;
+
+    // A self bubble is right-aligned, so the leftover is to its left — and the
+    // track gets there with `order`, not by being written first. The cluster
+    // acts on the message, so it has to stay *after* the message in the DOM for
+    // a screen reader and for the tab sequence, the same way it does on an
+    // incoming row. Moving it in source would silently put four buttons ahead
+    // of every one of the viewer's own messages.
+    expect(track.previousElementSibling).toBe(bubbleColumn(container));
+    expect(track.className).toContain("order-first");
+  });
+
+  it("puts the cluster on the right of an incoming bubble — away from its tail", () => {
+    const { container } = renderItem(message({ sender_id: OTHER }));
+    const track = cluster(container).parentElement!;
+
+    expect(track.previousElementSibling).toBe(bubbleColumn(container));
+    // Left where it is written — an incoming track is already on the side the
+    // reading order wants, so it needs no `order`.
+    expect(track.className).not.toContain("order-first");
+    // `rtl`, and specifically NOT `flex-row-reverse`, which is the thing that
+    // looks right and is not: `safe` falls back to `start`, and `start` for
+    // `justify-content` is writing-mode relative rather than flex relative, so
+    // reversing the main axis moves the hug and leaves the fallback on the
+    // physical left, off the side of the pane. This assertion is the spelling
+    // only — jsdom computes no layout, so it cannot see that difference. The
+    // browser check behind it, and its one honest limit, are recorded on
+    // `ACTION_TRACK` in `message-item.tsx`; do not restate the figure here.
+    expect(track.getAttribute("dir")).toBe("rtl");
+    expect(track.className).not.toContain("flex-row-reverse");
+    // ...and the cluster opts back out, or its own chips would reverse with it.
+    expect(cluster(container).getAttribute("dir")).toBe("ltr");
+  });
+});
+
+/**
  * #1193: `:hover`/`:focus-within` never fire on a coarse pointer, so the
  * per-message action cluster (quick reactions, Reply) was unreachable there.
  * `isTapRevealed`/`onToggleTapReveal` are the parent-owned reveal state; this
@@ -178,7 +283,9 @@ describe("MessageItem bubble sides", () => {
  */
 describe("MessageItem tap-to-reveal (#1193)", () => {
   function actionsCluster(container: HTMLElement): HTMLElement {
-    const found = container.querySelector<HTMLElement>(".absolute.top-0.z-10");
+    const found = container.querySelector<HTMLElement>(
+      '[role="group"][aria-label="Message actions"]',
+    );
     if (!found) throw new Error("no action cluster rendered");
     return found;
   }
