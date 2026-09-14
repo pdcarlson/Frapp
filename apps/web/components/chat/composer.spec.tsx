@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { act } from "react";
+import { renderToString } from "react-dom/server";
+import { hydrateRoot } from "react-dom/client";
 
 // Tiptap's ProseMirror view does not render document content into jsdom's
 // contenteditable node in this repo's test environment (see chat-shell.spec.tsx's
@@ -57,7 +60,12 @@ const { captureException } = vi.hoisted(() => ({
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
 import {
+  COMPOSER_BOX_CLASS,
+  COMPOSER_INPUT_CLASS,
+  COMPOSER_TOOLBAR_CLASS,
+  COMPOSER_WELL_CLASS,
   Composer,
+  ComposerShell,
   composerPlaceholder,
   notifyDispatchOutcome,
   runDispatch,
@@ -670,5 +678,311 @@ describe("Composer attachment ticket contract", () => {
       ),
     );
     expect(mockUploadSignedUrl).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The composer that exists before there is a channel (#2176).
+ *
+ * `1s` puts "composer shell" in the 0ms SSR set and budgets "composer focusable
+ * <= 400ms"; `<Composer>` is gated on `activeChannel`, so until this component
+ * the only thing in the thread column during a cold load was an `aria-hidden`
+ * box. These cases are the contract that replaced it: it takes focus, it takes
+ * text, it does not pretend to send, and it occupies exactly the space the real
+ * composer will.
+ */
+describe("ComposerShell (#2176)", () => {
+  /**
+   * Server-render into a detached host, hand it to React, and take it away
+   * again afterwards.
+   *
+   * The teardown is the part that matters: RTL only cleans up containers it
+   * created, so a host left in `document.body` keeps a second element named
+   * "Message composer" alive for the rest of the file. The next `screen.getBy…`
+   * added to this suite would fail with "found multiple elements", and it would
+   * read as a bug in that new test rather than as leakage from this one.
+   */
+  const hydrated: Array<() => void> = [];
+  async function serverRenderThenHydrate(
+    ssr: React.ReactElement,
+    client: React.ReactElement,
+  ) {
+    const host = document.createElement("div");
+    host.innerHTML = renderToString(ssr);
+    document.body.appendChild(host);
+    const textarea = host.querySelector("textarea");
+    return {
+      host,
+      textarea,
+      hydrate: async () => {
+        const root = await act(async () => hydrateRoot(host, client));
+        hydrated.push(() => {
+          root.unmount();
+          host.remove();
+        });
+      },
+    };
+  }
+
+  afterEach(() => {
+    while (hydrated.length) hydrated.pop()!();
+  });
+
+  it("offers a control the member can type into before any channel exists", () => {
+    render(<ComposerShell />);
+
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+    expect(input).toBeEnabled();
+    expect(input).not.toHaveAttribute("readonly");
+  });
+
+  it("is reachable by assistive tech, unlike the inert box it replaces", () => {
+    // `ComposerSkeleton` was `aria-hidden` on the explicit grounds that a
+    // focusable-looking control which cannot take a message is worse than an
+    // obvious placeholder. This one takes the message, so hiding it would now
+    // conceal the only interactive thing on the route during a cold load.
+    const { container } = render(<ComposerShell />);
+
+    expect(container.querySelector("[aria-hidden='true']")).toBeNull();
+  });
+
+  it("reports every keystroke, so the text outlives its own unmount", async () => {
+    // The shell is unmounted by the render that mounts `<Composer>`. Nothing
+    // inside it survives that, which is why the text is pushed out on change
+    // rather than read back at handoff time.
+    const onTextChange = vi.fn();
+    render(<ComposerShell onTextChange={onTextChange} />);
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Message composer" }),
+      "hi",
+    );
+
+    expect(onTextChange).toHaveBeenLastCalledWith("hi");
+  });
+
+  it("swallows Enter rather than breaking the line — there is nothing to send to yet", async () => {
+    const onTextChange = vi.fn();
+    render(<ComposerShell onTextChange={onTextChange} />);
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+
+    await userEvent.type(input, "hi{Enter}");
+
+    // Not merely "did not send" — a newline would mean the member's press of
+    // the send key arrives in the editor a moment later as a stray blank line.
+    expect(input).toHaveValue("hi");
+  });
+
+  it("swallows Shift+Enter too, unlike the real composer", async () => {
+    /*
+      A newline here would not survive the handoff intact. The draft path splits
+      on "\n" into one paragraph per line and Tiptap's `getText` rejoins blocks
+      with its default "\n\n", so a line break the shell contributes comes back
+      doubled — and doubles again every save/restore cycle. That asymmetry is
+      older than this component; the shell just declines to feed it.
+    */
+    render(<ComposerShell />);
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+
+    await userEvent.type(input, "a{Shift>}{Enter}{/Shift}b");
+
+    expect(input).toHaveValue("ab");
+  });
+
+  it("lets an IME commit its candidate with Enter", async () => {
+    /*
+      Enter during composition commits the candidate the member is assembling —
+      swallowing it makes Japanese, Chinese and Korean input impossible to
+      finish. The real composer gets this right by being a ProseMirror keymap
+      with composition state; a DOM `keydown` has to ask.
+    */
+    const onTextChange = vi.fn();
+    render(<ComposerShell onTextChange={onTextChange} />);
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+
+    const enter = new KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(enter, "isComposing", { value: true });
+    input.dispatchEvent(enter);
+
+    expect(enter.defaultPrevented).toBe(false);
+  });
+
+  it("answers a press of Enter instead of swallowing it silently", async () => {
+    // `connection-state.md`: a control that ignores an activation is a dead
+    // control, and the reason has to be on the control rather than near it.
+    render(<ComposerShell />);
+    const input = screen.getByRole("textbox", { name: "Message composer" });
+
+    const hintId = input.getAttribute("aria-describedby");
+    expect(hintId).toBeTruthy();
+    const hint = document.getElementById(hintId!);
+    // Described from the first render, so a screen reader hears why before
+    // trying — and only shown once they have actually tried.
+    expect(hint).toHaveTextContent(/still opening your channels/i);
+    expect(hint).toHaveClass("sr-only");
+
+    await userEvent.type(input, "roster is 41 tonight{Enter}");
+
+    expect(hint).not.toHaveClass("sr-only");
+  });
+
+  it("grows with its content, as the editor that replaces it does", async () => {
+    /*
+      The CLS case the shared class strings cannot cover. `COMPOSER_INPUT_CLASS`
+      gives both surfaces the same envelope, but a textarea does not grow inside
+      it on its own while ProseMirror does — so a shell pinned at one line while
+      the member types five would hand off to an editor that renders five and
+      push the whole bottom-aligned timeline up.
+    */
+    render(<ComposerShell />);
+    const input = screen.getByRole("textbox", {
+      name: "Message composer",
+    }) as HTMLTextAreaElement;
+    // jsdom lays nothing out, so `scrollHeight` is 0 until it is told.
+    Object.defineProperty(input, "scrollHeight", {
+      configurable: true,
+      value: 125,
+    });
+
+    fireEvent.change(input, { target: { value: "one\ntwo\nthree\nfour" } });
+
+    expect(input.style.height).toBe("125px");
+  });
+
+  it("reports focus entering and leaving, which is what the upgrade carries", async () => {
+    const onFocusChange = vi.fn();
+    render(
+      <>
+        <ComposerShell onFocusChange={onFocusChange} />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+
+    await userEvent.click(
+      screen.getByRole("textbox", { name: "Message composer" }),
+    );
+    expect(onFocusChange).toHaveBeenLastCalledWith(true);
+
+    await userEvent.click(screen.getByRole("button", { name: "elsewhere" }));
+    expect(onFocusChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("keeps text typed before hydration", async () => {
+    /*
+      The literal 0ms claim, and the reason this is an uncontrolled `<textarea>`
+      rather than a controlled one. The shell is static markup in the RSC
+      payload, so the browser can focus it and accept keystrokes long before
+      `/chat`'s ~827 KB of eager chat chunk has hydrated. That is only worth
+      anything if React does not then throw the keystrokes away when it adopts
+      the DOM it was handed.
+    */
+    const { host, textarea, hydrate } = await serverRenderThenHydrate(
+      <ComposerShell />,
+      <ComposerShell />,
+    );
+    expect(textarea).not.toBeNull();
+    textarea!.value = "typed while the bundle was still loading";
+
+    await hydrate();
+
+    expect(host.querySelector("textarea")).toHaveValue(
+      "typed while the bundle was still loading",
+    );
+  });
+
+  it("adopts text typed before React attached", async () => {
+    /*
+      The half that makes being focusable at first paint worth anything. A
+      member can type into the server-rendered textarea while the chat chunk is
+      still parsing, but `onChange` is React's and React is not there yet — so
+      without this the keystrokes live in the DOM, nothing downstream hears
+      about them, and the upgrade they were typed to survive drops them.
+    */
+    const onTextChange = vi.fn();
+    const { textarea, hydrate } = await serverRenderThenHydrate(
+      <ComposerShell />,
+      <ComposerShell onTextChange={onTextChange} />,
+    );
+    textarea!.value = "typed before React";
+
+    await hydrate();
+
+    expect(onTextChange).toHaveBeenCalledWith("typed before React");
+  });
+
+  it("adopts focus the member gave it before React attached", async () => {
+    // Same gap, for the caret: `onFocus` had no listener either, so the upgrade
+    // would hand the caret to `document.body` mid-sentence.
+    const onFocusChange = vi.fn();
+    const { textarea, hydrate } = await serverRenderThenHydrate(
+      <ComposerShell />,
+      <ComposerShell onFocusChange={onFocusChange} />,
+    );
+    textarea!.focus();
+
+    await hydrate();
+
+    expect(onFocusChange).toHaveBeenCalledWith(true);
+  });
+
+  it("says nothing about focus the member never gave it", async () => {
+    const onFocusChange = vi.fn();
+    const { hydrate } = await serverRenderThenHydrate(
+      <ComposerShell />,
+      <ComposerShell onFocusChange={onFocusChange} />,
+    );
+
+    await hydrate();
+
+    expect(onFocusChange).not.toHaveBeenCalled();
+  });
+
+  it("reserves exactly the real composer's box, so the upgrade shifts nothing", () => {
+    /*
+      `1s` budgets zero CLS above the composer, and the composer is the bottom
+      of a bottom-aligned column — a height change here pushes every row above
+      it. Asserted against the real component rather than against a copy of its
+      class strings: a hand-copied list is what drifts.
+    */
+    const shell = render(<ComposerShell />).container;
+    const real = render(<Composer {...baseProps()} />).container;
+
+    const box = (root: HTMLElement) => root.firstElementChild!;
+    const well = (root: HTMLElement) => box(root).firstElementChild!;
+
+    for (const cls of COMPOSER_BOX_CLASS.split(" ")) {
+      expect(box(shell).className).toContain(cls);
+      expect(box(real).className).toContain(cls);
+    }
+    for (const cls of COMPOSER_WELL_CLASS.split(" ")) {
+      expect(well(shell).className).toContain(cls);
+      expect(well(real).className).toContain(cls);
+    }
+  });
+
+  it("reserves the toolbar row at both pointer sizes", () => {
+    // `CHAT_CONTROL_CLASS` and the Send button are `h-8 pointer-coarse:h-11`,
+    // so a shell that reserved only `h-8` left a 12px shift on touch devices —
+    // which is what `ComposerSkeleton` did.
+    const { container } = render(<ComposerShell />);
+    const reserved = container.querySelector(
+      `[class*="${COMPOSER_TOOLBAR_CLASS.split(" ")[1]}"]`,
+    );
+
+    expect(reserved).not.toBeNull();
+    expect(reserved!.className).toContain("pointer-coarse:h-11");
+  });
+
+  it("gives its input the same height envelope the editor gets", () => {
+    const { container } = render(<ComposerShell />);
+
+    const input = container.querySelector("textarea")!;
+    for (const cls of COMPOSER_INPUT_CLASS.split(" ")) {
+      expect(input.className).toContain(cls);
+    }
   });
 });
