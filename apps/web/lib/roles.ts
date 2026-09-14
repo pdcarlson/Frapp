@@ -3,8 +3,13 @@ export type RoleOption = { id: string; name: string };
 /**
  * Normalize a loosely-typed roles payload (from `useRoles()` / `GET /v1/roles`)
  * into `{ id, name }[]`, dropping any entry without a string `id` and `name`.
- * Shared by the events editor/detail surfaces so the duck-typing lives in one
- * place. (The members surfaces still inline their own copy — see FRA follow-up.)
+ * Shared by the events, settings and members surfaces so the duck-typing lives
+ * in one place.
+ *
+ * `members-directory.tsx` deliberately does not use this: it needs a fourth
+ * field (`isPresident`, derived from the wildcard permission) to keep the
+ * President role out of the bulk-assign dropdown, so it is a different
+ * function over the same payload rather than a copy of this one.
  */
 export function normalizeRoleOptions(data: unknown): RoleOption[] {
   if (!Array.isArray(data)) return [];
