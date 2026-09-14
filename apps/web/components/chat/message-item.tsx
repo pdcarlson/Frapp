@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Pencil, Trash2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -273,6 +273,27 @@ export function MessageItem({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
 
+  /*
+   * Focus has to be handed back when the editor closes, and it cannot be done
+   * inline in the handlers: the action cluster is unmounted for the whole time
+   * the editor is open (`showActions && !isEditing` below), so at the moment
+   * Cancel or Escape fires, the Edit button does not exist to focus. The flag
+   * survives that commit; the effect runs after the cluster has remounted.
+   *
+   * Closing the editor by *saving* deliberately does not restore focus: the
+   * save is asynchronous and the row it would return to may have re-rendered,
+   * scrolled out of the virtualized window, or been replaced — and the member
+   * has finished with the row either way. Cancel is the one that owes the
+   * keyboard a way back, because the member is still working on this message.
+   */
+  const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const restoreFocusOnExit = useRef(false);
+  useEffect(() => {
+    if (isEditing || !restoreFocusOnExit.current) return;
+    restoreFocusOnExit.current = false;
+    editTriggerRef.current?.focus();
+  }, [isEditing]);
+
   // A row is not remounted by a content update — it's the same component
   // instance, keyed by id (`message-timeline.tsx`) — so an untouched-but-open
   // editor would otherwise keep showing what `message.content` was *when Edit
@@ -300,6 +321,7 @@ export function MessageItem({
   }
 
   function cancelEdit() {
+    restoreFocusOnExit.current = true;
     setIsEditing(false);
   }
 
@@ -401,30 +423,37 @@ export function MessageItem({
       />
     ) : null;
 
+  /*
+    Attachments render under the body for every kind, not inside the text
+    renderer: a file is a property of the message, not of how its body is
+    drawn, and a deleted message must not offer downloads of what it used to
+    carry. The component itself no-ops on a zero count, so this costs nothing
+    for the overwhelming majority of messages.
+  */
+  const attachments =
+    message.is_deleted || message.attachment_count === 0 ? null : (
+      <MessageAttachments
+        channelId={message.channel_id}
+        messageId={message.id}
+        count={message.attachment_count}
+      />
+    );
+
+  const bubble = (
+    <MessageRenderer
+      message={message}
+      viewerId={viewerId}
+      isSelf={isMine}
+      isConfirmed={isConfirmed}
+      onAct={onAct ?? (() => {})}
+    />
+  );
+
   const renderer = (
     <>
       {replyQuote}
-      <MessageRenderer
-        message={message}
-        viewerId={viewerId}
-        isSelf={isMine}
-        isConfirmed={isConfirmed}
-        onAct={onAct ?? (() => {})}
-      />
-      {/*
-        Attachments render under the body for every kind, not inside the text
-        renderer: a file is a property of the message, not of how its body is
-        drawn, and a deleted message must not offer downloads of what it used to
-        carry. The component itself no-ops on a zero count, so this costs nothing
-        for the overwhelming majority of messages.
-      */}
-      {message.is_deleted || message.attachment_count === 0 ? null : (
-        <MessageAttachments
-          channelId={message.channel_id}
-          messageId={message.id}
-          count={message.attachment_count}
-        />
-      )}
+      {bubble}
+      {attachments}
     </>
   );
 
@@ -554,6 +583,7 @@ export function MessageItem({
         <button
           type="button"
           className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
+          ref={editTriggerRef}
           onClick={startEdit}
         >
           <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
@@ -573,10 +603,28 @@ export function MessageItem({
     </div>
   ) : null;
 
+  /**
+   * The inline editor that takes the bubble's place in the row.
+   *
+   * **It is the bubble, in draft.** Not a dialog, not a popover, not a floating
+   * card: it renders in the message block where the bubble was, at the block's
+   * width, between the same reply quote and attachment list. §11 draws no
+   * editor — this is the undrawn case, and the nearest drawn pattern is the
+   * bubble itself, so the editor borrows the locked bubble radius (18 with the
+   * self tail corner at 6, `foundations.md` §8) and the *incoming* bubble's
+   * neutral card fill and hairline. Neutral rather than `--primary`: a draft is
+   * not yet a message, and a textarea on the chapter accent would have to
+   * re-solve the contrast pair that `text-renderer.tsx` gets for free.
+   *
+   * `w-full` here is only half the contract and is inert without the other
+   * half — see the `w-full` on the self column below, which is what gives this
+   * percentage a definite width to resolve against.
+   */
   const editForm = (
-    <div className="flex w-full flex-col gap-1.5 rounded-lg border border-border bg-card p-2">
+    <div className="mt-1 flex w-full flex-col gap-1.5 rounded-[18px] rounded-br-[6px] border border-border bg-card p-2">
       <Textarea
         autoFocus
+        aria-label="Edit message"
         value={editValue}
         onChange={(event) => {
           setEditValue(event.target.value);
@@ -593,7 +641,21 @@ export function MessageItem({
           }
         }}
         disabled={isSavingEdit}
-        className="min-h-[60px] resize-none"
+        /*
+          Width comes from the block; height comes from the draft.
+          `field-sizing-content` grows the field with what is typed, so a
+          message that rendered as six lines is edited as six lines rather than
+          through a two-line porthole — a box made full-width that still had to
+          be scrolled would only have moved the unreadability onto the other
+          axis. It is a progressive enhancement: an engine without it keeps
+          exactly today's fixed 60px floor and loses nothing this change added,
+          which is why the floor stays 60 (§4's own `min-h-24` is a form field's
+          resting height; a field that grows wants the smaller floor, and
+          raising it here would make the shortest message the tallest jump).
+          The cap keeps a very long draft from pushing the row past the
+          viewport; past it the field scrolls, as any textarea does.
+        */
+        className="field-sizing-content max-h-[50vh] min-h-[60px] resize-none"
       />
       <div className="flex items-center justify-end gap-1.5">
         <button
@@ -687,8 +749,44 @@ export function MessageItem({
         data-status={message._status}
         onClick={handleRowTap}
       >
-        <div className="flex max-w-[86%] flex-col items-end">
-          {isEditing ? editForm : renderer}
+        {/*
+          The message block, and the one element that owns its width.
+
+          **Read mode hugs; edit mode fills.** §11 caps a bubble at 86% of the
+          thread column and hugs its content below that, and the column gets
+          that for free by shrink-wrapping — a flex item with no width is sized
+          from its content, and the bubble's content is the message. Swapping a
+          `<textarea>` in under that rule is what produced the postage stamp:
+          a textarea's `width: 100%` is circular inside a shrink-to-fit parent,
+          so it falls back to the intrinsic `cols` width and the *column* sizes
+          itself from that instead. Measured in Chromium on an 860px thread
+          column, a bubble at the 86% cap — 740px — became a 249px editor on
+          the way in, and snapped back to 740px on the way out.
+
+          `w-full` while editing replaces "as wide as your content" with "as
+          wide as a bubble may be", which the `max-w-[86%]` beside it then caps
+          to exactly the track the bubble already had. So the editor is never
+          narrower than the bubble it replaced: at the cap it is the same width
+          to the pixel, and below the cap it opens up to the width the message
+          is about to be allowed to grow into.
+
+          **It has to stay conditional.** Filling in read mode too would look
+          identical — every child here is shrink-wrapped by `items-end` — but
+          the sibling action track is `flex-1` on the leftover, so a permanently
+          full-width block would strand the cluster at the lane edge on every
+          short message, which is the exact regression §11's "attaches to the
+          message, not to the lane" rule names. Edit mode is safe from it only
+          because the cluster is unmounted for the duration.
+        */}
+        <div
+          className={cn(
+            "flex max-w-[86%] flex-col items-end",
+            isEditing && "w-full",
+          )}
+        >
+          {replyQuote}
+          {isEditing ? editForm : bubble}
+          {attachments}
           {reactions}
           {/*
             The self caption and the delivery state are one line, per §11 —
