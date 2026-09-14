@@ -2,7 +2,24 @@ name: Deploy production
 # The Actions list otherwise shows one red row named "Deploy production" when
 # tagging fails after a live ship (run 34155737950, 2026-09-07). Scope + SHA
 # in the run title is what you read before opening the jobs.
-run-name: "${{ inputs.scope }} ${{ inputs.sha }}"
+#
+# `DRY RUN` leads, and is not merely appended, because the Actions list truncates
+# from the right — a marker at the end is the first thing to disappear at the
+# width where it is needed. The title used to be scope + SHA alone, so a dry run
+# and a live ship produced two IDENTICAL rows and the only way to tell them apart
+# was to open the run and read which steps were skipped. That was already a
+# papercut; it gets sharper now that a dry run also installs dependencies and
+# builds both frontends, so the two read alike for minutes at a time, and the one
+# question being asked of that row is whether production moved.
+#
+# `== true` rather than a bare truthiness test. A bare `inputs.dry_run_only &&`
+# is correct while the input arrives as a real boolean, and it does — the `if:`
+# conditions below rely on the same thing. But a non-empty STRING is truthy in
+# these expressions, so under any future where this reaches the title as
+# `"false"`, a bare test would label every live ship `DRY RUN`: the failure is
+# silent, and it points the wrong way. `== true` is false for `"false"` and for
+# `false` alike, so the marker can only ever be missing, never lying.
+run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.scope }} ${{ inputs.sha }}"
 
 # The ONLY path to production. A human opens Actions, names a commit, types a
 # confirmation, and approves the `production` environment. Nothing here fires on
@@ -441,14 +458,14 @@ jobs:
       # install never competes with it for disk or CPU, and skipped entirely on
       # the paths that never reach a Vercel build.
       - name: Install dependencies for the Vercel build
-        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
+        if: ${{ inputs.scope != 'migrations-only' }}
         run: npm ci
 
       # Pinned, exactly like the Supabase CLI above. An unpinned `@latest` would
       # make the only path to production depend on whatever Vercel published
       # this morning.
       - name: Install Vercel CLI
-        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
+        if: ${{ inputs.scope != 'migrations-only' }}
         run: npm install --global vercel@59.11.7
 
       # The production BUILDS of both frontends happen HERE, before a single byte
@@ -469,8 +486,42 @@ jobs:
       # build cannot overwrite the first and the upload step can find both.
       #
       # Still gated on the full scope: a migrations-only run builds nothing.
+      #
+      # ── And NOT gated on `dry_run_only`, which is the point ──────────────
+      # This step, the `npm ci` and the CLI install above it are the only three
+      # the dry run used to skip while still being able to run them safely, and
+      # skipping them is what made "dry run: green" mean less than it looked.
+      # THREE of the four production attempts on 2026-09-14 died right here,
+      # each after a reviewer had already clicked Approve, on errors a build
+      # would have surfaced in minutes: run 34892839657 on a `DEPLOY_SHA` the
+      # step had never passed (#2265), then 34894763676 on `NEXT_PUBLIC_API_URL`
+      # and 34896647837 on `NEXT_PUBLIC_SUPABASE_URL` — both absent from the
+      # Vercel Production environment the Infisical `prod` sync feeds.
+      #
+      # That the variable was DIFFERENT each time is the argument for rehearsing
+      # the real build rather than adding a preflight that enumerates the
+      # variables we currently know about. The build is the only check that
+      # knows the whole list, because it is the thing that consumes it.
+      #
+      # The rehearsal can cover this because the build genuinely changes nothing
+      # that matters: `buildVercelProject` runs `vercel pull` (a read) and
+      # `vercel build` (local), then moves `.vercel` into the stash. It creates
+      # no deployment — `vercel deploy --prebuilt` lives in the upload step
+      # alone — so a dry run that builds still uploads nothing, aliases nothing
+      # and leaves the Vercel dashboard without a new row.
+      #
+      # Note what it costs and what it does not: it lengthens a dry run by an
+      # `npm ci` and two `next build`s, and it does NOT prove the upload works.
+      # What it does prove is that this commit compiles against the Production
+      # environment variables actually in Vercel right now — the half of the
+      # job that has failed, and the half no other gate looks at.
+      #
+      # `!inputs.dry_run_only` is absent rather than rewritten: on a real ship
+      # and on a migrations-only run the condition evaluates exactly as it did
+      # before, so this changes the dry run only and leaves the shipping path
+      # byte-identical.
       - name: Build the Vercel production bundles (web + landing)
-        if: ${{ !inputs.dry_run_only && inputs.scope != 'migrations-only' }}
+        if: ${{ inputs.scope != 'migrations-only' }}
         env:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           VERCEL_WEB_PROJECT_ID: ${{ env.VERCEL_WEB_PROJECT_ID }}
@@ -480,7 +531,35 @@ jobs:
           DEPLOY_PHASE: build
           DEPLOY_SHA: ${{ steps.sha.outputs.sha }}
           VERCEL_BUILD_STASH_DIR: ${{ runner.temp }}/vercel-builds
-        run: node scripts/ci/deploy-vercel.mjs
+          DRY_RUN: ${{ inputs.dry_run_only }}
+        run: |
+          set -euo pipefail
+
+          # The one way this build is NOT inert, and it only bites later.
+          #
+          # Both `next.config.js` files pass `authToken: process.env.SENTRY_AUTH_TOKEN`
+          # to `withSentryConfig` with `release: sentryGitSha`, and `vercelCliEnv`
+          # spreads `process.env` into the build subprocess — while the Infisical
+          # `prod` inject above puts the whole prod secret set into this job's
+          # environment. So a build with that token present CREATES a Sentry release
+          # and uploads source maps for the commit it built.
+          #
+          # On a real ship that is exactly right. On a dry run it would mint a
+          # release for a commit that is not being deployed, and Sentry would then
+          # attribute production errors to a version that never shipped. Today the
+          # token is not provisioned, so the plugin stays silent and nothing happens
+          # (apps/web/next.config.js:121) — which means this would not go wrong now,
+          # it would go wrong quietly on the day someone adds the secret.
+          #
+          # Unset rather than left empty: `withSentryConfig` treats an empty string
+          # as no token, but `unset` is the state the plugin documents and cannot be
+          # read as "configured, blank".
+          if [ "${DRY_RUN:-}" = "true" ]; then
+            echo "Dry run: clearing SENTRY_AUTH_TOKEN so this build mints no Sentry release."
+            unset SENTRY_AUTH_TOKEN
+          fi
+
+          node scripts/ci/deploy-vercel.mjs
 
       # Always runs, including when this is not a dry run: the log then records
       # what WAS pending immediately before the apply, so a failure in the next
@@ -488,16 +567,39 @@ jobs:
       - name: Run migrations (dry-run)
         run: node scripts/run-migration.mjs --env production --dry-run
 
+      # The summary states what the rehearsal DID and, as carefully, what it
+      # still did not. A dry run that overstates its own coverage is how the
+      # frontend half went unrehearsed while every run said "green": the point
+      # of widening it is lost if the report goes back to being flattering.
       - name: Stop here (dry run only)
         if: ${{ inputs.dry_run_only }}
+        env:
+          SCOPE: ${{ inputs.scope }}
+          SHA: ${{ steps.sha.outputs.sha }}
         run: |
+          set -euo pipefail
           {
             echo "### Dry run only — nothing was applied and nothing was deployed"
             echo ""
-            echo "Commit: \`${{ steps.sha.outputs.sha }}\` · scope: \`${{ inputs.scope }}\`"
+            echo "Commit: \`$SHA\` · scope: \`$SCOPE\`"
             echo ""
             echo "The commit passed validation, the migration replay ran against production's"
             echo "applied state, and the pending set is listed in the previous step's log."
+            if [ "$SCOPE" != "migrations-only" ]; then
+              echo ""
+              echo "Both Vercel production bundles were BUILT — \`vercel pull --environment=production\`"
+              echo "then \`vercel build --prod\` — so this commit is known to compile against the"
+              echo "Production environment variables currently in Vercel. Nothing was uploaded:"
+              echo "no deployment was created and production still serves what it served before."
+              echo ""
+              echo "Still unrehearsed, and reachable only on a real run: the migration apply, the"
+              echo "Render deploy, the health check, and the Vercel upload."
+            else
+              echo ""
+              echo "Scope is \`migrations-only\`, so no frontend bundle was built. The Vercel build"
+              echo "is rehearsed only on a \`full\` dry run."
+            fi
+            echo ""
             echo "Re-run with **Stop after the dry run** unchecked to deploy it."
           } >> "$GITHUB_STEP_SUMMARY"
 

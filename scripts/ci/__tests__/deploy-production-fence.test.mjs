@@ -29,6 +29,8 @@ import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
+import { workflowSteps } from "./helpers/workflow-yaml.mjs";
+
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "deploy-production.yml");
 
@@ -282,30 +284,177 @@ describe("the SHA-trim step (run 34234768094)", () => {
   // stayed green for the whole life of the Vercel BUILD step while that step passed
   // no DEPLOY_SHA at all — the upload step's copy was carrying it. Run 34892839657
   // is what that produced: "DEPLOY_SHA environment variable is required", after the
-  // reviewer approval, the `npm ci` and the Vercel CLI install, on the one path no
-  // rehearsal can reach (the dry run skips this step by `if:`).
+  // reviewer approval, the `npm ci` and the Vercel CLI install.
   //
-  // deploy-vercel.mjs calls requireEnv("DEPLOY_SHA") BEFORE it branches on
-  // DEPLOY_PHASE, so the value is required in every phase — build included, where it
-  // is injected as VERCEL_GIT_COMMIT_SHA so the web/landing Sentry release matches
-  // the deployed commit. It cannot be defaulted from the ambient GITHUB_SHA: that is
-  // the DISPATCHED ref's tip rather than the deploy SHA, a step-level `GITHUB_SHA:`
-  // is silently ignored by Actions (reserved prefix), and defaulting would make the
-  // post-upload githubCommitSha assertion compare a wrong value against itself and
-  // pass. So assert it per CALL SITE.
-  it("every deploy-vercel.mjs call site passes DEPLOY_SHA", () => {
-    const text = readFileSync(WORKFLOW, "utf8");
-    const steps = text.split(/\n      - name: /).slice(1);
-    const callSites = steps.filter((step) => /run: node scripts\/ci\/deploy-vercel\.mjs/.test(step));
-    assert.ok(callSites.length >= 2, `expected a build and an upload call site, found ${callSites.length}`);
-    for (const step of callSites) {
-      const label = step.slice(0, step.indexOf("\n"));
-      assert.match(
-        step,
-        /DEPLOY_SHA:\s*\$\{\{\s*steps\.sha\.outputs\.sha\s*\}\}/,
-        `step "${label}" runs deploy-vercel.mjs without DEPLOY_SHA`,
+  // The per-call-site guard #2265 added here has MOVED to
+  // `deploy-vercel-env-contract.test.mjs`, generalised rather than dropped: it now
+  // asserts every variable `deploy-vercel.mjs` requires for a call site's phase
+  // (read from that script's own table, so the two cannot drift), across every
+  // workflow that invokes it rather than this one — the staging caller had the same
+  // exposure and nothing looking at it. The exact #2265 case is pinned by name there
+  // so this file's loss of it cannot go unnoticed. Kept as a pointer rather than a
+  // second copy: one canonical owner per fact.
+});
+
+// ── The other half of the #2265 shape ──────────────────────────────────────
+//
+// `no later DEPLOY_SHA assignment reads inputs.sha` above is two assertions.
+// The NEGATIVE half is strong: it fails if ANY occurrence after the trim reads
+// `inputs.sha`. The POSITIVE half — that some step reads the trimmed output —
+// is a whole-region grep satisfied by a single match, and five steps satisfy
+// it, so four of them could lose their `DEPLOY_SHA` with the suite still green.
+//
+// That is the identical shape #2265 fixed for the Vercel build step, still
+// standing for the other four. The worst of them is `Deploy the commit to
+// Render`: `deploy-render-production.mjs` calls `requireEnv("DEPLOY_SHA")`, the
+// step runs AFTER `Run migrations (apply)`, and it is gated
+// `!inputs.dry_run_only` — so no dry run reaches it even now that the rehearsal
+// is wider. A regression there fails a production run with the database already
+// migrated.
+//
+// So: assert per STEP, over every step that passes the value.
+describe("DEPLOY_SHA is sourced per step, not somewhere in the file", () => {
+  const steps = workflowSteps(WORKFLOW, "deploy-production.yml");
+  const carriers = steps.filter((step) => step.env.has("DEPLOY_SHA"));
+
+  // A loop over an empty list passes. If the reader ever stops recognising
+  // these steps, the assertions below would go quietly green.
+  it("finds every step that passes DEPLOY_SHA", () => {
+    assert.ok(
+      carriers.length >= 5,
+      `expected at least 5 steps passing DEPLOY_SHA, found ${carriers.length}: ` +
+        `${carriers.map((s) => s.name).join(", ") || "none"}`,
+    );
+  });
+
+  it("gives every one of them the trimmed output, never inputs.sha", () => {
+    for (const step of carriers) {
+      assert.equal(
+        step.env.get("DEPLOY_SHA"),
+        "${{ steps.sha.outputs.sha }}",
+        `step "${step.name}" (job ${step.jobId}) passes DEPLOY_SHA as ` +
+          `"${step.env.get("DEPLOY_SHA")}" rather than the trimmed validated output`,
       );
     }
+  });
+
+  // Named explicitly because this one runs after the apply, and because no dry
+  // run executes it — its only protection is this assertion.
+  it("the Render deploy step passes DEPLOY_SHA, and it runs after the apply", () => {
+    const render = steps.find((s) => s.name === "Deploy the commit to Render");
+    assert.ok(render, "the Render deploy step is missing");
+    assert.equal(render.env.get("DEPLOY_SHA"), "${{ steps.sha.outputs.sha }}");
+
+    const names = steps.map((s) => s.name);
+    assert.ok(
+      names.indexOf("Run migrations (apply)") < names.indexOf("Deploy the commit to Render"),
+      "the Render deploy is expected to run after the migration apply",
+    );
+  });
+});
+
+// ── What the dry run rehearses, held in place ──────────────────────────────
+//
+// Nothing in this suite asserted the workflow's `if:` conditions before, which
+// left the whole rehearsal/ship split unguarded in both directions: the three
+// build steps could silently go back to being dry-run-skipped, or the shipping
+// steps could silently start running on a dry run. The first quietly undoes the
+// coverage; the second deploys from a run whose entire contract is that it
+// deploys nothing.
+describe("the dry run rehearses the build and ships nothing", () => {
+  const byName = new Map(
+    workflowSteps(WORKFLOW, "deploy-production.yml").map((step) => [step.name, step]),
+  );
+
+  // Run on a dry run, skipped only for migrations-only.
+  const REHEARSED = [
+    "Install dependencies for the Vercel build",
+    "Install Vercel CLI",
+    "Build the Vercel production bundles (web + landing)",
+  ];
+
+  // Never run on a dry run. Each one writes to production or costs a release.
+  const SHIPPING = [
+    "Run migrations (apply)",
+    "Deploy the commit to Render",
+    "Deploy the commit to Vercel production (web + landing)",
+  ];
+
+  for (const name of REHEARSED) {
+    it(`"${name}" runs on a dry run`, () => {
+      const step = byName.get(name);
+      assert.ok(step, `step "${name}" not found`);
+      assert.doesNotMatch(
+        step.if ?? "",
+        /dry_run_only/,
+        `step "${name}" is gated on dry_run_only again; the dry run stops rehearsing the ` +
+          `Vercel build, which is the half that failed on runs 34892839657, 34894763676 and 34896647837`,
+      );
+      // The other half of the gate must stay: a migrations-only run builds nothing.
+      assert.match(step.if ?? "", /inputs\.scope != 'migrations-only'/);
+    });
+  }
+
+  for (const name of SHIPPING) {
+    it(`"${name}" never runs on a dry run`, () => {
+      const step = byName.get(name);
+      assert.ok(step, `step "${name}" not found`);
+      assert.match(
+        step.if ?? "",
+        /!inputs\.dry_run_only/,
+        `step "${name}" would run on a dry run — a dry run must apply nothing and deploy nothing`,
+      );
+    });
+  }
+});
+
+// The Vercel BUILD step runs on a dry run as well as on a real ship, which is
+// what makes "dry run: green" mean the frontends compile. That is only safe
+// while the build stays inert, and it has exactly one way not to be: both
+// `next.config.js` files hand `process.env.SENTRY_AUTH_TOKEN` to
+// `withSentryConfig` with `release: sentryGitSha`, `vercelCliEnv` spreads
+// `process.env` into the build subprocess, and the Infisical `prod` inject puts
+// the whole prod secret set into this job's environment. With that token
+// present a dry run would create a Sentry release, and upload source maps, for
+// a commit that is not being deployed.
+//
+// The token is not provisioned today, so this is latent rather than live — which
+// is precisely why it needs a test. Nothing would go red on the day it is added.
+describe("the dry-run Sentry guard on the Vercel build step", () => {
+  const BUILD_STEP = "Build the Vercel production bundles (web + landing)";
+
+  /** The step's script, with the real deploy swapped for a probe. */
+  function runBuildStep(dryRun) {
+    const path = join(workspace, "build-step.sh");
+    const script = extractStepScript(BUILD_STEP)
+      .replace(/\$\{\{[^}]*\}\}/g, "")
+      .replace(
+        "node scripts/ci/deploy-vercel.mjs",
+        'printf "token=%s\\n" "${SENTRY_AUTH_TOKEN-__UNSET__}"',
+      );
+    writeFileSync(path, script);
+    try {
+      return execFileSync("bash", [path], {
+        encoding: "utf8",
+        stdio: "pipe",
+        env: { ...process.env, DRY_RUN: dryRun, SENTRY_AUTH_TOKEN: "sntrys_realtoken" },
+      });
+    } catch (error) {
+      return `${error.stdout ?? ""}${error.stderr ?? ""}`;
+    }
+  }
+
+  it("clears SENTRY_AUTH_TOKEN on a dry run, so no release is minted", () => {
+    const output = runBuildStep("true");
+    assert.match(output, /token=__UNSET__/);
+    assert.doesNotMatch(output, /sntrys_realtoken/);
+  });
+
+  // The other half, and the one that makes the test above mean something: a
+  // guard that cleared the token unconditionally would pass that assertion while
+  // silently stopping every real production release from reaching Sentry.
+  it("leaves SENTRY_AUTH_TOKEN alone on a real ship", () => {
+    assert.match(runBuildStep("false"), /token=sntrys_realtoken/);
   });
 });
 
