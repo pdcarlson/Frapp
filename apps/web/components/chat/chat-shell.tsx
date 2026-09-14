@@ -30,7 +30,7 @@ import { can } from "@repo/validation";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
-import { useFrappUser } from "@/lib/auth/use-frapp-user";
+import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { coldLoadDefaultChannelId } from "@/lib/chat/default-channel";
@@ -167,7 +167,23 @@ export function ChatShell({
   initialMessageId?: string | null;
 } = {}) {
   const activeChapterId = useChapterStore((state) => state.activeChapterId);
-  const { userId } = useFrappUser();
+  /*
+    The viewer's `users.id` for painting — live once `GET /v1/users/me` answers,
+    and the one cached beside the first chunk until then (#2249).
+
+    Every use of it on this surface is a paint: which side a bubble takes
+    (`viewerId` into the timeline), what a DM is called
+    (`directChannelDisplayName`), whether the reply quote says "You", whether the
+    live region says "You", and whether the `?message=` jump may run yet. None of
+    them is a write, which is why the cached value is allowed to serve them —
+    `viewer-id.tsx` and `use-first-chunk-cache.ts` hold that line and the reason
+    for it.
+
+    Still `null` when identity is genuinely unknown, and `null` still means
+    withhold: the gate #2255 put in `message-timeline.tsx` is untouched, and
+    every guard below reads the same way it did.
+  */
+  const userId = useChatViewerId();
   const orgConfig = useOrgConfig();
 
   const channelsQuery = useChannels();

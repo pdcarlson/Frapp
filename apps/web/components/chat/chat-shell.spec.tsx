@@ -218,8 +218,15 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   ) => selector({ activeChapterId: chapterStoreState.value }),
 }));
 
-vi.mock("@/lib/auth/use-frapp-user", () => ({
-  useFrappUser: () => ({ userId: viewerState.userId }),
+/*
+  The shell reads identity through `useChatViewerId` (#2249), which layers the
+  id cached beside the first chunk under the live `GET /v1/users/me` one. Mocked
+  at that seam rather than at `useFrappUser`, because the shell no longer calls
+  `useFrappUser` — the resolved id is what it paints with, and `viewerState` is
+  how these tests say what it resolved to.
+*/
+vi.mock("@/lib/chat/viewer-id", () => ({
+  useChatViewerId: () => viewerState.userId,
 }));
 
 vi.mock("@/lib/chat/use-chat-channel", () => ({

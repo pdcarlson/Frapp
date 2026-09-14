@@ -20,7 +20,7 @@
  * argument is about *which* keys a persister picks up, and a persister picks up
  * every key by construction.
  *
- * This cache inverts that. It stores two kinds of row, both named explicitly,
+ * This cache inverts that. It stores three kinds of row, each named explicitly,
  * and every row carries the `userId` + `chapterId` it was written under **as
  * part of its primary key**. A read is a lookup at the current scope, so a row
  * written for another member or another chapter is not merely ignored — there
@@ -28,6 +28,40 @@
  * makes a cross-tenant read impossible; the wipe
  * (`first-chunk-wipe.ts`) and `pruneForeignScopes` below are hygiene on top of
  * it, so a member's rows do not sit on a shared machine after they leave.
+ *
+ * ## The viewer id row is the sensitive one, and it is named rather than assumed
+ *
+ * The third row type holds the viewer's **`users.id`** — the id
+ * `chat_messages.sender_id` references, and the one that decides which of
+ * `components.md` §11's two bubble shapes a row takes. `caching.md`'s argument
+ * against `persistQueryClient` names `["user","me"]` specifically as a key that
+ * must not outlive a sign-out, so storing anything derived from it has to be
+ * justified out loud instead of waved through on the header above.
+ *
+ * Three things make this row the blessed case rather than that one:
+ *
+ * - **It is keyed on the auth uid, so it cannot be read back by anyone else.**
+ *   A persister restores `["user","me"]` for whoever opens the tab next because
+ *   that key carries no identity. This row's key *is* the identity, and the
+ *   scope it is read at comes from the live Supabase session — so the only
+ *   member who can read member A's `users.id` back is member A.
+ * - **It is one opaque id, not the user object.** `["user","me"]` is never
+ *   seeded from it (see `use-first-chunk-cache.ts`): that key's consumers —
+ *   `account-menu`, `profile-panel`, `billing-page` — read a whole profile, and
+ *   a partial one seeded there would be a worse bug than the one this fixes.
+ *   Nothing here reaches those surfaces; the id is a paint input for chat.
+ * - **It is the id the rows beside it are already attributed with.** It is read
+ *   in the same transaction as the tails ({@link readFirstChunk}) precisely so
+ *   there is no window in which cached rows are painted and the id that says
+ *   whose they are has not arrived — which is the window
+ *   [#2243](https://github.com/pdcarlson/Frapp/issues/2243) was a bug in.
+ *
+ * The scope also carries `chapterId`, which `users.id` does not depend on. That
+ * is deliberate rather than sloppy: it costs nothing, because a chapter change
+ * drops the query cache wholesale and wipes this database, so the rows this id
+ * exists to attribute are gone on exactly the events that would invalidate it —
+ * and keying it the same way as everything else means it rides
+ * {@link pruneForeignScopes} and the wipe without a second rule to keep right.
  *
  * `userId` here is the **Supabase auth uid** (the JWT subject), not
  * `users.id` / `useViewerUserId`. Two reasons, and both matter:
@@ -58,6 +92,9 @@
  * - **Not reactions or actions.** `1s` puts them after paint, and a reaction
  *   chip that paints from cache and then disagrees with the server is worse
  *   than one that arrives a moment later.
+ * - **The viewer's `users.id`** — one id per scope, so the tails above can be
+ *   attributed to a side of the thread without waiting on `GET /v1/users/me`.
+ *   See the section above for why this row and not the user object.
  *
  * ## Failure posture
  *
@@ -128,9 +165,24 @@ export interface CachedChannelTailRow extends FirstChunkScope {
   cachedAt: number;
 }
 
+/**
+ * The viewer's `users.id` under one scope.
+ *
+ * Spelled `viewerUserId` rather than reusing `userId`, which this row already
+ * has and which means something else: `userId` is the **Supabase auth uid** the
+ * row is keyed on, and `viewerUserId` is the **`users.id`** the API answers with
+ * and `chat_messages.sender_id` references. Two id spaces in one row is exactly
+ * the place a single reused name would eventually be read as the wrong one.
+ */
+export interface CachedViewerIdRow extends FirstChunkScope {
+  viewerUserId: string;
+  cachedAt: number;
+}
+
 class ChatReadCacheDB extends Dexie {
   channelLists!: Table<CachedChannelListRow, [string, string]>;
   channelTails!: Table<CachedChannelTailRow, [string, string, string]>;
+  viewerIds!: Table<CachedViewerIdRow, [string, string]>;
 
   constructor() {
     super(FIRST_CHUNK_DB_NAME);
@@ -146,6 +198,19 @@ class ChatReadCacheDB extends Dexie {
     this.version(1).stores({
       channelLists: "[userId+chapterId]",
       channelTails: "[userId+chapterId+channelId], [userId+chapterId], cachedAt",
+    });
+    /*
+      v2 adds `viewerIds` and changes nothing that exists.
+
+      No `upgrade()` callback, because there is no data to move: a v1 database
+      has never held a viewer id, and the absence of the row is exactly the
+      state a reader must already handle — it is what every first load looks
+      like. Dexie creates the store and leaves the other two alone, so a member
+      mid-session on the old schema keeps their cached rail and tails and simply
+      starts caching the id from their next resolve.
+    */
+    this.version(2).stores({
+      viewerIds: "[userId+chapterId]",
     });
   }
 }
@@ -209,9 +274,17 @@ export interface FirstChunk {
   /** `null` when nothing usable was cached — not `[]`, which is a real empty chapter. */
   channels: CachedChannelListRow | null;
   tails: CachedChannelTailRow[];
+  /**
+   * The viewer's `users.id`, or `null` when this scope has none cached.
+   *
+   * The whole row, not the bare id: the caller re-checks the scope it was
+   * written under against the scope currently in effect before painting
+   * anything with it, and it cannot do that with the id alone.
+   */
+  viewer: CachedViewerIdRow | null;
 }
 
-const EMPTY_CHUNK: FirstChunk = { channels: null, tails: [] };
+const EMPTY_CHUNK: FirstChunk = { channels: null, tails: [], viewer: null };
 
 /**
  * Everything cached for one scope, already filtered by age.
@@ -226,9 +299,21 @@ export async function readFirstChunk(
   if (!db) return EMPTY_CHUNK;
   const key = [scope.userId, scope.chapterId];
   try {
-    const [list, tails] = await Promise.all([
+    /*
+      The viewer id is read here, in the same `Promise.all` as the rows, rather
+      than from a lookup of its own — and that is a correctness property, not a
+      saved round trip.
+
+      It resolves with the tails it exists to attribute. A separate read could
+      land after them, and a commit that painted rows before the id said whose
+      they were is precisely the window #2243 was a bug in: the rows would take
+      the incoming shape, then reflow under the member when the id arrived.
+      Read together, they reach React together.
+    */
+    const [list, tails, viewer] = await Promise.all([
       db.channelLists.get(key as [string, string]),
       db.channelTails.where("[userId+chapterId]").equals(key).toArray(),
+      db.viewerIds.get(key as [string, string]),
     ]);
     const now = Date.now();
     const usableList =
@@ -248,6 +333,26 @@ export async function readFirstChunk(
         (row) =>
           isFresh(row, now) && row.rows.length > 0 && known.has(row.channelId),
       ),
+      /*
+        Aged like every other row, and deliberately **not** gated on the channel
+        list the way a tail is.
+
+        A tail needs the list to vouch for its channel because a channel id is
+        the one part of a tail's key this scope does not otherwise attest. The
+        viewer id has nothing left to vouch for: its whole key is the scope, and
+        the scope is what the read is a lookup at. Requiring a list would also
+        withhold the id in the one case it is most needed — a member whose rail
+        expired but whose tails are still fresh would paint rows with no side.
+
+        Age still applies. `FIRST_CHUNK_MAX_AGE_MS` bounds the one way this row
+        can go stale without the key changing: an account deleted and recreated
+        under the same auth uid gets a new `users.id`. The live value overrides
+        it within a round trip in any case (`use-first-chunk-cache.ts`), and the
+        rows it would mis-attribute in the meantime are that same member's own
+        cached history — so the failure mode is "your old messages briefly read
+        as someone else's", never "someone else's read as yours".
+      */
+      viewer: viewer && isFresh(viewer, now) ? viewer : null,
     };
   } catch {
     return EMPTY_CHUNK;
@@ -276,6 +381,35 @@ export async function writeChannelList(
     await db.channelLists.put({ ...scope, channels, cachedAt });
   } catch {
     /* Best-effort: a failed write costs one cold load, not a broken shell. */
+  }
+}
+
+/**
+ * Remember the viewer's `users.id` for this scope.
+ *
+ * One row per scope, overwritten each time identity resolves — there is nothing
+ * to evict and no list to bound.
+ *
+ * **Refuses an empty id rather than deleting on one.** `writeChannelList`
+ * deletes on an empty array because an empty channel list is a real, paintable
+ * state that must not be seeded; there is no such state for an identity. An
+ * absent id means "not known", which is what a missing row already says, and a
+ * caller that reached here with `""` is a caller whose identity has not
+ * resolved — deleting then would throw away a good row on the strength of a
+ * value that means nothing.
+ */
+export async function writeViewerId(
+  scope: FirstChunkScope,
+  viewerUserId: string,
+  cachedAt: number,
+): Promise<void> {
+  const db = openDb();
+  if (!db) return;
+  if (!viewerUserId) return;
+  try {
+    await db.viewerIds.put({ ...scope, viewerUserId, cachedAt });
+  } catch {
+    /* Best-effort — see `writeChannelList`. */
   }
 }
 
@@ -379,7 +513,7 @@ async function evictOldestTails(
  * conservative side of a tenancy decision.
  *
  * **Reads primary keys, never rows.** The question is entirely about the key —
- * both tables lead with `[userId+chapterId]` — and `toArray()` would
+ * every table leads with `[userId+chapterId]` — and `toArray()` would
  * structured-clone every cached message in the database, foreign ones included,
  * to answer it. It also runs *after* the seed rather than in front of it: a
  * read can only reach the current scope's keys, so nothing here protects the
@@ -399,13 +533,15 @@ export async function pruneForeignScopes(
   const foreign = (key: readonly unknown[]) =>
     key[0] !== scope.userId || key[1] !== scope.chapterId;
   try {
-    const [listKeys, tailKeys] = await Promise.all([
+    const [listKeys, tailKeys, viewerKeys] = await Promise.all([
       db.channelLists.toCollection().primaryKeys(),
       db.channelTails.toCollection().primaryKeys(),
+      db.viewerIds.toCollection().primaryKeys(),
     ]);
     await Promise.all([
       db.channelLists.bulkDelete(listKeys.filter(foreign)),
       db.channelTails.bulkDelete(tailKeys.filter(foreign)),
+      db.viewerIds.bulkDelete(viewerKeys.filter(foreign)),
     ]);
   } catch {
     /* Best-effort — see `writeChannelList`. */
