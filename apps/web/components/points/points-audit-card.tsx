@@ -34,6 +34,7 @@ import {
 } from "@/components/shared/nested-states";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import { asArray } from "@/lib/utils";
 import { formatLocaleDateTime as formatTimestamp } from "@repo/formatting";
 
 type Category =
@@ -72,10 +73,6 @@ export function olderAuditCursor(
   if (rows.length < pageSize) return undefined;
   const oldest = rows[rows.length - 1]?.created_at;
   return typeof oldest === "string" && oldest.length > 0 ? oldest : undefined;
-}
-
-function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
 }
 
 const INITIAL_PAGING: AuditPaging = { before: undefined, history: [] };
