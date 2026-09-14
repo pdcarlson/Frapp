@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { applyAlpha, contrastRatio, mixHex, parseHex } from "@repo/color";
 import {
   deriveSignetPalette,
@@ -66,10 +69,70 @@ export const TEXT = signetDarkTokens.color.text;
 export const SEMANTIC = signetDarkTokens.color.semantic;
 
 /**
- * `--destructive-text` is CSS-only (`packages/theme/src/signet.css`) with no
- * `signetDarkTokens` entry, so it is the one literal here.
+ * The CSS-only tokens — the ones `signet.css` declares with no
+ * `signetDarkTokens` entry behind them, because `signetDarkTokens` is what
+ * `apps/mobile` reads and shipping them there would claim a mobile treatment no
+ * mobile screen implements (`packages/theme/src/signet.spec.ts` keeps that
+ * list).
+ *
+ * Parsed out of the stylesheet rather than restated, for the reason the fixed
+ * half above already is: a guard that hardcodes the value it is guarding goes
+ * green against a constant that no longer ships. `--destructive-text` was that
+ * literal until the mention chip needed two more of them.
  */
-export const DESTRUCTIVE_TEXT = "#FF7B72";
+const SIGNET_CSS_PATH = join(
+  // `__dirname`, not `import.meta.url`: these run under the jsdom environment,
+  // where `import.meta.url` is not a `file:` URL and `readFileSync` rejects it.
+  __dirname,
+  "..",
+  "..",
+  "..",
+  "packages",
+  "theme",
+  "src",
+  "signet.css",
+);
+
+/**
+ * Read at module scope, so a failure here takes down every spec that imports
+ * this file — eight of them — before a single test body runs. That is the right
+ * behaviour (the fixtures are worthless if the stylesheet moved) but a bare
+ * `ENOENT` across eight suites at once does not say why, and the traversal
+ * above assumes both ends stayed put. So the message names the assumption.
+ */
+function readSignetCss(): string {
+  try {
+    return readFileSync(SIGNET_CSS_PATH, "utf8");
+  } catch (cause) {
+    throw new Error(
+      `Could not read the Signet stylesheet at ${SIGNET_CSS_PATH}. ` +
+        "These fixtures resolve it relative to `apps/web/tests/`; if either " +
+        "that directory or `packages/theme/src/signet.css` moved, fix the " +
+        "path here rather than re-hardcoding the token values it parses.",
+      { cause },
+    );
+  }
+}
+
+const SIGNET_CSS = readSignetCss();
+
+function cssToken(name: string): string {
+  const value = new RegExp(`${name}:\\s*([^;]+);`).exec(SIGNET_CSS)?.[1];
+  if (!value) throw new Error(`${name} is not declared in signet.css`);
+  return value.trim();
+}
+
+export const DESTRUCTIVE_TEXT = cssToken("--destructive-text");
+
+/**
+ * The in-body mention chip (§11) — an opaque fill and the text that sits on it.
+ * Opaque is the load-bearing property, not a styling preference; see the guards
+ * in `components/chat/chat-contrast.spec.ts`.
+ */
+export const MENTION_CHIP = {
+  fill: cssToken("--mention-chip"),
+  text: cssToken("--mention-chip-text"),
+} as const;
 
 /** The hairline's alpha, parsed from the token so the two cannot disagree. */
 export const HAIRLINE_ALPHA = Number(
