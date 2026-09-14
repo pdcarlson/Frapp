@@ -30,7 +30,8 @@ import { getErrorMessage } from "@/lib/utils";
 
 interface TaskCardProps {
   message: ChatMessage;
-  viewerId: string | null;
+  /** Known, never `null` — see `MessageRendererProps.viewerId`. */
+  viewerId: string;
   /** False while the optimistic chat row is not yet server-acked. */
   isConfirmed: boolean;
 }
@@ -194,7 +195,19 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
     ? actionStatus(live)
     : payload.status;
   const pointsAwarded = live?.points_awarded ?? false;
-  const isAssignee = viewerId != null && viewerId === payload.assignee_user_id;
+  /*
+    `!!viewerId` rather than `!= null`, for the reason `poll-card` records: the
+    declared type does not stop `undefined` arriving through a spread, and
+    `undefined != null` is false — so that shape happened to fail closed here
+    while it failed *open* there. Spelled the same way in both so neither has to
+    be reasoned about again.
+
+    Failing closed is not harmless either. Start and Mark complete simply
+    disappear, but the COMPLETED branch below is gated on `<Can>` rather than on
+    `isAssignee`, so a false value un-hides Confirm on the viewer's *own*
+    completed task — an affordance #1056 says the server refuses.
+  */
+  const isAssignee = !!viewerId && viewerId === payload.assignee_user_id;
   const actionsDisabled =
     !isConfirmed ||
     updateStatus.isPending ||

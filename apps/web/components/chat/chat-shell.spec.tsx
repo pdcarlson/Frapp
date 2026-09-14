@@ -23,9 +23,25 @@ const { chapterStoreState } = vi.hoisted(() => ({
 // Mutable so the unresolved-viewer window can be exercised (#2243). `null` is
 // what `useFrappUser` really reports until `GET /v1/users/me` answers, and the
 // static `"viewer-1"` this used to be meant no test could reach that window.
-const { viewerState } = vi.hoisted(() => ({
+/*
+  Two identities, because the shell reads two (#2249).
+
+  `viewerState` is the **resolved** id — live if `GET /v1/users/me` answered,
+  else the one cached beside the Dexie first chunk — and it is what the shell
+  paints with. `liveViewerState` is the live half alone, which two guards read
+  because what they actually need is "has the live window loaded", not "who is
+  this". Tests that do not care set both through `setViewer`.
+*/
+const { viewerState, liveViewerState } = vi.hoisted(() => ({
   viewerState: { userId: "viewer-1" as string | null },
+  liveViewerState: { userId: "viewer-1" as string | null },
 }));
+
+/** Both halves at once — the ordinary case, where identity simply resolved. */
+function setViewer(userId: string | null) {
+  viewerState.userId = userId;
+  liveViewerState.userId = userId;
+}
 
 const {
   mockScrollToMessage,
@@ -218,8 +234,23 @@ vi.mock("@/lib/stores/chapter-store", () => ({
   ) => selector({ activeChapterId: chapterStoreState.value }),
 }));
 
+/*
+  The shell reads identity through `useChatViewerId` (#2249), which layers the
+  id cached beside the first chunk under the live `GET /v1/users/me` one. Mocked
+  at that seam rather than at `useFrappUser`, because the shell no longer calls
+  `useFrappUser` — the resolved id is what it paints with, and `viewerState` is
+  how these tests say what it resolved to.
+*/
+vi.mock("@/lib/chat/viewer-id", () => ({
+  useChatViewerId: () => viewerState.userId,
+}));
+
+// The live half, read by the deep-link jump and the announcer baseline.
 vi.mock("@/lib/auth/use-frapp-user", () => ({
-  useFrappUser: () => ({ userId: viewerState.userId }),
+  useFrappUser: () => ({
+    userId: liveViewerState.userId,
+    isLoading: liveViewerState.userId === null,
+  }),
 }));
 
 vi.mock("@/lib/chat/use-chat-channel", () => ({
@@ -481,7 +512,7 @@ function chatChannelResult(
 }
 
 beforeEach(() => {
-  viewerState.userId = "viewer-1";
+  setViewer("viewer-1");
   mockScrollToMessage.mockClear();
   mockRefetch.mockClear();
   mockUseChatChannel.mockReset();
@@ -642,6 +673,38 @@ describe("ChatShell deep-link targets", () => {
     expect(
       await screen.findByText(/older than the history loaded here/i),
     ).toBeTruthy();
+    expect(mockScrollToMessage).not.toHaveBeenCalled();
+  });
+
+  it("waits for the live window before calling a jump target unreachable (#2249)", async () => {
+    /*
+      The cached first chunk resolves identity from disk, so a warm load has a
+      viewer id long before the network has answered for the *messages*. This
+      guard is not about identity though — it decides whether to tell the member
+      "That message is older than the history loaded here.", and the cached tail
+      is by construction the rows that existed when the cache was written. A
+      deep link to something posted while they were away would miss against it
+      and state that, out loud, over a message the backfill is about to deliver.
+
+      So the jump keeps waiting on the *live* id, which is the proxy it has
+      always used for "the live window has landed" (#2269 replaces the proxy).
+      Asserted rather than left to the comment, because nothing else would fail
+      if a later change simplified the two identities back into one.
+    */
+    viewerState.userId = "viewer-1"; // cached id resolved…
+    liveViewerState.userId = null; // …live one has not.
+    searchHit.mockReturnValue({
+      message: { id: "way-older-than-the-window" },
+      channelId: "chan-general",
+    });
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("search-jump"));
+
+    await waitFor(() => expect(searchHit).toHaveBeenCalled());
+    expect(
+      screen.queryByText(/older than the history loaded here/i),
+    ).not.toBeInTheDocument();
     expect(mockScrollToMessage).not.toHaveBeenCalled();
   });
 
@@ -910,7 +973,7 @@ describe("ChatShell accessibility landmarks (#396)", () => {
     else's: the mis-ID on the one surface that cannot be glanced at and re-read.
   */
   it("does not attribute a new message while the viewer is unresolved", () => {
-    viewerState.userId = null;
+    setViewer(null);
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
 
     mockUseChatChannel.mockReturnValue(
@@ -933,6 +996,42 @@ describe("ChatShell accessibility landmarks (#396)", () => {
     expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
   });
 
+  it("takes its baseline from the live window, not the cached tail (#2249)", () => {
+    /*
+      The announcer's first run sets the baseline every later arrival is measured
+      against, and the rule two tests up is that anything already there when the
+      member arrived is part of what they arrived to, not an event.
+
+      A cached id resolves before the network answers, so if this effect ran on
+      it the baseline would be taken from the *cached tail* — and the backfill
+      replacing those rows would then read as a burst of arrivals and narrate
+      messages that were sitting there before the page opened. Pinned because
+      the failure is the announcer talking over a member who has just loaded the
+      page, on the one surface they cannot re-read.
+    */
+    viewerState.userId = "viewer-1"; // cached id resolved…
+    liveViewerState.userId = null; // …live one has not.
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    // The live backfill lands, replacing the seeded tail with a longer window.
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-while-away",
+            sender_id: "alice",
+            content: "arrived while they were away",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
+  });
+
   it("keeps announcing, and says \"You\", once identity settles", () => {
     /*
       The guard must not be a permanent mute. It returns *before* the seen-ref is
@@ -944,7 +1043,7 @@ describe("ChatShell accessibility landmarks (#396)", () => {
       what the member arrived to, not an event they should hear about. What has
       to survive is the *next* one, and its attribution.
     */
-    viewerState.userId = null;
+    setViewer(null);
     const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
     const landed = {
       id: "msg-3",
@@ -957,7 +1056,7 @@ describe("ChatShell accessibility landmarks (#396)", () => {
     );
     rerender(<ChatShell initialChannelId="chan-general" />);
 
-    viewerState.userId = "viewer-1";
+    setViewer("viewer-1");
     rerender(<ChatShell initialChannelId="chan-general" />);
     // Adopted as the baseline, not retro-announced — and, crucially, never
     // announced under the wrong name on the way.
