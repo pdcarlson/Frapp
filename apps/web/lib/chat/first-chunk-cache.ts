@@ -74,6 +74,8 @@ import { toRawRow, type ChatMessage, type RawChatMessage } from "@repo/chat-core
 import type { ChatChannel } from "@/components/chat/channel-list";
 import { coldLoadDefaultChannelId } from "./default-channel";
 import { FIRST_CHUNK_DB_NAME } from "./first-chunk-wipe";
+// Type-only: the shared scope definition, erased at compile time.
+import type { ChatScope } from "./chat-scope";
 
 /**
  * How many messages a tail holds. `1s` says "last ~30 messages"; the live
@@ -106,12 +108,14 @@ export const FIRST_CHUNK_CHANNEL_LIMIT = 3;
  */
 export const FIRST_CHUNK_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** The tenant a cached row belongs to. Both halves are required; see the header. */
-export interface FirstChunkScope {
-  /** Supabase auth uid (JWT subject) — not `users.id`. */
-  userId: string;
-  chapterId: string;
-}
+/**
+ * The tenant a cached row belongs to. Both halves are required; see the header.
+ *
+ * An alias, not a second declaration: the outbound drafts/outbox database keys
+ * its rows on the same scope, and two structurally-identical definitions of a
+ * security boundary are two things that can drift. `chat-scope.ts` is its home.
+ */
+export type FirstChunkScope = ChatScope;
 
 export interface CachedChannelListRow extends FirstChunkScope {
   channels: ChatChannel[];
