@@ -383,6 +383,24 @@ The dry-run pass is not ceremony: it runs the same validation, the same provider
 preflight, and the same migration replay as the real deploy, so a red dry run
 tells you what a real one would have done to the database before it did it.
 
+**Since 2026-09-14 it also builds both frontends** (`scope: full` only) —
+`vercel pull --environment=production` then `vercel build --prod`, the same
+`DEPLOY_PHASE=build` the real run executes. That is the half that kept failing:
+**all three** `full` attempts on 2026-09-14 died in the Vercel build, each after a
+reviewer had already approved — run 34892839657 on a `DEPLOY_SHA` the step never
+passed (fixed by #2265), then 34894763676 on `NEXT_PUBLIC_API_URL` and
+34896647837 on `NEXT_PUBLIC_SUPABASE_URL`, both absent from the Vercel Production
+environment. The dry run that day (34891891461) was green throughout, because it
+skipped every one of those steps. The build creates no deployment —
+`vercel deploy --prebuilt` is a separate step — so a dry run still uploads
+nothing and production keeps serving what it served before.
+
+What the dry run still does **not** rehearse, and cannot: the migration apply,
+the Render deploy, the health check, and the Vercel upload. A green dry run means
+the commit validates, the pending migrations replay cleanly against production's
+applied state, and both bundles compile against Vercel's current Production
+variables. It is not a promise that the apply or the upload will succeed.
+
 If you need to apply migrations *without* shipping code — recovering a failed
 apply, or clearing a backlog — run the same workflow with **`scope:
 migrations-only`**. It keeps every gate the full path has (SHA validation, the
