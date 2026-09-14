@@ -24,11 +24,18 @@ interface ReactionBarProps {
    * The viewer's `users.id`, known — `MessageItem` is the only caller and it is
    * now reached only once identity has resolved (#2243).
    *
-   * Non-nullable for the same reason the row's own prop is. A nullable viewer
-   * made `mine` below confidently `false`, and on a chip that is not a cosmetic
-   * mistake but a wrong *action*: an unlit chip the viewer has in fact reacted
-   * to sends `onReact` and adds a second identical reaction, where it should
-   * have sent `onUnreact` and removed theirs.
+   * Non-nullable for the same reason the row's own prop is: a nullable viewer
+   * made `mine` below confidently `false`, so a chip the viewer had in fact
+   * reacted to drew unlit, unpressed, and labelled "Click to react."
+   *
+   * What that cost is *not* a duplicate reaction, and the distinction matters
+   * because two layers already prevent one. `react()` in
+   * `@repo/chat-core`'s `chat-client.ts` opens with `if (!ctx.userId) return`,
+   * and `ctx.userId` is this same unresolved viewer — so in that window the
+   * click was a silent no-op. Even with an id, the server inserts against a
+   * unique index on `(message_id, user_id, action_type)` and turns the conflict
+   * into `{ deduplicated: true }`. The defect was a chip that misreported the
+   * viewer's own state and then did nothing when pressed.
    */
   viewerId: string;
   onReact: (emoji: string) => void;

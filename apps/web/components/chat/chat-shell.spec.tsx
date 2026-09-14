@@ -900,8 +900,11 @@ describe("ChatShell accessibility landmarks (#396)", () => {
   });
 
   /*
-    The announcer is the second place #2243's null viewer reached, and it is not
-    behind the timeline's identity gate — this effect runs off `channel.messages`
+    The announcer is another place #2243's null viewer reached — not the last one:
+    `chat-shell.tsx`'s composer reply-quote strip still passes a nullable `userId`
+    to `resolveAuthorLabel`, and the `renderers/` subtree still types it nullable.
+    Both are logged against #2249 rather than counted as done here. This one is
+    covered because it is not behind the timeline's identity gate — this effect runs off `channel.messages`
     whatever the timeline is rendering. `sender_id === null` is false for every
     row, so the member's own arriving message was narrated to them as somebody
     else's: the mis-ID on the one surface that cannot be glanced at and re-read.

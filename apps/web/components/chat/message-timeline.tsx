@@ -437,11 +437,19 @@ export const MessageTimeline = forwardRef<
     Ahead of the skeleton, and that order is load-bearing since #2243 gave the
     branch below a second, slower input.
 
-    An expired session is the likeliest way to reach an unresolved viewer at all:
-    the same 401 takes out `GET /v1/users/me` and the messages fetch together. If
-    identity were allowed to answer first, `viewerUnresolved` would hold forever
-    and bury this state — the member would get shimmer over a failure that has a
-    retry sitting right here, with no way out but a manual reload.
+    An expired session is the likeliest way to reach an unresolved viewer at all,
+    and there the same 401 takes out `GET /v1/users/me` and the messages fetch
+    together. If identity were allowed to answer first, `viewerUnresolved` would
+    hold forever and bury this state — the member would get shimmer over a
+    failure that has a retry sitting right here, with no way out but a reload.
+
+    It only covers the *correlated* failure, which is the common one rather than
+    the only one: `/v1/users/me` can fail alone (it is the route carrying
+    `AuthSyncInterceptor`, so it writes where the chat routes only read), and
+    offline it is not attempted at all, since only mutations are configured
+    `networkMode: "always"`. Either leaves this branch unreached and the skeleton
+    standing. That gap is #2251's, not this branch's — it needs the identity
+    query's own error state plumbed in, which no surface here has today.
 
     A load error and a pending load are mutually exclusive for this query anyway
     (`use-chat-channel.ts` reports `isLoading` as `query.isPending`, which is

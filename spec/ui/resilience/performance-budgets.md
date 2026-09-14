@@ -176,8 +176,12 @@ matter:
   oversight — the rows it withholds were painting the member's own messages as another member's, and
   §11 specs no third bubble shape to draw an unattributed row in — but it is a regression against
   the clause and is tracked as such, not as tuning.
-- **The abort check below still holds for the rows and no longer holds for the mark.** The rows come
-  from Dexie; the readable *moment* now additionally depends on one round trip issued at mount.
+- **The abort check below no longer means what it is cited for.** It aborted `**/v1/channels**` and
+  saw the rows paint from Dexie — and it still passes, because that glob does not match
+  `/v1/users/me`. But the rows now wait on that request too, so it no longer establishes that the
+  cached timeline is readable without the network. Re-running it with identity blocked as well is
+  part of #2249; until then this page does not have a network-independent-rows result, and must not
+  be read as if it did.
 
 Direction known, magnitude unmeasured: neither arm was re-run. The cold arm should not move —
 [`use-user.ts`](../../../packages/hooks/src/use-user.ts)'s `["user","me"]` query has no `enabled`

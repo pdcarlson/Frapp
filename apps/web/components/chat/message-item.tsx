@@ -253,7 +253,16 @@ export function MessageItem({
   isTapRevealed,
   onToggleTapReveal,
 }: MessageItemProps) {
-  const isMine = message.sender_id === viewerId;
+  // `sender_id` is nullable — an imported archive row names its author in
+  // `author_name` and has no roster entry — so the sender is checked before the
+  // comparison rather than relying on `viewerId` being a string. Dropping the old
+  // `!!viewerId &&` guard removed the thing that used to make `null === null`
+  // false, and that combination fails *open*: it would feed `canDelete` and
+  // offer Edit and Delete on every imported message. The gate upstream means a
+  // falsy `viewerId` should never arrive, but "should never" is the wrong
+  // strength of argument for a permission affordance, and an authorless row is
+  // genuinely nobody's own message whatever the viewer id is.
+  const isMine = !!message.sender_id && message.sender_id === viewerId;
   // Resolved for every sender including the viewer: the label says "You" for its
   // own row, but the avatar still needs the initials — falling through to a uuid
   // slice there would draw `11` next to "You" beside `AC` next to "Alice Chen".
