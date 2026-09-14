@@ -69,7 +69,8 @@ Status-only, never decorative. A semantic hue states a fact ("paid", "overdue");
 | `--destructive` | `#f85149` | Errors, overdue, destructive actions |
 | `--info` | `#2f81f7` | Informational status only — never a brand or accent color |
 | Mention/DM red | `#E5484D` | "You were addressed" — mention badges and DM indicators |
-| `--mention-chip` / `--mention-chip-text` | `#4C3A1A` / `#FAA81A` | The `@Name` chip *inside* a message body — recipe in [components.md](components.md) § Chat message bubbles |
+| `--mention-chip` | `#4C3A1A` | Fill of the `@Name` chip *inside* a message body — recipe in [components.md](components.md) § Chat message bubbles |
+| `--mention-chip-text` | `#FAA81A` | The handle drawn on that fill |
 
 - **Mention/DM red is fixed and semantic.** `#E5484D` states exactly one fact — *you were addressed*: an @-mention or a direct message. It MUST NOT be replaced by the chapter accent under any seed, and MUST NOT stand in for any other status, so "you were addressed" reads identically in every chapter. Its foreground is white. (This row is not in panel 4h; it is locked by the Canvas header and screens.)
   - **White on this red measures 3.91:1**, under the 4.5:1 text floor [README.md](README.md) §6 sets, and it is the one drawn tone [components.md](components.md) §1's lift cannot rescue — the text is already white, and the fill is the fixed semantic. Both shipping surfaces render it as drawn; the miss is real, is pinned to its measured value by `apps/web/components/chat/chat-contrast.spec.ts`, and needs a system-level decision (darken the fill for both platforms, or grant the badge an explicit exemption) rather than a per-surface patch — tracked in #1190.
