@@ -31,7 +31,26 @@ export interface MessageItemProps {
    * distinguish "loading" from "no avatar".
    */
   avatarUrl?: string;
-  viewerId: string | null;
+  /**
+   * The signed-in member's `users.id`, and it is **known** — never `null`.
+   *
+   * Non-nullable deliberately: the nullable version of this prop was the
+   * own-message mis-ID bug (#2243), not a loose type around it. `isMine` read
+   * `!!viewerId && sender_id === viewerId`, so an identity that had not arrived
+   * yet collapsed to a confident `false` and every row took the incoming shape —
+   * the viewer's own included, with `resolveAuthorLabel` skipping its "You"
+   * branch. Where the roster had not landed either, which is the same moment on
+   * a cold load, that fell through to `Member bf1a2c` for the viewer's own name
+   * and `authorInitialsFallback` drew `BF` beside it: both halves of that are
+   * the member's own uuid, read back to them as somebody else.
+   *
+   * `null` is not a third bubble shape to fall back to: `components.md` §11
+   * specs exactly two, self and incoming, and which one a row takes is decided
+   * by this id. So a row cannot be drawn before it is in hand — `MessageTimeline`
+   * holds its skeleton until then, and this type is what stops a later caller
+   * from quietly reopening the hole.
+   */
+  viewerId: string;
   showHeader: boolean;
   /**
    * Resolves a `users.id` to a display name, or `null` when unresolvable.
@@ -207,7 +226,9 @@ const ACTION_TRACK = "flex h-0 min-w-0 flex-1 items-start justify-end-safe";
  * has in the flow rather than sided.
  *
  * The viewer identity comes from the session (`viewerId`); the row never
- * trusts a literal sender id for "this is mine" comparisons.
+ * trusts a literal sender id for "this is mine" comparisons. It is also always
+ * *resolved* by the time a row renders — see `viewerId` on the props — because
+ * an unresolved one has no shape in §11 to render as.
  */
 export function MessageItem({
   message,
@@ -232,7 +253,7 @@ export function MessageItem({
   isTapRevealed,
   onToggleTapReveal,
 }: MessageItemProps) {
-  const isMine = !!viewerId && message.sender_id === viewerId;
+  const isMine = message.sender_id === viewerId;
   // Resolved for every sender including the viewer: the label says "You" for its
   // own row, but the avatar still needs the initials — falling through to a uuid
   // slice there would draw `11` next to "You" beside `AC` next to "Alice Chen".

@@ -860,6 +860,20 @@ export function ChatShell({
   useEffect(() => {
     const latest = channel.messages.at(-1);
     if (!activeChannelId || !latest) return;
+    /*
+      The attribution below needs a *resolved* viewer, and this effect is not
+      behind the timeline's identity gate (#2243) — so it can run while
+      `GET /v1/users/me` is still in flight. `latest.sender_id === null` is false
+      for every row, so the member's own message would be announced under their
+      own display name, or as "Someone": the mis-ID bug reaching the one surface
+      that cannot be glanced at and re-read.
+
+      Returning *before* the ref is touched is the load-bearing part. `userId` is
+      a dependency, so the resolve re-runs this effect with the message still
+      unseen and it is announced then, correctly. Marking it seen here would
+      swallow the announcement instead.
+    */
+    if (!userId) return;
     const latestKey = latest.client_message_id ?? latest.id;
     if (lastAnnouncedRef.current.channelId !== activeChannelId) {
       lastAnnouncedRef.current = {

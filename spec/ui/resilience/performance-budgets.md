@@ -222,6 +222,28 @@ That the warm paint comes from the cache rather than from a fast network was che
 aborting every `**/v1/channels**` request in the page and reloading: the rail and the timeline still
 rendered, from Dexie alone.
 
+**Correction (2026-09-14, later the same day): the mark now also waits on `GET /v1/users/me`, and
+the numbers above predate that.** [#2243](https://github.com/pdcarlson/Frapp/issues/2243) fixed the
+timeline painting the signed-in member's own messages as somebody else's while their identity was
+still loading — `viewerId` is what chooses between
+[`components.md`](../design-system/components.md) §11's two bubble shapes, and `null` was being read
+as "not mine" rather than as "not known yet". Rows are now withheld until it resolves, and
+`readable` accounts for that, so **the abort check above still holds for the rows and no longer
+holds for the mark**: the rows come from Dexie, the readable *moment* now additionally depends on one
+lightweight round trip that starts at mount, in parallel with the Dexie read.
+
+The direction is known; the magnitude is not, and neither arm was re-measured. The cold arm should
+not move: [`use-user.ts`](../../../packages/hooks/src/use-user.ts)'s `["user","me"]` query carries no
+`enabled` gate, so it is issued on mount, while the messages fetch
+([`use-chat-channel.ts`](../../../apps/web/lib/chat/use-chat-channel.ts)) is `enabled: !!channelId`
+and cannot start until a channel id exists. On the cold path identity therefore has strictly longer
+to land than the rows it gates. The warm arm is the one at risk, and it has
+60–120 ms of headroom here with a 417 ms sample already on record above. Re-measuring needs the
+signed-in Playwright session § What is not measured records as not existing, so this is a field
+question: Sentry is the authority, as it is for everything else on this page.
+[#2249](https://github.com/pdcarlson/Frapp/issues/2249) tracks getting the warm arm local-first
+again and re-measuring it, and carries the options with what each one costs.
+
 **Two issue numbers that are easy to conflate, kept because the corpus has nowhere else to record
 it.** [#2097](https://github.com/pdcarlson/Frapp/issues/2097) is the `persistQueryClient`
 correction — closed, and about a `localStorage` snapshot of the whole TanStack cache that never

@@ -20,7 +20,17 @@ const QUICK_REACTIONS: readonly string[] = ["👍", "🙏", "✅", "🔥"] as co
 
 interface ReactionBarProps {
   reactions: ReactionState;
-  viewerId: string | null;
+  /**
+   * The viewer's `users.id`, known — `MessageItem` is the only caller and it is
+   * now reached only once identity has resolved (#2243).
+   *
+   * Non-nullable for the same reason the row's own prop is. A nullable viewer
+   * made `mine` below confidently `false`, and on a chip that is not a cosmetic
+   * mistake but a wrong *action*: an unlit chip the viewer has in fact reacted
+   * to sends `onReact` and adds a second identical reaction, where it should
+   * have sent `onUnreact` and removed theirs.
+   */
+  viewerId: string;
   onReact: (emoji: string) => void;
   onUnreact: (emoji: string) => void;
 }
@@ -67,7 +77,7 @@ export function ReactionChips({
       )}
     >
       {entries.map((group) => {
-        const mine = viewerId ? group.userIds.includes(viewerId) : false;
+        const mine = group.userIds.includes(viewerId);
         return (
           <button
             key={group.actionType}
@@ -115,9 +125,9 @@ export function ReactionQuickPick({
   return (
     <div className="flex items-center gap-1.5">
       {QUICK_REACTIONS.map((emoji) => {
-        const mine = viewerId
-          ? (reactions[actionTypeFromEmoji(emoji)] ?? []).includes(viewerId)
-          : false;
+        const mine = (reactions[actionTypeFromEmoji(emoji)] ?? []).includes(
+          viewerId,
+        );
         return (
           <button
             key={emoji}

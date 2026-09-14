@@ -208,6 +208,16 @@ export interface MessageTimelineProps {
   /** Undefined while no channel is selected — avatar resolution just no-ops. */
   channelId: string | undefined;
   messages: ChatMessage[];
+  /**
+   * The signed-in member's `users.id`, or `null` while `GET /v1/users/me` has
+   * not answered yet.
+   *
+   * `null` is a *third* state here and not a viewer, which is the whole of
+   * #2243: it reaches this component ahead of the id on a regular basis, because
+   * the first chunk paints rows out of IndexedDB (#2227) while identity is still
+   * on the network. It is handled by withholding rows rather than by guessing —
+   * see the gate below — so `MessageItem` can take a plain `string`.
+   */
   viewerId: string | null;
   /** Resolves `users.id` → display name; `null` when unresolvable. */
   nameFor: (userId: string) => string | null;
@@ -305,8 +315,15 @@ export const MessageTimeline = forwardRef<
     metric as fast successes — the one direction that makes a latency number look
     better the more often the product breaks. An *empty* channel does count: it
     is readable, it just has nothing in it.
+
+    `viewerUnresolved` is excluded on the same principle, and it is the half that
+    keeps this number honest after #2243. Rows the member cannot trust the
+    authorship of are not readable either — that is the bug, not a cosmetic
+    detail — so a mark taken while identity was still in flight would be
+    timing a timeline that was about to reattribute half its rows.
   */
-  const readable = !isLoading && !loadError;
+  const viewerUnresolved = viewerId === null;
+  const readable = !isLoading && !loadError && !viewerUnresolved;
   useEffect(() => {
     if (readable) markColdLoad(COLD_LOAD_MARKS.channelReadable);
   }, [readable]);
@@ -391,7 +408,27 @@ export const MessageTimeline = forwardRef<
     [decorated],
   );
 
-  if (isLoading) {
+  /*
+    Identity gates the rows exactly as the messages themselves do (#2243).
+
+    `viewerId` decides which of the two shapes `components.md` §11 draws a bubble
+    in — self is right-aligned with no avatar, incoming is left with one — and
+    `null` is not a third shape to fall back to. It used to be treated as one by
+    omission: `MessageItem` computed `!!viewerId && sender_id === viewerId`, so
+    an unresolved viewer read as "not mine" and the member's own messages painted
+    as a stranger's — the incoming shape, with the first six hex of their own
+    uuid standing in for a name, because on this path the roster is still loading
+    beside the identity and `resolveAuthorLabel` had already skipped "You". The
+    resolve then repainted them, which is worse than it sounds on a virtualized
+    list — a self bubble drops its avatar and moves its caption below itself, so
+    every row it touched changed height and the thread reflowed under the member.
+
+    So this is not a spinner in front of a correct render; the render is not
+    available yet. The skeleton below already stands for "not readable", reserves
+    the geometry to the same metrics, and claims no author — which is precisely
+    what is true while identity is in flight.
+  */
+  if (isLoading || viewerUnresolved) {
     return (
       <>
         {/*
