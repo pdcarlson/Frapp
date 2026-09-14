@@ -72,19 +72,20 @@ describe("wipeFirstChunkCache", () => {
       what makes that impossible rather than merely intended, and this is the
       assertion that says so.
 
-      What this asserts is the *blast radius* of the wipe, not that a draft
-      surviving into another member's session is correct — it is not, and
-      #2226 tracks the decision between re-keying those tables and clearing
-      them. If that lands as "clear", this expectation changes with it.
+      What this asserts is the *blast radius* of the wipe. That a draft
+      survives it is correct and is not a tenancy hole: #2226 landed as a
+      re-key, so the row below is stored under `[userId+channelId]` and is
+      unreadable by anyone but ALICE — `offline-queue.spec.ts` is where that
+      claim is tested.
     */
-    await saveDraft("chan-1", "half-written message");
+    await saveDraft(ALICE, "chan-1", "half-written message");
     await writeChannelList(ALICE, [GENERAL], AT);
     await writeChannelTail(ALICE, "chan-1", [MESSAGE], AT);
 
     resetFirstChunkCacheForTests();
     await wipeFirstChunkCache();
 
-    expect(await loadDraft("chan-1")).toBe("half-written message");
+    expect(await loadDraft(ALICE, "chan-1")).toBe("half-written message");
     const chunk = await readFirstChunk(ALICE);
     expect(chunk.channels).toBeNull();
     expect(chunk.tails).toEqual([]);
