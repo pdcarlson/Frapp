@@ -9,6 +9,7 @@ import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useClaimChapterSync } from "@/lib/auth/use-claim-chapter-sync";
 import { wipeFirstChunkCache } from "@/lib/chat/first-chunk-wipe";
+import { clearCachedAccent } from "@/lib/theme/accent-cache";
 
 /**
  * First value and same-value updates must not clear: those are hydrate /
@@ -31,6 +32,15 @@ import { wipeFirstChunkCache } from "@/lib/chat/first-chunk-wipe";
  * `first-chunk-wipe.ts` rather than from the cache module itself, because this
  * provider is on the shell path of every dashboard route and that module
  * imports Dexie — see that file's header for the bundle argument.
+ *
+ * The chapter accent cache (`lib/theme/accent-cache.ts`) is dropped on the same
+ * two events and for the same reason, and carries the same caveat: it is
+ * hygiene, not the boundary. That cookie is only ever *read* at the scope the
+ * request's own access token names, so a row this clear misses — and a
+ * navigation moments later can make it miss — is unreachable rather than
+ * merely unread. Its module needs no bundle carve-out of its own: it is a
+ * cookie, so the clear is three lines of string handling with no dependency
+ * behind it.
  */
 function dropCacheWhenIdentityChanges(
   previousRef: { current: string | null | undefined },
@@ -43,6 +53,7 @@ function dropCacheWhenIdentityChanges(
   if (previous === next) return;
   queryClient.clear();
   void wipeFirstChunkCache();
+  clearCachedAccent();
 }
 
 export function FrappProvider({ children }: { children: React.ReactNode }) {

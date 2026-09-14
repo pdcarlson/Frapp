@@ -23,7 +23,27 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: activeChapterId() }),
 }));
 
+/*
+  The scope, not `useAuthUserId` beneath it: the hook's contract is "write only
+  under a known tenant", and mocking the Supabase client to express that would
+  test the mock. `null` here is the real, common state — the uid resolves in an
+  effect, so every mount begins without one.
+*/
+const tenantScope = vi.fn<() => { userId: string; chapterId: string } | null>(
+  () => ({ userId: "member-1", chapterId: "chapter-1" }),
+);
+vi.mock("@/lib/tenancy/scope", () => ({
+  useTenantScope: () => tenantScope(),
+}));
+
 const { useChapterTheme } = await import("./use-chapter-theme");
+const {
+  ACCENT_CACHE_CHAPTER_ATTR,
+  ACCENT_CACHE_STYLE_ID,
+  ACCENT_COOKIE,
+  accentTokensForScope,
+  parseAccentCookie,
+} = await import("@/lib/theme/accent-cache");
 
 /** A complete engine map, as `deriveSignetPalette` persists it. */
 const SIGNET_KEYS = {
@@ -60,6 +80,34 @@ function setPalette(palette: Record<string, string> | undefined) {
   });
 }
 
+/**
+ * jsdom keeps cookies on the document, so one spec's write is the next spec's
+ * stale row unless each is expired explicitly.
+ */
+function clearCookies(): void {
+  for (const pair of document.cookie.split(";")) {
+    const name = pair.split("=")[0]?.trim();
+    if (name) document.cookie = `${name}=; Path=/; Max-Age=0`;
+  }
+}
+
+function cachedRow() {
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${ACCENT_COOKIE}=([^;]*)`),
+  );
+  return parseAccentCookie(match?.[1], Date.now());
+}
+
+/** A server-rendered cached-accent rule, as `ChapterAccentStyle` emits one. */
+function renderCachedStyleFor(chapterId: string): HTMLStyleElement {
+  const style = document.createElement("style");
+  style.id = ACCENT_CACHE_STYLE_ID;
+  style.setAttribute(ACCENT_CACHE_CHAPTER_ATTR, chapterId);
+  style.textContent = ":root{--primary:#3E7BFA}";
+  document.head.append(style);
+  return style;
+}
+
 function inlineTokens(): Record<string, string> {
   const style = document.documentElement.style;
   const out: Record<string, string> = {};
@@ -73,7 +121,10 @@ function inlineTokens(): Record<string, string> {
 describe("useChapterTheme", () => {
   beforeEach(() => {
     document.documentElement.removeAttribute("style");
+    document.getElementById(ACCENT_CACHE_STYLE_ID)?.remove();
+    clearCookies();
     activeChapterId.mockReturnValue("chapter-1");
+    tenantScope.mockReturnValue({ userId: "member-1", chapterId: "chapter-1" });
     vi.clearAllMocks();
   });
 
@@ -162,5 +213,103 @@ describe("useChapterTheme", () => {
     expect(applied["--accent-text"]).toBe("#F3A8B6");
     // No token from the outgoing chapter survives the swap.
     expect(Object.keys(applied)).toHaveLength(7);
+  });
+
+  describe("recording the palette for the next cold load", () => {
+    /**
+     * The cache's only writer. `accent-cache.ts` has the argument for why the
+     * row exists at all; these are the conditions under which this hook is
+     * willing to create one.
+     */
+    it("caches exactly the tokens it applied", () => {
+      setPalette(SIGNET_KEYS);
+      renderHook(() => useChapterTheme());
+
+      const tokens = accentTokensForScope(cachedRow(), {
+        userId: "member-1",
+        chapterId: "chapter-1",
+      });
+      expect(tokens).toEqual(inlineTokens());
+    });
+
+    it("writes nothing until the session resolves", () => {
+      // `useAuthUserId` is `null` on every mount until its effect lands. A row
+      // written then would carry no member, and there is no member to write.
+      tenantScope.mockReturnValue(null);
+      setPalette(SIGNET_KEYS);
+      renderHook(() => useChapterTheme());
+
+      expect(cachedRow()).toBeNull();
+      // The live paint does not wait on the scope, though — only the cache does.
+      expect(Object.keys(inlineTokens())).toHaveLength(7);
+    });
+
+    it("writes nothing for an incomplete engine map", () => {
+      // A row persisted before the Signet keys existed (#1165). The same
+      // all-or-nothing rule the apply path uses: half a palette is worse than
+      // none, and caching half would make it worse for longer.
+      const partial: Record<string, string> = { ...SIGNET_KEYS };
+      delete partial["--signet-accent-ring"];
+      setPalette(partial);
+      renderHook(() => useChapterTheme());
+
+      expect(cachedRow()).toBeNull();
+    });
+
+    it("never caches under a scope whose chapter the palette is not for", () => {
+      // The store has moved but the scope has not yet — write the row now and
+      // it files chapter-1's palette under chapter-2's key.
+      setPalette(SIGNET_KEYS);
+      activeChapterId.mockReturnValue("chapter-2");
+      renderHook(() => useChapterTheme());
+
+      expect(cachedRow()).toBeNull();
+    });
+  });
+
+  describe("handing over from the server-rendered cached accent", () => {
+    /**
+     * The cached rule is an unlayered `:root` block and the live palette is an
+     * inline style on `<html>`, so for the chapter it was rendered for the
+     * handover needs no code at all — the cascade does it. A chapter *change*
+     * is the case that does, because `/join` and the onboarding wizard switch
+     * in place with no document load.
+     */
+    it("leaves the cached rule alone while it names the live chapter", () => {
+      renderCachedStyleFor("chapter-1");
+      setPalette(SIGNET_KEYS);
+      renderHook(() => useChapterTheme());
+
+      expect(document.getElementById(ACCENT_CACHE_STYLE_ID)).not.toBeNull();
+    });
+
+    it("removes it the moment the chapter changes in place", () => {
+      renderCachedStyleFor("chapter-1");
+      setPalette(SIGNET_KEYS);
+      const { rerender } = renderHook(() => useChapterTheme());
+      expect(document.getElementById(ACCENT_CACHE_STYLE_ID)).not.toBeNull();
+
+      // An in-place switch: the store moves, no navigation, and the new
+      // chapter's palette has not arrived yet.
+      activeChapterId.mockReturnValue("chapter-2");
+      tenantScope.mockReturnValue({ userId: "member-1", chapterId: "chapter-2" });
+      setPalette(undefined);
+      rerender();
+
+      // Otherwise the apply effect's cleanup would uncover chapter-1's cached
+      // accent — this change's own fix, painting the bug it exists to prevent.
+      expect(document.getElementById(ACCENT_CACHE_STYLE_ID)).toBeNull();
+      expect(inlineTokens()).toEqual({});
+    });
+
+    it("keeps it while the chapter is unknown", () => {
+      // `null` is "not resolved yet", never "a different chapter".
+      renderCachedStyleFor("chapter-1");
+      activeChapterId.mockReturnValue(null);
+      setPalette(undefined);
+      renderHook(() => useChapterTheme());
+
+      expect(document.getElementById(ACCENT_CACHE_STYLE_ID)).not.toBeNull();
+    });
   });
 });
