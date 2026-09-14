@@ -386,20 +386,42 @@ tells you what a real one would have done to the database before it did it.
 **Since 2026-09-14 it also builds both frontends** (`scope: full` only) —
 `vercel pull --environment=production` then `vercel build --prod`, the same
 `DEPLOY_PHASE=build` the real run executes. That is the half that kept failing:
-**all three** `full` attempts on 2026-09-14 died in the Vercel build, each after a
-reviewer had already approved — run 34892839657 on a `DEPLOY_SHA` the step never
-passed (fixed by #2265), then 34894763676 on `NEXT_PUBLIC_API_URL` and
-34896647837 on `NEXT_PUBLIC_SUPABASE_URL`, both absent from the Vercel Production
-environment. The dry run that day (34891891461) was green throughout, because it
-skipped every one of those steps. The build creates no deployment —
-`vercel deploy --prebuilt` is a separate step — so a dry run still uploads
-nothing and production keeps serving what it served before.
+**all three** `full` attempts on 2026-09-14 died in that build STEP, each after a
+reviewer had already approved. Two of them died inside `vercel build` itself, on a
+variable the Vercel Production scope did not hold — 34894763676 on
+`NEXT_PUBLIC_API_URL`, 34896647837 on `NEXT_PUBLIC_SUPABASE_URL`. The third,
+34892839657, died earlier and for a different reason: `requireEnv("DEPLOY_SHA")`
+threw inside `deploy-vercel.mjs` *before* it invoked the CLI at all, which was a
+workflow wiring bug rather than an environment one, and #2265 fixed it.
 
-What the dry run still does **not** rehearse, and cannot: the migration apply,
-the Render deploy, the health check, and the Vercel upload. A green dry run means
-the commit validates, the pending migrations replay cleanly against production's
-applied state, and both bundles compile against Vercel's current Production
-variables. It is not a promise that the apply or the upload will succeed.
+The distinction matters when reading this: only the first two are evidence about
+Infisical and Vercel. What all three share is the thing this change addresses —
+the step they died in was the one step no dry run executed. The dry run that day
+(34891891461) was green throughout, because it skipped every one of them.
+
+The build creates no deployment — `vercel deploy --prebuilt` is a separate step —
+so a dry run still uploads nothing and production keeps serving what it served
+before.
+
+What the dry run still does **not** rehearse: the migration apply, the Render
+deploy, the health check, and the Vercel upload. Those are withheld by choice —
+each one writes to production or takes production traffic — not because they are
+impossible to rehearse, so do not read the list as a technical limit.
+
+One difference sits *inside* the build, and it is the easiest thing here to
+misread: a real run compiles with `SENTRY_AUTH_TOKEN` present and therefore
+uploads source maps and creates a Sentry release. A dry run clears that token —
+but only the copy in the job environment, **not** the copy `vercel pull` writes
+into the pulled env file. So once that token is provisioned in Infisical `prod`,
+**a dry run may still create a Sentry release** for a commit that never shipped.
+If you are chasing production errors attributed to a version that was never
+deployed, a dry run is a live suspect, not a ruled-out one. Either way, a green
+dry-run build does not prove the real build's Sentry upload will succeed.
+
+A green dry run means the commit validates, the pending migrations replay cleanly
+against production's applied state, and both bundles compile against Vercel's
+current Production variables. It is not a promise that the apply or the upload
+will succeed.
 
 If you need to apply migrations *without* shipping code — recovering a failed
 apply, or clearing a backlog — run the same workflow with **`scope:

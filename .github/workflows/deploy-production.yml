@@ -123,7 +123,11 @@ on:
         required: true
         type: string
       dry_run_only:
-        description: "Validate, rehearse the migration, and stop. Applies nothing, deploys nothing."
+        # This one sentence is the whole description an operator gets in the
+        # Actions UI, so it has to name the build: a dry run that silently took
+        # several minutes longer than its description promised would read as a
+        # hung runner and get cancelled.
+        description: "Validate, rehearse the migration, BUILD both frontends, and stop. Applies nothing, uploads nothing, deploys nothing."
         required: false
         default: false
         type: boolean
@@ -227,6 +231,15 @@ jobs:
     #
     # `cancel-in-progress: false` is the important half: cancelling a run
     # mid-`db push` is how a database ends up half-migrated.
+    #
+    # Note what widening the dry run costs here, because nothing else says it:
+    # a `full` dry run now holds this group for an `npm ci` and two `next build`s
+    # on top of the migration rehearsal, and the group deliberately does not
+    # cancel. So a `migrations-only` recovery dispatch can queue behind a
+    # rehearsal that by definition changes nothing, for several minutes longer
+    # than before. That is the accepted price of rehearsing the build; if it ever
+    # bites during an incident, the recovery path is to wait or to cancel the dry
+    # run by hand, never to loosen `cancel-in-progress`.
     concurrency:
       group: db-migrate-production
       cancel-in-progress: false
@@ -439,11 +452,33 @@ jobs:
       - name: Stop the disposable Supabase stack
         run: supabase stop --no-backup
 
+      # Always runs, including when this is not a dry run: the log records what
+      # WAS pending before the apply, so a later failure is readable without
+      # guessing at the prior state.
+      #
+      # Ahead of the build steps, not after them, and that ordering is load
+      # bearing now that a dry run BUILDS. Below the build, a `next build` that
+      # the OOM killer takes — named in the build step's own comment as a live
+      # risk — would abort a dry run before this ever ran, and `Stop here` is
+      # gated on `if: inputs.dry_run_only` rather than `always()`, so the
+      # operator would get neither the pending list nor a summary: exactly the
+      # output DB_PROMOTION_RUNBOOK.md tells them to read before promoting, lost
+      # to a failure in a step that changes nothing.
+      #
+      # Nothing between here and the apply APPLIES A MIGRATION, so the pending
+      # list is still accurate when the apply runs. That is the whole claim —
+      # `vercel build` does run in the gap and does construct a production
+      # Supabase client, so this is not a statement that the gap is inert, and it
+      # is not standing permission to add a step in it that writes.
+      - name: Run migrations (dry-run)
+        run: node scripts/run-migration.mjs --env production --dry-run
+
       # ── Installed BEFORE anything is applied, deliberately ───────────────
       # `vercel build` runs each app's own build, which needs the workspace's
       # dependencies present: this is a monorepo and both apps import from
       # `packages/`. Nothing else in this job needs `node_modules` — the
-      # migration half runs through the Supabase CLI and `node scripts/…`.
+      # migration half runs through the Supabase CLI and `node scripts/…`, which
+      # is why the dry-run listing above can sit ahead of this install.
       #
       # So the natural place for these was next to the Vercel step at the end of
       # the job. That is the wrong place. Both steps can fail for reasons that
@@ -491,17 +526,20 @@ jobs:
       # This step, the `npm ci` and the CLI install above it are the only three
       # the dry run used to skip while still being able to run them safely, and
       # skipping them is what made "dry run: green" mean less than it looked.
-      # THREE of the four production attempts on 2026-09-14 died right here,
-      # each after a reviewer had already clicked Approve, on errors a build
-      # would have surfaced in minutes: run 34892839657 on a `DEPLOY_SHA` the
-      # step had never passed (#2265), then 34894763676 on `NEXT_PUBLIC_API_URL`
-      # and 34896647837 on `NEXT_PUBLIC_SUPABASE_URL` — both absent from the
-      # Vercel Production environment the Infisical `prod` sync feeds.
+      # All THREE `full` attempts on 2026-09-14 died on this step, each after a
+      # reviewer had already clicked Approve. Two died inside `vercel build`
+      # itself, on a variable the Vercel Production scope did not hold —
+      # 34894763676 on `NEXT_PUBLIC_API_URL`, 34896647837 on
+      # `NEXT_PUBLIC_SUPABASE_URL`. The third, 34892839657, died a moment earlier
+      # and for an unrelated reason: `requireEnv("DEPLOY_SHA")` threw inside
+      # `deploy-vercel.mjs` before it invoked the CLI at all (#2265 fixed that).
       #
-      # That the variable was DIFFERENT each time is the argument for rehearsing
-      # the real build rather than adding a preflight that enumerates the
-      # variables we currently know about. The build is the only check that
-      # knows the whole list, because it is the thing that consumes it.
+      # Worth keeping the two apart when citing them — only the first two say
+      # anything about Infisical. But that the missing variable was DIFFERENT
+      # each of those two times is the argument for rehearsing the real build
+      # rather than adding a preflight that enumerates the variables we happen to
+      # know about today. The build is the only check that knows the whole list,
+      # because it is the thing that consumes it.
       #
       # The rehearsal can cover this because the build genuinely changes nothing
       # that matters: `buildVercelProject` runs `vercel pull` (a read) and
@@ -546,10 +584,45 @@ jobs:
           #
           # On a real ship that is exactly right. On a dry run it would mint a
           # release for a commit that is not being deployed, and Sentry would then
-          # attribute production errors to a version that never shipped. Today the
-          # token is not provisioned, so the plugin stays silent and nothing happens
-          # (apps/web/next.config.js:121) — which means this would not go wrong now,
-          # it would go wrong quietly on the day someone adds the secret.
+          # attribute production errors to a version that never shipped.
+          #
+          # ── READ THIS BEFORE TRUSTING THE UNSET ──────────────────────────
+          # It closes ONE of the two ways the token reaches `next build`, and
+          # not the one that will matter most.
+          #
+          #   * CLOSED: the copy the Infisical step exported into this job's
+          #     environment. That is what `unset` removes.
+          #   * OPEN: the copy `vercel pull --environment=production` writes into
+          #     the pulled env file moments later, which `vercel build --prod`
+          #     compiles against. The Infisical syncs are configured at path `/`
+          #     with no per-key filter (SECRETS_MANAGEMENT.md § the sync table),
+          #     so the Vercel Production scope is INTENDED to hold the whole prod
+          #     store — and ENV_REFERENCE.md lists SENTRY_AUTH_TOKEN as a
+          #     frapp-web/frapp-landing build-time variable, so it is in scope for
+          #     that sync.
+          #
+          #     Stated carefully, because the obvious phrasing gets it backwards:
+          #     this is NOT "the channel that delivered NEXT_PUBLIC_API_URL to run
+          #     34894763676". That run died because the variable was ABSENT — the
+          #     same channel demonstrably failed to deliver it, and ci-cd.md
+          #     records the Production scope as empty of at least two keys again.
+          #     So whether SENTRY_AUTH_TOKEN would actually arrive is unknown.
+          #     That uncertainty is the argument FOR leaving this open and tracked
+          #     rather than against it: a guard whose correctness depends on a
+          #     sync that is currently broken is not a guard.
+          #
+          # So on the day SENTRY_AUTH_TOKEN is added to Infisical `prod` (pending
+          # human work, spec/behavior/observability.md), a dry run WILL create a
+          # Sentry release unless the pulled file is stripped too. Closing that
+          # means editing the file `vercel pull` writes, between the pull and the
+          # build, inside `buildVercelProject` — shared with staging, and its
+          # exact filename varies by CLI version. A strip that silently matched
+          # nothing would be a guard that cannot fail, which is the specific
+          # defect this whole change exists to remove, so it is NOT being guessed
+          # at here. Tracked instead; see the issue linked from the PR.
+          #
+          # The unset stays because it is free and correct for the channel it
+          # does cover. It is not, today, a guarantee.
           #
           # Unset rather than left empty: `withSentryConfig` treats an empty string
           # as no token, but `unset` is the state the plugin documents and cannot be
@@ -560,12 +633,6 @@ jobs:
           fi
 
           node scripts/ci/deploy-vercel.mjs
-
-      # Always runs, including when this is not a dry run: the log then records
-      # what WAS pending immediately before the apply, so a failure in the next
-      # step is readable without guessing at the prior state.
-      - name: Run migrations (dry-run)
-        run: node scripts/run-migration.mjs --env production --dry-run
 
       # The summary states what the rehearsal DID and, as carefully, what it
       # still did not. A dry run that overstates its own coverage is how the
@@ -584,7 +651,9 @@ jobs:
             echo "Commit: \`$SHA\` · scope: \`$SCOPE\`"
             echo ""
             echo "The commit passed validation, the migration replay ran against production's"
-            echo "applied state, and the pending set is listed in the previous step's log."
+            echo "applied state, and the pending set is listed in the **Run migrations (dry-run)**"
+            echo "step's log. Named, not \"the previous step\": on a \`full\` run the build steps sit"
+            echo "between that step and this summary."
             if [ "$SCOPE" != "migrations-only" ]; then
               echo ""
               echo "Both Vercel production bundles were BUILT — \`vercel pull --environment=production\`"
@@ -594,6 +663,14 @@ jobs:
               echo ""
               echo "Still unrehearsed, and reachable only on a real run: the migration apply, the"
               echo "Render deploy, the health check, and the Vercel upload."
+              echo ""
+              echo "One difference inside the build itself: a real run compiles with"
+              echo "\`SENTRY_AUTH_TOKEN\` present and so uploads source maps and creates a Sentry"
+              echo "release. This run cleared the copy in the job environment, which does NOT"
+              echo "cover the copy \`vercel pull\` writes into the pulled env file — so once that"
+              echo "token is provisioned in Infisical \`prod\`, a dry run may still mint a Sentry"
+              echo "release. Either way, a green build here does not prove the real build's"
+              echo "Sentry upload will succeed."
             else
               echo ""
               echo "Scope is \`migrations-only\`, so no frontend bundle was built. The Vercel build"
@@ -769,10 +846,24 @@ jobs:
           SHA: ${{ needs.deploy.outputs.sha }}
         run: |
           {
-            echo "### Production deploy — \`$SHA\`"
+            # The heading, not just a row: this summary gets linked and
+            # screenshotted as evidence that a SHA shipped, and a dry run's table
+            # otherwise reads `Migrate + deploy: success` with `Render deploy id:
+            # none` as the only tell. Same ambiguity `run-name` was changed to
+            # remove, one level down — and a dry run now looks even more like a
+            # ship, because it builds.
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "### DRY RUN — production was NOT deployed — \`$SHA\`"
+              echo ""
+              echo "> Nothing was applied and nothing was deployed. \`Migrate + deploy: success\`"
+              echo "> below means the REHEARSAL succeeded, not that this commit is live."
+            else
+              echo "### Production deploy — \`$SHA\`"
+            fi
             echo ""
             echo "| Phase | Result |"
             echo "| --- | --- |"
+            echo "| Dry run | \`$DRY_RUN\` |"
             echo "| Scope | \`$SCOPE\` |"
             echo "| Migrate + deploy | \`$DEPLOY_RESULT\` |"
             echo "| Migrations applied | \`${APPLIED:-not reached}\` |"

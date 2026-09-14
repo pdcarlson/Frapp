@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
-import { workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "deploy-production.yml");
@@ -46,7 +46,18 @@ function extractStepScript(stepName) {
   );
   assert.notEqual(stepIndex, -1, `step "${stepName}" not found in deploy-production.yml`);
 
-  const runIndex = lines.findIndex((line, i) => i > stepIndex && /^\s*run: \|\s*$/.test(line));
+  // Bounded by the NEXT step, not by the end of the file. Unbounded, a step
+  // with no `run: |` of its own silently binds to a LATER step's script and
+  // every assertion about it passes vacuously — the fail-open shape
+  // `helpers/workflow-yaml.mjs` was written to stop, which this file would
+  // otherwise still carry while importing the fix. Every step extracted here
+  // has its own `run: |` today, so this is latent; it is guarded because the
+  // failure is silent and green.
+  const nextStepIndex = lines.findIndex((line, i) => i > stepIndex && /^\s{6}- name:\s*/.test(line));
+  const limit = nextStepIndex === -1 ? lines.length : nextStepIndex;
+  const runIndex = lines.findIndex(
+    (line, i) => i > stepIndex && i < limit && /^\s*run: \|\s*$/.test(line),
+  );
   assert.notEqual(runIndex, -1, `step "${stepName}" has no \`run: |\` block`);
 
   const runIndent = lines[runIndex].match(/^\s*/)[0].length;
@@ -314,21 +325,21 @@ describe("the SHA-trim step (run 34234768094)", () => {
 //
 // So: assert per STEP, over every step that passes the value.
 describe("DEPLOY_SHA is sourced per step, not somewhere in the file", () => {
-  const steps = workflowSteps(WORKFLOW, "deploy-production.yml");
-  const carriers = steps.filter((step) => step.env.has("DEPLOY_SHA"));
+  const steps = () => workflowSteps(WORKFLOW);
+  const carriers = () => steps().filter((step) => step.env.has("DEPLOY_SHA"));
 
   // A loop over an empty list passes. If the reader ever stops recognising
   // these steps, the assertions below would go quietly green.
   it("finds every step that passes DEPLOY_SHA", () => {
     assert.ok(
-      carriers.length >= 5,
-      `expected at least 5 steps passing DEPLOY_SHA, found ${carriers.length}: ` +
-        `${carriers.map((s) => s.name).join(", ") || "none"}`,
+      carriers().length >= 5,
+      `expected at least 5 steps passing DEPLOY_SHA, found ${carriers().length}: ` +
+        `${carriers().map((s) => s.name).join(", ") || "none"}`,
     );
   });
 
   it("gives every one of them the trimmed output, never inputs.sha", () => {
-    for (const step of carriers) {
+    for (const step of carriers()) {
       assert.equal(
         step.env.get("DEPLOY_SHA"),
         "${{ steps.sha.outputs.sha }}",
@@ -341,11 +352,11 @@ describe("DEPLOY_SHA is sourced per step, not somewhere in the file", () => {
   // Named explicitly because this one runs after the apply, and because no dry
   // run executes it — its only protection is this assertion.
   it("the Render deploy step passes DEPLOY_SHA, and it runs after the apply", () => {
-    const render = steps.find((s) => s.name === "Deploy the commit to Render");
+    const render = steps().find((s) => s.name === "Deploy the commit to Render");
     assert.ok(render, "the Render deploy step is missing");
     assert.equal(render.env.get("DEPLOY_SHA"), "${{ steps.sha.outputs.sha }}");
 
-    const names = steps.map((s) => s.name);
+    const names = steps().map((s) => s.name);
     assert.ok(
       names.indexOf("Run migrations (apply)") < names.indexOf("Deploy the commit to Render"),
       "the Render deploy is expected to run after the migration apply",
@@ -362,9 +373,7 @@ describe("DEPLOY_SHA is sourced per step, not somewhere in the file", () => {
 // coverage; the second deploys from a run whose entire contract is that it
 // deploys nothing.
 describe("the dry run rehearses the build and ships nothing", () => {
-  const byName = new Map(
-    workflowSteps(WORKFLOW, "deploy-production.yml").map((step) => [step.name, step]),
-  );
+  const byName = () => new Map(workflowSteps(WORKFLOW).map((step) => [step.name, step]));
 
   // Run on a dry run, skipped only for migrations-only.
   const REHEARSED = [
@@ -382,7 +391,7 @@ describe("the dry run rehearses the build and ships nothing", () => {
 
   for (const name of REHEARSED) {
     it(`"${name}" runs on a dry run`, () => {
-      const step = byName.get(name);
+      const step = byName().get(name);
       assert.ok(step, `step "${name}" not found`);
       assert.doesNotMatch(
         step.if ?? "",
@@ -397,7 +406,7 @@ describe("the dry run rehearses the build and ships nothing", () => {
 
   for (const name of SHIPPING) {
     it(`"${name}" never runs on a dry run`, () => {
-      const step = byName.get(name);
+      const step = byName().get(name);
       assert.ok(step, `step "${name}" not found`);
       assert.match(
         step.if ?? "",
@@ -406,6 +415,32 @@ describe("the dry run rehearses the build and ships nothing", () => {
       );
     });
   }
+
+  // Steps are not the whole story. `release` mints and PUSHES the `vX.Y.Z` tag,
+  // and it is gated at JOB level, so nothing above can see it. #1340 redefined
+  // that tag to mean "this is what is live"; a dry run that tagged would restore
+  // the exact meaning it was redefined to remove, and `report` would exit 0
+  // because RELEASE_RESULT came back `success`.
+  it("the release job, which pushes the version tag, never runs on a dry run", () => {
+    const release = workflowJobs(WORKFLOW).find((job) => job.jobId === "release");
+    assert.ok(release, "the release job is missing");
+    assert.match(
+      release.if ?? "",
+      /!inputs\.dry_run_only/,
+      "the release job would mint a vX.Y.Z tag on a dry run, for a commit that was never deployed",
+    );
+    assert.match(release.if ?? "", /inputs\.scope != 'migrations-only'/);
+  });
+
+  // The Sentry guard's whole wiring is this one `env:` key. Nothing outside the
+  // step's `run:` block references it, so a tidy-up that deleted it as unused
+  // would leave `${DRY_RUN:-}` permanently empty, the `unset` would never fire,
+  // and every dry run would build with the real token — with the suite green.
+  it("the build step wires DRY_RUN from the input the Sentry guard reads", () => {
+    const build = byName().get("Build the Vercel production bundles (web + landing)");
+    assert.ok(build, "the Vercel build step is missing");
+    assert.equal(build.stepEnv.get("DRY_RUN"), "${{ inputs.dry_run_only }}");
+  });
 });
 
 // The Vercel BUILD step runs on a dry run as well as on a real ship, which is
