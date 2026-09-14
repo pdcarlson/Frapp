@@ -20,6 +20,13 @@ const { chapterStoreState } = vi.hoisted(() => ({
   chapterStoreState: { value: "chapter-1" as string | null },
 }));
 
+// Mutable so the unresolved-viewer window can be exercised (#2243). `null` is
+// what `useFrappUser` really reports until `GET /v1/users/me` answers, and the
+// static `"viewer-1"` this used to be meant no test could reach that window.
+const { viewerState } = vi.hoisted(() => ({
+  viewerState: { userId: "viewer-1" as string | null },
+}));
+
 const {
   mockScrollToMessage,
   mockRefetch,
@@ -93,7 +100,21 @@ const CATEGORIES = [
   { id: "cat-comm", name: "Committees", display_order: 1 },
 ];
 
-const MESSAGES = [
+/**
+ * `sender_id` is optional, and the two rows below deliberately omit it: an author
+ * the roster cannot resolve is what makes the "from someone" announcement test's
+ * fallback reachable. The #2243 tests set it, so the element type has to admit
+ * it — without that the object literals there trip excess-property checking and
+ * `check-types` fails while the suite still passes.
+ */
+type ShellMessage = {
+  id: string;
+  content: string;
+  created_at: string;
+  sender_id?: string | null;
+};
+
+const MESSAGES: ShellMessage[] = [
   { id: "msg-1", content: "hello", created_at: "2026-01-01T00:00:00Z" },
   { id: "msg-2", content: "world", created_at: "2026-01-01T00:01:00Z" },
 ];
@@ -198,7 +219,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 vi.mock("@/lib/auth/use-frapp-user", () => ({
-  useFrappUser: () => ({ userId: "viewer-1" }),
+  useFrappUser: () => ({ userId: viewerState.userId }),
 }));
 
 vi.mock("@/lib/chat/use-chat-channel", () => ({
@@ -460,6 +481,7 @@ function chatChannelResult(
 }
 
 beforeEach(() => {
+  viewerState.userId = "viewer-1";
   mockScrollToMessage.mockClear();
   mockRefetch.mockClear();
   mockUseChatChannel.mockReset();
@@ -875,6 +897,91 @@ describe("ChatShell accessibility landmarks (#396)", () => {
     rerender(<ChatShell initialChannelId="chan-general" />);
 
     expect(screen.getByText(/new message from someone/i)).toBeInTheDocument();
+  });
+
+  /*
+    The announcer is another place #2243's null viewer reached — not the last one:
+    `chat-shell.tsx`'s composer reply-quote strip still passes a nullable `userId`
+    to `resolveAuthorLabel`, and the `renderers/` subtree still types it nullable.
+    Both are logged against #2249 rather than counted as done here. This one is
+    covered because it is not behind the timeline's identity gate — this effect runs off `channel.messages`
+    whatever the timeline is rendering. `sender_id === null` is false for every
+    row, so the member's own arriving message was narrated to them as somebody
+    else's: the mis-ID on the one surface that cannot be glanced at and re-read.
+  */
+  it("does not attribute a new message while the viewer is unresolved", () => {
+    viewerState.userId = null;
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          {
+            id: "msg-3",
+            sender_id: "viewer-1",
+            content: "just landed",
+            created_at: "2026-01-01T00:02:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    // Silent rather than wrong. "Someone" would be a claim about a message the
+    // member had just written themselves.
+    expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps announcing, and says \"You\", once identity settles", () => {
+    /*
+      The guard must not be a permanent mute. It returns *before* the seen-ref is
+      written, so the resolve re-runs this effect with the ref still empty — and
+      the empty ref then takes the channel-switch branch, which adopts whatever
+      is latest as the baseline without narrating it. That is the same rule
+      "does not narrate the backfilled history as new on initial load" above
+      states: a message that landed while the app was still booting is part of
+      what the member arrived to, not an event they should hear about. What has
+      to survive is the *next* one, and its attribution.
+    */
+    viewerState.userId = null;
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    const landed = {
+      id: "msg-3",
+      sender_id: "viewer-1",
+      content: "just landed",
+      created_at: "2026-01-01T00:02:00Z",
+    };
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({ messages: [...MESSAGES, landed] }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    viewerState.userId = "viewer-1";
+    rerender(<ChatShell initialChannelId="chan-general" />);
+    // Adopted as the baseline, not retro-announced — and, crucially, never
+    // announced under the wrong name on the way.
+    expect(screen.queryByText(/^new message from/i)).not.toBeInTheDocument();
+
+    mockUseChatChannel.mockReturnValue(
+      chatChannelResult({
+        messages: [
+          ...MESSAGES,
+          landed,
+          {
+            id: "msg-4",
+            sender_id: "viewer-1",
+            content: "and another",
+            created_at: "2026-01-01T00:03:00Z",
+          },
+        ],
+      }),
+    );
+    rerender(<ChatShell initialChannelId="chan-general" />);
+
+    // "You", because the viewer is known now — the branch the null viewer used
+    // to skip straight past.
+    expect(screen.getByText(/new message from you/i)).toBeInTheDocument();
   });
 });
 
