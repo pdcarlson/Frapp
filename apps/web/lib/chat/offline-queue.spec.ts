@@ -26,22 +26,21 @@ import {
   CHAT_OUTBOUND_DB_NAME,
   clearDraft,
   createDexieOutboxStore,
-  getOutboxRow,
   loadDraft,
   resetChatDBForTests,
   saveDraft,
-  type ChatOutboundScope,
 } from "./offline-queue";
+import type { ChatScope } from "./chat-scope";
 
 /** Member A. */
-const ALICE: ChatOutboundScope = {
+const ALICE: ChatScope = {
   userId: "auth-alice",
   chapterId: "chapter-1",
 };
 /** Same chapter, different member — the shared-browser case #2226 is about. */
-const BOB: ChatOutboundScope = { userId: "auth-bob", chapterId: "chapter-1" };
+const BOB: ChatScope = { userId: "auth-bob", chapterId: "chapter-1" };
 /** Same member, different chapter — the chapter-switch case. */
-const ALICE_ELSEWHERE: ChatOutboundScope = {
+const ALICE_ELSEWHERE: ChatScope = {
   userId: "auth-alice",
   chapterId: "chapter-2",
 };
@@ -55,7 +54,7 @@ beforeEach(wipeDatabase);
 afterEach(wipeDatabase);
 
 /** A `ChatActionContext` good enough for `flushOutbox`, recording every POST. */
-function flushContext(scope: ChatOutboundScope, outbox: OutboxStore) {
+function flushContext(scope: ChatScope, outbox: OutboxStore) {
   const posts: { channelId: string; clientId: string; content: string }[] = [];
   const ctx = {
     queryClient: new QueryClient(),
@@ -109,6 +108,9 @@ describe("dexieOutboxStore", () => {
         "clearDraft",
         "dequeue",
         "enqueue",
+        // Not on the port: the single-row read the Retry / Discard controls
+        // need, kept on the store so a scope is bound to a queue exactly once.
+        "get",
         "listForChannel",
         "listQueued",
         "markFailed",
@@ -130,7 +132,7 @@ describe("dexieOutboxStore", () => {
         { clientId: "c1", body: "hello", status: "queued", attempts: 0 },
       ]);
       expect(await alice.listForChannel("chan-1")).toHaveLength(1);
-      expect(await getOutboxRow(ALICE, "c1")).toMatchObject({ body: "hello" });
+      expect(await createDexieOutboxStore(ALICE).get("c1")).toMatchObject({ body: "hello" });
 
       await alice.dequeue("c1");
       expect(await alice.listQueued()).toEqual([]);
@@ -162,7 +164,7 @@ describe("dexieOutboxStore", () => {
       await alice.enqueue({ clientId: "c1", channelId: "chan-1", body: "hi" });
 
       await alice.markFailed("c1", "boom");
-      expect(await getOutboxRow(ALICE, "c1")).toMatchObject({
+      expect(await createDexieOutboxStore(ALICE).get("c1")).toMatchObject({
         status: "failed",
         attempts: 1,
         lastError: "boom",
@@ -172,10 +174,10 @@ describe("dexieOutboxStore", () => {
       expect(await alice.listForChannel("chan-1")).toHaveLength(1);
 
       await alice.bumpAttempt("c1", "boom again");
-      expect(await getOutboxRow(ALICE, "c1")).toMatchObject({ attempts: 2 });
+      expect(await createDexieOutboxStore(ALICE).get("c1")).toMatchObject({ attempts: 2 });
 
       await alice.requeue("c1");
-      expect(await getOutboxRow(ALICE, "c1")).toMatchObject({
+      expect(await createDexieOutboxStore(ALICE).get("c1")).toMatchObject({
         status: "queued",
         lastError: undefined,
       });
@@ -209,7 +211,7 @@ describe("dexieOutboxStore", () => {
       expect(await createDexieOutboxStore(BOB).listForChannel("chan-1")).toEqual(
         [],
       );
-      expect(await getOutboxRow(BOB, "alice-1")).toBeUndefined();
+      expect(await createDexieOutboxStore(BOB).get("alice-1")).toBeUndefined();
     });
 
     it("does not flush A's queued message under B's session", async () => {
@@ -273,7 +275,7 @@ describe("dexieOutboxStore", () => {
         body: "alice's unsent message",
       });
 
-      const before = await getOutboxRow(ALICE, "alice-1");
+      const before = await createDexieOutboxStore(ALICE).get("alice-1");
 
       const bob = createDexieOutboxStore(BOB);
       await bob.dequeue("alice-1");
@@ -282,7 +284,7 @@ describe("dexieOutboxStore", () => {
       await bob.bumpAttempt("alice-1", "bob's error");
 
       // Byte for byte what it was: not deleted, not failed, not a spent attempt.
-      expect(await getOutboxRow(ALICE, "alice-1")).toEqual(before);
+      expect(await createDexieOutboxStore(ALICE).get("alice-1")).toEqual(before);
       expect(before).toMatchObject({
         body: "alice's unsent message",
         status: "queued",
@@ -417,26 +419,56 @@ describe("dexieOutboxStore", () => {
     });
   });
 
-  describe("before the scope resolves", () => {
-    it("persists nothing and reads back nothing", async () => {
+  describe("with no scope to key rows under", () => {
+    it("fails an enqueue instead of reporting a message it did not keep", async () => {
       /*
-        The window between first paint and the session resolving. There is no
-        correct key for a row yet, and inventing one is the bug — so the store
-        degrades exactly as it does under SSR: `enqueue` still answers with the
-        row its caller needs, and nothing reaches disk.
+        The regression an earlier revision of #2226 shipped and this pins shut.
+        Returning the row while writing nothing tells `sendMessage` the message
+        is durably queued: offline, it then returns without POSTing, the
+        optimistic card paints as pending, `listQueued` never sees the row, and
+        a reload loses it with no error and no Retry. `adapters.ts` says this
+        port exists to make exactly that impossible, so refusing loudly is the
+        only honest answer — `sendMessage` removes the optimistic card on a
+        throwing enqueue (#1718) rather than leaving a phantom.
       */
       const unscoped = createDexieOutboxStore(null);
 
-      const row = await unscoped.enqueue({
-        clientId: "c1",
-        channelId: "chan-1",
-        body: "typed before the session resolved",
-      });
-      expect(row).toMatchObject({ clientId: "c1", status: "queued" });
+      await expect(
+        unscoped.enqueue({
+          clientId: "c1",
+          channelId: "chan-1",
+          body: "typed with no chapter selected",
+        }),
+      ).rejects.toThrow(/no scope/i);
+
+      expect(await createDexieOutboxStore(ALICE).listQueued()).toEqual([]);
+    });
+
+    it("reads back nothing and no-ops every other call", async () => {
+      const unscoped = createDexieOutboxStore(null);
 
       expect(await unscoped.listQueued()).toEqual([]);
-      expect(await createDexieOutboxStore(ALICE).listQueued()).toEqual([]);
+      expect(await unscoped.listForChannel("chan-1")).toEqual([]);
+      expect(await unscoped.get("c1")).toBeUndefined();
+      await expect(unscoped.dequeue("c1")).resolves.toBeUndefined();
       await expect(unscoped.clearDraft("chan-1")).resolves.toBeUndefined();
+    });
+
+    it("cannot reach another member's rows", async () => {
+      await createDexieOutboxStore(ALICE).enqueue({
+        clientId: "alice-1",
+        channelId: "chan-1",
+        body: "alice's unsent message",
+      });
+
+      const unscoped = createDexieOutboxStore(null);
+      expect(await unscoped.listQueued()).toEqual([]);
+      expect(await unscoped.get("alice-1")).toBeUndefined();
+      await unscoped.dequeue("alice-1");
+
+      expect(await createDexieOutboxStore(ALICE).get("alice-1")).toMatchObject({
+        body: "alice's unsent message",
+      });
     });
   });
 });

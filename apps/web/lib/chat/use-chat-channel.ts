@@ -54,7 +54,7 @@ import {
   type ResolveMember,
 } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-integrations";
-import { createDexieOutboxStore, getOutboxRow } from "./offline-queue";
+import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
 import { usePersistedChannelTail } from "./use-first-chunk-cache";
 
@@ -195,13 +195,40 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     },
   });
 
-  // Ref-counted subscription to the realtime manager. Cleans up when the
-  // active channel changes or the component unmounts.
+  /*
+    Ref-counted subscription to the realtime manager. Cleans up when the active
+    channel changes or the component unmounts.
+
+    Keyed on `channelId` alone, deliberately. It used to carry `ctx`, which was
+    harmless while every member of `ctx` was stable for the life of the mount —
+    and stopped being so when `ctx.outbox` became scope-bound (#2226), because
+    the scope resolves a few milliseconds after mount. That made this effect
+    tear the topic down and rebuild it on every chat open: at refCount 1→0
+    `unsubscribe` calls `removeChannel` and drops the manager's channel state,
+    so the re-subscribe mints a fresh `joining` — a websocket leave/rejoin, a
+    second backfill, discarded typing state, and the connection pill flickering
+    off `live`. The realtime topic has nothing to do with which member's outbox
+    is mounted, so it should never have been able to notice.
+  */
   useEffect(() => {
     if (!channelId) return;
     chatRealtime.subscribe(channelId);
-    void hydrateOutboxIntoCache(ctx, channelId);
     return () => chatRealtime.unsubscribe(channelId);
+  }, [channelId]);
+
+  // The outbox hydrate genuinely does depend on the scope — it replays this
+  // member's unsent rows — so it keeps `ctx` and runs on its own.
+  useEffect(() => {
+    if (!channelId) return;
+    void hydrateOutboxIntoCache(ctx, channelId).catch(() => {
+      /*
+        Best-effort, and explicitly caught. A rejected Dexie read here (a
+        cross-tab `VersionError` while the v1→v3 upgrade lands, storage
+        pressure, private mode) would otherwise be an unhandled rejection that
+        reaches Sentry with no channel context and nothing anyone can act on.
+        The timeline still paints; it just starts without the unsent rows.
+      */
+    });
   }, [channelId, ctx]);
 
   // Connection status pipe.
@@ -299,24 +326,27 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     chatRealtime.emitTyping(channelId, userId);
   }, [channelId, userId]);
 
+  /*
+    Read through `ctx.outbox`, never a separately-bound scope: it is the same
+    store the flush uses, so Retry and Discard cannot resolve a row under a
+    different member than the one that would send it.
+  */
   const retry = useCallback(
     async (clientMessageId: string) => {
-      if (!scope) return;
-      const row = await getOutboxRow(scope, clientMessageId);
+      const row = await ctx.outbox.get(clientMessageId);
       if (!row) return;
       await retryOutboxRow(ctx, row);
     },
-    [ctx, scope],
+    [ctx],
   );
 
   const discard = useCallback(
     async (clientMessageId: string) => {
-      if (!scope) return;
-      const row = await getOutboxRow(scope, clientMessageId);
+      const row = await ctx.outbox.get(clientMessageId);
       if (!row) return;
       await discardOutboxRow(ctx, row);
     },
-    [ctx, scope],
+    [ctx],
   );
 
   const retryUnconfirmed = useCallback(

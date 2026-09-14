@@ -102,12 +102,23 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       outbox,
       kv: browserKeyValueStore,
     };
-    void flushOutbox(ctx);
+    /*
+      Caught, not floated. `flushOutbox` reads Dexie, and a rejected read — a
+      cross-tab `VersionError` while the v1→v3 upgrade of #2226 lands, storage
+      pressure, private mode — would otherwise surface as an unhandled
+      rejection on every `online` event, once per reconnect, carrying nothing
+      actionable. Each row's own send failure is already reported through the
+      outbox's `failed` state and the inline Retry affordance.
+    */
+    const flush = () => {
+      void flushOutbox(ctx).catch(() => {});
+    };
+    flush();
     // Trigger and gate ride the same connectivity signal: `flushOutbox`
     // consults the NetworkState port internally, so subscribe through the
     // same port rather than hand-rolling a window listener beside it.
     return browserNetworkState.subscribe((online) => {
-      if (online) void flushOutbox(ctx);
+      if (online) flush();
     });
   }, [queryClient, apiClient, supabase, userId, toast, track, outbox]);
 

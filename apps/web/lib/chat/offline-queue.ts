@@ -88,24 +88,11 @@ import type {
   OutboxRow,
   OutboxStore,
 } from "@repo/chat-core/adapters";
+// The tenant scope has one home, shared with the first-chunk read cache.
+import type { ChatDraftScope, ChatScope } from "./chat-scope";
 
 /** The IndexedDB database holding drafts and the outbox, and only those. */
 export const CHAT_OUTBOUND_DB_NAME = "frapp-chat";
-
-/**
- * The member — and, for the outbox, the chapter — a persisted row belongs to.
- *
- * See the header for why `userId` is the Supabase auth uid and why `chapterId`
- * scopes only the outbox.
- */
-export interface ChatOutboundScope {
-  /** Supabase auth uid (JWT subject) — not `users.id`. */
-  userId: string;
-  chapterId: string;
-}
-
-/** The draft scope: a channel id already implies its chapter. */
-export type ChatDraftScope = Pick<ChatOutboundScope, "userId">;
 
 export interface DraftRow {
   userId: string;
@@ -120,7 +107,7 @@ export interface DraftRow {
  * so no caller can come to depend on a field the `OutboxStore` port does not
  * promise.
  */
-interface StoredOutboxRow extends OutboxRow, ChatOutboundScope {}
+interface StoredOutboxRow extends OutboxRow, ChatScope {}
 
 class ChatDB extends Dexie {
   drafts!: Table<DraftRow, [string, string]>;
@@ -168,14 +155,19 @@ class ChatDB extends Dexie {
       database enforces rather than as a delimiter convention a future writer
       could forget or a value could contain.
 
-      The secondary indexes are the two reads the flush path makes —
+      The only secondary indexes are the two reads the flush path makes —
       `listQueued` (this scope's queued rows) and `listForChannel` (this
-      scope's rows for one channel) — so neither has to scan.
+      scope's rows for one channel) — so neither has to scan. `drafts` declares
+      none at all: every access it has is a `get`/`put`/`delete` on the primary
+      key. An index nothing queries is not free — it is rewritten on every
+      keystroke's `put` and every send's `enqueue` — so `queuedAt` is absent
+      too: both list reads materialise a scope's rows and then `sortBy`, which
+      is Dexie's in-memory sort and consults no index.
     */
     this.version(3).stores({
-      drafts: "[userId+channelId], userId",
+      drafts: "[userId+channelId]",
       outbox:
-        "[userId+chapterId+clientId], [userId+chapterId+status], [userId+chapterId+channelId], queuedAt",
+        "[userId+chapterId+clientId], [userId+chapterId+status], [userId+chapterId+channelId]",
     });
   }
 }
@@ -188,8 +180,14 @@ let cached: ChatDB | null = null;
  * constructor throws (IndexedDB disabled, private mode); every caller below
  * treats that as "no persistence", which is the degradation `use-channel-draft.ts`
  * has always assumed.
+ *
+ * **Module-private, and that is load-bearing.** The scoped keys are the tenant
+ * boundary, but they only bind callers who go through the scoped helpers above
+ * and {@link createDexieOutboxStore}. An exported handle is an unscoped
+ * `db.outbox.toArray()` that any `apps/web` module could reach for, compiling
+ * clean and drawing no lint objection — the pre-#2226 shape, one import away.
  */
-export function getChatDB(): ChatDB | null {
+function getChatDB(): ChatDB | null {
   if (typeof window === "undefined" || typeof indexedDB === "undefined") {
     return null;
   }
@@ -223,7 +221,7 @@ export function resetChatDBForTests(): void {
  * to `OutboxRow` needs no change here.
  */
 function toPortRow(row: StoredOutboxRow): OutboxRow {
-  const port: OutboxRow & Partial<ChatOutboundScope> = { ...row };
+  const port: OutboxRow & Partial<ChatScope> = { ...row };
   delete port.userId;
   delete port.chapterId;
   return port;
@@ -267,15 +265,65 @@ export async function clearDraft(
   await db.drafts.delete([scope.userId, channelId]);
 }
 
-export async function getOutboxRow(
-  scope: ChatOutboundScope,
-  clientId: string,
-): Promise<OutboxRow | undefined> {
-  const db = getChatDB();
-  if (!db) return undefined;
-  const row = await db.outbox.get([scope.userId, scope.chapterId, clientId]);
-  return row ? toPortRow(row) : undefined;
-}
+/**
+ * One scope's outbox: the `@repo/chat-core` port, plus the single-row read the
+ * Retry and Discard controls need.
+ *
+ * `get` rides here rather than staying a free function taking a scope, so there
+ * is exactly one place a scope is bound to a queue. A caller holding both a
+ * store and a loose scope could bind them to different members; holding only
+ * the store, it cannot.
+ */
+export type ChatOutbox = OutboxStore & {
+  get(clientId: string): Promise<OutboxRow | undefined>;
+};
+
+/**
+ * The store used when there is no scope to key rows under: keeps nothing, reads
+ * nothing, and **fails an enqueue rather than pretending to have kept it**.
+ *
+ * That last part is the whole difference between this and the no-IndexedDB
+ * path, which returns the row and degrades silently. A browser with storage
+ * switched off is a permanent, known condition where an online send still
+ * works and the member has been living without persistence all along. A missing
+ * scope is not: `sendMessage` takes the returned row as proof the message is
+ * durably queued, so answering while writing nothing means an offline compose
+ * is lost on reload with no error, no Retry and no Discard — the exact failure
+ * `packages/chat-core/src/adapters.ts` says this port exists to make
+ * impossible. `sendMessage` already handles a throwing `enqueue`: it removes
+ * the optimistic card rather than leaving a phantom (#1718), so the member is
+ * told, and nothing is silently swallowed.
+ *
+ * Reaching this at all is narrow, and narrower than it was. `userId` comes from
+ * {@link useChatOutboundScope}, which is sticky and survives the token expiry
+ * and the remount that used to empty it; and `sendMessage` returns on
+ * `!ctx.userId` before it ever reaches `enqueue`. What is left is a member with
+ * **no active chapter** who still has a channel id — a deep link, since a
+ * channel list needs the chapter — and such a send cannot succeed anyway:
+ * `ChatService.sendMessage` checks the chapter header against the channel, so
+ * there is nothing here to lose by refusing loudly.
+ */
+const INERT_OUTBOX: ChatOutbox = {
+  async enqueue(): Promise<OutboxRow> {
+    throw new Error(
+      "chat outbox has no scope to queue under (no signed-in member or no active chapter)",
+    );
+  },
+  async dequeue(): Promise<void> {},
+  async requeue(): Promise<void> {},
+  async markFailed(): Promise<void> {},
+  async bumpAttempt(): Promise<void> {},
+  async listQueued(): Promise<OutboxRow[]> {
+    return [];
+  },
+  async listForChannel(): Promise<OutboxRow[]> {
+    return [];
+  },
+  async clearDraft(): Promise<void> {},
+  async get(): Promise<OutboxRow | undefined> {
+    return undefined;
+  },
+};
 
 /**
  * The web `OutboxStore`, bound to one scope.
@@ -286,22 +334,35 @@ export async function getOutboxRow(
  * whatever `listQueued` hands back — has no way to reach another member's
  * queue. `apps/mobile/lib/chat/outbox-store.ts` is already shaped this way.
  *
- * `scope` is `null` until the session and the active chapter have both
- * resolved, and the store is then a no-op that keeps nothing: `enqueue` returns
- * the row it was given without persisting it, and every read is empty. That
- * window closes before it can matter — a send needs `ctx.userId`
- * (`useViewerUserId`, which resolves strictly after the session exists) and a
- * channel id, which needs the chapter — so nothing reaches `enqueue` while the
- * scope is still missing. It is the same degradation the SSR / no-IndexedDB
- * path has always had, for the same reason: there is nowhere correct to put the
- * row, and inventing a scope for it is the bug.
+ * A `null` scope returns {@link INERT_OUTBOX} rather than a store that
+ * re-checks for one on every call; deciding once is what lets the real store
+ * below treat `scope` as present rather than asserting it is at every key it
+ * builds.
+ *
+ * **What an unscoped window costs, stated rather than argued away.** While the
+ * scope is missing — first paint before the session resolves, or a member with
+ * no active chapter — nothing is written to disk. That is deliberate: there is
+ * no correct key for the row, and inventing one is the cross-account bug this
+ * whole module exists to close. It is also *exactly* the degradation a browser
+ * with IndexedDB disabled has always had, and it degrades the same way: an
+ * online send still POSTs and still succeeds, because the queue is only load-
+ * bearing for offline and retry. The residue is narrow and real — a message
+ * composed **offline** inside that window is not durable, and its `markFailed`
+ * is a no-op too, so it does not come back on reload.
+ *
+ * An earlier draft of this comment asserted the window was unreachable, on the
+ * grounds that a send needs `ctx.userId` and a channel id. Neither support
+ * holds: `useViewerUserId` reads `["user","me"]`, which `use-auth-user-id.ts`
+ * records as *not* account-scoped, and `chat-page.tsx` takes a channel id
+ * straight off `?channel=` without consulting the chapter. Nothing enforces the
+ * invariant, so it is not claimed.
  */
-export function createDexieOutboxStore(
-  scope: ChatOutboundScope | null,
-): OutboxStore {
+export function createDexieOutboxStore(scope: ChatScope | null): ChatOutbox {
+  if (!scope) return INERT_OUTBOX;
+
   const key = (clientId: string): [string, string, string] => [
-    scope!.userId,
-    scope!.chapterId,
+    scope.userId,
+    scope.chapterId,
     clientId,
   ];
 
@@ -311,7 +372,7 @@ export function createDexieOutboxStore(
     change: (row: StoredOutboxRow) => StoredOutboxRow,
   ): Promise<void> {
     const db = getChatDB();
-    if (!db || !scope) return;
+    if (!db) return;
     const existing = await db.outbox.get(key(clientId));
     if (!existing) return;
     await db.outbox.put(change(existing));
@@ -326,14 +387,14 @@ export function createDexieOutboxStore(
         ...row,
       };
       const db = getChatDB();
-      if (!db || !scope) return full;
+      if (!db) return full;
       await db.outbox.put({ ...full, ...scope });
       return full;
     },
 
     async dequeue(clientId: string): Promise<void> {
       const db = getChatDB();
-      if (!db || !scope) return;
+      if (!db) return;
       await db.outbox.delete(key(clientId));
     },
 
@@ -365,7 +426,7 @@ export function createDexieOutboxStore(
     /** This scope's queued rows, FIFO — drives the in-order flush loop. */
     async listQueued(): Promise<OutboxRow[]> {
       const db = getChatDB();
-      if (!db || !scope) return [];
+      if (!db) return [];
       const rows = await db.outbox
         .where("[userId+chapterId+status]")
         .equals([scope.userId, scope.chapterId, "queued"])
@@ -376,7 +437,7 @@ export function createDexieOutboxStore(
     /** This scope's rows for a channel (queued + failed), to hydrate the cache on boot. */
     async listForChannel(channelId: string): Promise<OutboxRow[]> {
       const db = getChatDB();
-      if (!db || !scope) return [];
+      if (!db) return [];
       const rows = await db.outbox
         .where("[userId+chapterId+channelId]")
         .equals([scope.userId, scope.chapterId, channelId])
@@ -385,8 +446,15 @@ export function createDexieOutboxStore(
     },
 
     async clearDraft(channelId: string): Promise<void> {
-      if (!scope) return;
       await clearDraft(scope, channelId);
+    },
+
+    /** One of this scope's rows, for the Retry / Discard controls. */
+    async get(clientId: string): Promise<OutboxRow | undefined> {
+      const db = getChatDB();
+      if (!db) return undefined;
+      const row = await db.outbox.get(key(clientId));
+      return row ? toPortRow(row) : undefined;
     },
   };
 }

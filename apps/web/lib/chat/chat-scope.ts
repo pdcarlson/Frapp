@@ -1,35 +1,143 @@
 "use client";
 
 /**
- * The identity chat's **outbound** on-disk rows (drafts, outbox) are written
- * under — one hook, so the drafts table and the outbox can never disagree about
- * whose work they are holding.
+ * The tenant a chat row on this browser belongs to — one definition, shared by
+ * the inbound first-chunk read cache (`first-chunk-cache.ts`) and the outbound
+ * drafts/outbox database (`offline-queue.ts`).
  *
- * Both halves are read from local state rather than fetched:
+ * One home on purpose. Both caches key their rows on this scope and both treat
+ * that key as a security boundary, so two derivations of "who is this" would be
+ * two things that can drift apart — and the drift would not look like a bug
+ * until a row written under one definition was read under the other.
  *
- * - `useAuthUserId()` is the Supabase auth uid, resolved from the stored
- *   session. See `offline-queue.ts` for why this and not `useViewerUserId()` —
- *   briefly, it is the subject of the token a flush POSTs under, and it does not
- *   cost a round trip an offline composer cannot make.
- * - `activeChapterId` is the persisted chapter store, corrected by the token's
- *   `active_chapter_id` claim (`useClaimChapterSync`).
+ * Both halves come from local state rather than the network — the Supabase
+ * session (`useAuthUserId`) and the persisted chapter store — which is the only
+ * reason a cold load can read the cache, or an offline composer write a draft,
+ * before `GET /v1/channels` returns.
  *
- * `null` until both have resolved. Callers treat that as "no persistence yet",
- * which is the same posture they already take for SSR and for a browser with
- * IndexedDB switched off: the composer still works, the keystrokes are still in
- * memory, nothing is written anywhere it could later be read under the wrong
- * identity. That window is short and closes before a send is possible at all —
- * `offline-queue.ts` walks through why.
+ * Deliberately **not** gated on the chapter store's `hasHydrated`.
+ * `profile-panel.tsx` records at length that the flag has three ways to stick
+ * at `false` for the life of a session when `localStorage` throws; gating here
+ * would silently disable both caches for exactly those members, and nothing
+ * else in the chat shell waits on it either.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { useChapterStore } from "@/lib/stores/chapter-store";
-import type { ChatOutboundScope } from "./offline-queue";
 
-export function useChatOutboundScope(): ChatOutboundScope | null {
+/** The member — and the chapter — a persisted chat row belongs to. */
+export interface ChatScope {
+  /** Supabase auth uid (JWT subject) — not `users.id`. */
+  userId: string;
+  chapterId: string;
+}
+
+/**
+ * The draft scope: the member alone.
+ *
+ * A channel id is a UUID unique across chapters, so `[userId+channelId]`
+ * isolates a draft completely and a chapter segment would be redundant
+ * structure. `offline-queue.ts` has the full argument for why the *outbox* is
+ * the one that does need the chapter.
+ */
+export type ChatDraftScope = Pick<ChatScope, "userId">;
+
+/** `null` until both halves are known. */
+export function useChatScope(): ChatScope | null {
   const userId = useAuthUserId();
-  const chapterId = useChapterStore((s) => s.activeChapterId);
+  const chapterId = useChapterStore((state) => state.activeChapterId);
+  return useMemo(
+    () => (userId && chapterId ? { userId, chapterId } : null),
+    [userId, chapterId],
+  );
+}
+
+/**
+ * The last member this page session saw signed in, held in module memory.
+ *
+ * `useAuthUserId` answers "is there a valid session **right now**", which is a
+ * different question from "whose browser is this", and the difference is what
+ * the outbound store must not get wrong. It is `null` in two situations that
+ * look identical to a caller and are not:
+ *
+ * 1. It has not resolved yet. Its state starts `null` on **every mount**, and
+ *    `ChatProvider` remounts on an in-app navigation to `/chat` while
+ *    `["user","me"]` and the channel list are still warm in the QueryClient —
+ *    so the composer is fully usable before the uid lands.
+ * 2. The access token expired and the refresh could not reach the network.
+ *    `getSession()` resolves `session: null` there, so this stays `null` for as
+ *    long as the member is offline — which is precisely when the outbox is the
+ *    only thing standing between them and a lost message.
+ *
+ * Neither means "signed out", and treating them as such is what made an earlier
+ * revision of this change drop offline sends on the floor: an unscoped store
+ * kept nothing while `sendMessage` believed the row was durably queued.
+ *
+ * So the last non-null uid is remembered and never revoked. It is module state,
+ * not storage: a fresh page load starts empty, so nothing survives into another
+ * member's session. Going stale requires *nobody* to be signed in — a real
+ * sign-out fires an auth event and `FrappProvider` holds a `useAuthUserId`
+ * subscription on the shell path of every dashboard route, so the next member
+ * replaces this before any chat surface mounts. And while nobody is signed in,
+ * `sendMessage` and `flushOutbox` both refuse on `ctx.userId` anyway, so a
+ * stale value here has nothing to act on.
+ */
+let lastKnownUserId: string | null = null;
+
+/** Test seam — module state outlives a `renderHook`, so specs must reset it. */
+export function resetLastKnownUserIdForTests(): void {
+  lastKnownUserId = null;
+}
+
+function useStickyAuthUserId(): string | null {
+  const live = useAuthUserId();
+  /*
+    Recorded in an effect, not during render: reassigning module state while
+    rendering is a side effect React is free to run twice or discard, and
+    `react-hooks/globals` rejects it. Writing after commit loses nothing,
+    because the read below always prefers the live value — the remembered one
+    is consulted only on a render where `useAuthUserId` has not (yet, or no
+    longer) got an answer, and by then some earlier commit has recorded it.
+  */
+  useEffect(() => {
+    if (live) lastKnownUserId = live;
+  }, [live]);
+  return live ?? lastKnownUserId;
+}
+
+/**
+ * `null` until the session is known — and **stable across a chapter change**,
+ * which is the point of it being separate.
+ *
+ * Drafts do not key on the chapter, so handing `useChannelDraft` the full scope
+ * would give its restore effect a dependency that changes for a reason drafts
+ * do not care about. A chapter that moves under a mounted composer — a
+ * `TOKEN_REFRESHED` that `useClaimChapterSync` writes through, `/join` or the
+ * onboarding wizard, both of which switch in place with no navigation — would
+ * then tear the effect down and re-run it, and its cleanup drops the
+ * `typedFor` claim that protects live typing: the restore that follows sees an
+ * unclaimed channel and overwrites the composer with the last value on disk,
+ * silently discarding anything typed inside the 400ms save debounce.
+ */
+export function useChatDraftScope(): ChatDraftScope | null {
+  const userId = useStickyAuthUserId();
+  return useMemo(() => (userId ? { userId } : null), [userId]);
+}
+
+/**
+ * The scope the outbound drafts/outbox database keys on.
+ *
+ * Sticky, unlike {@link useChatScope}, which the first-chunk **read** cache
+ * uses. The two caches want different answers from the same question and the
+ * asymmetry is deliberate: serving a read from a cache whose identity has gone
+ * uncertain is a tenancy risk, so the read cache prefers to go cold; refusing
+ * to persist an unsent message because identity has gone uncertain loses the
+ * message, which `spec/ui/resilience/principles.md` §5 ranks above it.
+ */
+export function useChatOutboundScope(): ChatScope | null {
+  const userId = useStickyAuthUserId();
+  const chapterId = useChapterStore((state) => state.activeChapterId);
   return useMemo(
     () => (userId && chapterId ? { userId, chapterId } : null),
     [userId, chapterId],
