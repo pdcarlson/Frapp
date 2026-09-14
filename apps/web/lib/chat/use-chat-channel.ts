@@ -55,6 +55,7 @@ import {
 } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-integrations";
 import { dexieOutboxStore, getOutboxRow } from "./offline-queue";
+import { usePersistedChannelTail } from "./use-first-chunk-cache";
 
 export interface UseChatChannelResult {
   messages: ChatMessage[];
@@ -351,6 +352,14 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   }, [connection, ctx]);
 
   const messages = useMemo(() => selectMessages(query.data), [query.data]);
+
+  /*
+    Keep this channel's tail on disk so the next cold load paints it (`1s`'s
+    "first chunk"). Driven off `dataUpdatedAt` rather than the message array so
+    a realtime merge — which is a `setQueryData`, and so bumps that timestamp —
+    refreshes the cache the same way the initial backfill does.
+  */
+  usePersistedChannelTail(channelId, messages, query.dataUpdatedAt);
 
   return {
     messages,

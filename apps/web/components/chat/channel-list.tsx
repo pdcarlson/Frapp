@@ -445,8 +445,16 @@ function ChannelMark({
  * tall at radius 8, the same 2px gaps, an indent for the mark — so the real rows
  * land in the space the placeholders already held rather than pushing anything.
  *
- * Deliberately not a count derived from anything: there is no cached list to
- * count yet, and a number that changes between renders makes the column jump.
+ * **Since the first-chunk cache shipped this is the cold-cache path, not the
+ * usual one.** A warm load seeds `["channels"]` from IndexedDB before the rail
+ * renders, so `channelsPaneState` never reaches `"loading"` and neither this
+ * nor the `sr-only` announcer below is reached. It is still the path for a
+ * first-ever visit, a wiped or expired cache, and a browser where IndexedDB
+ * throws — which is why it stays, and why its geometry still has to match.
+ *
+ * Deliberately not a count derived from anything. A cached count is available
+ * now, but the skeleton renders precisely when it is *not* — and a number that
+ * changes between renders makes the column jump.
  * `aria-hidden` because eight anonymous rectangles are no use to a screen
  * reader. **That means this is not the whole loading affordance**: the spoken
  * half is a separate `sr-only` live region in `chat-shell.tsx`, kept outside
