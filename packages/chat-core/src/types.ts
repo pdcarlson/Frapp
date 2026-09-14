@@ -288,6 +288,43 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
 }
 
 /**
+ * `normalizeRow`'s inverse: a normalized message back in the wire shape.
+ *
+ * Lives here, beside the function it must stay in step with, rather than in
+ * whichever caller happens to need it. Every field `RawChatMessage` gains has
+ * to be handled by both directions, and a projection kept in another package
+ * would simply drop the new field — silently, because the round trip still
+ * type-checks. `attachment_count` is the standing example: `normalizeRow`
+ * derives it from `metadata`, so copying it across as a top-level field would
+ * lose it.
+ *
+ * Client-only state (`_status`, `_error`, `_replay`) and the separately-carried
+ * `reactions` / `actions` are deliberately not represented — the wire shape has
+ * nowhere to put them, and whoever owns them re-applies them after the merge.
+ */
+export function toRawRow(message: ChatMessage): RawChatMessage {
+  return {
+    id: message.id,
+    channel_id: message.channel_id,
+    sender_id: message.sender_id,
+    author_name: message.author_name,
+    author_avatar_path: message.author_avatar_path,
+    author_external_id: message.author_external_id,
+    content: message.content,
+    kind: message.kind,
+    payload: message.payload,
+    reply_to_id: message.reply_to_id,
+    metadata: { attachment_count: message.attachment_count },
+    is_pinned: message.is_pinned,
+    pinned_at: message.pinned_at,
+    edited_at: message.edited_at,
+    is_deleted: message.is_deleted,
+    client_message_id: message.client_message_id,
+    created_at: message.created_at,
+  };
+}
+
+/**
  * Reads `metadata.attachment_count` defensively.
  *
  * `metadata` is free-form jsonb written by several services, and this key is

@@ -43,27 +43,44 @@ posture `npm run test:cov` has — and nothing in CI runs it. Freezing a number 
 is a decision about which routes get pinned at what, and this greenfield is mid-rebuild with several
 lanes still moving the answer.
 
-As of [#2175](https://github.com/pdcarlson/Frapp/issues/2175):
+As of the first-chunk read cache (2026-09-14), measured on one tree with and without the change so
+the two columns are comparable:
 
-| | Entry JS | Gzipped |
-|---|---|---|
-| Shell floor (every dashboard route) | 909 KB | 247 KB |
-| `/chat` | 1,733 KB | 501 KB |
-| Next-largest route (`/settings`) | 1,045 KB | 285 KB |
+| | Entry JS — before | after | Gzipped — before | after |
+|---|---|---|---|---|
+| Shell floor (every dashboard route) | 910.1 KB | 910.6 KB | 247.2 KB | 247.5 KB |
+| `/chat` | 1,736.8 KB | 1,741.3 KB | 502.3 KB | 503.9 KB |
+| Next-largest route (`/settings`) | 1,045.7 KB | 1,046.2 KB | 285.7 KB | 286.0 KB |
 
-The previous row, as of [#2145](https://github.com/pdcarlson/Frapp/issues/2145), was 898 KB / 242 KB
-on the floor. #2175 put the segment error boundary and its surface on the shell path, which is where
-those 11 KB went, and [`chapter-wizard-gate.tsx`](../../../apps/web/components/onboarding/chapter-wizard-gate.tsx)
-carries the breakdown and the cheaper alternative that was measured and not taken. Both rows are kept
-because the instruction below is to compare before and after, which needs a before.
+**The floor holding still is the point of that change's file layout, not an accident.** The wipe has
+to be callable from `frapp-client-provider.tsx`, which every dashboard route loads, and the cache
+module imports Dexie — which until then only `/chat` paid for. A static import would have moved
+Dexie onto the floor for `/settings`, `/points` and everywhere else, to pay for a function that runs
+at most twice a session. [`first-chunk-wipe.ts`](../../../apps/web/lib/chat/first-chunk-wipe.ts) is
+therefore a dependency-free module spelled against the raw `indexedDB` API, and the cache module
+takes the database name from it rather than the reverse. Verified after the build rather than assumed, and not by
+`measure-web-route-bundles.mjs`, which reports sizes and chunk counts but never chunk contents:
+grep the emitted `apps/web/.next/static/chunks/**/*.js` for `dexie` (one file matches), then read
+`entryJSFiles` out of each `apps/web/.next/server/app/**/page_client-reference-manifest.js` and
+check which routes list that chunk (only `/chat`). Nothing in CI does this.
 
-The per-route totals move by less than the floor does (`/settings` +7 KB, `/chat` +9 KB against the
-floor's +11 KB) even though each total contains the floor. That is not a transcription error: the two
-rows are separate production builds and Turbopack re-chunks between them, so a module can move
-between a route's own chunk and the shared floor. Compare rows to rows, not deltas to deltas, and
-re-run the script rather than subtracting.
+Earlier rows, for the trend: as of [#2175](https://github.com/pdcarlson/Frapp/issues/2175) the floor
+was 909 KB / 247 KB and `/chat` 1,733 KB / 501 KB; as of
+[#2145](https://github.com/pdcarlson/Frapp/issues/2145) the floor was 898 KB / 242 KB. #2175 put the
+segment error boundary and its surface on the shell path, which is where those 11 KB went, and
+[`chapter-wizard-gate.tsx`](../../../apps/web/components/onboarding/chapter-wizard-gate.tsx) carries
+the breakdown and the cheaper alternative that was measured and not taken. They are kept because the
+instruction below is to compare before and after, which needs a before — but compare them only to
+each other, not to the table above: those are different trees, and the 2026-09-14 pair is its own
+before-and-after for exactly that reason.
 
-`/chat` carries ~824 KB of its own on top of the floor, nearly all of it one chunk holding
+Across those two historical rows the per-route totals moved by less than the floor did (`/settings`
++7 KB, `/chat` +9 KB against the floor's +11 KB) even though each total contains the floor. That is
+not a transcription error: they are separate production builds and Turbopack re-chunks between them,
+so a module can move between a route's own chunk and the shared floor. Compare rows to rows, not
+deltas to deltas, and re-run the script rather than subtracting.
+
+`/chat` carries ~830 KB of its own on top of the floor, nearly all of it one chunk holding
 `@tiptap` + ProseMirror, `react-virtuoso`, and the `react-markdown` / `remark` / `micromark` chain.
 That is the board's **chat** chunk and it is correctly eager: the timeline has to be readable and
 the composer focusable inside 400ms, so neither can wait on a second request.
@@ -91,8 +108,9 @@ It used to mean Tiptap, which made it unmeetable by construction: `<Composer>` i
 latency. `1s` budgets "composer focusable" and puts "composer **shell**" in its 0ms set, and `1e`
 pin 4 is more explicit still — "Composer live at first paint · typing is allowed before history
 loads; the outbox queues it". The shell is what satisfies those, so it is what the mark reports.
-Tiptap's timing is kept under its own name rather than dropped: the ~825 KB of its own that `/chat`
-carries (measured below) is mostly that editor, and the shell's number is blind to it by design.
+Tiptap's timing is kept under its own name rather than dropped: the ~830 KB of its own that `/chat`
+carries ([Bundle size](#bundle-size), above) is mostly that editor, and the shell's number is blind
+to it by design.
 
 Three things the split makes true, none of them visible from the number alone:
 
@@ -126,6 +144,76 @@ That `duration` is the honest local number, because the measure is anchored at `
 Sentry *span* it becomes is not: it is short by `requestStart`, which is why the true interval also
 travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records that arithmetic.
 
+## Cached channel readable
+
+`1s`'s "first chunk" clause — the channel list and the last ~30 messages read from Dexie — is built
+as of 2026-09-14. Until then this page recorded it as absent and said "cached channel readable"
+therefore measured a network round trip, which it did.
+
+**One half of the clause is served differently from how it is worded, and the difference is
+visible in a miss.** `1s` says "channel list + **last active channel id** from cache"; the shell's
+channel selection is unchanged, and the cache instead keeps the tails of the three most recently
+read channels plus — pinned against eviction — the channel a cold load actually lands on
+([`default-channel.ts`](../../../apps/web/lib/chat/default-channel.ts), which `chat-shell.tsx` and
+the cache's eviction now both read, because they disagreed and the disagreement evicted exactly the
+tail the next reload asked for). Persisting a *selection* would change which channel a reload lands
+on, which is a UX decision rather than a caching one. The consequence to keep in mind when reading
+the numbers below: a member whose landing channel is outside those four pays the cold number, not
+the warm one.
+
+[`apps/web/lib/chat/first-chunk-cache.ts`](../../../apps/web/lib/chat/first-chunk-cache.ts) holds it
+in an IndexedDB database of its own, keyed by Supabase auth uid + chapter id; the layer, its wipe
+rules and why it is not the `persistQueryClient` snapshot [`caching.md`](caching.md) rules out are
+owned there and in that file. What belongs here is the number.
+
+Measured by hand on 2026-09-14 against a production build (`npm run build -w apps/web && npm run
+start -w apps/web`) with the local API and Supabase up, a seeded chapter of 8 channels and 50
+messages, and Playwright driving a real signed-in session. Both arms are the **same build, browser
+and dataset**; the only difference is whether the cache held rows at document load. Five paired
+runs, reading
+`performance.getEntriesByName("frapp.chat.channel-readable", "measure")[0].duration`:
+
+| | median | range (5 runs) |
+|---|---|---|
+| Cold cache | 1,179 ms | 1,027–1,551 |
+| Warm cache | **323 ms** | 283–335 |
+
+**The cold arm is the new build with an empty cache, not the old build.** It is the right control
+for what the cache buys — same code, same data, one variable — but it is not a before-and-after
+against `main`, and it cannot answer whether the cold path itself regressed. The changed build does
+strictly more work on a cold load than the old one did: it opens a second IndexedDB database, reads
+it, prunes it, and mounts one more `["channels"]` observer and two more `useAuthUserId`
+subscriptions. That cost is not isolated by this measurement.
+
+`frapp.chat.composer-focusable` was 186 ms cold and 207 ms warm — the same number inside the run-to-run
+spread, which is the #2176 shell doing its job: it never waited on the channel list, so a cache for
+the channel list cannot move it either way.
+
+Three qualifications, because a number without them is worth less than none:
+
+- **This is a sandbox VM on localhost, not a device on a network.** It is a controlled A/B of one
+  variable, not a field measurement. The 400ms budget is a field budget and Sentry
+  (`tracesSampleRate` 0.1) remains the only thing that can report against it.
+- **Five runs is five runs.** Every warm sample here cleared 400 ms (283–335), but a handful of
+  loads on one idle machine is not a distribution, and an earlier revision of this same measurement
+  had a warm sample at 417 ms. Treat the budget as met at the median on this hardware, not as met
+  everywhere.
+- **The mark fires just before `react-virtuoso` commits its rows**, so it reports when the timeline
+  stopped being a placeholder rather than when pixels landed. That is a property of the existing
+  instrument, unchanged here, and it applies equally to both arms.
+
+That the warm paint comes from the cache rather than from a fast network was checked separately by
+aborting every `**/v1/channels**` request in the page and reloading: the rail and the timeline still
+rendered, from Dexie alone.
+
+**Two issue numbers that are easy to conflate, kept because the corpus has nowhere else to record
+it.** [#2097](https://github.com/pdcarlson/Frapp/issues/2097) is the `persistQueryClient`
+correction — closed, and about a `localStorage` snapshot of the whole TanStack cache that never
+existed and is not intended. This cache is a different design and [`caching.md`](caching.md) argues
+the distinction. #2176's body carries "Related: the persisted channel cache (#2097)", which points
+at that correction rather than at this work; the board's Dexie read cache never had an issue of its
+own, which is how the two came to be linked.
+
 ## What is not measured, and why
 
 - **Wall-clock cold load in CI.** The Playwright harness
@@ -134,21 +222,6 @@ travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records that arithmet
   it would measure neither a production bundle nor a populated route. A signed-in harness is scoped
   as its own piece of work in that README; until it exists, timing numbers come from the field
   (Sentry) or by hand.
-- **A persisted read cache.** `1s`'s "first chunk" clause reads the channel list and the last ~30
-  messages from Dexie. No such cache exists: Dexie holds only the outbound `drafts` and `outbox`
-  tables, and TanStack Query is in-memory. So "cached channel readable" currently measures a network
-  round trip, and the 400ms budget should be read against that until something changes. Since #2176
-  this is true of "channel readable" **only**: the composer no longer waits on that round trip.
-
-  Two different absent things are easy to conflate here, so: [`caching.md`](caching.md)'s 2026-09-10
-  correction is about a `localStorage` `persistQueryClient` snapshot of the TanStack cache, and it
-  says that layer never existed **and is not intended** — a 24h snapshot would restore
-  `["user","me"]` and `["settings"]` after a sign-out or an account swap, which is a security
-  argument, not a scheduling one. The board's Dexie read cache is a different design and that
-  correction neither blesses nor rules it out. Whether the greenfield wants one is open, and this
-  page does not decide it. ([#2097](https://github.com/pdcarlson/Frapp/issues/2097) is the
-  `persistQueryClient` correction and is closed; the board's Dexie read cache has no issue of its
-  own, which is why #2176's "Related: the persisted channel cache (#2097)" points at the wrong one.)
 - **That the composer shell is in the SSR payload.** It is focusable before hydration only because
   `/chat` renders dynamically, and it renders dynamically only because
   `app/(dashboard)/layout.tsx` awaits `cookies()`. On a static prerender the `<Suspense>` boundary in
