@@ -3,18 +3,30 @@
  *
  * ## Why not `createSupabaseServerClient().auth.getSession()`
  *
- * Because this runs in the `(dashboard)` layout, in front of every dashboard
- * render, for the sole purpose of choosing a colour. `getSession()` is the
- * supported way to read a session server-side, but it will **refresh an expired
- * token**, which is a network round trip to the auth server — and a member
- * returning after an hour away is exactly the cold load this whole path exists
- * to make fast. Blocking time-to-first-byte on an auth call to avoid a flash
- * would be a strictly worse trade than the flash.
+ * Not because a refresh would be needed: `proxy.ts` already calls
+ * `supabase.auth.getSession()` on every protected route, ahead of the render,
+ * and it is the one place that *can* write refreshed cookies back. By the time
+ * the `(dashboard)` layout runs, the token in the jar is whatever the proxy
+ * settled on.
  *
- * So the cookies are read directly and the token is used **decoded, never
- * verified** (`active-chapter-claim.ts` states the ceiling that puts on it). No
- * network, no async work beyond `cookies()` itself, and nothing here can make a
- * request slower than it was before.
+ * It is because of where a second call would run. A Server Component's cookie
+ * store is read-only, so `@supabase/ssr`'s `setAll` is a caught no-op there
+ * (`lib/supabase/server.ts` says exactly that) — which means any refresh that
+ * client *did* decide to attempt would go out over the network and then be
+ * thrown away, once per render, with nothing to show for it. Whether it decides
+ * to is a property of supabase-js's internals rather than of this code, and
+ * this runs in front of every dashboard render for the sole purpose of choosing
+ * a colour. Reading the jar is the version whose cost can be established by
+ * reading it: no client, no network, no async work beyond `cookies()`.
+ *
+ * So the token is used **decoded, never verified** — `active-chapter-claim.ts`
+ * states the ceiling that puts on it.
+ *
+ * The cheaper shape is for `proxy.ts` to pass the uid and chapter it has
+ * already resolved down as a request header, which would delete this module
+ * outright. That is [#2233](https://github.com/pdcarlson/Frapp/issues/2233), and
+ * it is a change to the file that gates all authentication, so it is not
+ * smuggled in behind an accent.
  *
  * ## The format, and what happens when it moves
  *
