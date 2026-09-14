@@ -274,25 +274,49 @@ export function MessageItem({
   const [isRetrying, setIsRetrying] = useState(false);
 
   /*
-   * Focus has to be handed back when the editor closes, and it cannot be done
-   * inline in the handlers: the action cluster is unmounted for the whole time
-   * the editor is open (`showActions && !isEditing` below), so at the moment
-   * Cancel or Escape fires, the Edit button does not exist to focus. The flag
-   * survives that commit; the effect runs after the cluster has remounted.
+   * Two focus hand-backs, each a ref plus an effect rather than a `.focus()` in
+   * the handler, because both have to outlive the commit that causes them. Refs
+   * rather than state because nothing renders from them, and setting state from
+   * the effect that reads it is the cascading render `react-hooks` forbids.
    *
-   * Closing the editor by *saving* deliberately does not restore focus: the
-   * save is asynchronous and the row it would return to may have re-rendered,
-   * scrolled out of the virtualized window, or been replaced — and the member
-   * has finished with the row either way. Cancel is the one that owes the
-   * keyboard a way back, because the member is still working on this message.
+   * **Closing the editor returns focus to Edit — but only from the keyboard.**
+   * `disabled` and unmounting both drop focus to `<body>`, so without this the
+   * next Tab restarts at the top of the document rather than at the row the
+   * member was just editing, on a list that may be 200 rows long. It cannot be
+   * done inline: the action cluster is unmounted for as long as the editor is
+   * open (`showActions && !isEditing` below), so at the moment Cancel, Escape
+   * or a save fires there is no Edit button to focus; the effect runs once it
+   * has remounted.
+   *
+   * The keyboard gate is not fussiness. The cluster is revealed by
+   * `group-focus-within/message`, so focusing Edit *pins it open* — and a
+   * member who dismissed the editor with the mouse has their pointer somewhere
+   * else entirely and would be left with four controls painted over that
+   * message until focus happened to move again. `event.detail === 0` is how a
+   * click gets told apart from a pointer one: keyboard activation of a button
+   * reports no clicks.
+   *
+   * **A save that fails returns focus to the field**, unconditionally — the
+   * editor stays open (so the cluster is still unmounted and there is nothing
+   * to pin), the draft survives, and without this the caret does not: the
+   * member is told to try again in a form they must first click back into. It
+   * cannot be done from the `catch`, where the field is still disabled; it
+   * re-enables only on the render `finally` schedules.
    */
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const editFieldRef = useRef<HTMLTextAreaElement | null>(null);
   const restoreFocusOnExit = useRef(false);
+  const restoreFocusOnFailedSave = useRef(false);
   useEffect(() => {
     if (isEditing || !restoreFocusOnExit.current) return;
     restoreFocusOnExit.current = false;
     editTriggerRef.current?.focus();
   }, [isEditing]);
+  useEffect(() => {
+    if (isSavingEdit || !restoreFocusOnFailedSave.current) return;
+    restoreFocusOnFailedSave.current = false;
+    editFieldRef.current?.focus();
+  }, [isSavingEdit]);
 
   // A row is not remounted by a content update — it's the same component
   // instance, keyed by id (`message-timeline.tsx`) — so an untouched-but-open
@@ -320,20 +344,24 @@ export function MessageItem({
     setIsEditing(true);
   }
 
-  function cancelEdit() {
-    restoreFocusOnExit.current = true;
+  /** `fromKeyboard` decides the focus hand-back — see the refs above. */
+  function cancelEdit(fromKeyboard: boolean) {
+    restoreFocusOnExit.current = fromKeyboard;
     setIsEditing(false);
   }
 
-  async function saveEdit() {
+  async function saveEdit(fromKeyboard: boolean) {
     const trimmed = editValue.trim();
     if (trimmed.length === 0 || !onEdit) return;
     setIsSavingEdit(true);
     try {
       await onEdit(message.id, trimmed);
+      restoreFocusOnExit.current = fromKeyboard;
       setIsEditing(false);
     } catch {
-      // The action already toasted; stay in edit mode so the draft survives.
+      // The action already toasted; stay in edit mode so the draft survives —
+      // and hand the caret back to it, which `disabled` took away.
+      restoreFocusOnFailedSave.current = true;
     } finally {
       setIsSavingEdit(false);
     }
@@ -624,6 +652,7 @@ export function MessageItem({
     <div className="mt-1 flex w-full flex-col gap-1.5 rounded-[18px] rounded-br-[6px] border border-border bg-card p-2">
       <Textarea
         autoFocus
+        ref={editFieldRef}
         aria-label="Edit message"
         value={editValue}
         onChange={(event) => {
@@ -633,35 +662,54 @@ export function MessageItem({
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
-            cancelEdit();
+            cancelEdit(true);
           }
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
-            void saveEdit();
+            void saveEdit(true);
           }
         }}
         disabled={isSavingEdit}
         /*
           Width comes from the block; height comes from the draft.
-          `field-sizing-content` grows the field with what is typed, so a
+
+          `leading-[25px]` and the horizontal padding are not cosmetic — they
+          are what makes the draft wrap where the message wrapped. The bubble
+          draws 16/25 body type inside `px-4` (`text-renderer.tsx`), so the
+          editor has to put its text column on the same two numbers: `px-2`
+          inside the wrapper's `p-2` is the bubble's 16px, and without the
+          explicit line box the field would fall back to `text-base`'s 24 and
+          re-wrap a six-line message to seven on the way in. Measured on an
+          860px thread column, that moves the field's text column from 201px to
+          704px against the bubble's 708px — the last 4px are the wrapper's
+          hairline and the field's own, which the bubble does not pay on the
+          self side, and are a quarter of a character.
+
+          `field-sizing-content` then grows the field with what is typed, so a
           message that rendered as six lines is edited as six lines rather than
-          through a two-line porthole — a box made full-width that still had to
-          be scrolled would only have moved the unreadability onto the other
-          axis. It is a progressive enhancement: an engine without it keeps
-          exactly today's fixed 60px floor and loses nothing this change added,
-          which is why the floor stays 60 (§4's own `min-h-24` is a form field's
-          resting height; a field that grows wants the smaller floor, and
-          raising it here would make the shortest message the tallest jump).
-          The cap keeps a very long draft from pushing the row past the
-          viewport; past it the field scrolls, as any textarea does.
+          through a porthole — a box made full-width that still had to be
+          scrolled would only have moved the unreadability onto the other axis.
+          It is a progressive enhancement, and the one part of this change that
+          is: an engine without `field-sizing` keeps exactly today's fixed 60px
+          floor, which is why the floor stays 60 rather than rising to §4's
+          `min-h-24` (a form field's resting height — a field that grows wants
+          the smaller floor, or the shortest message becomes the tallest jump).
+          Width, unlike height, degrades nowhere.
+
+          `max-h-40` is the composer's own cap for a growing chat field
+          (`COMPOSER_INPUT_CLASS`), and it is an absolute length deliberately:
+          this field lives inside the timeline's scroller, which is always
+          shorter than the viewport, so a `vh` cap would let a long draft push
+          Save and Cancel below the fold on a short window. Past it the field
+          scrolls, as any textarea does.
         */
-        className="field-sizing-content max-h-[50vh] min-h-[60px] resize-none"
+        className="field-sizing-content max-h-40 min-h-[60px] resize-none px-2 leading-[25px]"
       />
       <div className="flex items-center justify-end gap-1.5">
         <button
           type="button"
           className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA)}
-          onClick={cancelEdit}
+          onClick={(event) => cancelEdit(event.detail === 0)}
           disabled={isSavingEdit}
         >
           Cancel
@@ -669,7 +717,7 @@ export function MessageItem({
         <button
           type="button"
           className={cn(CHIP.base, CHIP.neutral, CHIP_HIT_AREA, "gap-1")}
-          onClick={() => void saveEdit()}
+          onClick={(event) => void saveEdit(event.detail === 0)}
           disabled={isSavingEdit || editValue.trim().length === 0}
         >
           {isSavingEdit ? (

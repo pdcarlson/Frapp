@@ -124,9 +124,7 @@ describe("MessageItem author rendering", () => {
  */
 describe("MessageItem bubble sides", () => {
   function bubbleOf(container: HTMLElement): HTMLElement {
-    const found = container.querySelector<HTMLElement>(
-      '[class*="rounded-\\[18px\\]"]',
-    );
+    const found = container.querySelector<HTMLElement>('[data-slot="bubble"]');
     if (!found) throw new Error("no bubble rendered");
     return found;
   }
@@ -197,9 +195,7 @@ describe("MessageItem action cluster docking", () => {
   }
 
   function bubbleColumn(container: HTMLElement): HTMLElement {
-    const bubble = container.querySelector<HTMLElement>(
-      '[class*="rounded-\\[18px\\]"]',
-    );
+    const bubble = container.querySelector<HTMLElement>('[data-slot="bubble"]');
     if (!bubble?.parentElement) throw new Error("no bubble rendered");
     return bubble.parentElement;
   }
@@ -1241,23 +1237,40 @@ describe("MessageItem recorded rows (#1789)", () => {
  * assertions below pin the structure that *produces* the width rather than
  * measured pixels: the editor is inside the same block the bubble uses, and
  * that block stops hugging while the editor is open. The pixels behind that
- * were measured once, in Chromium, against this app's own compiled Tailwind on
- * a 900px lane (860px thread column): a bubble at the 86% cap is 740px and its
- * editor was 249px, for every message length; with the fill it is 740px. As
- * with `ACTION_TRACK`, nothing in this repo re-measures those figures — treat
- * them as the reason for the structure, not as a maintained measurement.
+ * were measured once, 2026-09-14, by rendering this row into Chromium against
+ * this app's own compiled Tailwind on a 900px lane (860px thread column): a
+ * bubble at the 86% cap is 740px and its editor was 249px — the same 249 for a
+ * 2-character message and a 2,000-character one — and 740px again with the
+ * fill. As with `ACTION_TRACK`, nothing in this repo re-measures those figures,
+ * and they scale with the thread column: treat "one fixed box at every length"
+ * as the reason for the structure, not the pixel pair as a maintained number.
  */
 describe("MessageItem inline editor width", () => {
   /**
-   * The message block: the one element in a row that carries §11's 86% cap, and
-   * the only thing that decides how wide the bubble *or* its editor may be.
+   * The message block — found by its position, deliberately, not by the class
+   * under test. A row has exactly two children: the block and the zero-height
+   * action track it is measured against, and the track is always the one
+   * carrying `h-0`. Querying the block by `max-w-[86%]` instead would make
+   * every assertion about the cap a restatement of the selector that found it,
+   * and deleting the cap would surface as "no block rendered" rather than as
+   * the cap being gone.
    */
   function messageBlock(container: HTMLElement): HTMLElement {
-    const found = container.querySelector<HTMLElement>(
-      '[class*="max-w-\\[86%\\]"]',
+    const row = container.querySelector<HTMLElement>('[role="listitem"]');
+    if (!row) throw new Error("no message row rendered");
+    const block = [...row.children].find(
+      (child): child is HTMLElement =>
+        child instanceof HTMLElement && !child.className.includes("h-0"),
     );
-    if (!found) throw new Error("no message block rendered");
-    return found;
+    if (!block) throw new Error("no message block rendered");
+    return block;
+  }
+
+  /** The edit surface itself — the element the textarea is wrapped in. */
+  function editSurface(): HTMLElement {
+    const field = screen.getByRole("textbox");
+    if (!field.parentElement) throw new Error("editor is not mounted");
+    return field.parentElement;
   }
 
   async function openEditor(content = "hello") {
@@ -1282,19 +1295,52 @@ describe("MessageItem inline editor width", () => {
     expect(row).not.toBeNull();
     expect(row).toContainElement(screen.getByRole("textbox"));
     expect(messageBlock(container)).toContainElement(screen.getByRole("textbox"));
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    // Queried through `screen`, not `container`: Radix portals a Dialog or a
+    // Popover to `document.body`, a *sibling* of the container RTL renders
+    // into, so a container-scoped query for one is null whether or not it is
+    // there — a tripwire that cannot trip.
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("fills the message block instead of letting the textarea size it", async () => {
     const { container } = await openEditor();
 
-    // `w-full` is the whole fix: it replaces "as wide as your content" — which
-    // in edit mode means the textarea's 20-character intrinsic width — with "as
-    // wide as a bubble may be", which `max-w-[86%]` beside it caps to the track
-    // the bubble already had. Without it the block is a stamp at every message
-    // length.
+    // `w-full` replaces "as wide as your content" — which in edit mode means
+    // the textarea's 20-character intrinsic width — with "as wide as a bubble
+    // may be", which the cap beside it then limits to the track the bubble
+    // already had.
     expect(messageBlock(container).className).toContain("w-full");
     expect(messageBlock(container).className).toContain("max-w-[86%]");
+  });
+
+  it("fills the block with the editor, not just the block", async () => {
+    await openEditor();
+
+    // The contract has two halves and needs both. Widening only the block
+    // leaves the editor shrink-wrapping the textarea inside a correct block,
+    // and `items-end` then pins the same stamp to the block's right edge — the
+    // bug, with the surrounding layout fixed around it. Widening only the
+    // editor does nothing at all, since its percentage has nothing definite to
+    // resolve against.
+    expect(editSurface().className).toContain("w-full");
+  });
+
+  it("keeps the editor wearing the bubble's chrome", async () => {
+    await openEditor();
+
+    // The locked bubble radius and the sender's tail corner: the editor stands
+    // where the bubble stood, so a different shape is a jump of its own. These
+    // are the values §11 locks, and the spec bullet now claims them — without
+    // this, a tidy-up back to a generic radius is green in CI and the only
+    // thing left contradicting it is prose.
+    expect(editSurface().className).toContain("rounded-[18px]");
+    expect(editSurface().className).toContain("rounded-br-[6px]");
+    // Grows with the draft instead of scrolling a fixed box, and wraps where
+    // the bubble wrapped — same line box, same text column.
+    expect(screen.getByRole("textbox").className).toContain(
+      "field-sizing-content",
+    );
+    expect(screen.getByRole("textbox").className).toContain("leading-[25px]");
   });
 
   it("hands the width back to the message when the editor closes", async () => {
@@ -1376,7 +1422,7 @@ describe("MessageItem inline editor keyboard", () => {
     expect(screen.getByText("hello")).toBeInTheDocument();
   });
 
-  it("returns focus to Edit when the editor is dismissed", async () => {
+  it("returns focus to Edit when the editor is dismissed from the keyboard", async () => {
     const { user } = await openEditor();
 
     await user.keyboard("{Escape}");
@@ -1385,6 +1431,52 @@ describe("MessageItem inline editor keyboard", () => {
     // button being focused here did not exist at the moment Escape fired — the
     // hand-back has to survive that commit and land after the remount.
     expect(screen.getByRole("button", { name: /edit/i })).toHaveFocus();
+  });
+
+  it("returns focus to Edit after a keyboard save too", async () => {
+    const { user, onEdit } = await openEditor();
+
+    await user.keyboard("{Enter}");
+
+    // Saving is the *common* way out of the editor, so skipping the hand-back
+    // here left the usual path with the defect the rare one was fixed for:
+    // `disabled` drops focus to the body while the request is in flight, and
+    // the next Tab then restarts at the top of a 200-row timeline.
+    expect(onEdit).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /edit/i })).toHaveFocus();
+  });
+
+  it("does not pin the hover cluster open when the mouse dismissed the editor", async () => {
+    const { user } = await openEditor();
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    // The action cluster is revealed by `group-focus-within`, so focusing Edit
+    // holds it open. That is what a keyboard user wants and the opposite of
+    // what a member who just clicked Cancel wants — their pointer is somewhere
+    // else, and they would be left with four controls painted over the message
+    // until focus happened to move again. A real click reports `detail >= 1`;
+    // keyboard activation of a button reports 0.
+    expect(screen.getByRole("button", { name: /edit/i })).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
+  });
+
+  it("hands the caret back to the field when a save fails", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn().mockRejectedValue(new Error("network error"));
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER, content: "hello" }),
+      onEdit,
+    });
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    await user.type(screen.getByRole("textbox"), " world");
+    await user.click(screen.getByRole("button", { name: /save/i }));
+
+    // The editor stays open with the draft — already covered above — but
+    // `disabled` blurred the field for the duration of the request, so being
+    // told to try again used to mean clicking back into the form first.
+    expect(screen.getByRole("textbox")).toHaveValue("hello world");
+    expect(screen.getByRole("textbox")).toHaveFocus();
   });
 
   it("refuses to save a draft emptied down to whitespace", async () => {
