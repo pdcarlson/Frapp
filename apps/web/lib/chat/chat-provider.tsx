@@ -16,6 +16,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
+import { asArray } from "@/lib/utils";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
 import { browserKeyValueStore, browserNetworkState } from "@repo/chat-core/adapters";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
@@ -51,7 +52,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           },
         );
         if (error) throw error as Error;
-        return Array.isArray(data) ? (data as RawChatMessage[]) : [];
+        return asArray<RawChatMessage>(data);
       },
     });
     return () => {
