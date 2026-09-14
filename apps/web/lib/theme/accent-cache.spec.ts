@@ -42,6 +42,16 @@ function tokensForSeed(seed: string): Record<AccentTokenName, string> {
 
 const BLUE = tokensForSeed("#3E7BFA");
 
+/**
+ * A row as the **server** receives it.
+ *
+ * `serializeAccentCookie` returns the percent-encoded form that goes on the
+ * wire; Next's cookie store decodes every value as it parses the `Cookie`
+ * header, so `parseAccentCookie`'s only production caller is handed the JSON.
+ * Decoding here is what makes these tests exercise the path the server takes —
+ * an earlier version fed the encoded form to a parser that then decoded again,
+ * so the suite and production disagreed about the contract.
+ */
 function write(
   scope: AccentScope = SCOPE,
   tokens: Partial<Record<AccentTokenName, string>> = BLUE,
@@ -49,10 +59,20 @@ function write(
 ) {
   const value = serializeAccentCookie(scope, tokens, now);
   if (!value) throw new Error("expected a serializable row");
-  return value;
+  return decodeURIComponent(value);
 }
 
 describe("accent cache row", () => {
+  it("round-trips a real engine palette through the wire encoding", () => {
+    // The full trip: serialize -> percent-encode (what lands in `document.cookie`)
+    // -> Next decodes -> parse. Keeps the writer's and the reader's contracts
+    // pinned to each other rather than to the test's own convenience.
+    const onTheWire = serializeAccentCookie(SCOPE, BLUE, NOW)!;
+    expect(onTheWire).not.toContain(";");
+    const row = parseAccentCookie(decodeURIComponent(onTheWire), NOW);
+    expect(accentTokensForScope(row, SCOPE)).toEqual(BLUE);
+  });
+
   it("round-trips a real engine palette", () => {
     const row = parseAccentCookie(write(), NOW);
     expect(accentTokensForScope(row, SCOPE)).toEqual(BLUE);
@@ -71,11 +91,9 @@ describe("accent cache row", () => {
     // The stored palette is positional, so reading an old row through a new
     // ACCENT_TOKEN_ORDER would paint each role with its neighbour's colour —
     // a wrong answer that looks like a working cache.
-    const row = JSON.parse(decodeURIComponent(write())) as Record<string, unknown>;
+    const row = JSON.parse(write()) as Record<string, unknown>;
     row["v"] = ACCENT_CACHE_VERSION + 1;
-    expect(
-      parseAccentCookie(encodeURIComponent(JSON.stringify(row)), NOW),
-    ).toBeNull();
+    expect(parseAccentCookie(JSON.stringify(row), NOW)).toBeNull();
   });
 
   it("expires past the retention bound, and tolerates a clock that moved back", () => {
@@ -92,12 +110,10 @@ describe("accent cache row", () => {
       undefined,
       "",
       "not-json",
-      encodeURIComponent("[]"),
-      encodeURIComponent(JSON.stringify({ v: ACCENT_CACHE_VERSION })),
+      "[]",
+      JSON.stringify({ v: ACCENT_CACHE_VERSION }),
       // Right shape, wrong arity — a palette missing a role.
-      encodeURIComponent(
-        JSON.stringify({ v: 1, u: "a", c: "b", t: NOW, p: ["#FFFFFF"] }),
-      ),
+      JSON.stringify({ v: 1, u: "a", c: "b", t: NOW, p: ["#FFFFFF"] }),
     ]) {
       expect(parseAccentCookie(value, NOW)).toBeNull();
     }
@@ -139,9 +155,15 @@ describe("the value grammar is the escaping", () => {
 
   it("never parses one either, so a hand-written cookie cannot inject", () => {
     for (const value of INJECTIONS) {
-      const row = { v: 1, u: SCOPE.userId, c: SCOPE.chapterId, t: NOW, p: [...ACCENT_TOKEN_ORDER].map(() => value) };
+      const row = {
+        v: 1,
+        u: SCOPE.userId,
+        c: SCOPE.chapterId,
+        t: NOW,
+        p: [...ACCENT_TOKEN_ORDER].map(() => value),
+      };
       expect(
-        parseAccentCookie(encodeURIComponent(JSON.stringify(row)), NOW),
+        parseAccentCookie(JSON.stringify(row), NOW),
         `${value} must not survive the parse`,
       ).toBeNull();
     }
@@ -210,14 +232,42 @@ describe("the cascade the cached rule depends on", () => {
     "utf8",
   );
 
+  /**
+   * Brace-matched, not `[\s\S]*$`.
+   *
+   * The first version of this took everything from `@layer base {` to the end
+   * of the file, which is true of any declaration that merely sits *after* the
+   * layer opens — including one moved out of it. It would have passed on the
+   * change it exists to catch.
+   */
+  function layerBaseBlock(css: string): string {
+    const open = css.indexOf("@layer base");
+    expect(open, "signet.css must still have an @layer base block").toBeGreaterThan(-1);
+    const start = css.indexOf("{", open);
+    let depth = 0;
+    for (let i = start; i < css.length; i += 1) {
+      if (css[i] === "{") depth += 1;
+      else if (css[i] === "}") {
+        depth -= 1;
+        if (depth === 0) return css.slice(start, i + 1);
+      }
+    }
+    throw new Error("@layer base block is unbalanced");
+  }
+
   it("signet.css declares the accent slot inside @layer base", () => {
-    const layer = SIGNET_CSS.match(/@layer base\s*\{[\s\S]*$/);
-    expect(layer, "signet.css must still have an @layer base block").not.toBeNull();
+    const layer = layerBaseBlock(SIGNET_CSS);
     for (const token of ACCENT_TOKEN_ORDER) {
       expect(
-        new RegExp(`^\\s*${token}:`, "m").test(layer![0]),
+        new RegExp(`^\\s*${token}:`, "m").test(layer),
         `${token} must be declared inside @layer base`,
       ).toBe(true);
     }
+  });
+
+  it("the brace matcher is not the whole file", () => {
+    // Guards the assertion above from going vacuous: if `layerBaseBlock` ever
+    // returned everything, "inside the layer" would stop meaning anything.
+    expect(layerBaseBlock(SIGNET_CSS).length).toBeLessThan(SIGNET_CSS.length);
   });
 });

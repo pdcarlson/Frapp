@@ -45,20 +45,64 @@
  * shape so the day it does move is a red test rather than a silent regression.
  */
 
+import { base64UrlDecode } from "./base64url";
+
 const BASE64_PREFIX = "base64-";
 
 /**
- * `sb-<ref>-auth-token`, optionally with a `.<n>` chunk suffix.
+ * The cookie name `@supabase/ssr` stores **this project's** session under.
  *
- * Deliberately not anchored to a known project ref: the ref differs per
- * environment (local, staging, production) and is not worth threading through
- * from env just to re-derive a name the cookie already carries.
+ * supabase-js derives its storage key as
+ * ``sb-${new URL(supabaseUrl).hostname.split(".")[0]}-auth-token`` — so
+ * `https://abcdefgh.supabase.co` gives `sb-abcdefgh-auth-token`, and the local
+ * stack on `http://127.0.0.1:54321` gives `sb-127-auth-token`. That rule is
+ * reproduced here rather than imported because, like the cookie format itself,
+ * it is not exported.
+ *
+ * **Anchoring to our own ref is a security property, not tidiness.** An earlier
+ * revision matched any `sb-<anything>-auth-token`, which is exploitable on a
+ * shared parent domain: script on a sibling host sets a `Domain=.example.com`
+ * cookie named for a project ref of its choosing, carrying an unsigned token
+ * with a `sub` and `active_chapter_id` it also controls, plus a matching accent
+ * row — and because an unchunked cookie is preferred over the victim's real,
+ * chunked one, the victim's dashboard first-paints in attacker-chosen colours.
+ * The token is never signature-verified here (`active-chapter-claim.ts` says
+ * why that is fine), so the cookie *name* is what decides whose session this
+ * is. It now has to be ours.
+ *
+ * The benign half of the same bug: a second Supabase-backed app on `localhost`
+ * — cookies ignore the port — left an `sb-<otherref>-auth-token` in the jar,
+ * whose `sub` belongs to another project, and the accent silently stopped
+ * painting with nothing to see.
+ *
+ * Returns `null` when the env var is missing or unparseable, which fails closed
+ * to one ordinary cold load.
+ */
+export function supabaseAuthCookieName(
+  supabaseUrl: string | undefined = process.env.NEXT_PUBLIC_SUPABASE_URL,
+): string | null {
+  if (!supabaseUrl) return null;
+  try {
+    const first = new URL(supabaseUrl).hostname.split(".")[0];
+    return first ? `sb-${first}-auth-token` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * That exact name, optionally with a `.<n>` chunk suffix.
  *
  * The PKCE code-verifier keys Supabase stores alongside the session
  * (`…-code-verifier`, `…-flows-code-verifier`, `…-flow-<id>-code-verifier`) all
- * end in `-code-verifier` rather than `-auth-token`, so this cannot match one.
+ * extend the name rather than suffixing `.<n>`, so this cannot match one.
  */
-const AUTH_COOKIE = /^sb-[A-Za-z0-9_-]+-auth-token(?:\.(\d+))?$/;
+function chunkIndexOf(cookieName: string, base: string): number | null {
+  if (cookieName === base) return -1;
+  if (!cookieName.startsWith(`${base}.`)) return null;
+  const suffix = cookieName.slice(base.length + 1);
+  return /^\d+$/.test(suffix) ? Number(suffix) : null;
+}
 
 export interface RequestCookie {
   name: string;
@@ -68,27 +112,30 @@ export interface RequestCookie {
 /**
  * The access token from a cookie jar, or `null`.
  *
- * `null` for every failure: no auth cookie, chunks that do not reassemble,
- * a value that is not JSON, JSON with no `access_token`. See the header for why
- * that is the only sensible failure mode here.
+ * `null` for every failure: no auth cookie, no derivable project ref, chunks
+ * that do not reassemble, a value that is not JSON, JSON with no
+ * `access_token`. See the header for why that is the only sensible failure mode
+ * here.
+ *
+ * `cookieName` defaults to this project's, derived from the env. The parameter
+ * exists so a test can name it without reaching into `process.env`.
  */
 export function readAccessTokenFromCookies(
   cookies: readonly RequestCookie[],
+  cookieName: string | null = supabaseAuthCookieName(),
 ): string | null {
+  if (!cookieName) return null;
   const chunks: Array<{ index: number; value: string }> = [];
   for (const cookie of cookies) {
-    const match = AUTH_COOKIE.exec(cookie.name);
-    if (!match) continue;
+    const index = chunkIndexOf(cookie.name, cookieName);
+    if (index === null) continue;
     /*
-      An unchunked cookie sorts as chunk 0 so both shapes take one code path.
-      A jar holding both (a session that shrank below the chunk threshold and
-      left `.0` behind, say) would concatenate them — hence `session`, which
+      An unchunked cookie is recorded as index -1 so both shapes take one code
+      path. A jar holding both (a session that shrank below the chunk threshold
+      and left `.0` behind, say) would concatenate them — hence `session`, which
       takes the unchunked value alone when one is present.
     */
-    chunks.push({
-      index: match[1] === undefined ? -1 : Number(match[1]),
-      value: cookie.value,
-    });
+    chunks.push({ index, value: cookie.value });
   }
   if (chunks.length === 0) return null;
 
@@ -125,13 +172,8 @@ export function readAccessTokenFromCookies(
 
 function decodeSessionValue(value: string): string | null {
   if (!value.startsWith(BASE64_PREFIX)) return value;
-  const encoded = value.slice(BASE64_PREFIX.length);
   try {
-    const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-    const binary = atob(padded);
-    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-    return new TextDecoder().decode(bytes);
+    return base64UrlDecode(value.slice(BASE64_PREFIX.length));
   } catch {
     return null;
   }

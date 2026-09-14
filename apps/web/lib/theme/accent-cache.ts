@@ -242,7 +242,21 @@ export function chapterAccentCss(
 }
 
 /**
- * Parse a cookie value into a row, or `null`.
+ * Parse a **decoded** cookie value into a row, or `null`.
+ *
+ * Decoded, because that is what the only production reader has. Next's cookie
+ * store runs `decodeURIComponent` on every value as it parses the `Cookie`
+ * header, so `cookies().get(...)` hands back the raw JSON
+ * {@link persistCachedAccent} stringified — never the percent-encoded form it
+ * put on the wire. An earlier revision decoded again here, which happened to
+ * work only because {@link SCOPE_ID} and {@link HEX_COLOR} between them
+ * guarantee no `%` survives into the JSON: widen either and the second decode
+ * starts corrupting or throwing on values the writer considers valid. It also
+ * meant every test fed the encoded form, so the suite exercised a path the
+ * server never takes.
+ *
+ * A client-side reader would have to decode first. There is none — the client
+ * writes and clears, and reads the *rendered* rule rather than the cookie.
  *
  * Fails closed on every error, and "closed" here means one ordinary cold load
  * with the house default — the behaviour before this cache existed. Nothing
@@ -256,7 +270,7 @@ export function parseAccentCookie(
   if (!value) return null;
   let row: unknown;
   try {
-    row = JSON.parse(decodeURIComponent(value));
+    row = JSON.parse(value);
   } catch {
     return null;
   }
@@ -287,10 +301,12 @@ export function parseAccentCookie(
 /**
  * The tokens of a row, but only when it was written under `scope`.
  *
- * The scope comparison is the security boundary — see the header. Callers pass
- * the scope they independently established (the server from the request's own
- * access token, the client from `useTenantScope`), never one taken from the
- * row.
+ * The scope comparison is the security boundary — see the header. The caller
+ * passes the scope it established independently of the row: `server-accent.ts`,
+ * the only one, takes it from the request's own access token. Nothing on the
+ * client reads a row at all — it writes, clears, and reads the *rendered* rule
+ * — and a client reader would be the "cookie trusted on its own word" case this
+ * design exists to close, so a new one is a decision, not a detail.
  */
 export function accentTokensForScope(
   row: CachedAccent | null,
@@ -372,22 +388,47 @@ export function persistCachedAccent(
 }
 
 /**
- * Drop the row.
+ * Drop the row **and disown the rule already in this document**.
  *
  * Called beside `wipeFirstChunkCache()` on the two identity events that drop
- * every other cache (`lib/providers/frapp-client-provider.tsx`). Hygiene, not
- * the boundary: `server-accent.ts` will not serve a row to a scope it was not
- * written under whether or not this ran, which matters because the events that
- * call it are followed by a navigation moments later.
+ * every other cache (`lib/providers/frapp-client-provider.tsx`).
  *
- * Expiry rather than `document.cookie = ""`: a cookie has no delete verb, and
- * an empty value would still be *sent*, then parsed, then rejected — the same
- * outcome by a longer route, and a row that looks present to anything reading
- * the jar.
+ * For the cookie, this is hygiene rather than the boundary: `server-accent.ts`
+ * will not serve a row to a scope it was not written under whether or not this
+ * ran, which matters because the events that call it are followed by a
+ * navigation moments later. Expiry rather than `document.cookie = ""`: a cookie
+ * has no delete verb, and an empty value would still be *sent*, then parsed,
+ * then rejected — the same outcome by a longer route, and a row that looks
+ * present to anything reading the jar.
+ *
+ * For the rendered rule it **is** the boundary, and that half is not optional.
+ * The `<style>` the layout emitted was rendered for the identity the request
+ * carried, and it keeps painting until something says otherwise — a cookie
+ * clear does nothing to a rule already in the DOM. The case that makes this
+ * load-bearing is a cross-tab sign-in: member B signs in in another tab with no
+ * chapter of their own, auth-js broadcasts it, this tab's store goes `null`,
+ * the live inline palette is stripped — and the previous member's chapter
+ * accent, sitting in this rule, becomes the only accent source on screen. That
+ * is the cross-tenant paint the keying is supposed to make impossible, arriving
+ * by a route the keying cannot see.
+ *
+ * Disowning is done by **removing the chapter attribute**, not by deleting the
+ * element: the element is React's (see `use-chapter-theme.ts`), and an
+ * attribute React will rewrite on its next render of this component is exactly
+ * the right lifetime. A rule with no chapter is nobody's and stays disabled; a
+ * later server render re-stamps the attribute, and that render has already
+ * re-read the cache under the *new* identity, so re-enabling it is correct.
  */
 export function clearCachedAccent(): void {
   if (typeof document === "undefined") return;
   const secure = window.location.protocol === "https:" ? "; Secure" : "";
   document.cookie =
     `${ACCENT_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
+  const rendered = document.getElementById(ACCENT_CACHE_STYLE_ID);
+  if (rendered instanceof HTMLStyleElement) {
+    rendered.removeAttribute(ACCENT_CACHE_CHAPTER_ATTR);
+    // Set directly as well as via the attribute, so the rule stops applying on
+    // this tick rather than on whichever render happens to come next.
+    rendered.media = "not all";
+  }
 }

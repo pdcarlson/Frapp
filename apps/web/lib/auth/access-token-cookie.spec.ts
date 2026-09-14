@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { readAccessTokenFromCookies } from "./access-token-cookie";
+import {
+  readAccessTokenFromCookies,
+  supabaseAuthCookieName,
+} from "./access-token-cookie";
+
+/** This project's cookie name, as supabase-js derives it. */
+const NAME = "sb-abcdefgh-auth-token";
+const read = (cookies: Array<{ name: string; value: string }>) =>
+  readAccessTokenFromCookies(cookies, NAME);
 
 /**
  * The Supabase cookie shapes, pinned.
@@ -33,17 +41,17 @@ function base64UrlEncode(value: string): string {
 describe("readAccessTokenFromCookies", () => {
   it("reads a plain single cookie", () => {
     expect(
-      readAccessTokenFromCookies([
-        { name: "sb-abcdefgh-auth-token", value: sessionJson() },
+      read([
+        { name: NAME, value: sessionJson() },
       ]),
     ).toBe(TOKEN);
   });
 
   it("reads a base64url-prefixed cookie", () => {
     expect(
-      readAccessTokenFromCookies([
+      read([
         {
-          name: "sb-abcdefgh-auth-token",
+          name: NAME,
           value: `base64-${base64UrlEncode(sessionJson())}`,
         },
       ]),
@@ -54,9 +62,9 @@ describe("readAccessTokenFromCookies", () => {
     const json = sessionJson();
     const split = Math.floor(json.length / 2);
     expect(
-      readAccessTokenFromCookies([
-        { name: "sb-abcdefgh-auth-token.1", value: json.slice(split) },
-        { name: "sb-abcdefgh-auth-token.0", value: json.slice(0, split) },
+      read([
+        { name: `${NAME}.1`, value: json.slice(split) },
+        { name: `${NAME}.0`, value: json.slice(0, split) },
       ]),
     ).toBe(TOKEN);
   });
@@ -67,10 +75,10 @@ describe("readAccessTokenFromCookies", () => {
     const json = sessionJson(`${TOKEN}${"x".repeat(200)}`);
     const size = Math.ceil(json.length / 11);
     const chunks = Array.from({ length: 11 }, (_, i) => ({
-      name: `sb-abcdefgh-auth-token.${i}`,
+      name: `${NAME}.${i}`,
       value: json.slice(i * size, (i + 1) * size),
     }));
-    expect(readAccessTokenFromCookies(chunks.reverse())).toBe(
+    expect(read(chunks.reverse())).toBe(
       `${TOKEN}${"x".repeat(200)}`,
     );
   });
@@ -79,38 +87,66 @@ describe("readAccessTokenFromCookies", () => {
     // A session that shrank below the chunk threshold can leave `.0` behind.
     // Concatenating both would produce garbage.
     expect(
-      readAccessTokenFromCookies([
-        { name: "sb-abcdefgh-auth-token", value: sessionJson() },
-        { name: "sb-abcdefgh-auth-token.0", value: '{"access_token":"stale"' },
+      read([
+        { name: NAME, value: sessionJson() },
+        { name: `${NAME}.0`, value: '{"access_token":"stale"' },
       ]),
     ).toBe(TOKEN);
   });
 
   it("reads the legacy array shape", () => {
     expect(
-      readAccessTokenFromCookies([
-        { name: "sb-abcdefgh-auth-token", value: JSON.stringify([TOKEN, "r"]) },
+      read([
+        { name: NAME, value: JSON.stringify([TOKEN, "r"]) },
       ]),
     ).toBe(TOKEN);
   });
 
   it("ignores the PKCE verifier keys stored beside the session", () => {
     expect(
-      readAccessTokenFromCookies([
-        { name: "sb-abcdefgh-auth-token-code-verifier", value: "v" },
-        { name: "sb-abcdefgh-auth-token-flows-code-verifier", value: "v" },
-        { name: "sb-abcdefgh-auth-token", value: sessionJson() },
+      read([
+        { name: `${NAME}-code-verifier`, value: "v" },
+        { name: `${NAME}-flows-code-verifier`, value: "v" },
+        { name: NAME, value: sessionJson() },
       ]),
     ).toBe(TOKEN);
   });
 
   it("ignores unrelated cookies", () => {
     expect(
-      readAccessTokenFromCookies([
+      read([
         { name: "signet_nav_collapsed", value: "1" },
         { name: "signet_chapter_accent", value: "{}" },
       ]),
     ).toBeNull();
+  });
+});
+
+describe("supabaseAuthCookieName", () => {
+  /**
+   * The rule supabase-js uses for its storage key:
+   * `` sb-${new URL(url).hostname.split(".")[0]}-auth-token ``. Reproduced here
+   * because it is not exported, and pinned because the whole point of anchoring
+   * to it is that a cookie named for any *other* ref is not this project's
+   * session — see the module header.
+   */
+  it.each([
+    ["https://abcdefgh.supabase.co", "sb-abcdefgh-auth-token"],
+    ["https://abcdefgh.supabase.co/", "sb-abcdefgh-auth-token"],
+    ["http://127.0.0.1:54321", "sb-127-auth-token"],
+    ["http://localhost:54321", "sb-localhost-auth-token"],
+  ])("derives %s as %s", (url, expected) => {
+    expect(supabaseAuthCookieName(url)).toBe(expected);
+  });
+
+  it.each([undefined, "", "not a url"])("is null for %s", (url) => {
+    expect(supabaseAuthCookieName(url)).toBeNull();
+  });
+
+  it("reads the project URL from the env when not given one", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://zyxwvuts.supabase.co");
+    expect(supabaseAuthCookieName()).toBe("sb-zyxwvuts-auth-token");
+    vi.unstubAllEnvs();
   });
 });
 
@@ -122,22 +158,22 @@ describe("it fails closed, never loudly", () => {
    */
   it.each([
     ["an empty jar", []],
-    ["a non-JSON value", [{ name: "sb-a-auth-token", value: "nonsense" }]],
-    ["truncated base64", [{ name: "sb-a-auth-token", value: "base64-!!!!" }]],
+    ["a non-JSON value", [{ name: NAME, value: "nonsense" }]],
+    ["truncated base64", [{ name: NAME, value: "base64-!!!!" }]],
     [
       "JSON with no access_token",
-      [{ name: "sb-a-auth-token", value: '{"refresh_token":"r"}' }],
+      [{ name: NAME, value: '{"refresh_token":"r"}' }],
     ],
     [
       "a non-string access_token",
-      [{ name: "sb-a-auth-token", value: '{"access_token":42}' }],
+      [{ name: NAME, value: '{"access_token":42}' }],
     ],
-    ["an empty access_token", [{ name: "sb-a-auth-token", value: '{"access_token":""}' }]],
-    ["an empty array", [{ name: "sb-a-auth-token", value: "[]" }]],
-    ["a JSON scalar", [{ name: "sb-a-auth-token", value: '"token"' }]],
-    ["chunks that do not reassemble", [{ name: "sb-a-auth-token.0", value: '{"access' }]],
+    ["an empty access_token", [{ name: NAME, value: '{"access_token":""}' }]],
+    ["an empty array", [{ name: NAME, value: "[]" }]],
+    ["a JSON scalar", [{ name: NAME, value: '"token"' }]],
+    ["chunks that do not reassemble", [{ name: `${NAME}.0`, value: '{"access' }]],
   ])("returns null for %s", (_label, cookies) => {
-    expect(() => readAccessTokenFromCookies(cookies)).not.toThrow();
-    expect(readAccessTokenFromCookies(cookies)).toBeNull();
+    expect(() => read(cookies)).not.toThrow();
+    expect(read(cookies)).toBeNull();
   });
 });

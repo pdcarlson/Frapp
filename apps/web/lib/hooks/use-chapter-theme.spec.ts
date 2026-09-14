@@ -1,4 +1,5 @@
-import { renderHook } from "@testing-library/react";
+import React from "react";
+import { render, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -42,6 +43,7 @@ const {
   ACCENT_CACHE_STYLE_ID,
   ACCENT_COOKIE,
   accentTokensForScope,
+  clearCachedAccent,
   parseAccentCookie,
 } = await import("@/lib/theme/accent-cache");
 
@@ -74,9 +76,19 @@ const LEGACY_KEYS = {
   "--brand-band": "#F3E9DC",
 };
 
-function setPalette(palette: Record<string, string> | undefined) {
+/**
+ * `id` is part of the payload because the cache writer compares against it:
+ * `GET /v1/chapters/current` returns the chapter, so the response itself says
+ * which chapter its palette belongs to. Taking that from the store instead is
+ * how the guard was once a tautology.
+ */
+function setPalette(
+  palette: Record<string, string> | undefined,
+  chapterId: string | null = "chapter-1",
+) {
+  const id = chapterId === null ? {} : { id: chapterId };
   useCurrentChapter.mockReturnValue({
-    data: palette === undefined ? {} : { theme_palette: palette },
+    data: palette === undefined ? { ...id } : { ...id, theme_palette: palette },
   });
 }
 
@@ -91,21 +103,60 @@ function clearCookies(): void {
   }
 }
 
+/**
+ * The row as the server would receive it.
+ *
+ * `document.cookie` holds the percent-encoded form; Next decodes on the way in,
+ * so `parseAccentCookie` takes the JSON. Decoding here keeps this helper on the
+ * same side of that boundary as production.
+ */
 function cachedRow() {
   const match = document.cookie.match(
     new RegExp(`(?:^|; )${ACCENT_COOKIE}=([^;]*)`),
   );
-  return parseAccentCookie(match?.[1], Date.now());
+  return parseAccentCookie(
+    match?.[1] ? decodeURIComponent(match[1]) : undefined,
+    Date.now(),
+  );
 }
 
-/** A server-rendered cached-accent rule, as `ChapterAccentStyle` emits one. */
-function renderCachedStyleFor(chapterId: string): HTMLStyleElement {
-  const style = document.createElement("style");
-  style.id = ACCENT_CACHE_STYLE_ID;
-  style.setAttribute(ACCENT_CACHE_CHAPTER_ATTR, chapterId);
-  style.textContent = ":root{--primary:#3E7BFA}";
-  document.head.append(style);
-  return style;
+/**
+ * The cached rule **as React renders it**, which is the whole point of the
+ * helper.
+ *
+ * An earlier version of this file built the element with
+ * `document.createElement` and appended it by hand. Every assertion below
+ * passed against that, and it hid a crash: the real element is a host fiber
+ * owned by `(dashboard)/layout.tsx`, so detaching it makes React throw
+ * `NotFoundError` from `removeChild` the next time that subtree unmounts or
+ * re-renders. A hand-built node has no fiber, so nothing could ever have thrown.
+ * Rendering it through React is what makes `survives an unmount` able to fail.
+ */
+function CachedAccentHost({
+  chapterId,
+  show = true,
+}: {
+  chapterId: string;
+  show?: boolean;
+}) {
+  useChapterTheme();
+  return show
+    ? React.createElement("style", {
+        id: ACCENT_CACHE_STYLE_ID,
+        [ACCENT_CACHE_CHAPTER_ATTR]: chapterId,
+        dangerouslySetInnerHTML: { __html: ":root{--primary:#3E7BFA}" },
+      })
+    : null;
+}
+
+function cachedStyle(): HTMLStyleElement | null {
+  return document.getElementById(ACCENT_CACHE_STYLE_ID) as HTMLStyleElement | null;
+}
+
+/** `not all` matches no medium, so the rule is present but inert. */
+function cachedRuleApplies(): boolean {
+  const style = cachedStyle();
+  return style !== null && style.media !== "not all";
 }
 
 function inlineTokens(): Record<string, string> {
@@ -256,11 +307,24 @@ describe("useChapterTheme", () => {
       expect(cachedRow()).toBeNull();
     });
 
-    it("never caches under a scope whose chapter the palette is not for", () => {
-      // The store has moved but the scope has not yet — write the row now and
-      // it files chapter-1's palette under chapter-2's key.
-      setPalette(SIGNET_KEYS);
+    it("never caches a palette the response does not vouch for", () => {
+      // The hazard is one `placeholderData: keepPreviousData` away: `data` would
+      // then hold the OUTGOING chapter's palette while the scope names the
+      // incoming one, and the row written would say chapter-2 and hold
+      // chapter-1's colours — a wrong answer that looks like a working cache.
+      // The response's own `id` is the only thing that can tell them apart.
+      setPalette(SIGNET_KEYS, "chapter-1");
       activeChapterId.mockReturnValue("chapter-2");
+      tenantScope.mockReturnValue({ userId: "member-1", chapterId: "chapter-2" });
+      renderHook(() => useChapterTheme());
+
+      expect(cachedRow()).toBeNull();
+    });
+
+    it("never caches a response that names no chapter at all", () => {
+      // Absence is not permission: a payload with no `id` cannot say which
+      // chapter it describes, so there is nothing to file it under.
+      setPalette(SIGNET_KEYS, null);
       renderHook(() => useChapterTheme());
 
       expect(cachedRow()).toBeNull();
@@ -272,44 +336,125 @@ describe("useChapterTheme", () => {
      * The cached rule is an unlayered `:root` block and the live palette is an
      * inline style on `<html>`, so for the chapter it was rendered for the
      * handover needs no code at all — the cascade does it. A chapter *change*
-     * is the case that does, because `/join` and the onboarding wizard switch
-     * in place with no document load.
+     * is the case that does, because several paths switch chapter in place
+     * with no document load.
      */
-    it("leaves the cached rule alone while it names the live chapter", () => {
-      renderCachedStyleFor("chapter-1");
+    it("leaves the cached rule applying while it names the live chapter", () => {
       setPalette(SIGNET_KEYS);
-      renderHook(() => useChapterTheme());
+      render(React.createElement(CachedAccentHost, { chapterId: "chapter-1" }));
 
-      expect(document.getElementById(ACCENT_CACHE_STYLE_ID)).not.toBeNull();
+      expect(cachedRuleApplies()).toBe(true);
     });
 
-    it("removes it the moment the chapter changes in place", () => {
-      renderCachedStyleFor("chapter-1");
+    it("stops it applying the moment the chapter changes in place", () => {
       setPalette(SIGNET_KEYS);
-      const { rerender } = renderHook(() => useChapterTheme());
-      expect(document.getElementById(ACCENT_CACHE_STYLE_ID)).not.toBeNull();
+      const view = render(
+        React.createElement(CachedAccentHost, { chapterId: "chapter-1" }),
+      );
+      expect(cachedRuleApplies()).toBe(true);
 
       // An in-place switch: the store moves, no navigation, and the new
       // chapter's palette has not arrived yet.
       activeChapterId.mockReturnValue("chapter-2");
       tenantScope.mockReturnValue({ userId: "member-1", chapterId: "chapter-2" });
       setPalette(undefined);
-      rerender();
+      view.rerender(
+        React.createElement(CachedAccentHost, { chapterId: "chapter-1" }),
+      );
 
       // Otherwise the apply effect's cleanup would uncover chapter-1's cached
       // accent — this change's own fix, painting the bug it exists to prevent.
-      expect(document.getElementById(ACCENT_CACHE_STYLE_ID)).toBeNull();
+      expect(cachedRuleApplies()).toBe(false);
       expect(inlineTokens()).toEqual({});
     });
 
-    it("keeps it while the chapter is unknown", () => {
+    it("turns back on when the claim settles a stale store", () => {
+      // Cold load on a browser whose persisted chapter is stale — switched on
+      // another device. The server rendered from the token's claim, so the rule
+      // in the document is RIGHT and the store is wrong; `useClaimChapterSync`
+      // is one auth event away from correcting it. A retire that destroyed the
+      // element here would hand this member the house-gold flash by way of the
+      // fix, with nothing to see.
+      setPalette(undefined);
+      activeChapterId.mockReturnValue("chapter-stale");
+      const view = render(
+        React.createElement(CachedAccentHost, { chapterId: "chapter-1" }),
+      );
+      expect(cachedRuleApplies()).toBe(false);
+
+      activeChapterId.mockReturnValue("chapter-1");
+      view.rerender(
+        React.createElement(CachedAccentHost, { chapterId: "chapter-1" }),
+      );
+      expect(cachedRuleApplies()).toBe(true);
+    });
+
+    it("keeps it applying while the chapter is unknown", () => {
       // `null` is "not resolved yet", never "a different chapter".
-      renderCachedStyleFor("chapter-1");
       activeChapterId.mockReturnValue(null);
       setPalette(undefined);
-      renderHook(() => useChapterTheme());
+      render(React.createElement(CachedAccentHost, { chapterId: "chapter-1" }));
 
-      expect(document.getElementById(ACCENT_CACHE_STYLE_ID)).not.toBeNull();
+      expect(cachedRuleApplies()).toBe(true);
+    });
+
+    it("stops applying once the identity changes, even with no chapter to compare", () => {
+      /*
+        The cross-tab sign-in. Member B signs in in another tab with no chapter
+        of their own; auth-js broadcasts it, `useClaimChapterSync` writes `null`
+        into this tab's store, and the live inline palette is stripped — so the
+        previous member's chapter accent, sitting in this rule, would be the
+        only accent source left on screen. `clearCachedAccent` runs on that
+        event and strips the chapter attribute, which is what lets this effect
+        tell the case apart from a cold load that has simply not resolved yet.
+      */
+      setPalette(SIGNET_KEYS);
+      const view = render(
+        React.createElement(CachedAccentHost, { chapterId: "chapter-1" }),
+      );
+      expect(cachedRuleApplies()).toBe(true);
+
+      clearCachedAccent();
+      expect(cachedRuleApplies()).toBe(false);
+
+      activeChapterId.mockReturnValue(null);
+      tenantScope.mockReturnValue(null);
+      setPalette(undefined);
+      view.rerender(
+        React.createElement(CachedAccentHost, { chapterId: "chapter-1" }),
+      );
+
+      // Still off: a rule that claims no chapter is nobody's.
+      expect(cachedRuleApplies()).toBe(false);
+      expect(inlineTokens()).toEqual({});
+    });
+
+    it("survives an unmount and a re-render after the chapter moved", () => {
+      // The element is React's. Detaching it rather than disabling it makes
+      // React throw `NotFoundError` from `removeChild` on the next unmount or
+      // re-render of the layout that owns it — a whole-dashboard error screen
+      // on the next sign-out or hard refresh. Verified: with `cached.remove()`
+      // in place of the `media` toggle, both expectations below throw.
+      setPalette(SIGNET_KEYS);
+      const view = render(
+        React.createElement(CachedAccentHost, { chapterId: "chapter-1" }),
+      );
+
+      activeChapterId.mockReturnValue("chapter-2");
+      setPalette(undefined);
+      view.rerender(
+        React.createElement(CachedAccentHost, { chapterId: "chapter-1" }),
+      );
+
+      expect(() =>
+        view.rerender(
+          React.createElement(CachedAccentHost, {
+            chapterId: "chapter-1",
+            show: false,
+          }),
+        ),
+      ).not.toThrow();
+      expect(() => view.unmount()).not.toThrow();
     });
   });
 });

@@ -12,6 +12,8 @@
  * anyway with a stylesheet.
  */
 
+import { base64UrlDecode } from "./base64url";
+
 interface AccessTokenClaims {
   sub?: unknown;
   active_chapter_id?: unknown;
@@ -68,12 +70,3 @@ export function readAuthSubjectClaim(
   return readStringClaim(token, "sub");
 }
 
-function base64UrlDecode(value: string): string {
-  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-  // `atob` exists in every browser and in Node ≥ 16, which covers vitest and
-  // the Next server runtime this is now also read from.
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-}

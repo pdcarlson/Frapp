@@ -17,6 +17,14 @@ import {
  * house values must be gone.
  */
 
+/**
+ * The jar as Next delivers it: **values already URL-decoded**.
+ *
+ * `RequestCookies` runs `decodeURIComponent` on every value while parsing the
+ * `Cookie` header, so a server component never sees the percent-encoded form
+ * the browser sent. The helpers below decode on the way in for that reason —
+ * feeding the encoded shape here would test a path the server does not take.
+ */
 const cookieJar = vi.fn<() => Array<{ name: string; value: string }>>(() => []);
 
 vi.mock("next/headers", () => ({
@@ -28,6 +36,15 @@ vi.mock("next/headers", () => ({
     };
   },
 }));
+
+/*
+  A hosted project URL, so the cookie name the reader derives is the realistic
+  `sb-<ref>-auth-token` rather than the local stack's `sb-127-auth-token`. The
+  reader anchors to this project's ref on purpose — a cookie named for any other
+  ref is another project's, or an attacker's.
+*/
+const SUPABASE_URL = "https://abcdefgh.supabase.co";
+const AUTH_COOKIE_NAME = "sb-abcdefgh-auth-token";
 
 const { readCachedAccentPaint } = await import("./server-accent");
 const {
@@ -82,7 +99,7 @@ function session(sub: string | null, chapter: string | null) {
   if (sub) claims["sub"] = sub;
   if (chapter) claims["active_chapter_id"] = chapter;
   return {
-    name: "sb-localhost-auth-token",
+    name: AUTH_COOKIE_NAME,
     value: JSON.stringify({ access_token: jwt(claims) }),
   };
 }
@@ -94,11 +111,12 @@ function accentCookie(
 ) {
   const value = serializeAccentCookie({ userId, chapterId }, tokens, Date.now());
   if (!value) throw new Error("expected a serializable row");
-  return { name: ACCENT_COOKIE, value };
+  return { name: ACCENT_COOKIE, value: decodeURIComponent(value) };
 }
 
 describe("the cached accent reaches first paint", () => {
   beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", SUPABASE_URL);
     cookieJar.mockReturnValue([]);
   });
 
@@ -146,6 +164,7 @@ describe("the cached accent reaches first paint", () => {
 
 describe("a row is only readable at the scope it was written under", () => {
   beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", SUPABASE_URL);
     cookieJar.mockReturnValue([]);
   });
 
@@ -185,9 +204,40 @@ describe("a row is only readable at the scope it was written under", () => {
 
   it("survives a garbage jar without throwing the render", async () => {
     cookieJar.mockReturnValue([
-      { name: "sb-localhost-auth-token", value: "not-json" },
-      { name: ACCENT_COOKIE, value: "%%%" },
+      { name: AUTH_COOKIE_NAME, value: "not-json" },
+      { name: ACCENT_COOKIE, value: "{{{" },
     ]);
     await expect(readCachedAccentPaint()).resolves.toBeNull();
+  });
+
+  it("ignores a session cookie named for another project's ref", async () => {
+    /*
+      The sibling-subdomain case. On a shared parent domain, script on another
+      host can set a `Domain=`-scoped cookie — and an earlier revision matched
+      any `sb-<ref>-auth-token`, preferring an unchunked one over the victim's
+      real, chunked session. Since the token is decoded and never verified, the
+      attacker supplied both halves of the key: a `sub` and `active_chapter_id`
+      of their choosing plus a row to match, and the victim's dashboard
+      first-painted in colours they had picked.
+
+      Anchoring the name to this project's ref is what closes it. The forged
+      cookie below is simply not this project's session.
+    */
+    cookieJar.mockReturnValue([
+      { name: "sb-attacker-auth-token", value: JSON.stringify({ access_token: jwt({ sub: USER, active_chapter_id: CHAPTER_A }) }) },
+      accentCookie(USER, CHAPTER_A),
+    ]);
+    expect(await readCachedAccentPaint()).toBeNull();
+  });
+
+  it("paints nothing when the project URL is absent or unparseable", async () => {
+    for (const url of ["", "not a url"]) {
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", url);
+      cookieJar.mockReturnValue([
+        session(USER, CHAPTER_A),
+        accentCookie(USER, CHAPTER_A),
+      ]);
+      expect(await readCachedAccentPaint()).toBeNull();
+    }
   });
 });
