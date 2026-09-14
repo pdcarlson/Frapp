@@ -20,7 +20,8 @@ import { useNow } from "@repo/hooks";
 
 interface PollCardProps {
   message: ChatMessage;
-  viewerId: string | null;
+  /** Known, never `null` — see `MessageRendererProps.viewerId`. */
+  viewerId: string;
   /** Confirmed messages can be voted on; pending optimistic rows cannot. */
   isConfirmed: boolean;
   onVote: (
@@ -66,7 +67,14 @@ export function PollCard({
   const isClosed = closesAt
     ? !Number.isNaN(closesAt.getTime()) && closesAt.getTime() < now
     : false;
-  const canVote = isConfirmed && !isClosed && viewerId !== null;
+  /*
+    `!viewerId`, not `!== null`. The prop says `string` now, but a JSX spread of
+    a loosely-typed object is not prop-checked, so `undefined` can still arrive
+    with the compiler silent — and `undefined !== null` is true, which opened
+    this. The same hole `message-timeline.tsx`'s gate spells out and guards
+    against; an unusable id is an unresolved viewer whatever shape it arrives in.
+  */
+  const canVote = isConfirmed && !isClosed && !!viewerId;
 
   const cast = (option: PollOption) => {
     if (!canVote) return;
