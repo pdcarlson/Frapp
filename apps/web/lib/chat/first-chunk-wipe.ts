@@ -30,11 +30,15 @@
  * `frapp-client-provider.tsx` makes for clearing the whole `QueryClient`
  * rather than a list of keys.
  *
- * That those tables are *not* dropped is today's behaviour, not a settled
- * decision: they also carry no tenant scope, so on a shared browser they
- * outlive the member who wrote them, and the outbox flushes for whoever signs
- * in next. Whether the answer is to re-key them or to clear them is open in
- * [#2226](https://github.com/pdcarlson/Frapp/issues/2226).
+ * That those tables are *not* dropped is now a settled decision rather than
+ * merely today's behaviour. [#2226](https://github.com/pdcarlson/Frapp/issues/2226)
+ * closed the tenancy hole they used to have by **re-keying** them —
+ * `[userId+channelId]` for drafts, `[userId+chapterId+clientId]` for the
+ * outbox — so another member can no longer read a draft or flush a queued
+ * message, while the rows survive for the member who actually wrote them.
+ * This wipe must therefore keep its hands off `frapp-chat`: a sweep of that
+ * database on an identity change would be the message deletion the re-key
+ * exists to avoid.
  */
 
 /** The IndexedDB database holding the first-chunk read cache, and only that. */
