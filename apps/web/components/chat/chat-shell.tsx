@@ -725,6 +725,21 @@ export function ChatShell({
       return;
     }
     if (channel.isLoading) return;
+    /*
+      The timeline withholds its rows — and with them `<Virtuoso>` — until the
+      viewer resolves (#2243), and `scrollToMessage` reports honestly that it
+      could not scroll when there is no virtualizer attached. Without this the
+      jump would run into that window and read the `false` as "this message is
+      outside the loaded window", painting "That message is older than the
+      history loaded here." over a message that is in fact loaded.
+
+      A warm cold-start with `?message=` hits it squarely: `seedFirstChunk`
+      writes the tail straight into the query cache, so `channel.isLoading` is
+      already false above while `GET /v1/users/me` is still in flight. `userId`
+      is in the dependency list below so the resolve re-runs the jump, which is
+      the half that makes returning here a deferral rather than a silent drop.
+    */
+    if (!userId) return;
     const jumped = timeline.current?.scrollToMessage(pendingMessageId) ?? false;
     if (jumped) {
       setPendingMessageId(null);
@@ -743,6 +758,7 @@ export function ChatShell({
     channel.isLoading,
     channel.messages,
     jumpAttempt,
+    userId,
   ]);
 
   /**
@@ -868,10 +884,16 @@ export function ChatShell({
       own display name, or as "Someone": the mis-ID bug reaching the one surface
       that cannot be glanced at and re-read.
 
-      Returning *before* the ref is touched is the load-bearing part. `userId` is
-      a dependency, so the resolve re-runs this effect with the message still
-      unseen and it is announced then, correctly. Marking it seen here would
-      swallow the announcement instead.
+      What happens to a message that arrives *inside* that window: it is adopted
+      as the baseline and never announced. `userId` is a dependency, so the
+      resolve does re-run this effect — but the ref is still `{null, null}`,
+      because returning here skips the write, so that run takes the
+      channel-switch branch below and sets the baseline without narrating it.
+      That is the rule the initial load already follows: a message that landed
+      while the app was still booting is part of what the member arrived to, not
+      an event to hear about. It is a deliberate outcome, not the announcement
+      going missing by accident — do not "fix" it by moving the ref write above
+      this line, which would restore the wrong attribution and nothing else.
     */
     if (!userId) return;
     const latestKey = latest.client_message_id ?? latest.id;

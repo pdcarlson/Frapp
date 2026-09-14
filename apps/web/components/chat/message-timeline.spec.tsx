@@ -311,18 +311,40 @@ describe("MessageTimeline identity gate (#2243)", () => {
     // drawn yet.
     expect(bubbles()).toHaveLength(0);
     expect(screen.queryByText("mine")).not.toBeInTheDocument();
-  });
-
-  it("does not leak the uuid fallbacks it used to paint", () => {
-    renderTimeline([message({ sender_id: VIEWER, content: "mine" })], {
-      viewerId: null,
-    });
-
     // `Member 111111` and `11` are `memberFallbackLabel` and
-    // `authorInitialsFallback` reading the *viewer's own* id back to them —
-    // the "Member … · BF" staging reported, spelled with this file's uuids.
+    // `authorInitialsFallback` reading the *viewer's own* id back to them — the
+    // "Member … · BF" staging reported, spelled with this file's uuids. Asserted
+    // here rather than in a test of their own: with no rows drawn they cannot
+    // appear whatever those helpers produce, so alone they would pin nothing.
     expect(screen.queryByText("Member 111111")).not.toBeInTheDocument();
     expect(screen.queryByText("11")).not.toBeInTheDocument();
+  });
+
+  it("shows a load failure rather than burying it behind the identity gate", () => {
+    // An expired session is the likeliest route to an unresolved viewer, and it
+    // takes out the messages fetch with the same 401. The error has a retry; the
+    // skeleton has no exit, so the error has to win.
+    renderTimeline([message({ sender_id: VIEWER })], {
+      viewerId: null,
+      loadError: new Error("401"),
+    });
+
+    expect(screen.getByText("Couldn't load messages")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("still paints another member's row as incoming once identity settles", () => {
+    // The positive half, and not implied by the own-row case: a gate that opened
+    // into *every* row taking the self shape would pass every assertion above.
+    renderTimeline([message({ sender_id: ALICE, content: "from alice" })], {
+      viewerId: VIEWER,
+    });
+
+    const [bubble] = bubbles();
+    expect(bubble?.className).toContain("bg-card");
+    expect(bubble?.className).toContain("border-border");
+    expect(bubble?.className).toContain("rounded-bl-[6px]");
+    expect(screen.getByText("Alice Chen")).toBeInTheDocument();
   });
 
   it("withholds an incoming row too, not just the member's own", () => {

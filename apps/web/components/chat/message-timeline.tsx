@@ -322,7 +322,12 @@ export const MessageTimeline = forwardRef<
     detail — so a mark taken while identity was still in flight would be
     timing a timeline that was about to reattribute half its rows.
   */
-  const viewerUnresolved = viewerId === null;
+  // `!viewerId` rather than `=== null`: the prop's declared type says `null`, but
+  // a JSX spread of a loosely-typed object is not prop-checked, so a caller can
+  // hand this `undefined` with the compiler silent — and `undefined === null` is
+  // false, which would open the gate and paint every row as another member's
+  // again. An unusable id is an unresolved viewer whatever shape it arrives in.
+  const viewerUnresolved = !viewerId;
   const readable = !isLoading && !loadError && !viewerUnresolved;
   useEffect(() => {
     if (readable) markColdLoad(COLD_LOAD_MARKS.channelReadable);
@@ -428,6 +433,34 @@ export const MessageTimeline = forwardRef<
     the geometry to the same metrics, and claims no author — which is precisely
     what is true while identity is in flight.
   */
+  /*
+    Ahead of the skeleton, and that order is load-bearing since #2243 gave the
+    branch below a second, slower input.
+
+    An expired session is the likeliest way to reach an unresolved viewer at all:
+    the same 401 takes out `GET /v1/users/me` and the messages fetch together. If
+    identity were allowed to answer first, `viewerUnresolved` would hold forever
+    and bury this state — the member would get shimmer over a failure that has a
+    retry sitting right here, with no way out but a manual reload.
+
+    A load error and a pending load are mutually exclusive for this query anyway
+    (`use-chat-channel.ts` reports `isLoading` as `query.isPending`, which is
+    false once a query has settled either way), so putting the failure first
+    costs the loading case nothing.
+  */
+  if (loadError) {
+    return (
+      <ErrorState
+        title="Couldn't load messages"
+        // The canonical string from `writing.md` §7, not `loadError.message`.
+        // A raw fetch rejection ("Failed to fetch") is not copy, and the doc
+        // that owns this table already answers the question a member has.
+        description="Confirm your chapter access and retry."
+        onRetry={onRetryLoad}
+      />
+    );
+  }
+
   if (isLoading || viewerUnresolved) {
     return (
       <>
@@ -455,18 +488,6 @@ export const MessageTimeline = forwardRef<
         </div>
         <MessageTimelineSkeleton />
       </>
-    );
-  }
-  if (loadError) {
-    return (
-      <ErrorState
-        title="Couldn't load messages"
-        // The canonical string from `writing.md` §7, not `loadError.message`.
-        // A raw fetch rejection ("Failed to fetch") is not copy, and the doc
-        // that owns this table already answers the question a member has.
-        description="Confirm your chapter access and retry."
-        onRetry={onRetryLoad}
-      />
     );
   }
   if (messages.length === 0) {

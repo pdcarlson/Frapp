@@ -100,7 +100,21 @@ const CATEGORIES = [
   { id: "cat-comm", name: "Committees", display_order: 1 },
 ];
 
-const MESSAGES = [
+/**
+ * `sender_id` is optional, and the two rows below deliberately omit it: an author
+ * the roster cannot resolve is what makes the "from someone" announcement test's
+ * fallback reachable. The #2243 tests set it, so the element type has to admit
+ * it — without that the object literals there trip excess-property checking and
+ * `check-types` fails while the suite still passes.
+ */
+type ShellMessage = {
+  id: string;
+  content: string;
+  created_at: string;
+  sender_id?: string | null;
+};
+
+const MESSAGES: ShellMessage[] = [
   { id: "msg-1", content: "hello", created_at: "2026-01-01T00:00:00Z" },
   { id: "msg-2", content: "world", created_at: "2026-01-01T00:01:00Z" },
 ];
