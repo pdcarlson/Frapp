@@ -8,10 +8,11 @@
  * outbox so components stay dumb (arrays + callbacks).
  */
 
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
+import { useChannelDraft } from "./use-channel-draft";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
 import { asArray } from "@/lib/utils";
@@ -53,13 +54,7 @@ import {
   type ResolveMember,
 } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-integrations";
-import {
-  clearDraft,
-  dexieOutboxStore,
-  getOutboxRow,
-  loadDraft,
-  saveDraft,
-} from "./offline-queue";
+import { dexieOutboxStore, getOutboxRow } from "./offline-queue";
 
 export interface UseChatChannelResult {
   messages: ChatMessage[];
@@ -217,43 +212,18 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     return unsub;
   }, [channelId]);
 
-  // Draft persistence — load once per channel, debounce writes.
-  const [draftState, setDraftState] = useState("");
-  useEffect(() => {
-    if (!channelId) return;
-    let cancelled = false;
-    loadDraft(channelId)
-      .then((body) => {
-        if (!cancelled) setDraftState(body);
-      })
-      .catch((err) => {
-        // IndexedDB read can throw in private mode / quota issues — degrade
-        // to an empty draft rather than crash the channel.
-        console.warn("loadDraft failed", err);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [channelId]);
-  const draft = channelId ? draftState : "";
-  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelDraftTimer = useCallback(() => {
-    if (draftTimer.current) {
-      clearTimeout(draftTimer.current);
-      draftTimer.current = null;
-    }
-  }, []);
-  const setDraft = useCallback(
-    (body: string) => {
-      setDraftState(body);
-      if (!channelId) return;
-      cancelDraftTimer();
-      draftTimer.current = setTimeout(() => {
-        void saveDraft(channelId, body);
-      }, 400);
-    },
-    [channelId, cancelDraftTimer],
-  );
+  /*
+    Draft persistence lives in its own hook (#2176).
+
+    It was inline here until the composer shell needed it to survive a channel
+    that does not exist yet, which turned four lines of `useState` into a small
+    state machine with an ordering hazard in it — and this hook takes eight
+    dependencies, so nothing in that machine could be tested without standing up
+    all eight. `use-channel-draft.ts` owns it and `use-channel-draft.spec.ts`
+    tests it directly.
+  */
+  const { draft, setDraft, cancelPendingSave, clearAfterSend } =
+    useChannelDraft(channelId);
 
   const send = useCallback(
     async (
@@ -269,23 +239,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       if (content.trim().length === 0 && !hasAttachments) return;
       // Cancel any in-flight debounced save before clearing so a stale draft
       // can't be re-persisted after the send.
-      cancelDraftTimer();
+      cancelPendingSave();
       await sendMessage(ctx, {
         channelId,
         content: content.trim(),
         replyToId: opts?.replyToId ?? null,
         attachments: opts?.attachments ?? null,
       });
-      setDraftState("");
-      // Same Dexie drafts table `sendMessage` already cleared best-effort.
-      // A second fault must not reject a send that already posted (#1718).
-      try {
-        await clearDraft(channelId);
-      } catch {
-        // Best-effort — in-flight saveDraft races are why this call exists.
-      }
+      await clearAfterSend();
     },
-    [cancelDraftTimer, channelId, ctx],
+    [cancelPendingSave, clearAfterSend, channelId, ctx],
   );
 
   const reactCb = useCallback(
