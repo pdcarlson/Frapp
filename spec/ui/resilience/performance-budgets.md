@@ -162,6 +162,64 @@ travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records that arithmet
 
 ## Cached channel readable
 
+**Resolved (2026-09-14, later still, [#2249](https://github.com/pdcarlson/Frapp/issues/2249)).** Both
+consequences the #2243 correction below records are closed, and both are now measured rather than
+reasoned about. The viewer's `users.id` is cached beside the first chunk and read in the same Dexie
+transaction as the rows it attributes
+([`first-chunk-cache.ts`](../../../apps/web/lib/chat/first-chunk-cache.ts),
+[`viewer-id.tsx`](../../../apps/web/lib/chat/viewer-id.tsx)), so identity no longer waits on
+`GET /v1/users/me` on a warm load. The withhold contract is unchanged: with no cached id and no live
+one the rows are still withheld.
+
+Measured as a **paired A/B on one machine** — same build pipeline, same browser, same seeded dataset,
+the only variable being whether the tree carries this change. `main` at `955c46e` is the baseline.
+
+| | baseline (`955c46e`) | with #2249 |
+|---|---|---|
+| Cold cache | 1,116 ms (1,097–1,205) | 1,076 / 1,106 / 1,133 ms |
+| **Warm cache** | **424 ms** (392–561) | **191 / 196 / 209 ms** (174–265 across all runs) |
+| Warm, network blocked | **never readable** — no mark inside 20 s, 0 rows, 5/5 runs | 659 / 668 / 698 ms, **6 real rows, 15/15 runs** |
+
+Three things follow, in the order they matter:
+
+- **The warm arm on `main` is over its own budget.** 424 ms median against a 400 ms field budget, with
+  every one of five samples at 392 ms or worse — on a machine whose cold arm (1,116 ms) reproduces the
+  1,179 ms recorded below, so this is not a slower box. The #2243 correction said "the warm arm is the
+  one at risk" and cited an earlier 417 ms sample; the risk landed. With this change the same arm is
+  ~200 ms, comfortably inside the budget and below the 323 ms this page recorded before identity ever
+  gated the mark.
+- **The rank-1 `1s` clause is served again.** The clause asks the cached tail to "render real"; the
+  blocked-network arm is the direct test of it, and it is a count rather than a latency, so sandbox
+  noise cannot move it. With `**/v1/channels**`, the messages fetch **and** `/v1/users/me` all
+  aborted, the baseline paints **nothing** — the permanent skeleton over rows already on disk — and
+  this change paints six real, correctly-attributed rows every run.
+- **The abort check means what it is cited for again**, and means more than it used to. It now blocks
+  identity as well as the channel list, which is what "the cached timeline is readable without the
+  network" requires once `viewerId` gates the rows. That is the gap the #2243 correction left open and
+  handed to #2249.
+
+**Method, and where it differs from the by-hand runs below.** Production build
+(`npm run build -w apps/web && npm run start -w apps/web`), local API and Supabase, a seeded chapter
+of 8 channels and 50 messages in `#general`, Playwright driving a real signed-in session, reading
+`performance.getEntriesByName("frapp.chat.channel-readable", "measure")[0].duration`. Five loads per
+arm per set. Both arms run in the **same signed-in browser context**, and the cold arm deletes
+`frapp-chat-read-cache` immediately before its measured navigation rather than using a fresh profile —
+because signing in already lands on `/chat`, so a fresh profile's "cold" load would have been warmed
+by the redirect. That is a real difference from however the 2026-09-14 numbers below were collected,
+and it is why the table above should be read as a self-contained A/B rather than as a continuation of
+that series.
+
+**Sample counts, stated rather than implied: one five-run set on the baseline, three on the change.**
+Two further baseline sets were attempted and **discarded, not counted** — the rebuilt baseline served a
+stale chunk manifest and produced no mark at all, which a sanity gate caught; they are not evidence in
+either direction. The single baseline set is the weaker half of this table. What carries weight
+independently of it is the blocked-network row, where the two arms differ by "paints nothing" versus
+"paints every row", and the cold arm, which agrees across every set and says the machine did not drift
+between them.
+
+Everything below this block is the record as it stood before, kept because the reasoning is still how
+the trade was decided — not because the two consequences it names are still live.
+
 **Correction (2026-09-14, later the same day, [#2243](https://github.com/pdcarlson/Frapp/issues/2243)):
 every number in this section predates a change in what the mark measures, and the `1s` clause below
 is no longer fully served.** `readable` in
