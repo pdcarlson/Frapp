@@ -54,7 +54,8 @@ import {
   type ResolveMember,
 } from "@repo/chat-core/dispatch";
 import type { SlashCommand } from "@repo/chat-integrations";
-import { dexieOutboxStore, getOutboxRow } from "./offline-queue";
+import { createDexieOutboxStore, getOutboxRow } from "./offline-queue";
+import { useChatOutboundScope } from "./chat-scope";
 import { usePersistedChannelTail } from "./use-first-chunk-cache";
 
 export interface UseChatChannelResult {
@@ -123,8 +124,17 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [rawToast],
   );
 
+  /*
+    Whose queue this channel reads and writes (#2226). The store is bound to the
+    scope rather than being the module const it used to be, so every outbox
+    operation this hook reaches — enqueue, retry, discard, the per-channel
+    hydrate — can only address rows written by the signed-in member in the
+    active chapter.
+  */
+  const scope = useChatOutboundScope();
+  const outbox = useMemo(() => createDexieOutboxStore(scope), [scope]);
+
   const ctx = useMemo(
-    // `dexieOutboxStore` is a module const, so it is not a dependency.
     () => ({
       queryClient,
       apiClient,
@@ -132,10 +142,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       userId,
       toast,
       track: track ?? undefined,
-      outbox: dexieOutboxStore,
+      outbox,
       kv: browserKeyValueStore,
     }),
-    [queryClient, apiClient, supabase, userId, toast, track],
+    [queryClient, apiClient, supabase, userId, toast, track, outbox],
   );
 
   // Initial load: REST backfill of the most recent messages + a single
@@ -291,20 +301,22 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   const retry = useCallback(
     async (clientMessageId: string) => {
-      const row = await getOutboxRow(clientMessageId);
+      if (!scope) return;
+      const row = await getOutboxRow(scope, clientMessageId);
       if (!row) return;
       await retryOutboxRow(ctx, row);
     },
-    [ctx],
+    [ctx, scope],
   );
 
   const discard = useCallback(
     async (clientMessageId: string) => {
-      const row = await getOutboxRow(clientMessageId);
+      if (!scope) return;
+      const row = await getOutboxRow(scope, clientMessageId);
       if (!row) return;
       await discardOutboxRow(ctx, row);
     },
-    [ctx],
+    [ctx, scope],
   );
 
   const retryUnconfirmed = useCallback(

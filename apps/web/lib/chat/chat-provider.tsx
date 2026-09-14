@@ -22,7 +22,8 @@ import { browserKeyValueStore, browserNetworkState } from "@repo/chat-core/adapt
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { chatRealtime } from "@repo/chat-core/realtime-manager";
 import { flushOutbox } from "@repo/chat-core/chat-client";
-import { dexieOutboxStore } from "./offline-queue";
+import { createDexieOutboxStore } from "./offline-queue";
+import { useChatOutboundScope } from "./chat-scope";
 import { useFirstChunkCache } from "./use-first-chunk-cache";
 import type { RawChatMessage } from "@repo/chat-core/types";
 
@@ -30,6 +31,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const apiClient = useFrappClient();
   const { userId } = useFrappUser();
+  /*
+    The scope every outbound Dexie row is keyed under (#2226). Binding the store
+    to it is what makes the boot flush below safe on a shared browser: before
+    this, `listQueued` returned every queued row in the database, so a member
+    signing in inherited whatever the previous member had left unsent and posted
+    it under their own token.
+
+    Not `userId` above — that is `useViewerUserId` (`users.id`, a
+    `GET /v1/users/me` round trip), and it can lag a same-tab account swap. The
+    scope keys on the Supabase auth uid, which is the subject of the very token
+    this flush POSTs under; `offline-queue.ts` has the full argument.
+  */
+  const scope = useChatOutboundScope();
+  const outbox = useMemo(() => createDexieOutboxStore(scope), [scope]);
   const { toast } = useToast();
   const track = useContext(AnalyticsContext);
   const supabase = useMemo(() => getRealtimeClient(), []);
@@ -84,7 +99,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       userId,
       toast,
       track: track ?? undefined,
-      outbox: dexieOutboxStore,
+      outbox,
       kv: browserKeyValueStore,
     };
     void flushOutbox(ctx);
@@ -94,7 +109,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return browserNetworkState.subscribe((online) => {
       if (online) void flushOutbox(ctx);
     });
-  }, [queryClient, apiClient, supabase, userId, toast, track]);
+  }, [queryClient, apiClient, supabase, userId, toast, track, outbox]);
 
   return <>{children}</>;
 }
