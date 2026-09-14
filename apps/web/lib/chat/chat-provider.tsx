@@ -23,6 +23,7 @@ import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { chatRealtime } from "@repo/chat-core/realtime-manager";
 import { flushOutbox } from "@repo/chat-core/chat-client";
 import { dexieOutboxStore } from "./offline-queue";
+import { useFirstChunkCache } from "./use-first-chunk-cache";
 import type { RawChatMessage } from "@repo/chat-core/types";
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
@@ -32,6 +33,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
   const track = useContext(AnalyticsContext);
   const supabase = useMemo(() => getRealtimeClient(), []);
+
+  /*
+    The persisted first chunk (`1s`): seed the channel list and the cached
+    message tails into the QueryClient before the network answers, and keep
+    them written as the live data arrives.
+    Mounted here rather than in `ChatShell` because it must run once for the
+    surface, not once per pane, and because this is already the component that
+    owns chat's boot-time side effects. It renders nothing and blocks nothing —
+    a cold load with an empty cache is exactly the cold load we had before.
+  */
+  useFirstChunkCache();
 
   // Configure the realtime manager exactly once per mount. Manager is a
   // module singleton; this just rebinds it to the current QueryClient /

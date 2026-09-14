@@ -8,11 +8,29 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useClaimChapterSync } from "@/lib/auth/use-claim-chapter-sync";
+import { wipeFirstChunkCache } from "@/lib/chat/first-chunk-wipe";
 
 /**
  * First value and same-value updates must not clear: those are hydrate /
  * token-refresh, not a switch. A real change (chapter or auth uid) drops the
  * whole cache because many keys are not scoped to that identity.
+ *
+ * The in-memory cache is not the only one any more. Chat's first-chunk read
+ * cache (`lib/chat/first-chunk-cache.ts`) survives a reload by design, so the
+ * same two events have to reach it — a sign-out or a chapter switch that left
+ * a channel list and thirty messages on disk would be the persisted version of
+ * exactly the leak this function exists to prevent.
+ *
+ * Two things about that call. It is **not awaited**, and nothing downstream
+ * depends on it having finished: keying is what prevents a cross-tenant read,
+ * and `pruneForeignScopes` deletes any foreign row on the next read. That
+ * matters because the delete genuinely may not land — the sign-out and
+ * chapter-switch controls navigate away moments later, `/join` and the
+ * onboarding wizard change chapter in place with no navigation, and a second
+ * tab holding the database open blocks it outright. And it comes from
+ * `first-chunk-wipe.ts` rather than from the cache module itself, because this
+ * provider is on the shell path of every dashboard route and that module
+ * imports Dexie — see that file's header for the bundle argument.
  */
 function dropCacheWhenIdentityChanges(
   previousRef: { current: string | null | undefined },
@@ -24,6 +42,7 @@ function dropCacheWhenIdentityChanges(
   if (previous === undefined || previous === null) return;
   if (previous === next) return;
   queryClient.clear();
+  void wipeFirstChunkCache();
 }
 
 export function FrappProvider({ children }: { children: React.ReactNode }) {
