@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { extractMentionTokens } from "@repo/validation";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { TextRenderer } from "./text-renderer";
 
@@ -134,5 +135,166 @@ describe("TextRenderer formatting", () => {
   it("still shows the deleted-message tombstone unchanged", () => {
     render(<TextRenderer message={message("**bold**", { is_deleted: true })} isSelf={false} />);
     expect(screen.getByText("[message deleted]")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The §11 in-bubble mention highlight — `components.md` carried it as a
+ * TODO-DESIGN, and staging showed why it mattered: `@Name` rendered as plain
+ * body text, so a message that addressed you looked exactly like one that did
+ * not.
+ *
+ * Two rules these pin, both of which a "make mentions stand out" change is
+ * likely to break in passing. The chip goes on the **handle only** — retinting
+ * the bubble would overwrite the one thing a bubble's fill already says, whose
+ * message this is — and the run it wraps is decided by the *server's*
+ * tokenizer, so the UI never claims a mention the API did not see.
+ */
+describe("TextRenderer mention chips", () => {
+  function chips(container: HTMLElement) {
+    return Array.from(container.querySelectorAll("mark"));
+  }
+
+  it("chips the handle in an incoming bubble", () => {
+    const { container } = render(
+      <TextRenderer message={message("morning @Alice, agenda attached")} isSelf={false} />,
+    );
+
+    const [chip] = chips(container);
+    expect(chip?.textContent).toBe("@Alice");
+    expect(chip?.className).toContain("bg-mention-chip");
+    expect(chip?.className).toContain("text-mention-chip-text");
+    // The token the server would resolve, not the label the reader sees — the
+    // two differ the moment a mention ends a sentence.
+    expect(chip?.getAttribute("data-mention")).toBe("Alice");
+  });
+
+  it("chips the handle in a self bubble too, with the same recipe", () => {
+    const { container } = render(
+      <TextRenderer message={message("thanks @Alice")} isSelf />,
+    );
+
+    const [chip] = chips(container);
+    expect(chip?.textContent).toBe("@Alice");
+    // Identical paint on both sides: the chip is opaque precisely so it does
+    // not have to know whether the chapter accent under it is light or dark.
+    expect(chip?.className).toContain("bg-mention-chip");
+    expect(chip?.className).toContain("text-mention-chip-text");
+  });
+
+  it("leaves the bubble's own fill alone on both sides", () => {
+    // "Don't retint the whole bubble." A mention is an address inside someone's
+    // message; the bubble still has to say whose message it is.
+    const incoming = render(
+      <TextRenderer message={message("ping @Alice")} isSelf={false} />,
+    );
+    const incomingBubble = incoming.container.querySelector('[class*="rounded-"]');
+    expect(incomingBubble?.className).toContain("bg-card");
+    expect(incomingBubble?.className).not.toContain("mention");
+    incoming.unmount();
+
+    const self = render(<TextRenderer message={message("ping @Alice")} isSelf />);
+    const selfBubble = self.container.querySelector('[class*="rounded-"]');
+    expect(selfBubble?.className).toContain("bg-primary");
+    expect(selfBubble?.className).not.toContain("mention");
+  });
+
+  it("chips every occurrence, not just the first", () => {
+    const { container } = render(
+      <TextRenderer message={message("@Alice and @Bob and @Alice again")} isSelf={false} />,
+    );
+
+    expect(chips(container).map((c) => c.textContent)).toEqual([
+      "@Alice",
+      "@Bob",
+      "@Alice",
+    ]);
+  });
+
+  it("reaches a handle inside bold and italic text", () => {
+    const { container } = render(
+      <TextRenderer message={message("**ping @Alice** and *cc @Bob*")} isSelf={false} />,
+    );
+
+    expect(chips(container).map((c) => c.textContent)).toEqual(["@Alice", "@Bob"]);
+    expect(container.querySelector("strong")?.textContent).toContain("@Alice");
+  });
+
+  it("leaves a handle inside code alone — that is documenting one, not making one", () => {
+    const { container } = render(
+      <TextRenderer message={message("type `@channel` to address everyone")} isSelf={false} />,
+    );
+
+    expect(chips(container)).toHaveLength(0);
+    expect(container.querySelector("code")?.textContent).toBe("@channel");
+  });
+
+  it("does not chip a handle the server never saw — an entity-escaped `@`", () => {
+    // The forgery this closes. `&#64;` carries no literal `@`, so the API
+    // resolves nobody and notifies nobody — but CommonMark decodes it before a
+    // remark plugin ever sees the text, so tokenizing the *rendered* string
+    // paints a "she was addressed" chip on a message that addressed her to no
+    // one. Any member can type it.
+    const { container } = render(
+      <TextRenderer
+        message={message("&#64;PresidentJane please approve the budget")}
+        isSelf={false}
+      />,
+    );
+
+    expect(extractMentionTokens("&#64;PresidentJane please approve the budget")).toEqual([]);
+    expect(chips(container)).toHaveLength(0);
+    // The text still reads as the author typed it; only the chip is withheld.
+    expect(container.textContent).toContain("@PresidentJane");
+  });
+
+  it("chips the real handle in a message that also carries a forged one", () => {
+    // The filter is per handle, not per message — one bad token must not
+    // suppress the genuine mention beside it, or the fix would be a new bug.
+    const { container } = render(
+      <TextRenderer message={message("@Bob and &#64;Alice")} isSelf={false} />,
+    );
+
+    expect(chips(container).map((c) => c.textContent)).toEqual(["@Bob"]);
+    expect(container.textContent).toContain("@Alice");
+  });
+
+  it("does not chip an email address", () => {
+    // The shared tokenizer's lookbehind is what stops this; asserting it here
+    // is what catches a renderer that stops using the shared tokenizer.
+    const { container } = render(
+      <TextRenderer message={message("mail alice@example.com about it")} isSelf={false} />,
+    );
+
+    expect(chips(container)).toHaveLength(0);
+  });
+
+  it("keeps the trailing punctuation outside the chip", () => {
+    // `@jane.` tokenises as `jane`, so the stop is prose and must stay prose —
+    // chipping it would paint a run nobody was notified about.
+    const { container } = render(
+      <TextRenderer message={message("over to @Alice.")} isSelf={false} />,
+    );
+
+    const [chip] = chips(container);
+    expect(chip?.textContent).toBe("@Alice");
+    expect(container.textContent).toBe("over to @Alice.");
+  });
+
+  it("still renders no raw HTML through the chip path", () => {
+    // The chip is the first thing to add an element to the allowlist, so the
+    // XSS-safe guarantee is re-asserted with a mention in the same message.
+    const { container } = render(
+      <TextRenderer
+        message={message('@Alice <img src=x onerror="alert(1)"> <mark>hi</mark>')}
+        isSelf={false}
+      />,
+    );
+
+    expect(container.querySelector("img")).toBeNull();
+    // The one `mark` is the chip this renderer made, never the one the message
+    // typed — `unwrapDisallowed` cannot promote authored text to an element.
+    expect(chips(container).map((c) => c.textContent)).toEqual(["@Alice"]);
+    expect(container.textContent).toContain("<mark>hi</mark>");
   });
 });

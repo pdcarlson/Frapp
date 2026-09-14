@@ -45,6 +45,31 @@ export const CHIP = {
 } as const;
 
 /**
+ * The in-body mention chip — `@Name` inside a message bubble.
+ *
+ * `components.md` §11 carried this as a TODO-DESIGN ("an in-bubble mention
+ * highlight is not drawn"). It is settled here as a soft amber chip on the
+ * handle alone: the surrounding bubble is never retinted, because a message
+ * that mentions you is still the sender's message, and repainting it would
+ * take the one thing the bubble's fill already says — whose message this is.
+ *
+ * **Not the mention red.** `--mention` is a badge fill carrying white text, and
+ * foundations §5 is explicit that rendering that hue *as text* needs a lifted
+ * tone that does not exist. This chip renders as text, so it takes the
+ * `--mention-chip` pair instead, which is fixed and semantic in the same way.
+ *
+ * Not `CHIP.base` either, and not by oversight: that recipe is a 26px control
+ * with a 44px touch floor, and this is a run of words inside a sentence. It
+ * takes inline geometry — a tight radius off the §8 chip band, padding that
+ * keeps the line box intact, and the body weight lifted one step so the handle
+ * reads as a handle when the chip's fill is the subtler half of the pair.
+ */
+export const MENTION_CHIP = [
+  "rounded-[5px] px-1 py-px",
+  "bg-mention-chip font-semibold text-mention-chip-text",
+].join(" ");
+
+/**
  * The 44px floor (§2), on the surfaces the floor is actually about.
  *
  * §2 requires ≥44px **on touch surfaces**, and the drawn chip is 26. Mobile
