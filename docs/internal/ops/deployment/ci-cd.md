@@ -75,6 +75,18 @@ production** with a commit SHA:
 > Preview, as manual rows from 2026-02-28 — so the first production build would have compiled a
 > broken bundle. They were written to the Production scope by API that day; the source-of-truth fix
 > is the Infisical `prod` environment (see `SECRETS_MANAGEMENT.md` § Blast radius).
+>
+> **They did not stay written. Amended 2026-09-14** — read the paragraph above as history, not as
+> current state. Two production builds that day died on exactly these variables:
+> [34894763676](https://github.com/pdcarlson/Frapp/actions/runs/34894763676) on
+> `NEXT_PUBLIC_API_URL`, and
+> [34896647837](https://github.com/pdcarlson/Frapp/actions/runs/34896647837) on
+> `NEXT_PUBLIC_SUPABASE_URL` (thrown from `apps/web/lib/supabase/server.ts` while prerendering `/`).
+> So the 2026-09-06 repair did not hold, and the Production scope is empty of at least those two
+> again. **Do not read "written to the Production scope" as a reason to rule the sync out** when a
+> production build fails on a `NEXT_PUBLIC_*`: open the Vercel Production scope and look. The fix is
+> still a human edit in Infisical `prod` at path `/` — the repo cannot make it, and #834 tracks the
+> sync itself.
 
 > **Deploying an OLDER commit.** That intersection in step 2 is deliberate, and it is what
 > keeps an incident rollback possible. A required check added *after* a commit was made could

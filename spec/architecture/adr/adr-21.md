@@ -175,6 +175,13 @@ Two consequences this ADR's own requirements produce, recorded here because this
 dispatched successfully through the new path — needs the `production` environment's required-reviewer
 approval. `deploy-production.yml`'s `dry_run_only` still stops before the Vercel step.
 
+**Correction 2026-09-14:** that last sentence is no longer true, and it is load-bearing enough to
+correct rather than leave for a reader to trip over. A dry run now runs `npm ci`, installs the
+Vercel CLI and executes `DEPLOY_PHASE=build` — `vercel pull --environment=production` plus
+`vercel build --prod` for both projects. What it still does not do is UPLOAD: `vercel deploy
+--prebuilt` stays gated on `!inputs.dry_run_only`, so a dry run creates no deployment and takes no
+production traffic. The three build steps are gated on `inputs.scope != 'migrations-only'` alone.
+
 **Correction 2026-09-07:** the CLI deploy **has** now run against the live projects. Run
 [34155737950](https://github.com/pdcarlson/Frapp/actions/runs/34155737950) (`scope: full`, SHA
 `f2938a01`) applied, shipped Render, and uploaded both Vercel production bundles with
