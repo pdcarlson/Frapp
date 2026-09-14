@@ -30,6 +30,7 @@ import {
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import { normalizeRoleOptions } from "@/lib/roles";
 
 type MemberRecord = Record<string, unknown>;
 
@@ -210,18 +211,8 @@ export function MemberDetailSheet({
   }, [customRolesQuery.data]);
 
   const roleOptions = useMemo(() => {
-    const rolesData = rolesQuery.data as unknown;
-    if (Array.isArray(rolesData)) {
-      const parsed = rolesData.flatMap((role: unknown) => {
-        if (!role || typeof role !== "object") return [];
-        const candidate = role as Record<string, unknown>;
-        if (typeof candidate.id !== "string" || typeof candidate.name !== "string") {
-          return [];
-        }
-        return [{ id: candidate.id, name: candidate.name }];
-      });
-      if (parsed.length > 0) return parsed;
-    }
+    const parsed = normalizeRoleOptions(rolesQuery.data);
+    if (parsed.length > 0) return parsed;
 
     if (memberRoleIds.length > 0) {
       return memberRoleIds.map((roleId) => ({
