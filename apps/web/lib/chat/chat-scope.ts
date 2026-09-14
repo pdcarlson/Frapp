@@ -1,37 +1,38 @@
 "use client";
 
 /**
- * The tenant a chat row on this browser belongs to — one definition, shared by
- * the inbound first-chunk read cache (`first-chunk-cache.ts`) and the outbound
- * drafts/outbox database (`offline-queue.ts`).
+ * The chat half of tenant scoping: which scope the inbound first-chunk read
+ * cache (`first-chunk-cache.ts`) reads, and the two *different* answers the
+ * outbound drafts/outbox database (`offline-queue.ts`) needs.
  *
- * One home on purpose. Both caches key their rows on this scope and both treat
- * that key as a security boundary, so two derivations of "who is this" would be
- * two things that can drift apart — and the drift would not look like a bug
- * until a row written under one definition was read under the other.
+ * The plain live scope is no longer defined here. It moved to
+ * `@/lib/tenancy/scope` when the chapter accent cache became a second
+ * shell-path caller, and this file re-exports it under its chat name so no
+ * call site changed. The reason it is re-exported rather than re-derived is
+ * the one this header has always given: both caches key their rows on the
+ * scope and both treat that key as a security boundary, so two derivations of
+ * "who is this" would be two things that can drift apart — and the drift would
+ * not look like a bug until a row written under one definition was read under
+ * the other. That argument never depended on chat.
  *
- * Both halves come from local state rather than the network — the Supabase
- * session (`useAuthUserId`) and the persisted chapter store — which is the only
- * reason a cold load can read the cache, or an offline composer write a draft,
- * before `GET /v1/channels` returns.
- *
- * Deliberately **not** gated on the chapter store's `hasHydrated`.
- * `profile-panel.tsx` records at length that the flag has three ways to stick
- * at `false` for the life of a session when `localStorage` throws; gating here
- * would silently disable both caches for exactly those members, and nothing
- * else in the chat shell waits on it either.
+ * What stays here is what is genuinely chat's: the **sticky** variants. Both
+ * halves still come from local state rather than the network — the Supabase
+ * session and the persisted chapter store — which is the only reason a cold
+ * load can read the cache, or an offline composer write a draft, before
+ * `GET /v1/channels` returns.
  */
 
 import { useEffect, useMemo } from "react";
 import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useTenantScope, type TenantScope } from "@/lib/tenancy/scope";
 
-/** The member — and the chapter — a persisted chat row belongs to. */
-export interface ChatScope {
-  /** Supabase auth uid (JWT subject) — not `users.id`. */
-  userId: string;
-  chapterId: string;
-}
+/**
+ * The member — and the chapter — a persisted chat row belongs to.
+ *
+ * An alias, not a second declaration: see the header.
+ */
+export type ChatScope = TenantScope;
 
 /**
  * The draft scope: the member alone.
@@ -43,14 +44,16 @@ export interface ChatScope {
  */
 export type ChatDraftScope = Pick<ChatScope, "userId">;
 
-/** `null` until both halves are known. */
+/**
+ * `null` until both halves are known.
+ *
+ * Delegates to `useTenantScope` — see the header for why this is a re-export
+ * and not a second derivation. Kept under its chat name because
+ * `use-first-chunk-cache.ts` re-exports it again as `useFirstChunkScope`, and
+ * renaming through two hops buys nothing.
+ */
 export function useChatScope(): ChatScope | null {
-  const userId = useAuthUserId();
-  const chapterId = useChapterStore((state) => state.activeChapterId);
-  return useMemo(
-    () => (userId && chapterId ? { userId, chapterId } : null),
-    [userId, chapterId],
-  );
+  return useTenantScope();
 }
 
 /**

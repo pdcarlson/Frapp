@@ -52,6 +52,22 @@ the two columns are comparable:
 | `/chat` | 1,736.8 KB | 1,741.3 KB | 502.3 KB | 503.9 KB |
 | Next-largest route (`/settings`) | 1,045.7 KB | 1,046.2 KB | 285.7 KB | 286.0 KB |
 
+As of the chapter-accent first-paint cache ([#2231](https://github.com/pdcarlson/Frapp/issues/2231)),
+measured the same way on one tree either side of the change:
+
+| | Entry JS — before | after | Gzipped — before | after |
+|---|---|---|---|---|
+| Shell floor (every dashboard route) | 910.6 KB | 912.5 KB | 247.5 KB | 248.2 KB |
+
+**+0.7 KB gzipped on the floor, and the floor is where it lands** — `use-chapter-theme.ts` and
+`frapp-client-provider.tsx` both reach the cache module, and both are on every dashboard route. That
+is the cost of the change, and it is the number the storage decision turns on: the same cache built
+on Dexie would have put the library itself on the floor instead, at **29.5 KB gzipped**
+(`gzip -c node_modules/dexie/dist/modern/dexie.min.mjs | wc -c`) — fifty times the price, on twenty
+routes, to serve one colour. So [`accent-cache.ts`](../../../apps/web/lib/theme/accent-cache.ts) is a
+cookie with no imports at all, and the server half that does reach `next/headers` is never in a
+client graph.
+
 **The floor holding still is the point of that change's file layout, not an accident.** The wipe has
 to be callable from `frapp-client-provider.tsx`, which every dashboard route loads, and the cache
 module imports Dexie — which until then only `/chat` paid for. A static import would have moved
