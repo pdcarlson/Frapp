@@ -100,7 +100,9 @@ export interface ChatActionContext {
   userId: string | null;
   /**
    * Durable outbox (plus the hot-path draft clear). Web injects the
-   * Dexie-backed `dexieOutboxStore` from `apps/web/lib/chat/offline-queue.ts`;
+   * Dexie-backed store from `apps/web/lib/chat/offline-queue.ts`, built per
+   * signed-in member by `createDexieOutboxStore(scope)` (#2226) so a context
+   * can only ever address its own member's queue;
    * mobile brings its own. Required — silently dropping queued sends is the
    * failure this port exists to prevent (see `adapters.ts`).
    */
