@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractMentionTokens,
+  findMentionSpans,
   matchMentionCandidate,
   resolveMentions,
   type MentionCandidate,
@@ -18,6 +19,73 @@ const BOB: MentionCandidate = {
   user_id: "33333333-3333-3333-3333-333333333333",
   display_name: "Bob Stone",
 };
+
+/**
+ * The positional half, added for the in-bubble mention chip
+ * (`apps/web/components/chat/renderers/remark-mention-chips.ts`). A highlight
+ * has to wrap exactly the characters the resolver read, so these pin the offsets
+ * as well as the tokens — the whole point of putting this here rather than
+ * letting a renderer keep its own regex.
+ */
+describe("findMentionSpans", () => {
+  it("returns the offsets of the `@` and of the token's end", () => {
+    const text = "hi @jane";
+    const [span] = findMentionSpans(text);
+
+    expect(span).toEqual({ start: 3, end: 8, token: "jane" });
+    expect(text.slice(span!.start, span!.end)).toBe("@jane");
+  });
+
+  it("keeps every occurrence, unlike the deduplicating token list", () => {
+    const text = "@bob hi @jane and @bob again";
+
+    expect(findMentionSpans(text).map((s) => s.token)).toEqual([
+      "bob",
+      "jane",
+      "bob",
+    ]);
+    expect(extractMentionTokens(text)).toEqual(["bob", "jane"]);
+  });
+
+  it("stops the span short of trailing punctuation the token drops", () => {
+    // `@jane.` tokenises as `jane`, so a highlight that spanned the stop would
+    // paint a character the resolver never looked at.
+    const text = "over to @jane.";
+    const [span] = findMentionSpans(text);
+
+    expect(text.slice(span!.start, span!.end)).toBe("@jane");
+    expect(span!.end).toBe(text.length - 1);
+  });
+
+  it("spans a name with an apostrophe whole", () => {
+    const text = "ask @O'Brien";
+    const [span] = findMentionSpans(text);
+
+    expect(text.slice(span!.start, span!.end)).toBe("@O'Brien");
+  });
+
+  it("finds nothing in an email address", () => {
+    expect(findMentionSpans("mail jane@example.com")).toEqual([]);
+  });
+
+  it("rejects an over-long run rather than spanning a truncation of it", () => {
+    // Same rule as `extractMentionTokens`: a truncated token is a valid prefix,
+    // and the prefix tier would resolve it to someone nobody named. Nothing to
+    // highlight either, then.
+    expect(findMentionSpans(`@${"a".repeat(65)}`)).toEqual([]);
+    expect(findMentionSpans(`@${"a".repeat(64)}`)).toHaveLength(1);
+  });
+
+  it("agrees with the tokens the resolver acts on", () => {
+    // The contract the chip depends on, asserted directly: same walk, same
+    // rejections, so a painted run is always a run resolution considered.
+    const text = "@bob, @jane. and jane@example.com plus `@nobody`";
+
+    expect([...new Set(findMentionSpans(text).map((s) => s.token))]).toEqual(
+      extractMentionTokens(text),
+    );
+  });
+});
 
 describe("extractMentionTokens", () => {
   it("pulls each distinct token once, in order of first appearance", () => {

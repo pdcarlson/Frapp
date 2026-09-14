@@ -7,6 +7,7 @@ import {
   DESTRUCTIVE_TEXT,
   HAIRLINE_ALPHA,
   HOUSE_SEED,
+  MENTION_CHIP,
   ratio,
   SEEDS,
   SEMANTIC,
@@ -187,6 +188,105 @@ describe("the mention badge", () => {
     // eye a row is flagged, and that half does clear 3:1.
     expect(ratio(SEMANTIC.mention, SURFACE.surface1)).toBeGreaterThanOrEqual(
       AA_NON_TEXT,
+    );
+  });
+});
+
+describe("the in-bubble mention chip", () => {
+  /**
+   * §11's TODO-DESIGN for the in-bubble mention highlight, settled as an
+   * **opaque** chip — and the opacity is the requirement, not the styling.
+   *
+   * A mention lands inside a bubble, and a self bubble is `--primary`: a
+   * per-chapter colour the seed corpus alone spreads from `#006400` to
+   * `#FFFFFF`. §5's tint recipe (13% alpha + hue text) composites over whatever
+   * that is, so the same chip would measure 6.5:1 in one chapter and about 1:1
+   * in the next — the message that addresses you unreadable in exactly the
+   * chapters whose accent happens to be pale. An opaque chip carries its own
+   * ground, so the pair measures identically on every bubble in every chapter.
+   */
+  it("keeps chip text AA on the chip's own fill", () => {
+    // Pinned to the measured value, not just to the floor: `components.md` §11
+    // quotes this number, and a ratio asserted only as ">= 4.5" lets the doc's
+    // figure go quietly wrong the next time either half of the pair moves.
+    const measured = ratio(MENTION_CHIP.text, MENTION_CHIP.fill);
+    expect(measured).toBeCloseTo(5.54, 2);
+    expect(measured).toBeGreaterThanOrEqual(AA_TEXT);
+  });
+
+  it("measures the same on every chapter bubble, because the fill is opaque", () => {
+    // The guarantee stated as the thing it actually buys: whatever bubble the
+    // chip lands on, the text/fill pair the reader sees is this one pair. An
+    // alpha fill could not make this assertion at all — there would be 19 of
+    // them, one per seed, and the next chapter to sign up would be a 20th.
+    const measured = ratio(MENTION_CHIP.text, MENTION_CHIP.fill);
+    for (const seed of SEEDS) {
+      const bubble = accentRolesFor(seed)["--primary"]!;
+      // The chip is painted over the bubble, not composited with it, so the
+      // bubble cannot enter the measurement. Asserted by measuring the pair
+      // *again* per seed rather than trusting that sentence.
+      expect(ratio(MENTION_CHIP.text, MENTION_CHIP.fill), seed).toBe(measured);
+      expect(bubble).toMatch(/^#[0-9A-F]{6}$/i);
+    }
+  });
+
+  it("would have caught the alpha version, on every seed", () => {
+    // The regression this exists for, kept as a measurement rather than a
+    // comment: the same hue as a 13% tint composites over the bubble, so its
+    // own text's contrast becomes a per-tenant accident. This is what an "it's
+    // just the §5 tint recipe" simplification would ship — and the spread is
+    // the argument, so both ends are pinned. `components.md` §11 quotes them.
+    const ratios = SEEDS.map((seed) => {
+      const bubble = accentRolesFor(seed)["--primary"]!;
+      return ratio(MENTION_CHIP.text, tint(MENTION_CHIP.text, bubble));
+    });
+
+    expect(Math.max(...ratios)).toBeCloseTo(4.32, 2);
+    expect(Math.min(...ratios)).toBeCloseTo(1.03, 2);
+    // Not one seed in the corpus reaches AA. The opaque pair clears it on all
+    // of them, which is the whole trade.
+    expect(Math.max(...ratios)).toBeLessThan(AA_TEXT);
+  });
+
+  it("is not the mention red, which has no lifted tone to render as text", () => {
+    // foundations §5: mention red is a badge fill carrying white text, and "a
+    // future surface that renders mention red as text needs a lifted tone
+    // first; it does not have one today". This surface renders as text.
+    expect(MENTION_CHIP.text.toUpperCase()).not.toBe(
+      SEMANTIC.mention.toUpperCase(),
+    );
+    expect(MENTION_CHIP.fill.toUpperCase()).not.toBe(
+      SEMANTIC.mention.toUpperCase(),
+    );
+  });
+
+  it("is never accent-derived, under any chapter seed", () => {
+    // Same rule as the red badge above: "you were addressed" reads identically
+    // in every chapter, so no seed may produce either half of the chip.
+    for (const seed of SEEDS) {
+      const roles = accentRolesFor(seed);
+      for (const role of ["--primary", "--accent-subtle", "--accent-text"]) {
+        expect(roles[role]!.toUpperCase(), `${seed} ${role}`).not.toBe(
+          MENTION_CHIP.fill.toUpperCase(),
+        );
+        expect(roles[role]!.toUpperCase(), `${seed} ${role}`).not.toBe(
+          MENTION_CHIP.text.toUpperCase(),
+        );
+      }
+    }
+  });
+
+  it("separates the handle from the body text around it", () => {
+    // The chip's job inside an incoming bubble: `@Name` must not read as more
+    // prose. The fill is a subtle step off `--card` by design (§5's tint look),
+    // so the separation is carried by the text tone — which is why THAT is the
+    // half asserted, and why a change that keeps the fill and neutralises the
+    // text would fail here rather than pass on the fill alone.
+    expect(MENTION_CHIP.text.toUpperCase()).not.toBe(
+      TEXT.foreground.toUpperCase(),
+    );
+    expect(ratio(MENTION_CHIP.text, SURFACE.card)).toBeGreaterThanOrEqual(
+      AA_TEXT,
     );
   });
 });
