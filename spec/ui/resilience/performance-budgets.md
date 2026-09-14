@@ -162,6 +162,85 @@ travels as `detail.msFromTimeOrigin`. `cold-load-marks.ts` records that arithmet
 
 ## Cached channel readable
 
+**Resolved (2026-09-14, later still, [#2249](https://github.com/pdcarlson/Frapp/issues/2249)).** Both
+consequences the #2243 correction below records are closed. The viewer's `users.id` is cached beside
+the first chunk and read in the same Dexie transaction as the rows it attributes
+([`first-chunk-cache.ts`](../../../apps/web/lib/chat/first-chunk-cache.ts),
+[`viewer-id.tsx`](../../../apps/web/lib/chat/viewer-id.tsx)), so identity no longer waits on
+`GET /v1/users/me` on a warm load. The withhold contract is unchanged: with no cached id and no live
+one the rows are still withheld.
+
+Measured as a **paired A/B on one machine** — same build pipeline, same browser, same seeded dataset,
+the only variable being whether the tree carries this change. `main` at `955c46e` is the baseline.
+
+| | baseline (`955c46e`) | with #2249 |
+|---|---|---|
+| Cold cache | 1,116 ms (1,097–1,205) | 1,076 / 1,106 / 1,133 ms |
+| Warm cache | 424 ms (392–561) | 191 / 196 / 209 ms (174–265 across all 15 runs) |
+| Warm, network blocked | no mark inside 20 s, 0 rows, 5/5 runs | 659 / 668 / 698 ms, 6 rows, 15/15 runs |
+
+**The result that does not depend on any latency number is the bottom row.** With
+`**/v1/channels**`, the messages fetch **and** `/v1/users/me` all aborted, the baseline paints no
+rows at all and this change paints the same six the warm arm paints. That is the `1s` rank-1 clause —
+"render real" from the cached tail — passing where it previously could not, and it is the abort check
+the #2243 correction says stopped meaning what it was cited for, now re-run with identity blocked as
+well. One honest caveat on it: the baseline half is *an absence observed for 20 seconds*, not an
+instantaneous fact, so it is a bound rather than a proof that the mark could never fire.
+
+**On the warm arm, what the numbers do and do not support.** The baseline's five samples are 392,
+402, 424, 439 and 561 ms — four of five above the 400 ms line, one below it. The same arm with this
+change is 174–265 ms across fifteen samples, so the two distributions do not overlap and the
+direction is not in doubt. What must **not** be read off this table:
+
+- **It is a sandbox VM on localhost, and 400 ms is a *field* budget.** The qualification further down
+  this section is live, not history: Sentry (`tracesSampleRate` 0.1) remains the only thing that can
+  report against the budget. "Four of five samples above 400 ms on this box" is evidence that the
+  warm arm is worth attention, not a finding that the budget is breached in the field — and the
+  post-change numbers are likewise not a finding that it is met there.
+- **No comparison with the 323 ms / 1,179 ms figures below is supported.** Those were collected by
+  hand on unknown hardware, and the cold-arm procedure differs from this one (fresh profile vs.
+  deleting the database in place — see Method). The cold arms here and there being close is not a
+  reproduction and must not be used to argue this machine is comparable to that one; it is two
+  numbers that happen to be similar. In particular this table does **not** establish that #2243
+  caused a 323 → 424 ms regression, nor that #2249 improved on the pre-gate number. Both would need
+  the old series re-run under this procedure, which nobody has done.
+
+**Method.** Production build (`npm run build -w apps/web && npm run start -w apps/web`), local API
+and Supabase, a seeded chapter of 8 channels and 50 messages in `#general` alternating between two
+senders, Playwright driving a real signed-in session through `/sign-in`. Per arm, per set, five
+document loads of `/chat`, reading
+`performance.getEntriesByName("frapp.chat.channel-readable", "measure")[0].duration` and polling for
+it up to 20 s. Rows are `document.querySelectorAll('[data-slot="bubble"]').length` sampled 1.5 s
+after the mark, because the mark fires just before `react-virtuoso` commits. **Six is a viewport
+count, not a cache count** — the cache holds up to 30 rows
+([`FIRST_CHUNK_MESSAGE_LIMIT`](../../../apps/web/lib/chat/first-chunk-cache.ts)) and the virtualiser
+renders what fits the default headless window; the network-served warm arm reports the same six.
+
+Both arms run in the **same signed-in browser context**, and the cold arm deletes
+`frapp-chat-read-cache` immediately before its measured navigation rather than using a fresh profile —
+because signing in already lands on `/chat`, so a fresh profile's "cold" load would have been warmed
+by the redirect.
+
+**The driving script is not committed**, so this figure does not carry a runnable command the way
+this page's conventions ask. Writing one is the signed-in-harness work § What is not measured, and
+why still lists as absent; [#2266](https://github.com/pdcarlson/Frapp/issues/2266) carries the script
+this run used so the next person does not start from nothing.
+
+**Sample counts, stated rather than implied: one five-run set on the baseline, three on the change.**
+Two further baseline sets were attempted and **discarded, not counted** — the rebuilt baseline served
+a stale chunk manifest and produced no mark at all, which a sanity gate caught; they are not evidence
+in either direction. The single baseline set is the weakest part of this table, and the warm-arm
+conclusions rest on it.
+
+Everything below this block is the record as it stood before. It is kept because the reasoning is
+still how the trade was decided, not because the two consequences the #2243 correction names are
+still live — those are closed. **Its three qualifications are not history and are not superseded.**
+The localhost caveat, "five runs is five runs", and the note that the mark fires just before
+`react-virtuoso` commits apply to the table above exactly as they applied to the table below. The
+block above points at the first of them rather than re-deriving it, and says nothing that weakens the
+other two: five runs is still five runs there, and the mark still reports when the timeline stopped
+being a placeholder rather than when pixels landed.
+
 **Correction (2026-09-14, later the same day, [#2243](https://github.com/pdcarlson/Frapp/issues/2243)):
 every number in this section predates a change in what the mark measures, and the `1s` clause below
 is no longer fully served.** `readable` in
