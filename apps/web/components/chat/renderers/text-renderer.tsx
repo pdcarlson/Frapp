@@ -49,6 +49,17 @@ export function TextRenderer({ message, isSelf }: TextRendererProps) {
 
   return (
     <div
+      /*
+       * What makes this element *the bubble*, rather than the radius.
+       *
+       * The radius used to be the identifier — three helpers found the bubble
+       * by querying the locked `rounded-[18px]` — and that stopped being
+       * unambiguous once the inline editor started standing in for the bubble
+       * at the same radius, tail and card fill (#2235). A test reaching for
+       * "the bubble" on an editing row got the editor and asserted incoming
+       * chrome against draft chrome, green.
+       */
+      data-slot="bubble"
       className={cn(
         "mt-1 inline-block max-w-full whitespace-pre-wrap break-words",
         // s05 draws 11/14 padding and a 23px line box. components.md §1 is
