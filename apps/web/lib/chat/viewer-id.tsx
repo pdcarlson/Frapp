@@ -37,10 +37,20 @@
  * uid of the session in hand — but it is a round trip old, and the one way it
  * can be wrong without the key changing is an account deleted and recreated
  * under that same uid. A resolved live value settles that in every case, so it
- * wins whenever it exists. The cache is what fills the window before it, which
- * on a warm load is the whole of the wait and offline is unbounded: only
- * mutations are configured `networkMode: "always"`, so `["user","me"]` is not
- * attempted at all while the browser is offline and `isPending` never clears.
+ * wins whenever it exists. The cache is what fills the window before it — the
+ * whole of the round trip on a warm load, and offline the whole of the outage.
+ *
+ * **Offline it fails in two different ways, and the rule is what they have in
+ * common.** `query-provider.tsx` scopes `networkMode: "always"` to mutations, so
+ * `["user","me"]` inherits TanStack's `"online"` default. Whether that *pauses*
+ * the query turns on `onlineManager`, which starts `#online = true` and moves
+ * only on the window's `online`/`offline` events — it never reads
+ * `navigator.onLine`. So a link that drops after load pauses the query
+ * indefinitely, while a document restored from bfcache while already offline
+ * still believes it is online, runs the fetch and fails it. One never settles
+ * and one settles to an error with no `data`. Either way `useViewerUserId()`
+ * stays `null`, which is the only part a caller can act on — and #2251, which
+ * is plumbing that query's own failure state through, has to handle both.
  *
  * What this deliberately does **not** do is treat "unknown" as "not mine". With
  * no live value and nothing cached this returns `null`, and `null` still means

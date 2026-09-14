@@ -13,7 +13,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "@repo/hooks";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { useChannelDraft } from "./use-channel-draft";
-import { useFrappUser } from "@/lib/auth/use-frapp-user";
+import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { useToast } from "@/hooks/use-toast";
 import { asArray } from "@/lib/utils";
 import { AnalyticsContext } from "@/lib/providers/analytics-provider";
@@ -109,7 +109,43 @@ export interface UseChatChannelResult {
 export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const queryClient = useQueryClient();
   const apiClient = useFrappClient();
-  const { userId } = useFrappUser();
+  /*
+    The resolved viewer id — live if `GET /v1/users/me` has answered, else the
+    one cached beside the first chunk (#2249).
+
+    **Not a write credential, and that is why the cached value is allowed here.**
+    Nothing below is *authorised* by `ctx.userId`: every REST action POSTs under
+    the member's bearer token and the server derives the author from it, and the
+    two paths that talk to Supabase directly are RLS-scoped to `auth.uid()`
+    (`chat_message_actions`). What the id does is decide *local* attribution —
+    which chip lights up (`toggleReactionLocal`), whose optimistic bubble is
+    drawn (`senderId`), which member's queued rows hydrate
+    (`hydrateOutboxIntoCache`). That is the same question `viewerId` answers for
+    the timeline, so it takes the same answer.
+
+    Two places do put it on the wire, and neither is an authorisation: `unreact`
+    passes it as a `.match({ user_id })` filter on a `chat_message_actions`
+    delete, and `emitTyping` broadcasts it as the typing identity. The filter is
+    the one worth naming — a delete that matches nothing is not an error in
+    Postgres, so a *stale* id (the deleted-and-recreated-account case this cache
+    already bounds with a 7-day age limit) would remove the chip locally and
+    leave the row on the server until a refetch or a realtime echo restores it.
+    RLS still prevents it touching anyone else's row; the cost is a chip that
+    disagrees with the server for one fetch, which is the same class of cost as
+    painting a bubble on the wrong side for one fetch, and strictly smaller than
+    the alternative below.
+
+    Keeping it on the live id was worse than inconsistent, it was broken. The
+    timeline's gate opens on the resolved id, so a warm or offline load now
+    renders reaction chips, poll buttons and card actions — and `react` and
+    `actOnCard` return *silently* on a falsy `ctx.userId`, with no optimistic
+    chip, no request and no toast. Offline that window has no end. Worse,
+    `hydrateOutboxIntoCache` returns on the same check, so a member who composed
+    a message offline and reloaded would have seen a complete-looking thread
+    with their own unsent message absent from it and no Retry in reach —
+    `principles.md` §5 is the rule that outranks everything else here.
+  */
+  const userId = useChatViewerId();
   const { toast: rawToast } = useToast();
   const track = useContext(AnalyticsContext);
   const supabase = useMemo(() => getRealtimeClient(), []);

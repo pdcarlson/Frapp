@@ -30,6 +30,7 @@ import { can } from "@repo/validation";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChatViewerId } from "@/lib/chat/viewer-id";
 import { asArray, cn } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
@@ -184,6 +185,24 @@ export function ChatShell({
     every guard below reads the same way it did.
   */
   const userId = useChatViewerId();
+  /*
+    The *live* id, kept separately for two guards below that are not asking who
+    the viewer is.
+
+    Both are spelled `if (!liveUserId) return` and both were written when the
+    two questions had the same answer. They are really asking **"has the
+    authoritative window loaded yet?"**, and `GET /v1/users/me` having answered
+    was the proxy they had for it. #2249 breaks that proxy on purpose: identity
+    can now resolve from disk while the network has returned nothing, which is
+    the whole point for painting and exactly wrong for these two.
+
+    So they keep the proxy they have always used rather than being quietly
+    re-timed by a change about something else. It is still a proxy — the
+    identity query and the messages query are independent, so it was never
+    airtight — and #2269 tracks replacing it with a signal that actually says
+    whether the live window has landed.
+  */
+  const { userId: liveUserId } = useFrappUser();
   const orgConfig = useOrgConfig();
 
   const channelsQuery = useChannels();
@@ -754,8 +773,19 @@ export function ChatShell({
       already false above while `GET /v1/users/me` is still in flight. `userId`
       is in the dependency list below so the resolve re-runs the jump, which is
       the half that makes returning here a deferral rather than a silent drop.
+
+      `liveUserId`, deliberately not the cached-or-live `userId` (#2249). What
+      this guard needs is the *live window*, not an identity: it reports
+      "That message is older than the history loaded here." when
+      `scrollToMessage` misses, and the cached tail is 30 rows that by
+      definition predate the cache being written — so a deep link to a message
+      posted while the member was away would miss against it and paint that
+      copy over a message the backfill is seconds from delivering. It clears
+      itself when the backfill lands, but a screen reader has already been told.
+      See the note beside `liveUserId` for why this is a proxy and what
+      replaces it.
     */
-    if (!userId) return;
+    if (!liveUserId) return;
     const jumped = timeline.current?.scrollToMessage(pendingMessageId) ?? false;
     if (jumped) {
       setPendingMessageId(null);
@@ -774,7 +804,7 @@ export function ChatShell({
     channel.isLoading,
     channel.messages,
     jumpAttempt,
-    userId,
+    liveUserId,
   ]);
 
   /**
@@ -910,8 +940,17 @@ export function ChatShell({
       an event to hear about. It is a deliberate outcome, not the announcement
       going missing by accident — do not "fix" it by moving the ref write above
       this line, which would restore the wrong attribution and nothing else.
+
+      `liveUserId`, deliberately not the cached-or-live `userId` (#2249), and for
+      a second reason on top of attribution. This effect's first run sets the
+      *baseline* every later arrival is measured against. Taken off the seeded
+      cached tail, that baseline is however stale the cache is — so the backfill
+      replacing those rows reads as a burst of new messages and narrates every
+      one of them, which is precisely the "part of what the member arrived to,
+      not an event to hear about" rule just above, inverted. Waiting for the live
+      id keeps the baseline on a window the network has answered for.
     */
-    if (!userId) return;
+    if (!liveUserId) return;
     const latestKey = latest.client_message_id ?? latest.id;
     if (lastAnnouncedRef.current.channelId !== activeChannelId) {
       lastAnnouncedRef.current = {
@@ -926,13 +965,17 @@ export function ChatShell({
       messageId: latestKey,
     };
     if (latest.is_deleted) return;
+    // `liveUserId`, matching the guard above and this effect's dependencies —
+    // they are equal here anyway (the live value wins in `useChatViewerId`),
+    // but reading the other one would put a value outside the dep list into
+    // the closure and make the two disagree the moment either moves.
     const author =
-      latest.sender_id === userId
+      latest.sender_id === liveUserId
         ? "You"
         : (nameFor(latest.sender_id ?? "") ?? "Someone");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- announcing a real-time arrival by comparing against the previous render's last-seen id, not syncing render state
     setLiveAnnouncement(`New message from ${author}`);
-  }, [channel.messages, activeChannelId, userId, nameFor]);
+  }, [channel.messages, activeChannelId, liveUserId, nameFor]);
 
   /*
     From here the frame renders FIRST and every state renders inside it.

@@ -480,6 +480,17 @@ export function useFirstChunkCache(): string | null {
     stops counting the moment the identity it was read under does. `scope` going
     `null` (a sign-out, or an offline session whose token has expired) disowns it
     too, which is the read cache's standing posture — go cold on uncertainty.
+
+    **What it does not cover, stated because the obvious reading is that it
+    does.** This governs the *cached* half only. `useChatViewerId` returns
+    `live ?? cached`, so during a same-tab account swap the live half still
+    outranks whatever this returns — and `["user","me"]` is not account-scoped,
+    which is precisely why `dropCacheWhenIdentityChanges` clears it and why this
+    cache keys on the auth uid instead. An observer can serve the outgoing
+    member's `users.id` for the commit between that clear and the subtree's next
+    render. That window predates this change and is unchanged by it: before
+    #2249 the shell read `useViewerUserId()` directly and had exactly the same
+    exposure. Nothing here widens it, and nothing here closes it either.
   */
   return cachedViewer &&
     scope &&

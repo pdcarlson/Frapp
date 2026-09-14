@@ -102,6 +102,19 @@
  * privacy modes, and throws on quota; `use-channel-draft.ts` already degrades
  * that way for drafts, and the cost of a failure here is one ordinary cold
  * load. Nothing in the shell waits on any of these promises.
+ *
+ * **One failure mode costs more than a cold load, and the v2 bump is what makes
+ * it reachable.** Across a deploy, a tab still running the previous bundle
+ * declares `version(1)` while a new tab opens the same database at `version(2)`.
+ * IndexedDB fires `versionchange`, Dexie closes the old tab's connection, and
+ * that tab's next operation reopens at v1 against a v2 store and rejects with
+ * `VersionError`. The swallow turns that into "no cache" — not for one load, but
+ * for the life of that tab: cold rails, cold tails, and on `/chat` the identity
+ * skeleton again, with nothing on screen to say why. It heals on reload and
+ * nothing is lost (the outbox is a different database), so this is a cost worth
+ * naming rather than a bug worth blocking on — but it is the first schema change
+ * this database has had, so it is the first time the cost exists at all, and
+ * every future bump pays it again.
  */
 
 import Dexie, { type Table } from "dexie";
@@ -205,9 +218,15 @@ class ChatReadCacheDB extends Dexie {
       No `upgrade()` callback, because there is no data to move: a v1 database
       has never held a viewer id, and the absence of the row is exactly the
       state a reader must already handle — it is what every first load looks
-      like. Dexie creates the store and leaves the other two alone, so a member
-      mid-session on the old schema keeps their cached rail and tails and simply
-      starts caching the id from their next resolve.
+      like. Dexie creates the store and leaves the other two alone, so the tab
+      that performs the upgrade keeps its cached rail and tails and simply
+      starts caching the id from its next resolve.
+
+      "The tab that performs the upgrade", precisely — a tab still running the
+      v1 bundle does *not* keep serving from the upgraded database. See the
+      cross-version note in this file's Failure posture for what it does
+      instead, and why that is a stated cost rather than something this
+      declaration can fix.
     */
     this.version(2).stores({
       viewerIds: "[userId+chapterId]",
@@ -289,8 +308,11 @@ const EMPTY_CHUNK: FirstChunk = { channels: null, tails: [], viewer: null };
 /**
  * Everything cached for one scope, already filtered by age.
  *
- * Reads both tables in one pass so a cold load pays a single IndexedDB round
- * trip rather than one per channel.
+ * Reads all three tables in one pass so a cold load pays a single IndexedDB
+ * round trip rather than one per channel. The count is the point, not a detail:
+ * the viewer id in particular must not be split into a lookup of its own — see
+ * the comment on the `Promise.all` below for why a late-landing id is the #2243
+ * reflow window rather than merely a slower read.
  */
 export async function readFirstChunk(
   scope: FirstChunkScope,
