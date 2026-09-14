@@ -30,12 +30,8 @@ import { Input } from "@/components/ui/input";
 import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
 import { formatLocaleDateTime as formatDate } from "@repo/formatting";
 import { getErrorMessage } from "@/lib/utils";
+import { normalizeRoleOptions } from "@/lib/roles";
 import { buildJoinUrl } from "@/lib/invite-link";
-
-type RoleRow = {
-  id: string;
-  name: string;
-};
 
 /**
  * Seeded display name of the Member system role — the role a chapter with no
@@ -131,29 +127,13 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const { toast } = useToast();
   const hasLiveDataError = rolesQuery.isError || invitesQuery.isError;
 
-  const roleOptions = useMemo(() => {
-    const rolesData = rolesQuery.data as unknown;
-    if (!Array.isArray(rolesData)) {
-      return [];
-    }
-    const roles = rolesData
-      .flatMap((role: unknown) => {
-        if (!role || typeof role !== "object") return [];
-        const candidate = role as Record<string, unknown>;
-        if (
-          typeof candidate.id !== "string" ||
-          typeof candidate.name !== "string"
-        ) {
-          return [];
-        }
-        return [{ id: candidate.id, name: candidate.name }];
-      })
-      .sort((first: RoleRow, second: RoleRow) =>
+  const roleOptions = useMemo(
+    () =>
+      normalizeRoleOptions(rolesQuery.data).sort((first, second) =>
         first.name.localeCompare(second.name),
-      );
-
-    return roles;
-  }, [rolesQuery.data]);
+      ),
+    [rolesQuery.data],
+  );
 
   const inviteRows = useMemo(() => {
     return normalizeInvites(invitesQuery.data);
@@ -165,7 +145,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const defaultRoleName = useMemo(() => {
     const configuredId = orgConfigQuery.data?.default_invite_role_id;
     if (!configuredId) return undefined;
-    return roleOptions.find((role: RoleRow) => role.id === configuredId)?.name;
+    return roleOptions.find((role) => role.id === configuredId)?.name;
   }, [orgConfigQuery.data?.default_invite_role_id, roleOptions]);
 
   /**
@@ -186,13 +166,13 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
       // catalog, which is what the previous form got right.
       if (
         roleOptions.length > 0 &&
-        !roleOptions.some((role: RoleRow) => role.name === roleName)
+        !roleOptions.some((role) => role.name === roleName)
       ) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
         setRoleName(
           defaultRoleName ??
             roleOptions.find(
-              (role: RoleRow) => role.name === SEEDED_MEMBER_ROLE_NAME,
+              (role) => role.name === SEEDED_MEMBER_ROLE_NAME,
             )?.name ??
             roleOptions[0]?.name ??
             SEEDED_MEMBER_ROLE_NAME,
@@ -211,7 +191,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     // role by `system_key`, which also survives a rename.
     const preferred =
       defaultRoleName ??
-      roleOptions.find((role: RoleRow) => role.name === SEEDED_MEMBER_ROLE_NAME)
+      roleOptions.find((role) => role.name === SEEDED_MEMBER_ROLE_NAME)
         ?.name ??
       roleOptions[0]?.name ??
       SEEDED_MEMBER_ROLE_NAME;

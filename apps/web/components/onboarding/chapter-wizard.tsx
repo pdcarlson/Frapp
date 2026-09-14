@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
@@ -45,6 +45,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
 import { useToast } from "@/hooks/use-toast";
 import { useSelectChapter } from "@/lib/auth/select-chapter";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { buildJoinUrl } from "@/lib/invite-link";
 
@@ -110,15 +111,6 @@ function parseFoundedYear(raw: string): number | undefined {
   if (!Number.isFinite(parsed) || parsed < 1776 || parsed > 9999)
     return undefined;
   return parsed;
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(id);
-  }, [value, delayMs]);
-  return debounced;
 }
 
 export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
