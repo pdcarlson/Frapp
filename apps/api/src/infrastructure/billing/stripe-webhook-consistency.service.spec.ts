@@ -116,8 +116,13 @@ describe('StripeWebhookConsistencyService', () => {
   });
 
   it('WARNS but does not refuse boot on a missing event type', async () => {
-    // Deliberate: both endpoints registered 2026-08-27 enable five of six, so
-    // fatal here would turn a missing notification into an outage.
+    // Deliberate, and still a warning: every registered endpoint is missing one
+    // handled type today — the test-mode pair `payment_intent.payment_failed`
+    // (#1978), the live-mode endpoint `customer.subscription.updated` (#2285) —
+    // so making this fatal would refuse boot on production. #2287 tracks
+    // tightening it and is blocked on both. The fixture below is the TEST-mode
+    // shape only; #2287 adds the live-mode one, so do not read a green suite
+    // here as evidence that flipping the guard is safe.
     const fiveOfSix = [...HANDLED_WEBHOOK_EVENT_TYPES].filter(
       (t) => t !== 'payment_intent.payment_failed',
     );
