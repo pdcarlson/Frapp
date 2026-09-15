@@ -64,12 +64,7 @@ import {
 import { useFrappClient } from "@repo/hooks";
 
 import { getSupabaseClient } from "@/lib/supabase";
-import { chatDraftStore } from "./draft-store";
-import {
-  bootChatAdapters,
-  chatOutboxStore,
-  useChatRuntime,
-} from "./use-chat-runtime";
+import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
 
 /** Matches web's debounce so a draft write never rides every keystroke. */
 const DRAFT_SAVE_DEBOUNCE_MS = 400;
@@ -128,7 +123,7 @@ export interface UseChatChannelResult {
 }
 
 export function useChatChannel(channelId: string | null): UseChatChannelResult {
-  const { ctx, viewerId } = useChatRuntime();
+  const { ctx, viewerId, outbox, drafts } = useChatRuntime();
   const apiClient = useFrappClient();
   const queryClient = useQueryClient();
 
@@ -208,8 +203,29 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   // already-resolved promise and run in registration order, and the runtime's
   // effect is declared first (it is called at the top of this hook), so its
   // `configure` is guaranteed to land before this `subscribe`.
+  /*
+    Keyed on `channelId` and `viewerId`, deliberately NOT on `ctx`.
+
+    It used to carry `ctx`, which was harmless while every member of `ctx` was
+    stable for the life of the mount — and stopped being so when `ctx.outbox`
+    became scope-bound (#2228), because the scope resolves a few milliseconds
+    after mount. Web hit this first and split the same effect for the same
+    reason (#2226, `apps/web/lib/chat/use-chat-channel.ts`).
+
+    Leaving it in tears the topic down and rebuilds it: at refCount 1→0
+    `unsubscribe` calls `removeChannel` and drops the manager's channel state,
+    so the re-subscribe mints a fresh `joining` — a websocket leave/rejoin, a
+    second backfill, discarded typing state, and the connection pill flickering
+    off `live`. The realtime topic has nothing to do with which member's outbox
+    is mounted.
+
+    `viewerId` stays, and is what the old `ctx` guard was really for: it is the
+    presence half described above. It is a plain string that changes only when
+    the viewer actually changes — which *should* re-attach — so it does not
+    churn the way an object identity does.
+  */
   useEffect(() => {
-    if (!channelId || !ctx) return;
+    if (!channelId || !viewerId) return;
     let cancelled = false;
     let attached = false;
 
@@ -217,7 +233,6 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       if (cancelled) return;
       chatRealtime.subscribe(channelId);
       attached = true;
-      void hydrateOutboxIntoCache(ctx, channelId);
     });
 
     return () => {
@@ -225,6 +240,28 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       // Only release a refcount this effect actually took, or an unmount that
       // races the boot would decrement someone else's subscription.
       if (attached) chatRealtime.unsubscribe(channelId);
+    };
+  }, [channelId, viewerId]);
+
+  // The outbox hydrate genuinely does depend on the scope — it replays this
+  // member's unsent rows — so it keeps `ctx` and runs on its own, exactly as
+  // web split it. Re-running it on a scope change is correct and cheap:
+  // `mergeServerRows`-style upserts only add, and the realtime topic above is
+  // left alone.
+  useEffect(() => {
+    if (!channelId || !ctx) return;
+    let cancelled = false;
+    void bootChatAdapters().then(() => {
+      if (cancelled) return;
+      void hydrateOutboxIntoCache(ctx, channelId).catch(() => {
+        // Best-effort, and explicitly caught. A rejected AsyncStorage read
+        // would otherwise be an unhandled rejection carrying no channel
+        // context. The timeline still paints; it just starts without the
+        // unsent rows.
+      });
+    });
+    return () => {
+      cancelled = true;
     };
   }, [channelId, ctx]);
 
@@ -260,13 +297,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   useEffect(() => {
     if (!channelId) return;
     let cancelled = false;
-    void chatDraftStore.load(channelId).then((body) => {
+    void drafts.load(channelId).then((body) => {
       if (!cancelled) setDraftState(body);
     });
     return () => {
       cancelled = true;
     };
-  }, [channelId]);
+  }, [channelId, drafts]);
   const draft = channelId ? draftState : "";
 
   /** Set while a send is in flight; see the re-entry guard in `send`. */
@@ -393,10 +430,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       if (!channelId) return;
       cancelDraftTimer();
       draftTimer.current = setTimeout(() => {
-        void chatDraftStore.save(channelId, body);
+        void drafts.save(channelId, body);
       }, DRAFT_SAVE_DEBOUNCE_MS);
     },
-    [channelId, cancelDraftTimer],
+    [channelId, cancelDraftTimer, drafts],
   );
 
   /**
@@ -431,7 +468,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       setSendError(null);
       try {
         await sendMessage(ctx, { channelId, content: body });
-        await chatDraftStore.clear(channelId);
+        await drafts.clear(channelId);
       } catch (error) {
         // `sendMessage` awaits `outbox.enqueue` *outside* its own try/catch, so
         // a full or unavailable AsyncStorage rejects out of it having already
@@ -455,7 +492,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         sendingRef.current = false;
       }
     },
-    [cancelDraftTimer, channelId, ctx],
+    [cancelDraftTimer, channelId, ctx, drafts],
   );
 
   const react = useCallback(
@@ -495,10 +532,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const findOutboxRow = useCallback(
     async (clientMessageId: string) => {
       if (!channelId) return undefined;
-      const rows = await chatOutboxStore.listForChannel(channelId);
+      const rows = await outbox.listForChannel(channelId);
       return rows.find((row) => row.clientId === clientMessageId);
     },
-    [channelId],
+    [channelId, outbox],
   );
 
   const retry = useCallback(

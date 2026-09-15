@@ -26,7 +26,20 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { KeyValueStore } from "@repo/chat-core/adapters";
 
 /** Only keys under this prefix are hydrated — see the module comment. */
-export const CHAT_KV_PREFIX = "chat:";
+/**
+ * Narrowed from `"chat:"` in #2228.
+ *
+ * The mirror's whole soundness argument is that its only consumer is the
+ * `chat:lastSeen:` backfill cursor, where a stale read widens a backfill
+ * instead of losing data. A `"chat:"` sweep was harmless while that was the
+ * only `chat:`-prefixed key — but #2228 put member-scoped drafts and queued
+ * message bodies in the same namespace, and this hydrate would have copied
+ * every member's unsent text into a process-wide `Map` with no scope, no
+ * clear on sign-out, and a public `get`. The scoped keys are the tenant
+ * boundary; a wildcard reader over them is a hole in it, so the sweep is
+ * narrowed to exactly what the mirror is documented to serve.
+ */
+export const CHAT_KV_PREFIX = "chat:lastSeen:";
 
 export interface HydratableKeyValueStore extends KeyValueStore {
   /**

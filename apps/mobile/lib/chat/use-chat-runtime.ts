@@ -25,25 +25,35 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFrappClient, useViewerUserId } from "@repo/hooks";
+import type { OutboxStore } from "@repo/chat-core/adapters";
 import type { ChatActionContext } from "@repo/chat-core/chat-client";
 import { flushOutbox } from "@repo/chat-core/chat-client";
 import { chatRealtime } from "@repo/chat-core/realtime-manager";
 import type { RawChatMessage } from "@repo/chat-core/types";
 import { getSupabaseClient } from "@/lib/supabase";
 import { connectionMonitor } from "@/lib/connection/monitor";
+import { useChatScope } from "./chat-scope";
+import { getDraftStore, type DraftStore } from "./draft-store";
 import { createAsyncStorageKeyValueStore } from "./key-value-store";
 import { createMonitorNetworkState } from "./network-state";
-import { createAsyncStorageOutboxStore } from "./outbox-store";
+import { getOutboxStore } from "./outbox-store";
 
 /**
  * One instance per app process, mirroring the manager's own singleton scope.
  * The key-value mirror and the connectivity cache are process-wide state; a
  * per-screen instance would hydrate repeatedly and, worse, let two screens
  * disagree about whether the device is online.
+ *
+ * The outbox and draft stores are deliberately **not** here any more (#2228).
+ * They hold what a member wrote, so they are keyed per member and built by
+ * {@link useChatRuntime} from the live scope — a process-wide instance is
+ * exactly the shared-device authorship bug that issue fixes. The key-value
+ * mirror stays process-wide because its only consumer is the
+ * `chat:lastSeen:` backfill cursor, where a stale read widens a backfill
+ * rather than misattributing a message.
  */
 export const chatKeyValueStore = createAsyncStorageKeyValueStore();
 export const chatNetworkState = createMonitorNetworkState(connectionMonitor);
-export const chatOutboxStore = createAsyncStorageOutboxStore();
 
 let bootPromise: Promise<void> | null = null;
 
@@ -51,6 +61,11 @@ let bootPromise: Promise<void> | null = null;
  * Hydrates the key-value mirror and primes the connectivity cache. Both are
  * synchronous ports over asynchronous platform APIs, so they need one await
  * before first read. Runs at most once per process.
+ *
+ * Pre-#2228 rows are deliberately left where they are rather than swept — see
+ * `outbox-store.ts`: they are unreachable once the scoped keys land, and
+ * deleting composed-but-unsent messages is the one thing
+ * `spec/ui/resilience/principles.md` §5 forbids.
  */
 export function bootChatAdapters(): Promise<void> {
   bootPromise ??= Promise.all([
@@ -64,6 +79,13 @@ export interface ChatRuntime {
   /** `null` until the viewer's app user resolves; no writes without identity. */
   ctx: ChatActionContext | null;
   viewerId: string | null;
+  /**
+   * Bound to the signed-in member. `listForChannel` on this can only ever
+   * return rows that member wrote — see `chat-scope.ts`.
+   */
+  outbox: OutboxStore;
+  /** Bound to the signed-in member, for the composer's draft round-trip. */
+  drafts: DraftStore;
 }
 
 export function useChatRuntime(): ChatRuntime {
@@ -82,6 +104,28 @@ export function useChatRuntime(): ChatRuntime {
    * `user.id` compiles on neither client.
    */
   const viewerId = useViewerUserId();
+
+  /**
+   * The tenant boundary for everything this device has written and not sent.
+   *
+   * Distinct from `viewerId` above and not interchangeable with it: `viewerId`
+   * is `users.id`, the column `chat_messages.sender_id` references, and it is
+   * what the server attributes a send to. The scope carries the Supabase auth
+   * uid — the JWT subject the flush will POST under — so "rows this store can
+   * see" and "rows this token may author" are the same set. `chat-scope.ts`
+   * has the full argument, including why it is sticky.
+   */
+  const scope = useChatScope();
+
+  /**
+   * Looked up rather than constructed: one store per member per process, so the
+   * store's serialization chain stays the single chain its contract promises
+   * and its identity stays stable for the effects keyed on it downstream.
+   * Switching member yields a different store addressing different keys, which
+   * is what makes the boundary hold.
+   */
+  const outbox = useMemo(() => getOutboxStore(scope), [scope]);
+  const drafts = useMemo(() => getDraftStore(scope), [scope]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -123,10 +167,10 @@ export function useChatRuntime(): ChatRuntime {
       apiClient,
       supabase,
       userId: viewerId,
-      outbox: chatOutboxStore,
+      outbox,
       net: chatNetworkState,
     };
-  }, [queryClient, apiClient, supabase, viewerId]);
+  }, [queryClient, apiClient, supabase, viewerId, outbox]);
 
   // Boot flush, then re-flush on every reconnect. Both the trigger and the gate
   // ride the same port: `flushOutbox` consults `net` internally, so subscribing
@@ -145,5 +189,5 @@ export function useChatRuntime(): ChatRuntime {
     });
   }, [ctx]);
 
-  return { ctx, viewerId };
+  return { ctx, viewerId, outbox, drafts };
 }
