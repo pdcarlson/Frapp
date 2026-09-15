@@ -130,8 +130,22 @@ this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#
    restriction has a real cost here: on an issue a routine may not re-body, a blocker can only be
    *reported*, never enforced, and the issue keeps ranking as claimable. Comment anyway (a `/next`
    session sees it during §1.2 and saves the re-derivation), then surface it in the run report as
-   needing an owner body edit. #1293 is the standing example — #460 has burned repeated ranked
-   sessions for exactly this reason. Verified 2026-09-03 against `next.md:199` and `:335`.
+   needing an owner body edit. #1293 is the standing example, and its first item, **#460, was
+   repaired on 2026-08-27** — its body now carries `Blocked by #714` and `Blocked by #457`, both
+   of which were still open when this was re-checked on 2026-09-15, so the filter has a live
+   blocker to bite on. Cite #460 as what the fix looks like, not as a live defect. The issues
+   still missing markers are tracked on #1293 itself, and **that list ages** — #1370, cited there
+   as a live instance, closed 2026-09-01, as did #1385, the human-gated blocker it waited on.
+
+   **Verify a candidate against the issue, never against #1293's comment stream**, which now
+   contradicts itself: comments dated 2026-08-31 and 2026-09-04 still describe #460 as missing its
+   `Blocked by` lines, which is provably false — #460's `updated_at` has not moved since
+   2026-08-27, so the body cannot have lost and regained them. A comment thread is an append-only
+   log of what was true when each entry was written, and no run goes back to correct one. Read the
+   body and the blockers' current state; that takes two calls and is the only account that cannot
+   be stale. The rule itself is unchanged and still verified 2026-09-03 against `next.md:199` and
+   `:335` — note `:199`'s predicate is "no open blocker **surviving §1.1**", so a tracker-open
+   blocker screens a candidate at §0.2 and §1.1 adjudicates it against the repo.
 
 Triage (only) may *organize* any `triage` item (priority, `Blocked by`, promote). That exception
 is spelled in the triage skill; it does not widen destructive writes.

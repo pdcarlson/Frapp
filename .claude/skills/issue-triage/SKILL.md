@@ -127,9 +127,15 @@ each:
      **do not treat the comment as the fix**, and surface the issue in the
      [board-health report](#board-health-report) as needing an owner body edit.
 
-   This is the failure #1293 documents: #460 presupposes an AI request path that does not exist,
-   carries no `Blocked by` body line, and has burned repeated ranked sessions that each re-derive
-   the same blocker and release. A comment would not have stopped it.
+   This is the failure #1293 documents, and a comment would not have stopped any of the ranked
+   sessions it burned — which is the point. Its worked example, #460, has since been **repaired**,
+   so read it as the example of the fix rather than of a live defect; the blocker numbers and dates
+   are in
+   [`ROUTINES.md` rule 7](../../../docs/internal/ci-cd/ROUTINES.md#shared-ownership-boundary-all-routines)
+   rather than restated here.
+
+   **Do not inherit a live example from #1293 — re-read its comments.** That list ages between
+   runs, and a stale one sends you looking for a defect that someone already fixed.
 5. **Epic attach.** Attach as a sub-issue (`sub_issue_write`) when it clearly belongs to an open
    epic. If none fit, leave it standalone. **Match both title forms** — `[Epic] <name>` and
    `Epic: <name>` are both in live use, so a brackets-only reading skips the colon form, and
