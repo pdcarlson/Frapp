@@ -517,6 +517,33 @@ created after the gate cannot be added to it, so new work needs a real entry.
 Backfilling an old one — deleting its line once you know the real promotion
 date — is welcome; inventing a date to turn the gate green is not.
 
+## 2026-09-15: Chat report and block (#2257)
+
+### 20260915210000_chat_reports_and_blocks.sql
+
+- **Purpose**: Additive tables `chat_message_reports` and `chat_member_blocks`, the backing state for the member-side Guideline 1.2 controls. RLS enabled, **no policies** on either (API service role only) — for `chat_member_blocks` that default-deny is the safety guarantee, not just the convention, and the migration header argues why. A report snapshots the reported content and sender at file time and its `message_id` is nullable `on delete set null`, so the record survives a hard channel delete. A partial unique index makes at most one *open* report per member per message. `chat_member_blocks` rejects a self-block and a block of the system actor.
+- **Checks**: After `db push`,
+  `select tablename from pg_tables where tablename in ('chat_message_reports','chat_member_blocks');` returns 2 rows;
+  `select relrowsecurity from pg_class where relname in ('chat_message_reports','chat_member_blocks');` is `true` for both;
+  `select count(*) from pg_policies where tablename in ('chat_message_reports','chat_member_blocks');` returns **0** — a non-zero result here is the regression the table comments argue against.
+- **Promoter notes**: Additive only. Ship with the API slice that writes them (the report and block modules land in a later slice of #2257; nothing reads these tables until then). Hosted projects are not applied from a cloud-agent session.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-chat-report-and-block-20260915210000) § Rollback chat report and block.
+
+### 20260915210100_anonymize_user_purge_chat_blocks.sql
+
+- **Purpose**: Function-only. `create or replace function anonymize_user(...)` adding two purges — `chat_member_blocks` on the **blocker side only**, and `rush_candidate_votes` (#494, which had been missing a purge line since it shipped). What is purged and what is deliberately retained is owned by [`spec/behavior/data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion) § Individual Account Deletion; read the reasoning there rather than here, so the two cannot drift.
+- **Checks**: After `db push`, with a throwaway user holding a block in each direction plus a filed report and a rush ballot, `select anonymize_user('<uuid>');` then
+  `select count(*) from chat_member_blocks where blocker_user_id = '<uuid>';` returns **0**;
+  `select count(*) from chat_member_blocks where blocked_user_id = '<uuid>';` is **unchanged** (this is the safety property, not an oversight);
+  `select count(*) from rush_candidate_votes where voter_id = '<uuid>';` returns **0**;
+  `select count(*) from chat_message_reports where reporter_user_id = '<uuid>';` is **unchanged**.
+  To confirm the deployed definition carries the lines, strip comments before matching — `prosrc` includes them, so a naive substring test passes on a database that was never promoted:
+  `select position('chat_member_blocks' in regexp_replace(prosrc, '--[^\n]*', '', 'g')) > 0 from pg_proc where proname = 'anonymize_user';`
+- **Promoter notes**: Apply with or after `20260915210000` — the function references `chat_member_blocks`, and plpgsql resolves the table at execution time, so applying it first would not fail at migration time but would fail on the first account deletion. Re-applying is idempotent.
+
+**Rollback**: See [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md#rollback-anonymize_user-chat-block-purge-20260915210100) § Rollback anonymize_user chat block purge.
+
 ## 2026-09-09: Subscription webhook RPC returns pre-UPDATE status (#1979)
 
 One function replacement. Drops and recreates `apply_subscription_webhook`

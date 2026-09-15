@@ -148,6 +148,29 @@ That is deliberate, not an oversight, and the design is stated in
 > (RLS enabled, no policies). Under the invoking `authenticated` role those sub-selects would return
 > nothing…"*
 
+**How the count in § "Enforcing layer per table" below was derived** (re-derive it the
+same way rather than incrementing it). Against a database with every migration applied:
+
+```sql
+select c.relname
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity
+   and not exists (select 1 from pg_policies p
+                    where p.schemaname = 'public' and p.tablename = c.relname)
+ order by c.relname;
+```
+
+That returns **49** rows. The "API only" row of that table is those 49 plus the three `*`-marked
+tables (`members`, `users`, `member_custom_field_values`), which carry
+non-widening policies and are therefore listed there rather than in a row of
+their own — **52**. Last re-derived 2026-09-15 against a local stack at
+migration `20260915210100`, when it had drifted by four: `rush_candidates` and
+`rush_candidate_votes` (#494) had never been added, and `chat_member_blocks` /
+`chat_message_reports` (#2257) arrived with the same gap. Nothing in CI checks
+this list — `scripts/check-pglite-migrations.mjs` reconciles the *policy*
+inventory in § "The policies that do exist" and never the table one — so it
+drifts silently and only a re-derivation catches it.
+
 **Consequence for anyone adding a table:** enabling RLS and writing no policy is the correct default.
 Adding an `auth.uid()` policy *widens* access from "nothing" to "something" and must be justified by
 a client that genuinely reads the table directly.
@@ -156,7 +179,7 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_message_attachments`, `chat_message_bookmarks`, `discord_connections`, `discord_import_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 48 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_points_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_member_blocks`, `chat_message_attachments`, `chat_message_bookmarks`, `chat_message_reports`, `discord_connections`, `discord_import_channels`, `discord_import_files`, `discord_imports`, `discord_oauth_states`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `rush_candidate_votes`, `rush_candidates`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 52 |
 | **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
 | **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences`, `chapter_audit_log`‡ | 2 |
 
