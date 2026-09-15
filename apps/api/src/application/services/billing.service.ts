@@ -19,6 +19,7 @@ import {
   type InvoiceWebhookObject,
   type PaymentIntentWebhookObject,
 } from '#domain/adapters/billing.interface';
+import { HANDLED_WEBHOOK_EVENT_TYPES } from '../../infrastructure/billing/stripe-webhook-events';
 import { FinancialInvoiceService } from './financial-invoice.service';
 import {
   CHAPTER_REPOSITORY,
@@ -63,15 +64,10 @@ const UUID_PATTERN =
  * deduplicating (FRA-23). Anything else is logged and dropped before the
  * database is touched, so a shared Stripe account's unrelated traffic does not
  * accumulate claim rows. Keep in sync with the switch in `handleWebhookEvent`.
+ *
+ * Defined in `infrastructure/billing/stripe-webhook-events.ts` so the boot-time
+ * endpoint check reads the same list without importing this service.
  */
-const HANDLED_WEBHOOK_EVENT_TYPES: ReadonlySet<string> = new Set([
-  'checkout.session.completed',
-  'customer.subscription.updated',
-  'customer.subscription.deleted',
-  'invoice.paid',
-  'payment_intent.succeeded',
-  'payment_intent.payment_failed',
-]);
 
 /**
  * How long a claim may sit in `processing` before another delivery may take it

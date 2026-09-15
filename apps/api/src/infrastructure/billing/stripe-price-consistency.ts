@@ -64,7 +64,7 @@ export function shouldSkipStripePriceConsistency(
 
 function stripeErrorField(
   error: unknown,
-  field: 'code' | 'type' | 'name',
+  field: 'code' | 'type' | 'rawType' | 'name',
 ): string | undefined {
   if (!error || typeof error !== 'object') return undefined;
   const value = (error as Record<string, unknown>)[field];
@@ -75,10 +75,32 @@ function stripeErrorField(
  * Misconfiguration, not a Stripe blip: wrong/missing Price, inactive Price's
  * retrieve still succeeds — callers handle `active` separately — or a secret
  * that Stripe will not authenticate.
+ *
+ * Reads `rawType` as well as `type`. stripe-node's `StripeError` constructor
+ * does `this.type = type || this.constructor.name` and keeps the API's own
+ * value on `rawType`, so a real 401 arrives as `type: 'StripeAuthenticationError'`
+ * and the `authentication_error` comparison below never matched. Rotating
+ * `STRIPE_SECRET_KEY` in Stripe without updating Infisical was therefore
+ * classified transient by both boot guards: "not refusing boot", deploy green,
+ * every Stripe call 401ing at runtime — the failure this predicate exists to
+ * make loud. Both spellings are checked because `rawType` is stripe-node's and
+ * a hand-built error object in a test or a fetch shim may only set `type`.
  */
+const MISCONFIGURATION_ERROR_TYPES = new Set([
+  'authentication_error',
+  'invalid_request_error',
+  // Class names, for the same errors as stripe-node actually constructs them.
+  'StripeAuthenticationError',
+  'StripePermissionError',
+  'StripeInvalidRequestError',
+]);
+
 export function isStripePriceMisconfigurationError(error: unknown): boolean {
   const code = stripeErrorField(error, 'code');
   if (code === 'resource_missing') return true;
-  const type = stripeErrorField(error, 'type');
-  return type === 'authentication_error' || type === 'invalid_request_error';
+  for (const field of ['rawType', 'type'] as const) {
+    const value = stripeErrorField(error, field);
+    if (value && MISCONFIGURATION_ERROR_TYPES.has(value)) return true;
+  }
+  return false;
 }
