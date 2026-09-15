@@ -103,8 +103,15 @@ const mocks = vi.hoisted(() => {
   // Deliberately NOT `null`: mocking the client away skips that branch entirely,
   // which would leave the cold-start regression below untested.
   supabaseIn: vi.fn(async () => ({ data: [] as unknown[] })),
-  // Mutable so a test can null `ctx` and prove the write paths refuse.
-  runtime: { ctx: null as unknown, viewerId: null as string | null },
+  // Mutable so a test can null `ctx` and prove the write paths refuse. The two
+  // stores arrived with #2228: the hook reads them off the runtime rather than
+  // importing process-wide singletons, so they are never undefined here either.
+  runtime: {
+    ctx: null as unknown,
+    viewerId: null as string | null,
+    outbox: null as unknown,
+    drafts: null as unknown,
+  },
   };
 });
 
@@ -135,18 +142,9 @@ vi.mock("@/lib/supabase", () => ({
   }),
 }));
 
-vi.mock("./draft-store", () => ({
-  chatDraftStore: {
-    load: mocks.draftLoad,
-    save: mocks.draftSave,
-    clear: mocks.draftClear,
-  },
-}));
-
 vi.mock("./use-chat-runtime", () => ({
   useChatRuntime: () => mocks.runtime,
   bootChatAdapters: mocks.bootChatAdapters,
-  chatOutboxStore: { listForChannel: mocks.listForChannel },
 }));
 
 import { useChatChannel } from "./use-chat-channel";
@@ -196,7 +194,18 @@ function rawRow(id: string, createdAt: string): RawChatMessage {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.runtime = { ctx: { userId: "user-1" }, viewerId: "user-1" };
+  mocks.runtime = {
+    ctx: { userId: "user-1" },
+    viewerId: "user-1",
+    // Scoped per member since #2228 — the hook reads both off the runtime
+    // rather than importing a process-wide singleton.
+    outbox: { listForChannel: mocks.listForChannel },
+    drafts: {
+      load: mocks.draftLoad,
+      save: mocks.draftSave,
+      clear: mocks.draftClear,
+    },
+  };
   mocks.bootChatAdapters.mockImplementation(() => Promise.resolve());
   mocks.sendMessage.mockImplementation(async () => undefined);
   mocks.draftLoad.mockImplementation(async () => "");
@@ -676,7 +685,7 @@ describe("initial queryFn", () => {
     // So: `ctx` is deliberately null for the whole test. Hydration must still
     // happen, which is only true while the client is read from
     // `getSupabaseClient()` rather than from `ctx`.
-    mocks.runtime = { ctx: null, viewerId: null };
+    mocks.runtime = { ...mocks.runtime, ctx: null, viewerId: null };
     mocks.supabaseIn.mockImplementation(async () => ({
       data: [
         {
@@ -716,7 +725,7 @@ describe("before the viewer's ctx resolves", () => {
   // "the composer must disable rather than no-op silently" — left the whole
   // suite green until this block existed.
   it("reports canSend false and refuses every write path", async () => {
-    mocks.runtime = { ctx: null, viewerId: null };
+    mocks.runtime = { ...mocks.runtime, ctx: null, viewerId: null };
     mocks.listForChannel.mockImplementation(async () => [
       { clientId: "client-aaa", id: "server-zzz", channelId: CHANNEL },
     ]);
@@ -741,7 +750,7 @@ describe("before the viewer's ctx resolves", () => {
   it("does not subscribe to realtime without a ctx", async () => {
     // The attach effect returns early on `!ctx`, so a channel is never
     // installed for a viewer the manager could not identify.
-    mocks.runtime = { ctx: null, viewerId: null };
+    mocks.runtime = { ...mocks.runtime, ctx: null, viewerId: null };
 
     renderChannel();
     await act(async () => {
