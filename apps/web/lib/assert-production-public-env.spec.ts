@@ -14,6 +14,20 @@ import {
 
 const productionSupabase = `https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`;
 
+/** A legacy-format (JWT) Supabase anon key whose `ref` claim names `ref`. */
+const anonKeyForProject = (ref: string) =>
+  [
+    Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString(
+      "base64url",
+    ),
+    Buffer.from(
+      JSON.stringify({ iss: "supabase", ref, role: "anon" }),
+    ).toString("base64url"),
+    "not-a-real-signature",
+  ].join(".");
+
+const productionAnonKey = anonKeyForProject(PRODUCTION_SUPABASE_PROJECT_REF);
+
 const here = dirname(fileURLToPath(import.meta.url));
 
 describe("assert-production-public-env constants", () => {
@@ -51,6 +65,7 @@ describe("assertProductionWebPublicEnv", () => {
         vercelEnv: "production",
         apiUrl: `${PRODUCTION_API_ORIGIN}/`,
         supabaseUrl: `${productionSupabase}/`,
+        supabaseAnonKey: productionAnonKey,
       }),
     ).not.toThrow();
   });
@@ -123,5 +138,89 @@ describe("assertProductionWebPublicEnv", () => {
       expect(String(error)).not.toContain("secret-invite");
       expect(String(error)).toMatch(/NEXT_PUBLIC_SUPABASE_URL/);
     }
+  });
+  it("refuses a missing anon key — the defect that let runs 34896647837 and 34905005744 reach prerender", () => {
+    const base = {
+      vercelEnv: "production",
+      apiUrl: PRODUCTION_API_ORIGIN,
+      supabaseUrl: productionSupabase,
+    };
+    // Exactly the shape of the failing production runs: both URLs correct,
+    // anon key absent. Before this check the guard passed here and the build
+    // died ~30s later in `lib/supabase/server.ts` while prerendering `/`.
+    expect(() => assertProductionWebPublicEnv(base)).toThrow(
+      /NEXT_PUBLIC_SUPABASE_ANON_KEY[\s\S]*empty/,
+    );
+    expect(() =>
+      assertProductionWebPublicEnv({ ...base, supabaseAnonKey: "" }),
+    ).toThrow(/NEXT_PUBLIC_SUPABASE_ANON_KEY/);
+    expect(() =>
+      assertProductionWebPublicEnv({ ...base, supabaseAnonKey: "   " }),
+    ).toThrow(/NEXT_PUBLIC_SUPABASE_ANON_KEY/);
+  });
+
+  it("names the Infisical remedy, because the build log is where this is read", () => {
+    try {
+      assertProductionWebPublicEnv({
+        vercelEnv: "production",
+        apiUrl: PRODUCTION_API_ORIGIN,
+        supabaseUrl: productionSupabase,
+      });
+      throw new Error("expected refuse");
+    } catch (error) {
+      expect(String(error)).toMatch(/\$\{SUPABASE_ANON_KEY\}/);
+      expect(String(error)).toMatch(/NEXT_PUBLIC_/);
+    }
+  });
+
+  it("refuses an anon key minted for a different Supabase project", () => {
+    expect(() =>
+      assertProductionWebPublicEnv({
+        vercelEnv: "production",
+        apiUrl: PRODUCTION_API_ORIGIN,
+        supabaseUrl: productionSupabase,
+        // The staging project ref — a production URL paired with the staging
+        // anon key, which the URL fences alone cannot see.
+        supabaseAnonKey: anonKeyForProject("hnoyzpidbmizhbqaiity"),
+      }),
+    ).toThrow(/hnoyzpidbmizhbqaiity[\s\S]*unttyvyfezddlyafcydh|wrong database/);
+  });
+
+  it("never echoes the anon key itself", () => {
+    const secretish = anonKeyForProject("hnoyzpidbmizhbqaiity");
+    try {
+      assertProductionWebPublicEnv({
+        vercelEnv: "production",
+        apiUrl: PRODUCTION_API_ORIGIN,
+        supabaseUrl: productionSupabase,
+        supabaseAnonKey: secretish,
+      });
+      throw new Error("expected refuse");
+    } catch (error) {
+      expect(String(error)).not.toContain(secretish);
+    }
+  });
+
+  it("accepts a non-JWT publishable key on presence alone rather than guessing", () => {
+    // `sb_publishable_…` carries no project reference, so there is nothing to
+    // pin it to. It must not be rejected for failing a check that cannot apply.
+    expect(() =>
+      assertProductionWebPublicEnv({
+        vercelEnv: "production",
+        apiUrl: PRODUCTION_API_ORIGIN,
+        supabaseUrl: productionSupabase,
+        supabaseAnonKey: "sb_publishable_not-a-real-key",
+      }),
+    ).not.toThrow();
+  });
+
+  it("still skips the anon key check outside production", () => {
+    expect(() =>
+      assertProductionWebPublicEnv({
+        vercelEnv: "preview",
+        apiUrl: "http://localhost:3001",
+        supabaseUrl: "http://127.0.0.1:54321",
+      }),
+    ).not.toThrow();
   });
 });

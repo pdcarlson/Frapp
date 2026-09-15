@@ -17,9 +17,9 @@
 production** with a commit SHA:
 
 1. **Typed confirmation** (`DEPLOY TO PRODUCTION`) — checked in an unscoped `validate` job before any secret is read and before GitHub asks anyone to Approve.
-2. **Commit validation** — trim, then the SHA must be an ancestor of `main` *and* have green CI, asserted against the required-check list branch protection uses, intersected with the jobs that commit's own workflows define (`scripts/ci/validate-deploy-sha.mjs`). Still unscoped. A bad paste fails here with no reviewer request (run 34234768094 sat on Approve, then died at Validate).
+2. **Commit validation** — trim, then the SHA must be an ancestor of `main` _and_ have green CI, asserted against the required-check list branch protection uses, intersected with the jobs that commit's own workflows define (`scripts/ci/validate-deploy-sha.mjs`). Still unscoped. A bad paste fails here with no reviewer request (run 34234768094 sat on Approve, then died at Validate).
 3. **Environment approval** — the shipping job (`deploy`) pauses on the `production` environment's Required reviewers. This is the only human gate, and it fires after `validate` succeeds, on a run that names the commit. Do not put `environment: production` on `validate`.
-4. **Provider preflight** — Render auto-deploy is off; `healthCheckPath` is `/health`; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the *absence* of a Git link, so a **present** link is the violation.
+4. **Provider preflight** — Render auto-deploy is off; `healthCheckPath` is `/health`; neither Vercel project is linked to Git (`scripts/ci/production-guardrails.mjs`). The Vercel half asserted "does not promote from `main`" until #1579 inverted it on 2026-09-02; post-ADR-21 the safe condition is the _absence_ of a Git link, so a **present** link is the violation.
 5. **Migration rehearsal** → fence → `npm ci` + Vercel CLI → **Vercel production builds** (both
    projects, `vercel pull --environment=production` + `vercel build --prod`, each `.vercel` stashed
    under `$RUNNER_TEMP`) → dry-run → apply.
@@ -49,8 +49,8 @@ production** with a commit SHA:
 > (`dep-dafh307qj5pc73fall9g`), Vercel `--prebuilt --prod` upload at 19:36:02Z, then tagging failed on
 > `GET /pulls/1340` (an issue number in a squash subject). The Actions list row stayed named
 > **Deploy production** and concluded **failure**. That is not "API before DB" and not a
-> rolled-back ship: open the run, read `report` (`DEPLOY_RESULT: success`, *Production IS
-> updated*). Re-run the **Release** workflow with the live SHA. Job ids on that run were `deploy` /
+> rolled-back ship: open the run, read `report` (`DEPLOY_RESULT: success`, _Production IS
+> updated_). Re-run the **Release** workflow with the live SHA. Job ids on that run were `deploy` /
 > `release` / `report` (`needs:` keys those); the UI labels now say migrate-then-ship,
 > mint-tag, and summarize. **Amended 2026-09-08:** an unscoped `validate` job now runs first
 > (confirm / trim / `validate-deploy-sha.mjs`); `release` and `report` still consume
@@ -76,21 +76,40 @@ production** with a commit SHA:
 > broken bundle. They were written to the Production scope by API that day; the source-of-truth fix
 > is the Infisical `prod` environment (see `SECRETS_MANAGEMENT.md` § Blast radius).
 >
-> **They did not stay written. Amended 2026-09-14** — read the paragraph above as history, not as
-> current state. Two production builds that day died on exactly these variables:
-> [34894763676](https://github.com/pdcarlson/Frapp/actions/runs/34894763676) on
-> `NEXT_PUBLIC_API_URL`, and
-> [34896647837](https://github.com/pdcarlson/Frapp/actions/runs/34896647837) on
-> `NEXT_PUBLIC_SUPABASE_URL` (thrown from `apps/web/lib/supabase/server.ts` while prerendering `/`).
-> So the 2026-09-06 repair did not hold, and the Production scope is empty of at least those two
-> again. **Do not read "written to the Production scope" as a reason to rule the sync out** when a
-> production build fails on a `NEXT_PUBLIC_*`: open the Vercel Production scope and look. The fix is
-> still a human edit in Infisical `prod` at path `/` — the repo cannot make it, and #834 tracks the
-> sync itself.
+> **They did not stay written. Amended 2026-09-14, corrected 2026-09-15** — read the paragraph
+> above as history, not as current state. Production builds that day died on these variables, but
+> on _one at a time_, and the second attribution below was wrong for a full day:
+>
+> - [34894763676](https://github.com/pdcarlson/Frapp/actions/runs/34894763676) died on
+>   `NEXT_PUBLIC_API_URL`, at config load, inside `next.config.js` — the early guard firing exactly
+>   as designed (`⨯ Failed to load next.config.js` … `at assertProductionWebPublicEnv
+(lib/assert-production-public-env.js:88:3)`).
+> - [34896647837](https://github.com/pdcarlson/Frapp/actions/runs/34896647837) and
+>   [34905005744](https://github.com/pdcarlson/Frapp/actions/runs/34905005744) did **not** die on
+>   `NEXT_PUBLIC_SUPABASE_URL`. Both logged `✓ Running next.config.js took …ms` — i.e. the guard
+>   ran and _passed_, which is positive evidence that both URLs were present and correct — and then
+>   died prerendering `/` in `apps/web/lib/supabase/server.ts`. That throw names two variables while
+>   `server.ts:13` tests `!url || !anonKey`, so the message could not say which was absent. It was
+>   `NEXT_PUBLIC_SUPABASE_ANON_KEY`: run 34905005744's build-step environment lists
+>   `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SUPABASE_URL` and the _unprefixed_ `SUPABASE_ANON_KEY`, and
+>   no `NEXT_PUBLIC_SUPABASE_ANON_KEY` at all.
+>
+> The lesson is narrower than "the sync dropped everything": Infisical `prod` is missing the
+> `NEXT_PUBLIC_SUPABASE_ANON_KEY` → `${SUPABASE_ANON_KEY}` reference that ENV_REFERENCE.md
+> § References — Framework-Specific Names requires in all three environments. The unprefixed key
+> alone never reaches the bundle, because Next inlines only `NEXT_PUBLIC_*`. `NEXT_PUBLIC_POSTHOG_KEY`
+> and `NEXT_PUBLIC_POSTHOG_HOST` are absent from that scope too; they degrade silently (analytics
+> off) rather than failing the build.
+>
+> **Do not read "written to the Production scope" as a reason to rule the sync out** when a
+> production build fails on a `NEXT_PUBLIC_*`: open the Vercel Production scope and look. And do not
+> read a `server.ts` throw as naming the absent variable — cross-check it against the build-step
+> environment. The fix is still a human edit in Infisical `prod` at path `/` — the repo cannot make
+> it, and #834 tracks the sync itself.
 
 > **Deploying an OLDER commit.** That intersection in step 2 is deliberate, and it is what
-> keeps an incident rollback possible. A required check added *after* a commit was made could
-> never have run on it, so it is reported *not applicable* — named in the run log, never waved
+> keeps an incident rollback possible. A required check added _after_ a commit was made could
+> never have run on it, so it is reported _not applicable_ — named in the run log, never waved
 > through silently — rather than refusing the deploy.
 >
 > Three things stay fatal, and they are why the narrowing is safe to have:
@@ -102,7 +121,7 @@ production** with a commit SHA:
 >   apart from a genuine failure and carrying the re-run remedy in the message, because a
 >   superseded run asserted nothing rather than failing.
 >
-> And if the narrowing would excuse *every* required check, the deploy is refused outright: that
+> And if the narrowing would excuse _every_ required check, the deploy is refused outright: that
 > is a tree whose workflows could not be read, not a commit that predates a gate.
 >
 > Full account, including the incident that prompted it:
@@ -161,7 +180,7 @@ Two consequences worth carrying:
 After a push to `main`, `.github/workflows/verify-deployments.yml` polls Render to confirm the **staging** deploy for that SHA reached a healthy terminal state:
 
 - **Render** (`verify-render-api`): fails on `build_failed` / `update_failed` / `pre_deploy_failed` or on "no deploy created for this SHA within 5 minutes" (autoDeploy-wiring red flag). Treats `canceled` / `deactivated` as neutral (superseded).
-- **Vercel web** (`verify-vercel-web`) and **Vercel landing** (`verify-vercel-landing`): ⚠️ **removed 2026-09-02 by #1579** — ADR-21's Git unlink means no push creates a Vercel deployment, so these jobs could only ever fail. What follows describes the semantics `verify-vercel-deploy.mjs` still implements; the script is kept and is now imported by `deploy-vercel.mjs` for its terminal-state vocabulary, though no workflow calls it directly. **#1578** (2026-09-04) did not re-wire it here: `deploy-vercel-staging.yml` creates the deployments and so verifies them **by id**, which is strictly better than searching for one by SHA, and it must stay CI-gated where this workflow is push-triggered. This workflow remains the Render staging observer. Historically they failed on `ERROR`. Treat `CANCELED` as neutral **only when a later deployment on the same branch overtook it** — the signature of Vercel auto-cancelling a build that a newer push superseded, where the branch is still verified by the build that overtook it (and that build has its own verify run, so the later deployment need not be `READY` yet). A cancel that nothing overtook is a failure: it was a manual stop, a build concurrency limit, or an Ignored Build Step that skipped it. Note the test looks **forward**, not backward. Asking whether an *earlier* success exists was the right question while `turbo-ignore` ran — an earlier success was the baseline a skip diffed against — but on `main` one always exists, so as a supersession test it would call every cancel benign. "No deployment for this SHA within 3 minutes" is also a **failure**. It was neutral while `ignoreCommand` ran `turbo-ignore`, which legitimately suppressed a build for an unchanged app tree; both apps now pin `ignoreCommand: "exit 1"`, so with `git.deploymentEnabled.main = true` every push to `main` must produce a deployment row for both projects and a missing one means the Git integration did not fire. ⚠️ **2026-09-02:** that is now the permanent state — both projects are unlinked from Git (ADR-21), so a missing deployment row is expected rather than a red flag. Both jobs failed on every push (`verify-vercel-landing` since 2026-09-01, `verify-vercel-web` since 2026-09-02) until #1579 removed them; only the verify step ever failed, the alias step after it was skipped. See the dated note at the top of [Vercel Setup](vercel.md).
+- **Vercel web** (`verify-vercel-web`) and **Vercel landing** (`verify-vercel-landing`): ⚠️ **removed 2026-09-02 by #1579** — ADR-21's Git unlink means no push creates a Vercel deployment, so these jobs could only ever fail. What follows describes the semantics `verify-vercel-deploy.mjs` still implements; the script is kept and is now imported by `deploy-vercel.mjs` for its terminal-state vocabulary, though no workflow calls it directly. **#1578** (2026-09-04) did not re-wire it here: `deploy-vercel-staging.yml` creates the deployments and so verifies them **by id**, which is strictly better than searching for one by SHA, and it must stay CI-gated where this workflow is push-triggered. This workflow remains the Render staging observer. Historically they failed on `ERROR`. Treat `CANCELED` as neutral **only when a later deployment on the same branch overtook it** — the signature of Vercel auto-cancelling a build that a newer push superseded, where the branch is still verified by the build that overtook it (and that build has its own verify run, so the later deployment need not be `READY` yet). A cancel that nothing overtook is a failure: it was a manual stop, a build concurrency limit, or an Ignored Build Step that skipped it. Note the test looks **forward**, not backward. Asking whether an _earlier_ success exists was the right question while `turbo-ignore` ran — an earlier success was the baseline a skip diffed against — but on `main` one always exists, so as a supersession test it would call every cancel benign. "No deployment for this SHA within 3 minutes" is also a **failure**. It was neutral while `ignoreCommand` ran `turbo-ignore`, which legitimately suppressed a build for an unchanged app tree; both apps now pin `ignoreCommand: "exit 1"`, so with `git.deploymentEnabled.main = true` every push to `main` must produce a deployment row for both projects and a missing one means the Git integration did not fire. ⚠️ **2026-09-02:** that is now the permanent state — both projects are unlinked from Git (ADR-21), so a missing deployment row is expected rather than a red flag. Both jobs failed on every push (`verify-vercel-landing` since 2026-09-01, `verify-vercel-web` since 2026-09-02) until #1579 removed them; only the verify step ever failed, the alias step after it was skipped. See the dated note at the top of [Vercel Setup](vercel.md).
 
 The workflow is currently advisory (not a required check). When a failure shows up in the Actions UI, the failure message will name the commit SHA and last observed state; open the linked Render / Vercel dashboard to read full deploy logs.
 
