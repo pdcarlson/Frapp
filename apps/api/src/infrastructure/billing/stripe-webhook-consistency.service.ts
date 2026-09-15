@@ -5,6 +5,7 @@ import { shouldSkipStripePriceConsistency } from './stripe-price-consistency';
 import {
   expectedWebhookUrl,
   findEnabledEndpoint,
+  findEndpointsForUrl,
   missingEventTypes,
   StripeWebhookEndpointMismatchError,
 } from './stripe-webhook-consistency';
@@ -26,14 +27,32 @@ export class StripeWebhookConsistencyService implements OnModuleInit {
   }
 
   /**
-   * List the webhook endpoints on `STRIPE_SECRET_KEY`'s account and require an
-   * enabled one for this deployment's own URL. Throws
-   * {@link StripeWebhookEndpointMismatchError} when none exists.
+   * List the webhook endpoints on `STRIPE_SECRET_KEY`'s account and check that
+   * one is registered for this deployment's own URL.
    *
-   * A subscribed-events gap only WARNS. Making it fatal would refuse boot on
-   * both endpoints registered on 2026-08-27, which enable five of the six
-   * handled types — turning a missing payment-failure notification into an
-   * outage. Tighten to fatal once those are corrected.
+   * ONLY ONE CONDITION IS FATAL: the account has no webhook endpoints at all.
+   * That is the 2026-09-15 incident exactly — Signet live mode was empty — and
+   * it has no benign cause: a real key, a public URL, and zero endpoints is
+   * unambiguously an unconfigured environment.
+   *
+   * Everything else WARNS, because this guard can take the whole API down —
+   * auth, chat, events — for a condition that only breaks billing, and the
+   * benign triggers are real:
+   *
+   *   - An endpoint disabled for twenty minutes while someone debugs a delivery
+   *     failure in Workbench. A routine restart in that window would otherwise
+   *     be a total outage.
+   *   - An endpoint registered against the service's other working hostname
+   *     (`frapp-api-prod.onrender.com` before `api.frapp.live`'s DNS is live —
+   *     see bootstrap.ts). Deliveries succeed; only this string comparison
+   *     disagrees.
+   *   - A subscribed-events gap. The two TEST-mode endpoints registered
+   *     2026-08-27 enable five of the six handled types; the live-mode endpoint
+   *     created 2026-09-15 has all six. Tighten this to fatal once the
+   *     test-mode pair is corrected.
+   *
+   * Trading silent billing breakage for a possible outage is the wrong trade
+   * whenever the guard might be the stale party rather than the config.
    *
    * Transient Stripe errors are logged and swallowed, matching the price check:
    * a network blip must not cancel a deploy.
@@ -44,10 +63,22 @@ export class StripeWebhookConsistencyService implements OnModuleInit {
       return;
     }
 
-    const expectedUrl = expectedWebhookUrl(this.config.get<string>('API_URL'));
+    const apiUrl = this.config.get<string>('API_URL');
+    const expectedUrl = expectedWebhookUrl(apiUrl);
     if (!expectedUrl) {
       // No publicly reachable API_URL, so no endpoint could be registered for
       // it. A laptop or CI box with a real test key is not a misconfiguration.
+      //
+      // Logged rather than returned in silence: API_URL is NOT in
+      // REQUIRED_ENV_VARS, so a deployment that loses it would skip this check
+      // entirely and produce a boot log indistinguishable from a passing one —
+      // which is how the incident this guard exists for went unnoticed.
+      this.logger.warn(
+        `Stripe webhook consistency check skipped: API_URL is ${
+          apiUrl ? `"${apiUrl}"` : 'unset'
+        }, which is not a public https origin Stripe could deliver to. ` +
+          'Expected in staging and production.',
+      );
       return;
     }
 
@@ -70,14 +101,28 @@ export class StripeWebhookConsistencyService implements OnModuleInit {
       return;
     }
 
-    const endpoint = findEnabledEndpoint(endpoints, expectedUrl);
-    if (!endpoint) {
-      const reason = endpoints.length
-        ? `account has ${endpoints.length} endpoint(s), none enabled for this URL`
-        : 'account has no webhook endpoints at all';
-      const err = new StripeWebhookEndpointMismatchError(expectedUrl, reason);
+    if (endpoints.length === 0) {
+      const err = new StripeWebhookEndpointMismatchError(
+        expectedUrl,
+        'account has no webhook endpoints at all',
+      );
       this.logger.error(err.message);
       throw err;
+    }
+
+    const endpoint = findEnabledEndpoint(endpoints, expectedUrl);
+    if (!endpoint) {
+      const forUrl = findEndpointsForUrl(endpoints, expectedUrl);
+      this.logger.error(
+        forUrl.length
+          ? `Stripe has ${forUrl.length} endpoint(s) for ${expectedUrl} but none are enabled — ` +
+              'deliveries are not being sent. Re-enable it in the Stripe dashboard.'
+          : `Stripe has ${endpoints.length} endpoint(s) on this account but none for ${expectedUrl} — ` +
+              'either this deployment receives no webhooks, or the endpoint is registered ' +
+              'against a different hostname for the same service. Not refusing boot, because ' +
+              'that would trade a billing outage for a total one.',
+      );
+      return;
     }
 
     const missing = missingEventTypes(

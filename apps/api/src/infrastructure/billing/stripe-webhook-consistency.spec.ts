@@ -1,6 +1,7 @@
 import {
   expectedWebhookUrl,
   findEnabledEndpoint,
+  findEndpointsForUrl,
   missingEventTypes,
   STRIPE_WEBHOOK_PATH,
   StripeWebhookEndpointMismatchError,
@@ -25,6 +26,13 @@ describe('expectedWebhookUrl', () => {
     expect(expectedWebhookUrl('https://api.frapp.live/v1?x=1')).toBe(
       `https://api.frapp.live${STRIPE_WEBHOOK_PATH}`,
     );
+  });
+
+  it('skips IPv6 loopback — URL.hostname keeps the brackets', () => {
+    // `new URL('https://[::1]').hostname` is '[::1]', never '::1', so the bare
+    // comparison was dead code and an IPv6-only box would be refused boot.
+    expect(expectedWebhookUrl('https://[::1]:3001')).toBeNull();
+    expect(expectedWebhookUrl('https://[::1]')).toBeNull();
   });
 
   it('skips where Stripe could never deliver, so a laptop still boots', () => {
@@ -127,5 +135,43 @@ describe('StripeWebhookEndpointMismatchError', () => {
   it('never echoes a signing secret, because it is never given one', () => {
     const err = new StripeWebhookEndpointMismatchError('https://x/y', 'reason');
     expect(err.message).not.toMatch(/whsec_/);
+  });
+});
+
+describe('findEnabledEndpoint — URL comparison', () => {
+  const url = `https://api.frapp.live${STRIPE_WEBHOOK_PATH}`;
+
+  it("ignores a query string, which Stripe's versioning runbook tells you to add", () => {
+    const versioned = {
+      url: `${url}?version=2026-08-26.dahlia`,
+      status: 'enabled',
+    };
+    expect(findEnabledEndpoint([versioned], url)).toBe(versioned);
+  });
+
+  it('still refuses a different PATH on the same origin', () => {
+    // Leniency about the query must not become leniency about the route.
+    expect(
+      findEnabledEndpoint(
+        [
+          {
+            url: 'https://api.frapp.live/v2/webhooks/stripe',
+            status: 'enabled',
+          },
+        ],
+        url,
+      ),
+    ).toBeNull();
+  });
+
+  it('prefers the enabled endpoint when a disabled twin shares the URL', () => {
+    // The exact mid-migration state: new endpoint live, old one disabled.
+    const disabled = { url, status: 'disabled' };
+    const enabled = {
+      url: `${url}?version=2026-08-26.dahlia`,
+      status: 'enabled',
+    };
+    expect(findEnabledEndpoint([disabled, enabled], url)).toBe(enabled);
+    expect(findEndpointsForUrl([disabled, enabled], url)).toHaveLength(2);
   });
 });

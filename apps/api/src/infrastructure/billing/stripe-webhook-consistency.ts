@@ -68,7 +68,10 @@ export function expectedWebhookUrl(
   }
   if (url.protocol !== 'https:') return null;
 
-  const host = url.hostname.toLowerCase();
+  // `URL.hostname` KEEPS the brackets for IPv6 — `new URL('https://[::1]')`
+  // gives `'[::1]'`, never `'::1'` — so comparing the bare form is dead code
+  // and an IPv6-only box with a real sk_test_ would be refused boot.
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   const unreachable =
     host === 'localhost' ||
     host === '127.0.0.1' ||
@@ -81,15 +84,43 @@ export function expectedWebhookUrl(
   return `${url.origin}${STRIPE_WEBHOOK_PATH}`;
 }
 
-/** Stripe URLs differ only by a trailing slash often enough to be worth ignoring. */
+/**
+ * Compare origin + path only.
+ *
+ * Stripe's own API-version upgrade runbook tells you to register the
+ * replacement endpoint with a disambiguating query parameter
+ * (`…/webhooks?version=2024-04-10`) and disable the old one. Comparing whole
+ * strings would call that correctly-configured endpoint a mismatch — and since
+ * this guard can refuse boot, following Stripe's documented procedure would
+ * take the entire API down. A trailing slash and host case are ignored for the
+ * same reason: they are differences Stripe does not consider meaningful.
+ */
 function normalizeUrl(value: string): string {
-  return value.trim().replace(/\/+$/, '').toLowerCase();
+  const trimmed = value.trim();
+  try {
+    const url = new URL(trimmed);
+    return `${url.origin}${url.pathname}`.replace(/\/+$/, '').toLowerCase();
+  } catch {
+    return trimmed.replace(/\/+$/, '').toLowerCase();
+  }
 }
 
 export interface StripeWebhookEndpointLike {
   url?: string | null;
   status?: string | null;
   enabled_events?: readonly string[] | null;
+}
+
+/** Every endpoint registered for `expectedUrl`, enabled or not. */
+export function findEndpointsForUrl<T extends StripeWebhookEndpointLike>(
+  endpoints: readonly T[],
+  expectedUrl: string,
+): T[] {
+  const wanted = normalizeUrl(expectedUrl);
+  return endpoints.filter(
+    (endpoint) =>
+      typeof endpoint.url === 'string' && normalizeUrl(endpoint.url) === wanted,
+  );
 }
 
 /**
@@ -100,13 +131,9 @@ export function findEnabledEndpoint<T extends StripeWebhookEndpointLike>(
   endpoints: readonly T[],
   expectedUrl: string,
 ): T | null {
-  const wanted = normalizeUrl(expectedUrl);
   return (
-    endpoints.find(
-      (endpoint) =>
-        typeof endpoint.url === 'string' &&
-        normalizeUrl(endpoint.url) === wanted &&
-        endpoint.status === 'enabled',
+    findEndpointsForUrl(endpoints, expectedUrl).find(
+      (endpoint) => endpoint.status === 'enabled',
     ) ?? null
   );
 }

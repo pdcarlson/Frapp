@@ -57,7 +57,7 @@ describe('StripeWebhookConsistencyService', () => {
       ...over,
     }) as Stripe.WebhookEndpoint;
 
-  it('refuses boot when the account has NO endpoints — the 2026-09-15 incident', () => {
+  it('refuses boot ONLY when the account has NO endpoints — the 2026-09-15 incident', () => {
     // Live mode held no endpoint at all, so production ran on a test-mode
     // whsec_ and every delivery failed signature verification, silently.
     list.mockResolvedValue({ data: [] });
@@ -67,21 +67,45 @@ describe('StripeWebhookConsistencyService', () => {
     );
   });
 
-  it('refuses boot when only another environment has an endpoint', async () => {
+  it('LOGS but does not refuse boot when only another environment has an endpoint', async () => {
+    // Benign trigger: the endpoint is registered against the service's other
+    // working hostname (frapp-api-prod.onrender.com before api.frapp.live's
+    // DNS is live). Deliveries succeed; only this comparison disagrees.
+    // Refusing here would trade a billing outage for a total one.
     list.mockResolvedValue({ data: [endpoint({ url: STAGING_ENDPOINT })] });
     const service = serviceWith({ secret: REAL_SECRET, apiUrl: API_URL });
-    await expect(service.assertRegisteredEndpoint()).rejects.toThrow(
-      /no enabled webhook endpoint/i,
-    );
-    expect(errorLog).toHaveBeenCalled();
+    await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('none for'));
   });
 
-  it('refuses boot when the matching endpoint is disabled', async () => {
+  it('LOGS but does not refuse boot when the matching endpoint is disabled', async () => {
+    // Disable is one click in Workbench and the normal thing to do while
+    // debugging a delivery failure. A restart in that window must not take
+    // auth, chat and events down with billing.
     list.mockResolvedValue({ data: [endpoint({ status: 'disabled' })] });
     const service = serviceWith({ secret: REAL_SECRET, apiUrl: API_URL });
-    await expect(service.assertRegisteredEndpoint()).rejects.toThrow(
-      StripeWebhookEndpointMismatchError,
+    await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining('none are enabled'),
     );
+  });
+
+  it("matches an endpoint carrying a query string — Stripe's own versioning runbook adds one", async () => {
+    // docs.stripe.com/webhooks/versioning says to register the replacement as
+    // `…/webhooks?version=YYYY-MM-DD` and disable the old one. Whole-string
+    // comparison would call that a mismatch.
+    list.mockResolvedValue({
+      data: [endpoint({ url: `${PROD_ENDPOINT}?version=2026-08-26.dahlia` })],
+    });
+    const service = serviceWith({ secret: REAL_SECRET, apiUrl: API_URL });
+    await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
+    expect(errorLog).not.toHaveBeenCalled();
+  });
+
+  it('warns when API_URL is unset rather than skipping in silence', async () => {
+    const service = serviceWith({ secret: REAL_SECRET, apiUrl: undefined });
+    await expect(service.assertRegisteredEndpoint()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('API_URL'));
   });
 
   it('passes with an enabled endpoint for this deployment', async () => {

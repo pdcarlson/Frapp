@@ -79,7 +79,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 >
 > **Staging (and local) must use that same Signet account's test keys**, not a second test-mode Stripe account. `STRIPE_PRICE_ID` above lives on Signet. A sibling sandbox (`acct_1U932aKySXtAfQjP`, "Signet sandbox") can hold customers and still have **zero Prices** — checkout then 503s with Stripe `resource_missing` on the price, and the boot/ready check above refuses that pair. Do not copy that account's `STRIPE_SECRET_KEY` into Infisical.
 >
-> **Register only the events the API handles** — `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `payment_intent.succeeded`, `payment_intent.payment_failed`. The allowlist in [`apps/api/src/application/services/billing.service.ts`](../../../apps/api/src/application/services/billing.service.ts) (`HANDLED_WEBHOOK_EVENT_TYPES`) drops everything else before it reaches the database, so registering more only adds noise. The path is `/v1/webhooks/stripe` — the `v1` comes from global URI versioning in `main.ts`, not from the controller.
+> **Register only the events the API handles** — `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `payment_intent.succeeded`, `payment_intent.payment_failed`. The allowlist in [`apps/api/src/infrastructure/billing/stripe-webhook-events.ts`](../../../apps/api/src/infrastructure/billing/stripe-webhook-events.ts) (`HANDLED_WEBHOOK_EVENT_TYPES`) drops everything else before it reaches the database, so registering more only adds noise. The path is `/v1/webhooks/stripe` — the `v1` comes from global URI versioning in `main.ts`, not from the controller.
 
 ### API-Only Settings
 
