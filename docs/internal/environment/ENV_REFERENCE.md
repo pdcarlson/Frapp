@@ -102,17 +102,37 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 
 > The three `DISCORD_*` variables are **optional, and all-or-nothing**. They power the "Connect
 > Discord" path of the archive importer (`spec/behavior/chat/README.md` § Imported archive
-> messages). Unset, `GET /v1/discord/availability` answers `available: false`, the wizard offers
-> only the DiscordChatExporter upload flow, and every other `/v1/discord/*` route answers 503. **The
+> messages). Unset, `GET /v1/discord/availability` answers `available: false` and the wizard greys
+> the "Connect Discord" card out, leaving the DiscordChatExporter upload flow as the only selectable
+> source. Only the two routes that begin or confirm a handshake — `POST /v1/discord/connect` and
+> `POST /v1/discord/connect/confirm` — answer 503; `GET` and `DELETE /v1/discord/connection` still
+> answer 200 (reporting not-connected), and the callback answers a redirect by contract. **The
 > upload flow is a separate path, not a fallback that switches on** — it works identically whether or
 > not these are set, which is the whole point of keeping it.
 >
-> `DiscordOAuthService.isAvailable()` requires **all four** of `DISCORD_BOT_TOKEN`,
-> `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` and `API_URL`/`APP_URL` (below). Three of four is not
+> `DiscordOAuthService.isAvailable()` requires **all five** of `DISCORD_BOT_TOKEN`,
+> `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `API_URL` and `APP_URL` (the last two below, in
+> [§ Canonical Variables — The Complete Grid](#canonical-variables--the-complete-grid) — they are
+> not in the table above). Four of five is not
 > a degraded mode: without the client secret there is no server-to-server code exchange, which is
 > the step that proves the authorizing human holds Manage Server on the guild — so the flow would
 > have to trust the browser for it, which it must never do. Without `API_URL` there is no redirect
 > URI to register, and without `APP_URL` the callback has nowhere to send the browser back to.
+>
+> **The production column above states the recommendation, not the current deployment** — staging
+> and production were observed sharing one Discord application, so the `prod` cells read as setup
+> steps for an application that does not exist yet. **Do not follow them to create one**: a new
+> production application forces every already-connected chapter's admin to re-authorize the new bot,
+> and a client id whose application carries no `api.frapp.live` redirect row reproduces the failure
+> #2318 was opened to fix. What was checked, how, and what follows from it lives in
+> [`integrations.md`](../ops/deployment/integrations.md) § 7A step 4, which owns that fact;
+> [#2321](https://github.com/pdcarlson/Frapp/issues/2321) is where it gets decided. Reconcile these
+> cells with whatever that lands on rather than editing them to match one environment by hand.
+>
+> ⚠️ **Until then, "Reset Token" and "Reset Secret" in the cells above are cross-environment
+> destructive** — one application means one valid token and one secret, so resetting either to
+> provision local or staging breaks production until production's Infisical is updated too. See
+> § 7A steps 2–3.
 >
 > **`DISCORD_BOT_TOKEN` is ONE global Signet value per environment, not one per tenant.** There is
 > no per-chapter credential anywhere in this feature and no secret store that would hold one — what
@@ -120,14 +140,16 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 > inert without an install behind it. Do not go looking for per-chapter Discord secrets; there are
 > none by design.
 >
-> **Two things live outside Infisical and no CI check can detect either.** (1) The OAuth redirect URI
-> must be registered by hand in the Developer Portal → OAuth2 → Redirects, exactly
-> `${API_URL}/v1/discord/connect/callback` per environment — see
-> [`integrations.md`](../ops/deployment/integrations.md) § Discord application setup. (2) **Message Content Intent**
-> must be enabled under Bot → Privileged Gateway Intents. Without it Discord answers `200` with
-> `content: ""` on every message, so an import would otherwise write a chapter's whole history as
-> empty bubbles; the importer detects this and fails loudly rather than importing blanks, but only
-> the toggle makes it actually work.
+> **Two things live outside Infisical, no CI check can detect either, and `available: true` does
+> not cover them.** `isAvailable()` reads the five variables above and makes no call to Discord, so
+> a green availability check says nothing about either: (1) the OAuth redirect URI, registered by
+> hand in the Developer Portal → OAuth2 → Redirects as exactly
+> `${API_URL}/v1/discord/connect/callback`, and (2) the **Message Content Intent** under Bot →
+> Privileged Gateway Intents. Both fail at runtime, in different places, with different symptoms —
+> and how each one presents, including what evidence it does and does not leave server-side, is in
+> [`integrations.md`](../ops/deployment/integrations.md) § 7A. Discord Application Setup, which owns
+> that mechanism. Do not restate it here; provider behavior falsifies these facts, and a second copy
+> is how it drifts.
 
 ### Analytics (Pseudonymous)
 
