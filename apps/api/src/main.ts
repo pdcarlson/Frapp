@@ -36,4 +36,18 @@ async function bootstrap() {
   Logger.log(`Swagger docs at http://localhost:${port}/docs`, 'Bootstrap');
 }
 
-void bootstrap();
+/**
+ * A rejected `bootstrap()` used to surface as Node's generic unhandled-rejection
+ * notice — "This error originated either by throwing inside of an async function
+ * without a catch block…" — with the real reason trailing behind it. Render's
+ * deploy log for `dep-daka00vqj5pc73acul20` is what that looks like when the
+ * cause is a refused config check: the boot guard did its job, and the operator
+ * had to read past a paragraph about promises to find out which variable was
+ * wrong. Catch it, print the reason first, and exit non-zero deliberately.
+ */
+bootstrap().catch((error: unknown) => {
+  const reason =
+    error instanceof Error ? (error.stack ?? error.message) : String(error);
+  Logger.error(`API failed to start: ${reason}`, 'Bootstrap');
+  process.exit(1);
+});
