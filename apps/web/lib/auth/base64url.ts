@@ -8,6 +8,11 @@
  * land in one of — and because both callers turn a throw into `null` by design,
  * the symptom of that divergence is not an error but one of the two paths
  * silently never resolving, with both their specs green.
+ *
+ * There is a third, deliberate copy outside this module:
+ * `lib/assert-production-public-env.js` inlines the alphabet-swap and padding
+ * because it is plain ESM loaded by `next.config.js`, which cannot import
+ * TypeScript. A fix here belongs there too — grep `base64url` before editing.
  */
 
 /** Throws on malformed input; every caller here catches and treats it as absent. */
