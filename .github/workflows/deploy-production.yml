@@ -529,17 +529,47 @@ jobs:
       # All THREE `full` attempts on 2026-09-14 died on this step, each after a
       # reviewer had already clicked Approve. Two died inside `vercel build`
       # itself, on a variable the Vercel Production scope did not hold —
-      # 34894763676 on `NEXT_PUBLIC_API_URL`, 34896647837 on
-      # `NEXT_PUBLIC_SUPABASE_URL`. The third, 34892839657, died a moment earlier
-      # and for an unrelated reason: `requireEnv("DEPLOY_SHA")` threw inside
-      # `deploy-vercel.mjs` before it invoked the CLI at all (#2265 fixed that).
+      # 34894763676 on `NEXT_PUBLIC_API_URL` and 34896647837 on
+      # `NEXT_PUBLIC_SUPABASE_ANON_KEY`. The third, 34892839657, died a moment
+      # earlier and for an unrelated reason: `requireEnv("DEPLOY_SHA")` threw
+      # inside `deploy-vercel.mjs` before it invoked the CLI at all (#2265
+      # fixed that).
       #
-      # Worth keeping the two apart when citing them — only the first two say
-      # anything about Infisical. But that the missing variable was DIFFERENT
-      # each of those two times is the argument for rehearsing the real build
-      # rather than adding a preflight that enumerates the variables we happen to
-      # know about today. The build is the only check that knows the whole list,
-      # because it is the thing that consumes it.
+      # Corrected 2026-09-15: this comment, and ci-cd.md, both read the second
+      # failure as `NEXT_PUBLIC_SUPABASE_URL` for a day. It was not. The two
+      # runs died at different STAGES, and the stage is what identifies the
+      # variable:
+      #
+      #   * 34894763676 died at CONFIG LOAD — `⨯ Failed to load next.config.js`,
+      #     with a frame at `assertProductionWebPublicEnv` called from
+      #     `next.config.js`. Only that guard throws there, and the frame is
+      #     reachable only PAST the function's first statement, the
+      #     `vercelEnv !== "production"` early return — so `VERCEL_ENV` IS
+      #     `production` inside `vercel build --prod` on this runner, despite
+      #     the CLI's own "System environment variables will not be available"
+      #     warning and despite nothing in this repo setting it. (That run's
+      #     stack reads `:88:3`; line numbers as of dcc5cd7, and the file has
+      #     grown since — cite the symbol, not the number.)
+      #   * 34896647837 and 34905005744 logged `✓ Running next.config.js took
+      #     …ms` and died ~30s later PRERENDERING `/`. The guard passing is
+      #     positive evidence both URLs were present; `server.ts:13` tests
+      #     `!url || !anonKey` but names both in the message, so the log could
+      #     not say which. Run 34905005744's own step env settles it: it lists
+      #     `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SUPABASE_URL` and the unprefixed
+      #     `SUPABASE_ANON_KEY`, and no `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+      #
+      # So it was never "a different variable each time" in the sense that
+      # motivated leaving the preflight thin — it was one variable the guard
+      # checked and one it structurally could not see. The guard now checks the
+      # anon key too (apps/web/lib/assert-production-public-env.js), which turns
+      # that 30s-then-opaque failure into a config-load error naming the
+      # variable and the Infisical remedy.
+      #
+      # Rehearsing the real build still earns its place, for the reason below —
+      # it is the only check that knows the WHOLE list, and it caught this
+      # before a byte of production changed. The preflight and the rehearsal are
+      # not alternatives: the guard makes the common failure legible in seconds,
+      # the rehearsal catches the ones nobody enumerated.
       #
       # The rehearsal can cover this because the build genuinely changes nothing
       # that matters: `buildVercelProject` runs `vercel pull` (a read) and
