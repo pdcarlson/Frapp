@@ -119,6 +119,21 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 > have to trust the browser for it, which it must never do. Without `API_URL` there is no redirect
 > URI to register, and without `APP_URL` the callback has nowhere to send the browser back to.
 >
+> **The production column above states the recommendation, not the current deployment** — staging
+> and production were observed sharing one Discord application, so the `prod` cells read as setup
+> steps for an application that does not exist yet. **Do not follow them to create one**: a new
+> production application forces every already-connected chapter's admin to re-authorize the new bot,
+> and a client id whose application carries no `api.frapp.live` redirect row reproduces the failure
+> #2318 was opened to fix. What was checked, how, and what follows from it lives in
+> [`integrations.md`](../ops/deployment/integrations.md) § 7A step 4, which owns that fact;
+> [#2321](https://github.com/pdcarlson/Frapp/issues/2321) is where it gets decided. Reconcile these
+> cells with whatever that lands on rather than editing them to match one environment by hand.
+>
+> ⚠️ **Until then, "Reset Token" and "Reset Secret" in the cells above are cross-environment
+> destructive** — one application means one valid token and one secret, so resetting either to
+> provision local or staging breaks production until production's Infisical is updated too. See
+> § 7A steps 2–3.
+>
 > **`DISCORD_BOT_TOKEN` is ONE global Signet value per environment, not one per tenant.** There is
 > no per-chapter credential anywhere in this feature and no secret store that would hold one — what
 > a chapter contributes is a `guild_id` in `discord_connections`, which is a public snowflake and
