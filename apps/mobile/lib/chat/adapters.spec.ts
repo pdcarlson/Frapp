@@ -6,7 +6,14 @@ import {
   createMonitorNetworkState,
   isOfflineFromExpoState,
 } from "./network-state";
-import { createAsyncStorageOutboxStore, OUTBOX_KEY } from "./outbox-store";
+import {
+  createAsyncStorageOutboxStore,
+  draftKey,
+  getOutboxStore,
+  outboxKey,
+  resetOutboxStoresForTests,
+  UnscopedOutboxError,
+} from "./outbox-store";
 import {
   createConnectionMonitor,
   type MonitorDeps,
@@ -299,6 +306,9 @@ describe("createAsyncStorageKeyValueStore", () => {
   });
 });
 
+/** The member every row below is keyed under. */
+const SCOPE = { userId: "user-a" };
+
 describe("createAsyncStorageOutboxStore", () => {
   let clock = 0;
   const now = () => ++clock;
@@ -308,7 +318,7 @@ describe("createAsyncStorageOutboxStore", () => {
   });
 
   it("enqueues with bookkeeping defaults and lists it as queued", async () => {
-    const store = createAsyncStorageOutboxStore(fakeStorage(), now);
+    const store = createAsyncStorageOutboxStore(SCOPE, fakeStorage(), now);
     const row = await store.enqueue({
       clientId: "a",
       channelId: "c1",
@@ -323,7 +333,7 @@ describe("createAsyncStorageOutboxStore", () => {
     // `NewOutboxRow` makes attempts/status/queuedAt optional, so a caller
     // spreading an intent object can hand us the keys with undefined values. If
     // those overwrote the defaults, `bumpAttempt` would produce NaN.
-    const store = createAsyncStorageOutboxStore(fakeStorage(), now);
+    const store = createAsyncStorageOutboxStore(SCOPE, fakeStorage(), now);
     await store.enqueue({
       clientId: "a",
       channelId: "c1",
@@ -340,7 +350,7 @@ describe("createAsyncStorageOutboxStore", () => {
   });
 
   it("replaces rather than duplicates on a repeated client id", async () => {
-    const store = createAsyncStorageOutboxStore(fakeStorage(), now);
+    const store = createAsyncStorageOutboxStore(SCOPE, fakeStorage(), now);
     await store.enqueue({ clientId: "a", channelId: "c1", body: "first" });
     await store.enqueue({ clientId: "a", channelId: "c1", body: "second" });
 
@@ -350,7 +360,7 @@ describe("createAsyncStorageOutboxStore", () => {
   });
 
   it("lists queued rows FIFO and omits failed ones", async () => {
-    const store = createAsyncStorageOutboxStore(fakeStorage(), now);
+    const store = createAsyncStorageOutboxStore(SCOPE, fakeStorage(), now);
     await store.enqueue({ clientId: "a", channelId: "c1", body: "1" });
     await store.enqueue({ clientId: "b", channelId: "c1", body: "2" });
     await store.enqueue({ clientId: "c", channelId: "c1", body: "3" });
@@ -363,7 +373,7 @@ describe("createAsyncStorageOutboxStore", () => {
   });
 
   it("requeues a failed row and clears its error", async () => {
-    const store = createAsyncStorageOutboxStore(fakeStorage(), now);
+    const store = createAsyncStorageOutboxStore(SCOPE, fakeStorage(), now);
     await store.enqueue({ clientId: "a", channelId: "c1", body: "1" });
     await store.markFailed("a", "boom");
     await store.requeue("a");
@@ -378,7 +388,7 @@ describe("createAsyncStorageOutboxStore", () => {
   });
 
   it("bumps attempts cumulatively", async () => {
-    const store = createAsyncStorageOutboxStore(fakeStorage(), now);
+    const store = createAsyncStorageOutboxStore(SCOPE, fakeStorage(), now);
     await store.enqueue({ clientId: "a", channelId: "c1", body: "1" });
     await store.bumpAttempt("a", "e1");
     await store.bumpAttempt("a", "e2");
@@ -388,7 +398,7 @@ describe("createAsyncStorageOutboxStore", () => {
   });
 
   it("dequeues by client id", async () => {
-    const store = createAsyncStorageOutboxStore(fakeStorage(), now);
+    const store = createAsyncStorageOutboxStore(SCOPE, fakeStorage(), now);
     await store.enqueue({ clientId: "a", channelId: "c1", body: "1" });
     await store.dequeue("a");
 
@@ -396,7 +406,7 @@ describe("createAsyncStorageOutboxStore", () => {
   });
 
   it("scopes listForChannel and includes failed rows", async () => {
-    const store = createAsyncStorageOutboxStore(fakeStorage(), now);
+    const store = createAsyncStorageOutboxStore(SCOPE, fakeStorage(), now);
     await store.enqueue({ clientId: "a", channelId: "c1", body: "1" });
     await store.enqueue({ clientId: "b", channelId: "c2", body: "2" });
     await store.markFailed("a", "boom");
@@ -410,7 +420,7 @@ describe("createAsyncStorageOutboxStore", () => {
     // AsyncStorage has no compare-and-swap, so unserialized read-modify-write
     // cycles drop one of two concurrent enqueues. The flush loop and a user
     // send genuinely race here.
-    const store = createAsyncStorageOutboxStore(fakeStorage(), now);
+    const store = createAsyncStorageOutboxStore(SCOPE, fakeStorage(), now);
     await Promise.all([
       store.enqueue({ clientId: "a", channelId: "c1", body: "1" }),
       store.enqueue({ clientId: "b", channelId: "c1", body: "2" }),
@@ -422,7 +432,8 @@ describe("createAsyncStorageOutboxStore", () => {
 
   it("treats a corrupt payload as empty instead of wedging sends", async () => {
     const store = createAsyncStorageOutboxStore(
-      fakeStorage({ [OUTBOX_KEY]: "{not json" }),
+      SCOPE,
+      fakeStorage({ [outboxKey(SCOPE)]: "{not json" }),
       now,
     );
 
@@ -435,8 +446,222 @@ describe("createAsyncStorageOutboxStore", () => {
   it("clears a draft without failing the send that triggered it", async () => {
     const storage = fakeStorage();
     storage.removeItem = vi.fn().mockRejectedValue(new Error("disk full"));
-    const store = createAsyncStorageOutboxStore(storage, now);
+    const store = createAsyncStorageOutboxStore(SCOPE, storage, now);
 
     await expect(store.clearDraft("c1")).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * The #2228 tenant boundary.
+ *
+ * These run against the real store and a real AsyncStorage fake, deliberately:
+ * a module mock cannot see this class of bug, because the defect was never in
+ * *what the store was asked for* — it was that one global key answered for
+ * everybody. So each test below writes as one member and reads as another, and
+ * fails if the second store can reach the first's rows at all.
+ */
+describe("createAsyncStorageOutboxStore tenant scoping (#2228)", () => {
+  let clock = 0;
+  const now = () => ++clock;
+
+  const MEMBER_A = { userId: "user-a" };
+  const MEMBER_B = { userId: "user-b" };
+
+  beforeEach(() => {
+    clock = 0;
+  });
+
+  it("does not return another member's queued rows to the boot flush", async () => {
+    // The exact shape of the reported bug: A queues offline, B signs in on the
+    // same device, and `flushOutbox` runs `listQueued` at boot.
+    const storage = fakeStorage();
+    const a = createAsyncStorageOutboxStore(MEMBER_A, storage, now);
+    await a.enqueue({ clientId: "a-1", channelId: "c1", body: "A's message" });
+
+    const b = createAsyncStorageOutboxStore(MEMBER_B, storage, now);
+
+    expect(await b.listQueued()).toEqual([]);
+    expect(await b.listForChannel("c1")).toEqual([]);
+    // ...and A still has it. Scoping is not a wipe: the unsent message waits.
+    expect(await a.listQueued()).toHaveLength(1);
+  });
+
+  it("cannot dequeue, fail, requeue or bump another member's row", async () => {
+    const storage = fakeStorage();
+    const a = createAsyncStorageOutboxStore(MEMBER_A, storage, now);
+    await a.enqueue({ clientId: "a-1", channelId: "c1", body: "A's message" });
+
+    const b = createAsyncStorageOutboxStore(MEMBER_B, storage, now);
+    await b.dequeue("a-1");
+    await b.markFailed("a-1", "boom");
+    await b.requeue("a-1");
+    await b.bumpAttempt("a-1", "boom");
+
+    const [row] = await a.listQueued();
+    expect(row).toMatchObject({
+      clientId: "a-1",
+      status: "queued",
+      attempts: 0,
+    });
+    expect(row?.lastError).toBeUndefined();
+  });
+
+  it("writes each member's queue under its own key, clear of the legacy namespace", async () => {
+    const storage = fakeStorage();
+    await createAsyncStorageOutboxStore(MEMBER_A, storage, now).enqueue({
+      clientId: "a-1",
+      channelId: "c1",
+      body: "A",
+    });
+    await createAsyncStorageOutboxStore(MEMBER_B, storage, now).enqueue({
+      clientId: "b-1",
+      channelId: "c1",
+      body: "B",
+    });
+
+    expect(storage.map.has(outboxKey(MEMBER_A))).toBe(true);
+    expect(storage.map.has(outboxKey(MEMBER_B))).toBe(true);
+    expect(storage.map.has("chat:outbox:v1")).toBe(false);
+
+    // The version segment leads so a legacy sweep cannot match a live key.
+    // `chat:outbox:v2:…` would have been caught by `startsWith("chat:outbox:")`.
+    for (const key of storage.map.keys()) {
+      expect(key.startsWith("chat:outbox:")).toBe(false);
+      expect(key.startsWith("chat:draft:")).toBe(false);
+    }
+  });
+
+  it("keeps a member's queue reachable whatever the active chapter is", async () => {
+    // Regression guard for the first cut of this fix, which put the chapter in
+    // the key. Mobile's chapter comes from a claim `auth-gate.ts` documents as
+    // optional, and `sendMessage` enqueues on EVERY send — so a chapter-keyed
+    // outbox turned a missing claim into a total send outage, and moved the key
+    // out from under already-queued rows on a chapter switch, leaving their
+    // Retry/Discard controls as dead taps. The scope carries the member only.
+    const storage = fakeStorage();
+    const first = createAsyncStorageOutboxStore(MEMBER_A, storage, now);
+    await first.enqueue({ clientId: "a-1", channelId: "c1", body: "queued" });
+
+    // A second store for the same member, built after a chapter change.
+    const afterSwitch = createAsyncStorageOutboxStore(MEMBER_A, storage, now);
+
+    expect(await afterSwitch.listQueued()).toHaveLength(1);
+    expect(await afterSwitch.listForChannel("c1")).toHaveLength(1);
+  });
+
+  it("refuses to queue a message it cannot key to an author", async () => {
+    // Returning a row it did not keep would report a queued message that does
+    // not exist — the silent loss the outbox exists to prevent. It fails the
+    // send instead, which the composer surfaces and the member can retry.
+    const storage = fakeStorage();
+    const unscoped = createAsyncStorageOutboxStore(null, storage, now);
+
+    await expect(
+      unscoped.enqueue({ clientId: "x", channelId: "c1", body: "nowhere" }),
+    ).rejects.toThrow(UnscopedOutboxError);
+    expect(await unscoped.listQueued()).toEqual([]);
+    expect(storage.map.size).toBe(0);
+  });
+
+  it("gives the member a sentence they can act on, not an internal one", async () => {
+    // `use-chat-channel.ts` renders `error.message` straight into the composer
+    // hint — mobile has no toast — so this string is product copy.
+    const error = new UnscopedOutboxError();
+    expect(error.message).toBe(
+      "You're signed out. Sign in again to send this message.",
+    );
+    expect(error.message).not.toMatch(/scope|keyed|outbox/i);
+  });
+
+  it("round-trips one member's own queue unchanged", async () => {
+    // The boundary must not cost the ordinary path anything.
+    const storage = fakeStorage();
+    const a = createAsyncStorageOutboxStore(MEMBER_A, storage, now);
+
+    await a.enqueue({ clientId: "a-1", channelId: "c1", body: "one" });
+    await a.enqueue({ clientId: "a-2", channelId: "c1", body: "two" });
+    expect(await a.listQueued()).toHaveLength(2);
+
+    await a.bumpAttempt("a-1", "flaky");
+    await a.markFailed("a-2", "dead");
+    expect(await a.listQueued()).toHaveLength(1);
+
+    await a.requeue("a-2");
+    expect(await a.listQueued()).toHaveLength(2);
+
+    await a.dequeue("a-1");
+    await a.dequeue("a-2");
+    expect(await a.listQueued()).toEqual([]);
+  });
+
+  it("clears only the signed-in member's draft", async () => {
+    const storage = fakeStorage();
+    await storage.setItem(draftKey(MEMBER_A, "c1"), "A's half-typed message");
+    await storage.setItem(draftKey(MEMBER_B, "c1"), "B's half-typed message");
+
+    await createAsyncStorageOutboxStore(MEMBER_B, storage, now).clearDraft("c1");
+
+    expect(storage.map.get(draftKey(MEMBER_A, "c1"))).toBe(
+      "A's half-typed message",
+    );
+    expect(storage.map.has(draftKey(MEMBER_B, "c1"))).toBe(false);
+  });
+});
+
+describe("getOutboxStore", () => {
+  beforeEach(() => {
+    resetOutboxStoresForTests();
+  });
+
+  it("hands the same store back for one member, so one chain owns one key", () => {
+    // The store serializes every read-modify-write through a single promise
+    // chain because AsyncStorage has no compare-and-swap. That is a guarantee
+    // per *key*, not per object: two live stores over one key would each have
+    // their own chain, and an interleaved flush-dequeue and user-enqueue would
+    // silently drop a queued row.
+    const first = getOutboxStore({ userId: "user-a" });
+    const second = getOutboxStore({ userId: "user-a" });
+
+    expect(second).toBe(first);
+  });
+
+  it("hands a different store to a different member", () => {
+    expect(getOutboxStore({ userId: "user-a" })).not.toBe(
+      getOutboxStore({ userId: "user-b" }),
+    );
+  });
+
+  it("returns the inert store when nobody is signed in", async () => {
+    const store = getOutboxStore(null);
+    await expect(
+      store.enqueue({ clientId: "x", channelId: "c1", body: "nowhere" }),
+    ).rejects.toThrow(UnscopedOutboxError);
+    expect(await store.listQueued()).toEqual([]);
+  });
+});
+
+describe("the key-value mirror does not reach scoped chat rows (#2228)", () => {
+  it("hydrates only the lastSeen cursor, not drafts or queued bodies", async () => {
+    // The mirror is a process-wide `Map` with a public `get`, no scope, and no
+    // clear on sign-out. Its soundness argument is that its only consumer is
+    // the backfill cursor, where a stale read widens a backfill instead of
+    // losing data. #2228 put member-scoped drafts and unsent message bodies
+    // under `chat:` too, so a `"chat:"` sweep would have copied every member's
+    // unsent text into it — a wildcard reader over the very keys that are the
+    // tenant boundary.
+    const scope = { userId: "user-a" };
+    const storage = fakeStorage({
+      "chat:lastSeen:c1": "m-42",
+      [outboxKey(scope)]: '[{"clientId":"a-1","body":"A private message"}]',
+      [draftKey(scope, "c1")]: "A half-typed message",
+    });
+    const kv = createAsyncStorageKeyValueStore(storage);
+
+    await kv.hydrate();
+
+    expect(kv.get("chat:lastSeen:c1")).toBe("m-42");
+    expect(kv.get(outboxKey(scope))).toBeNull();
+    expect(kv.get(draftKey(scope, "c1"))).toBeNull();
   });
 });
