@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
-import Constants, { ExecutionEnvironment } from "expo-constants";
+import { isExpoGo } from "./expo-go";
+import { createIsolatedModule } from "./isolated-module";
 
 /**
  * Isolation module for `react-native-keyboard-controller`
- * (spec/ui/mobile/patterns.md, #937 Expo Go rules).
+ * (`spec/ui/mobile/README.md` § Run paths: Expo Go vs EAS, #937 Expo Go rules).
  *
  * The package registers a native module at import time, and Expo Go does not
  * ship it — an unguarded import crashes Go at launch. Nothing outside this
@@ -11,57 +12,46 @@ import Constants, { ExecutionEnvironment } from "expo-constants";
  * everything else goes through `KeyboardProviderGuarded` / `getKeyboardPath`,
  * and screens choose `KeyboardAvoidingView` when the path is "fallback".
  */
-type KeyboardControllerModule = typeof import("react-native-keyboard-controller");
+type KeyboardControllerModule =
+  typeof import("react-native-keyboard-controller");
 
-/** `undefined` = not yet attempted; `null` = attempted and unavailable. */
-let cachedModule: KeyboardControllerModule | null | undefined;
-
-const defaultLoader = (): KeyboardControllerModule =>
-  // Lazy require: Metro bundles the factory but does not execute it until
-  // this line runs, which the StoreClient guard below prevents in Expo Go.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  require("react-native-keyboard-controller") as KeyboardControllerModule;
-
-let loader = defaultLoader;
+// Keep this handle unexported. `keyboard.spec.ts`'s source-shape guard
+// bans a static import with the semicolon-bounded regex
+// /^(import|export)[^;]*["']react-native-keyboard-controller(\/[^"']*)?["']/m,
+// and `[^;]` spans newlines —
+// so an `export` keyword here would reach the `packageName` string below and
+// read as an import that does not exist. The cure a maintainer would reach for
+// is loosening that regex, which is the guard that stops a real static import
+// from crashing Expo Go at launch behind the suite-wide `vi.mock`.
+const keyboardControllerModule = createIsolatedModule<KeyboardControllerModule>(
+  {
+    packageName: "react-native-keyboard-controller",
+    whenUnavailable: "using the fallback keyboard path.",
+    load: () =>
+      // Lazy require: Metro bundles the factory but does not execute it until
+      // this line runs, which the Expo Go guard below prevents in Go.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require("react-native-keyboard-controller") as KeyboardControllerModule,
+    isUnavailable: isExpoGo,
+  },
+);
 
 /**
  * Test-only seam: vitest's runtime executes the real CJS `require`, which
  * cannot be intercepted by `vi.mock`, so the spec injects a loader instead.
+ *
+ * Typed narrower than the factory's own seam on purpose. This is the one
+ * isolation module with no platform split, so its real loader either yields the
+ * module or throws — it cannot return `null`. Accepting a null-returning loader
+ * would let a spec assert the fallback path through a state production cannot
+ * reach, and never exercise the `try`/`catch` that must warn on a genuine link
+ * failure.
  */
-export function setKeyboardControllerLoaderForTests(
+export const setKeyboardControllerLoaderForTests: (
   next: (() => KeyboardControllerModule) | null,
-) {
-  loader = next ?? defaultLoader;
-  cachedModule = undefined;
-}
+) => void = keyboardControllerModule.setLoaderForTests;
 
-function loadKeyboardController(): KeyboardControllerModule | null {
-  if (cachedModule !== undefined) {
-    return cachedModule;
-  }
-
-  // Read inside the function, not at module scope, so tests can mock
-  // expo-constants without import-order sensitivity.
-  if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
-    cachedModule = null;
-    return cachedModule;
-  }
-
-  try {
-    cachedModule = loader();
-  } catch (error) {
-    // Outside Expo Go the module is expected to exist, so a load failure is a
-    // real linking problem (e.g. a dev-client built before this package was
-    // added) — surface it instead of silently impersonating the Go fallback.
-    console.warn(
-      "react-native-keyboard-controller failed to load; using the fallback keyboard path.",
-      error,
-    );
-    cachedModule = null;
-  }
-
-  return cachedModule;
-}
+const loadKeyboardController = keyboardControllerModule.load;
 
 /** Which keyboard path is live: the native controller, or the RN fallback. */
 export function getKeyboardPath(): "native" | "fallback" {
