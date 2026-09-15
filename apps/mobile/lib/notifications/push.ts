@@ -1,5 +1,7 @@
 import { Platform } from "react-native";
-import Constants, { ExecutionEnvironment } from "expo-constants";
+import Constants from "expo-constants";
+import { isWebOrExpoGo } from "../expo-go";
+import { createIsolatedModule } from "../isolated-module";
 import { requireNotifications } from "./push-module";
 import type {
   NotificationsModule,
@@ -17,10 +19,10 @@ import type {
  * enforces it and names this path in its message. Everything else goes through
  * `isPushAvailable()` and the wrappers below.
  *
- * Modelled on `lib/payments/stripe.ts`, which solved the identical problem for
- * `@stripe/stripe-react-native`: the guard read inside the function rather than
- * at module scope, the test seam, and the platform split behind
- * `./push-module` all come from there.
+ * The loader machinery — the cached attempt, the test seam, the warn-and-cache
+ * on a load failure — is `lib/isolated-module.ts`, shared with the three other
+ * isolation modules. Only the guard and the platform split behind
+ * `./push-module` are this module's own.
  *
  * ## Three things have to be true before a push can arrive
  *
@@ -37,56 +39,29 @@ import type {
  * an enhancement over a history that already renders.
  */
 
-/** `undefined` = not yet attempted; `null` = attempted and unavailable. */
-let cachedModule: NotificationsModule | null | undefined;
-
-const defaultLoader = (): NotificationsModule | null => requireNotifications();
-
-let loader = defaultLoader;
+// Keep this handle unexported. `push.spec.ts`'s source-shape guard
+// bans a static import with the semicolon-bounded regex
+// /^(import|export)[^;]*["']expo-notifications(\/[^"']*)?["']/m,
+// and `[^;]` spans newlines —
+// so an `export` keyword here would reach the `packageName` string below and
+// read as an import that does not exist. The cure a maintainer would reach for
+// is loosening that regex, which is the guard that stops a real static import
+// from crashing Expo Go at launch behind the suite-wide `vi.mock`.
+const notifications = createIsolatedModule<NotificationsModule>({
+  packageName: "expo-notifications",
+  whenUnavailable:
+    "push stays disabled and notifications render from in-app data only.",
+  load: requireNotifications,
+  isUnavailable: isWebOrExpoGo,
+});
 
 /**
  * Test-only seam: vitest executes the real CJS `require`, which `vi.mock`
  * cannot intercept, so specs inject a loader instead.
  */
-export function setPushLoaderForTests(
-  next: (() => NotificationsModule | null) | null,
-) {
-  loader = next ?? defaultLoader;
-  cachedModule = undefined;
-}
+export const setPushLoaderForTests = notifications.setLoaderForTests;
 
-function loadNotifications(): NotificationsModule | null {
-  if (cachedModule !== undefined) return cachedModule;
-
-  // Belt and braces. `push-module.ts` already returns null on web, so this
-  // cannot be the thing that saves the export — but it makes the intent legible
-  // at the one place a reader looks, and it is simply true: there is no web
-  // target for this app's push.
-  if (Platform.OS === "web") {
-    cachedModule = null;
-    return cachedModule;
-  }
-
-  if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
-    cachedModule = null;
-    return cachedModule;
-  }
-
-  try {
-    cachedModule = loader();
-  } catch (error) {
-    // Outside Expo Go the module is expected to exist, so a load failure is a
-    // real linking problem (a dev client built before this package landed), not
-    // the Go fallback wearing its clothes.
-    console.warn(
-      "expo-notifications failed to load; push stays disabled and notifications render from in-app data only.",
-      error,
-    );
-    cachedModule = null;
-  }
-
-  return cachedModule;
-}
+const loadNotifications = notifications.load;
 
 /**
  * The EAS project id `getExpoPushTokenAsync` needs outside Expo Go.
