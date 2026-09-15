@@ -51,14 +51,20 @@ fallback that switches on: the two paths are independent, and the upload one is
 what keeps working if Discord ever throttles one shared bot across every chapter.
 
 Everything below is **provider-side configuration that no repo state creates and
-no CI check can detect.** Three of the five steps produce an Infisical value; two
-produce nothing but a toggle, and getting either wrong fails at runtime with an
-error that names neither this page nor the setting.
+no CI check can detect.** Two of the five steps produce Infisical values (step 2
+the bot token, step 3 the OAuth pair); the other three produce nothing a repo can
+see — step 1 an application, step 4 a text entry, step 5 a toggle — and getting
+any of those three wrong fails at runtime with an error that names neither this
+page nor the setting.
 
 1. **Create the application.** https://discord.com/developers/applications → New
    Application, owned by **Signet**, not by a chapter. A separate application per
    environment is recommended so a staging mistake cannot read production
-   chapters' servers.
+   chapters' servers. Today that is honored where it counts and not beyond it:
+   production has its own application, and local and staging share a second one
+   (`DISCORD_CLIENT_ID` is the same value for both in
+   [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) § API-Only Settings).
+   That split is what step 4 has to be read against.
 2. **Bot token.** Bot → Reset Token → copy (shown once) → Infisical
    `DISCORD_BOT_TOKEN`. **One global value per environment, not one per chapter.**
 3. **OAuth2 credentials.** OAuth2 → copy Client ID → `DISCORD_CLIENT_ID`; Reset
@@ -76,11 +82,29 @@ error that names neither this page nor the setting.
 
    It is `API_URL` + `/v1/discord/connect/callback` and Discord matches it
    **character for character**. Get it wrong and every admin who clicks "Add to
-   Server" gets Discord's own `invalid_redirect_uri` page with **nothing in the
-   API logs** — Discord rejects the request before the callback is ever reached.
-   The path is pinned in code as `DISCORD_CALLBACK_PATH`
+   Server" gets Discord's own **`Invalid OAuth2 redirect_uri`** page, and the
+   callback is never reached — Discord rejects at the authorize URL, before the
+   consent screen, so the admin never even picks a server. The path is pinned in
+   code as `DISCORD_CALLBACK_PATH`
    (`apps/api/src/application/services/discord-oauth.service.ts`); this table is
    the third copy, and the one that drifts.
+
+   **The Redirects list belongs to an application, not to an environment.**
+   Discord validates `redirect_uri` against the list of the application named by
+   the `client_id` in the authorize URL, and the API builds that URL from its own
+   `DISCORD_CLIENT_ID` — so a row is only ever consulted on the application whose
+   client id *that* environment is configured with. Registering production's URI
+   on the staging application does nothing for production.
+
+   So register, on each application, a row for every environment whose
+   `DISCORD_CLIENT_ID` points at it. Today
+   ([`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) § API-Only Settings
+   is the source of truth for which is which) local and staging share one
+   application — which therefore needs **both** the `localhost:3001` and the
+   `api-staging` rows — and production has its own, needing the `api.frapp.live`
+   row. An extra registered row an environment is not using yet is inert, so
+   adding the next environment's row while you are already in the portal is free;
+   what is not free is leaving one unregistered.
 
 5. **Enable Message Content Intent** — Bot → Privileged Gateway Intents →
    Message Content Intent → on. This is **self-serve below 100 servers** and is
@@ -88,7 +112,8 @@ error that names neither this page nor the setting.
    threshold). Without it Discord answers `200` with `content: ""` on every
    message a chapter's members wrote. The importer detects that and fails with a
    message naming this toggle rather than importing a decade of empty bubbles —
-   but only turning it on makes an import actually work.
+   but only turning it on makes an import actually work, and the detection is
+   thresholded rather than absolute (see the table below, and #2317).
 
 **Permissions.** The install requests View Channels + Read Message History and
 nothing else (bitfield `66560`, pinned as `DISCORD_BOT_PERMISSIONS` in
@@ -105,9 +130,40 @@ chapter is what activates it. So a Signet officer cannot send their authorize
 link to somebody else's Discord admin and end up reading that server. Do not
 "simplify" the flow by binding on the callback.
 
-**Verify after setup**: `GET /v1/discord/availability` (as an officer with
-`channels:manage`) must answer `{"available": true}`. If it answers `false`, one
-of the three secrets or `API_URL` / `APP_URL` is unset in that environment — see
+**Verify after setup — and know what the check does not cover.**
+`GET /v1/discord/availability` (as an officer with `channels:manage`) must answer
+`{"available": true}`. If it answers `false`, one of the three secrets or
+`API_URL` / `APP_URL` is unset in that environment — see
 [`ENV_REFERENCE.md`](../../environment/ENV_REFERENCE.md) § API-Only Settings.
+
+**`available: true` is not "Discord is set up".** `DiscordOAuthService.isAvailable()`
+reads the five variables named above and nothing else; it makes no call to
+Discord, so it cannot observe step 4 or step 5 at all. Neither is detected
+*before* an admin tries to use the flow: step 4 is never visible to Signet, and
+step 5 only becomes visible once an import is already running. A fully green
+availability check therefore sits happily on top of either one being wrong. The
+three failures look nothing alike:
+
+| What is wrong                        | How it presents                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A secret or `API_URL` / `APP_URL` unset | `availability` answers `false`, and the wizard still shows the "Connect Discord" card — greyed out, reading "Not available in this environment", not hidden. Only `POST /v1/discord/connect` and `POST /v1/discord/connect/confirm` 503; `GET`/`DELETE /v1/discord/connection` still answer 200, so a clean 200 there is **not** evidence the secrets are set.                    |
+| Redirect URI not registered (step 4) | Wizard offers "Connect Discord" normally and `POST /v1/discord/connect` **succeeds** — it mints a `discord_oauth_states` row and returns the authorize URL. The browser then hits Discord's **`Invalid OAuth2 redirect_uri`** page and the *callback* never fires, so there is no `?discord=` code and nothing on the callback path in logs or Sentry. Server-side evidence does exist: a pile of `discord_oauth_states` rows with `consumed_at IS NULL` and no matching `discord_connections` row is the fingerprint. Live, the `redirect_uri=` parameter in that page's address bar is the fastest check — compare it to the table above character for character. |
+| Message Content Intent off (step 5)  | Connecting succeeds and channel and role mapping succeed. The import fails with an error naming this toggle (`MISSING_MESSAGE_CONTENT_INTENT_ERROR`) **only once a slice has seen 25 authored messages with no content, attachment or embed between them** (`MIN_AUTHORED_MESSAGES_FOR_CONTENT_CHECK`, `apps/api/src/domain/utils/discord-api-message.ts`). Under that threshold — a small or quiet archive — the import goes green and writes those messages empty. See the caveat below.                                  |
+
+**Two caveats on that last row, because it is the one that can pass while wrong.**
+The tally is cumulative across a slice and checked once per 100-message page
+*before* that page is written, so rows written by earlier pages are already
+committed when a later page trips it — an import that fails this way can still
+have left empty rows behind, despite what the error text says. And the check
+needs `withSubstance === 0`: a single message anywhere in the slice carrying an
+embed or attachment latches it off for the rest of that slice. So **a green
+import on a small test server is not proof the intent is on** — verify the
+toggle in the portal directly. ([#2317](https://github.com/pdcarlson/Frapp/issues/2317)
+tracks tightening the detector and correcting its error string.)
+
+So the check that actually proves step 4 is clicking **Add to Server** once per
+environment and getting Discord's consent screen instead of its error page. It
+proves step 4 and nothing else — the consent screen renders happily with the
+Message Content Intent off. Confirm step 5 by eye in the portal.
 
 ---
