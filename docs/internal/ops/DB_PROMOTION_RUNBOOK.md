@@ -885,7 +885,7 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
   - `select column_default from information_schema.columns where table_name='discord_imports' and column_name='source';` → **`'upload'::text`**. Every pre-existing import must still read as an upload with no backfill.
   - `select pg_get_constraintdef(oid) from pg_constraint where conname='discord_imports_source_check';` → `CHECK ((source = ANY (ARRAY['upload'::text, 'bot'::text])))`
   - `select indexdef from pg_indexes where indexname='idx_discord_import_channels_order';` → on `(import_id, position, discord_channel_id)`
-  - Sanity: `GET /v1/discord/availability` answers `200` with `{"available":true}` once the secrets are set, and the Discord card appears as a second option in the import wizard's source step — the DiscordChatExporter upload path must still be offered alongside it, not replaced.
+  - Sanity: `GET /v1/discord/availability` answers `200` with `{"available":true}` once the secrets are set, and the Discord card appears as a second option in the import wizard's source step — the DiscordChatExporter upload path must still be offered alongside it, not replaced. **`available: true` only proves the five variables are set**; it makes no call to Discord and cannot see the redirect registration or the Message Content Intent, both of which are checked separately below.
 - **Rollback**: see **Rollback the Discord bot connection** in
   [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). **Read it before
   promoting** — dropping `discord_connections` discards every chapter's guild
@@ -939,12 +939,19 @@ discord_imports;` before promoting rather than assuming it stayed small. Both
     for the environment, and it is the **API** origin, not the app origin —
     `https://api-staging.frapp.live/v1/discord/connect/callback`, not
     `https://app.staging.frapp.live/…`. This is the one that has actually been
-    got wrong: the app origin looks right, matches `APP_URL`, and fails only at
-    the end of a real OAuth round trip with Discord's own `invalid_redirect_uri`
-    screen, after the admin has already picked a server.
+    got wrong: the app origin looks right and matches `APP_URL`. It fails at the
+    **start** of the OAuth round trip, not the end — Discord serves its own
+    `Invalid OAuth2 redirect_uri` page straight off the authorize URL, before the
+    consent screen, so the admin never picks a server and nothing on the callback
+    path reaches the API. (`POST /v1/discord/connect` does succeed first and
+    mints a `discord_oauth_states` row; unconsumed rows with no matching
+    `discord_connections` row are the server-side fingerprint.)
   - The Message Content Intent must be ON for the app. Without it Discord answers
-    `200` with `content: ""` on every message, so an import would silently write
-    an archive of empty messages rather than fail.
+    `200` with `content: ""` on every message. The importer detects this and
+    fails — but only once a slice has seen 25 authored messages with no content,
+    attachment or embed, so a small test server can import green with the intent
+    off and write those messages empty. Verify the toggle in the portal; a green
+    import on a scratch server does not prove it.
 
 ## 2026-08-24: Discord archive importer — one migration
 
