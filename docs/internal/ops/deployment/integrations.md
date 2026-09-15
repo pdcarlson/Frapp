@@ -4,13 +4,42 @@
 
 1. Go to https://dashboard.stripe.com/test → Developers → API keys.
 2. Copy `sk_test_...` → use as `STRIPE_SECRET_KEY` for staging API.
-3. Create a webhook endpoint pointing at `https://api-staging.frapp.live/v1/webhooks/stripe`.
+3. Create a webhook endpoint pointing at `https://api-staging.frapp.live/v1/webhooks/stripe`,
+   and enable **exactly these six event types**:
+
+   ```
+   checkout.session.completed
+   customer.subscription.updated
+   customer.subscription.deleted
+   invoice.paid
+   payment_intent.succeeded
+   payment_intent.payment_failed
+   ```
+
+   This list is `HANDLED_WEBHOOK_EVENT_TYPES` in
+   [`apps/api/src/infrastructure/billing/stripe-webhook-events.ts`](../../../../apps/api/src/infrastructure/billing/stripe-webhook-events.ts),
+   which is the source of truth — re-read it rather than trusting this copy, and
+   update this step if it ever changes. Anything not on the list is dropped by the
+   allowlist before the database is touched, so enabling extras is noise rather than
+   risk; enabling **fewer** is the failure that keeps happening. Every endpoint
+   registered so far has been missing at least one type, each a different one
+   (#1978, #2285), because this step used to name none of them. `StripeWebhookConsistencyService`
+   warns at boot when the registered endpoint is missing one — read the API's startup
+   log after creating an endpoint, and do not treat a green deploy as confirmation.
+
 4. Copy the webhook signing secret → `STRIPE_WEBHOOK_SECRET`.
 5. Create a Product + Price → copy price ID → `STRIPE_PRICE_ID`.
 
 ### 7.2 Live Mode (Production)
 
 Same steps but toggle to Live mode in Stripe dashboard. Requires business verification.
+
+**Live mode is a separate object graph.** Its webhook endpoints, products and prices are
+distinct from test mode's, and a test-mode endpoint can be registered against the
+production URL — one is, today. So "an endpoint exists at `api.frapp.live`" seen in test
+mode says nothing about live mode, and the six event types above must be enabled again,
+by hand, on the live endpoint. Agent sessions cannot check this: their Stripe access is
+test-mode only.
 
 ---
 
