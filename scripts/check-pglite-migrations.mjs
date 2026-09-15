@@ -1017,6 +1017,8 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   const EVCARD = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"; // event-card message
   const PCARD = "ffffffff-ffff-ffff-ffff-ffffffffffff"; // punctuation-name card
   const LATECARD = "99999999-9999-9999-9999-999999999999"; // card racing the scrub
+  const OTHER = "77777777-7777-7777-7777-777777777777"; // the other member in a block pair
+  const CAND = "88888888-8888-8888-8888-888888888888"; // rush candidate the doomed user voted on
 
   // ─── change-ping tables stay writable without a `realtime` schema ──────────
   //
@@ -1116,6 +1118,29 @@ console.log("\n=== Functional smoke: anonymize_user ===");
               '{"actor_user_id":"someone-else","actor_name":"Someone Else","recipient_user_id":"${U}","recipient_name":"(DU) Doomed"}'::jsonb);
       insert into user_settings (user_id) values ('${U}');
       insert into push_tokens (user_id, token) values ('${U}', 'ExponentPushToken[smoke]');
+      -- #2257 safety state. The asymmetry below is the property under test:
+      -- the doomed user's OWN block goes, the block another member placed
+      -- AGAINST them stays (purging it would let a reported member clear every
+      -- block standing against him by deleting his account), and the report
+      -- they filed stays because it is moderation history. Plus #494's rush
+      -- ballot, whose purge line this same migration adds.
+      insert into users (id, supabase_auth_id, email, display_name)
+      values ('${OTHER}', gen_random_uuid(), 'other@example.com', 'Other Member');
+      insert into chat_member_blocks (chapter_id, blocker_user_id, blocked_user_id)
+      values ('${C}', '${U}', '${OTHER}'), ('${C}', '${OTHER}', '${U}');
+      insert into chat_message_reports (chapter_id, message_id, reporter_user_id, reason, reported_content)
+      values ('${C}', '${CARD}', '${U}', 'harassment',
+              'Assigned "T" to Doomed User (due tomorrow) cc Doomed Userling');
+      -- The other direction, which is the one carrying the abuse vector: a
+      -- report filed BY someone else ABOUT the departing member. A symmetric
+      -- "purge everything about them" would wipe the moderation queue about a
+      -- member who is deleting his account to escape it.
+      insert into chat_message_reports (chapter_id, message_id, reporter_user_id, reported_sender_id, reason)
+      values ('${C}', '${EVCARD}', '${OTHER}', '${U}', 'spam');
+      insert into rush_candidates (id, chapter_id, display_name, created_by)
+      values ('${CAND}', '${C}', 'Prospect', '${OTHER}');
+      insert into rush_candidate_votes (candidate_id, chapter_id, voter_id)
+      values ('${CAND}', '${C}', '${U}');
       -- Rename before deletion: the content rewrite must key on the card's own
       -- payload snapshot ('Doomed User'), not the live display name.
       update users set display_name = 'D' where id = '${U}';
@@ -1173,6 +1198,49 @@ console.log("\n=== Functional smoke: anonymize_user ===");
                    + (select count(*)::int from user_settings where user_id = '${U}')
                    + (select count(*)::int from push_tokens where user_id = '${U}') as leftovers`,
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
+      },
+      {
+        // #2257. The delete block has been hand-copied forward twice
+        // (20260803140000 -> 20260902160000 -> 20260915210100) and each
+        // omission so far was caught only by a human diffing the body. These
+        // two assertions are the regression guard for the safety-relevant
+        // half, in BOTH directions: a future copy that drops the purge fails
+        // the first, and one that over-purges -- deleting blocks against the
+        // departing member, or their reports -- fails the second.
+        name: "current-state purged: own block list, rush ballots",
+        sql: `select (select count(*)::int from chat_member_blocks where blocker_user_id = '${U}')
+                   + (select count(*)::int from rush_candidate_votes where voter_id = '${U}') as leftovers`,
+        ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
+      },
+      {
+        // Exact counts, not `>= 0`: an over-purge gives 0 and a spurious
+        // duplicate gives 2, so both directions fail. reports_against is the
+        // one that matters most -- it is the queue ABOUT the departing member,
+        // which a symmetric purge would let him erase by leaving.
+        name: "safety state RETAINED: blocks against them, reports they filed, reports about them",
+        sql: `select (select count(*)::int from chat_member_blocks where blocked_user_id = '${U}') as blocked_by,
+                     (select count(*)::int from chat_message_reports where reporter_user_id = '${U}') as reports,
+                     (select count(*)::int from chat_message_reports where reported_sender_id = '${U}') as reports_against`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].blocked_by === 1 &&
+          rows[0].reports === 1 &&
+          rows[0].reports_against === 1,
+      },
+      {
+        // #2257. reported_content is a second copy of chat_messages.content, so
+        // the card scrub has to reach it too or a scrubbed display name
+        // survives verbatim in a table nothing ever purges.
+        name: "report evidence snapshot scrubbed alongside the card it copies",
+        sql: `select reported_content from chat_message_reports where message_id = '${CARD}'`,
+        // Exactly the string the sibling assertion above pins for
+        // chat_messages.content, including the 'Doomed Userling' that word
+        // boundaries must leave alone -- the snapshot has to track the message
+        // it copies precisely, not merely stop saying 'Doomed User'.
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].reported_content ===
+            'Assigned "T" to Deleted User (due tomorrow) cc Doomed Userling',
       },
       {
         name: "task card rewritten in payload AND content via payload snapshot (rename-proof, word-boundary safe)",

@@ -1894,3 +1894,48 @@ SELECT candidate_id, chapter_id, voter_id, created_at FROM rush_candidate_votes;
 ```
 
 `voter_id` is stored for uniqueness and is never listed on the card; dumping the vote table still contains who voted. Treat that dump as restricted.
+
+## Rollback chat report and block (20260915210000)
+
+* **Migration**: `20260915210000_chat_reports_and_blocks.sql`
+
+Purely additive DDL — two tables, constraints, indexes, RLS on with no policies (#2257). Nothing existing is altered.
+
+```sql
+DROP TABLE IF EXISTS chat_message_reports;
+DROP TABLE IF EXISTS chat_member_blocks;
+```
+
+Order between the two does not matter — neither references the other.
+
+**Redeploy the API first**, to a build without the #2257 report and block modules. At the time of writing no such build exists in the other direction: these tables ship ahead of the API slice that reads them, so until that slice lands every build is already "without", and this step is a no-op. Once the API slice has shipped, treat it as load-bearing — whatever routes read these tables will fail while the tables are gone, and the member-facing degradation is whatever that slice specified, which is written in [`spec/behavior/chat/README.md`](../../../spec/behavior/chat/README.md#report-and-block) § Report and block rather than guessed at here.
+
+Roll back `20260915210100` **first** if it has been applied: `anonymize_user` references `chat_member_blocks`, and plpgsql resolves the table at execution time, so dropping the table under the newer function leaves account deletion failing at runtime with `relation "chat_member_blocks" does not exist` — with nothing failing at migration time to warn you.
+
+**This is an App Store compliance regression, not only a feature rollback.** Guideline 1.2 expects a UGC app to ship report and block; once the member-side controls are live, dropping these tables removes the controls a reviewer taps. Do not roll back on a build that is under review or live in the App Store without a replacement in the same deploy.
+
+**Data caveat**: rolling back deletes every filed report and every block.
+
+```sql
+SELECT * FROM chat_message_reports;
+SELECT chapter_id, blocker_user_id, blocked_user_id, created_at FROM chat_member_blocks;
+```
+
+Both dumps are restricted. The report dump names reporters and carries the snapshotted content, and the block dump is exactly the who-blocked-whom mapping the tables' zero-policy RLS exists to keep unreadable — a member must never learn they were blocked. Treat a dump as the one place that guarantee does not hold, and delete it when the restore is done.
+
+## Rollback anonymize_user chat block purge (20260915210100)
+
+* **Migration**: `20260915210100_anonymize_user_purge_chat_blocks.sql`
+
+Function-only change (#2257): `create or replace function anonymize_user(...)` adding `delete from chat_member_blocks where blocker_user_id = p_user_id;` and `delete from rush_candidate_votes where voter_id = p_user_id;` alongside the existing per-user purges.
+
+To roll back, re-apply the previous definition from `20260902160000_anonymize_user_purge_bookmarks.sql` — the whole function body is in that file, and `create or replace` makes replaying it idempotent:
+
+```sql
+-- Re-run the CREATE OR REPLACE block from
+-- supabase/migrations/20260902160000_anonymize_user_purge_bookmarks.sql
+```
+
+**Rolling this back is a data-retention regression, not a feature rollback.** Without these lines, a deleted member's own block list and their rush ballots both survive account deletion. The FKs' `on delete cascade` do **not** cover either: `anonymize_user` tombstones the `users` row rather than deleting it, so nothing ever cascades. What each table retains and why is owned by [`spec/behavior/data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion) § Individual Account Deletion. Only roll back alongside dropping `chat_member_blocks` itself — and in that order, per the note above.
+
+**Re-applying is safe** and idempotent; each delete is a no-op for a user with no such rows, and re-running the whole function on an already-tombstoned user is the documented retry path.

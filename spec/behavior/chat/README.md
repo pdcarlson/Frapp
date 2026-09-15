@@ -248,6 +248,61 @@ than pretending otherwise:**
   limit in the channel header; the target stays pending, so a message that arrives later still
   gets its jump. Reaching genuinely old hits needs real backfill — see #1571.
 
+## Report and block
+
+Signet ships chapter channels, **direct messages**, and file uploads. That is user-generated content, and **App Store Review Guideline 1.2** expects a UGC app to give a member a way to report objectionable content and to block an abusive user. Officer moderation (`channels:manage`, above) is real but does not reach a private DM, which is the surface a reviewer probes and the one a harassed member actually needs. These two controls are the member-side answer (#2257).
+
+**Status: schema only.** The tables below exist (`20260915210000`); the API routes, the mobile controls, and the officer queue land in the following slices of #2257. Treat this section as the contract those slices are written against, not as a description of shipped behavior — [`AGENTS.md`](../../../AGENTS.md) § Spec vs code.
+
+### Report
+
+- **Any member can report any message they can see**, in a channel or a DM. Visibility is the existing `canAccessChannel` predicate — reporting is authorized as a **read**, so it reaches exactly the messages the member could already render, and no more.
+- **A report is filed as the caller, never with ambient service authority.** The reporter is the authenticated caller; a member cannot report as someone else.
+- **Reports land in a per-chapter officer queue** readable by `channels:manage` holders, newest first.
+- **The reporter is never disclosed to the reported member.** There is no surface, API route, or repository method that answers "who reported me". The tables' zero-policy RLS (below) is what makes that structural rather than a matter of review.
+- **A report carries its own evidence.** The reported content and sender are snapshotted into the report row at file time. This is not belt-and-braces: a sender may soft-delete their *own* message, which overwrites its content with `[message deleted]`, so without the snapshot every reported member would have a one-tap way to blank the evidence and leave an unactionable report behind. For the same reason the report's `message_id` is nullable and does **not** cascade — a channel delete hard-deletes its messages, and an officer must not be able to erase reports against themselves by deleting the channel.
+- **One *open* report per member per message.** A double-tap or an offline retry cannot queue the same message twice. Once a report is resolved the message can be reported again — a message dismissed as spam and then edited into harassment is a new report, not a duplicate.
+- **Reports survive the reporter's account deletion**, rendering as "Deleted User". They are moderation history: a member must not be able to erase the record of a report by closing their account. See [`data-retention.md`](../data-retention.md).
+
+### Block
+
+- **A block is scoped to one chapter.** A member can belong to more than one chapter ([`multi-tenancy.md`](../multi-tenancy.md)), and blocking someone in one chapter says nothing about another chapter they may both belong to. Blocks are keyed on user ids, matching `chat_messages.sender_id`.
+- **Blocking is silent, and nothing may become an oracle for it.** The blocked member is not told and must not be able to discover it. This is the whole point of the feature, and it is why the block table carries no RLS policy: a "read your own block list" policy scoped `blocker_user_id = auth.uid()` is one edit away from a symmetric version that tells an abuser exactly who has blocked them.
+
+  The rule binds behavior, not just storage. **Any surface that refuses an action *because* of a block leaks the block** — a distinct error on DM creation is enough to binary-search the roster and enumerate exactly who has blocked you. So a block is enforced by **not delivering**, never by refusing: the blocked member can still open a thread and send into it, and sees the ordinary success they would see anyway. Nothing they send reaches the blocker.
+- **A member cannot block themselves, nor the system actor.** Blocking the system sender would silently mask the chapter welcome post, the `#chapter-audit` bridge, invite-accept DMs and the poll-expiry notice, with nothing rendering as "blocked" to explain why — chapter features would simply appear broken. (A poll and its tally are *not* in that set: `poll` is not a server-only kind, so they are authored by the member who created the poll.)
+- **Blocking is reversible, and the unblock affordance is durable.** The blocked-members list in Settings is the one place a block can always be undone; a tombstone in a thread the member may never reopen is not sufficient.
+
+#### What a block does and does not hide
+
+| Surface | Blocked member's content |
+| --- | --- |
+| Channel messages | Hidden — replaced by a tombstone the blocker can expand |
+| Direct messages | Hidden. The blocked member can still open a thread and send — refusing would be an oracle, see above — but nothing they send reaches the blocker |
+| Reactions on the blocker's messages | Hidden |
+| Poll votes | **Counted, not hidden.** A poll tally is chapter state, not a message; suppressing one vote would misreport the result to everyone |
+| Points / task / event cards **authored by** the blocked member | Hidden, like any other message they sent. These carry the acting member's `sender_id` (`PointsService`, `TaskService` and `EventService` each pass the actor, not the system id), so they are masked by the same `sender_id` predicate as ordinary text. That is deliberate: their templates interpolate member free text — a task title, an event name, a points reason — so exempting them would hand a blocked member an unmaskable channel into the blocker's timeline. The chapter record itself is unaffected; chat is a notification surface for it, and the points, tasks and events screens remain the system of record |
+| Messages from the **system actor** that merely name the blocked member | Not hidden. `SYSTEM_SENDER_ID` is not blockable at all (above) |
+| Officer moderation surfaces | **Not hidden.** A `channels:manage` holder reviewing a report sees the content as filed; a personal block must not blind an officer acting in their role |
+| Directory | Not hidden. Blocking is a chat control, not a chapter-membership one |
+
+### The masking contract
+
+**The client applies its own block list.** The server masks what it serves, but that is not sufficient on its own: the mobile and web chat threads also receive rows over a Supabase Realtime `postgres_changes` echo, which delivers the raw row with no viewer attached and therefore cannot be server-masked. A client that trusted only the server's projection would render a blocked member's *live* messages in full.
+
+Two rules follow, and both are load-bearing:
+
+- **Nothing may key off the server's masking sentinel.** The sentinel is a rendering detail of one code path; a client that pattern-matches it inherits a contract the server never promised, and silently stops masking the day that string changes.
+- **A block list that cannot be read is not an empty block list.** The read must be tri-state — ready, loading, unavailable — because a failed fetch that reads as "nobody is blocked" fails open on a safety feature. When the list is unavailable the member is told so, and messages that arrived by a path the server could not mask are held rather than rendered.
+
+Holding the right messages requires knowing **how each row reached the cache**, which is provenance, not timing. A `created_at` watermark cannot express it: REST and Realtime serialize `timestamptz` differently (`@supabase/realtime-js` maps `timestamp` through a PostgREST-consistent formatter but leaves `timestamptz` untouched), so comparing the two as strings silently misclassifies — and even with a common format, the timestamp says when a row was *written*, never how it arrived. See #2315.
+
+### Retention and authorization
+
+- `chat_message_reports` and `chat_member_blocks` both have RLS enabled with **zero policies**. No client reads either table directly; the API reaches them with the service-role key. For these two tables that default-deny is the safety guarantee rather than the convention — see the argument in `20260915210000_chat_reports_and_blocks.sql`.
+- Account deletion purges a member's **own** block list and keeps everything else — blocks against them, reports they filed, and reports about them. The reasoning is in [`data-retention.md`](../data-retention.md#individual-account-deletion) § Individual Account Deletion, which owns the erasure contract; read it there rather than here, so the two cannot drift.
+
+
 ## Announcements
 
 - The `#announcements` channel is special: only members with `announcements:post` permission can send messages. All members can read.
