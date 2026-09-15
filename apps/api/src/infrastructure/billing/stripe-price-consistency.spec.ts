@@ -66,3 +66,37 @@ describe('StripePriceAccountMismatchError', () => {
     expect(err.message).not.toMatch(/sk_(test|live)_/);
   });
 });
+
+describe('isStripePriceMisconfigurationError — stripe-node error shapes', () => {
+  it('classifies a 401 as misconfiguration via rawType, not as a transient blip', () => {
+    // stripe-node keeps the API's own type on `rawType`; `type` carries a class
+    // name. Reading only `type` meant a rotated STRIPE_SECRET_KEY was called
+    // transient by both boot guards — "not refusing boot", deploy green, every
+    // Stripe call 401ing at runtime.
+    expect(
+      isStripePriceMisconfigurationError({
+        type: 'StripeAPIError',
+        rawType: 'authentication_error',
+        message: 'Invalid API Key provided',
+      }),
+    ).toBe(true);
+  });
+
+  it('classifies a 403 permission error as misconfiguration', () => {
+    expect(
+      isStripePriceMisconfigurationError({
+        type: 'StripeAPIError',
+        rawType: 'invalid_request_error',
+      }),
+    ).toBe(true);
+  });
+
+  it('still treats a genuine network blip as transient', () => {
+    expect(isStripePriceMisconfigurationError(new Error('ETIMEDOUT'))).toBe(
+      false,
+    );
+    expect(
+      isStripePriceMisconfigurationError({ type: 'StripeConnectionError' }),
+    ).toBe(false);
+  });
+});
