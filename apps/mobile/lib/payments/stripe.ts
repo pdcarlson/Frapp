@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
-import Constants, { ExecutionEnvironment } from "expo-constants";
+import { isWebOrExpoGo } from "../expo-go";
+import { createIsolatedModule } from "../isolated-module";
 import { requireStripe } from "./stripe-module";
 import type { StripeModule } from "./stripe-types";
 
@@ -13,14 +14,14 @@ import type { StripeModule } from "./stripe-types";
  * and names this path in its message. Everything else goes through
  * `isStripeAvailable()` and the two calls below.
  *
- * Modelled on `lib/keyboard.tsx`, which solved the same problem for
- * `react-native-keyboard-controller` — the guard read inside the function
- * rather than at module scope, and the test seam, come from there. One thing
- * does **not** carry over: the package is reached through `./stripe-module`,
- * whose native and web halves are separate files, because an ordinary lazy
- * `require` is not lazy enough under `expo export --platform web`. The full
- * reasoning is in `stripe-module.ts`, and it is worth reading before
- * "simplifying" this back into one require.
+ * The loader machinery — the cached attempt, the test seam, the warn-and-cache
+ * on a load failure — is `lib/isolated-module.ts`, shared with the three other
+ * isolation modules. Two things are this module's own: the guard, and the fact
+ * that the package is reached through `./stripe-module`, whose native and web
+ * halves are separate files because an ordinary lazy `require` is not lazy
+ * enough under `expo export --platform web`. The full reasoning is in
+ * `stripe-module.ts`, and it is worth reading before "simplifying" this back
+ * into one require.
  *
  * ## No Apple Pay or Google Pay, and no config plugin
  *
@@ -41,56 +42,20 @@ import type { StripeModule } from "./stripe-types";
  * the mobile counterpart and is optional for exactly the same reason: local dev,
  * CI and Expo Go all run without it, and none of them can take a payment anyway.
  */
-/** `undefined` = not yet attempted; `null` = attempted and unavailable. */
-let cachedModule: StripeModule | null | undefined;
-
-const defaultLoader = (): StripeModule | null => requireStripe();
-
-let loader = defaultLoader;
+const stripeModule = createIsolatedModule<StripeModule>({
+  packageName: "@stripe/stripe-react-native",
+  whenUnavailable: "the dues pay path stays disabled.",
+  load: requireStripe,
+  isUnavailable: isWebOrExpoGo,
+});
 
 /**
  * Test-only seam: vitest executes the real CJS `require`, which `vi.mock`
  * cannot intercept, so specs inject a loader instead.
  */
-export function setStripeLoaderForTests(
-  next: (() => StripeModule | null) | null,
-) {
-  loader = next ?? defaultLoader;
-  cachedModule = undefined;
-}
+export const setStripeLoaderForTests = stripeModule.setLoaderForTests;
 
-function loadStripe(): StripeModule | null {
-  if (cachedModule !== undefined) return cachedModule;
-
-  // Belt and braces. `stripe-module.ts` already returns null on web, so this
-  // cannot be the thing that saves the export — but it makes the intent legible
-  // at the one place a reader looks, and it is simply true: Stripe's native
-  // sheet has no web target.
-  if (Platform.OS === "web") {
-    cachedModule = null;
-    return cachedModule;
-  }
-
-  if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
-    cachedModule = null;
-    return cachedModule;
-  }
-
-  try {
-    cachedModule = loader();
-  } catch (error) {
-    // Outside Expo Go the module is expected to exist, so a load failure is a
-    // real linking problem (a dev client built before this package landed), not
-    // the Go fallback wearing its clothes.
-    console.warn(
-      "@stripe/stripe-react-native failed to load; the dues pay path stays disabled.",
-      error,
-    );
-    cachedModule = null;
-  }
-
-  return cachedModule;
-}
+const loadStripe = stripeModule.load;
 
 export function publishableKey(): string | null {
   const key = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;

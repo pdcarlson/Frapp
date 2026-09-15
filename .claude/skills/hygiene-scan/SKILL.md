@@ -130,7 +130,7 @@ cycle is stable across years; a leap year shifts it by one day, which is accepte
 | 1 | `apps/api/src/interface`, `apps/api/src/infrastructure`, `apps/api/src/modules`, `apps/api/src/config`, the `apps/api/src/*.ts` bootstrap files, `apps/api/test`, `packages/api-sdk` (hand-written code only), `packages/validation`; `supabase/` is read for context and is **flag-only** | `api-development` |
 | 2 | `apps/web`, `packages/theme`, `packages/color`, `packages/chapter-theme`, `packages/brand-assets`, `packages/formatting` | `ui-development`, `signet-cutover` |
 | 3 | `apps/mobile`, `packages/chat-core`, `packages/chat-integrations`, `packages/hooks` | `ui-development`, `signet-cutover`, `realtime-resilience` |
-| 4 | `packages/org-archetypes`, `packages/eslint-config`, `packages/typescript-config`, `scripts/`, `apps/landing` (dead code and correctness only — never visuals), and the gates' own baselines | `testing`, `QUALITY_GATES.md` |
+| 4 | `packages/org-archetypes`, `packages/observability`, `packages/eslint-config`, `packages/typescript-config`, `scripts/`, `apps/landing` (dead code and correctness only — never visuals), and the gates' own baselines | `testing`, `QUALITY_GATES.md` |
 
 The slice bounds the **deep read**, not the fix: a pattern found in the slice is fixed everywhere it
 occurs (Phase 2's whole-pattern rule), and the repo-wide lenses in Phase 1 run every day. Groups

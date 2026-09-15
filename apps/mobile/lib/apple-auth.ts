@@ -3,6 +3,7 @@ import * as Crypto from "expo-crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireAppleAuth } from "./apple-auth-module";
 import type { AppleAuthModule } from "./apple-auth-types";
+import { createIsolatedModule } from "./isolated-module";
 
 /**
  * Isolation module for `expo-apple-authentication`.
@@ -14,39 +15,18 @@ import type { AppleAuthModule } from "./apple-auth-types";
  * the module is missing.
  */
 
-let cachedModule: AppleAuthModule | null | undefined;
+const appleAuth = createIsolatedModule<AppleAuthModule>({
+  packageName: "expo-apple-authentication",
+  whenUnavailable: "using browser Sign in with Apple.",
+  load: requireAppleAuth,
+  // Native SIWA is iOS-only; everywhere else the browser OAuth fallback is the
+  // intended path, not a degradation.
+  isUnavailable: () => Platform.OS !== "ios",
+});
 
-const defaultLoader = (): AppleAuthModule | null => requireAppleAuth();
+export const setAppleAuthLoaderForTests = appleAuth.setLoaderForTests;
 
-let loader = defaultLoader;
-
-export function setAppleAuthLoaderForTests(
-  next: (() => AppleAuthModule | null) | null,
-) {
-  loader = next ?? defaultLoader;
-  cachedModule = undefined;
-}
-
-function loadAppleAuth(): AppleAuthModule | null {
-  if (cachedModule !== undefined) return cachedModule;
-
-  if (Platform.OS !== "ios") {
-    cachedModule = null;
-    return cachedModule;
-  }
-
-  try {
-    cachedModule = loader();
-  } catch (error) {
-    console.warn(
-      "expo-apple-authentication failed to load; using browser Sign in with Apple.",
-      error,
-    );
-    cachedModule = null;
-  }
-
-  return cachedModule;
-}
+const loadAppleAuth = appleAuth.load;
 
 export async function isNativeAppleAuthAvailable(): Promise<boolean> {
   const apple = loadAppleAuth();
