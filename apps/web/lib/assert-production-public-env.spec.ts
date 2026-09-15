@@ -15,14 +15,14 @@ import {
 const productionSupabase = `https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`;
 
 /** A legacy-format (JWT) Supabase anon key whose `ref` claim names `ref`. */
-const anonKeyForProject = (ref: string) =>
+const anonKeyForProject = (ref: string, role = "anon") =>
   [
     Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString(
       "base64url",
     ),
-    Buffer.from(
-      JSON.stringify({ iss: "supabase", ref, role: "anon" }),
-    ).toString("base64url"),
+    Buffer.from(JSON.stringify({ iss: "supabase", ref, role })).toString(
+      "base64url",
+    ),
     "not-a-real-signature",
   ].join(".");
 
@@ -183,7 +183,7 @@ describe("assertProductionWebPublicEnv", () => {
         // anon key, which the URL fences alone cannot see.
         supabaseAnonKey: anonKeyForProject("hnoyzpidbmizhbqaiity"),
       }),
-    ).toThrow(/hnoyzpidbmizhbqaiity[\s\S]*unttyvyfezddlyafcydh|wrong database/);
+    ).toThrow(/hnoyzpidbmizhbqaiity[\s\S]*unttyvyfezddlyafcydh/);
   });
 
   it("never echoes the anon key itself", () => {
@@ -201,7 +201,7 @@ describe("assertProductionWebPublicEnv", () => {
     }
   });
 
-  it("accepts a non-JWT publishable key on presence alone rather than guessing", () => {
+  it("accepts a `sb_publishable_` key, which carries no project reference", () => {
     // `sb_publishable_…` carries no project reference, so there is nothing to
     // pin it to. It must not be rejected for failing a check that cannot apply.
     expect(() =>
@@ -222,5 +222,106 @@ describe("assertProductionWebPublicEnv", () => {
         supabaseUrl: "http://127.0.0.1:54321",
       }),
     ).not.toThrow();
+  });
+  it("refuses a service-role key — it would be inlined into the browser bundle", () => {
+    // SUPABASE_SERVICE_ROLE_KEY sits at the same Infisical path, one row from
+    // the anon key in ENV_REFERENCE.md's table, and is a JWT for the SAME
+    // project ref. A ref-only check passes it, and Next then publishes an
+    // RLS-bypass credential to every visitor.
+    expect(() =>
+      assertProductionWebPublicEnv({
+        vercelEnv: "production",
+        apiUrl: PRODUCTION_API_ORIGIN,
+        supabaseUrl: productionSupabase,
+        supabaseAnonKey: anonKeyForProject(
+          PRODUCTION_SUPABASE_PROJECT_REF,
+          "service_role",
+        ),
+      }),
+    ).toThrow(/service_role[\s\S]*not an anon key/);
+  });
+
+  it("refuses an `sb_secret_` key, the new-format service-role twin", () => {
+    expect(() =>
+      assertProductionWebPublicEnv({
+        vercelEnv: "production",
+        apiUrl: PRODUCTION_API_ORIGIN,
+        supabaseUrl: productionSupabase,
+        supabaseAnonKey: "sb_secret_placeholder-value",
+      }),
+    ).toThrow(/SECRET key/);
+  });
+
+  it("refuses an unresolved reference, a pasted URL, and junk", () => {
+    const base = {
+      vercelEnv: "production",
+      apiUrl: PRODUCTION_API_ORIGIN,
+      supabaseUrl: productionSupabase,
+    };
+    // Each is non-empty, so the old presence check and `server.ts`'s
+    // `!anonKey` both pass it: the build goes green and every Supabase
+    // request 401s at runtime, with no build-time signal at all.
+    expect(() =>
+      assertProductionWebPublicEnv({
+        ...base,
+        supabaseAnonKey: "${SUPABASE_ANON_KEY}",
+      }),
+    ).toThrow(/unresolved variable reference/);
+    expect(() =>
+      assertProductionWebPublicEnv({
+        ...base,
+        supabaseAnonKey: productionSupabase,
+      }),
+    ).toThrow(/looks like a URL/);
+    expect(() =>
+      assertProductionWebPublicEnv({ ...base, supabaseAnonKey: "changeme" }),
+    ).toThrow(/not a recognized Supabase key/);
+  });
+
+  it("accepts a legacy anon key carrying no `ref` claim rather than guessing", () => {
+    expect(() =>
+      assertProductionWebPublicEnv({
+        vercelEnv: "production",
+        apiUrl: PRODUCTION_API_ORIGIN,
+        supabaseUrl: productionSupabase,
+        supabaseAnonKey: [
+          Buffer.from(JSON.stringify({ alg: "HS256" })).toString("base64url"),
+          Buffer.from(
+            JSON.stringify({ iss: "supabase-demo", role: "anon" }),
+          ).toString("base64url"),
+          "not-a-real-signature",
+        ].join("."),
+      }),
+    ).not.toThrow();
+  });
+
+  it("reports EVERY wrong variable in one throw, so one attempt names them all", () => {
+    // Fail-fast costs a typed `DEPLOY TO PRODUCTION` and a fresh reviewer
+    // Approve per variable; the three 2026-09-14 attempts each burned one.
+    let message = "";
+    try {
+      assertProductionWebPublicEnv({ vercelEnv: "production" });
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toMatch(/NEXT_PUBLIC_API_URL/);
+    expect(message).toMatch(/NEXT_PUBLIC_SUPABASE_URL/);
+    expect(message).toMatch(/NEXT_PUBLIC_SUPABASE_ANON_KEY/);
+    expect(message).toMatch(/3 production environment variables/);
+  });
+
+  it("throws the bare message, not a numbered list, when only one is wrong", () => {
+    let message = "";
+    try {
+      assertProductionWebPublicEnv({
+        vercelEnv: "production",
+        apiUrl: PRODUCTION_API_ORIGIN,
+        supabaseUrl: productionSupabase,
+      });
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toMatch(/NEXT_PUBLIC_SUPABASE_ANON_KEY/);
+    expect(message).not.toMatch(/environment variables are wrong/);
   });
 });

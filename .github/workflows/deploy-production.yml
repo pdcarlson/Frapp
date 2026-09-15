@@ -532,7 +532,8 @@ jobs:
       # 34894763676 on `NEXT_PUBLIC_API_URL` and 34896647837 on
       # `NEXT_PUBLIC_SUPABASE_ANON_KEY`. The third, 34892839657, died a moment
       # earlier and for an unrelated reason: `requireEnv("DEPLOY_SHA")` threw
-      # inside `deploy-vercel.mjs` before it invoked the CLI at all (#2265).
+      # inside `deploy-vercel.mjs` before it invoked the CLI at all (#2265
+      # fixed that).
       #
       # Corrected 2026-09-15: this comment, and ci-cd.md, both read the second
       # failure as `NEXT_PUBLIC_SUPABASE_URL` for a day. It was not. The two
@@ -540,12 +541,15 @@ jobs:
       # variable:
       #
       #   * 34894763676 died at CONFIG LOAD — `⨯ Failed to load next.config.js`,
-      #     stack `at assertProductionWebPublicEnv (…:88:3)`. Only the early
-      #     guard throws there, and reaching its line 88 requires passing the
-      #     `vercelEnv !== "production"` early return at line 87 — so
-      #     `VERCEL_ENV` IS `production` inside `vercel build --prod` on this
-      #     runner, despite the CLI's own "System environment variables will not
-      #     be available" warning and despite nothing in this repo setting it.
+      #     with a frame at `assertProductionWebPublicEnv` called from
+      #     `next.config.js`. Only that guard throws there, and the frame is
+      #     reachable only PAST the function's first statement, the
+      #     `vercelEnv !== "production"` early return — so `VERCEL_ENV` IS
+      #     `production` inside `vercel build --prod` on this runner, despite
+      #     the CLI's own "System environment variables will not be available"
+      #     warning and despite nothing in this repo setting it. (That run's
+      #     stack reads `:88:3`; line numbers as of dcc5cd7, and the file has
+      #     grown since — cite the symbol, not the number.)
       #   * 34896647837 and 34905005744 logged `✓ Running next.config.js took
       #     …ms` and died ~30s later PRERENDERING `/`. The guard passing is
       #     positive evidence both URLs were present; `server.ts:13` tests

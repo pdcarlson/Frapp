@@ -82,8 +82,12 @@ production** with a commit SHA:
 >
 > - [34894763676](https://github.com/pdcarlson/Frapp/actions/runs/34894763676) died on
 >   `NEXT_PUBLIC_API_URL`, at config load, inside `next.config.js` — the early guard firing exactly
->   as designed (`⨯ Failed to load next.config.js` … `at assertProductionWebPublicEnv
-(lib/assert-production-public-env.js:88:3)`).
+>   as designed: `⨯ Failed to load next.config.js`, with a frame at
+>   `assertProductionWebPublicEnv` called from `next.config.js`. That frame is reachable only
+>   _past_ that function's first statement — the `vercelEnv !== "production"` early return — so
+>   `VERCEL_ENV` really is `production` inside `vercel build --prod` on the GitHub runner. (The
+>   run's stack reads `lib/assert-production-public-env.js:88:3`; those are the line numbers as of
+>   `dcc5cd7`, and the file has grown since — trust the symbol, not the number.)
 > - [34896647837](https://github.com/pdcarlson/Frapp/actions/runs/34896647837) and
 >   [34905005744](https://github.com/pdcarlson/Frapp/actions/runs/34905005744) did **not** die on
 >   `NEXT_PUBLIC_SUPABASE_URL`. Both logged `✓ Running next.config.js took …ms` — i.e. the guard
