@@ -28,10 +28,14 @@ const REQUIRED_ENV_VARS = [
 //   - EVENT_CHECK_IN_TOKEN_SECRET  per-environment HMAC key for check-in codes
 //
 // Also optional, same reasoning (#1243): the Discord bot import path. Unset,
-// `GET /v1/discord/availability` answers `available: false`, the wizard offers
-// only the DiscordChatExporter upload flow, and every other Discord route
-// answers 503. The upload flow is a SEPARATE path, not a fallback that switches
-// on — it works identically whether or not any of these are set.
+// `GET /v1/discord/availability` answers `available: false` and the wizard
+// greys the "Connect Discord" card out, leaving the DiscordChatExporter upload
+// flow as the only selectable source. Only the two routes that begin or confirm
+// a handshake 503 — `POST /v1/discord/connect` and `/connect/confirm`, the two
+// that call `assertAvailable()`; `GET`/`DELETE /v1/discord/connection` answer
+// 200 and the callback answers a redirect by contract. The upload flow is a
+// SEPARATE path, not a fallback that switches on — it works identically whether
+// or not any of these are set.
 //
 // All four are needed together; three of the four are not enough to run the
 // flow, which is why `DiscordOAuthService.isAvailable()` checks all of them
