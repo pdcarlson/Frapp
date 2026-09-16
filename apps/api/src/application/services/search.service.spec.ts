@@ -6,6 +6,8 @@ import {
 } from './search.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RbacService } from './rbac.service';
+import { ChatBlockService } from './chat-block.service';
+import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 describe('SearchService', () => {
@@ -15,6 +17,7 @@ describe('SearchService', () => {
     getEffectivePermissions: jest.Mock;
     memberHasAnyPermission: jest.Mock;
   };
+  let mockChatBlocks: { listBlockedUserIds: jest.Mock };
 
   const makeChain = (resolveValue: { data: unknown[]; error: unknown }) => {
     const chain: Record<string, unknown> = {};
@@ -65,6 +68,8 @@ describe('SearchService', () => {
       memberHasAnyPermission: jest.fn().mockResolvedValue(false),
     };
 
+    mockChatBlocks = { listBlockedUserIds: jest.fn().mockResolvedValue([]) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SearchService,
@@ -73,6 +78,7 @@ describe('SearchService', () => {
           useValue: mockSupabase,
         },
         { provide: RbacService, useValue: mockRbacService },
+        { provide: ChatBlockService, useValue: mockChatBlocks },
       ],
     }).compile();
 
@@ -483,6 +489,110 @@ describe('SearchService', () => {
 
         expect(tablesQueried).toEqual([]);
         expect(result.messages).toEqual([]);
+      });
+    });
+
+    describe('blocked senders (#2257)', () => {
+      /*
+        Search is a message read surface, so it owes the same mask the timeline
+        does — and it is the one place a member goes looking for text, so an
+        unmasked search is a full-text index over the messages they blocked.
+        `spec/behavior/chat/README.md` § The masking contract.
+      */
+      const wireMessages = (rows: unknown[]) => {
+        (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
+          if (table === 'chat_channels') {
+            return makeChain({
+              data: [
+                {
+                  id: 'pub',
+                  type: 'PUBLIC',
+                  member_ids: null,
+                  required_permissions: null,
+                },
+              ],
+              error: null,
+            });
+          }
+          // `accessibleChannelIds` returns empty without a membership row, so
+          // the message source would never run and the mask would never be
+          // reached — the tests below would pass for the wrong reason.
+          if (table === 'members') {
+            return makeChain({ data: [{ id: 'mem-1' }], error: null });
+          }
+          if (table === 'chat_messages') {
+            return makeChain({ data: rows, error: null });
+          }
+          return makeChain({ data: [], error: null });
+        });
+      };
+
+      const hit = (overrides: Record<string, unknown> = {}) => ({
+        id: 'msg-1',
+        channel_id: 'pub',
+        sender_id: 'user-2',
+        content: 'go away',
+        type: 'TEXT',
+        reply_to_id: null,
+        metadata: {},
+        is_pinned: false,
+        pinned_at: null,
+        edited_at: null,
+        is_deleted: false,
+        created_at: '2026-03-01T00:00:00.000Z',
+        ...overrides,
+      });
+
+      it('masks a hit from a member the caller has blocked', async () => {
+        wireMessages([hit()]);
+        mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-2']);
+
+        const result = await service.search('ch-1', 'user-1', 'away');
+
+        expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+        );
+        expect(result.messages).toHaveLength(1);
+        expect(result.messages[0].content).toBe(BLOCKED_MESSAGE_CONTENT);
+        expect(result.messages[0].sender_blocked).toBe(true);
+      });
+
+      it('flags an unblocked hit rather than leaving the field absent', async () => {
+        wireMessages([hit({ sender_id: 'user-3', content: 'come along' })]);
+        mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-2']);
+
+        const result = await service.search('ch-1', 'user-1', 'along');
+
+        expect(result.messages[0].sender_blocked).toBe(false);
+        expect(result.messages[0].content).toBe('come along');
+      });
+
+      it('fails the source when the block list cannot be read', async () => {
+        // "A block list that cannot be read is not an empty block list."
+        // `withinBudget` degrades a slow source to an empty array, so the worst
+        // case for a caller is no message results — never unmasked ones.
+        wireMessages([hit()]);
+        mockChatBlocks.listBlockedUserIds.mockRejectedValue(
+          new Error('pg down'),
+        );
+
+        await expect(service.search('ch-1', 'user-1', 'away')).rejects.toThrow(
+          'pg down',
+        );
+      });
+
+      it('does not read the block list when no channel is searchable', async () => {
+        // The read is deliberately after the match rather than concurrent with
+        // it: `searchMessages` returns early in several places, and a
+        // `Promise.all` would pay for the block read on every one of them.
+        (mockSupabase.from as jest.Mock).mockImplementation(() =>
+          makeChain({ data: [], error: null }),
+        );
+
+        await service.search('ch-1', 'user-1', 'away');
+
+        expect(mockChatBlocks.listBlockedUserIds).not.toHaveBeenCalled();
       });
     });
 

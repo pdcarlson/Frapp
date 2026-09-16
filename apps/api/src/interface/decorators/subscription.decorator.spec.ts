@@ -30,6 +30,8 @@ import {
   SUBSCRIPTION_FREE_TIER_KEY,
 } from './subscription.decorator';
 import { ChatController } from '../controllers/chat.controller';
+import { ChatReportController } from '../controllers/chat-report.controller';
+import { ChatBlockController } from '../controllers/chat-block.controller';
 import { MemberController } from '../controllers/member.controller';
 import { InviteController } from '../controllers/invite.controller';
 import { RbacController } from '../controllers/rbac.controller';
@@ -69,7 +71,22 @@ describe('subscription decorator wiring', () => {
     ChapterController,
   ];
 
-  const exempt = [BillingController];
+  /**
+   * Controllers that bypass the subscription guard **entirely**, class-wide.
+   *
+   * Two reasons live here now, and the list stopped being "billing" the day the
+   * second one landed (#2257):
+   *
+   * - **Billing recovery** — `BillingController`, so a locked chapter can pay
+   *   its way back in.
+   * - **Member safety** — reporting objectionable content and blocking an
+   *   abusive member. App Store Guideline 1.2 has no billing exception, and a
+   *   member being harassed in a chapter that missed a payment needs these
+   *   exactly as much as one in a paid chapter. `@FreeTier()` would not do: it
+   *   is overridden by the hard lock after the `past_due` grace window and by
+   *   `canceled` outright.
+   */
+  const exempt = [BillingController, ChatReportController, ChatBlockController];
 
   const paidOps = [
     EventController,
@@ -105,5 +122,31 @@ describe('subscription decorator wiring', () => {
       reflector.get(SUBSCRIPTION_FREE_TIER_KEY, controller),
     ).toBeUndefined();
     expect(reflector.get(SUBSCRIPTION_EXEMPT_KEY, controller)).toBeUndefined();
+  });
+
+  /**
+   * The route-level exemptions, pinned separately.
+   *
+   * The three arrays above read metadata off the **class**, which is the only
+   * place `reflector.get(KEY, controller)` looks — so a `@SubscriptionExempt()`
+   * on a single handler is invisible to them. That gap was not theoretical:
+   * `FinancialInvoiceController` has carried one on `POST :id/payment-intent`
+   * since dues collection became a recovery path, and it sits in `paidOps`
+   * above (correctly — its class is unmarked) with nothing anywhere pinning the
+   * route. A ledger that cannot see part of what it ledgers is a proof that
+   * cannot fail, so this pins the handlers too.
+   *
+   * Keep it exhaustive: `grep -rn '@SubscriptionExempt()' src` should turn up
+   * nothing that is neither in `exempt` above nor here.
+   */
+  const routeExempt: [string, (...args: never[]) => unknown][] = [
+    [
+      'FinancialInvoiceController.createPaymentIntent',
+      FinancialInvoiceController.prototype.createPaymentIntent,
+    ],
+  ];
+
+  it.each(routeExempt)('%s is marked @SubscriptionExempt', (_name, handler) => {
+    expect(reflector.get(SUBSCRIPTION_EXEMPT_KEY, handler)).toBe(true);
   });
 });

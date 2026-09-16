@@ -252,7 +252,7 @@ than pretending otherwise:**
 
 Signet ships chapter channels, **direct messages**, and file uploads. That is user-generated content, and **App Store Review Guideline 1.2** expects a UGC app to give a member a way to report objectionable content and to block an abusive user. Officer moderation (`channels:manage`, above) is real but does not reach a private DM, which is the surface a reviewer probes and the one a harassed member actually needs. These two controls are the member-side answer (#2257).
 
-**Status: schema only.** The tables below exist (`20260915210000`); the API routes, the mobile controls, and the officer queue land in the following slices of #2257. Treat this section as the contract those slices are written against, not as a description of shipped behavior — [`AGENTS.md`](../../../AGENTS.md) § Spec vs code.
+**Status: schema and API.** The tables exist (`20260915210000`) and the API is live: `POST|GET|PATCH /v1/chat/reports` and `GET|POST|DELETE /v1/chat/blocks` (`ChatReportController` / `ChatBlockController`, both `@SubscriptionExempt()`), and `ChatService.getMessages` applies the caller's block list to what it serves. **No client surface exists yet** — neither mobile nor web has the report affordance, the blocked-members list in Settings, the tombstone, or the client-side masking the § below requires, and nothing renders the officer queue. So the sections below are still partly a contract the remaining slices of #2257 are written against rather than a description of shipped behavior; where they describe rendering, they describe what is owed — [`AGENTS.md`](../../../AGENTS.md) § Spec vs code.
 
 ### Report
 
@@ -292,7 +292,7 @@ Signet ships chapter channels, **direct messages**, and file uploads. That is us
 
 Two rules follow, and both are load-bearing:
 
-- **Nothing may key off the server's masking sentinel.** The sentinel is a rendering detail of one code path; a client that pattern-matches it inherits a contract the server never promised, and silently stops masking the day that string changes.
+- **Nothing may key off the server's masking sentinel.** The sentinel is a rendering detail of one code path; a client that pattern-matches it inherits a contract the server never promised, and silently stops masking the day that string changes. What the server *does* promise is a boolean: every message row `GET /v1/channels/{id}/messages` returns carries `sender_blocked`, set on every row rather than only the masked ones, so "this server does not mask" and "this message is fine" cannot be confused. The list itself is `GET /v1/chat/blocks`.
 - **A block list that cannot be read is not an empty block list.** The read must be tri-state — ready, loading, unavailable — because a failed fetch that reads as "nobody is blocked" fails open on a safety feature. When the list is unavailable the member is told so, and messages that arrived by a path the server could not mask are held rather than rendered.
 
 Holding the right messages requires knowing **how each row reached the cache**, which is provenance, not timing. A `created_at` watermark cannot express it: REST and Realtime serialize `timestamptz` differently (`@supabase/realtime-js` maps `timestamp` through a PostgREST-consistent formatter but leaves `timestamptz` untouched), so comparing the two as strings silently misclassifies — and even with a common format, the timestamp says when a row was *written*, never how it arrived. See #2315.

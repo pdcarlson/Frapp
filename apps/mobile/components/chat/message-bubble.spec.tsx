@@ -56,6 +56,7 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: "msg-1",
     channel_id: "chan-1",
+    sender_blocked: false,
     sender_id: OTHER,
     author_name: null,
     author_avatar_path: null,

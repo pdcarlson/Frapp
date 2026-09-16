@@ -9,6 +9,7 @@ import {
   type ChatNotificationPreferenceRow,
 } from './chat-notification-preference.repository';
 import { RbacService } from '../../application/services/rbac.service';
+import { ChatBlockService } from '../../application/services/chat-block.service';
 import type { ChatMessage } from '#domain/entities';
 import { ChannelCacheService } from './channel-cache.service';
 
@@ -224,6 +225,22 @@ describe('ChatPushWorkerService — recipient filter over the Realtime payload p
           useValue: { findForUsers },
         },
         { provide: RbacService, useValue: { getEffectivePermissions } },
+        {
+          // Nobody has blocked anybody in this file's fixtures: it is about the
+          // Realtime subscription lifecycle, not the audience rules. Answering
+          // from the recipients actually passed in — rather than a static array
+          // — keeps a regression to the wrong audience visible here too.
+          provide: ChatBlockService,
+          useValue: {
+            filterOutBlockers: jest.fn(
+              async (
+                _chapterId: string,
+                _senderId: string | null,
+                recipientIds: string[],
+              ) => recipientIds,
+            ),
+          },
+        },
       ],
     }).compile();
 

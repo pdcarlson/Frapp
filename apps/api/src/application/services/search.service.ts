@@ -8,6 +8,8 @@ import { canAccessChannel } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { RbacService } from './rbac.service';
+import { ChatBlockService } from './chat-block.service';
+import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
 import { hasRequiredRole } from './event.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
@@ -26,7 +28,12 @@ export interface SearchResult {
   backwork: BackworkResource[];
   events: Event[];
   members: SearchMemberResult[];
-  messages: ChatMessage[];
+  /**
+   * Masked for the caller, like every other surface that serves message content
+   * to a named viewer (#2257). `sender_blocked` is on every row, not only the
+   * masked ones — see `chat-block-mask.ts`.
+   */
+  messages: MaskedChatMessage[];
 }
 
 /** Which of the four result arrays a search hit belongs to. */
@@ -187,6 +194,10 @@ export class SearchService {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     private readonly rbacService: RbacService,
+    // Search is a message read surface, so it owes the same mask as the
+    // timeline (#2257). Without it, the one place a member goes looking for
+    // text is the one place a blocked member's text still reads in full.
+    private readonly chatBlocks: ChatBlockService,
   ) {}
 
   async search(
@@ -484,7 +495,7 @@ export class SearchService {
     userId: string,
     query: string,
     channelId?: string,
-  ): Promise<ChatMessage[]> {
+  ): Promise<MaskedChatMessage[]> {
     // A channel-scoped search is still resolved through `accessibleChannelIds`
     // rather than trusting the caller's id — that is what keeps the single
     // access path this method's comment below insists on. The id is pushed down
@@ -535,7 +546,29 @@ export class SearchService {
       .limit(SEARCH_LIMIT)
       .order('created_at', { ascending: false })) as QueryResult<ChatMessage>;
     throwIfError(error);
-    return data ?? [];
+
+    // The caller's block list, applied to what search serves — the same rule
+    // `ChatService.getMessages` applies, through the same pure function, so the
+    // two cannot drift (#2257, `spec/behavior/chat/README.md` § The masking
+    // contract).
+    //
+    // Read AFTER the match rather than concurrently with it, and that is the
+    // cheap half of a deliberate trade: `searchMessages` returns early in three
+    // places above (short channel list, no accessible channels), and a
+    // `Promise.all` would issue the block read on every one of them. The rows
+    // are already in hand and capped at `SEARCH_LIMIT`, so the extra round trip
+    // is bounded.
+    //
+    // **Not defended against.** A failed block-list read propagates and this
+    // source is a 500 — "a block list that cannot be read is not an empty block
+    // list". Note what that interacts with: `withinBudget` degrades a source
+    // that misses the 500ms budget to an empty array, so the worst case here is
+    // no message results, never unmasked ones.
+    const blockedUserIds = await this.chatBlocks.listBlockedUserIds(
+      chapterId,
+      userId,
+    );
+    return maskBlockedMessages(data ?? [], blockedUserIds);
   }
 
   /**

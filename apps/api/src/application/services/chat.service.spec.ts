@@ -41,6 +41,8 @@ import { NotificationService } from './notification.service';
 import { ActivationService } from './activation.service';
 import { RbacService } from './rbac.service';
 import { ChannelAccessService } from './channel-access.service';
+import { ChatBlockService } from './chat-block.service';
+import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
 import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 import { ChannelCacheService } from '../../modules/chat-push-worker/channel-cache.service';
 
@@ -80,6 +82,9 @@ describe('ChatService', () => {
     hasAlumniRole: jest.Mock;
     isAlumni: jest.Mock;
   };
+  // Nobody is blocked by default, so every existing case reads unmasked; the
+  // masking tests below seed it.
+  let mockChatBlocks: { listBlockedUserIds: jest.Mock };
   const baseMember = {
     id: 'mem-1',
     user_id: 'user-1',
@@ -218,6 +223,10 @@ describe('ChatService', () => {
       invalidate: jest.fn(),
     };
 
+    mockChatBlocks = {
+      listBlockedUserIds: jest.fn().mockResolvedValue([]),
+    };
+
     mockRbac = {
       getEffectivePermissions: jest.fn(),
       // Active (non-alumni) member by default; alumni posting is covered in
@@ -267,6 +276,7 @@ describe('ChatService', () => {
           useValue: mockChatNotificationPrefs,
         },
         { provide: ChannelCacheService, useValue: mockChannelCache },
+        { provide: ChatBlockService, useValue: mockChatBlocks },
       ],
     }).compile();
 
@@ -1026,7 +1036,9 @@ describe('ChatService', () => {
       expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith('ch-chan-1', {
         limit: 50,
       });
-      expect(result).toEqual(messages);
+      // Every row carries `sender_blocked` (#2257) — see the masking cases
+      // below for why the flag is present even when nothing is blocked.
+      expect(result).toEqual([{ ...baseMessage, sender_blocked: false }]);
     });
 
     it('should pass pagination options to repository', async () => {
@@ -1045,7 +1057,7 @@ describe('ChatService', () => {
         'ch-chan-1',
         options,
       );
-      expect(result).toEqual(messages);
+      expect(result).toEqual([{ ...baseMessage, sender_blocked: false }]);
     });
 
     it('rejects a calendar-invalid before cursor instead of forwarding it', async () => {
@@ -1067,6 +1079,112 @@ describe('ChatService', () => {
       expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith('ch-chan-1', {
         limit: 200,
       });
+    });
+
+    // ── Block masking (#2257) ────────────────────────────────────────
+    //
+    // `spec/behavior/chat/README.md` § The masking contract. The server masks
+    // what it serves; the client additionally applies its own list to rows that
+    // arrive over the Realtime echo, which carries no viewer and so cannot be
+    // masked here.
+
+    it('masks messages from a member the caller has blocked', async () => {
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+      mockMessageRepo.findByChannel.mockResolvedValue([
+        { ...baseMessage, id: 'msg-mine' },
+        {
+          ...baseMessage,
+          id: 'msg-theirs',
+          sender_id: 'user-blocked',
+          content: 'go away',
+        },
+      ]);
+
+      const result = await service.getMessages('ch-chan-1', 'ch-1', 'user-1');
+
+      expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
+      expect(result).toEqual([
+        expect.objectContaining({
+          id: 'msg-mine',
+          content: 'Hello world',
+          sender_blocked: false,
+        }),
+        expect.objectContaining({
+          id: 'msg-theirs',
+          content: BLOCKED_MESSAGE_CONTENT,
+          sender_blocked: true,
+        }),
+      ]);
+    });
+
+    it('resolves the block list for the caller, in the caller chapter', async () => {
+      // Per-viewer, per-chapter: the same row reads differently for two members
+      // of the same channel, which is why this cannot live in the repository or
+      // a view.
+      mockMessageRepo.findByChannel.mockResolvedValue([baseMessage]);
+
+      await service.getMessages('ch-chan-1', 'ch-1', 'user-1');
+
+      expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
+    });
+
+    it('fails the read when the block list cannot be read', async () => {
+      // "A block list that cannot be read is not an empty block list." Serving
+      // the thread unmasked here would fail open on a safety feature for as long
+      // as the table was unreachable.
+      mockChatBlocks.listBlockedUserIds.mockRejectedValue(new Error('pg down'));
+      mockMessageRepo.findByChannel.mockResolvedValue([baseMessage]);
+
+      await expect(
+        service.getMessages('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('pg down');
+    });
+
+    it('masks the pinned list too, which is channel content and not an officer surface', async () => {
+      // A pin is precisely the message that stays in front of the blocker
+      // indefinitely, so leaving this read unmasked would be a durable hole.
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+      mockMessageRepo.findPinnedByChannel.mockResolvedValue([
+        {
+          ...baseMessage,
+          id: 'msg-pinned',
+          sender_id: 'user-blocked',
+          content: 'go away',
+        },
+      ]);
+
+      const result = await service.getPinnedMessages(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(result).toEqual([
+        expect.objectContaining({
+          id: 'msg-pinned',
+          content: BLOCKED_MESSAGE_CONTENT,
+          sender_blocked: true,
+        }),
+      ]);
+    });
+
+    it('fails the pinned read when the block list cannot be read', async () => {
+      // The same fail-closed rule as `getMessages`, pinned separately because
+      // it is a separate call site: a `.catch(() => [])` added to one and not
+      // the other leaves a durable hole in exactly the list that stays in front
+      // of the blocker indefinitely.
+      mockChatBlocks.listBlockedUserIds.mockRejectedValue(new Error('pg down'));
+      mockMessageRepo.findPinnedByChannel.mockResolvedValue([baseMessage]);
+
+      await expect(
+        service.getPinnedMessages('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('pg down');
     });
 
     it('should reject reads when the channel is in another chapter', async () => {
@@ -1109,7 +1227,7 @@ describe('ChatService', () => {
       mockMessageRepo.findByChannel.mockResolvedValue([baseMessage]);
 
       const result = await service.getMessages('ch-chan-1', 'ch-1', 'user-1');
-      expect(result).toEqual([baseMessage]);
+      expect(result).toEqual([{ ...baseMessage, sender_blocked: false }]);
     });
 
     it('should reject reads of a role-gated channel without the permission', async () => {
