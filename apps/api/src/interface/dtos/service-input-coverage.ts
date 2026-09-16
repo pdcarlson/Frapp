@@ -54,6 +54,8 @@ import type {
   CreateCustomRoleDto,
   UpdateCustomRoleDto,
 } from './custom-role.dto';
+import type { FileChatReportInput } from '../../application/services/chat-report.service';
+import type { CreateChatReportDto } from './chat-moderation.dto';
 
 /**
  * `never` unless every key of `Dto` also exists on `Input`. Assigning it to
@@ -77,6 +79,7 @@ export const dtoKeysAreCoveredByServiceInputs: {
   updateCustomField: Covers<UpdateCustomFieldDto, UpdateCustomFieldInput>;
   createCustomRole: Covers<CreateCustomRoleDto, CreateCustomRoleInput>;
   updateCustomRole: Covers<UpdateCustomRoleDto, UpdateCustomRoleInput>;
+  fileChatReport: Covers<CreateChatReportDto, FileChatReportInput>;
 } = {
   patchChapterConfig: true,
   branding: true,
@@ -87,4 +90,5 @@ export const dtoKeysAreCoveredByServiceInputs: {
   updateCustomField: true,
   createCustomRole: true,
   updateCustomRole: true,
+  fileChatReport: true,
 };

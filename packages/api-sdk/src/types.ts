@@ -1229,6 +1229,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chat/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chat message reports for this chapter */
+        get: operations["ChatReportController_listReports_v1"];
+        put?: never;
+        /** Report a chat message (idempotent while a report stays open) */
+        post: operations["ChatReportController_fileReport_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat/reports/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Resolve a chat message report */
+        patch: operations["ChatReportController_resolveReport_v1"];
+        trace?: never;
+    };
+    "/v1/chat/blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the caller's blocked members in this chapter */
+        get: operations["ChatBlockController_listBlocks_v1"];
+        put?: never;
+        /** Block a member in this chapter (idempotent) */
+        post: operations["ChatBlockController_blockMember_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat/blocks/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unblock a member (idempotent) */
+        delete: operations["ChatBlockController_unblockMember_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -3400,6 +3470,45 @@ export interface components {
             name?: string;
             display_order?: number;
         };
+        ChatMessageDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Null for an imported archive message, which names its author in author_name instead. Kept on a masked row: the blocker chose the block, so reading their own list back is not a disclosure — and without it a client cannot reconcile a server-masked row against the list it applies itself.
+             */
+            sender_id: string | null;
+            author_name?: string | null;
+            author_avatar_path?: string | null;
+            author_external_id?: string | null;
+            /** @description Reads the masking sentinel when `sender_blocked` is true, and “[message deleted]” once the message is deleted. **Never pattern-match either string** — the machine-readable signals are `sender_blocked` and `is_deleted`. */
+            content: string;
+            /** @enum {string} */
+            type: "TEXT" | "POLL";
+            /**
+             * @description Null on rows written before the column existed; read as 'text'.
+             * @enum {string|null}
+             */
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | null;
+            /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text. */
+            payload?: Record<string, never> | null;
+            client_message_id?: string | null;
+            /** Format: uuid */
+            reply_to_id: string | null;
+            /** @description Free-form annotations; carries `attachment_count`. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads. */
+            metadata: Record<string, never>;
+            is_pinned: boolean;
+            pinned_at: string | null;
+            edited_at: string | null;
+            is_deleted: boolean;
+            /** @description `users.id` of everyone mentioned, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
+            mentions?: string[] | null;
+            created_at: string;
+            /** @description Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`. */
+            sender_blocked: boolean;
+        };
         MessageAttachmentDto: {
             storage_path: string;
             filename: string;
@@ -3470,6 +3579,8 @@ export interface components {
             content: string;
             is_deleted: boolean;
             created_at: string;
+            /** @description Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows. */
+            sender_blocked: boolean;
         };
         BookmarkDto: {
             /** Format: uuid */
@@ -3488,6 +3599,75 @@ export interface components {
             message_id: string;
             /** Format: uuid */
             chapter_id: string;
+            created_at: string;
+        };
+        CreateChatReportDto: {
+            /**
+             * Format: uuid
+             * @description The message being reported. Must be one the caller can already read — reporting authorizes as a read of the message’s channel.
+             */
+            message_id: string;
+            /**
+             * @description Mirrors the chat_message_reports_reason_check constraint.
+             * @enum {string}
+             */
+            reason: "spam" | "harassment" | "hate" | "violence" | "sexual" | "self_harm" | "other";
+            /** @description Optional free text from the reporter. */
+            details?: string;
+        };
+        ChatReportDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /**
+             * Format: uuid
+             * @description Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence.
+             */
+            message_id: string | null;
+            /** @description The message content as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence. */
+            reported_content: string | null;
+            /**
+             * Format: uuid
+             * @description Null for an imported archive message, which names its author in reported_author_name instead.
+             */
+            reported_sender_id: string | null;
+            reported_author_name: string | null;
+            /** @enum {string} */
+            reason: "spam" | "harassment" | "hate" | "violence" | "sexual" | "self_harm" | "other";
+            details: string | null;
+            /** @enum {string} */
+            status: "open" | "reviewed" | "actioned" | "dismissed";
+            created_at: string;
+            resolved_at: string | null;
+            /** Format: uuid */
+            resolved_by: string | null;
+        };
+        ResolveChatReportDto: {
+            /**
+             * @description `open` is deliberately not accepted: the answer to “it happened again” is a new report, not a revived one.
+             * @enum {string}
+             */
+            status: "reviewed" | "actioned" | "dismissed";
+        };
+        ChatBlockListDto: {
+            /** @description users.id values the caller has blocked in the active chapter. An empty array means nobody is blocked — a failed request is NOT an empty list, and a client must hold unmaskable messages rather than render them when the read fails. */
+            blocked_user_ids: string[];
+        };
+        CreateChatBlockDto: {
+            /**
+             * Format: uuid
+             * @description The `users.id` of the member to block. Must be a member of the active chapter — a block is scoped to one chapter.
+             */
+            user_id: string;
+        };
+        ChatBlockDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            blocked_user_id: string;
             created_at: string;
         };
         GeofenceCoordinateDto: {
@@ -5858,7 +6038,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"][];
+                };
             };
         };
     };
@@ -5985,7 +6167,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"][];
+                };
             };
         };
     };
@@ -6207,6 +6391,137 @@ export interface operations {
             header?: never;
             path: {
                 messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatReportController_listReports_v1: {
+        parameters: {
+            query?: {
+                /** @description Which slice of the queue to read. Defaults to `open` — the resolved statuses are history. */
+                status?: "open" | "reviewed" | "actioned" | "dismissed";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatReportDto"][];
+                };
+            };
+        };
+    };
+    ChatReportController_fileReport_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChatReportDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatReportDto"];
+                };
+            };
+        };
+    };
+    ChatReportController_resolveReport_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveChatReportDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatReportDto"];
+                };
+            };
+        };
+    };
+    ChatBlockController_listBlocks_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatBlockListDto"];
+                };
+            };
+        };
+    };
+    ChatBlockController_blockMember_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChatBlockDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatBlockDto"];
+                };
+            };
+        };
+    };
+    ChatBlockController_unblockMember_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: string;
             };
             cookie?: never;
         };

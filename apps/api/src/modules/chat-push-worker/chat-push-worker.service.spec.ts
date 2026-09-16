@@ -8,6 +8,7 @@ import {
   type ChatNotificationPreferenceRow,
 } from './chat-notification-preference.repository';
 import { RbacService } from '../../application/services/rbac.service';
+import { ChatBlockService } from '../../application/services/chat-block.service';
 import { ChannelCacheService } from './channel-cache.service';
 
 describe('ChatPushWorkerService', () => {
@@ -16,6 +17,7 @@ describe('ChatPushWorkerService', () => {
   let findByChapter: jest.Mock;
   let findForUsers: jest.Mock;
   let getEffectivePermissions: jest.Mock;
+  let filterOutBlockers: jest.Mock;
 
   const CHANNEL = {
     id: 'ch-1',
@@ -39,6 +41,17 @@ describe('ChatPushWorkerService', () => {
     findByChapter = jest.fn();
     findForUsers = jest.fn().mockResolvedValue(new Map());
     getEffectivePermissions = jest.fn().mockResolvedValue([]);
+    // Default: nobody has blocked the sender. Answered from the recipients
+    // actually passed in rather than a fixed array, for the reason `setPrefs`
+    // gives below — a static answer would stay green if the worker started
+    // asking about the wrong audience.
+    filterOutBlockers = jest.fn(
+      async (
+        _chapterId: string,
+        _senderId: string | null,
+        recipientIds: string[],
+      ) => recipientIds,
+    );
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -63,6 +76,10 @@ describe('ChatPushWorkerService', () => {
         {
           provide: RbacService,
           useValue: { getEffectivePermissions },
+        },
+        {
+          provide: ChatBlockService,
+          useValue: { filterOutBlockers },
         },
       ],
     }).compile();
@@ -112,6 +129,126 @@ describe('ChatPushWorkerService', () => {
       return map;
     });
   }
+
+  describe('blocked senders (#2257)', () => {
+    /*
+      `spec/behavior/chat/README.md` § Report and block. A push is the one
+      delivery that reaches past every client-side list — it lands on a lock
+      screen and `notifyUser` persists a notification row — so the block has to
+      be applied to the AUDIENCE, not to the preview.
+    */
+    it('does not notify a recipient who has blocked the sender', async () => {
+      service.__setChannelForTest(CHANNEL);
+      setMembers(['sender', 'blocker', 'bystander']);
+      filterOutBlockers.mockImplementation(
+        async (
+          _chapterId: string,
+          _senderId: string | null,
+          recipientIds: string[],
+        ) => recipientIds.filter((id) => id !== 'blocker'),
+      );
+
+      await service.handleMessage({
+        id: 'm1',
+        channel_id: CHANNEL.id,
+        sender_id: 'sender',
+        content: 'go away',
+        kind: 'text',
+        mentions: ['blocker', 'bystander'],
+        created_at: '',
+      });
+
+      expect(filterOutBlockers).toHaveBeenCalledWith('chap-1', 'sender', [
+        'blocker',
+        'bystander',
+      ]);
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'bystander',
+        'chap-1',
+        expect.anything(),
+      );
+    });
+
+    it('drops a blocker even when the message mentions them', async () => {
+      // The sharpest case: `decidePush` returns 'send' on `hasMention` BEFORE
+      // the level check, so a mention overrides an explicit `off`. If the block
+      // were applied anywhere downstream of that, a blocked member could force
+      // a push into a channel the blocker had deliberately muted.
+      service.__setChannelForTest(CHANNEL);
+      setMembers(['sender', 'blocker']);
+      setPrefs({
+        blocker: [
+          {
+            user_id: 'blocker',
+            chapter_id: 'chap-1',
+            channel_id: CHANNEL.id,
+            message_kind: null,
+            level: 'off',
+          },
+        ],
+      });
+      filterOutBlockers.mockResolvedValue([]);
+
+      await service.handleMessage({
+        id: 'm1',
+        channel_id: CHANNEL.id,
+        sender_id: 'sender',
+        content: 'hey @blocker',
+        kind: 'text',
+        mentions: ['blocker'],
+        created_at: '',
+      });
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('never reads preferences for an audience it has not filtered', async () => {
+      // Ordering, as an assertion. The block filter has to run before anything
+      // that could produce a delivery — a preference read is harmless on its
+      // own, but it is the step immediately before the fan-out loop, so if the
+      // blocker is still in the list here they are still in it at `notifyUser`.
+      service.__setChannelForTest(CHANNEL);
+      setMembers(['sender', 'blocker', 'bystander']);
+      filterOutBlockers.mockResolvedValue(['bystander']);
+
+      await service.handleMessage({
+        id: 'm1',
+        channel_id: CHANNEL.id,
+        sender_id: 'sender',
+        content: 'hello',
+        kind: 'text',
+        mentions: ['bystander'],
+        created_at: '',
+      });
+
+      expect(findForUsers).toHaveBeenCalledWith(['bystander'], 'chap-1');
+    });
+
+    it('sends nothing at all when the block list cannot be read', async () => {
+      // Fail closed. "A block list that cannot be read is not an empty block
+      // list" — so the whole fan-out for this message is lost rather than one
+      // blocked member's content reaching the blocker's lock screen. The throw
+      // is caught by `handleMessage`'s own try/catch, so the worker survives.
+      service.__setChannelForTest(CHANNEL);
+      setMembers(['sender', 'a', 'b']);
+      filterOutBlockers.mockRejectedValue(new Error('pg down'));
+
+      await expect(
+        service.handleMessage({
+          id: 'm1',
+          channel_id: CHANNEL.id,
+          sender_id: 'sender',
+          content: 'hello @a @b',
+          kind: 'text',
+          mentions: ['a', 'b'],
+          created_at: '',
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(notifyUser).not.toHaveBeenCalled();
+    });
+  });
 
   it('does not push the sender on their own message', async () => {
     service.__setChannelForTest(CHANNEL);
@@ -549,6 +686,13 @@ describe('ChatPushWorkerService', () => {
             useValue: {
               getEffectivePermissions: jest.fn().mockResolvedValue([]),
             },
+          },
+          {
+            // The roster is empty in this race fixture, so `handleMessage`
+            // returns before the audience is filtered at all; the provider is
+            // here to satisfy the injector, not to be consulted.
+            provide: ChatBlockService,
+            useValue: { filterOutBlockers: jest.fn() },
           },
         ],
       }).compile();

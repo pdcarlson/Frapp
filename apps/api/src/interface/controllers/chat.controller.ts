@@ -53,6 +53,7 @@ import {
   ClearedKindNotificationPreferenceDto,
   ResolveAuthorAvatarsDto,
   GetChannelMessagesQueryDto,
+  ChatMessageDto,
 } from '../dtos/chat.dto';
 import type { ChannelType } from '#domain/entities/chat.entity';
 
@@ -305,10 +306,18 @@ export class ChatController {
 
   // ── Messages ─────────────────────────────────────────────────────────
 
+  /**
+   * Declared response schema, not decoration. Without it `openapi.json` carries
+   * no 200 body for this route and `openapi-typescript` types the response
+   * `never` (#1049) — which is how `sender_blocked` came to be emitted by the
+   * API and invisible to every typed client, leaving the machine-readable half
+   * of `spec/behavior/chat/README.md` § The masking contract unreachable.
+   */
   @Get(':id/messages')
   @ApiOperation({
     summary: 'Get channel message history (supports since= reconnect replay)',
   })
+  @ApiOkResponse({ type: ChatMessageDto, isArray: true })
   async getMessages(
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,
@@ -452,6 +461,10 @@ export class ChatController {
 
   @Get(':id/pins')
   @ApiOperation({ summary: 'Get pinned messages in a channel' })
+  // Masked exactly like `GET :id/messages`, so it owes the same declared
+  // schema — a pin is channel content that stays in front of the blocker
+  // indefinitely, and a client cannot honour `sender_blocked` it cannot see.
+  @ApiOkResponse({ type: ChatMessageDto, isArray: true })
   async getPinnedMessages(
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,

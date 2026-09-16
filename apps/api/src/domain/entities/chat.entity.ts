@@ -371,6 +371,27 @@ export interface BookmarkedMessage {
   content: string;
   is_deleted: boolean;
   created_at: string;
+  /**
+   * Whether the caller has blocked this message's sender (#2257).
+   *
+   * **Computed per viewer by `ChatBookmarkService`, not a column** — which is
+   * why `BOOKMARK_MESSAGE_COLUMNS` does not list it and the three-way
+   * correspondence above still holds. It follows `message_available` exactly:
+   * the repository's cast does not produce either field and the service sets
+   * both on every row before they leave.
+   *
+   * Present on every row rather than only the masked ones, for the reason
+   * `chat-block-mask.ts` gives: an absent-means-false flag cannot distinguish
+   * "this surface does not mask" from "this message is fine". A blocked row's
+   * `content` reads `BLOCKED_MESSAGE_CONTENT`, and nothing may key off that
+   * string.
+   *
+   * Distinct from `message_available`, which is about channel access. A member
+   * who blocked someone has not lost access to the channel, so the jump
+   * affordance stays live and lands on a tombstone; conflating the two would
+   * tell a member they had lost a permission they still hold.
+   */
+  sender_blocked: boolean;
 }
 
 /**

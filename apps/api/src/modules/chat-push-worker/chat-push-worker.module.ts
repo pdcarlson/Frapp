@@ -5,6 +5,7 @@ import { NotificationModule } from '../notification/notification.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ChannelCacheModule } from './channel-cache.module';
+import { ChatBlockModule } from '../chat-block/chat-block.module';
 
 /**
  * Push worker (ADR-09). Runs in-process on the API; the
@@ -21,7 +22,17 @@ import { ChannelCacheModule } from './channel-cache.module';
   // deciding whether a ROLE_GATED channel's message may be pushed to a member.
   // `ChannelCacheModule` → `ChannelCacheService`, shared with `ChatModule` so a
   // channel write can evict this worker's cached authorization inputs.
-  imports: [NotificationModule, ChapterModule, RbacModule, ChannelCacheModule],
+  // `ChatBlockModule` → `ChatBlockService`, so a recipient who has blocked the
+  // sender is dropped from the push audience (#2257). Imported rather than
+  // provided locally so there is one home for the block rule across the four
+  // surfaces that owe it.
+  imports: [
+    NotificationModule,
+    ChapterModule,
+    RbacModule,
+    ChannelCacheModule,
+    ChatBlockModule,
+  ],
   providers: [ChatPushWorkerService, ChatNotificationPreferenceRepository],
 })
 export class ChatPushWorkerModule {}
