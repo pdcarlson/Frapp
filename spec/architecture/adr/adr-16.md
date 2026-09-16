@@ -191,3 +191,11 @@ This does **not** reverse amendment 5: GitHub Issues stays canonical; Linear sta
 **Alternatives rejected:** restoring amendment 4's "Cursor retired / Claude-only". Keeping Cursor-primary with Claude as a temporary fallback (#2017 / #2028). Silent deletion of either tree. Dual-running Curator/Triage on both scheduled platforms. Restoring Linear. Making Bugbot the review gate.
 
 **Trigger to revisit:** none scheduled. Revisit only if one harness stops being able to ship independently.
+
+### Correction — 2026-09-16: review enforcement is no longer harness-specific
+
+Amendments 8–9 remain the history of making Cursor and Claude independent first-class environments,
+but their review-adapter details are superseded. Both now share the repository-managed
+[Git pre-push hook](../../../.githooks/pre-push), installed by the root `prepare` script, with exact
+pushed-commit evidence at `.cache/diff-review/<PUSHED_COMMIT_SHA>`. Cursor and Claude project hooks
+no longer intercept pushes. See the [review runbook](../../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).

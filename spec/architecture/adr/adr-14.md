@@ -24,3 +24,16 @@ The live rules are the 2026-08-01 amendment (local [`/diff-review`](../../../.cl
 - External human (non-agent) contributors are added, or PRs start landing without having gone through the local gate → reintroduce a server-side review/check on merge.
 - Claude Code makes `/code-review` invocable *unconditionally* by an agent — i.e. without the current turn's prompt carrying the token, and from inside a sub-agent — or a hook-driven subprocess route (`claude -p "/code-review"`) proves reliable → retire `/diff-review` and point the hook at the bundled reviewer. **Note the 2026-08-01 amendment does not fire this trigger**: conditional invocability is not enough, because the `/next` flow can never satisfy the condition.
 - The local-only model proves too easy to skip → add a CI check that the diff was reviewed, or restore a managed Code Review service if Frapp lands on a Team/Enterprise plan.
+
+## Amendment — 2026-09-16: provider-neutral Git enforcement
+
+The provider-specific Claude `PreToolUse` gate and Cursor shell adapter are replaced by the
+repository-managed [`.githooks/pre-push`](../../../.githooks/pre-push), installed through the root
+`prepare` script. Git supplies the exact ref updates, so every published commit requires
+`.cache/diff-review/<PUSHED_COMMIT_SHA>` evidence and multi-ref or explicit-ref pushes cannot borrow
+HEAD's marker. The four-denial livelock release is rejected: repeated pushes never create evidence.
+
+This corrects the 2026-06-04 amendment's provider-specific and deny-once design without erasing that
+history. The new gate is provider-neutral for Codex, Claude, Cursor, and humans once installed. It is
+not server-side or unconditional: Git's `--no-verify`, a changed `core.hooksPath`, or skipped
+installation can bypass it. A nonzero hook result otherwise aborts the push.
