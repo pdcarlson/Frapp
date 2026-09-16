@@ -5,6 +5,8 @@ import {
   ChatBookmarkService,
 } from './chat-bookmark.service';
 import { ChannelAccessService } from './channel-access.service';
+import { ChatBlockService } from './chat-block.service';
+import { BLOCKED_MESSAGE_CONTENT } from './chat-block-mask';
 import { CHAT_MESSAGE_BOOKMARK_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import type { IChatMessageBookmarkRepository } from '#domain/repositories/chat.repository.interface';
 import type {
@@ -20,8 +22,9 @@ const MESSAGE = 'msg-1';
 const message = (
   overrides: Partial<BookmarkedMessage> = {},
 ): BookmarkedMessage => ({
-  // Exactly the nine fields the endpoint serves. A wider fixture would let a
-  // test assert redaction of a field production never sends.
+  // Exactly the fields the endpoint serves — the nine-column projection plus
+  // the per-viewer `sender_blocked` the service computes. A wider fixture would
+  // let a test assert redaction of a field production never sends.
   id: MESSAGE,
   channel_id: 'ch-1',
   sender_id: 'user-2',
@@ -31,6 +34,7 @@ const message = (
   content: 'keep this',
   is_deleted: false,
   created_at: '2026-01-01T00:00:00.000Z',
+  sender_blocked: false,
   ...overrides,
 });
 
@@ -48,6 +52,7 @@ describe('ChatBookmarkService', () => {
     assertMessageAccess: jest.Mock;
     filterAccessibleChannelIds: jest.Mock;
   };
+  let mockChatBlocks: { listBlockedUserIds: jest.Mock };
 
   beforeEach(async () => {
     mockRepo = {
@@ -65,11 +70,16 @@ describe('ChatBookmarkService', () => {
         ),
     };
 
+    mockChatBlocks = {
+      listBlockedUserIds: jest.fn().mockResolvedValue([]),
+    };
+
     const moduleRef: TestingModule = await Test.createTestingModule({
       providers: [
         ChatBookmarkService,
         { provide: CHAT_MESSAGE_BOOKMARK_REPOSITORY, useValue: mockRepo },
         { provide: ChannelAccessService, useValue: mockChannelAccess },
+        { provide: ChatBlockService, useValue: mockChatBlocks },
       ],
     }).compile();
 
@@ -224,8 +234,61 @@ describe('ChatBookmarkService', () => {
         'created_at',
         'id',
         'is_deleted',
+        'sender_blocked',
         'sender_id',
       ]);
+    });
+
+    it('masks a bookmarked message whose sender the caller has blocked', async () => {
+      // The panel re-reads `chat_messages` on every request, so a bookmark
+      // saved before the block keeps serving that member's CURRENT content —
+      // edits included. A block the timeline honours and this panel does not is
+      // not a block (#2257).
+      mockRepo.findByUserAndChapter.mockResolvedValue([
+        {
+          ...bookmark,
+          message: message({ sender_id: 'user-blocked', content: 'go away' }),
+        },
+      ]);
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['user-blocked']);
+
+      const [row] = await service.listBookmarks(CHAPTER, USER);
+
+      expect(mockChatBlocks.listBlockedUserIds).toHaveBeenCalledWith(
+        CHAPTER,
+        USER,
+      );
+      expect(row.message.content).toBe(BLOCKED_MESSAGE_CONTENT);
+      expect(row.message.sender_blocked).toBe(true);
+      // The jump affordance stays live: a block is not a loss of channel
+      // access, and what the member lands on there is the same tombstone.
+      expect(row.message_available).toBe(true);
+    });
+
+    it('flags an unblocked bookmarked message rather than leaving the field absent', async () => {
+      mockRepo.findByUserAndChapter.mockResolvedValue([
+        { ...bookmark, message: message() },
+      ]);
+      mockChatBlocks.listBlockedUserIds.mockResolvedValue(['someone-else']);
+
+      const [row] = await service.listBookmarks(CHAPTER, USER);
+
+      expect(row.message.sender_blocked).toBe(false);
+      expect(row.message.content).toBe('keep this');
+    });
+
+    it('fails the read when the block list cannot be read', async () => {
+      // "A block list that cannot be read is not an empty block list." Serving
+      // the panel unmasked here would fail open on a safety feature for as long
+      // as the table was unreachable.
+      mockRepo.findByUserAndChapter.mockResolvedValue([
+        { ...bookmark, message: message({ sender_id: 'user-blocked' }) },
+      ]);
+      mockChatBlocks.listBlockedUserIds.mockRejectedValue(new Error('pg down'));
+
+      await expect(service.listBookmarks(CHAPTER, USER)).rejects.toThrow(
+        'pg down',
+      );
     });
 
     it('treats an archived Group DM as still readable', async () => {

@@ -106,6 +106,22 @@ export interface RawChatMessage {
   is_deleted?: boolean | null;
   deleted_at?: string | null;
   client_message_id?: string | null;
+  /**
+   * Whether the server evaluated the viewer's block list and found this row's
+   * sender on it (#2257, `spec/behavior/chat/README.md` § The masking contract).
+   *
+   * Optional **here and only here**, because the two sources this shape covers
+   * are genuinely different. The REST reads set it on every row, masked or not,
+   * which is what lets a client tell "the server does not mask" from "this
+   * message is fine". The Postgres Changes echo is a raw table row with no
+   * viewer attached and therefore carries no such column at all.
+   *
+   * So an absent value means "this row arrived by a path that could not mask
+   * it", and `normalizeRow` resolves that to `false`. That default is NOT the
+   * masking signal — a client still applies its own list to echoed rows, which
+   * is exactly why the contract requires `GET /v1/chat/blocks` to exist.
+   */
+  sender_blocked?: boolean | null;
   created_at: string;
 }
 
@@ -171,6 +187,21 @@ export interface ChatMessage {
    * stamps at send time.
    */
   attachment_count: number;
+  /**
+   * Whether the **server** masked this row for the viewer, set on every row
+   * rather than only the masked ones (#2257).
+   *
+   * Not a substitute for the client's own list. Rows arriving over the Realtime
+   * echo carry no viewer and normalize to `false` here whatever the viewer's
+   * list says, so a client that rendered on this flag alone would show a
+   * blocked member's *live* messages in full. Read it as "the server already
+   * masked this one", and keep applying the list from `GET /v1/chat/blocks` on
+   * top — `spec/behavior/chat/README.md` § The masking contract.
+   *
+   * Required, deliberately: `normalizeRow` always sets it, and an optional flag
+   * would put "is it there?" in front of every reader.
+   */
+  sender_blocked: boolean;
   reactions: ReactionState;
   /**
    * Raw `chat_message_actions` rows for this message. Polls / card actions
@@ -281,6 +312,10 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     created_at: row.created_at,
     client_message_id: clientId,
     attachment_count: attachmentCount(row.metadata),
+    // Absent means the row reached us by a path with no viewer to mask against
+    // (the Postgres Changes echo), never "the sender is fine" — see
+    // `RawChatMessage.sender_blocked`.
+    sender_blocked: row.sender_blocked === true,
     reactions: {},
     actions: [],
     _status: "confirmed",
@@ -320,6 +355,7 @@ export function toRawRow(message: ChatMessage): RawChatMessage {
     edited_at: message.edited_at,
     is_deleted: message.is_deleted,
     client_message_id: message.client_message_id,
+    sender_blocked: message.sender_blocked,
     created_at: message.created_at,
   };
 }
@@ -376,6 +412,10 @@ export function optimisticMessage(args: {
     is_deleted: false,
     created_at: new Date().toISOString(),
     client_message_id: args.clientMessageId,
+    // An optimistic row is the viewer's own message. You cannot block yourself
+    // (`ChatBlockService.blockMember` refuses it), so this is false by
+    // construction rather than by default.
+    sender_blocked: false,
     reactions: {},
     actions: [],
     _status: "pending",

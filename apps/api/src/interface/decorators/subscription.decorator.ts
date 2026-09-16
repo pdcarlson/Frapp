@@ -19,8 +19,27 @@ export const SUBSCRIPTION_GRACE_BLOCKED_KEY = 'subscription_grace_blocked';
 export const FreeTier = () => SetMetadata(SUBSCRIPTION_FREE_TIER_KEY, true);
 
 /**
- * Bypasses the subscription guard entirely. Use for billing endpoints that
- * must remain reachable while the chapter is locked so admins can recover.
+ * Bypasses the subscription guard entirely — the only marker that survives the
+ * `canceled` hard lock, so it is the strongest thing here and the shortest list.
+ *
+ * Two kinds of route qualify, and the second is not billing:
+ *
+ * - **Billing recovery** — the endpoints an admin needs to pay a locked chapter
+ *   back into `active` (`BillingController`, and `POST
+ *   /v1/invoices/:id/payment-intent`, since dues collection is itself the
+ *   recovery path).
+ * - **Member safety** — reporting objectionable content and blocking an abusive
+ *   member (`ChatReportController`, `ChatBlockController`, #2257). App Store
+ *   Guideline 1.2 expects a UGC app to offer both, and it has no billing
+ *   exception: a member being harassed in a chapter whose card failed needs
+ *   them exactly as much as one in a paying chapter. `@FreeTier()` is not
+ *   enough — it lapses with the `past_due` grace window and never applies under
+ *   `canceled`.
+ *
+ * Nothing else. A route that is merely important is not exempt; the bar is that
+ * refusing it while a chapter is locked would be either unrecoverable or unsafe.
+ * `subscription.decorator.spec.ts` pins both the class-level and the
+ * route-level rosters.
  */
 export const SubscriptionExempt = () =>
   SetMetadata(SUBSCRIPTION_EXEMPT_KEY, true);

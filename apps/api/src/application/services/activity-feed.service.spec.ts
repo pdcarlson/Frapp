@@ -10,7 +10,8 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import type { Event } from '#domain/entities/event.entity';
 import type { PointTransaction } from '#domain/entities/point-transaction.entity';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
-import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
+import type { ChatChannel } from '#domain/entities/chat.entity';
+import type { MaskedChatMessage } from './chat-block-mask';
 
 describe('ActivityFeedService', () => {
   let service: ActivityFeedService;
@@ -448,7 +449,15 @@ describe('ActivityFeedService', () => {
     };
   }
 
-  function messageFixture(overrides: Partial<ChatMessage>): ChatMessage {
+  /**
+   * `ChatService.getMessages` masks what it serves (#2257), so what this feed
+   * actually receives is a `MaskedChatMessage` — every row carrying
+   * `sender_blocked`, not only the masked ones. The fixture says so rather than
+   * modelling a shape the service can no longer return.
+   */
+  function messageFixture(
+    overrides: Partial<MaskedChatMessage>,
+  ): MaskedChatMessage {
     return {
       id: 'msg-1',
       channel_id: announcementsChannel.id,
@@ -457,7 +466,8 @@ describe('ActivityFeedService', () => {
       type: 'TEXT',
       is_deleted: false,
       created_at: '2026-03-03T00:00:00.000Z',
+      sender_blocked: false,
       ...overrides,
-    } as ChatMessage;
+    } as MaskedChatMessage;
   }
 });

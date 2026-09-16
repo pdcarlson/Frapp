@@ -66,6 +66,8 @@ import {
 } from '#domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
 import { ChannelAccessService } from './channel-access.service';
+import { ChatBlockService } from './chat-block.service';
+import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
 import { ActivationService } from './activation.service';
 import { ChatNotificationPreferenceRepository } from '../../modules/chat-push-worker/chat-notification-preference.repository';
 import type { ChatNotificationLevel } from '../../modules/chat-push-worker/chat-notification-preference.repository';
@@ -268,6 +270,9 @@ export class ChatService {
     private readonly activation: ActivationService,
     private readonly chatNotificationPrefs: ChatNotificationPreferenceRepository,
     private readonly channelCache: ChannelCacheService,
+    // Report and block (#2257) live in their own services; the hot path needs
+    // only the block list, to mask what it serves.
+    private readonly chatBlocks: ChatBlockService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -559,18 +564,44 @@ export class ChatService {
 
   // ── Messages ─────────────────────────────────────────────────────────
 
+  /**
+   * Channel history for one viewer, with that viewer's block list applied
+   * (#2257, `spec/behavior/chat/README.md` § The masking contract).
+   *
+   * The masking is per-caller, which is why it cannot live in the repository or
+   * in a database view: the same row reads differently for two members of the
+   * same channel. `maskBlockedMessages` is the shared rule — a pure function in
+   * `chat-block-mask.ts` — so a second read surface owes the same guarantee
+   * without a second copy of it.
+   *
+   * **The block-list read is not defended against.** If it throws, this throws:
+   * the contract is explicit that "a block list that cannot be read is not an
+   * empty block list", and a `.catch(() => [])` here would quietly unmask every
+   * blocked member for as long as the table was unreachable — failing open on
+   * the one feature whose entire value is that it does not.
+   *
+   * Server masking is necessary but not sufficient on its own, and nothing
+   * downstream may key off the `BLOCKED_MESSAGE_CONTENT` sentinel. Clients also receive
+   * rows over a Supabase Realtime `postgres_changes` echo, which carries no
+   * viewer and so cannot be masked here; they apply their own list, fetched from
+   * `GET /v1/chat/blocks`, and read `sender_blocked` rather than the sentinel.
+   */
   async getMessages(
     channelId: string,
     chapterId: string,
     userId: string,
     options?: { limit?: number; before?: string; since?: string },
-  ): Promise<ChatMessage[]> {
+  ): Promise<MaskedChatMessage[]> {
     await this.assertChannelAccess(channelId, chapterId, userId);
     instantOrThrow('before', options?.before);
-    return this.messageRepo.findByChannel(channelId, {
-      ...options,
-      limit: clampListLimit(options?.limit),
-    });
+    const [messages, blockedUserIds] = await Promise.all([
+      this.messageRepo.findByChannel(channelId, {
+        ...options,
+        limit: clampListLimit(options?.limit),
+      }),
+      this.chatBlocks.listBlockedUserIds(chapterId, userId),
+    ]);
+    return maskBlockedMessages(messages, blockedUserIds);
   }
 
   /**
@@ -1149,13 +1180,28 @@ export class ChatService {
     });
   }
 
+  /**
+   * The channel's pinned messages, masked for this viewer exactly like
+   * {@link getMessages}.
+   *
+   * Pinning is an officer action but the pinned list is not an officer
+   * moderation surface — every member of the channel reads it, so a pinned
+   * message from a blocked member is channel content and the contract's
+   * "Channel messages → Hidden" row covers it. Leaving this unmasked would have
+   * been a durable hole in the mask, since a pin is precisely the message that
+   * stays in front of the blocker indefinitely.
+   */
   async getPinnedMessages(
     channelId: string,
     chapterId: string,
     userId: string,
-  ): Promise<ChatMessage[]> {
+  ): Promise<MaskedChatMessage[]> {
     await this.assertChannelAccess(channelId, chapterId, userId);
-    return this.messageRepo.findPinnedByChannel(channelId);
+    const [messages, blockedUserIds] = await Promise.all([
+      this.messageRepo.findPinnedByChannel(channelId),
+      this.chatBlocks.listBlockedUserIds(chapterId, userId),
+    ]);
+    return maskBlockedMessages(messages, blockedUserIds);
   }
 
   // ── Reactions ────────────────────────────────────────────────────────

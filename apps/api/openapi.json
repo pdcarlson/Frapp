@@ -2465,7 +2465,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatMessageDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2673,7 +2683,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatMessageDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3057,6 +3077,225 @@
           }
         ],
         "summary": "Remove the caller’s bookmark (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/chat/reports": {
+      "post": {
+        "operationId": "ChatReportController_fileReport_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChatReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Report a chat message (idempotent while a report stays open)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "get": {
+        "operationId": "ChatReportController_listReports_v1",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Which slice of the queue to read. Defaults to `open` — the resolved statuses are history.",
+            "schema": {
+              "default": "open",
+              "type": "string",
+              "enum": [
+                "open",
+                "reviewed",
+                "actioned",
+                "dismissed"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatReportDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chat message reports for this chapter",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/chat/reports/{id}": {
+      "patch": {
+        "operationId": "ChatReportController_resolveReport_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveChatReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Resolve a chat message report",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/chat/blocks": {
+      "get": {
+        "operationId": "ChatBlockController_listBlocks_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBlockListDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the caller's blocked members in this chapter",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "post": {
+        "operationId": "ChatBlockController_blockMember_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChatBlockDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBlockDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Block a member in this chapter (idempotent)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/chat/blocks/{userId}": {
+      "delete": {
+        "operationId": "ChatBlockController_unblockMember_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unblock a member (idempotent)",
         "tags": [
           "Chat"
         ]
@@ -8724,6 +8963,129 @@
           }
         }
       },
+      "ChatMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for an imported archive message, which names its author in author_name instead. Kept on a masked row: the blocker chose the block, so reading their own list back is not a disclosure — and without it a client cannot reconcile a server-masked row against the list it applies itself."
+          },
+          "author_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "author_avatar_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "author_external_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "content": {
+            "type": "string",
+            "description": "Reads the masking sentinel when `sender_blocked` is true, and “[message deleted]” once the message is deleted. **Never pattern-match either string** — the machine-readable signals are `sender_blocked` and `is_deleted`."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "TEXT",
+              "POLL"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "rush",
+              "system_audit",
+              "imported",
+              "loading",
+              "announcement"
+            ],
+            "nullable": true,
+            "description": "Null on rows written before the column existed; read as 'text'."
+          },
+          "payload": {
+            "type": "object",
+            "nullable": true,
+            "description": "Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text."
+          },
+          "client_message_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "reply_to_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Free-form annotations; carries `attachment_count`. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads."
+          },
+          "is_pinned": {
+            "type": "boolean"
+          },
+          "pinned_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "edited_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_deleted": {
+            "type": "boolean"
+          },
+          "mentions": {
+            "nullable": true,
+            "description": "`users.id` of everyone mentioned, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "sender_blocked": {
+            "type": "boolean",
+            "description": "Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`."
+          }
+        },
+        "required": [
+          "id",
+          "channel_id",
+          "sender_id",
+          "content",
+          "type",
+          "reply_to_id",
+          "metadata",
+          "is_pinned",
+          "pinned_at",
+          "edited_at",
+          "is_deleted",
+          "created_at",
+          "sender_blocked"
+        ]
+      },
       "MessageAttachmentDto": {
         "type": "object",
         "properties": {
@@ -8953,6 +9315,10 @@
           },
           "created_at": {
             "type": "string"
+          },
+          "sender_blocked": {
+            "type": "boolean",
+            "description": "Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows."
           }
         },
         "required": [
@@ -8961,7 +9327,8 @@
           "sender_id",
           "content",
           "is_deleted",
-          "created_at"
+          "created_at",
+          "sender_blocked"
         ]
       },
       "BookmarkDto": {
@@ -9017,6 +9384,194 @@
           "id",
           "message_id",
           "chapter_id",
+          "created_at"
+        ]
+      },
+      "CreateChatReportDto": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The message being reported. Must be one the caller can already read — reporting authorizes as a read of the message’s channel."
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "spam",
+              "harassment",
+              "hate",
+              "violence",
+              "sexual",
+              "self_harm",
+              "other"
+            ],
+            "description": "Mirrors the chat_message_reports_reason_check constraint."
+          },
+          "details": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Optional free text from the reporter."
+          }
+        },
+        "required": [
+          "message_id",
+          "reason"
+        ]
+      },
+      "ChatReportDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null once the reported message was hard-deleted (a channel delete, or the Discord import purge). The report outlives it; the reported_* fields are the evidence."
+          },
+          "reported_content": {
+            "type": "string",
+            "nullable": true,
+            "description": "The message content as it read when the report was filed, so a sender soft-deleting their own message cannot blank the evidence."
+          },
+          "reported_sender_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for an imported archive message, which names its author in reported_author_name instead."
+          },
+          "reported_author_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "spam",
+              "harassment",
+              "hate",
+              "violence",
+              "sexual",
+              "self_harm",
+              "other"
+            ]
+          },
+          "details": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "reviewed",
+              "actioned",
+              "dismissed"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "resolved_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "resolved_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "message_id",
+          "reported_content",
+          "reported_sender_id",
+          "reported_author_name",
+          "reason",
+          "details",
+          "status",
+          "created_at",
+          "resolved_at",
+          "resolved_by"
+        ]
+      },
+      "ResolveChatReportDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "reviewed",
+              "actioned",
+              "dismissed"
+            ],
+            "description": "`open` is deliberately not accepted: the answer to “it happened again” is a new report, not a revived one."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "ChatBlockListDto": {
+        "type": "object",
+        "properties": {
+          "blocked_user_ids": {
+            "description": "users.id values the caller has blocked in the active chapter. An empty array means nobody is blocked — a failed request is NOT an empty list, and a client must hold unmaskable messages rather than render them when the read fails.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "blocked_user_ids"
+        ]
+      },
+      "CreateChatBlockDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The `users.id` of the member to block. Must be a member of the active chapter — a block is scoped to one chapter."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "ChatBlockDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "blocked_user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "blocked_user_id",
           "created_at"
         ]
       },
