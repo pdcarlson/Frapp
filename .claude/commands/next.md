@@ -420,8 +420,8 @@ Verify end-to-end — run the tests and the app. Never claim a step you didn't r
 ## Phase 3 — review at push, the single gate
 
 **Run [`/diff-review`](../skills/diff-review/SKILL.md). Always, unreduced.** The pre-push review-gate
-hook ([`.claude/hooks/pre-push-review-gate.sh`](../hooks/pre-push-review-gate.sh)) blocks a push until
-`.cache/diff-review/<HEAD_SHA>` exists, and `/diff-review` is what writes it. **Do not bother trying
+repository Git hook ([`.githooks/pre-push`](../../.githooks/pre-push)) blocks a push until
+`.cache/diff-review/<PUSHED_COMMIT_SHA>` exists, and `/diff-review` is what writes it. **Do not bother trying
 `/code-review`:** its model invocation is waived only when the turn's prompt carries `/code-review`
 whitespace-delimited on both sides, and a `/next` turn is a slash-command expansion, which the scan
 skips — so it is refused 100% of the time here, even if you typed the token as an argument to `/next`.
@@ -527,10 +527,9 @@ branch model is from-`main` only, and this line is the standing grant for the su
 approved with this doctrine's PR). Each hard rule below closes a verified hazard, not a
 hypothetical:
 
-- **Check out the branch you push.** The pre-push gate resolves the *checked-out* HEAD, not the
-  pushed ref — pushing a non-checked-out ref either slips an unreviewed diff through or burns the
-  gate's livelock budget toward an UNREVIEWED release. No worktrees for the same reason: the marker
-  and the check would key on different roots.
+- **Review the ref you push.** The Git hook checks every exact pushed commit, including explicit
+  refspecs and worktrees; a marker for another branch cannot authorize it. Keep the branch checked
+  out anyway so `/diff-review` scopes and records the intended HEAD.
 - **Commit WIP before every branch switch**, so a babysit fix on PR A never pulls B's half-built
   work into review scope (`/diff-review` includes dirty-tree changes) or lands on the wrong branch.
   Each `/diff-review` covers exactly one branch's HEAD.

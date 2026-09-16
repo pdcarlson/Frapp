@@ -40,7 +40,6 @@ const REGEX_SITES = [
   RUNBOOK_REL,
   "spec/architecture/adr/adr-14.md",
   ".claude/skills/diff-review/SKILL.md",
-  ".claude/hooks/pre-push-review-gate.sh",
 ];
 
 // A backtick-delimited span containing the scan pattern.

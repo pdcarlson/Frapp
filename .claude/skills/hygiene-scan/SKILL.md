@@ -68,7 +68,7 @@ design question** — do not ship the mechanical half.
 | | |
 | --- | --- |
 | **May edit** | `apps/**` and `packages/**` product code and their tests; under `scripts/**`, dead code and stale allowlist entries only — the check, CI and deploy scripts there *are* the gates, so their logic is never in scope; the gate baselines, downward only (`scripts/dependency-cruiser-known-violations.json` via `--update-baseline` after a clean run, the `.jscpd.json` threshold); **path citations** in any doc — `spec/behavior/**` included — when a fix moves or renames a file (that is doc-sync, not intent), and the **relevant** `docs/` file when a fact it states moved; this skill directory (self-maintenance) |
-| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (frozen — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); dead code and correctness there are fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · the legacy `@repo/theme` exports landing consumes · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `FRAPP_SKIP_REVIEW_GATE` |
+| **Never** | `supabase/migrations/**` · `.github/workflows/**` · any dependency version (`package.json` deps, `package-lock.json`) · `apps/landing` **visuals** (frozen — [`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md); dead code and correctness there are fair game) · the seven frozen mobile files ([`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze) · the legacy `@repo/theme` exports landing consumes · `spec/behavior/**` and `spec/product/**` prose (intent — never "corrected" to match code; only a path citation there may change, per the row above) · a gate's posture (required ↔ advisory is the owner's call: [`QUALITY_GATES.md`](../../../docs/internal/ci-cd/QUALITY_GATES.md)) · `git push --no-verify` |
 | **Volume** | at most **one** PR per run, on `claude/hygiene-scan-YYYY-MM-DD` (append `-2` if that branch exists); at most **one open** Hygiene Scan PR at a time; at most **~3** net-new issues per run. Never merge — a human does. |
 
 **Behaviour change is out of scope**, with one exception. Observable behaviour is anything a test,
@@ -364,10 +364,9 @@ decision" and says why is a pass; a run that manufactures a change to show work 
 1. **Review before pushing, for real.** Run [`/diff-review`](../diff-review/SKILL.md) at `high`
    or better and act on every finding. You are reviewing your own unattended edit of product
    code; the independent verifier pass is the whole reason this routine is allowed to exist. The
-   pre-push hook (`.claude/hooks/pre-push-review-gate.sh`) denies `git push` without the review
+   pre-push hook (`.githooks/pre-push`) denies `git push` without the review
    marker for the current HEAD; committing invalidates the marker by design, so review **last**.
-   Never set `FRAPP_SKIP_REVIEW_GATE`; if the livelock guard ever releases a push labelled
-   UNREVIEWED, that is a finding to lead the report with, not a success.
+   Never use `git push --no-verify`; if the hook cannot find valid evidence, stop and report the blocker rather than bypassing it.
 2. **Push and open** against `main` with `mcp__github__create_pull_request`, filling the PR
    template. The body must carry, per fix: **the rule restored** (cited), **the consumers
    checked**, and **the verification that ran** (commands and outcomes, including what could not
@@ -433,7 +432,7 @@ run entry never restates. Keep it to the facts the next run needs.
   editing either side to match the other (`AGENTS.md` § Spec vs code).
 - **Never print secret values.** Names and presence only.
 - **Say "not run" rather than guessing.** A verification you did not run did not happen.
-- **Never** migrations, CI workflows, dependency versions, gate posture, `FRAPP_SKIP_REVIEW_GATE`,
+- **Never** migrations, CI workflows, dependency versions, gate posture, `git push --no-verify`,
   an empty commit, a self-merge.
 
 ---

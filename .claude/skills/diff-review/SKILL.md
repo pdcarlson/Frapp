@@ -232,8 +232,7 @@ mkdir -p "$(git rev-parse --show-toplevel)/.cache/diff-review" \
 **Use the absolute repo-root path, as above — not a `.cache/…` path relative to the cwd.** The hook
 reads `<repo-root>/.cache/diff-review/<SHA>`, so a marker written from `apps/api` lands somewhere the
 hook never looks. `.gitignore` matches `.cache/diff-review/` at any depth, so a stray copy is
-invisible in `git status` and the mismatch would be silent — you'd just get denied until the livelock
-guard released the push labelled UNREVIEWED.
+invisible in `git status` and the mismatch would be silent — the push remains denied until evidence exists.
 
 Only do this **after** reporting and acting on findings. The gate keys on the HEAD SHA, so committing
 fixes invalidates the marker by design — re-run this skill on the new HEAD, and the review always

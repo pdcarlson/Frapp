@@ -6,14 +6,29 @@
 
 ## What runs now
 
-Review is a **local pre-push gate**, not a CI job. Cursor Cloud and Claude Code are independent first-class agent environments. Same evidence marker either way.
+Review is a **repository-managed Git `pre-push` gate**, not a CI job or an agent-provider hook.
+[`.githooks/pre-push`](../../../.githooks/pre-push) is enabled by the root `prepare` script through
+[`scripts/setup-git-hooks.mjs`](../../../scripts/setup-git-hooks.mjs), alongside the existing secret
+scan. Once installed, the same Git hook runs for local Codex, cloud agents, and humans.
 
-- **Cursor Cloud:** [`.cursor/hooks.json`](../../../.cursor/hooks.json) `beforeShellExecution` runs [`.cursor/hooks/pre-push-review-gate.sh`](../../../.cursor/hooks/pre-push-review-gate.sh), a thin adapter around the Claude hook. Cursor defaults **fail-open** on crash, timeout, or invalid JSON ([docs](https://cursor.com/docs/agent/hooks)); this gate sets `failClosed: true` and always emits valid Cursor JSON so an empty Claude-allow stdout cannot be treated as invalid JSON.
-- **Claude Code:** a **PreToolUse hook** — [`.claude/hooks/pre-push-review-gate.sh`](../../../.claude/hooks/pre-push-review-gate.sh), wired under `hooks.PreToolUse` in [`.claude/settings.json`](../../../.claude/settings.json) — intercepts `git push`. Parse failure of a push-like payload **denies**.
-- A push is **blocked until the current branch HEAD has actually been reviewed**, with guidance to run a review skill in the same chat session on the current diff. Address every finding (fix it, or file a tracked Triage follow-up with a reason), then re-push.
-- Review **sub-agents inherit the session model** (Opus in a normal session) — `CLAUDE_CODE_SUBAGENT_MODEL` is no longer pinned.
+Git gives the hook every proposed ref update. Each non-deletion update must have evidence at
+`.cache/diff-review/<PUSHED_COMMIT_SHA>`; annotated tags are peeled to their commit. This is stronger
+than checking the currently checked-out HEAD: explicit refspecs and multi-ref pushes cannot borrow a
+marker from another commit. `/diff-review` writes the marker for the reviewed HEAD. Address every
+finding, commit any fixes, review the new commit, then push.
 
-This is the **single** pre-PR review gate (one matcher/marker/livelock implementation; two harness adapters). The `/next` flow no longer runs review as a separate step — the push hook drives it exactly once per HEAD. Frapp's gate is **`/diff-review`**. Cursor built-ins (`/review`, Bugbot) are not canonical and do not write the evidence marker.
+**Why not Codex project hooks?** Verified against the installed Codex CLI 0.144.0-alpha.4 on
+2026-09-16: `PreToolUse` hooks can block Codex-issued shell commands when they return a valid block
+response, but they are tool-level (not Git- or human-level), trust can be bypassed, and the available
+hook configuration exposes no fail-closed-on-crash/timeout guarantee. Claude and Cursor hooks have
+the same provider-specific coverage problem. The Git hook therefore owns enforcement; provider
+configs no longer duplicate it.
+
+This is consistent default-path enforcement, **not an unconditional server-side gate**. Git aborts a
+push when an installed `pre-push` hook exits nonzero, but a user can deliberately use
+`git push --no-verify`, change `core.hooksPath`, or skip installation. There is no attempt-count
+release: retrying a denied push can never create evidence. Cursor built-ins (`/review`, Bugbot) are
+not canonical and do not write the marker.
 
 ### Which review skill
 
@@ -97,9 +112,7 @@ knowledge of.
 independent verifier per distinct `file:line`. It does **not** write the gate marker, so once you
 have acted on its findings, record the evidence by hand:
 `mkdir -p "$(git rev-parse --show-toplevel)/.cache/diff-review" && touch "$(git rev-parse --show-toplevel)/.cache/diff-review/$(git rev-parse HEAD)"`.
-Do **not** reach for `FRAPP_SKIP_REVIEW_GATE=1` instead: that leaves a push you *did* review
-indistinguishable from one that skipped review entirely, and it is for emergencies only. The hook's
-own deny message says exactly this.
+Do **not** use `git push --no-verify` instead: that deliberately bypasses the repository hook and leaves no review evidence.
 
 `/diff-review` reproduces the bundled workflow (scope → parallel finder subagents per angle → one
 independent verifier subagent per candidate → a single `ReportFindings` call) and additionally encodes
@@ -108,100 +121,43 @@ permission decorators, the PGlite migration gate, the doc-sync mandate, the trac
 verification honesty. The per-candidate verifier pass is what makes an agent-run review trustworthy
 rather than the agent agreeing with its own work — do not weaken it.
 
-## How the gate enforces (and avoids livelock)
+## How the gate enforces
 
-A PreToolUse hook can't observe a skill invocation directly, so the gate keys on **evidence, not
-attempts**: `/diff-review` writes `.cache/diff-review/<HEAD_SHA>` (gitignored) once it has reported and
-acted on findings, and the hook allows the push only when that marker exists for the current HEAD.
-**Retrying a denied push does not satisfy the gate.**
-
-> **Why not deny-once-then-allow?** That was the previous design, and it guaranteed nothing the moment
-> the review became agent-invocable — two consecutive pushes cleared it with no review in between. It
-> was only ever load-bearing because the required skill was human-only, so the keystroke *was* the
-> enforcement. Verified by executing the hook: attempt 1 denied, attempt 2 allowed, review never ran.
-
-- Committing fixes changes HEAD → the marker no longer matches, so the review always covers exactly what
-  you push.
-- **Worktree-safe root (FRA-319):** the hook resolves the repository root from the repo the push
-  actually targets: a `git -C <dir> push` keys to the `-C` target (whatever the session cwd is —
-  keying to the cwd would let a stale marker in the cwd's repo wave through an unreviewed `-C` push
-  of a different worktree), a plain `git push` keys to the payload's `cwd`, and the old
-  `CLAUDE_PROJECT_DIR` → own-toplevel chain remains the fallback. HEAD and the marker path derive
-  from that one root, so a push from a linked git worktree is keyed to the worktree's HEAD and finds
-  the marker `/diff-review` wrote at the worktree root — previously the gate keyed both to the main
-  checkout, a completed review could never satisfy it there, and every worktree push was released
-  UNREVIEWED by the livelock guard. Known limits, same fail direction as the matcher's documented
-  tradeoffs: a quoted `-C` path containing spaces and a `cd <dir> && git push` compound both key to
-  the payload cwd — prefer plain `git push` from the pushing checkout, or `git -C <dir> push`.
-- **Livelock guard:** a hook must never wedge a session permanently. After **4** blocked attempts for the
-  same HEAD (counter under the transcript directory, `${TMPDIR:-/tmp}` fallback), the push is allowed
-  through with a loud `WARNING … This diff is UNREVIEWED` on stderr. Four, not two, so a reflexive
-  immediate retry — the old passing behaviour — no longer gets through.
-- **Deliberate bypass:** `FRAPP_SKIP_REVIEW_GATE=1` — **emergencies only.** It is *not* the path
-  after `/code-review`: that review really happened, so write the marker by hand (the command is in
-  § The `/code-review` invocation rule above) rather than labelling a reviewed push unreviewed.
-- The `git push` match is a heuristic over a free-form shell string, but a deliberately narrow one:
-  `git` must be in **command position** (start of string, or after `;` `&&` `||` `|` or a newline —
-  newlines are normalised to `;` before matching), and only git's own **global options**
-  (`-C <dir>`, `-c k=v`, `--git-dir=…`) may sit between `git` and the subcommand. So
-  `grep "git push" f`, `echo "git push"`, and `git commit -m "wire up push notifications"` do **not**
-  match, while `git -C <dir> push`, `cd x && git push`, a multi-line `cd x` ⏎ `git push`, and
-  `git push --dry-run … && git push …` all do. The accepted gap is an env-prefixed invocation
-  (`env FOO=1 git push`): a missed push costs one unreviewed branch, whereas over-matching burns the
-  livelock budget and then auto-allows a real one, which is strictly worse.
-- **Exempt: pushes that publish nothing.** A dry run (`--dry-run` / `-n`) and a ref deletion in its
-  **flag** form (`--delete` / `-d`) upload no objects, so there is no diff to review. Both are decided
-  on the command's *tokens*, never by searching the string: the whole command must be one plain `git`
-  invocation of inert tokens, so a comment, a quote, a command substitution, a second chained command,
-  or the flag text inside a ref name each keep the gate on. The colon refspec is **not** exempt —
-  `git push origin :old main` deletes one ref while publishing another. The attacks these rules defeat
-  are enumerated in the hook itself; do not restate them here.
-- **The gate is not deletion protection.** It reviews code, and it is the *only* thing in the path of a
-  ref deletion: branch protection sets `allow_deletions: false` for **`main` alone**
-  ([runbook](../ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#main)), so every other branch and tag can be
-  deleted with nothing server-side refusing it.
-
-The hook is a tool-level Claude Code hook and is **independent of git's own hooks**: it does not run git,
-does not touch `--no-verify`, and does not interfere with the git-level
-[`.githooks/pre-commit`](../../../.githooks/pre-commit) gitleaks secret scan.
+- Git invokes `.githooks/pre-push` with proposed updates on standard input. A zero local SHA is a
+  deletion and publishes no object, so it is exempt.
+- Every other local object must peel to a commit and have a repository-root
+  `.cache/diff-review/<commit SHA>` marker. Every ref in a multi-ref push is checked.
+- The hook exits nonzero when any evidence is absent or an object cannot resolve to a commit. Git
+  then aborts the push. Hook failure is denial because `set -euo pipefail` produces a nonzero exit.
+- A new commit has a new SHA and therefore needs a new review. Retrying does not mutate the marker
+  directory and never changes the verdict; the former four-attempt escape was removed.
+- The deliberate emergency bypass is Git's standard `git push --no-verify`. It is auditable in the
+  operator's command but not server-enforced. Do not use it after `/code-review`; write the marker
+  for the reviewed commit instead.
+- `npm install` and `npm ci` run the root `prepare` script, which sets
+  `core.hooksPath=.githooks`. A raw checkout that never runs the installer is not protected.
 
 ## Troubleshooting
 
-- **Push wasn't blocked / no review prompt:** most likely a marker already exists for this HEAD
-  (`.cache/diff-review/<SHA>` — review already ran), or the command form wasn't matched (see the
-  command-position rules above; an env-prefixed push is the known gap). Hooks load at session start,
-  so if you edited the hook mid-session, start a fresh session.
-- **Denied repeatedly:** that is the design — the gate wants evidence, and **re-issuing the push does
-  not provide it**. Run `/diff-review`; it writes the marker as its last step. If it ran but the push
-  is still denied, check the marker actually landed at **repo-root** `.cache/diff-review/<HEAD_SHA>`
-  (a marker written relative to a subdirectory cwd is invisible to the hook, and gitignored so it
-  won't show in `git status`), and that `git rev-parse HEAD` succeeds.
-- **Push allowed with a `WARNING … UNREVIEWED` line:** the livelock guard fired after 4 blocked
-  attempts, or the attempt counter could not be persisted. The diff really was not reviewed — treat
-  the warning as a finding, not noise.
-- **Need to bypass for an emergency push:** `FRAPP_SKIP_REVIEW_GATE=1`. Do **not** simply retry the
-  push — retrying no longer satisfies the gate, and four retries burn the livelock budget so the
-  fifth is released as UNREVIEWED. There is no server-side merge gate to satisfy.
-- **`/diff-review` isn't offered as a skill:** its frontmatter regressed — `disable-model-invocation`
-  must be absent from `.claude/skills/diff-review/SKILL.md`. Skills load at session start, so a fresh
-  session is needed after adding or editing one.
-- **`Skill(skill: "code-review")` returns `disable-model-invocation`:** expected whenever this turn's
-  prompt does not carry `/code-review` whitespace-delimited (see the invocation rule above). Not a
-  misconfiguration — fall back to `/diff-review`.
+- **Push was not blocked:** run `git config --get core.hooksPath`; it must print `.githooks`. Run
+  `node scripts/setup-git-hooks.mjs` if dependencies were not installed. Also check whether the push
+  used `--no-verify`.
+- **Denied repeatedly:** retrying is intentionally inert. Run `/diff-review`; after addressing its
+  findings it writes the marker. If `/code-review` ran, create the documented marker manually.
+- **An explicit ref or tag is denied although HEAD was reviewed:** the hook checks the commit
+  actually named by each ref update. Review that commit and create its marker; a HEAD marker cannot
+  authorize a different object.
+- **`/diff-review` is unavailable:** its frontmatter must not contain `disable-model-invocation`.
+  Skills load at session start, so start a fresh session after fixing it.
+- **`Skill(skill: "code-review")` returns `disable-model-invocation`:** expected unless the current
+  turn carries the token in the exact form described above. Fall back to `/diff-review`.
 
 ## Testing the gate
 
-`npm run test:ci-scripts` (or `node --test scripts/ci/__tests__/review-gate.test.mjs`, which prints
-the case count) covers command-position matching, the `--dry-run` compound case, the ref-deletion
-exemption and the colon-refspec form it excludes, marker present / absent / stale, both forms of
-`FRAPP_SKIP_REVIEW_GATE`, the livelock release, and the fail-closed paths for a malformed payload, a
-missing interpreter, and a broken `grep`. Needs no network and no running stack.
-
-It lives under `scripts/ci/__tests__/` **so that something actually runs it** — the `test:ci-scripts`
-glob picks it up and the `ci-scripts-tests` CI job runs it on every PR. An earlier revision shipped
-this as a standalone `scripts/test-review-gate.sh` wired to nothing, which is how the fail-open parse
-bug it now guards against went unnoticed. Each case runs against a throwaway git repo, so the suite
-never reads or writes the live `.cache/diff-review/` marker.
+`node --test scripts/ci/__tests__/review-gate.test.mjs scripts/ci/__tests__/cursor-review-gate.test.mjs scripts/ci/__tests__/code-review-invocation-rule.test.mjs`
+exercises nonzero denial, repeated retries, exact-SHA and multi-ref evidence, deletions, annotated
+tags, installer wiring, provider-hook removal, and the `/code-review` invocation rule. Each behavior
+test uses a throwaway repository and never touches live evidence.
 
 ## Rationale & history
 

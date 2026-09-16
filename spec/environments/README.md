@@ -226,13 +226,7 @@ angle in `.claude/skills/diff-review/SKILL.md`. No gate reads the docs corpus fo
 defects now. `link-check` still resolves its links and anchors, and `env-slugs` still walks every
 `.md` under `docs/` and `spec/` for `--env=` slugs — neither says whether a claim is true.
 
-**Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment; Cursor adapter ADR-16 amendments 8–9). Frapp's gate is **`/diff-review`** — not Bugbot. Cursor Cloud: [`.cursor/hooks.json`](../../.cursor/hooks.json) `beforeShellExecution` (`failClosed: true`). Claude Code: `.claude/hooks/pre-push-review-gate.sh`. Both gate `git push` on *evidence* that a review ran for the
-current HEAD — evidence, not an attempt, so retrying a denied push does not satisfy it. A push that
-publishes no objects (a dry run, or a `--delete` ref deletion) is exempt, having no diff to review.
-Which review to run, how the evidence is recorded, and the livelock release are the runbook's to
-state, not this roster's. Review sub-agents inherit the
-session model (Opus). There is no `claude-review-gate` required check, no `claude-review.yml` workflow, and no
-`CLAUDE_CODE_OAUTH_TOKEN` secret.
+**Code review is a repository-managed Git pre-push gate, not a CI check** (ADR-14 amendment). Frapp's gate is **`/diff-review`** — not Bugbot. The root `prepare` script installs [`.githooks/pre-push`](../../.githooks/pre-push) through `core.hooksPath`, so local Codex, cloud agents, and humans share one mechanism. Every non-deletion ref update requires evidence for its exact pushed commit at `.cache/diff-review/<PUSHED_COMMIT_SHA>`; retrying cannot satisfy it. Git guarantees that the hook's nonzero exit aborts the push when installed, but `--no-verify`, a changed hooks path, or skipped installation bypass it, so it is not an unconditional server-side gate. Details live in the [review runbook](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 - On `main`, conversation resolution is not required, so unresolved review threads do not block merge.
 - There is no second branch with a stricter policy. The human gate on what reaches users is the `production` **environment**'s Required reviewers, which pauses the deploy itself (#1340).

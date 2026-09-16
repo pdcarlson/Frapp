@@ -31,7 +31,7 @@ try {
 
 // Best-effort: ensure the committed hook is executable (some checkouts drop the bit).
 try {
-  execSync("chmod +x .githooks/pre-commit", { stdio: "ignore" });
+  execSync("chmod +x .githooks/pre-commit .githooks/pre-push", { stdio: "ignore" });
 } catch {
   // Non-fatal (e.g. Windows): git on Windows runs hooks regardless of the bit.
 }
