@@ -198,7 +198,7 @@ When the user supplies durable environment hints or tool workarounds not documen
 Cursor Cloud is a first-class Frapp agent environment (ADR-16 amendment 9). Claude Code is the other, independent one — not a fallback. Full sandbox/egress/bringup: [`CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Credentials: [`AGENT_CREDENTIALS.md`](docs/internal/environment/AGENT_CREDENTIALS.md).
 
 - **Environment contract:** [`.cursor/environment.json`](.cursor/environment.json). Wait for `.cloud-sandbox-up.done` or stop on `.cloud-sandbox-up.failed` (log `/tmp/cloud-sandbox-up.log`). Do not work around a failed bringup. Do not put secrets in that file. Do not trigger speculative environment Builds.
-- **Review gate:** `/diff-review`. Project [`.cursor/hooks.json`](.cursor/hooks.json) fails closed on the evidence marker `.cache/diff-review/<HEAD_SHA>`. Cursor built-ins (`/review`, Bugbot) are **not** Frapp's gate. Runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+- **Review gate:** `/diff-review`. The repository-managed [`.githooks/pre-push`](.githooks/pre-push), installed by the root `prepare` script, requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for every published commit. Retrying never releases it; `git push --no-verify` is the explicit Git bypass, so this is not a server-side or unconditional gate. Cursor built-ins (`/review`, Bugbot) are not Frapp's gate. Runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 - **Tracker:** GitHub Issues via this harness's GitHub MCP. Never `gh` or raw REST for tracker writes. Labels replace the whole set. Policy: [`GITHUB_PM.md`](docs/internal/ci-cd/GITHUB_PM.md).
 - **PRs:** open against `main`. Prefer this harness's PR tool when present; GitHub MCP remains valid. Never `gh`.
 - **Babysit:** subscribe using this harness's PR/CI tools. Do not freeze a catalog here. Wake-path facts: [`pr-babysitting.md`](docs/internal/ci-cd/pr-babysitting.md).
@@ -232,7 +232,7 @@ Claude Code is a first-class Frapp agent environment (ADR-16 amendment 9). Curso
 - **Wait before using the DB/API:** poll for `.cloud-sandbox-up.done` (success) or `.cloud-sandbox-up.failed` (error); live log at `/tmp/cloud-sandbox-up.log`.
 - **Boot the API** with `npm run start:dev -w apps/api` (the generated `.env.local` means no Infisical is needed). Cursor Cloud terminals already start the API — do not start a second copy there.
 - **On failure, STOP and report** what to fix in the Claude web environment. Don't paper over it.
-- **Review gate:** [`.claude/hooks/pre-push-review-gate.sh`](.claude/hooks/pre-push-review-gate.sh) via [`.claude/settings.json`](.claude/settings.json) `PreToolUse`. Same evidence marker as Cursor. `/diff-review`.
+- **Review gate:** the provider-neutral [`.githooks/pre-push`](.githooks/pre-push) installed by the root `prepare` script. It uses the same exact-pushed-commit evidence contract for Claude, Cursor, Codex, and humans. `/diff-review`.
 - **Tracker:** GitHub MCP (`mcp__github__*`). Never `gh` or raw REST for tracker writes.
 - **PRs:** `create_pull_request` / `update_pull_request` against `main`. `doneMeansMerged: true` in `.claude/settings.json`.
 - **Babysit:** `subscribe_pr_activity`. **Do not call `send_later`, and do not add it to `permissions.allow`.** It still prompts the owner. Wake coverage is the PR-activity webhook, `CI wake` comments, and `PR base sync` comments.

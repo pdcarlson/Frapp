@@ -78,12 +78,13 @@ Vercel *was* configured to auto-deploy only on `main` via `git.deploymentEnabled
 
 ### AI review coverage
 
-- Code review is a **local pre-push gate**, not CI. Frapp's gate is **`/diff-review`** (not Bugbot). **Cursor Cloud:** [`.cursor/hooks.json`](.cursor/hooks.json) `beforeShellExecution` with `failClosed: true` wrapping `.claude/hooks/pre-push-review-gate.sh`. **Claude Code:** `.claude/hooks/pre-push-review-gate.sh` via `.claude/settings.json`. Both block
-  `git push` for a branch HEAD until that HEAD has been reviewed; agents run **`/diff-review`**,
-  which writes the marker it looks for. The CI Claude review and the `claude-review-gate` required
-  check were removed (2026-06-04, ADR-14 amendment). Which skill, when the bundled `/code-review`
-  is reachable, how evidence is recorded, the bypass and the livelock release:
-  [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md) § What runs now.
+- Code review is a **local Git pre-push gate**, not CI. The checked-in
+  [`.githooks/pre-push`](.githooks/pre-push) is enabled by `npm install` / `npm ci` and applies to
+  agents and humans alike. It requires `.cache/diff-review/<PUSHED_COMMIT_SHA>` for every commit a
+  push publishes; `/diff-review` writes that evidence. Retrying never releases a denied push. Git's
+  explicit `--no-verify` option and an uninstalled/changed hooks path remain bypasses, so this is not
+  described as an unconditional server-side gate. Details:
+  [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ### PR review requirement policy
 
@@ -131,7 +132,7 @@ divergent lists until #1635.
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
 - Code review runs **locally before you push**, not on the PR: the pre-push review-gate hook requires a
-  `/diff-review` pass, which writes the evidence marker itself. `FRAPP_SKIP_REVIEW_GATE=1` is for
+  `/diff-review` pass, which writes the evidence marker itself. `git push --no-verify` is for
   emergencies only — never as the routine path after a review you did run, because it leaves that push
   indistinguishable from one that skipped review. Procedure:
   [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md) § How the gate enforces.
