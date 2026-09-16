@@ -36,23 +36,16 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - Include a rollback note for infra changes.
 2. **Automation pass**
    - Required checks pass.
-   - Code review happens **before the push**, locally: Cursor Cloud's
-     [`.cursor/hooks.json`](../../../.cursor/hooks.json) `beforeShellExecution` adapter
-     (`.cursor/hooks/pre-push-review-gate.sh`) wraps `.claude/hooks/pre-push-review-gate.sh`
-     and requires one review pass on the branch HEAD before it is pushed. There is no CI Claude
-     review or `claude-review-gate` check (removed 2026-06-04).
-     Which skill, and the rules for each: [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md) § Which review skill.
+   - Code review happens before the push through the repository-managed
+     [`.githooks/pre-push`](../../../.githooks/pre-push). The root `prepare` script installs it for
+     agents and humans, and every pushed commit needs exact-SHA evidence. There is no CI Claude
+     review or `claude-review-gate` check. Details:
+     [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 3. **Human review pass** — a convention, **not a merge gate**. Branch protection sets
-   `required_pull_request_reviews: null` and `required_conversation_resolution: false`
-   (`scripts/configure-branch-protection.mjs`, applied to `main` only), so GitHub blocks neither an
-   unapproved merge nor one with open threads. That script is *intent*; confirm live state with
-   `npm run configure:branch-protection:verify` — use that script name, not the `-- --verify` form:
-   one dropped separator turns it into a live `PUT` of the whole protection payload.
-   Seek an approval and resolve your threads because the work is better for it — nothing downstream
-   will stop you. Step 2's local gate is **not** a backstop for this: it sees **agent** shell
-   (Cursor `beforeShellExecution`) or Claude `PreToolUse` tool calls, not a human's own terminal
-   `git push`. It releases the push after 4 blocked attempts with a stderr warning, and
-   `FRAPP_SKIP_REVIEW_GATE=1` bypasses it. A diff can reach `main` with no review pass of any kind.
+   `required_pull_request_reviews: null` and `required_conversation_resolution: false`. The local
+   hook can also be deliberately bypassed with Git's `--no-verify`, a changed hooks path, or skipped
+   installation, so a diff can still reach `main` without a review. Confirm live protection with
+   `npm run configure:branch-protection:verify`; agents never apply it.
 4. **Merge**
    - Feature work: squash merge into `main`.
    - Production: no PR. Dispatch **Deploy production** with the SHA you want live (#1340).

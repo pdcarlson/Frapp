@@ -187,8 +187,7 @@ Otherwise, in order:
    slice. A path written in backticks is validated by nothing, so resolve every one you write or
    move. `npm run ci:local-gate` previews the code gates and is heavier than a docs run needs.
 2. **Review.** Run [`/diff-review`](../diff-review/SKILL.md). The pre-push hook **denies `git push`**
-   without its marker for the current HEAD — retrying does not help, and after four denials the
-   livelock guard pushes anyway, labelled UNREVIEWED. This is the gate that actually blocks you.
+   without its marker for the current HEAD — retrying never releases it. This is the gate that actually blocks you.
 3. **Push and open** against `main` with `mcp__github__create_pull_request`. If the GitHub MCP is
    unavailable, push the branch, report its name, and stop — `gh` and raw REST are not sanctioned
    paths (`AGENTS.md` § Work tracking), so there is no fallback that opens a PR.
