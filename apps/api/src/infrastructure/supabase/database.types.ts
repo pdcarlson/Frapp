@@ -19,10 +19,12 @@ import type {
   ChannelReadReceipt,
   ChatChannel,
   ChatChannelCategory,
+  ChatMemberBlock,
   ChatMessage,
   ChatMessageAction,
   ChatMessageAttachment,
   ChatMessageBookmark,
+  ChatMessageReport,
   ChatNotificationPreference,
   DiscordConnection,
   DiscordImport,
@@ -121,6 +123,8 @@ export interface Database {
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
+      chat_message_reports: TableDefinition<ChatMessageReport>;
+      chat_member_blocks: TableDefinition<ChatMemberBlock>;
       poll_votes: TableDefinition<PollVote>;
       push_tokens: TableDefinition<PushToken>;
       notifications: TableDefinition<Notification>;

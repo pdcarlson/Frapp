@@ -19,6 +19,7 @@ import { decidePush } from './push-rules';
 import { canAccessChannel } from '@repo/validation';
 import { RbacService } from '../../application/services/rbac.service';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import { ChatBlockService } from '../../application/services/chat-block.service';
 import { ChannelCacheService } from './channel-cache.service';
 import type { CachedChannelRow } from './channel-cache.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
@@ -49,9 +50,18 @@ type ChannelRow = CachedChannelRow;
  * Push worker (ADR-09).
  *
  * Subscribes to Postgres Changes on `chat_messages` INSERT via service role.
- * Per message: resolves the channel (cached), loads recipients, asks the
- * Realtime Presence map who's currently in the channel, evaluates the push
- * rule chain per recipient, and fans out through `NotificationService.notifyUser`.
+ * Per message: resolves the channel (cached), loads recipients, narrows them to
+ * those who may read the channel AND have not blocked the sender, asks the
+ * Realtime Presence map who's currently in the channel, evaluates the push rule
+ * chain per recipient, and fans out through `NotificationService.notifyUser`.
+ *
+ * **Both audience filters are disclosure boundaries, and they answer different
+ * questions.** `filterCanReadChannel` asks "may this member read this channel";
+ * `ChatBlockService.filterOutBlockers` asks "has this member blocked the
+ * sender". The second is not implied by the first — a blocker and a blocked
+ * member are usually in the same channels — and it is applied at the audience
+ * level rather than by blanking the preview, so no push is sent and no
+ * notification row is persisted.
  *
  * Burst-bundling: 3+ messages from the same sender within 60s collapse
  * into a single bundled push per recipient. The bundler key is
@@ -89,6 +99,13 @@ export class ChatPushWorkerService
      * correctness mechanism.
      */
     private readonly channelCache: ChannelCacheService,
+    /**
+     * Per-chapter blocks (#2257). The audience is narrowed by this as well as
+     * by `filterCanReadChannel`: "can read the channel" and "has not blocked
+     * the sender" are different questions, and only the first one was being
+     * asked.
+     */
+    private readonly chatBlocks: ChatBlockService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -198,9 +215,34 @@ export class ChatPushWorkerService
       // false because the worker read a `mentions` field that did not exist —
       // so resolving mentions for real is exactly what would have turned a
       // latent chapter-wide fan-out into a real one.
-      const recipientIds = await this.filterCanReadChannel(
-        channel,
-        candidateIds,
+      const readerIds = await this.filterCanReadChannel(channel, candidateIds);
+      if (readerIds.length === 0) return;
+
+      // Then drop anyone who has blocked the sender (#2257,
+      // `spec/behavior/chat/README.md` § Report and block).
+      //
+      // **At the audience level, not by blanking the preview.** A push is the
+      // one delivery that reaches past every client-side list: it lands on a
+      // lock screen and `notifyUser` persists a notification row, so masking
+      // the body would still buzz the blocker's phone every time the member
+      // they blocked posts, and still leave a row in their notification list.
+      // Removing them here means neither exists.
+      //
+      // It has to be here and not inside the loop below, because a mention is
+      // the sharpest case: `decidePush` returns 'send' on `hasMention` BEFORE
+      // the level check, so a blocked member can force a push through a channel
+      // the blocker deliberately muted. The block has to win over that, and the
+      // only way it can is by the recipient not being in the audience at all.
+      //
+      // **Fails closed by throwing.** This sits inside `handleMessage`'s
+      // try/catch, so an unreadable block list costs this message its
+      // notifications for everybody — the conservative side. Degrading to the
+      // unfiltered audience would deliver a blocked member's content to the
+      // blocker for as long as the table was unreachable, silently.
+      const recipientIds = await this.chatBlocks.filterOutBlockers(
+        channel.chapter_id,
+        row.sender_id,
+        readerIds,
       );
       if (recipientIds.length === 0) return;
 

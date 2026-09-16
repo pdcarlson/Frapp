@@ -6,6 +6,8 @@ import type {
   ChatMessageBookmarkWithMessage,
 } from '#domain/entities/chat.entity';
 import { ChannelAccessService } from './channel-access.service';
+import { ChatBlockService } from './chat-block.service';
+import { maskBlockedBookmarkMessage } from './chat-block-mask';
 
 /**
  * What a bookmark looks like once its channel is no longer readable.
@@ -53,6 +55,10 @@ function redactBookmarkedMessage(
       author_external_id: null,
       content: BOOKMARK_REDACTED_CONTENT,
       is_deleted: false,
+      // Lost channel access is not a block, and saying otherwise would tell a
+      // member they had blocked someone they had not. The two redactions are
+      // deliberately separate signals; this one is `message_available: false`.
+      sender_blocked: false,
     },
   };
 }
@@ -89,6 +95,10 @@ export class ChatBookmarkService {
     @Inject(CHAT_MESSAGE_BOOKMARK_REPOSITORY)
     private readonly bookmarkRepo: IChatMessageBookmarkRepository,
     private readonly channelAccess: ChannelAccessService,
+    // The panel re-reads `chat_messages` on every request, so it serves current
+    // content to a named viewer and owes the same block mask the timeline does
+    // (#2257).
+    private readonly chatBlocks: ChatBlockService,
   ) {}
 
   /**
@@ -178,6 +188,24 @@ export class ChatBookmarkService {
    * Deleted messages are a different case and stay verbatim: `deleteMessage`
    * already rewrote `content` to `[message deleted]`, which is the placeholder
    * the spec asks for.
+   *
+   * **The caller's block list is applied on the same argument** (#2257). The
+   * embed re-reads the message on every request, so a bookmark saved before a
+   * block keeps serving that member's *current* content — including edits made
+   * after the block. A block that the timeline honours and the bookmarks panel
+   * does not is not a block.
+   *
+   * Two redactions, deliberately distinct rather than folded together. Lost
+   * channel access answers `message_available: false` and suppresses the jump
+   * affordance, because jumping would land the member in a channel they cannot
+   * open. A block answers `sender_blocked: true` and leaves the jump live — the
+   * member still has the channel, and what they land on there is the same
+   * tombstone. Channel access is checked first because it is the stricter of
+   * the two.
+   *
+   * The block read is not defended against, like every other surface: "a block
+   * list that cannot be read is not an empty block list", so a failure here is
+   * a failed request rather than an unmasked panel.
    */
   async listBookmarks(
     chapterId: string,
@@ -202,9 +230,20 @@ export class ChatBookmarkService {
       { includeArchived: true },
     );
 
+    const blockedUserIds = new Set(
+      await this.chatBlocks.listBlockedUserIds(chapterId, userId),
+    );
+
     return bookmarks.map((bookmark) =>
       accessible.has(bookmark.message.channel_id)
-        ? { ...bookmark, message_available: true }
+        ? {
+            ...bookmark,
+            message_available: true,
+            message: maskBlockedBookmarkMessage(
+              bookmark.message,
+              blockedUserIds,
+            ),
+          }
         : redactBookmarkedMessage(bookmark),
     );
   }

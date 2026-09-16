@@ -22,7 +22,10 @@ import {
   CHAT_MESSAGE_KINDS,
   SETTABLE_NOTIFICATION_KINDS,
 } from '#domain/entities/chat.entity';
-import type { SettableNotificationKind } from '#domain/entities/chat.entity';
+import type {
+  MessageType,
+  SettableNotificationKind,
+} from '#domain/entities/chat.entity';
 import {
   ISO_INSTANT_MESSAGE,
   ISO_INSTANT_PATTERN,
@@ -465,6 +468,121 @@ export class ResolveAuthorAvatarsDto {
 }
 
 /**
+ * A chat message as a read surface serves it — the whole row, plus the
+ * server's masking verdict for the caller.
+ *
+ * **Declared rather than inferred, and that is the point of it.** Neither
+ * `GET /v1/channels/{id}/messages` nor `GET /v1/channels/{id}/pins` carried a
+ * response schema, so `openapi.json` documented no 200 body and
+ * `openapi-typescript` typed both responses `never` — the #1049 defect.
+ * `sender_blocked` was therefore emitted by the API and invisible to every
+ * typed client: the one machine-readable half of
+ * `spec/behavior/chat/README.md` § The masking contract, unreachable.
+ *
+ * Mirrors {@link MaskedChatMessage} in `chat-block-mask.ts` field for field.
+ * Nothing in this app serializes to a declared DTO — there is no
+ * `ClassSerializerInterceptor` — so this class documents the wire shape and
+ * does not enforce it; the service's return type is what keeps it true.
+ */
+export class ChatMessageDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Null for an imported archive message, which names its author in author_name instead. Kept on a masked row: the blocker chose the block, so reading their own list back is not a disclosure — and without it a client cannot reconcile a server-masked row against the list it applies itself.',
+  })
+  sender_id: string | null;
+
+  @ApiProperty({ type: String, nullable: true, required: false })
+  author_name?: string | null;
+
+  @ApiProperty({ type: String, nullable: true, required: false })
+  author_avatar_path?: string | null;
+
+  @ApiProperty({ type: String, nullable: true, required: false })
+  author_external_id?: string | null;
+
+  @ApiProperty({
+    type: String,
+    description:
+      'Reads the masking sentinel when `sender_blocked` is true, and “[message deleted]” once the message is deleted. **Never pattern-match either string** — the machine-readable signals are `sender_blocked` and `is_deleted`.',
+  })
+  content: string;
+
+  @ApiProperty({ enum: ['TEXT', 'POLL'] })
+  type: MessageType;
+
+  @ApiProperty({
+    enum: CHAT_MESSAGE_KINDS,
+    nullable: true,
+    required: false,
+    description:
+      "Null on rows written before the column existed; read as 'text'.",
+  })
+  kind?: (typeof CHAT_MESSAGE_KINDS)[number] | null;
+
+  @ApiProperty({
+    type: Object,
+    nullable: true,
+    required: false,
+    description:
+      'Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text.',
+  })
+  payload?: Record<string, any> | null;
+
+  @ApiProperty({ type: String, nullable: true, required: false })
+  client_message_id?: string | null;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  reply_to_id: string | null;
+
+  @ApiProperty({
+    type: Object,
+    description:
+      'Free-form annotations; carries `attachment_count`. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads.',
+  })
+  metadata: Record<string, any>;
+
+  @ApiProperty()
+  is_pinned: boolean;
+
+  @ApiProperty({ type: String, nullable: true })
+  pinned_at: string | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  edited_at: string | null;
+
+  @ApiProperty()
+  is_deleted: boolean;
+
+  @ApiProperty({
+    type: [String],
+    nullable: true,
+    required: false,
+    description:
+      '`users.id` of everyone mentioned, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row.',
+  })
+  mentions?: string[] | null;
+
+  @ApiProperty()
+  created_at: string;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`.',
+  })
+  sender_blocked: boolean;
+}
+
+/**
  * The message a bookmark points at, as the Bookmarks view renders it (#462).
  *
  * A narrow projection rather than the whole `ChatMessage`: the panel draws an
@@ -515,6 +633,13 @@ export class BookmarkedMessageDto {
 
   @ApiProperty()
   created_at: string;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows.',
+  })
+  sender_blocked: boolean;
 }
 
 /**
