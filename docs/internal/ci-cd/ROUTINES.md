@@ -388,7 +388,7 @@ legacy code rather than patching around it; every finding names the repo rule it
 FIX one bounded theme: whole-pattern (every site, delete what you replace), net simpler (never
 trade one smell for another), verified against the baselines by typecheck, lint, the workspace
 tests and the gates that cover the change, reviewed with /diff-review before push, in ONE PR on a
-claude/hygiene-scan-YYYY-MM-DD branch that a human merges — never you, never FRAPP_SKIP_REVIEW_GATE,
+claude/hygiene-scan-YYYY-MM-DD branch that a human merges — never you, never git push --no-verify,
 at most one open Hygiene Scan PR at a time (if one is open, service it and file instead). FILE
 what you will not fix unattended via file-follow-up (triage + suggestion + area + priority +
 Agent brief + a visible fp=hygiene/ marker; at most ~3 net-new per run) and append this run's

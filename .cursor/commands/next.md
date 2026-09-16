@@ -11,4 +11,4 @@ Follow [`.claude/commands/next.md`](../../.claude/commands/next.md) **exactly**.
 
 Skills live under `.claude/skills/` (Cursor Cloud loads that tree; Claude Code uses it natively). Keep one skill tree — do not copy into `.cursor/skills/`.
 
-Babysit, tracker, and PR tools: follow [`AGENTS.md`](../../AGENTS.md) — use this harness's GitHub MCP and PR/CI subscription tools. Do not freeze a catalog here. Review gate: `/diff-review` (fail-closed project hooks; not Bugbot).
+Babysit, tracker, and PR tools: follow [`AGENTS.md`](../../AGENTS.md) — use this harness's GitHub MCP and PR/CI subscription tools. Do not freeze a catalog here. Review gate: `/diff-review` (repository Git pre-push hook; not Bugbot).

@@ -42,7 +42,7 @@ const MANIFEST_KEYS = [
 
 // ── Discovery ────────────────────────────────────────────────────────────────────────
 // By SHEBANG, not by `*.sh`. The repo's most security-relevant shell script is
-// `.githooks/pre-commit` — the gitleaks scan that `scripts/setup-git-hooks.mjs` wires into
+// the extensionless `.githooks/pre-commit` and `.githooks/pre-push` gates — the secret scan that `scripts/setup-git-hooks.mjs` wires into
 // `core.hooksPath` on every install — and it has no extension. A glob-based sweep would
 // report "every tracked shell script parses" while never opening it, and the vacuity guard
 // below would not notice because the glob still matches two dozen other files.
@@ -71,6 +71,8 @@ test("every tracked shell script parses", () => {
     scripts.includes(".githooks/pre-commit"),
     "discovery must reach extensionless scripts — .githooks/pre-commit is the gitleaks gate",
   );
+
+  assert.ok(scripts.includes(".githooks/pre-push"), "discovery must reach the extensionless review gate");
 
   const broken = [];
   for (const rel of scripts) {
