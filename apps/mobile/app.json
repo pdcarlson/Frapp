@@ -91,6 +91,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4ba05e35-7d91-4bb4-9597-be754127de95"
+      }
+    },
+    "owner": "pdcarlson"
   }
 }
