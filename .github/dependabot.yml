@@ -83,11 +83,37 @@ updates:
       # delivery client) with no tie to the mobile SDK lock; globbing would
       # freeze it silently and forever. If an Expo SDK upgrade adds a new
       # client package here, add it to this list.
+      #
+      # This list must cover EVERY `expo-*` entry in apps/mobile/package.json,
+      # because an Expo client package's major version IS its SDK line: the
+      # `58.x` release of any of them is built against `expo-modules-core@58`
+      # and freely calls native API that `expo-modules-core@57` does not have.
+      # Dependabot reads that as an ordinary semver major and opens a PR, and
+      # nothing in CI compiles Swift — `expo prebuild` generates the native
+      # project without building it — so the break does not surface until
+      # `eas build -p ios`. It last cost a production build (#2218 moved
+      # expo-apple-authentication to 58.0.0; its
+      # `ios/AppleAuthenticationRequest.swift` then called
+      # `Utilities.keyWindow()`, which `expo-modules-core@57.0.11` does not
+      # declare, and Xcode failed with
+      # `type 'Utilities' has no member 'keyWindow'`). These move only as a
+      # version-locked set via a planned SDK upgrade (#289), like the React
+      # family above.
+      - dependency-name: "expo-apple-authentication"
+      - dependency-name: "expo-application"
+      - dependency-name: "expo-camera"
       - dependency-name: "expo-constants"
+      - dependency-name: "expo-crypto"
+      - dependency-name: "expo-device"
+      - dependency-name: "expo-document-picker"
       - dependency-name: "expo-file-system"
       - dependency-name: "expo-font"
+      - dependency-name: "expo-image-picker"
       - dependency-name: "expo-linking"
+      - dependency-name: "expo-localization"
+      - dependency-name: "expo-location"
       - dependency-name: "expo-network"
+      - dependency-name: "expo-notifications"
       - dependency-name: "expo-router"
       - dependency-name: "expo-secure-store"
       - dependency-name: "expo-sharing"
