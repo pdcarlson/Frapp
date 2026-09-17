@@ -192,20 +192,24 @@ in [`issue-triage`](../issue-triage/SKILL.md)'s epic-attach step, corrected in t
 Where the session has the tools, ground suggestions in what's actually happening in production —
 this lens files the highest-signal issues because the evidence is live, not hypothetical:
 
-- **Sentry MCP** (if available): new or growing error clusters, regressions on recent releases. The
-  organization slug is **`frapp-live`** — its home is
-  [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md), which also lists the projects
-  and the region. Pass it rather than guessing: `frapp` is wrong and answers **403**, which reads
-  like a permissions failure rather than a typo, and on 2026-09-17 cost a run a bogus "Sentry is
-  unreachable" conclusion. `find_organizations` is the one call that distinguishes the two; make it
+- **Sentry MCP** (if available): new or growing error clusters, regressions on recent releases.
+  **Never guess the organization slug — read it** from
+  [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md), its canonical home, which also
+  names the projects and the region. Guessing is not a harmless miss: a wrong slug answers **403**,
+  which reads like a revoked grant rather than a typo, and on 2026-09-17 it cost a run a bogus
+  "Sentry is unreachable" conclusion that was one step from a `[human]` re-auth issue against a
+  connector that works. `find_organizations` is the one call that tells the two apart; make it
   before recording the source as dark.
 - **Supabase MCP** (if available): `get_advisors` security/performance findings. **There are two
-  hosted projects, not one** — `frapp-prod` and `frapp-staging` — and their advisor sets genuinely
-  differ, so reading either alone misses findings. Measured 2026-09-17: prod carries 112
-  `pg_graphql_*_table_exposed` WARNs that staging does not, because `pg_graphql` is installed on
-  prod only (#1366). Resolve both ids with `list_projects` rather than pasting them here — the refs
-  are already restated in three docs, and a fourth hand-maintained copy is one rotation away from
-  being wrong. Check both, and attribute every finding to the project it came from.
+  hosted projects, not one**, and their advisor sets genuinely differ, so reading either alone
+  misses findings. Measured 2026-09-17: production carried 112 `pg_graphql_*_table_exposed` WARNs
+  that staging did not, because `pg_graphql` is installed on production only (#1366). Take both
+  environments from [`.github/environments.json`](../../../.github/environments.json) — the one
+  place a deployed environment's provider ids and names are declared, read via
+  `scripts/ci/lib/environments.mjs` rather than parsed inline — and match its `supabaseProjectName`
+  entries against `list_projects`. Do not restate the names or refs here; that file's own header
+  exists to stop exactly this becoming another copy. Check both, and attribute every finding to the
+  environment it came from.
 - **GitHub MCP**: repeated CI failures or flaky jobs on recent `main` runs.
 
 Cite the live evidence (error ID, advisor name, run link) in the issue. If a tool isn't present in
