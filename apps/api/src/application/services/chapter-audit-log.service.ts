@@ -18,6 +18,21 @@ import { clampListLimit } from '#domain/constants/list-query-limits';
 import { instantOrThrow } from './instant-bound';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
+/**
+ * The before/after diff shape the settings family writes — one key per changed
+ * field, each carrying what it was and what it became.
+ *
+ * Not the type of {@link RecordAuditEntryInput.diff}, deliberately: that stays
+ * the looser `Record<string, unknown>` because other writers record a flat
+ * payload instead (`member.service.ts` a `user_id`, `rbac.service.ts` a
+ * claiming member id). This alias is what a from/to caller declares its own
+ * `diff` as, so the envelope stays checked where it is the contract —
+ * `packages/chat-integrations/src/payloads.ts` documents it, nothing enforces
+ * it at runtime, and `chapter_audit_log` is append-only, so a malformed row
+ * cannot be corrected afterwards.
+ */
+export type AuditDiff = Record<string, { from: unknown; to: unknown }>;
+
 export interface RecordAuditEntryInput {
   chapterId: string;
   /** Null when the acting identity is the system itself, not a member. */
@@ -56,10 +71,11 @@ export interface AuditLogViewer {
 /**
  * Shared write/read path for `chapter_audit_log` (Chunk 02, #334).
  *
- * The three original writers (`chapter-config`, `custom-role`,
- * `custom-field` services) each still insert inline and are left as-is —
- * this service is for new writers so they don't have to repeat the insert
- * shape. `ChatBridgeWorkerService` mirrors every member-visible row into
+ * `record` is the only writer: no service inserts into `chapter_audit_log`
+ * directly, and the three that once did (`chapter-config`, `custom-role`,
+ * `custom-field`) were moved onto it in #2167. A new writer injects this
+ * service rather than repeating the insert shape.
+ * `ChatBridgeWorkerService` mirrors every member-visible row into
  * `#chapter-audit` on its own via a Realtime subscription, so a writer here
  * needs no separate chat call.
  */
@@ -75,11 +91,9 @@ export class ChapterAuditLogService {
   ) {}
 
   // Append-only audit trail. A failed write must fail the request — settings
-  // and roster changes are never silently unaudited (matches the existing
-  // writers' convention). Logged before rethrowing so "the mutation
-  // succeeded but its audit entry didn't land" has a specific signal to
-  // triage on, rather than reading as a bare 500 (matches
-  // chapter-config.service.ts's writeAudit).
+  // and roster changes are never silently unaudited. Logged before rethrowing
+  // so "the mutation succeeded but its audit entry didn't land" has a specific
+  // signal to triage on, rather than reading as a bare 500.
   async record(entry: RecordAuditEntryInput): Promise<void> {
     try {
       await this.auditLogRepo.create({

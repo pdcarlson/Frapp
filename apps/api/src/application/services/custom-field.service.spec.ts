@@ -5,17 +5,26 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CustomFieldService } from './custom-field.service';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
+import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
 const CHAPTER_ID = 'chapter-1';
 const ACTOR_ID = 'user-1';
 
-type AuditRow = Record<string, unknown>;
+/** See `createAuditLogServiceMock` for why the row shape is asserted elsewhere. */
+const auditLog = createAuditLogServiceMock();
+
+beforeEach(() => {
+  auditLog.record.mockClear();
+});
 
 /**
  * Builds a Supabase test double tailored to the chains CustomFieldService uses:
  * - chapter_custom_fields: insert/update/delete + select/maybeSingle/order
- * - chapter_audit_log: insert (captured)
+ *
+ * No `chapter_audit_log` branch: an insert reintroduced there hits the
+ * unhandled-table fallback and fails loudly (#2167).
  */
 function makeSupabase(opts: {
   /** Row returned by the single-row read used before update/delete. */
@@ -33,7 +42,6 @@ function makeSupabase(opts: {
    */
   highestSortRow?: { sort: number } | null;
 }) {
-  const auditInserts: AuditRow[] = [];
   const customFieldInsert = jest.fn();
   // Recorders hoisted out of the per-call `builder` so tests can assert the
   // arguments the service passed, not just the value the chain resolved to. A
@@ -44,15 +52,6 @@ function makeSupabase(opts: {
   const fieldLimit = jest.fn();
 
   const from = jest.fn((table: string) => {
-    if (table === 'chapter_audit_log') {
-      return {
-        insert: jest.fn((row: AuditRow) => {
-          auditInserts.push(row);
-          return Promise.resolve({ error: null });
-        }),
-      };
-    }
-
     if (table === 'chapter_custom_fields') {
       const builder: Record<string, jest.Mock> = {};
       builder.select = jest.fn(() => builder);
@@ -112,7 +111,6 @@ function makeSupabase(opts: {
 
   return {
     from,
-    auditInserts,
     customFieldInsert,
     fieldEq,
     fieldOrder,
@@ -125,6 +123,7 @@ async function buildService(supabase: { from: jest.Mock }) {
     providers: [
       CustomFieldService,
       { provide: SUPABASE_CLIENT, useValue: supabase },
+      { provide: ChapterAuditLogService, useValue: auditLog },
     ],
   }).compile();
   return module.get(CustomFieldService);
@@ -182,15 +181,22 @@ describe('CustomFieldService', () => {
           sort: 0,
         }),
       );
-      expect(supabase.auditInserts).toHaveLength(1);
-      expect(supabase.auditInserts[0]).toMatchObject({
-        chapter_id: CHAPTER_ID,
-        actor_user_id: ACTOR_ID,
-        action: 'chapter_custom_field_created',
-        target_type: 'chapter_custom_field',
-        target_id: created.id,
-        member_visible: true,
-      });
+      expect(auditLog.record).toHaveBeenCalledTimes(1);
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chapterId: CHAPTER_ID,
+          actorUserId: ACTOR_ID,
+          action: 'chapter_custom_field_created',
+          targetType: 'chapter_custom_field',
+          targetId: created.id,
+        }),
+      );
+      // Left unset so `record`'s default (true) applies — the row value is
+      // pinned in chapter-audit-log.service.spec.ts. Asserted explicitly
+      // because `objectContaining` tolerates extra keys, so a later
+      // `memberVisible: false` here would otherwise pass every assertion
+      // while silently dropping field changes out of `#chapter-audit`.
+      expect(auditLog.record.mock.calls[0][0].memberVisible).toBeUndefined();
     });
 
     it('appends after the highest existing sort when none is supplied', async () => {
@@ -271,7 +277,7 @@ describe('CustomFieldService', () => {
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(supabase.customFieldInsert).not.toHaveBeenCalled();
-      expect(supabase.auditInserts).toHaveLength(0);
+      expect(auditLog.record).not.toHaveBeenCalled();
     });
 
     it('deep-clones options so the persisted row never shares a reference', async () => {
@@ -312,7 +318,7 @@ describe('CustomFieldService', () => {
           type: 'text',
         }),
       ).rejects.toBeInstanceOf(ConflictException);
-      expect(supabase.auditInserts).toHaveLength(0);
+      expect(auditLog.record).not.toHaveBeenCalled();
     });
   });
 
@@ -326,10 +332,12 @@ describe('CustomFieldService', () => {
       const result = await service.remove('f1', CHAPTER_ID, ACTOR_ID);
 
       expect(result).toEqual({ success: true });
-      expect(supabase.auditInserts[0]).toMatchObject({
-        action: 'chapter_custom_field_deleted',
-        target_type: 'chapter_custom_field',
-      });
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'chapter_custom_field_deleted',
+          targetType: 'chapter_custom_field',
+        }),
+      );
     });
 
     it('throws 404 when the field is missing', async () => {
@@ -362,9 +370,9 @@ describe('CustomFieldService', () => {
       });
 
       expect(result).toEqual(updated);
-      expect(supabase.auditInserts[0]).toMatchObject({
-        action: 'chapter_custom_field_updated',
-      });
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'chapter_custom_field_updated' }),
+      );
     });
 
     it('returns the existing field without auditing when the patch is empty', async () => {
@@ -375,7 +383,7 @@ describe('CustomFieldService', () => {
       const result = await service.update('f1', CHAPTER_ID, ACTOR_ID, {});
 
       expect(result).toEqual(existing);
-      expect(supabase.auditInserts).toHaveLength(0);
+      expect(auditLog.record).not.toHaveBeenCalled();
     });
 
     it('refuses to strip the choices off an existing select field', async () => {
@@ -396,7 +404,7 @@ describe('CustomFieldService', () => {
         await expect(
           service.update('f1', CHAPTER_ID, ACTOR_ID, body),
         ).rejects.toBeInstanceOf(BadRequestException);
-        expect(supabase.auditInserts).toHaveLength(0);
+        expect(auditLog.record).not.toHaveBeenCalled();
       }
     });
   });
