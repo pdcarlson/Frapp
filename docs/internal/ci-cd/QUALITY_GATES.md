@@ -274,7 +274,7 @@ no way to grandfather individual clones. The only lever is a repo-wide duplicati
 that fails when exceeded. So the ratchet is:
 
 - **Current measurement: 3.88%** duplicated lines (1,030 clones, 12,393 duplicated lines, across
-  1,428 files analysed; 12,393 / 319,277 = 3.881%) — measured 2026-09-17 with
+  1,428 files analysed; 12,393 / 319,277 = 3.882%) — measured 2026-09-17 with
   `npm run check:duplication` after folding the three inline `chapter_audit_log` writers into
   `ChapterAuditLogService.record` (#2167), which removed two clone pairs. `main` measured 3.89%
   / 1,032 clones / 12,422 duplicated lines the same day, so 0.01 of the figure is this change and
