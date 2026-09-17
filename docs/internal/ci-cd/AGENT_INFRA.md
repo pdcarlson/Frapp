@@ -717,14 +717,21 @@ stay silent).
 close a live alert (that is how a real outage gets silenced) and must not open one either (nothing
 was observed to be drifting). `unknown` still exits non-zero, so a check that cannot run is a red
 run rather than a quiet pass. Every scheduled watchdog in
-`scripts/ci/` exits non-zero on a bad verdict, and for all but two of them green additionally means
-"it was checked and it matched" — they *are* the check. The two that do **not** carry that second
-meaning are `staging-conformance` and `production-auth-conformance`, which
-exit 0 on an `inconclusive` run (nothing was asserted, so nothing was proved) and on
-`unproven-recovery` (an open alert names an assertion this run could not evaluate, so it is neither
-re-raised nor closed). Both say so in the step summary, and both deliberately leave the alert as
-they found it — but their green is "no contradiction observed", not "verified". Read those two
-that way. The annotate-only scripts (`deploy-alert`, `ci-wake`, `pr-base-sync`) only annotate a run
+`scripts/ci/` exits non-zero on a bad verdict. **Green does not always mean "it was checked and it
+matched."** Several carry a deliberate pass-without-proof path, and reading their green as
+verification is how a real outage gets hand-waved:
+
+- `staging-conformance` and `production-auth-conformance` exit 0 on `inconclusive` — nothing was
+  asserted, so nothing was proved — and on `unproven-recovery`, where an open alert names an
+  assertion this run could not evaluate, so it is neither re-raised nor closed.
+- Both backup-freshness watches exit 0 while the newest `db-backup.yml` run is still in flight
+  under 3h, *without* establishing that any dump or mirror succeeded within 36h
+  ([#2332](https://github.com/pdcarlson/Frapp/issues/2332)).
+
+Each of these says so in its step summary or its verdict reason, and each deliberately leaves an
+open alert as it found it. So read the reason line, not the exit code: when it does not say the
+thing was checked and matched, green means "no contradiction observed", not "verified". The
+annotate-only scripts (`deploy-alert`, `ci-wake`, `pr-base-sync`) only annotate a run
 that is already red, and deliberately exit 0 so a watchdog never adds noise of its own.
 
 **Read-only by construction.** It calls the Management API's migration-history endpoint

@@ -139,9 +139,14 @@ one alert, with one documented exception: the three `production-backup` watches 
 Infisical injections, and the 06:15 watch reads that same environment. So one cause can open all
 three: a revoked Infisical machine identity fails both jobs in one run and opens both freshness
 alerts; a reviewer gate on `production-backup` opens the 06:15 alert *and* suspends both jobs, which
-the freshness watches then see as a run hung past 3h. Three P1s, one fix. Outside that
-`production-backup` cluster the pairs are genuinely disjoint: if several of *those* alerts are open
-at once they are telling you about different problems. The staggering has more than one reason — the full schedule and its rationale are
+the freshness watches then see as a run hung past 3h. Three P1s, one fix.
+
+That cluster is the largest shared-cause group but **not** the only one. `production-guardrails.yml`
+(07:15) and `production-release-pin.yml` (08:00) authenticate with the same `RENDER_API_KEY` and
+`VERCEL_API_KEY`, and both turn an unreadable provider response into their own P1 — so one revoked
+or expired provider credential opens two alerts that look unrelated. Before treating several open
+alerts as several problems, check whether they share a credential, an environment, or a workflow
+run; more of them do than the one-alert-per-drift design suggests. The staggering has more than one reason — the full schedule and its rationale are
 [`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance, which owns that fact.
 
 **Read the conformance alert's clearing condition literally — an open issue does not always mean
