@@ -192,13 +192,26 @@ in [`issue-triage`](../issue-triage/SKILL.md)'s epic-attach step, corrected in t
 Where the session has the tools, ground suggestions in what's actually happening in production —
 this lens files the highest-signal issues because the evidence is live, not hypothetical:
 
-- **Sentry MCP** (if available): new or growing error clusters, regressions on recent releases.
-- **Supabase MCP** (if available): `get_advisors` security/performance findings against the hosted
-  project.
+- **Sentry MCP** (if available): new or growing error clusters, regressions on recent releases. The
+  organization slug is **`frapp-live`** — its home is
+  [`ALERT_ROUTING.md`](../../../docs/internal/ops/ALERT_ROUTING.md), which also lists the projects
+  and the region. Pass it rather than guessing: `frapp` is wrong and answers **403**, which reads
+  like a permissions failure rather than a typo, and on 2026-09-17 cost a run a bogus "Sentry is
+  unreachable" conclusion. `find_organizations` is the one call that distinguishes the two; make it
+  before recording the source as dark.
+- **Supabase MCP** (if available): `get_advisors` security/performance findings. **There are two
+  hosted projects, not one** — `frapp-prod` and `frapp-staging` — and their advisor sets genuinely
+  differ, so reading either alone misses findings. Measured 2026-09-17: prod carries 112
+  `pg_graphql_*_table_exposed` WARNs that staging does not, because `pg_graphql` is installed on
+  prod only (#1366). Resolve both ids with `list_projects` rather than pasting them here — the refs
+  are already restated in three docs, and a fourth hand-maintained copy is one rotation away from
+  being wrong. Check both, and attribute every finding to the project it came from.
 - **GitHub MCP**: repeated CI failures or flaky jobs on recent `main` runs.
 
 Cite the live evidence (error ID, advisor name, run link) in the issue. If a tool isn't present in
-this session, skip the source silently — never guess at runtime state.
+this session, skip the source silently — never guess at runtime state. "Not present" means the tool
+is absent or genuinely refuses; an error caused by an argument you supplied is your bug, so re-check
+the argument before recording the source as unavailable.
 
 ## Filing a new issue (into the `triage` inbox)
 
