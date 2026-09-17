@@ -3,7 +3,6 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
@@ -19,7 +18,10 @@ import type {
   MemberCustomFieldValue,
 } from '#domain/entities/chapter-custom-field.entity';
 import type { CreateCustomField, UpdateCustomField } from '@repo/validation';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import {
+  ChapterAuditLogService,
+  type AuditDiff,
+} from './chapter-audit-log.service';
 
 /**
  * What `create` and `update` accept.
@@ -43,6 +45,13 @@ export type UpdateCustomFieldInput = UpdateCustomField;
 
 // Postgres unique-violation SQLSTATE (raised when (chapter_id, key) collides).
 const UNIQUE_VIOLATION = '23505';
+
+/**
+ * `chapter_audit_log.target_type` for every row this service writes. Paired
+ * with the field id as `target_id`, it is what lets the audit log filter by
+ * entity.
+ */
+const AUDIT_TARGET_TYPE = 'chapter_custom_field';
 
 /** Shape of a Supabase row response after the (untyped) query builder. */
 type RowResponse = {
@@ -69,10 +78,9 @@ type MutateResponse = { error: PostgrestError | null };
  */
 @Injectable()
 export class CustomFieldService {
-  private readonly logger = new Logger(CustomFieldService.name);
-
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    private readonly auditLog: ChapterAuditLogService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<ChapterCustomField[]> {
@@ -235,15 +243,14 @@ export class CustomFieldService {
     }
 
     const field = data as ChapterCustomField;
-    await this.writeAudit(
+    await this.auditLog.record({
       chapterId,
       actorUserId,
-      'chapter_custom_field_created',
-      field.id,
-      {
-        field: { from: null, to: field },
-      },
-    );
+      action: 'chapter_custom_field_created',
+      targetType: AUDIT_TARGET_TYPE,
+      targetId: field.id,
+      diff: { field: { from: null, to: field } } satisfies AuditDiff,
+    });
     return field;
   }
 
@@ -297,15 +304,14 @@ export class CustomFieldService {
     if (error || !data) throw new NotFoundException('Custom field not found');
 
     const field = data;
-    await this.writeAudit(
+    await this.auditLog.record({
       chapterId,
       actorUserId,
-      'chapter_custom_field_updated',
-      id,
-      {
-        field: { from: existing, to: field },
-      },
-    );
+      action: 'chapter_custom_field_updated',
+      targetType: AUDIT_TARGET_TYPE,
+      targetId: id,
+      diff: { field: { from: existing, to: field } } satisfies AuditDiff,
+    });
     return field;
   }
 
@@ -326,15 +332,14 @@ export class CustomFieldService {
       .eq('chapter_id', chapterId);
     if (error) throw error;
 
-    await this.writeAudit(
+    await this.auditLog.record({
       chapterId,
       actorUserId,
-      'chapter_custom_field_deleted',
-      id,
-      {
-        field: { from: existing, to: null },
-      },
-    );
+      action: 'chapter_custom_field_deleted',
+      targetType: AUDIT_TARGET_TYPE,
+      targetId: id,
+      diff: { field: { from: existing, to: null } } satisfies AuditDiff,
+    });
     return { success: true };
   }
 
@@ -371,39 +376,5 @@ export class CustomFieldService {
       .maybeSingle();
     if (error || !data) throw new NotFoundException('Custom field not found');
     return data;
-  }
-
-  // Append-only audit trail. A failed write must fail the request — settings
-  // changes are never silently unaudited (matches ChapterConfigService).
-  private async writeAudit(
-    chapterId: string,
-    actorUserId: string,
-    action: string,
-    targetId: string,
-    diff: Record<string, { from: unknown; to: unknown }>,
-  ): Promise<void> {
-    const audit: TablesInsert<'chapter_audit_log'> = {
-      chapter_id: chapterId,
-      actor_user_id: actorUserId,
-      action,
-      target_type: 'chapter_custom_field',
-      // The field being changed — lets the audit log filter by entity.
-      target_id: targetId,
-      scope: 'chapter',
-      diff,
-      member_visible: true,
-    };
-    const { error }: MutateResponse = await this.supabase
-      .from('chapter_audit_log')
-      .insert(audit);
-    if (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        'Failed to write chapter audit log',
-        error,
-      );
-      throw error;
-    }
   }
 }

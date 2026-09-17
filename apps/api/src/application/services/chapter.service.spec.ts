@@ -10,6 +10,10 @@ import * as chapterTheme from '@repo/chapter-theme';
 import { ChapterService } from './chapter.service';
 import { toChapterMemberView } from './chapter-member-view';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
+import {
+  createAuditLogServiceMock,
+  type AuditLogServiceMock,
+} from '#test/helpers/audit-log.mock';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
@@ -59,7 +63,7 @@ describe('ChapterService', () => {
   };
   let mockSupabase: { from: jest.Mock };
   let mockInsert: jest.Mock;
-  let mockAuditLog: { record: jest.Mock };
+  let mockAuditLog: AuditLogServiceMock;
 
   beforeEach(async () => {
     mockStorageProvider = {
@@ -119,7 +123,7 @@ describe('ChapterService', () => {
       from: jest.fn().mockReturnValue({ insert: mockInsert }),
     };
 
-    mockAuditLog = { record: jest.fn().mockResolvedValue(undefined) };
+    mockAuditLog = createAuditLogServiceMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
