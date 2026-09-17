@@ -11,6 +11,8 @@ Signet is the rebrand of Frapp. Its dark-first, warm, consumer design system was
 | [`design-system/reference/signet-design-system.dc.html`](design-system/reference/signet-design-system.dc.html) | Design-system panels: foundations, components, iconography, states |
 | [`design-system/reference/canvas-screens.dc.html`](design-system/reference/canvas-screens.dc.html) | The 23 mobile screens (Canvas) |
 
+A third set of boards, the landing reskin under [`landing/reference/`](landing/reference/README.md), is committed as **target state, not a source of truth**: rule 1 below does not apply to it, and its README owns the statement of when that changes.
+
 Naming: spec prose says **Signet**. Code identifiers, package names, domains, and bundle ids remain `frapp` / `@repo/*` / `frapp.live` for now — the repo rename is deferred. When citing code, cite real current names.
 
 ## Precedence

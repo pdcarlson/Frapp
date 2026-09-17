@@ -46,6 +46,12 @@ jobs:
       # an image, and it is the extraction rule, not the walk, that spares the
       # script tags.
       #
+      # spec/ui/landing/reference/canvas holds the landing reskin boards under
+      # the same convention (source text; ./support.js not committed; in-page
+      # href="#…" anchors that only resolve inside a rendered board), so the
+      # directory is excluded while spec/ui/landing/reference/README.md, one
+      # level up, stays checked.
+      #
       # The second exclusion below is scoped to the ONE file rather than its
       # directory, because that directory also holds a README.md whose relative
       # links and heading anchors this job is the only coverage for. Excluding
@@ -75,5 +81,5 @@ jobs:
       - name: Check internal markdown links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference --exclude-path spec/ui/web-greenfield/reference/web-framework.dc.html docs spec .claude AGENTS.md README.md CONTRIBUTING.md apps/web/AGENTS.md .github/pull_request_template.md"
+          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference --exclude-path spec/ui/web-greenfield/reference/web-framework.dc.html --exclude-path spec/ui/landing/reference/canvas docs spec .claude AGENTS.md README.md CONTRIBUTING.md apps/web/AGENTS.md .github/pull_request_template.md"
           fail: true

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#131211;color:#EDEAE3;font-family:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:#E7C86B;text-decoration:none}a:hover{text-decoration:underline;text-underline-offset:3px}
+/* Signature moment: crest wipe + settle + light bloom + rule draw. Plays once on load, motion-safe only. */
+.hero-col{position:relative;overflow:clip}
+.hero-col::before{content:"";position:absolute;left:0;top:0;width:1px;height:100%;background:rgba(255,255,255,.08)}
+.signet-stage{position:relative;width:400px;height:400px;align-self:center;margin-top:24px;flex:none}
+.signet-light{position:absolute;left:50%;top:38%;width:200%;height:165%;transform:translate(-50%,-50%);pointer-events:none;background:radial-gradient(50% 50% at 50% 50%,rgba(221,184,68,.06) 0%,rgba(221,184,68,.026) 44%,rgba(221,184,68,0) 72%)}
+.signet-mark{position:relative;display:block;width:100%;height:100%}
+.signet-crest{display:block;width:100%;height:100%}
+@keyframes signet-wipe{from{-webkit-mask-position:100% 0%;mask-position:100% 0%}to{-webkit-mask-position:0% 100%;mask-position:0% 100%}}
+@keyframes signet-settle{from{transform:translate3d(0,10px,0) scale(.972)}to{transform:none}}
+@keyframes signet-bloom{from{opacity:0}to{opacity:1}}
+@keyframes signet-rule{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@media (prefers-reduced-motion:no-preference){
+  .signet-mark{animation:signet-settle 640ms cubic-bezier(.22,1,.36,1) both}
+  .signet-light{animation:signet-bloom 660ms cubic-bezier(.45,0,.55,1) 60ms both}
+  .hero-col::before{transform-origin:top;animation:signet-rule 300ms cubic-bezier(.16,1,.3,1) 120ms both}
+  @supports ((mask-image:linear-gradient(#000,#000)) or (-webkit-mask-image:linear-gradient(#000,#000))){
+    .signet-crest{--wipe:linear-gradient(35deg,#000 0 42%,rgba(0,0,0,.45) 53%,transparent 64%);-webkit-mask-image:var(--wipe);mask-image:var(--wipe);-webkit-mask-size:260% 260%;mask-size:260% 260%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:signet-wipe 520ms cubic-bezier(.45,.05,.15,1) 60ms both}
+  }
+}
+</style>
+</helmet>
+<div style="width:1440px;height:900px;box-sizing:border-box;display:flex;flex-direction:column;background:#131211;color:#EDEAE3;overflow:hidden;font-family:'Figtree',system-ui,sans-serif">
+
+<header style="height:72px;flex:none;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;padding:0 80px;border-bottom:1px solid rgba(255,255,255,.08)">
+  <a href="#top" aria-label="Signet home" style="display:flex;align-items:center;gap:10px;color:#EDEAE3;height:44px">
+    <span style="width:28px;height:28px;border-radius:8px;background:#1A1A1A;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 1024 1024" aria-hidden="true"><path fill="#DDB844" d="M188.98 592.26C188.6 595.81 190.31 599.31 191.21 602.67 C192.59 607.82 193.92 612.93 195.64 617.99C201.79 636.11 209.25 654 218.22 670.92 C267.26 763.42 350.53 832.37 437.81 887.43C454.9 898.21 472.03 908.94 489.15 919.67 C494.21 922.84 499.31 925.92 504.43 928.99C506.9 930.47 509.97 933.16 513 932.89 C516.21 931.55 518.79 927.14 520.96 924.49C526.22 918.09 531.25 911.52 535.94 904.69 C550.88 882.9 563.79 859.35 572.88 834.49C592.01 782.13 597.69 723.86 581.4 669.85 C572.94 641.79 559.85 615.7 543.19 591.62C514.52 550.21 473.55 519.59 443.03 479.74 C418.94 448.28 403.41 410.82 398.95 371.41C397.67 360.06 396.7 348.99 396.67 337.54 C396.65 333.35 395.65 327.04 397.64 323.23C398.61 322.65 402.87 333.99 403.56 335.54 C409.84 349.67 417.72 363.45 426.95 375.87C456.99 416.33 500.91 443.82 546.91 462.85 C554.25 465.89 561.55 469.05 568.9 472.1C572.15 473.45 576.33 476.04 579.93 475.61 C583.26 474.33 585.66 469.9 588 467.31C592.67 462.14 597.73 457.34 602.98 452.76 C619.64 438.24 638.1 426.94 658.47 418.4C677.36 410.49 698.21 406.45 718.51 404.41 C730.73 403.18 743.25 403.88 755.26 400.79C793.72 390.89 822.82 359.69 831.62 321.02 C832.37 317.72 833.7 312.59 832.74 309.27C831.34 304.47 823.85 300.08 820.2 296.94 C812.17 290.02 803.98 283.22 796.21 276C794.2 274.13 787.16 269.58 787.63 266.66 C789.39 264.15 793.47 263.83 796.22 263.06C801.87 261.47 808.05 260.49 813.91 259.96 C816.83 259.7 833.44 261.13 833.83 258.7C833.12 256.13 830.24 254.07 828.26 252.43 C821.65 246.96 813.33 243.62 805.24 241.04C781.88 233.6 757.56 228.61 733.55 223.72 C726.37 222.26 719.22 220.81 712.07 219.2C707.47 218.17 701.79 217.88 698 214.78 C691.19 209.2 686.5 200.91 680.54 194.47C672.01 185.24 661.53 177.81 650.38 172.09 C634.03 163.72 616.35 158.99 598.54 155.04C560.49 146.61 519.5 147.45 481.42 155.11 C454.91 160.44 428.32 168.81 405.82 184.28C384.17 199.16 368.22 219.58 354.92 241.95 C333.13 278.62 319.26 321.41 309.44 362.71C299.8 403.2 293.23 444.11 276.67 482.63 C264.4 511.19 245.85 538.41 224.18 560.67C217.25 567.79 209.99 574.74 202.34 581.08 C198.68 584.12 190.72 587.8 188.98 592.26ZM637.89 843.52 C642.22 842.8 647.64 835.39 650.86 832.47C663.14 821.35 674.65 809.27 685.44 796.71 C714.5 762.88 742.28 720.43 730.02 673.67C724.4 652.25 715.33 631.67 704.92 612.13 C691.03 586.02 675.21 559.91 668.16 530.91C663.39 511.29 662.93 489.19 668.04 469.57 C668.88 466.33 677.4 446.98 675.61 445.52C673.05 445.5 669.99 448.94 668.05 450.44 C661.4 455.58 655.48 461.07 650.42 467.8C646.82 472.58 643.07 477.16 640.01 482.32 C635.9 489.25 632.7 496.4 630.44 504.12C615.15 556.28 645.87 607.39 659.04 656.45 C661.42 665.3 664.24 674.56 665.2 683.69C669.51 724.75 667.12 764.52 653.33 803.75 C651.46 809.07 649.79 814.4 647.67 819.64C646.6 822.27 636.73 842.86 637.89 843.52ZM637.98 233.8 C635.99 238.01 627.34 242.23 623.53 244.98C608.22 256.03 590.81 261.83 572.01 256.79 C564.57 254.8 558.08 250.56 551.82 246.22C548.79 244.12 541.73 241.42 540.07 238.22 C540.19 234.79 548.21 228.75 550.62 226.24C564.62 211.66 584.01 206.35 603.46 212.61 C611.35 215.16 618.44 219.88 625.22 224.52C627.84 226.31 637.68 230.62 637.98 233.8Z"></path></svg></span>
+    <span style="font-size:18px;font-weight:700;line-height:18px">Signet</span>
+  </a>
+  <nav aria-label="Primary" style="display:flex;align-items:center;gap:32px">
+    <a href="#product" style="font-size:14px;font-weight:600;line-height:44px;color:#A9A399">Product</a>
+    <a href="#pricing" style="font-size:14px;font-weight:600;line-height:44px;color:#A9A399">Pricing</a>
+    <sc-if value="{{navLegal}}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:32px"><a href="https://frapp.live/privacy" style="font-size:14px;font-weight:600;line-height:44px;color:#A9A399">Privacy</a><a href="https://frapp.live/terms" style="font-size:14px;font-weight:600;line-height:44px;color:#A9A399">Terms</a></span></sc-if>
+  </nav>
+  <div style="display:flex;align-items:center;gap:24px">
+    <a href="https://app.frapp.live/sign-in" style="font-size:14px;font-weight:600;line-height:44px;color:#EDEAE3">Sign in</a>
+    <a href="https://app.frapp.live/sign-up" style="height:44px;padding:0 18px;border-radius:12px;background:{{accent}};color:{{accentOn}};font-size:14px;font-weight:700;display:inline-flex;align-items:center;box-sizing:border-box">Get started</a>
+  </div>
+</header>
+
+<section id="top" style="min-height:632px;display:grid;grid-template-columns:repeat(12, minmax(0, 1fr));column-gap:24px;padding:72px 80px 0;box-sizing:border-box">
+  <div style="grid-column:1 / span 7;display:flex;flex-direction:column;align-items:flex-start;gap:24px;padding:24px 0 40px">
+    <p style="margin:0;font-size:14px;line-height:18px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#E7C86B">Chapter operations, chat first</p>
+    <h1 style="margin:0;font-size:72px;line-height:74px;font-weight:700;letter-spacing:-.02em;text-wrap:balance">Run your chapter where it already talks.</h1>
+    <p style="margin:0;font-size:20px;line-height:30px;color:#A9A399;max-width:616px;text-wrap:pretty">Signet is chat first. Events, check-in and points land in the conversation your members already read. Officers stop chasing. Members stop asking where things are.</p>
+    <div style="display:flex;align-items:center;gap:24px;margin-top:8px">
+      <a href="https://app.frapp.live/sign-up" style="height:48px;padding:0 24px;border-radius:12px;background:#DDB844;color:#292109;font-size:16px;font-weight:700;display:inline-flex;align-items:center;box-sizing:border-box">Get started</a>
+      <a href="https://frapp.live/join" style="font-size:16px;line-height:44px;font-weight:600;color:#E7C86B">Have an invite? Join your chapter</a>
+    </div>
+    <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399;max-width:616px">Free for chat, members and announcements. No card. Officers add Chapter Pro when the chapter needs events, dues and points.</p>
+  </div>
+  <div style="grid-column:8 / span 5;position:relative;height:560px;overflow:clip;border-left:1px solid rgba(255,255,255,.08);padding-left:40px;box-sizing:border-box">
+    <div role="img" aria-label="The Signet mobile app, the chat home: what is up next for the member, a pinned announcements channel with two mentions, the channel list, and a direct message." style="position:absolute;left:40px;top:24px;width:390px;height:760px;box-sizing:border-box;border:1px solid rgba(255,255,255,.14);border-radius:36px;background:#131211;overflow:hidden;display:flex;flex-direction:column;padding-top:52px">
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 20px 6px"><p style="margin:0;flex:1;font-size:12.5px;line-height:17px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#A9A399">Up next</p><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="10" cy="10" r="6" stroke="#A9A399" stroke-width="1.7" fill="rgba(255,255,255,.06)"></circle><path d="M14.5 14.5L18 18" stroke="#A9A399" stroke-width="1.7" stroke-linecap="round"></path></svg></div>
+      <div style="padding:0 20px 10px">
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 0"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3.5" fill="rgba(231,200,107,.18)" stroke="#E7C86B" stroke-width="1.6"></rect><path d="M4 9.5h16M8.5 3v4M15.5 3v4" stroke="#E7C86B" stroke-width="1.6"></path></svg><p style="margin:0;flex:1;font-size:16px;line-height:22px"><b style="font-weight:700">Chapter meeting</b><span style="color:#A9A399"> · Chapter room</span></p><span style="font-size:14px;font-weight:700;color:#E7C86B;white-space:nowrap">6:30 PM</span></div>
+        <div style="height:1px;background:rgba(255,255,255,.06)"></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 0"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="rgba(255,255,255,.06)" stroke="#A9A399" stroke-width="1.6"></circle><path d="M8.5 12.2l2.4 2.4 4.6-5" stroke="#A9A399" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg><p style="margin:0;flex:1;font-size:16px;line-height:22px"><b style="font-weight:700">Ride-share list</b><span style="color:#A9A399"> · task</span></p><span style="font-size:14px;font-weight:700;color:#FF7B72;white-space:nowrap">due tomorrow</span></div>
+      </div>
+      <div style="flex:1;overflow:hidden;padding:8px 12px 0">
+        <p style="margin:0;font-size:12.5px;line-height:17px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#A9A399;padding:8px 8px 6px">Pinned</p>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 8px;border-radius:12px"><span style="font-size:17px;font-weight:700;color:#E7C86B">#</span><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:16px;font-weight:700">announcements</span><span style="font-size:14px;color:#A9A399">Philanthropy committee sign-ups close Friday</span></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span style="font-size:12.5px;color:#A9A399">4:02 PM</span><span style="min-width:20px;height:20px;border-radius:7px;background:#E5484D;color:#FFFFFF;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;white-space:nowrap;box-sizing:border-box">@ 2</span></div></div>
+        <p style="margin:0;font-size:12.5px;line-height:17px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#A9A399;padding:14px 8px 6px">Channels</p>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 8px;border-radius:12px;background:#1A1A1A"><span style="font-size:17px;font-weight:700;color:#A9A399">#</span><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:16px;font-weight:700">general</span><span style="font-size:14px;color:#A9A399">Maya: @Jordan can you pin the parking map?</span></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span style="font-size:12.5px;color:#A9A399">4:06 PM</span><span style="min-width:20px;height:20px;border-radius:7px;background:rgba(255,255,255,.14);color:#EDEAE3;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;box-sizing:border-box">7</span></div></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 8px"><span style="font-size:17px;font-weight:700;color:#A9A399">#</span><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:16px;font-weight:600;color:#A9A399">treasury</span><span style="font-size:14px;color:#A9A399">Invoice batch went out, check the dues tab</span></div><span style="font-size:12.5px;color:#A9A399">1:30 PM</span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 8px"><span style="font-size:17px;font-weight:700;color:#A9A399">#</span><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:16px;font-weight:600;color:#A9A399">house</span><span style="font-size:14px;color:#A9A399">Wi-Fi is back, password pinned</span></div><span style="font-size:12.5px;color:#A9A399">Yesterday</span></div>
+        <p style="margin:0;font-size:12.5px;line-height:17px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#A9A399;padding:14px 8px 6px">Direct</p>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 8px"><span style="width:34px;height:34px;border-radius:50%;background:#2A2621;color:#A9A399;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center">MC</span><div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:16px;font-weight:700">Maya Chen</span><span style="font-size:14px;color:#A9A399">minutes doc is uploaded</span></div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span style="font-size:12.5px;color:#A9A399">Tue</span><span style="min-width:20px;height:20px;border-radius:7px;background:#E5484D;color:#FFFFFF;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;box-sizing:border-box">1</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section aria-label="Built for officers" style="min-height:153px;padding:0 80px 48px;box-sizing:border-box">
+  <div style="border-top:1px solid rgba(255,255,255,.08);padding-top:24px;display:grid;grid-template-columns:repeat(12, minmax(0, 1fr));column-gap:24px">
+    <p style="grid-column:1 / span 3;margin:0;font-size:14px;line-height:18px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:{{accentText}}">Built for officers</p>
+    <div style="grid-column:4 / span 3;display:flex;flex-direction:column;gap:8px">
+      <h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">President</h2>
+      <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Chapter meeting check-in is a QR on the screen. Attendance and points post themselves.</p>
+    </div>
+    <div style="grid-column:7 / span 3;display:flex;flex-direction:column;gap:8px">
+      <h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">Treasurer</h2>
+      <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Dues invoices go out through Stripe. Paid, open and overdue are one list, not a DM thread.</p>
+    </div>
+    <div style="grid-column:10 / span 3;display:flex;flex-direction:column;gap:8px">
+      <h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">Secretary</h2>
+      <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Minutes, bylaws and the audit log live where members already look. Nobody asks for the link twice.</p>
+    </div>
+  </div>
+</section>
+
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return { navLegal: false, accent: '#DDB844', accentOn: '#292109', accentText: '#E7C86B', accentSubtle: '#282314', accentBorder: '#5F522C' }; }
+}
+</script>
+</body>
+</html>

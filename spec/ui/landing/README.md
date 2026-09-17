@@ -61,3 +61,5 @@ Still open: **the page renders no free tier, and its "no feature gating" claim c
 ## Future reskin
 
 The landing's Signet visual system is specified in [`../design-system/`](../design-system/README.md). Copy and the locked crest are Signet; Geist + bone/bronze tokens stay until the visual reskin, so this document stays visual-change frozen for tokens and typeface.
+
+The reskin itself is designed: the target boards are committed under [`reference/`](reference/README.md) (desktop and phone pages, three hero options, token, spec and motion sheets). Their status, and when they start to bind this surface, is stated there and nowhere else.
