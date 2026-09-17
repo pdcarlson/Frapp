@@ -181,9 +181,15 @@ First release.
 
 ## Privacy questionnaire answers
 
-Same facts as https://frapp.live/privacy. The table below is **what was declared
+Same facts as https://frapp.live/privacy — including, for now, the struck row below,
+where the two still agree with each other and **both are wrong about the binary**: the
+published policy describes photo-library collection and this table records it as
+declared, while #2296 removed the capability entirely. #2305 owns correcting both
+halves. The table below is **what was declared
 in App Store Connect on 2026-09-14**, in Apple's own data-type names — the console
-offers a fixed list, so this is the paste, not a paraphrase.
+offers a fixed list, so this is the paste, not a paraphrase. A struck row is an
+answer since withdrawn: the recorded values stay as entered, and the footnote says
+what still has to change where.
 
 | Apple data type | Purpose(s) | Linked | Tracking |
 | --- | --- | --- | --- |
@@ -191,7 +197,7 @@ offers a fixed list, so this is the paste, not a paraphrase.
 | Contact Info → Email Address | App Functionality | Yes | No |
 | Contact Info → Phone Number | App Functionality | Yes | No |
 | Location → Precise Location | App Functionality | Yes | No |
-| User Content → Photos or Videos | App Functionality | Yes | No |
+| ~~User Content → Photos or Videos~~ † | App Functionality | Yes | No |
 | User Content → Other User Content | App Functionality | Yes | No |
 | Identifiers → User ID | App Functionality, **Analytics** | Yes | No |
 | Identifiers → Device ID | App Functionality | Yes | No |
@@ -203,13 +209,39 @@ Declared **not** collected: all Financial Info (including Payment Info),
 Purchases, Sensitive Info, Contacts, Health & Fitness, Emails or Text Messages,
 Advertising Data, Browsing History, Search History.
 
+> † **Withdrawn — still to be corrected in the console (owner action, #2196 §4).**
+> The row keeps its entered values because this table is the record of what was
+> *actually entered* on 2026-09-14, and it was entered; the strike marks the answer as
+> withdrawn without destroying the paste. The app cannot access the photo
+> library and never could: the declaration rode on `expo-image-picker`, which no source
+> file ever imported, and #2296 removed the package and its purpose string outright.
+> Until someone clears this answer in App Store Connect the console still claims a
+> collection the binary cannot perform, which is the label half of the same Guideline
+> 5.1.2 problem #2305 tracks in the privacy policy. Nothing in CI can see the console,
+> so this line is the only reminder.
+>
+> **Note for whoever implements #2305.** Its acceptance criterion 3 asks for this row to
+> be "removed, or set to not-collected". Deleting it would destroy the 2026-09-14
+> console paste this table exists to hold, so #2296 struck it and kept the entered
+> values instead — the row no longer *asserts* current collection, which satisfies that
+> criterion's intent. If #2305 wants the values gone as well, say so there and move them
+> into this footnote rather than dropping them; do not read this paragraph as a veto on
+> the criterion, and do not close #2305 with the criterion silently unmet.
+
 Where each answer comes from:
 
 - **Phone Number** — chapters can define a member field of type `phone`
   (`CustomFieldTypeSchema` in `packages/validation/src/index.ts`). There is no
   address field type, which is why **Physical Address** is not declared.
-- **Other User Content** — chat messages and Backwork file uploads. Apple's
+- **Other User Content** — chat messages. Apple's
   "Emails or Text Messages" type is not used; in-app chat belongs here.
+  Backwork file uploads also land in this type, but **not from the iOS binary**,
+  which has no upload path at all: `app/(tabs)/documents.tsx` omits the upload
+  affordance, `app/(tabs)/service-hours.tsx` omits proof attachment, and
+  `components/chat/message-attachments.tsx` only renders what the web dashboard
+  sent — all three for want of a file picker (#2296 removed the one that was
+  declared ahead of them). The row stays because chat text alone justifies it;
+  the upload half is a web-dashboard practice until a picker slice ships.
 - **User ID carries Analytics** because PostHog identifies members —
   `packages/observability/src/correlation.ts` sets
   `distinct_id = hmac_sha256(salt, user_id)`. Pseudonymous, but we hold the salt,

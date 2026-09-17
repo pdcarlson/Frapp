@@ -130,3 +130,41 @@ camera capture is not used); `expo-document-picker`'s plugin only touches iCloud
 entitlements behind `ios.usesIcloudStorage`, which this app does not set, so it needs no
 `plugins` entry. Same integrator carve-out as the rest of this section — the three
 surfaces themselves are still unbuilt and land as their own slices.
+
+**Both were removed again** (#2296) — the three surfaces were still unbuilt a month
+later, and the declarations were not merely premature but actively harmful. The
+`photosPermission` string shipped in the binary as a purpose string for a feature that
+does not exist (Guideline 5.1.1(i)), and the `cameraPermission: false` above compiled
+to `withBlockedPermissions(['android.permission.CAMERA'])`, which *removed* the
+permission `expo-camera` contributes and wrote `tools:node="remove"` into the manifest —
+silently breaking QR check-in (`app/(tabs)/check-in.tsx`) on every Android build. The
+declining-a-permission half is the reusable lesson: a plugin option that declines a
+permission is not inert, it overrides other plugins, so it can only be set for a
+permission nothing in the app requests. `app.config.spec.ts` pins both halves against
+the resolved config — the Android permission set at the effect level, the declined
+options and iOS purpose strings at the cause level — so re-adding this picker the same
+way fails a test rather than shipping. It is not an airtight fence: an option left
+*omitted* still inherits its plugin's default purpose string, and a vendor option
+spelled something other than `*Permission`/`*UsageDescription` is not scanned. Closing
+those needs the introspected config in CI, filed as #2343. Re-add the
+dependency and its plugin entry in the slice that actually builds a picker surface —
+which is what #1045 should have been.
+
+**`app.json` also gained `ios.privacyManifests`** (#2294, same PR as the removal above) —
+the iOS privacy manifest, without which App Store Connect returns an automated
+ITMS-91053/91061 on the first upload. It declares `NSPrivacyTracking: false`, an empty
+`NSPrivacyTrackingDomains`, and two required-reason categories. `UserDefaults`/`CA92.1`
+is the load-bearing one, and its basis is `@stripe/stripe-react-native` alone — it reads
+`UserDefaults.standard` and ships no manifest of its own. `expo-sharing` also uses
+`UserDefaults`, but through `UserDefaults(suiteName:)`, the app-group case, whose reason
+is `1C8F.1`; that path is unreachable while this app configures no app group, and a share
+extension would have to declare `1C8F.1` rather than assume this row covers it.
+`FileTimestamp`/`C617.1` stands for the app target's own container reads and is required
+by #2296's criteria — it is not what averts ITMS-91053, since react-native, cxxreact,
+`expo-application` and `async-storage` already declare that category themselves. It is a **static** key by
+necessity: `@expo/config-plugins`' `withPrivacyInfo` no-ops unless `ios.privacyManifests`
+is present, and the app commits no `ios/` directory, so prebuild is the only thing that
+writes the file. That makes it load-bearing that `app.config.js`'s `applyMobileConfig`
+keeps spreading `config` and overriding only `extra` and `android` — `app.config.spec.ts`
+asserts the resolved config to pin exactly that. Recorded here rather than glossed,
+per this section's practice; the nutrition-label half stays owner work on #2196 §4.
