@@ -8,16 +8,21 @@ cd apps/mobile
 # Login to Expo
 npx eas login
 
-# Initialize EAS project (creates project on expo.dev)
-npx eas init
+# Inspect the linked EAS project
+npx eas project:info
 ```
 
-`eas init` writes `extra.eas.projectId` and `owner` into `app.json` itself. Those
-keys are deliberately absent from the committed `app.json`: a placeholder `owner`
-makes `expo start` try to resolve an Expo account that does not exist, and it
-aborts the dev server with `CommandError: Interactive prompt was cancelled`.
-Leave them out until a real EAS project exists, and do not commit them back as
-placeholders.
+The committed [`apps/mobile/app.json`](../../../../apps/mobile/app.json) links
+the app to EAS through `extra.eas.projectId` and `owner: pdcarlson`. Keep these
+real project identifiers committed; do not replace them with placeholders or
+run `eas init` to create a new project for routine setup.
+
+This linkage satisfies the project-id check in `isPushAvailable()`; an installed
+build must also load the native notifications module. It does not prove push
+credentials, environment variables, or delivery are configured or verified.
+Verify remote push on an installed build with the required platform credentials
+and notification permission. Expo Go remains unsupported. Android
+`GOOGLE_SERVICES_JSON` configuration remains a separate follow-up.
 
 ### 6.2 Testing on Your Phone (Quickest Path)
 
