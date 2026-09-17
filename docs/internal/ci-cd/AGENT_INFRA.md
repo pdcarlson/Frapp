@@ -717,9 +717,9 @@ stay silent).
 close a live alert (that is how a real outage gets silenced) and must not open one either (nothing
 was observed to be drifting). `unknown` still exits non-zero, so a check that cannot run is a red
 run rather than a quiet pass. Every scheduled watchdog in
-`scripts/ci/` exits non-zero on a bad verdict. For this one and for the backup, release-pin and
-uptime watches, green additionally means "it was checked and it matched" — they *are* the check.
-Two do **not** carry that second meaning: `staging-conformance` and `production-auth-conformance`
+`scripts/ci/` exits non-zero on a bad verdict, and for all but two of them green additionally means
+"it was checked and it matched" — they *are* the check. The two that do **not** carry that second
+meaning are `staging-conformance` and `production-auth-conformance`, which
 exit 0 on an `inconclusive` run (nothing was asserted, so nothing was proved) and on
 `unproven-recovery` (an open alert names an assertion this run could not evaluate, so it is neither
 re-raised nor closed). Both say so in the step summary, and both deliberately leave the alert as
