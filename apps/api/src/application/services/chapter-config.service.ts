@@ -35,6 +35,10 @@ import {
   type PointsConfig,
 } from './chapter-points-config.service';
 import { ActivationService } from './activation.service';
+import {
+  ChapterAuditLogService,
+  type AuditDiff,
+} from './chapter-audit-log.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 
 /**
@@ -222,6 +226,7 @@ export class ChapterConfigService {
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     private readonly activation: ActivationService,
     private readonly pointsConfig: ChapterPointsConfigService,
+    private readonly auditLog: ChapterAuditLogService,
   ) {}
 
   async getConfig(chapterId: string) {
@@ -447,7 +452,7 @@ export class ChapterConfigService {
     const existing = await this.getConfig(chapterId);
 
     // Build the diff for the audit log
-    const diff: Record<string, { from: unknown; to: unknown }> = {};
+    const diff: AuditDiff = {};
     const update: TablesUpdate<'chapters'> = {};
 
     if (
@@ -758,31 +763,19 @@ export class ChapterConfigService {
       }
     }
 
-    // Write audit log entry. The audit trail is a hard requirement, so a
-    // failure here surfaces as an error rather than being silently dropped.
-    const audit: TablesInsert<'chapter_audit_log'> = {
-      chapter_id: chapterId,
-      actor_user_id: actorUserId,
+    // Write audit log entry, after the config writes above and before the
+    // activation milestone below — the ordering `getConfig`'s fail-closed
+    // contract depends on. The audit trail is a hard requirement, so a failure
+    // here surfaces as an error rather than being silently dropped;
+    // `ChapterAuditLogService.record` logs and rethrows for exactly that.
+    await this.auditLog.record({
+      chapterId,
+      actorUserId,
       action: 'chapter_config_updated',
-      target_type: 'chapter',
-      target_id: chapterId,
-      scope: 'chapter',
+      targetType: 'chapter',
+      targetId: chapterId,
       diff,
-      member_visible: true,
-    };
-    const { error: auditError } = await this.supabase
-      .from('chapter_audit_log')
-      .insert(audit);
-
-    if (auditError) {
-      logThrowable(
-        this.logger,
-        'error',
-        'Failed to write chapter audit log',
-        auditError,
-      );
-      throw auditError;
-    }
+    });
 
     // ADR-08 (Chunk 05): `#chapter-audit` mirroring is now owned by the
     // ChatBridgeWorker which subscribes to `chapter_audit_log` INSERTs and

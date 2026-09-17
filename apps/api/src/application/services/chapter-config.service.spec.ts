@@ -57,6 +57,8 @@ import { SERVICE_CONFIG_DEFAULTS } from './chapter-service-config.service';
 import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ActivationService } from './activation.service';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
+import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
 import { ChapterPointsConfigService } from './chapter-points-config.service';
 
 const CHAPTER_ID = 'ch-1';
@@ -165,7 +167,6 @@ function makeSupabase(
   const duesUpsert = jest.fn().mockReturnValue({ error: null });
   const serviceUpsert = jest.fn().mockReturnValue({ error: null });
   const pointsUpsert = jest.fn().mockReturnValue({ error: null });
-  const auditInsert = jest.fn().mockResolvedValue({ error: null });
   const chapterUpdate = jest.fn();
 
   const from = jest.fn((table: string) => {
@@ -289,9 +290,6 @@ function makeSupabase(
       });
       return builder;
     }
-    if (table === 'chapter_audit_log') {
-      return { insert: auditInsert };
-    }
     return {};
   });
 
@@ -301,7 +299,6 @@ function makeSupabase(
     duesUpsert,
     serviceUpsert,
     pointsUpsert,
-    auditInsert,
     chapterUpdate,
   };
 }
@@ -315,8 +312,17 @@ const mockActivation: jest.Mocked<Pick<ActivationService, 'record'>> = {
   record: jest.fn().mockResolvedValue(true),
 };
 
+/**
+ * The one audit writer (#2167). The row this produces — `scope`,
+ * `member_visible`, the `target_id`/`diff` defaults, and the rethrow on a
+ * failed write — is asserted in `chapter-audit-log.service.spec.ts`; here we
+ * assert what this service asks for.
+ */
+const mockAuditLog = createAuditLogServiceMock();
+
 beforeEach(() => {
   mockActivation.record.mockClear();
+  mockAuditLog.record.mockClear();
 });
 
 async function buildService(supabase: { from: jest.Mock }) {
@@ -330,6 +336,7 @@ async function buildService(supabase: { from: jest.Mock }) {
       ChapterPointsConfigService,
       { provide: SUPABASE_CLIENT, useValue: supabase },
       { provide: ActivationService, useValue: mockActivation },
+      { provide: ChapterAuditLogService, useValue: mockAuditLog },
     ],
   }).compile();
   return module.get(ChapterConfigService);
@@ -416,8 +423,8 @@ describe('ChapterConfigService — workflows', () => {
       // No chapters-table column changed, so it is never updated...
       expect(supabase.chapterUpdate).not.toHaveBeenCalled();
       // ...but the audit row still fires, carrying the workflows diff.
-      expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
-      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
+      const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect(auditRow.action).toBe('chapter_config_updated');
       expect(auditRow.diff.workflows.to).toHaveProperty('wf_advisor_digest');
       expect(auditRow.diff.workflows.to).not.toHaveProperty('wf_task_confirm');
@@ -433,7 +440,7 @@ describe('ChapterConfigService — workflows', () => {
 
       // Nothing changed → no upsert, no audit, returns existing config.
       expect(supabase.workflowUpsert).not.toHaveBeenCalled();
-      expect(supabase.auditInsert).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
       expect(result.id).toBe(CHAPTER_ID);
     });
   });
@@ -507,8 +514,8 @@ describe('ChapterConfigService — dues', () => {
 
       // No chapters-table column changed, but the audit row still fires.
       expect(supabase.chapterUpdate).not.toHaveBeenCalled();
-      expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
-      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
+      const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect(auditRow.diff.dues.to).toMatchObject({ cadence: 'monthly' });
     });
 
@@ -531,7 +538,7 @@ describe('ChapterConfigService — dues', () => {
       });
 
       expect(supabase.duesUpsert).not.toHaveBeenCalled();
-      expect(supabase.auditInsert).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
       expect(result.id).toBe(CHAPTER_ID);
     });
   });
@@ -561,7 +568,7 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       // the branding accent — and on exactly the legacy rows this mirror exists
       // to repair, the two disagree. Recording it would put a value in the
       // audit log that the column never actually held.
-      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect(auditRow.diff).not.toHaveProperty('accent_color');
       expect(auditRow.diff.branding.to).toMatchObject({
         colors: { accent: '#8B0000' },
@@ -646,10 +653,12 @@ describe('ChapterConfigService — analytics opt-out', () => {
       expect(supabase.chapterUpdate).toHaveBeenCalledWith({
         analytics_opt_out: true,
       });
-      expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
-      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
+      const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect(auditRow.action).toBe('chapter_config_updated');
-      expect(auditRow.member_visible).toBe(true);
+      // `memberVisible` is left unset so `record`'s default (true) applies;
+      // the row value itself is pinned in chapter-audit-log.service.spec.ts.
+      expect(auditRow.memberVisible).toBeUndefined();
       expect(auditRow.diff.analytics_opt_out).toEqual({
         from: false,
         to: true,
@@ -665,7 +674,7 @@ describe('ChapterConfigService — analytics opt-out', () => {
       });
 
       expect(supabase.chapterUpdate).not.toHaveBeenCalled();
-      expect(supabase.auditInsert).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
       expect(result.id).toBe(CHAPTER_ID);
     });
   });
@@ -708,7 +717,7 @@ describe('ChapterConfigService — service hours', () => {
         { chapter_id: CHAPTER_ID, minutes_per_point: 45 },
         { onConflict: 'chapter_id' },
       );
-      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect(auditRow.diff.service).toEqual({
         from: { minutes_per_point: 60 },
         to: { minutes_per_point: 45 },
@@ -724,7 +733,7 @@ describe('ChapterConfigService — service hours', () => {
       });
 
       expect(supabase.serviceUpsert).not.toHaveBeenCalled();
-      expect(supabase.auditInsert).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
   });
 });
@@ -782,7 +791,7 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
         },
         { onConflict: 'chapter_id' },
       );
-      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect(auditRow.diff.points).toEqual({
         from: DEFAULTS,
         to: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
@@ -824,7 +833,7 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
       });
 
       expect(supabase.pointsUpsert).not.toHaveBeenCalled();
-      expect(supabase.auditInsert).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
   });
 });
@@ -1036,7 +1045,7 @@ describe('ChapterConfigService default invite role (#422)', () => {
       default_invite_role_id: 'role-pledge',
     });
 
-    expect(supabase.auditInsert).toHaveBeenCalled();
+    expect(mockAuditLog.record).toHaveBeenCalled();
   });
 
   it('is a no-op when the value is unchanged', async () => {
@@ -1255,7 +1264,7 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       // The point of the test: nothing was written, so nothing was lost, and
       // no audit row claims a `from` the chapter never held.
       expect(supabase.duesUpsert).not.toHaveBeenCalled();
-      expect(supabase.auditInsert).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
     it('cannot reset minutes_per_point through a swallowed service read error', async () => {
@@ -1276,7 +1285,7 @@ describe('ChapterConfigService — a failed read is never a default (#1626)', ()
       ).rejects.toMatchObject({ message: READ_ERROR.message });
 
       expect(supabase.serviceUpsert).not.toHaveBeenCalled();
-      expect(supabase.auditInsert).not.toHaveBeenCalled();
+      expect(mockAuditLog.record).not.toHaveBeenCalled();
     });
 
     it('still applies a partial dues PATCH when the read succeeds', async () => {
@@ -1340,7 +1349,7 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
     });
 
     expect(supabase.duesUpsert).toHaveBeenCalledTimes(1);
-    expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+    expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
     expect(result.dues).toMatchObject({
       cadence: 'monthly',
       active_amount_cents: 75000,
@@ -1370,7 +1379,7 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
     });
 
     expect(supabase.serviceUpsert).toHaveBeenCalledTimes(1);
-    expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+    expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
     expect(result.service).toMatchObject({ minutes_per_point: 30 });
   });
 
@@ -1386,7 +1395,7 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
     });
 
     expect(supabase.workflowUpsert).toHaveBeenCalledTimes(1);
-    expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+    expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
     expect(result.workflows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1411,7 +1420,7 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
     });
 
     expect(supabase.chapterUpdate).toHaveBeenCalled();
-    expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+    expect(mockAuditLog.record).toHaveBeenCalledTimes(1);
     expect(result.branding).toMatchObject({ colors: { accent: '#8B0000' } });
     expect(result.theme_palette).toMatchObject({
       '--signet-accent-primary': '#C49A3A',
@@ -1432,6 +1441,6 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
     ).rejects.toMatchObject({ message: TRAILING.message });
 
     expect(supabase.duesUpsert).not.toHaveBeenCalled();
-    expect(supabase.auditInsert).not.toHaveBeenCalled();
+    expect(mockAuditLog.record).not.toHaveBeenCalled();
   });
 });
