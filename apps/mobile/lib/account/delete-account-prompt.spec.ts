@@ -57,6 +57,15 @@ describe("confirmDeleteAccount", () => {
     const [title, body] = lastAlertCall() ?? [];
     expect(title).toBe(DELETE_ACCOUNT_CONFIRM_TITLE);
     expect(body).toBe(DELETE_ACCOUNT_CONFIRM_BODY);
+    // Comparing the alert's arguments to the same constants the implementation
+    // passes proves only that they were forwarded. These pin what the user is
+    // actually told, so a copy edit cannot quietly drop the irreversibility
+    // warning, the anonymization disclosure or the retention pointer —
+    // the three things App Review was shown and `spec/behavior/data-retention.md`
+    // documents.
+    expect(body).toMatch(/cannot be undone/i);
+    expect(body).toMatch(/Deleted User/);
+    expect(body).toMatch(/Privacy Policy/i);
     // The account survives merely opening the dialog.
     expect(deleteAccount.mutate).not.toHaveBeenCalled();
   });

@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -99,26 +100,26 @@ export default function JoinChapter() {
   /**
    * Apple 5.1.1(v): an account that can be created in-app must be deletable
    * in-app. Signet creates the account implicitly on first sign-in, and a user
-   * with zero memberships is pinned to this screen by `(auth)/_layout.tsx` —
-   * Settings, where the other copy of this control lives, is unreachable from
-   * here. Without this row that account can never be deleted from the app
-   * (#2295).
+   * with zero memberships is pinned to this screen — `useOnboardingRedirect`
+   * (mounted app-wide by `components/app-runtime.tsx`) replaces any other path
+   * with `/join` while the gate reads `join`, and this group's own layout
+   * re-asserts it. Settings, where the other copy of this control lives, is
+   * unreachable from here, so without this row that account can never be
+   * deleted from the app (#2295).
    *
-   * The failure lands in this screen's existing error slot rather than a second
-   * native alert: the user is already looking at one, and a dialog stacked on a
-   * dialog reads as a crash.
+   * The failure deliberately uses the shared native alert rather than this
+   * screen's `error` slot. That slot belongs to invite redemption and is
+   * cleared on every keystroke (`onChangeText`) and on every join attempt, so a
+   * "deletion didn't finish, please retry" notice put there is erased by the
+   * user's next tap — on the one flow whose entire contract is retry. The
+   * alert also announces itself to VoiceOver and survives navigation, matching
+   * Settings exactly.
    */
   function handleDeleteAccount() {
-    setError(null);
     confirmDeleteAccount({
       deleteAccount,
       onDeleted: () => {
         void handleSignOut();
-      },
-      onError: () => {
-        setError(
-          "Deleting your account didn't finish. Part of it may already have gone through, and running it again is safe. Try once more in a moment.",
-        );
       },
     });
   }
@@ -144,14 +145,39 @@ export default function JoinChapter() {
     }
   }
 
-  const submitting = redeemInvite.isPending;
+  // `isSuccess`, not just `isPending`: TanStack clears `isPending` in the same
+  // render that runs `onSuccess`, but `handleSignOut` then awaits a real
+  // network sign-out before navigating. Without it the row re-enables
+  // mid-teardown reading "Delete account" again, and a second tap sends a
+  // DELETE with a bearer whose auth user is already gone — a 401 that renders
+  // as "deletion didn't finish, running it again is safe" after it in fact
+  // finished.
+  const deleting = deleteAccount.isPending || deleteAccount.isSuccess;
+  // Redemption and deletion each lock the whole screen. Deleting must lock it
+  // because navigating away unmounts this screen, and a per-call `mutate`
+  // callback does not fire after unmount — the account would be erased with
+  // `handleSignOut` never running, leaving a live session on a deleted account.
+  // Redeeming must lock it because burning a single-use invite and then
+  // deleting the account strands the membership it just created.
+  const submitting = redeemInvite.isPending || deleting;
 
   return (
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <View style={styles.container}>
+      {/*
+        The card scrolls. It stays centred while it fits and scrolls when it
+        does not — which it does not on a 375x667 device once the keyboard is
+        up: `justifyContent: "center"` lets Yoga overflow *both* ends rather
+        than clamping, so the last child is lost first, and that child is the
+        delete control this screen exists to guarantee (#2295).
+      */}
+      <ScrollView
+        style={styles.flex}
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.title}>Join your chapter</Text>
         <Text style={styles.subtitle}>
           Enter the invite your officer sent. Invites expire after 24 hours and
@@ -206,38 +232,61 @@ export default function JoinChapter() {
           <Pressable
             accessibilityRole="button"
             accessibilityHint="Open the first-officer chapter creation wizard."
+            accessibilityState={{ disabled: submitting }}
+            disabled={submitting}
             onPress={() => {
               router.push("/create-chapter");
             }}
             style={styles.secondaryButton}
           >
-            <Text style={styles.secondaryButtonText}>Create a chapter</Text>
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                submitting ? styles.disabledButtonText : null,
+              ]}
+            >
+              Create a chapter
+            </Text>
           </Pressable>
 
           <Pressable
             accessibilityRole="button"
+            accessibilityState={{ disabled: submitting }}
+            disabled={submitting}
             onPress={() => {
               void handleSignOut();
             }}
             style={styles.secondaryButton}
           >
-            <Text style={styles.secondaryButtonText}>Sign out</Text>
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                submitting ? styles.disabledButtonText : null,
+              ]}
+            >
+              Sign out
+            </Text>
           </Pressable>
 
           <Pressable
             accessibilityRole="button"
             accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
-            accessibilityState={{ disabled: deleteAccount.isPending }}
-            disabled={deleteAccount.isPending}
+            accessibilityState={{ disabled: submitting, busy: deleting }}
+            disabled={submitting}
             onPress={handleDeleteAccount}
             style={styles.secondaryButton}
           >
-            <Text style={styles.destructiveButtonText}>
-              {deleteAccount.isPending ? "Deleting account…" : "Delete account"}
+            <Text
+              style={[
+                styles.destructiveButtonText,
+                submitting ? styles.disabledButtonText : null,
+              ]}
+            >
+              {deleting ? "Deleting account…" : "Delete account"}
             </Text>
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -246,7 +295,7 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     flex: { flex: 1 },
     container: {
-      flex: 1,
+      flexGrow: 1,
       justifyContent: "center",
       padding: tokens.spacing.xl,
       backgroundColor: tokens.color.surface.background,
@@ -333,6 +382,12 @@ function createStyles(tokens: SignetTokens) {
     destructiveButtonText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.semantic.destructive,
+    },
+    // Mirrors `ListRow`'s disabled treatment: a control that cannot respond has
+    // to look like it, or a user on a slow delete taps a dead full-strength
+    // button and concludes the app has frozen.
+    disabledButtonText: {
+      opacity: 0.5,
     },
   });
 }
