@@ -25,23 +25,29 @@ function lastAlertCall() {
   return calls[calls.length - 1];
 }
 
-function pressDelete() {
+async function pressDelete() {
   const buttons = lastAlertCall()?.[2] as AlertButton[] | undefined;
   const destructive = buttons?.find((button) => button.style === "destructive");
   if (!destructive?.onPress) {
     throw new Error("no destructive button was offered");
   }
   destructive.onPress();
+  // the prompt now awaits `mutateAsync`, so let the microtask queue drain
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 function stubMutation(
   behaviour: "success" | "error" | "never",
 ): DeleteAccountMutation {
   return {
-    mutate: vi.fn((_variables, options) => {
-      if (behaviour === "success") options.onSuccess();
-      if (behaviour === "error") options.onError();
-    }),
+    mutateAsync: vi.fn(() =>
+      behaviour === "error"
+        ? Promise.reject(new Error("502"))
+        : behaviour === "success"
+          ? Promise.resolve({})
+          : new Promise<never>(() => {}),
+    ),
   };
 }
 
@@ -67,7 +73,7 @@ describe("confirmDeleteAccount", () => {
     expect(body).toMatch(/Deleted User/);
     expect(body).toMatch(/Privacy Policy/i);
     // The account survives merely opening the dialog.
-    expect(deleteAccount.mutate).not.toHaveBeenCalled();
+    expect(deleteAccount.mutateAsync).not.toHaveBeenCalled();
   });
 
   it("offers a cancel and a destructive button, in that order", () => {
@@ -86,35 +92,35 @@ describe("confirmDeleteAccount", () => {
     expect(buttons[0]?.onPress).toBeUndefined();
   });
 
-  it("deletes and then hands control back, once confirmed", () => {
+  it("deletes and then hands control back, once confirmed", async () => {
     const deleteAccount = stubMutation("success");
     const onDeleted = vi.fn();
     confirmDeleteAccount({ deleteAccount, onDeleted });
 
-    pressDelete();
+    await pressDelete();
 
-    expect(deleteAccount.mutate).toHaveBeenCalledTimes(1);
+    expect(deleteAccount.mutateAsync).toHaveBeenCalledTimes(1);
     expect(onDeleted).toHaveBeenCalledTimes(1);
   });
 
-  it("does not sign the user out when deletion fails", () => {
+  it("does not sign the user out when deletion fails", async () => {
     const onDeleted = vi.fn();
     confirmDeleteAccount({ deleteAccount: stubMutation("error"), onDeleted });
 
-    pressDelete();
+    await pressDelete();
 
     // Signing out on failure would strand the user: they could no longer reach
     // the control to retry, and the endpoint's whole contract is "retry".
     expect(onDeleted).not.toHaveBeenCalled();
   });
 
-  it("surfaces a retryable failure natively when the caller has no slot", () => {
+  it("surfaces a retryable failure natively when the caller has no slot", async () => {
     confirmDeleteAccount({
       deleteAccount: stubMutation("error"),
       onDeleted: vi.fn(),
     });
 
-    pressDelete();
+    await pressDelete();
 
     const [title, body] = lastAlertCall() ?? [];
     expect(title).toBe(DELETE_ACCOUNT_FAILURE_TITLE);

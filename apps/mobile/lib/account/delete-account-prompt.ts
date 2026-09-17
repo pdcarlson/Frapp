@@ -42,10 +42,7 @@ export const DELETE_ACCOUNT_FAILURE_BODY =
  * mutation.
  */
 export type DeleteAccountMutation = {
-  mutate: (
-    variables: undefined,
-    options: { onSuccess: () => void; onError: () => void },
-  ) => void;
+  mutateAsync: (variables?: undefined) => Promise<unknown>;
 };
 
 export type ConfirmDeleteAccountOptions = {
@@ -53,7 +50,9 @@ export type ConfirmDeleteAccountOptions = {
   /**
    * Run once the account is gone. Every caller signs out here — the session
    * outlives the account by a moment, and leaving the user on a screen backed
-   * by a deleted account is how you get an unrecoverable 401 loop.
+   * by a deleted account is how you get an unrecoverable 401 loop. This runs
+   * even if the screen that started the deletion has since unmounted, which is
+   * the whole reason the call below is `mutateAsync`.
    */
   onDeleted: () => void;
 };
@@ -68,20 +67,32 @@ export function confirmDeleteAccount({
       text: "Delete",
       style: "destructive",
       onPress: () => {
-        deleteAccount.mutate(undefined, {
-          onSuccess: onDeleted,
-          // Always the native alert. An earlier revision let a caller route
-          // this into its own UI; the join screen did, and its error slot is
-          // cleared on every keystroke, so the retry instruction vanished on
-          // the one flow whose entire contract is retry. The alert also
-          // announces itself and survives navigation.
-          onError: () => {
+        // `mutateAsync`, never `mutate(…, { onSuccess })`. TanStack gates the
+        // per-call callbacks on `hasListeners()`
+        // (`mutationObserver.ts` — `#notify`), so they are silently skipped
+        // once the screen unmounts, while `execute()`'s promise resolves
+        // either way. A back gesture or hardware Back can unmount mid-delete
+        // — `/join` has back-stack history whenever the chapter picker pushed
+        // it, and disabling the screen's own controls cannot block native
+        // navigation. With the callback form, the account was deleted
+        // server-side and `onDeleted` never ran, leaving the deleted account's
+        // Supabase session and cached data live on the device.
+        void (async () => {
+          try {
+            await deleteAccount.mutateAsync(undefined);
+            onDeleted();
+          } catch {
+            // Always the native alert. An earlier revision let a caller route
+            // this into its own UI; the join screen did, and its error slot is
+            // cleared on every keystroke, so the retry instruction vanished on
+            // the one flow whose entire contract is retry. The alert also
+            // announces itself and survives navigation.
             Alert.alert(
               DELETE_ACCOUNT_FAILURE_TITLE,
               DELETE_ACCOUNT_FAILURE_BODY,
             );
-          },
-        });
+          }
+        })();
       },
     },
   ]);

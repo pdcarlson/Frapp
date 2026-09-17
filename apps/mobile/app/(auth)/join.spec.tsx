@@ -28,7 +28,7 @@ import {
  */
 
 const signOut = vi.fn().mockResolvedValue(undefined);
-const mutate = vi.fn();
+const mutateAsync = vi.fn();
 let isPending = false;
 let isSuccess = false;
 
@@ -42,7 +42,7 @@ vi.mock("@/lib/select-chapter", () => ({
 
 vi.mock("@repo/hooks", () => ({
   useRedeemInvite: () => ({ isPending: false, mutateAsync: vi.fn() }),
-  useDeleteAccount: () => ({ isPending, isSuccess, mutate }),
+  useDeleteAccount: () => ({ isPending, isSuccess, mutateAsync }),
 }));
 
 import JoinChapter from "./join";
@@ -112,15 +112,15 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     });
 
     expect(Alert.alert).toHaveBeenCalledTimes(1);
-    expect(mutate).not.toHaveBeenCalled();
+    expect(mutateAsync).not.toHaveBeenCalled();
     expect(confirmButtons().map((button) => button.style)).toEqual([
       "cancel",
       "destructive",
     ]);
   });
 
-  it("deletes and signs out once confirmed", () => {
-    mutate.mockImplementation((_variables, options) => options.onSuccess());
+  it("deletes and signs out once confirmed, even if the screen is gone", async () => {
+    mutateAsync.mockResolvedValue({});
     const tree = render();
 
     act(() => {
@@ -129,13 +129,21 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     act(() => {
       confirmButtons().find((b) => b.style === "destructive")?.onPress?.();
     });
+    // The sign-out hangs off `mutateAsync`'s promise, not a per-call callback,
+    // so it still runs after a back gesture unmounts this screen — which
+    // `/join` can have, since the chapter picker pushes to it.
+    tree.unmount();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
 
-    expect(mutate).toHaveBeenCalledTimes(1);
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 
-  it("reports a failure through the shared alert and stays signed in", () => {
-    mutate.mockImplementation((_variables, options) => options.onError());
+  it("reports a failure through the shared alert and stays signed in", async () => {
+    mutateAsync.mockRejectedValue(new Error("502"));
     const tree = render();
 
     act(() => {
@@ -143,6 +151,10 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     });
     act(() => {
       confirmButtons().find((b) => b.style === "destructive")?.onPress?.();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     // Still signed in — the endpoint is idempotent and the instruction is
