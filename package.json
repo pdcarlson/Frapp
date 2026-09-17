@@ -48,16 +48,16 @@
     "@vitest/coverage-v8": "4.1.11",
     "concurrently": "^10.0.5",
     "dependency-cruiser": "^17.4.3",
-    "jscpd": "^5.0.16",
+    "jscpd": "^5.2.0",
     "jsdom": "^30.0.1",
     "prettier": "^3.9.6",
     "sharp": "0.35.4",
-    "squawk-cli": "2.63.0",
-    "turbo": "^2.10.12",
+    "squawk-cli": "2.65.0",
+    "turbo": "^2.10.13",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
   "optionalDependencies": {
-    "@infisical/cli": "0.43.128"
+    "@infisical/cli": "0.43.132"
   },
   "overrides": {
     "react": "19.2.3",
