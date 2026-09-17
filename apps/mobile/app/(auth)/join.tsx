@@ -159,7 +159,13 @@ export default function JoinChapter() {
   // `handleSignOut` never running, leaving a live session on a deleted account.
   // Redeeming must lock it because burning a single-use invite and then
   // deleting the account strands the membership it just created.
-  const submitting = redeemInvite.isPending || deleting;
+  // `isSuccess` on the redeem side too: `handleJoin` awaits `selectChapter`
+  // (a POST plus a session refresh) *after* `mutateAsync` resolves and before
+  // it navigates. Without it every control re-enables for those round trips —
+  // the exact window where a delete would strand the membership the redeem
+  // just created.
+  const submitting =
+    redeemInvite.isPending || redeemInvite.isSuccess || deleting;
   // The primary button's spinner stays tied to redemption alone. `submitting`
   // disables it during a deletion too, but showing its spinner then would tell
   // the user a join is running when what is running is the deletion of their
@@ -179,7 +185,7 @@ export default function JoinChapter() {
         delete control this screen exists to guarantee (#2295).
       */}
       <ScrollView
-        style={styles.flex}
+        style={styles.scroll}
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
@@ -299,6 +305,14 @@ export default function JoinChapter() {
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     flex: { flex: 1 },
+    // The surface colour has to sit on the scroll view as well as its content
+    // container: an iOS overscroll bounce reveals what is behind the content,
+    // and the root Stack ships no navigation theme, so that is react-navigation's
+    // default light background under a dark-only Signet surface.
+    scroll: {
+      flex: 1,
+      backgroundColor: tokens.color.surface.background,
+    },
     container: {
       flexGrow: 1,
       justifyContent: "center",

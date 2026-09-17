@@ -56,17 +56,11 @@ export type ConfirmDeleteAccountOptions = {
    * by a deleted account is how you get an unrecoverable 401 loop.
    */
   onDeleted: () => void;
-  /**
-   * Surface the failure. Defaults to the native alert; the join screen passes
-   * its own so the message lands in the error slot it already renders.
-   */
-  onError?: () => void;
 };
 
 export function confirmDeleteAccount({
   deleteAccount,
   onDeleted,
-  onError,
 }: ConfirmDeleteAccountOptions): void {
   Alert.alert(DELETE_ACCOUNT_CONFIRM_TITLE, DELETE_ACCOUNT_CONFIRM_BODY, [
     { text: "Cancel", style: "cancel" },
@@ -76,14 +70,17 @@ export function confirmDeleteAccount({
       onPress: () => {
         deleteAccount.mutate(undefined, {
           onSuccess: onDeleted,
-          onError:
-            onError ??
-            (() => {
-              Alert.alert(
-                DELETE_ACCOUNT_FAILURE_TITLE,
-                DELETE_ACCOUNT_FAILURE_BODY,
-              );
-            }),
+          // Always the native alert. An earlier revision let a caller route
+          // this into its own UI; the join screen did, and its error slot is
+          // cleared on every keystroke, so the retry instruction vanished on
+          // the one flow whose entire contract is retry. The alert also
+          // announces itself and survives navigation.
+          onError: () => {
+            Alert.alert(
+              DELETE_ACCOUNT_FAILURE_TITLE,
+              DELETE_ACCOUNT_FAILURE_BODY,
+            );
+          },
         });
       },
     },

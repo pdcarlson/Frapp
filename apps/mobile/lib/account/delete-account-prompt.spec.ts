@@ -124,20 +124,4 @@ describe("confirmDeleteAccount", () => {
     // talks the user out of the retry that finishes the job.
     expect(body).toMatch(/running it again is safe/i);
   });
-
-  it("lets a caller route the failure into its own error slot instead", () => {
-    const onError = vi.fn();
-    confirmDeleteAccount({
-      deleteAccount: stubMutation("error"),
-      onDeleted: vi.fn(),
-      onError,
-    });
-
-    pressDelete();
-
-    expect(onError).toHaveBeenCalledTimes(1);
-    // Exactly one alert — the confirm. The override replaces the native
-    // failure alert rather than stacking a second dialog on the first.
-    expect(vi.mocked(Alert.alert)).toHaveBeenCalledTimes(1);
-  });
 });
