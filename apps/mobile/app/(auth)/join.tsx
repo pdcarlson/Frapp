@@ -160,6 +160,11 @@ export default function JoinChapter() {
   // Redeeming must lock it because burning a single-use invite and then
   // deleting the account strands the membership it just created.
   const submitting = redeemInvite.isPending || deleting;
+  // The primary button's spinner stays tied to redemption alone. `submitting`
+  // disables it during a deletion too, but showing its spinner then would tell
+  // the user a join is running when what is running is the deletion of their
+  // account.
+  const redeeming = redeemInvite.isPending;
 
   return (
     <KeyboardAvoidingView
@@ -216,7 +221,7 @@ export default function JoinChapter() {
               submitting ? styles.primaryButtonDisabled : null,
             ]}
           >
-            {submitting ? (
+            {redeeming ? (
               <ActivityIndicator color={tokens.color.gold.onHouse} />
             ) : (
               <Text style={styles.primaryButtonText}>Join chapter</Text>

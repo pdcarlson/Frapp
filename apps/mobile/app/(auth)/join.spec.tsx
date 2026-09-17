@@ -172,11 +172,12 @@ describe("join screen — account deletion (5.1.1(v))", () => {
     for (const label of ["Deleting account", "Sign out", "Create a chapter"]) {
       expect(control(tree.root, label)?.props.disabled).toBe(true);
     }
-    // "Join chapter" swaps its label for a spinner while the screen is busy,
-    // so it is asserted through that state rather than by text.
+    // "Join chapter" is disabled too, but keeps its label: its spinner means
+    // "a join is running", and what is running is the deletion.
+    expect(control(tree.root, "Join chapter")?.props.disabled).toBe(true);
     expect(
       tree.root.findAllByType("ActivityIndicator" as never, { deep: true }),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     // And the delete row says what it is doing, rather than looking tappable
     // and doing nothing.
     expect(JSON.stringify(tree.toJSON())).toMatch(/Deleting account/);
