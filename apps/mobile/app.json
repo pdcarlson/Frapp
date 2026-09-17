@@ -13,6 +13,20 @@
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyTrackingDomains": [],
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+          }
+        ]
       }
     },
     "android": {
@@ -51,14 +65,6 @@
         {
           "color": "#EFB63B",
           "defaultChannel": "default"
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Signet uses your photo library so you can choose a profile photo or attach an image.",
-          "cameraPermission": false,
-          "microphonePermission": false
         }
       ],
       [
