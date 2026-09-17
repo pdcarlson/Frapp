@@ -6,18 +6,26 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CustomRoleService } from './custom-role.service';
+import { ChapterAuditLogService } from './chapter-audit-log.service';
+import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
 const CHAPTER_ID = 'chapter-1';
 const ACTOR_ID = 'user-1';
 
-type AuditRow = Record<string, unknown>;
+/** See `createAuditLogServiceMock` for why the row shape is asserted elsewhere. */
+const auditLog = createAuditLogServiceMock();
+
+beforeEach(() => {
+  auditLog.record.mockClear();
+});
 
 /**
  * Builds a Supabase test double tailored to the chains CustomRoleService uses:
  * - chapter_custom_roles: insert/update/delete + select/maybeSingle/order
- * - chapter_audit_log: insert (captured)
- * `roleResult` / `insertResult` let a test inject a row or an error.
+ * `roleResult` / `insertResult` let a test inject a row or an error. No
+ * `chapter_audit_log` branch: an insert reintroduced there hits the
+ * unhandled-table fallback and fails loudly (#2167).
  */
 function makeSupabase(opts: {
   /** Row returned by the single-row read used before update/delete. */
@@ -29,19 +37,9 @@ function makeSupabase(opts: {
   /** Rows returned by the list query. */
   listRows?: unknown[];
 }) {
-  const auditInserts: AuditRow[] = [];
   const customRoleInsert = jest.fn();
 
   const from = jest.fn((table: string) => {
-    if (table === 'chapter_audit_log') {
-      return {
-        insert: jest.fn((row: AuditRow) => {
-          auditInserts.push(row);
-          return Promise.resolve({ error: null });
-        }),
-      };
-    }
-
     if (table === 'chapter_custom_roles') {
       // Each call to from() returns a fresh builder; the terminal method
       // resolves with the configured result for the operation under test.
@@ -81,7 +79,7 @@ function makeSupabase(opts: {
     return {};
   });
 
-  return { from, auditInserts, customRoleInsert };
+  return { from, customRoleInsert };
 }
 
 async function buildService(supabase: { from: jest.Mock }) {
@@ -89,6 +87,7 @@ async function buildService(supabase: { from: jest.Mock }) {
     providers: [
       CustomRoleService,
       { provide: SUPABASE_CLIENT, useValue: supabase },
+      { provide: ChapterAuditLogService, useValue: auditLog },
     ],
   }).compile();
   return module.get(CustomRoleService);
@@ -143,16 +142,23 @@ describe('CustomRoleService', () => {
         }),
       );
       // Audit emitted.
-      expect(supabase.auditInserts).toHaveLength(1);
-      expect(supabase.auditInserts[0]).toMatchObject({
-        chapter_id: CHAPTER_ID,
-        actor_user_id: ACTOR_ID,
-        action: 'chapter_custom_role_created',
-        target_type: 'chapter_custom_role',
-        // target_id is the role id so the audit log filters by entity.
-        target_id: created.id,
-        member_visible: true,
-      });
+      expect(auditLog.record).toHaveBeenCalledTimes(1);
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chapterId: CHAPTER_ID,
+          actorUserId: ACTOR_ID,
+          action: 'chapter_custom_role_created',
+          targetType: 'chapter_custom_role',
+          // targetId is the role id so the audit log filters by entity.
+          targetId: created.id,
+        }),
+      );
+      // Left unset so `record`'s default (true) applies — the row value is
+      // pinned in chapter-audit-log.service.spec.ts. Asserted explicitly
+      // because `objectContaining` tolerates extra keys, so a later
+      // `memberVisible: false` here would otherwise pass every assertion
+      // while silently dropping role changes out of `#chapter-audit`.
+      expect(auditLog.record.mock.calls[0][0].memberVisible).toBeUndefined();
     });
 
     it('ignores a client-supplied core flag and always persists core: false', async () => {
@@ -189,7 +195,7 @@ describe('CustomRoleService', () => {
           label: 'Dup',
         }),
       ).rejects.toBeInstanceOf(ConflictException);
-      expect(supabase.auditInserts).toHaveLength(0);
+      expect(auditLog.record).not.toHaveBeenCalled();
     });
   });
 
@@ -203,7 +209,7 @@ describe('CustomRoleService', () => {
       await expect(
         service.remove('r1', CHAPTER_ID, ACTOR_ID),
       ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(supabase.auditInserts).toHaveLength(0);
+      expect(auditLog.record).not.toHaveBeenCalled();
     });
 
     it('deletes a non-core role and audits the deletion', async () => {
@@ -215,9 +221,9 @@ describe('CustomRoleService', () => {
       const result = await service.remove('r1', CHAPTER_ID, ACTOR_ID);
 
       expect(result).toEqual({ success: true });
-      expect(supabase.auditInserts[0]).toMatchObject({
-        action: 'chapter_custom_role_deleted',
-      });
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'chapter_custom_role_deleted' }),
+      );
     });
 
     it('throws 404 when the role is missing', async () => {
@@ -252,9 +258,9 @@ describe('CustomRoleService', () => {
       });
 
       expect(result).toEqual(updated);
-      expect(supabase.auditInserts[0]).toMatchObject({
-        action: 'chapter_custom_role_updated',
-      });
+      expect(auditLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'chapter_custom_role_updated' }),
+      );
     });
 
     it('returns the existing role without auditing when the patch is empty', async () => {
@@ -265,7 +271,7 @@ describe('CustomRoleService', () => {
       const result = await service.update('r1', CHAPTER_ID, ACTOR_ID, {});
 
       expect(result).toEqual(existing);
-      expect(supabase.auditInserts).toHaveLength(0);
+      expect(auditLog.record).not.toHaveBeenCalled();
     });
   });
 
@@ -285,7 +291,7 @@ describe('CustomRoleService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
       expect(supabase.customRoleInsert).not.toHaveBeenCalled();
-      expect(supabase.auditInserts).toHaveLength(0);
+      expect(auditLog.record).not.toHaveBeenCalled();
     });
 
     it('rejects update with a wildcard capability before touching the row', async () => {
@@ -298,7 +304,7 @@ describe('CustomRoleService', () => {
           capabilities: ['*'],
         }),
       ).rejects.toThrow(BadRequestException);
-      expect(supabase.auditInserts).toHaveLength(0);
+      expect(auditLog.record).not.toHaveBeenCalled();
     });
   });
 
