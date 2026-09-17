@@ -89,6 +89,24 @@ sees it, and it reports suites that *failed to run*, not tests that failed. Depe
 `uuid` 11 → 14 bump ([#1248](https://github.com/pdcarlson/Frapp/pull/1248)) is the worked example:
 `uuid` dropped its CommonJS build in v12, and the bump produced 5 failed suites and 0 failed tests.
 
+### The Jest side of this is now handled — `--experimental-vm-modules`
+
+Jest 30 can `require()` an ES module natively, but only when `vm.SourceTextModule` exists, which
+means **Node 24.9+ AND the `--experimental-vm-modules` flag**. Without the flag `vm.SourceTextModule`
+is `undefined`, Jest's `supportsSyncEvaluate` gate is false, and you get
+`Must use import to load ES Module` no matter how new the Node is. That is why the flag is on every
+`jest` invocation in `apps/api/package.json` — `test`, `test:watch`, `test:cov`, `test:debug`,
+`test:e2e`, `test:integration`, `test:ai-evals`. Remove it from one and that script alone starts
+failing on ESM-only packages, which is a confusing way to find out.
+
+`@nestjs/schedule` 12 is what forced it: 12.x is published `"type": "module"` with no CJS build, so
+the two suites importing `@Cron` could not load. With the flag, all 191 suites pass unchanged.
+
+**This changes the triage above, but not the diagnosis.** An ESM-only dependency no longer red-lights
+`api-tests` by default, so `api-tests` is no longer the canary it was. Read the remedies below as
+what to do when a package is ESM-only *and still* will not load — for example one using
+top-level `await`, which `require(esm)` cannot serve at all.
+
 When a major bump red-lights `api-tests` this way, check the package's `"type"` and `exports` before
 assuming the code is at fault:
 
@@ -316,13 +334,18 @@ three in lockstep when those keys change. Do not copy the CommonJS keys onto the
 
 `expo-server-sdk` 6+ is the same shape of problem from a published package rather than a workspace:
 it is `"type": "module"` (7.x also declares `engines.node >= 22.12.0` for stable `require(esm)`).
-Jest still treats `node_modules` as a script, so `import Expo from 'expo-server-sdk'` in
-`ExpoPushProvider` throws `SyntaxError: Cannot use import statement outside a module` before any
-spec runs. Transforming the real package is a worse fix — it then `import`s ESM `undici` and a
-JSON module via `with { type: 'json' }`. The mapper points at
-`test/helpers/expo-server-sdk.stub.ts` instead. Production Nest still `require()`s the real SDK
-(Node 20.19+ and 22.12+ both load it); the unit suite already `jest.mock`s it. E2E never sends
-push, so the stub only has to construct when `AppModule` boots.
+Before `--experimental-vm-modules`, Jest treated `node_modules` as a script, so
+`import Expo from 'expo-server-sdk'` in `ExpoPushProvider` threw
+`SyntaxError: Cannot use import statement outside a module` before any spec ran. Transforming the
+real package is a worse fix — it then `import`s ESM `undici` and a JSON module via
+`with { type: 'json' }`. The mapper points at `test/helpers/expo-server-sdk.stub.ts` instead.
+Production Nest `require()`s the real SDK (Node 20.19+ and 22.12+ both load it); the unit suite
+already `jest.mock`s it. E2E never sends push, so the stub only has to construct when `AppModule`
+boots.
+
+The stub stays even though the flag would now load the real package: it exists to keep the unit
+suite off the network and off `undici`, not merely to dodge the parse error. Removing it is a
+separate decision from the flag.
 
 **Boot through `configureApp()`, never by hand.** `apps/api/src/bootstrap.ts` holds the wiring that
 shapes a request or a response — versioning, the validation pipe, `requestIdMiddleware`, the logging
