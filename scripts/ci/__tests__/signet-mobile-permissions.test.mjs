@@ -1,11 +1,21 @@
 // Locks mobile OS permission dialogs and Expo Go pay/push copy on Signet.
 //
-// WHY THIS EXISTS. The three app.json permission strings, the Expo Go
+// WHY THIS EXISTS. The two app.json permission strings, the Expo Go
 // pay/push sentences, and the PaymentSheet merchant default are already
 // Signet. A leftover sweep can put Frapp back in the OS dialog, add a
-// fourth *Permission string on app.config.js the first lock would miss,
+// third *Permission string on app.config.js the first lock would miss,
 // drop a prompt so the hardcoded list still passes, or treat Settings →
 // Signet / the store display name as out of this lock's scope. #1952.
+//
+// THE FLOOR WAS THREE UNTIL #2296. The third prompt was
+// expo-image-picker's photosPermission, a purpose string for a feature no
+// source file ever imported; its plugin entry also set
+// `cameraPermission: false`, which stripped android.permission.CAMERA from
+// the QR scanner. Both are gone. Do NOT "restore" photosPermission to
+// satisfy this lock — that reintroduces a Guideline 5.1.1(i) purpose
+// string and re-breaks Android check-in. A picker returns only with the
+// slice that actually builds a picker surface, and the floor rises with
+// it. spec/ui/mobile/navigation.md § Hotspot freeze has the account.
 //
 // SCOPE. String-valued *Permission prompts under apps/mobile, the
 // stripeUnavailableReason / pushUnavailableReason definitions, and the
@@ -30,14 +40,13 @@ const PUSH = "apps/mobile/lib/notifications/push.ts";
 const DUES = "apps/mobile/app/(tabs)/dues.tsx";
 
 /** Current string-valued OS permission prompts. A deleted prompt must fail. */
-const MIN_PERMISSION_STRINGS = 3;
+const MIN_PERMISSION_STRINGS = 2;
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", "coverage"]);
 const SOURCE_EXT = /\.(?:json|js|ts|tsx)$/;
 
 const PERMISSIONS = [
   "Signet uses the camera to scan the check-in code at chapter events.",
-  "Signet uses your photo library so you can choose a profile photo or attach an image.",
   "Signet confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
 ];
 
@@ -118,13 +127,9 @@ export function mobilePermissionLockProblems({ appJson, stripe, push, dues }) {
   const problems = [];
   const prompts = collectPermissionStrings(appJson);
   if (prompts.length < MIN_PERMISSION_STRINGS) {
-    problems.push("must keep at least three string-valued *Permission prompts");
+    problems.push("must keep at least two string-valued *Permission prompts");
   }
-  for (const key of [
-    "cameraPermission",
-    "photosPermission",
-    "locationWhenInUsePermission",
-  ]) {
+  for (const key of ["cameraPermission", "locationWhenInUsePermission"]) {
     if (!prompts.some((prompt) => prompt.key === key)) {
       problems.push(`must keep ${key}`);
     }
@@ -178,8 +183,8 @@ export function mobilePermissionLockProblems({ appJson, stripe, push, dues }) {
 export function lockSelfProblems(source) {
   const problems = [];
   const floor = source.match(/^const MIN_PERMISSION_STRINGS = (\d+);?$/m);
-  if (!floor || floor[1] !== "3") {
-    problems.push("MIN_PERMISSION_STRINGS must stay 3");
+  if (!floor || floor[1] !== "2") {
+    problems.push("MIN_PERMISSION_STRINGS must stay 2");
   }
   const mobileRoot = source.match(
     /^const MOBILE_ROOT = join\(REPO_ROOT, "([^"]+)"\);?$/m,
@@ -239,18 +244,18 @@ test("putting Frapp in a camera permission string fails", () => {
   );
 });
 
-test("dropping photosPermission fails", () => {
+test("dropping cameraPermission fails", () => {
   const problems = mobilePermissionLockProblems({
     appJson: readRepo(APP_JSON).replace(
-      '"photosPermission": "Signet uses your photo library so you can choose a profile photo or attach an image."',
-      '"photosPermission": false',
+      '"cameraPermission": "Signet uses the camera to scan the check-in code at chapter events."',
+      '"cameraPermission": false',
     ),
     stripe: readRepo(STRIPE),
     push: readRepo(PUSH),
     dues: readRepo(DUES),
   });
   assert.ok(
-    problems.some((problem) => problem.includes("photosPermission")),
+    problems.some((problem) => problem.includes("must keep cameraPermission")),
     problems.join("; "),
   );
 });
@@ -356,10 +361,10 @@ test("dropping the unquoted JS collector fails", () => {
   );
 });
 
-test("dropping MIN_PERMISSION_STRINGS below 3 fails", () => {
+test("dropping MIN_PERMISSION_STRINGS below 2 fails", () => {
   const problems = lockSelfProblems(
     readFileSync(LOCK, "utf8").replace(
-      "const MIN_PERMISSION_STRINGS = 3",
+      "const MIN_PERMISSION_STRINGS = 2",
       "const MIN_PERMISSION_STRINGS = 1",
     ),
   );

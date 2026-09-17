@@ -140,7 +140,25 @@ permission `expo-camera` contributes and wrote `tools:node="remove"` into the ma
 silently breaking QR check-in (`app/(tabs)/check-in.tsx`) on every Android build. The
 declining-a-permission half is the reusable lesson: a plugin option that declines a
 permission is not inert, it overrides other plugins, so it can only be set for a
-permission nothing in the app requests. `app.config.spec.ts` now pins both halves, so
-re-adding a picker cannot reintroduce either defect silently. Re-add the dependency and
-its plugin entry in the slice that actually builds a picker surface — which is what
-#1045 should have been.
+permission nothing in the app requests. `app.config.spec.ts` pins both halves against
+the resolved config — the Android permission set at the effect level, the declined
+options and iOS purpose strings at the cause level — so re-adding this picker the same
+way fails a test rather than shipping. It is not an airtight fence: an option left
+*omitted* still inherits its plugin's default purpose string, and a vendor option
+spelled something other than `*Permission`/`*UsageDescription` is not scanned. Closing
+those needs the introspected config in CI, filed as #2343. Re-add the
+dependency and its plugin entry in the slice that actually builds a picker surface —
+which is what #1045 should have been.
+
+**`app.json` also gained `ios.privacyManifests`** (#2294, same PR as the removal above) —
+the iOS privacy manifest, without which App Store Connect returns an automated
+ITMS-91053/91061 on the first upload. It declares `NSPrivacyTracking: false`, an empty
+`NSPrivacyTrackingDomains`, and the two required-reason categories the bundled SDKs use
+without shipping manifests of their own (`UserDefaults`/`CA92.1` for the Stripe React
+Native wrapper and `expo-sharing`; `FileTimestamp`/`C617.1`). It is a **static** key by
+necessity: `@expo/config-plugins`' `withPrivacyInfo` no-ops unless `ios.privacyManifests`
+is present, and the app commits no `ios/` directory, so prebuild is the only thing that
+writes the file. That makes it load-bearing that `app.config.js`'s `applyMobileConfig`
+keeps spreading `config` and overriding only `extra` and `android` — `app.config.spec.ts`
+asserts the resolved config to pin exactly that. Recorded here rather than glossed,
+per this section's practice; the nutrition-label half stays owner work on #2196 §4.

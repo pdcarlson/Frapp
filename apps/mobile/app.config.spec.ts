@@ -621,102 +621,221 @@ describe("PRODUCTION_APP_ORIGIN", () => {
   });
 });
 
+
 /**
  * App Store compliance: the iOS privacy manifest (#2294) and the native
- * permission regression guard (#2296).
+ * permission declarations (#2296).
  *
  * `getConfig` is the real resolution path — it loads `app.json`, hands it to
- * `app.config.js`, and evaluates the `plugins` list. That is the right assertion
- * for `ios.privacyManifests`, which is a *static* key the dynamic layer must not
- * drop: `applyMobileConfig` spreads `config` and overrides only `extra` and
- * `android`, and this pins that it keeps doing so.
+ * `app.config.js`, and evaluates the `plugins` list. Both halves of the #2296
+ * defect are visible in its output, because `withPermissions` and
+ * `withBlockedPermissions` (`@expo/config-plugins/build/android/Permissions.js`)
+ * mutate `config.android.permissions` *synchronously* before returning their mod;
+ * only the `tools:node="remove"` attribute is prebuild-only. So the Android
+ * permission set is asserted at the effect level here, hermetically, with no
+ * native toolchain — and at the cause level too, because the eager filter is
+ * plugin-order sensitive: a blocker listed before `expo-camera` would be undone
+ * by it and slip past an effect-level check alone.
  *
- * It is deliberately NOT used for `android.permissions`. CAMERA is contributed by
- * `expo-camera`'s plugin and can be taken away again by any plugin calling
- * `withBlockedPermissions`; both land in the Gradle/Xcode mods that only
- * `expo prebuild` (or `expo config --type introspect`) runs, so `getConfig`
- * reports a partial list. Rather than shell out to the CLI — slow, and it needs
- * the whole native toolchain in CI — the Android half is guarded at its *cause*:
- * no plugin entry may decline a permission this app requests at runtime. That is
- * the exact mechanism by which `expo-image-picker`'s `cameraPermission: false`
- * silently broke QR check-in on every Android build, and it is hermetic.
+ * `ios.privacyManifests` is likewise a *static* key the dynamic layer must not
+ * drop: `applyMobileConfig` spreads `config` and overrides only `extra` and
+ * `android`, and these tests pin that it keeps doing so.
+ *
+ * WHAT IS NOT COVERED, stated so a green run is not read for more than it earns.
+ * The iOS purpose strings that actually ship are written by
+ * `IOSConfig.Permissions.applyPermissions`, which runs in the Xcode *mods*, and
+ * it deletes a key only when the option is strictly `false`. An option left
+ * **omitted** inherits the plugin's own default string (e.g. "Allow
+ * $(PRODUCT_NAME) to access your microphone") and still ships. No assertion over
+ * `app.json` can see that, here or in
+ * `scripts/ci/__tests__/signet-mobile-permissions.test.mjs`, which also reads the
+ * file rather than the built binary. Nor is the *bundled-SDK* side of #2294
+ * encoded: the audit behind the two declared categories was run by hand, so a
+ * future native dependency that uses a required-reason API without shipping its
+ * own manifest would be an ITMS-91053 rejection with every test green. Both gaps
+ * want the introspected config in CI, and both are filed as #2343 — which also
+ * owns collapsing this roster and the Signet copy lock's into one home.
  */
 describe("iOS privacy manifest (#2294)", () => {
-  function resolvedIos() {
+  function resolved() {
     const { getConfig } = requireConfig("expo/config") as {
       getConfig: (
         dir: string,
         opts?: { skipSDKVersionRequirement?: boolean; isModdedConfig?: boolean },
-      ) => { exp: { ios?: { privacyManifests?: Record<string, unknown> } } };
+      ) => {
+        exp: {
+          ios?: { privacyManifests?: Record<string, unknown> };
+          android?: { permissions?: string[]; blockedPermissions?: string[] };
+        };
+      };
     };
-    return getConfig(path.dirname(fileURLToPath(import.meta.url)), {
-      skipSDKVersionRequirement: true,
-      isModdedConfig: true,
-    }).exp.ios;
+    // `app.config.js` throws on an EAS *production* profile without Firebase
+    // config, and getConfig offers no env injection point — so an inherited
+    // EAS_BUILD_PROFILE (an `eas build --local` shell, or a prebuild hook that
+    // runs this suite) would fail these tests with an unrelated Firebase
+    // message. Neutralize it; the production fences have their own tests above.
+    const saved = {
+      EAS_BUILD_PROFILE: process.env.EAS_BUILD_PROFILE,
+      EAS_BUILD_PLATFORM: process.env.EAS_BUILD_PLATFORM,
+    };
+    delete process.env.EAS_BUILD_PROFILE;
+    delete process.env.EAS_BUILD_PLATFORM;
+    try {
+      return getConfig(path.dirname(fileURLToPath(import.meta.url)), {
+        skipSDKVersionRequirement: true,
+        isModdedConfig: true,
+      }).exp;
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   }
 
   it("declares no tracking, so the manifest cannot contradict the nutrition label", () => {
-    const manifests = resolvedIos()?.privacyManifests;
+    // NSPrivacyCollectedDataTypes is deliberately NOT declared — but note what
+    // that means: `mergePrivacyInfo` destructures it with an `= []` default and
+    // returns all four keys, so the generated PrivacyInfo.xcprivacy ships an
+    // *empty* collected-data array either way. Omitting is therefore not
+    // "unspecified", and the generated privacy report understates what App Store
+    // Connect declares. It is not an ITMS-91053/91061 target (those validate
+    // NSPrivacyAccessedAPITypes only) and nothing cross-checks it against the
+    // label, so this is an accuracy gap rather than a rejection risk. Declaring
+    // the types belongs with #2304/#2305, which are actively rewriting the label
+    // those declarations would have to match — declaring them here first would
+    // create a second home for a fact in flux.
+    const manifests = resolved().ios?.privacyManifests;
     expect(manifests).toBeDefined();
     expect(manifests?.NSPrivacyTracking).toBe(false);
     expect(manifests?.NSPrivacyTrackingDomains).toEqual([]);
   });
 
-  it("declares a required reason for every bundled SDK that touches one", () => {
-    const types = resolvedIos()?.privacyManifests?.NSPrivacyAccessedAPITypes as
-      | { NSPrivacyAccessedAPIType: string; NSPrivacyAccessedAPITypeReasons: string[] }[]
-      | undefined;
+  it("declares exactly the two required-reason categories app.json is meant to carry", () => {
+    // UserDefaults / CA92.1 is the load-bearing row, and its basis is
+    // @stripe/stripe-react-native alone: StripeSdkImpl.swift reads and writes
+    // `UserDefaults.standard` (app-local, which is what CA92.1 covers) and ships
+    // no manifest of its own. expo-sharing also uses UserDefaults, but via
+    // `UserDefaults(suiteName:)` — the app-group case, whose reason is 1C8F.1,
+    // not CA92.1. That path is unreachable today because this app configures no
+    // app group; if a share extension or app group is ever added, 1C8F.1 has to
+    // be declared rather than assumed covered by this row.
+    //
+    // FileTimestamp / C617.1 is required by #2296's acceptance criteria and is
+    // harmless, but it is NOT what averts ITMS-91053: react-native, cxxreact,
+    // expo-application and @react-native-async-storage all already declare
+    // C617.1 in their own pod manifests. It stands for the app target's own
+    // container reads.
+    //
+    // Pinned as the whole array rather than per-category lookups: a keyed lookup
+    // is last-wins, so a duplicate category or an extra entry carrying an
+    // invalid reason code — which Apple rejects on upload — would pass unseen.
+    expect(resolved().ios?.privacyManifests?.NSPrivacyAccessedAPITypes).toEqual([
+      {
+        NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
+        NSPrivacyAccessedAPITypeReasons: ["CA92.1"],
+      },
+      {
+        NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
+        NSPrivacyAccessedAPITypeReasons: ["C617.1"],
+      },
+    ]);
+  });
 
-    // UserDefaults: @stripe/stripe-react-native (StripeSdkImpl.swift) and
-    // expo-sharing (SharingModule.swift), neither of which ships a manifest of
-    // its own. FileTimestamp: the app container's own file reads.
-    // Absent these two, App Store Connect returns ITMS-91053 on upload.
-    const byCategory = new Map(
-      (types ?? []).map((t) => [t.NSPrivacyAccessedAPIType, t.NSPrivacyAccessedAPITypeReasons]),
+  it("resolves the camera permission the QR scanner requests (#2296, effect level)", () => {
+    // The acceptance criterion for #2296, asserted rather than only pasted into
+    // the PR: whatever the plugin list does, the resolved set must contain
+    // CAMERA. `app/(tabs)/check-in.tsx` calls `useCameraPermissions()`.
+    const android = resolved().android;
+    expect(android?.permissions ?? []).toContain("android.permission.CAMERA");
+    // The other route to the same defect, and the one a plugin cannot undo.
+    expect(android?.blockedPermissions ?? []).not.toContain(
+      "android.permission.CAMERA",
     );
-    expect(byCategory.get("NSPrivacyAccessedAPICategoryUserDefaults")).toEqual(["CA92.1"]);
-    expect(byCategory.get("NSPrivacyAccessedAPICategoryFileTimestamp")).toEqual(["C617.1"]);
   });
 });
 
 describe("native permission declarations (#2296)", () => {
-  function pluginEntries(): [string, Record<string, unknown>][] {
-    const appJson = requireConfig("./app.json") as {
-      expo: { plugins: (string | [string, Record<string, unknown>?])[] };
+  function appJson(): {
+    expo: {
+      plugins: (string | [string, Record<string, unknown>?])[];
+      ios?: { infoPlist?: Record<string, unknown> };
     };
-    return appJson.expo.plugins
-      .map((p) => (Array.isArray(p) ? p : [p, {}]))
-      .map(([name, opts]) => [name, opts ?? {}] as [string, Record<string, unknown>]);
+  } {
+    return requireConfig("./app.json");
   }
 
-  it("lets no plugin decline the camera permission the QR scanner requests", () => {
-    // `app/(tabs)/check-in.tsx` calls `useCameraPermissions()`. A plugin option
-    // of `cameraPermission: false` compiles to
-    // `withBlockedPermissions(['android.permission.CAMERA'])`, which *removes*
-    // what expo-camera added and writes `tools:node="remove"` into the manifest.
-    // The result is a build where check-in can never be granted the camera.
-    const decliners = pluginEntries()
-      .filter(([, opts]) => opts.cameraPermission === false)
-      .map(([name]) => name);
+  function pluginEntries(): [string, Record<string, unknown>][] {
+    return appJson().expo.plugins.map((plugin) =>
+      Array.isArray(plugin)
+        ? [plugin[0], plugin[1] ?? {}]
+        : [plugin, {} as Record<string, unknown>],
+    );
+  }
+
+  /** Every option that resolves to an iOS purpose string, declared or declined. */
+  function permissionOptions(): [string, unknown][] {
+    return pluginEntries()
+      .flatMap(([name, opts]) =>
+        Object.entries(opts)
+          .filter(([key]) => /(?:Permission|UsageDescription)$/.test(key))
+          .map(([key, value]) => [`${name}:${key}`, value] as [string, unknown]),
+      )
+      .sort(([a], [b]) => a.localeCompare(b));
+  }
+
+  /**
+   * Options this app must never decline, because a screen requests the
+   * underlying permission at runtime. Declining is not inert: it compiles to
+   * `withBlockedPermissions`, which strips what another plugin contributed, so
+   * the permission can never be granted on Android — silently. That is how
+   * `expo-image-picker`'s `cameraPermission: false` broke QR check-in. Every
+   * other declined option below is safe precisely because no source file asks
+   * for it (no microphone, FaceID, motion or background-location use); add the
+   * option here in the same slice that introduces such a use.
+   */
+  const REQUESTED_AT_RUNTIME = [
+    // app/(tabs)/check-in.tsx → useCameraPermissions()
+    "cameraPermission",
+    // study zones, and the check-in location confirm
+    "locationWhenInUsePermission",
+  ];
+
+  it("lets no plugin decline a permission a screen requests at runtime", () => {
+    const decliners = permissionOptions()
+      .filter(
+        ([key, value]) =>
+          value === false &&
+          REQUESTED_AT_RUNTIME.some((option) => key.endsWith(`:${option}`)),
+      )
+      .map(([key]) => key);
     expect(decliners).toEqual([]);
   });
 
-  it("ships iOS usage-description strings only for features that exist", () => {
-    // Each `*Permission`/`*UsageDescription` option with a *string* value becomes
-    // a purpose string in the binary. A string for an unbuilt feature is a
-    // Guideline 5.1.1(i)/2.1 rejection, so the set is pinned exactly rather than
-    // merely checked for absences.
-    const declared = pluginEntries()
-      .flatMap(([name, opts]) =>
-        Object.entries(opts)
-          .filter(([key, value]) => /Permission$/.test(key) && typeof value === "string")
-          .map(([key]) => `${name}:${key}`),
-      )
-      .sort();
-    expect(declared).toEqual([
-      "expo-camera:cameraPermission",
-      "expo-location:locationWhenInUsePermission",
+  it("ships iOS purpose strings only for features that exist", () => {
+    // A purpose string for an unbuilt feature is a Guideline 5.1.1(i)/2.1
+    // rejection — that is what expo-image-picker's photosPermission was. The
+    // full option set is pinned, values included, so neither a new string nor a
+    // flipped decline slips through.
+    expect(permissionOptions()).toEqual([
+      ["expo-camera:cameraPermission", "Signet uses the camera to scan the check-in code at chapter events."],
+      ["expo-camera:microphonePermission", false],
+      ["expo-location:locationAlwaysAndWhenInUsePermission", false],
+      ["expo-location:locationAlwaysPermission", false],
+      ["expo-location:locationWhenInUsePermission", "Signet confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code."],
+      ["expo-location:motionUsagePermission", false],
+      ["expo-secure-store:faceIDPermission", false],
     ]);
+  });
+
+  it("hand-writes no purpose string under ios.infoPlist", () => {
+    // The plugin roster above is not the only way in: a key written straight
+    // into `ios.infoPlist` bypasses plugins entirely and prebuild copies it
+    // verbatim into Info.plist — the route ITSAppUsesNonExemptEncryption uses.
+    const infoPlist = appJson().expo.ios?.infoPlist ?? {};
+    expect(
+      Object.keys(infoPlist).filter((key) => /UsageDescription$/.test(key)),
+    ).toEqual([]);
   });
 
   it("does not depend on the media pickers no source file imports", () => {
