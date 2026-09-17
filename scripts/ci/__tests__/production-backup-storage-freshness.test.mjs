@@ -179,9 +179,11 @@ describe("evaluateDumpFreshness", () => {
 
   // Regression lock for the run-level hung branch. The `jobs: []` case above
   // covers only the under-3h side, so deleting the run-level age check left
-  // every test green. This is the shape a job suspended on an environment
-  // reviewer gate returns — `waiting`/`queued` with no job record — which is
-  // the exact #1435 trap this watchdog family exists to catch.
+  // every test green. This is a run GitHub has accepted but whose jobs list is
+  // not yet populated — the run-level clock is the only evidence available.
+  // (A job already suspended on an environment reviewer gate reports
+  // `status: "waiting"` WITH a job record, so it takes the job-level branch
+  // below; do not delete that one on the strength of this test.)
   it("fails a run in flight for more than 3h with the storage job not yet created", () => {
     const verdict = evaluate({
       runs: [{ id: 1, status: "queued", created_at: hoursAgo(4) }],

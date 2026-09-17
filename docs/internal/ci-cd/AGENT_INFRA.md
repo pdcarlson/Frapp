@@ -716,10 +716,15 @@ stay silent).
 `unknown` — a target the Management API could not be read — does **neither**. An API blip must not
 close a live alert (that is how a real outage gets silenced) and must not open one either (nothing
 was observed to be drifting). `unknown` still exits non-zero, so a check that cannot run is a red
-run rather than a quiet pass. Like every scheduled watchdog in
-`scripts/ci/`, it exits non-zero on a bad verdict — each one *is* the check, so green has to mean
-"it was checked and it matched". The annotate-only scripts (`deploy-alert`, `ci-wake`,
-`pr-base-sync`) only annotate a run
+run rather than a quiet pass. Every scheduled watchdog in
+`scripts/ci/` exits non-zero on a bad verdict. For this one and for the backup, release-pin and
+uptime watches, green additionally means "it was checked and it matched" — they *are* the check.
+Two do **not** carry that second meaning: `staging-conformance` and `production-auth-conformance`
+exit 0 on an `inconclusive` run (nothing was asserted, so nothing was proved) and on
+`unproven-recovery` (an open alert names an assertion this run could not evaluate, so it is neither
+re-raised nor closed). Both say so in the step summary, and both deliberately leave the alert as
+they found it — but their green is "no contradiction observed", not "verified". Read those two
+that way. The annotate-only scripts (`deploy-alert`, `ci-wake`, `pr-base-sync`) only annotate a run
 that is already red, and deliberately exit 0 so a watchdog never adds noise of its own.
 
 **Read-only by construction.** It calls the Management API's migration-history endpoint

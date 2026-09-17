@@ -133,13 +133,15 @@ timer, fifteen minutes before `db-backup.yml` (06:30) tries to run under it; `ch
 provider-side production settings; `staging-conformance.yml` (07:30) owns everything else about
 staging and deliberately does **not** re-run the drift comparison; `production-auth-conformance.yml`
 (07:45) owns Auth hook + redirect allow list + skip-until-on SMTP + skip-until-SMTP-on Magic Link on `frapp-prod`; `production-release-pin.yml` (08:00) owns the three production hosts sharing a peeled `vX.Y.Z`; `production-backup-freshness.yml` (13:15) owns that the latest `backup-production` dump succeeded within 36h; `production-backup-storage-freshness.yml` (14:00) owns that the latest `backup-production-storage` mirror succeeded within 36h. One real drift still raises exactly
-one alert, with one documented exception: the two backup-freshness watches (13:15 and 14:00) are
-**not** independent of each other. They watch two jobs of the *same* `db-backup.yml` run, both under
-`environment: production-backup` and both behind the same pair of Infisical injections, so a single
-revoked machine identity or a reviewer gate on that environment fails both jobs in one run and opens
-both alerts — one cause, two P1s, plus the 06:15 environment alert if the cause was the gate. Every
-other pair here is genuinely disjoint: if several of *those* alerts are open at once they are telling
-you about different problems. The staggering has more than one reason — the full schedule and its rationale are
+one alert, with one documented exception: the three `production-backup` watches (06:15, 13:15 and
+14:00) are **not** independent of one another. The two freshness watches read two jobs of the *same*
+`db-backup.yml` run, both under `environment: production-backup` and both behind the same pair of
+Infisical injections, and the 06:15 watch reads that same environment. So one cause can open all
+three: a revoked Infisical machine identity fails both jobs in one run and opens both freshness
+alerts; a reviewer gate on `production-backup` opens the 06:15 alert *and* suspends both jobs, which
+the freshness watches then see as a run hung past 3h. Three P1s, one fix. Outside that
+`production-backup` cluster the pairs are genuinely disjoint: if several of *those* alerts are open
+at once they are telling you about different problems. The staggering has more than one reason — the full schedule and its rationale are
 [`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance, which owns that fact.
 
 **Read the conformance alert's clearing condition literally — an open issue does not always mean
