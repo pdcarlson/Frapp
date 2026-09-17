@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PostgrestError } from '@supabase/supabase-js';
@@ -17,7 +16,10 @@ import type {
 import type { ChapterCustomRole } from '#domain/entities/chapter-custom-role.entity';
 import { WILDCARD } from '#domain/constants/permissions';
 import type { CreateCustomRole, UpdateCustomRole } from '@repo/validation';
-import { logThrowable } from '../../infrastructure/observability/log-throwable';
+import {
+  ChapterAuditLogService,
+  type AuditDiff,
+} from './chapter-audit-log.service';
 
 /**
  * What `create` and `update` accept.
@@ -44,6 +46,13 @@ export type UpdateCustomRoleInput = UpdateCustomRole;
 // Postgres unique-violation SQLSTATE (raised when (chapter_id, key) collides).
 const UNIQUE_VIOLATION = '23505';
 
+/**
+ * `chapter_audit_log.target_type` for every row this service writes. Paired
+ * with the role id as `target_id`, it is what lets the audit log filter by
+ * entity.
+ */
+const AUDIT_TARGET_TYPE = 'chapter_custom_role';
+
 /** Shape of a Supabase row response after the (untyped) query builder. */
 type RowResponse = {
   data: ChapterCustomRole | null;
@@ -67,10 +76,9 @@ type MutateResponse = { error: PostgrestError | null };
  */
 @Injectable()
 export class CustomRoleService {
-  private readonly logger = new Logger(CustomRoleService.name);
-
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    private readonly auditLog: ChapterAuditLogService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<ChapterCustomRole[]> {
@@ -135,15 +143,14 @@ export class CustomRoleService {
     }
 
     const role = data as ChapterCustomRole;
-    await this.writeAudit(
+    await this.auditLog.record({
       chapterId,
       actorUserId,
-      'chapter_custom_role_created',
-      role.id,
-      {
-        role: { from: null, to: role },
-      },
-    );
+      action: 'chapter_custom_role_created',
+      targetType: AUDIT_TARGET_TYPE,
+      targetId: role.id,
+      diff: { role: { from: null, to: role } } satisfies AuditDiff,
+    });
     return role;
   }
 
@@ -175,15 +182,14 @@ export class CustomRoleService {
     if (error || !data) throw new NotFoundException('Custom role not found');
 
     const role = data;
-    await this.writeAudit(
+    await this.auditLog.record({
       chapterId,
       actorUserId,
-      'chapter_custom_role_updated',
-      id,
-      {
-        role: { from: existing, to: role },
-      },
-    );
+      action: 'chapter_custom_role_updated',
+      targetType: AUDIT_TARGET_TYPE,
+      targetId: id,
+      diff: { role: { from: existing, to: role } } satisfies AuditDiff,
+    });
     return role;
   }
 
@@ -204,15 +210,14 @@ export class CustomRoleService {
       .eq('chapter_id', chapterId);
     if (error) throw error;
 
-    await this.writeAudit(
+    await this.auditLog.record({
       chapterId,
       actorUserId,
-      'chapter_custom_role_deleted',
-      id,
-      {
-        role: { from: existing, to: null },
-      },
-    );
+      action: 'chapter_custom_role_deleted',
+      targetType: AUDIT_TARGET_TYPE,
+      targetId: id,
+      diff: { role: { from: existing, to: null } } satisfies AuditDiff,
+    });
     return { success: true };
   }
 
@@ -239,39 +244,5 @@ export class CustomRoleService {
       .maybeSingle();
     if (error || !data) throw new NotFoundException('Custom role not found');
     return data;
-  }
-
-  // Append-only audit trail. A failed write must fail the request — settings
-  // changes are never silently unaudited (matches ChapterConfigService).
-  private async writeAudit(
-    chapterId: string,
-    actorUserId: string,
-    action: string,
-    targetId: string,
-    diff: Record<string, { from: unknown; to: unknown }>,
-  ): Promise<void> {
-    const audit: TablesInsert<'chapter_audit_log'> = {
-      chapter_id: chapterId,
-      actor_user_id: actorUserId,
-      action,
-      target_type: 'chapter_custom_role',
-      // The role being changed — lets the audit log filter by entity.
-      target_id: targetId,
-      scope: 'chapter',
-      diff,
-      member_visible: true,
-    };
-    const { error }: MutateResponse = await this.supabase
-      .from('chapter_audit_log')
-      .insert(audit);
-    if (error) {
-      logThrowable(
-        this.logger,
-        'error',
-        'Failed to write chapter audit log',
-        error,
-      );
-      throw error;
-    }
   }
 }

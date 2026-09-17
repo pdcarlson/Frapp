@@ -19,6 +19,10 @@ import {
 } from '#domain/constants/permissions';
 import { CustomRoleService } from './custom-role.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
+import {
+  createAuditLogServiceMock,
+  type AuditLogServiceMock,
+} from '#test/helpers/audit-log.mock';
 import type { Role } from '#domain/entities/role.entity';
 import type { Member } from '#domain/entities/member.entity';
 import type { Chapter } from '#domain/entities/chapter.entity';
@@ -29,7 +33,7 @@ describe('RbacService', () => {
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockCustomRoleService: { findByIds: jest.Mock };
-  let mockChapterAuditLogService: { record: jest.Mock };
+  let mockChapterAuditLogService: AuditLogServiceMock;
 
   beforeEach(async () => {
     mockRoleRepo = {
@@ -69,9 +73,7 @@ describe('RbacService', () => {
       findByIds: jest.fn().mockResolvedValue([]),
     };
 
-    mockChapterAuditLogService = {
-      record: jest.fn().mockResolvedValue(undefined),
-    };
+    mockChapterAuditLogService = createAuditLogServiceMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

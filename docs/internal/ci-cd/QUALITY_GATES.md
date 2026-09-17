@@ -273,12 +273,19 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 4.16%** duplicated lines (977 clones, 11,833 duplicated lines, across
-  1,294 files analysed) — measured 2026-09-10 with `npm run check:duplication` after combining
-  the identity-query / named-event extract with first-party Sentry trace origins and the
-  shared `/task` `/event` `/hours` `card_posted` cases. The raw ratio is
-  11,833 / 284,707 = 4.156%, under the 4.3% threshold.
-- **Threshold: 4.3%**, just above it. Not ratcheted down.
+- **Current measurement: 3.88%** duplicated lines (1,030 clones, 12,400 duplicated lines, across
+  1,428 files analysed) — measured 2026-09-17 with `npm run check:duplication` after folding the
+  three inline `chapter_audit_log` writers into `ChapterAuditLogService.record` (#2167), which
+  removed two clone pairs. `main` measured 3.89% / 1,032 clones the same day, so 0.01 of the
+  figure is this change and the rest is slack the ratio had already shed.
+- **Threshold: 4.1%.** Ratcheted from 4.3% on 2026-09-17. The 0.22 of headroom is deliberate:
+  the measured figure has ranged 3.89–4.24% across the seven days to 2026-09-12, so a threshold
+  set just above 3.88% would redden on ordinary drift rather than on a real copy-paste.
+- The **2026-09-10 figure** was 4.16% (977 clones, 11,833 duplicated lines, 1,294 files;
+  11,833 / 284,707 = 4.156%), measured after combining the identity-query / named-event extract
+  with first-party Sentry trace origins and the shared `/task` `/event` `/hours` `card_posted`
+  cases. Kept as the previous datum, not as a baseline to compare a current run against — the
+  denominator has grown since.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
   make a red run green. Set the new value from a *measured* run, never from a guess, and leave
   enough headroom that ordinary drift does not redden it.
