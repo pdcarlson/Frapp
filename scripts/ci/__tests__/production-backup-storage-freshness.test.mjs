@@ -177,6 +177,41 @@ describe("evaluateDumpFreshness", () => {
     assert.match(verdict.reason, /in flight/);
   });
 
+  // Regression lock for the run-level hung branch. The `jobs: []` case above
+  // covers only the under-3h side, so deleting the run-level age check left
+  // every test green. This is the shape a job suspended on an environment
+  // reviewer gate returns — `waiting`/`queued` with no job record — which is
+  // the exact #1435 trap this watchdog family exists to catch.
+  it("fails a run in flight for more than 3h with the storage job not yet created", () => {
+    const verdict = evaluate({
+      runs: [{ id: 1, status: "queued", created_at: hoursAgo(4) }],
+      jobs: [],
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /hung for more than 3h/);
+  });
+
+  // Regression lock for ageMs's NaN guard. Every other fixture supplies a
+  // well-formed timestamp, so inverting `Number.isNaN(at) ? POSITIVE_INFINITY`
+  // to `: 0` left all tests green — and that mutant does not merely green the
+  // run, it reports the mirror as fresh and CLOSES an open P1.
+  it("fails closed when a success job carries no completed_at", () => {
+    const verdict = evaluate({
+      jobs: [{ ...successJob(), completed_at: null }],
+    });
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.fresh, false);
+    assert.match(verdict.reason, /older than 36h/);
+  });
+
+  it("fails closed on an unparseable completed_at rather than treating it as now", () => {
+    const verdict = evaluate({
+      jobs: [{ ...successJob(), completed_at: "not-a-date" }],
+    });
+    assert.equal(verdict.ok, false);
+    assert.match(verdict.reason, /older than 36h/);
+  });
+
   it("fails when Actions runs are unreadable or empty", () => {
     assert.equal(evaluate({ runsStatus: 500, runs: null }).ok, false);
     assert.match(evaluate({ runsStatus: 500, runs: null }).reason, /unreadable \(HTTP 500\)/);
@@ -463,6 +498,14 @@ export function scriptPinProblems(source) {
   if (!/^export const STALE_AFTER_MS = 36 \* 60 \* 60 \* 1000;?$/m.test(source)) {
     problems.push("STALE_AFTER_MS must stay 36h");
   }
+  // The production exit path. `--probe-only`'s exit is pinned separately, but
+  // this line is the ONLY thing that turns a FAIL verdict into a red Actions
+  // run — the workflow invokes the script with no flags. Mutating it to
+  // `process.exit(0)` left all 44 original tests green while the watch
+  // reported success forever with the mirror stale. Verified by mutation.
+  if (!/process\.exit\(\s*watchdog\.outcome === "pass" \? 0 : 1\s*\)/.test(source)) {
+    problems.push("main() must exit non-zero on a non-pass verdict");
+  }
   if (!/^export const HUNG_AFTER_MS = 3 \* 60 \* 60 \* 1000;?$/m.test(source)) {
     problems.push("HUNG_AFTER_MS must stay 3h");
   }
@@ -490,14 +533,22 @@ export function watchdogWorkflowProblems(yaml) {
   if (/pull_request:/.test(yaml)) {
     problems.push("must not be a pull_request check");
   }
-  if (!/cron: "30 13 \* \* \*"/.test(yaml)) {
-    problems.push("cron must stay 13:30");
+  if (!/cron: "0 14 \* \* \*"/.test(live)) {
+    problems.push("cron must stay 14:00");
   }
   if (/cron:\s*"30 6 \* \* \*"/.test(live)) {
     problems.push("must not collide with db-backup.yml at 06:30");
   }
   if (/cron:\s*"15 13 \* \* \*"/.test(live)) {
     problems.push("must not collide with production-backup-freshness.yml at 13:15");
+  }
+  // 13:30 was this watch's original slot, copied from the sibling. It is only
+  // ~26 minutes past the latest observed storage-job start (13:04 UTC,
+  // measured 2026-09-17), so a scheduling-lag night can put the probe inside
+  // a healthy run — which returns a green "in flight" verdict that never
+  // reaches the 36h staleness check. Do not move back onto it.
+  if (/cron:\s*"30 13 \* \* \*"/.test(live)) {
+    problems.push("must not sit at 13:30 — too close to the observed storage window");
   }
   return problems;
 }
@@ -518,20 +569,20 @@ describe("workflow wiring", () => {
   });
 
   it("is schedule + workflow_dispatch only — not a required PR check", () => {
-    assert.match(workflow, /cron: "30 13 \* \* \*"/);
+    assert.match(liveYaml, /cron: "0 14 \* \* \*"/);
     assert.match(workflow, /workflow_dispatch:/);
     assert.doesNotMatch(workflow, /pull_request:/);
     assert.doesNotMatch(roster, /production-backup-storage-freshness/);
   });
 
-  it("no other daily schedule shares 13:30", () => {
+  it("no other daily schedule shares 14:00", () => {
     for (const file of readdirSync(WORKFLOWS_DIR).filter((f) => /\.ya?ml$/.test(f))) {
       if (file === "production-backup-storage-freshness.yml") continue;
       const text = uncommented(readFileSync(join(WORKFLOWS_DIR, file), "utf8"));
       assert.doesNotMatch(
         text,
-        /cron:\s*"30 13 \* \* \*"/,
-        `${file} collides with production-backup-storage-freshness.yml at 13:30 UTC`,
+        /cron:\s*"0 14 \* \* \*"/,
+        `${file} collides with production-backup-storage-freshness.yml at 14:00 UTC`,
       );
     }
   });
@@ -556,7 +607,7 @@ describe("workflow wiring", () => {
 
   it("AGENT_INFRA.md roster and scheduled table name this job", () => {
     assert.match(infra, /production-backup-storage-freshness\.yml/);
-    assert.match(infra, /13:30/);
+    assert.match(infra, /14:00/);
   });
 
   it("the script refuses a GitHub closer in its alert copy", () => {
@@ -614,6 +665,19 @@ describe("workflow wiring", () => {
 describe("watchdog mutations", () => {
   const script = readFileSync(SCRIPT, "utf8");
   const workflow = readFileSync(WORKFLOW, "utf8");
+
+  it("making main() always exit 0 fails", () => {
+    const problems = scriptPinProblems(
+      script.replace(
+        'process.exit(watchdog.outcome === "pass" ? 0 : 1)',
+        "process.exit(0)",
+      ),
+    );
+    assert.ok(
+      problems.some((problem) => problem.includes("exit non-zero")),
+      problems.join("; "),
+    );
+  });
 
   it("renaming the watch to the dump job fails", () => {
     const problems = scriptPinProblems(
@@ -682,20 +746,20 @@ describe("watchdog mutations", () => {
 
   it("moving the cron onto the dump slot fails", () => {
     const problems = watchdogWorkflowProblems(
-      workflow.replace('cron: "30 13 * * *"', 'cron: "30 6 * * *"'),
+      workflow.replace('cron: "0 14 * * *"', 'cron: "30 6 * * *"'),
     );
     assert.ok(
-      problems.some((problem) => /13:30|06:30/.test(problem)),
+      problems.some((problem) => /14:00|06:30/.test(problem)),
       problems.join("; "),
     );
   });
 
   it("moving the cron onto the Postgres freshness slot fails", () => {
     const problems = watchdogWorkflowProblems(
-      workflow.replace('cron: "30 13 * * *"', 'cron: "15 13 * * *"'),
+      workflow.replace('cron: "0 14 * * *"', 'cron: "15 13 * * *"'),
     );
     assert.ok(
-      problems.some((problem) => /13:30|13:15/.test(problem)),
+      problems.some((problem) => /14:00|13:15/.test(problem)),
       problems.join("; "),
     );
   });
