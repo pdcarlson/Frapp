@@ -89,24 +89,25 @@ host for the DEGRADED/OFFLINE-from-health path (three consecutive failed
 
 ## 5) Push notifications — **not verifiable in Expo Go**
 
-Remote push cannot be exercised from any build that currently exists, and no row
-here should be checked off from a Go session:
+Exercise remote push on an installed build that meets the prerequisites in
+[Mobile (EAS) Setup](../ops/deployment/mobile.md#61-initial-setup). Project linkage
+alone is not evidence that token registration or delivery works; record actual
+device results before checking off remote-push behavior.
 
 - Expo Go dropped remote push in SDK 53, so `expo-notifications` is not even
   loaded there.
-- `getExpoPushTokenAsync` needs an EAS `projectId` and **no EAS project exists**
-  (#938, open and `[human]`). `isPushAvailable()` is therefore false in an
-  installed build too.
+- `isPushAvailable()` checks native-module loading and the resolved EAS project
+  id, not credentials, permission, or successful delivery.
 
-What *can* be checked today:
+Availability and local-notification checks:
 
 | Screen | Control | Expected outcome |
 |---|---|---|
 | Settings (`/(tabs)/preferences`) | Push notifications row, Expo Go | Reads "Unavailable" with the Expo Go sentence — not "Off", which would imply a switch the member could flip |
-| Study hours | Background the app mid-session (installed build) | A local "Study session paused" notification appears; returning clears it. **Local** notifications need the native module but no project id, so this is the one push-shaped path that works without #938 — and it does nothing in Expo Go |
+| Study hours | Background the app mid-session (installed build) | A local "Study session paused" notification appears; returning clears it. **Local** notifications need the native module but no project id and can be tested independently of remote-push setup — this does nothing in Expo Go |
 | Study hours | End a session while paused | The paused notification is cleared rather than left inviting the member back to a session that no longer exists |
 
-Once #938 lands and a dev build exists, add rows for: the s03 primer card
+On an installed build meeting those prerequisites, verify: the s03 primer card
 (hosted on `(auth)/welcome.tsx`), the OS
 prompt firing **only** after the primer's "Turn on", token register on sign-in /
 deregister on sign-out, a tap deep-linking from a cold start, and a foregrounded
