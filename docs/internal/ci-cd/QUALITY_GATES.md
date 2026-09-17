@@ -273,11 +273,12 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 3.88%** duplicated lines (1,030 clones, 12,400 duplicated lines, across
-  1,428 files analysed) — measured 2026-09-17 with `npm run check:duplication` after folding the
-  three inline `chapter_audit_log` writers into `ChapterAuditLogService.record` (#2167), which
-  removed two clone pairs. `main` measured 3.89% / 1,032 clones the same day, so 0.01 of the
-  figure is this change and the rest is slack the ratio had already shed.
+- **Current measurement: 3.88%** duplicated lines (1,030 clones, 12,393 duplicated lines, across
+  1,428 files analysed; 12,393 / 319,277 = 3.881%) — measured 2026-09-17 with
+  `npm run check:duplication` after folding the three inline `chapter_audit_log` writers into
+  `ChapterAuditLogService.record` (#2167), which removed two clone pairs. `main` measured 3.89%
+  / 1,032 clones / 12,422 duplicated lines the same day, so 0.01 of the figure is this change and
+  the rest is slack the ratio had already shed.
 - **Threshold: 4.1%.** Ratcheted from 4.3% on 2026-09-17. The 0.22 of headroom is deliberate:
   the measured figure has ranged 3.89–4.24% across the seven days to 2026-09-12, so a threshold
   set just above 3.88% would redden on ordinary drift rather than on a real copy-paste.
