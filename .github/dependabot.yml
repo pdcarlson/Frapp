@@ -183,13 +183,27 @@ updates:
       # PR #2352, which failed `clean-checkout-typecheck` and
       # `lint-and-typecheck` with it.
       #
-      # So the effective postcss version is Next's business, not ours: it moves
-      # when `next` moves, which Dependabot still proposes freely. Ignoring the
-      # direct bump therefore does NOT freeze postcss — it only stops
-      # Dependabot re-proposing a range that de-dupes worse than the one we
-      # have. If `packages/theme` ever needs a postcss API newer than Next's
-      # pin, the fix is a root `overrides` entry (one copy for everyone), not a
-      # higher range here.
+      # So the *resolved* postcss version is Next's business, not ours: it moves
+      # when `next` moves, which Dependabot still proposes freely.
+      #
+      # This entry carries no `update-types`, deliberately — a postcss MINOR is
+      # what broke the build, so a major-only ignore would not have helped. Two
+      # consequences, stated plainly because the React/Expo block above is right
+      # that they must be: it freezes the declared range in
+      # `packages/theme/package.json`, and it suppresses Dependabot SECURITY PRs
+      # for postcss. The second is narrower than it sounds — the copy that ships
+      # is Next's, and a postcss advisory is cleared by moving `next` or by a
+      # root `overrides` entry, neither of which this touches — but
+      # `npm run check:npm-audit` is the thing that would actually catch it, not
+      # Dependabot.
+      #
+      # This reasoning holds only while Next's exact pin still satisfies the
+      # range below. If `next` ever pins a postcss outside `^8.5.6`, npm nests a
+      # second copy again and `@repo/theme#check-types` fails exactly as in
+      # #2352 — and Dependabot will not be proposing the raise that fixes it.
+      # Raise the range by hand then, or add a root `overrides` entry (one copy
+      # for everyone), which is also the fix if `packages/theme` ever needs a
+      # postcss API newer than Next's pin.
       - dependency-name: "postcss"
 
       # ── The NestJS 12 hold ───────────────────────────────────────────────
@@ -201,10 +215,11 @@ updates:
       # candidate, and `@sentry/nestjs` is the API's error reporting, so
       # running it pre-release to satisfy a dependency bump is the wrong trade.
       #
-      # The four packages move as a set — `@nestjs/platform-express@12` and
-      # `@nestjs/testing@12` both peer-require `@nestjs/core@^12` — which is
-      # why #2353 and #2355 were individually unmergeable no matter what CI
-      # said: each bumped one package and left `core`/`common` at 11.
+      # The four packages move as a set: `@nestjs/platform-express` and
+      # `@nestjs/testing` peer-require `@nestjs/core@^12` from 12.0.1 onward
+      # (12.0.0 still allowed `^11.0.0`). Dependabot proposes the newest in the
+      # major, so #2353 and #2355 were individually unmergeable no matter what
+      # CI said: each bumped one package and left `core`/`common` at 11.
       # `@nestjs/swagger@12` joins them for the same reason (`^12.0.0` peers).
       #
       # Ignoring only the major keeps 11.x minors and patches flowing, so this

@@ -10,8 +10,8 @@
 #
 # It waits for the START-written sentinel, fails fast (does not silently launch a doomed
 # server) if bringup reported failure, then execs the given command under the repo's
-# pinned Node 20 (scripts/cursor-node20.sh — Cursor's base image fronts Node 22, which
-# breaks `nest start`). Usage:
+# pinned Node (scripts/cursor-node.sh — Cursor's base image fronts its own Node, ahead
+# of nvm; the version comes from .nvmrc). Usage:
 #
 #   bash scripts/cursor-cloud-terminal.sh npm run start:dev -w apps/api
 set -uo pipefail
@@ -36,4 +36,4 @@ if [ -f "$FAILED" ] && [ ! -f "$DONE" ]; then
 fi
 
 echo "[cursor-cloud-terminal] stack ready; starting: $*" >&2
-exec bash "$ROOT/scripts/cursor-node20.sh" "$@"
+exec bash "$ROOT/scripts/cursor-node.sh" "$@"

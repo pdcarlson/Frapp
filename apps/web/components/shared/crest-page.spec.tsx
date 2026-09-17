@@ -31,13 +31,16 @@ const CREST = /signet-emblem-B\.png/;
 /**
  * Every `.tsx` under `apps/web`, walked rather than globbed.
  *
- * `fs.globSync` is Node 22+, and this repo declares `engines: { node: ">=20" }`
- * with every CI job pinning `node-version: 20`. The first version of these two
- * tests globbed, passed on a 22 laptop, and failed CI with `TypeError: globSync
- * is not a function` — the exact trap `scripts/measure-web-route-bundles.mjs`
- * had already hit and written up ("a glob here would throw at module-link time
- * … on the platform the repo actually supports, while passing on a 22 laptop").
- * Reaching for the glob was not a new discovery; it was not reading that note.
+ * `fs.globSync` is Node 22+. The first version of these two tests globbed,
+ * passed on a 22 laptop, and failed CI with `TypeError: globSync is not a
+ * function`, because the repo then declared `engines: { node: ">=20" }` with
+ * every CI job pinning `node-version: 20`. Reaching for the glob was not a new
+ * discovery; it was not reading the note in
+ * `scripts/measure-web-route-bundles.mjs`, which had already hit the same trap.
+ *
+ * That floor is now `>=24` and CI pins 24, so `globSync` would link fine here.
+ * The walk stays: it is shared with the two sibling walkers below, and the
+ * value is one collection strategy across them, not the four lines.
  *
  * `scripts/ci/__tests__/signet-web-titles.test.mjs` walks the same corpus with
  * `readdirSync` for the same reason. This is that walker, and every API it uses

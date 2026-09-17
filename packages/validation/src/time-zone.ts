@@ -27,6 +27,13 @@
  * those now validate and deliver rather than degrading to UTC, but they still
  * observe no DST, and a client on a leaner ICU build can still disagree.
  * Steer people to named zones.
+ *
+ * Whether the rule SHOULD follow the runtime like this is open — #2361. An
+ * offset that validates but ignores DST puts a member's quiet hours an hour
+ * out for the ~8 months of daylight time, and a client that rejects what the
+ * server stored is the drift this module exists to prevent, pointed the other
+ * way. Do not "fix" that by tightening this predicate without reading #2361;
+ * the alternatives were weighed there.
  */
 
 /** Longest value the `user_settings.quiet_hours_tz` column is allowed to carry. */

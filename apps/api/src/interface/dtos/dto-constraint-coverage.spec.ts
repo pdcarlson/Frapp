@@ -45,9 +45,11 @@ function loadDtoClasses(): DtoClass[] {
   // still finding enough classes to clear the floor below.
   for (const file of readdirSync(dir, { recursive: true }).map(String).sort()) {
     if (!file.endsWith('.dto.ts')) continue;
-    // Synchronous require, as in test/ai-evals/harness/registry.ts: `import()`
-    // stays a true dynamic import under ts-jest and would need
-    // --experimental-vm-modules on the whole runner for this one file.
+    // Synchronous require, as in test/ai-evals/harness/registry.ts. `import()`
+    // stays a true dynamic import under ts-jest; that used to mean paying for
+    // --experimental-vm-modules on the whole runner for this one file, but the
+    // flag is on every jest script now (see docs/guides/testing.md § 2a), so
+    // the only remaining reason for `require` here is that it is simpler.
     // Extension stripped so Jest's resolver picks the module up normally.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const mod = require(join(dir, file.replace(/\.ts$/, ''))) as Record<
