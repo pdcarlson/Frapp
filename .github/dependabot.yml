@@ -102,7 +102,7 @@ updates:
       # This list must cover EVERY `expo-*` entry in apps/mobile/package.json.
       # That is mechanical, not a per-package judgement: an Expo client
       # package's major version IS its SDK line. Ten of them sat outside this
-      # list until PR __FIXPR__, and two of those cost a production build —
+      # list until PR #2338, and two of those cost a production build —
       # #2218 and #2217 moved expo-apple-authentication and expo-localization to
       # 58.0.0, and `eas build -p ios` failed with
       # `type 'Utilities' has no member 'keyWindow'`. Nothing in CI compiles

@@ -309,7 +309,7 @@ entry in `apps/mobile/package.json` belongs in the list, whatever the package lo
 JS side. An Expo client package's major version **is** its SDK line — the `58.x` release of any of
 them is built against `expo-modules-core@58` and freely calls native API that `expo-modules-core@57`
 does not have — so "is this really a native module?" is the wrong question to ask of one, and
-answering it per package is what let ten of them sit outside the list until PR __FIXPR__. Read the rule
+answering it per package is what let ten of them sit outside the list until PR #2338. Read the rule
 this way and the list is mechanically checkable against the manifest; read it as a per-package
 judgement and the gap reopens the next time a client package is added. Nothing checks it
 mechanically today — adding that gate is #2330.
