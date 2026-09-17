@@ -1,0 +1,91 @@
+import { Alert } from "react-native";
+
+/**
+ * The one account-deletion prompt, shared by every surface that offers it.
+ *
+ * Apple 5.1.1(v) requires in-app deletion wherever an account can be created,
+ * and Signet creates accounts implicitly on first sign-in — so the control has
+ * to exist on more than one screen (Settings for a member with a chapter, the
+ * join screen for the zero-membership state that cannot reach Settings at all,
+ * #2295). Two screens offering the same destructive action is exactly how copy
+ * drifts, so the strings and the confirm/fail choreography live here once
+ * rather than being written a second time.
+ *
+ * `Alert.alert` with a destructive button is required by the native-feel table
+ * in `spec/ui/mobile/README.md`; `window.confirm` is banned everywhere.
+ */
+
+export const DELETE_ACCOUNT_CONFIRM_TITLE = "Delete account?";
+
+export const DELETE_ACCOUNT_CONFIRM_BODY =
+  "This cannot be undone. Your profile and contact details are erased; " +
+  "chapter history you took part in stays, anonymized as “Deleted User”. " +
+  "See the Privacy Policy for what is kept and for how long.";
+
+export const DELETE_ACCOUNT_FAILURE_TITLE = "Deletion didn't finish";
+
+/**
+ * The endpoint documents a 502 as "did not finish", and every step is
+ * idempotent — so the instruction is retry. It must not also say the account is
+ * intact: media is purged and PII is scrubbed *before* the auth record is
+ * deleted, so a failure after that point has already destroyed the profile.
+ * Telling someone "nothing is lost" there would talk them out of the retry that
+ * finishes the job.
+ */
+export const DELETE_ACCOUNT_FAILURE_BODY =
+  "Part of it may already have gone through, and running it again is safe. Try once more in a moment.";
+
+/**
+ * The shape `useDeleteAccount()` satisfies. Declared structurally rather than
+ * imported so this module stays free of TanStack Query types — the specs drive
+ * it with a stub, and the prompt genuinely does not care what produced the
+ * mutation.
+ */
+export type DeleteAccountMutation = {
+  mutate: (
+    variables: undefined,
+    options: { onSuccess: () => void; onError: () => void },
+  ) => void;
+};
+
+export type ConfirmDeleteAccountOptions = {
+  deleteAccount: DeleteAccountMutation;
+  /**
+   * Run once the account is gone. Every caller signs out here — the session
+   * outlives the account by a moment, and leaving the user on a screen backed
+   * by a deleted account is how you get an unrecoverable 401 loop.
+   */
+  onDeleted: () => void;
+  /**
+   * Surface the failure. Defaults to the native alert; the join screen passes
+   * its own so the message lands in the error slot it already renders.
+   */
+  onError?: () => void;
+};
+
+export function confirmDeleteAccount({
+  deleteAccount,
+  onDeleted,
+  onError,
+}: ConfirmDeleteAccountOptions): void {
+  Alert.alert(DELETE_ACCOUNT_CONFIRM_TITLE, DELETE_ACCOUNT_CONFIRM_BODY, [
+    { text: "Cancel", style: "cancel" },
+    {
+      text: "Delete",
+      style: "destructive",
+      onPress: () => {
+        deleteAccount.mutate(undefined, {
+          onSuccess: onDeleted,
+          onError:
+            onError ??
+            (() => {
+              Alert.alert(
+                DELETE_ACCOUNT_FAILURE_TITLE,
+                DELETE_ACCOUNT_FAILURE_BODY,
+              );
+            }),
+        });
+      },
+    },
+  ]);
+}

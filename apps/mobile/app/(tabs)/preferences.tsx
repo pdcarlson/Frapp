@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Alert,
   AppState,
   Linking,
   StyleSheet,
@@ -27,6 +26,7 @@ import {
 } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { shouldShowDonationCta } from "@/lib/more/donation";
@@ -399,42 +399,13 @@ export default function PreferencesScreen() {
     WebBrowser.openBrowserAsync(url).catch(() => setLinkFailed(label));
   }
 
-  function confirmDeleteAccount() {
-    // Native `Alert.alert` with a destructive button, per the native-feel table
-    // in `spec/ui/mobile/README.md`. `window.confirm` is banned everywhere.
-    Alert.alert(
-      "Delete account?",
-      "This cannot be undone. Your profile and contact details are erased; " +
-        "chapter history you took part in stays, anonymized as “Deleted User”. " +
-        "See the Privacy Policy for what is kept and for how long.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            deleteAccount.mutate(undefined, {
-              onSuccess: () => {
-                void handleSignOut();
-              },
-              onError: () => {
-                // The endpoint documents a 502 as "did not finish", and every
-                // step is idempotent — so the instruction is retry. It must not
-                // also say the account is intact: media is purged and PII is
-                // scrubbed *before* the auth record is deleted, so a failure
-                // after that point has already destroyed the profile. Telling
-                // someone "nothing is lost" there would talk them out of the
-                // retry that finishes the job.
-                Alert.alert(
-                  "Deletion didn't finish",
-                  "Part of it may already have gone through, and running it again is safe. Try once more in a moment.",
-                );
-              },
-            });
-          },
-        },
-      ],
-    );
+  function handleDeleteAccount() {
+    confirmDeleteAccount({
+      deleteAccount,
+      onDeleted: () => {
+        void handleSignOut();
+      },
+    });
   }
 
   return (
@@ -566,7 +537,7 @@ export default function PreferencesScreen() {
           destructive
           disabled={deleteAccount.isPending}
           accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
-          onPress={confirmDeleteAccount}
+          onPress={handleDeleteAccount}
         />
       </ListSection>
       {linkFailed ? (

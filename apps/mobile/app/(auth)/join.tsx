@@ -11,8 +11,9 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useRedeemInvite } from "@repo/hooks";
+import { useDeleteAccount, useRedeemInvite } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
 import { useAuthSession } from "@/lib/auth-session";
 import {
   consumeRememberedInviteToken,
@@ -41,6 +42,7 @@ export default function JoinChapter() {
   const router = useRouter();
   const { status, signOut } = useAuthSession();
   const redeemInvite = useRedeemInvite();
+  const deleteAccount = useDeleteAccount();
   const selectChapter = useSelectChapter();
   const params = useLocalSearchParams<{
     token?: string | string[];
@@ -92,6 +94,33 @@ export default function JoinChapter() {
     // `signOut` drops the query cache itself (`lib/auth-session.tsx`), so every
     // sign-out path gets it without each screen remembering to.
     router.replace("/(auth)/sign-in");
+  }
+
+  /**
+   * Apple 5.1.1(v): an account that can be created in-app must be deletable
+   * in-app. Signet creates the account implicitly on first sign-in, and a user
+   * with zero memberships is pinned to this screen by `(auth)/_layout.tsx` —
+   * Settings, where the other copy of this control lives, is unreachable from
+   * here. Without this row that account can never be deleted from the app
+   * (#2295).
+   *
+   * The failure lands in this screen's existing error slot rather than a second
+   * native alert: the user is already looking at one, and a dialog stacked on a
+   * dialog reads as a crash.
+   */
+  function handleDeleteAccount() {
+    setError(null);
+    confirmDeleteAccount({
+      deleteAccount,
+      onDeleted: () => {
+        void handleSignOut();
+      },
+      onError: () => {
+        setError(
+          "Deleting your account didn't finish. Part of it may already have gone through, and running it again is safe. Try once more in a moment.",
+        );
+      },
+    });
   }
 
   async function handleJoin() {
@@ -194,6 +223,19 @@ export default function JoinChapter() {
           >
             <Text style={styles.secondaryButtonText}>Sign out</Text>
           </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
+            accessibilityState={{ disabled: deleteAccount.isPending }}
+            disabled={deleteAccount.isPending}
+            onPress={handleDeleteAccount}
+            style={styles.secondaryButton}
+          >
+            <Text style={styles.destructiveButtonText}>
+              {deleteAccount.isPending ? "Deleting account…" : "Delete account"}
+            </Text>
+          </Pressable>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -284,6 +326,13 @@ function createStyles(tokens: SignetTokens) {
     secondaryButtonText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
+    },
+    // Same hue `ListRow` gives a destructive row in Settings
+    // (`components/list-section.tsx`), so the delete control reads the same
+    // way on both screens that offer it.
+    destructiveButtonText: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.semantic.destructive,
     },
   });
 }
