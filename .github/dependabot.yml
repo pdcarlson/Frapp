@@ -55,7 +55,9 @@ updates:
     # See AGENTS.md § Gotchas and PR #842.
     #
     # These families therefore move only as a version-locked set, via a
-    # planned Expo SDK upgrade (#289) — never as an isolated Dependabot bump.
+    # planned Expo SDK upgrade (#2329) — never as an isolated Dependabot bump.
+    # (#289 was the SDK 54 → 57 upgrade and is closed; #2329 is the open
+    # tracker for the next one.)
     #
     # KNOWN, DELIBERATE GAP: ignore conditions apply to Dependabot *security*
     # updates as well as version updates, so a CVE in one of these packages
@@ -64,6 +66,19 @@ updates:
     # families need a human/agent to carry a CVE through the SDK-upgrade path.
     # `npm run check:npm-audit` still fails CI on such an advisory, so it
     # surfaces loudly rather than silently.
+    #
+    # The set this gap covers GREW when the Expo client list below was
+    # completed to all 21 packages: it now also suppresses security PRs for
+    # expo-camera, expo-image-picker, expo-document-picker, expo-location and
+    # expo-notifications — the media, file, location and push surfaces. These
+    # entries carry no `update-types`, so in-SDK 57.0.x patches are frozen too,
+    # not just the SDK-line majors that caused the break. Whether that is still
+    # the right trade at 21 packages is #2331; until it is decided, the blanket
+    # ignore stands, because an isolated bump here is what broke the build.
+    # When it does bite: `check:npm-audit` is a required check, so an advisory
+    # here goes red on every open PR at once. The unblock path is an entry in
+    # scripts/npm-audit-allowlist.json (reason + tracking issue + expiry), not
+    # a one-package bump.
     ignore:
       - dependency-name: "react"
       - dependency-name: "react-dom"
@@ -83,11 +98,36 @@ updates:
       # delivery client) with no tie to the mobile SDK lock; globbing would
       # freeze it silently and forever. If an Expo SDK upgrade adds a new
       # client package here, add it to this list.
+      #
+      # This list must cover EVERY `expo-*` entry in apps/mobile/package.json.
+      # That is mechanical, not a per-package judgement: an Expo client
+      # package's major version IS its SDK line. Ten of them sat outside this
+      # list until PR #2338, and two of those cost a production build —
+      # #2218 and #2217 moved expo-apple-authentication and expo-localization to
+      # 58.0.0, and `eas build -p ios` failed with
+      # `type 'Utilities' has no member 'keyWindow'`. Nothing in CI compiles
+      # Swift, so the list is the only gate. Why the rule is mechanical and
+      # what the break looks like: docs/internal/ci-cd/AGENT_INFRA.md
+      # § The ignore list is a runtime constraint, not a preference.
+      # Nothing enforces this roster mechanically today — that is #2330.
+      #
+      # These move only as a version-locked set via a planned SDK upgrade
+      # (#2329), like the React family above.
+      - dependency-name: "expo-apple-authentication"
+      - dependency-name: "expo-application"
+      - dependency-name: "expo-camera"
       - dependency-name: "expo-constants"
+      - dependency-name: "expo-crypto"
+      - dependency-name: "expo-device"
+      - dependency-name: "expo-document-picker"
       - dependency-name: "expo-file-system"
       - dependency-name: "expo-font"
+      - dependency-name: "expo-image-picker"
       - dependency-name: "expo-linking"
+      - dependency-name: "expo-localization"
+      - dependency-name: "expo-location"
       - dependency-name: "expo-network"
+      - dependency-name: "expo-notifications"
       - dependency-name: "expo-router"
       - dependency-name: "expo-secure-store"
       - dependency-name: "expo-sharing"
