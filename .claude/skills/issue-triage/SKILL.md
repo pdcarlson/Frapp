@@ -142,6 +142,23 @@ each:
    `has_children: true` is the structural check that does not depend on the title at all. Verified
    2026-09-13 by a sweep of every open issue: 14 epics carry the bracketed form, and exactly one
    (#2140) carries the colon form — so a bracketed match silently declines to attach anything to it.
+
+   **Neither check finds a *new* umbrella, and that is the case that costs the most.** #2196
+   ("Ship Signet to the iOS App Store — submission track") is an umbrella by construction — its
+   body enumerates the work and several issues name it as `Umbrella: #2196` — yet it carries no
+   epic prefix in either form and, until 2026-09-17, `has_children: false`. So the title match and
+   the structural check both declined it, while a single-slice PR carrying `Fixes #2196` would have
+   closed the whole submission track. The cheap third signal is the **child's** body: an issue that
+   names a parent (`Umbrella: #N`, `Epic: #N`) is evidence about #N regardless of #N's own title,
+   and attaching one child flips `has_children` so the Phase 4 `Fixes`-vs-`Part of` guard in
+   [`GITHUB_PM.md`](../../../docs/internal/ci-cd/GITHUB_PM.md) protects the parent from then on.
+   Attach on the child's own claim of parentage; do **not** infer an umbrella from topic
+   similarity, which is the force-bucketing Pass B forbids.
+
+   **`sub_issue_id` is the issue's internal id, not its number.** `sub_issue_write` takes
+   `issue_number` for the *parent* and `sub_issue_id` for the *child* — passing the child's issue
+   number there fails or attaches the wrong issue. The id comes back on every `issue_write` result
+   (`{"id": "...", "url": "..."}`) and from `issue_read get`; `list_issues` does not return it.
 6. **Promote or hold:**
    - `suggestion`-owned **or** clearly well-formed and actionable → **remove the `triage` label**
      (that is the promotion to Backlog).
