@@ -47,7 +47,7 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitest/coverage-v8": "4.1.11",
     "concurrently": "^10.0.5",
-    "dependency-cruiser": "^17.4.3",
+    "dependency-cruiser": "^18.3.1",
     "jscpd": "^5.2.0",
     "jsdom": "^30.0.1",
     "prettier": "^3.9.6",
@@ -71,7 +71,7 @@
     "undici": ">=7.29.0 <8.0.0",
     "path-to-regexp": "^8.4.0",
     "yaml": "^2.9.0",
-    "multer": ">=2.3.0 <3.0.0",
+    "multer": "2.3.0",
     "@xmldom/xmldom": ">=0.8.13",
     "@expo/plist": {
       "@xmldom/xmldom": "^0.8.15"
@@ -83,11 +83,10 @@
       "js-yaml": "4.3.2"
     },
     "sharp": "0.35.4",
-    "multer": "2.3.0",
     "@typescript/old": "npm:typescript@6.0.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "packageManager": "npm@11.6.2",
   "workspaces": [

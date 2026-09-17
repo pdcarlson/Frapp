@@ -65,7 +65,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       # Dependency-free (global fetch + the alert-issue helper), so no npm ci —
       # matching ci-wake.yml's deliberately minimal action surface.

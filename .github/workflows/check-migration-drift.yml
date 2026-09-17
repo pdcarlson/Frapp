@@ -57,7 +57,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       # Refs come from Infisical here, and this workflow keeps reading them that
       # way ON PURPOSE. `.github/environments.json` now also records the ref each

@@ -79,9 +79,11 @@ describe('UpdateUserSettingsDto — quiet_hours_tz zone validation (#687)', () =
   });
 
   // Whether a fixed offset resolves is a property of the runtime's ICU, not of
-  // this DTO: Node 20 (CI and the Dockerfile) rejects `-05:00`, Node 22 accepts
-  // it. So assert the portable thing — the DTO reaches the same verdict as the
-  // shared predicate — rather than an outcome that flips with the Node version.
+  // this DTO: Node 20 rejects `-05:00`, Node 22+ accepts it. CI and the
+  // Dockerfile have since moved from Node 20 to Node 24, so this verdict did
+  // flip — and this test stayed green through it, which is the whole reason it
+  // asserts the portable thing (the DTO reaches the same verdict as the shared
+  // predicate) rather than an outcome that tracks the Node version.
   it('agrees with the shared predicate on offset forms, whatever this runtime decides', async () => {
     const candidate = '-05:00';
     const rejectedByDto = (

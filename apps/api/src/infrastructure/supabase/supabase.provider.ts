@@ -11,15 +11,17 @@ export const SUPABASE_CLIENT = 'SUPABASE_CLIENT';
  * Supabase client provider.
  *
  * Realtime transport: `@supabase/realtime-js` (≥ 2.97) requires native
- * `WebSocket` on the global. Node 22+ ships it; Node 20 does NOT. CI pins
- * Node 20, so instantiating the client without an explicit transport would
- * throw "Node.js 20 detected without native WebSocket support" at startup
- * (and at OpenAPI export time, which silently aborts the api-contract
- * check, blocking PRs that touch any apps/api/src file).
+ * `WebSocket` on the global. Node 22+ ships it; Node 20 does NOT. That gap is
+ * no longer live — CI and the Dockerfile both run Node 24 now — but the
+ * explicit transport stays, because the failure it prevents is silent where it
+ * matters: without one, a runtime that lacks the global throws "Node.js 20
+ * detected without native WebSocket support" at startup AND at OpenAPI export
+ * time, where it aborts the api-contract check and blocks every PR touching
+ * apps/api/src.
  *
- * The `ws` package is a Realtime-compatible polyfill; we pass it via
- * `realtime.transport` so the same provider works on Node 20 (CI), Node 22
- * (newer hosts), and the Docker image regardless of base version.
+ * The `ws` package is a Realtime-compatible polyfill; passing it via
+ * `realtime.transport` pins one transport across CI, the Docker image and a
+ * dev machine, rather than letting the base image's Node version decide.
  */
 export const supabaseProvider: Provider = {
   provide: SUPABASE_CLIENT,
