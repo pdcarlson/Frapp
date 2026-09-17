@@ -1,5 +1,5 @@
-import { readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync } from 'node:fs';
+import { basename, join } from 'node:path';
 
 /**
  * The repository corpus both coverage ledgers measure themselves against —
@@ -31,18 +31,40 @@ export const EXPECTED_REPOSITORY_COUNT = 43;
 /** `apps/api/src` — the one root both ledgers walk, and what paths report against. */
 export const REPOSITORY_SRC_ROOT = join(__dirname, '..', '..', 'src');
 
+/**
+ * Every file under `apps/api/src` whose basename `accept` returns true for,
+ * sorted by full path.
+ *
+ * The one walk. Each ledger says what it counts by passing a predicate rather
+ * than re-deriving the traversal, for the reason stated above: a second walker
+ * means two definitions of what is in the tree, and the day one learns to skip
+ * a directory the other keeps counting it.
+ *
+ * `withFileTypes` rather than `statSync`: it does not follow symlinks, so a
+ * stale or circular link under `src` cannot turn a ledger into an `ENOENT` or
+ * an unbounded recursion.
+ */
+export function collectApiSources(
+  accept: (fileName: string) => boolean,
+  dir: string = REPOSITORY_SRC_ROOT,
+): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...collectApiSources(accept, fullPath));
+    } else if (entry.isFile() && accept(entry.name)) {
+      out.push(fullPath);
+    }
+  }
+  return out.sort();
+}
+
 /** Every `*.repository.ts` under `apps/api/src`, sorted by basename. */
 export function collectRepositories(
   dir: string = REPOSITORY_SRC_ROOT,
 ): RepositoryFile[] {
-  const out: RepositoryFile[] = [];
-  for (const name of readdirSync(dir)) {
-    const fullPath = join(dir, name);
-    if (statSync(fullPath).isDirectory()) {
-      out.push(...collectRepositories(fullPath));
-    } else if (name.endsWith('.repository.ts')) {
-      out.push({ fileName: name, fullPath });
-    }
-  }
-  return out.sort((a, b) => a.fileName.localeCompare(b.fileName));
+  return collectApiSources((name) => name.endsWith('.repository.ts'), dir)
+    .map((fullPath) => ({ fileName: basename(fullPath), fullPath }))
+    .sort((a, b) => a.fileName.localeCompare(b.fileName));
 }

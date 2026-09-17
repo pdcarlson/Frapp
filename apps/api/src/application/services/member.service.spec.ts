@@ -16,6 +16,10 @@ import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
+import {
+  createAuditLogServiceMock,
+  type AuditLogServiceMock,
+} from '#test/helpers/audit-log.mock';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 
 describe('MemberService', () => {
@@ -33,7 +37,7 @@ describe('MemberService', () => {
     getEffectivePermissions: jest.Mock;
     flagIfPresidentRemoved: jest.Mock;
   };
-  let mockAuditLogService: { record: jest.Mock };
+  let mockAuditLogService: AuditLogServiceMock;
   let mockStorageProvider: { listFiles: jest.Mock; deleteFiles: jest.Mock };
 
   beforeEach(async () => {
@@ -79,9 +83,7 @@ describe('MemberService', () => {
       getEffectivePermissions: jest.fn().mockResolvedValue([]),
       flagIfPresidentRemoved: jest.fn().mockResolvedValue(undefined),
     };
-    mockAuditLogService = {
-      record: jest.fn().mockResolvedValue(undefined),
-    };
+    mockAuditLogService = createAuditLogServiceMock();
     mockStorageProvider = {
       listFiles: jest.fn().mockResolvedValue([]),
       deleteFiles: jest.fn().mockResolvedValue(undefined),
