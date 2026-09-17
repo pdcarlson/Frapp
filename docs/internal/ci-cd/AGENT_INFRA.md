@@ -730,9 +730,13 @@ verification is how a real outage gets hand-waved:
 
 Each of these says so in its step summary or its verdict reason, and each deliberately leaves an
 open alert as it found it. So read the reason line, not the exit code: when it does not say the
-thing was checked and matched, green means "no contradiction observed", not "verified". The
-annotate-only scripts (`deploy-alert`, `ci-wake`, `pr-base-sync`) only annotate a run
-that is already red, and deliberately exit 0 so a watchdog never adds noise of its own.
+thing was checked and matched, green means "no contradiction observed", not "verified". `deploy-alert`,
+`ci-wake` and `pr-base-sync` are not conformance watchdogs and do not follow this rule: each exits
+non-zero only when it itself fails — an unhandled error, or a malformed event payload in
+`ci-wake`'s case — never because of what it observed. They are not passive, though —
+between them they update PR branches, re-queue runs, upsert wake comments, and raise and close their
+own `routine-state` alerts. Their exit code says nothing about what they found; their alert issues
+do.
 
 **Read-only by construction.** It calls the Management API's migration-history endpoint
 (`GET /v1/projects/{ref}/database/migrations` — the stable endpoint, not the Beta `database/query`

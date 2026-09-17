@@ -133,7 +133,8 @@ timer, fifteen minutes before `db-backup.yml` (06:30) tries to run under it; `ch
 provider-side production settings; `staging-conformance.yml` (07:30) owns everything else about
 staging and deliberately does **not** re-run the drift comparison; `production-auth-conformance.yml`
 (07:45) owns Auth hook + redirect allow list + skip-until-on SMTP + skip-until-SMTP-on Magic Link on `frapp-prod`; `production-release-pin.yml` (08:00) owns the three production hosts sharing a peeled `vX.Y.Z`; `production-backup-freshness.yml` (13:15) owns that the latest `backup-production` dump succeeded within 36h; `production-backup-storage-freshness.yml` (14:00) owns that the latest `backup-production-storage` mirror succeeded within 36h. One real drift still raises exactly
-one alert, with one documented exception: the three `production-backup` watches (06:15, 13:15 and
+one alert — but several alerts open at once do **not** reliably mean several problems. Two known
+shared-cause groups: the three `production-backup` watches (06:15, 13:15 and
 14:00) are **not** independent of one another. The two freshness watches read two jobs of the *same*
 `db-backup.yml` run, both under `environment: production-backup` and both behind the same pair of
 Infisical injections, and the 06:15 watch reads that same environment. So one cause can open all
@@ -141,12 +142,16 @@ three: a revoked Infisical machine identity fails both jobs in one run and opens
 alerts; a reviewer gate on `production-backup` opens the 06:15 alert *and* suspends both jobs, which
 the freshness watches then see as a run hung past 3h. Three P1s, one fix.
 
-That cluster is the largest shared-cause group but **not** the only one. `production-guardrails.yml`
-(07:15) and `production-release-pin.yml` (08:00) authenticate with the same `RENDER_API_KEY` and
-`VERCEL_API_KEY`, and both turn an unreadable provider response into their own P1 — so one revoked
-or expired provider credential opens two alerts that look unrelated. Before treating several open
-alerts as several problems, check whether they share a credential, an environment, or a workflow
-run; more of them do than the one-alert-per-drift design suggests. The staggering has more than one reason — the full schedule and its rationale are
+The second group is the shared provider credentials. `production-guardrails.yml` (07:15) and
+`production-release-pin.yml` (08:00) both authenticate with `RENDER_API_KEY` and `VERCEL_API_KEY`,
+and both turn an unreadable provider response into their own P1. `staging-conformance.yml` (07:30)
+passes the same `RENDER_API_KEY`, and a key that is present but *revoked* is a FAIL there rather
+than a SKIP — SKIPPED is reserved for an absent key — which raises its own P1 too. So one revoked
+or expired `RENDER_API_KEY` opens **three** alerts that read as unrelated, and a revoked
+`VERCEL_API_KEY` opens two.
+
+Before treating several open alerts as several problems, check whether they share a credential, an
+environment, or a workflow run. These two groups are the ones known today, not a complete list. The staggering has more than one reason — the full schedule and its rationale are
 [`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § Scheduled conformance, which owns that fact.
 
 **Read the conformance alert's clearing condition literally — an open issue does not always mean
