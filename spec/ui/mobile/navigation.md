@@ -153,9 +153,15 @@ which is what #1045 should have been.
 **`app.json` also gained `ios.privacyManifests`** (#2294, same PR as the removal above) —
 the iOS privacy manifest, without which App Store Connect returns an automated
 ITMS-91053/91061 on the first upload. It declares `NSPrivacyTracking: false`, an empty
-`NSPrivacyTrackingDomains`, and the two required-reason categories the bundled SDKs use
-without shipping manifests of their own (`UserDefaults`/`CA92.1` for the Stripe React
-Native wrapper and `expo-sharing`; `FileTimestamp`/`C617.1`). It is a **static** key by
+`NSPrivacyTrackingDomains`, and two required-reason categories. `UserDefaults`/`CA92.1`
+is the load-bearing one, and its basis is `@stripe/stripe-react-native` alone — it reads
+`UserDefaults.standard` and ships no manifest of its own. `expo-sharing` also uses
+`UserDefaults`, but through `UserDefaults(suiteName:)`, the app-group case, whose reason
+is `1C8F.1`; that path is unreachable while this app configures no app group, and a share
+extension would have to declare `1C8F.1` rather than assume this row covers it.
+`FileTimestamp`/`C617.1` stands for the app target's own container reads and is required
+by #2296's criteria — it is not what averts ITMS-91053, since react-native, cxxreact,
+`expo-application` and `async-storage` already declare that category themselves. It is a **static** key by
 necessity: `@expo/config-plugins`' `withPrivacyInfo` no-ops unless `ios.privacyManifests`
 is present, and the app commits no `ios/` directory, so prebuild is the only thing that
 writes the file. That makes it load-bearing that `app.config.js`'s `applyMobileConfig`

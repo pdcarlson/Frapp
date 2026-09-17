@@ -200,7 +200,7 @@ export function lockSelfProblems(source) {
     problems.push("APP_JSON must stay apps/mobile/app.json");
   }
   if (!/\[A-Za-z\]\+Permission/.test(source)) {
-    problems.push("must collect any *Permission string, not only the three known keys");
+    problems.push("must collect any *Permission string, not only the known keys");
   }
   if (!/\(\?:"\(\[A-Za-z\]\+Permission\)"\|/.test(source)) {
     problems.push("must collect unquoted JS *Permission keys");

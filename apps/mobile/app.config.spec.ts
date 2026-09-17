@@ -673,24 +673,15 @@ describe("iOS privacy manifest (#2294)", () => {
     // config, and getConfig offers no env injection point — so an inherited
     // EAS_BUILD_PROFILE (an `eas build --local` shell, or a prebuild hook that
     // runs this suite) would fail these tests with an unrelated Firebase
-    // message. Neutralize it; the production fences have their own tests above.
-    const saved = {
-      EAS_BUILD_PROFILE: process.env.EAS_BUILD_PROFILE,
-      EAS_BUILD_PLATFORM: process.env.EAS_BUILD_PLATFORM,
-    };
+    // message. Clear both; the root `afterEach` restores them, because
+    // `restoredEnvKeys` above already owns these two keys — deliberately not a
+    // second restore policy in this file.
     delete process.env.EAS_BUILD_PROFILE;
     delete process.env.EAS_BUILD_PLATFORM;
-    try {
-      return getConfig(path.dirname(fileURLToPath(import.meta.url)), {
-        skipSDKVersionRequirement: true,
-        isModdedConfig: true,
-      }).exp;
-    } finally {
-      for (const [key, value] of Object.entries(saved)) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-      }
-    }
+    return getConfig(path.dirname(fileURLToPath(import.meta.url)), {
+      skipSDKVersionRequirement: true,
+      isModdedConfig: true,
+    }).exp;
   }
 
   it("declares no tracking, so the manifest cannot contradict the nutrition label", () => {
@@ -702,9 +693,10 @@ describe("iOS privacy manifest (#2294)", () => {
     // Connect declares. It is not an ITMS-91053/91061 target (those validate
     // NSPrivacyAccessedAPITypes only) and nothing cross-checks it against the
     // label, so this is an accuracy gap rather than a rejection risk. Declaring
-    // the types belongs with #2304/#2305, which are actively rewriting the label
-    // those declarations would have to match — declaring them here first would
-    // create a second home for a fact in flux.
+    // the types belongs with #2305, which is actively rewriting the label those
+    // declarations would have to match — declaring them here first would create
+    // a second home for a fact in flux. (Not #2304: that one is the store
+    // listing description under Guideline 2.3 and touches no label answer.)
     const manifests = resolved().ios?.privacyManifests;
     expect(manifests).toBeDefined();
     expect(manifests?.NSPrivacyTracking).toBe(false);
@@ -786,13 +778,26 @@ describe("native permission declarations (#2296)", () => {
 
   /**
    * Options this app must never decline, because a screen requests the
-   * underlying permission at runtime. Declining is not inert: it compiles to
-   * `withBlockedPermissions`, which strips what another plugin contributed, so
-   * the permission can never be granted on Android — silently. That is how
-   * `expo-image-picker`'s `cameraPermission: false` broke QR check-in. Every
-   * other declined option below is safe precisely because no source file asks
-   * for it (no microphone, FaceID, motion or background-location use); add the
-   * option here in the same slice that introduces such a use.
+   * underlying permission at runtime. Declining is not inert, but be precise
+   * about what it costs, because it differs per plugin:
+   *
+   * - For all three plugins registered today, `false` reaches only
+   *   `IOSConfig.Permissions.createPermissionsPlugin`, which *deletes* the iOS
+   *   purpose-string key. iOS requires that string to be present when a screen
+   *   requests the permission, so the cost is a failed or crashing request and a
+   *   Guideline 5.1.1(i) problem — not an Android strip. `expo-camera` and
+   *   `expo-location` add their Android permissions via `withPermissions`
+   *   *unconditionally*, whatever these options say.
+   * - A plugin *can* also call `AndroidConfig.Permissions.withBlockedPermissions`
+   *   off such an option, which strips what another plugin contributed and can
+   *   never be granted on Android. That is what `expo-image-picker` did to
+   *   CAMERA, and it is why QR check-in was broken — but no plugin in `app.json`
+   *   behaves that way now. The resolved-permission test above is what covers
+   *   that route.
+   *
+   * Every other declined option below is safe precisely because no source file
+   * asks for it (no microphone, FaceID, motion or background-location use); add
+   * the option here in the same slice that introduces such a use.
    */
   const REQUESTED_AT_RUNTIME = [
     // app/(tabs)/check-in.tsx → useCameraPermissions()

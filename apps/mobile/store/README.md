@@ -181,9 +181,11 @@ First release.
 
 ## Privacy questionnaire answers
 
-Same facts as https://frapp.live/privacy, **except the struck row below** — the
-published policy still describes photo-library collection that #2296 removed and
-#2305 tracks correcting. The table below is **what was declared
+Same facts as https://frapp.live/privacy — including, for now, the struck row below,
+where the two still agree with each other and **both are wrong about the binary**: the
+published policy describes photo-library collection and this table records it as
+declared, while #2296 removed the capability entirely. #2305 owns correcting both
+halves. The table below is **what was declared
 in App Store Connect on 2026-09-14**, in Apple's own data-type names — the console
 offers a fixed list, so this is the paste, not a paraphrase. A struck row is an
 answer since withdrawn: the recorded values stay as entered, and the footnote says
@@ -217,6 +219,14 @@ Advertising Data, Browsing History, Search History.
 > collection the binary cannot perform, which is the label half of the same Guideline
 > 5.1.2 problem #2305 tracks in the privacy policy. Nothing in CI can see the console,
 > so this line is the only reminder.
+>
+> **Note for whoever implements #2305.** Its acceptance criterion 3 asks for this row to
+> be "removed, or set to not-collected". Deleting it would destroy the 2026-09-14
+> console paste this table exists to hold, so #2296 struck it and kept the entered
+> values instead — the row no longer *asserts* current collection, which satisfies that
+> criterion's intent. If #2305 wants the values gone as well, say so there and move them
+> into this footnote rather than dropping them; do not read this paragraph as a veto on
+> the criterion, and do not close #2305 with the criterion silently unmet.
 
 Where each answer comes from:
 
