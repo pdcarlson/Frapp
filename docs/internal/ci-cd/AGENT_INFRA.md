@@ -285,7 +285,8 @@ entry: React Native bundles a `react-native-renderer` that asserts exact version
 therefore accept a newer React silently, hoist it, and kill `apps/mobile` on first render with
 "Invalid hook call" — a failure **only booting the app on a device catches**, never CI. See
 [`AGENTS.md` § Gotchas](../../../AGENTS.md) and PR #842. These packages move as a version-locked set
-through a planned Expo SDK upgrade (#289), never as isolated bumps.
+through a planned Expo SDK upgrade (#2329), never as isolated bumps. (#289 was the SDK 54 → 57
+upgrade, closed `completed` by PR #927; #2329 is the open tracker for the next one.)
 
 **The membership rule**, since the list is not simply "everything RN-shaped": a package belongs in it
 if it is either (a) exact-version-locked to React (`react`, `react-dom`, `react-test-renderer`) or
@@ -294,6 +295,44 @@ if it is either (a) exact-version-locked to React (`react`, `react-dom`, `react-
 ranges stay updatable even when they look RN-adjacent — `@react-navigation/native` and
 `@gorhom/bottom-sheet` are deliberately **not** ignored, because a bad bump there fails
 `check-types` or a test rather than dying silently on a device.
+
+That `check-types` safety net is the reason JS-only libraries stay updatable, and it **does not
+cover a package that ships native code**: `@sentry/react-native` and `@stripe/stripe-react-native`
+both ship Swift and Kotlin, both appear in the SDK's own `bundledNativeModules.json`, and both are
+outside the ignore list — so a bad bump on either fails as a native compile with no CI signal, not
+as a type error. They are also deliberately held *ahead* of the versions the SDK specifies. Whether
+that exemption is right, and on what grounds, is #2336; it is an open question, not a decision this
+rule has made.
+
+**For the `expo-*` client packages, apply (b) mechanically, not as a judgement:** *every* `expo-*`
+entry in `apps/mobile/package.json` belongs in the list, whatever the package looks like from the
+JS side. An Expo client package's major version **is** its SDK line — the `58.x` release of any of
+them is built against `expo-modules-core@58` and freely calls native API that `expo-modules-core@57`
+does not have — so "is this really a native module?" is the wrong question to ask of one, and
+answering it per package is what let ten of them sit outside the list until PR __FIXPR__. Read the rule
+this way and the list is mechanically checkable against the manifest; read it as a per-package
+judgement and the gap reopens the next time a client package is added. Nothing checks it
+mechanically today — adding that gate is #2330.
+
+That gap cost a production build. Dependabot moved `expo-apple-authentication` (#2218) and
+`expo-localization` (#2217) to `58.0.0` as ordinary semver majors, and the first iOS production EAS
+build failed in the Xcode native compile with `type 'Utilities' has no member 'keyWindow'`:
+`expo-apple-authentication@58.0.0`'s `ios/AppleAuthenticationRequest.swift` calls
+`Utilities.keyWindow()`, and `expo-modules-core@57.0.11` declares `Utilities` with only
+`urlFrom(string:)` and `currentViewController()` — in the 57 line that window lookup lives on a
+different type, `SceneGeometry.keyWindow(for:)`. **Nothing in CI catches this class of break:** the
+`expo prebuild` job runs with `--no-install`, which generates the native project without compiling
+it, so no Swift is built anywhere in CI and the failure first appears at `eas build -p ios`. The
+list is the only gate.
+
+Pinning back to the SDK line is the supported configuration, not a workaround — `~57.0.x` is what
+Expo ships for SDK 57 — but it is **not free, and the PR that did it did not verify the runtime
+path.** `58.0.0` also carried two iOS fixes on the Sign in with Apple path that the 57 line does not
+have: an uncatchable `fatalError` when no key window is found (replaced upstream by a catchable
+exception), and a missing `.runOnQueue(.main)` on `requestAsync`, which leaves
+`ASAuthorizationController.performRequests()` on `expo-modules-core`'s background async queue. Both
+are tracked in #2334, and both arrive for free with #2329. Do not read the pin as evidence that
+native SIWA was exercised — the mobile unit suite mocks the module and never loads it.
 
 Two traps for whoever edits that list next:
 
@@ -306,6 +345,15 @@ Two traps for whoever edits that list next:
   isolated security bump in that set breaks the runtime — but it is a real gap, so it is written down
   rather than left implicit. `check:npm-audit` still fails CI on such an advisory, so it surfaces
   loudly; carrying the fix means doing an SDK-aligned upgrade, not a one-package bump.
+
+  **That gap got wider when the Expo client list was completed to all 21 packages.** It now also
+  covers `expo-camera`, `expo-image-picker`, `expo-document-picker`, `expo-location` and
+  `expo-notifications` — the media, file, location and push surfaces, which had been receiving
+  automatic patch and security PRs while they sat outside the list. None of the entries carry
+  `update-types`, so in-SDK `57.0.x` patches are frozen alongside the SDK-line majors that actually
+  caused the break; scoping them to `version-update:semver-major` (the shape `eslint` already uses
+  in the same file) would block the break and let patches flow. Whether to do that is #2331 — an
+  open question, not a decision this section has made.
 
 `@types/react` is deliberately **not** ignored: it is types-only, carries no runtime equality
 assertion, and a bad bump fails `npm run check-types` in CI — which is precisely the safety net that
