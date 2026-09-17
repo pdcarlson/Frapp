@@ -679,3 +679,55 @@ describe("iOS privacy manifest (#2294)", () => {
   });
 });
 
+describe("native permission declarations (#2296)", () => {
+  function pluginEntries(): [string, Record<string, unknown>][] {
+    const appJson = requireConfig("./app.json") as {
+      expo: { plugins: (string | [string, Record<string, unknown>?])[] };
+    };
+    return appJson.expo.plugins
+      .map((p) => (Array.isArray(p) ? p : [p, {}]))
+      .map(([name, opts]) => [name, opts ?? {}] as [string, Record<string, unknown>]);
+  }
+
+  it("lets no plugin decline the camera permission the QR scanner requests", () => {
+    // `app/(tabs)/check-in.tsx` calls `useCameraPermissions()`. A plugin option
+    // of `cameraPermission: false` compiles to
+    // `withBlockedPermissions(['android.permission.CAMERA'])`, which *removes*
+    // what expo-camera added and writes `tools:node="remove"` into the manifest.
+    // The result is a build where check-in can never be granted the camera.
+    const decliners = pluginEntries()
+      .filter(([, opts]) => opts.cameraPermission === false)
+      .map(([name]) => name);
+    expect(decliners).toEqual([]);
+  });
+
+  it("ships iOS usage-description strings only for features that exist", () => {
+    // Each `*Permission`/`*UsageDescription` option with a *string* value becomes
+    // a purpose string in the binary. A string for an unbuilt feature is a
+    // Guideline 5.1.1(i)/2.1 rejection, so the set is pinned exactly rather than
+    // merely checked for absences.
+    const declared = pluginEntries()
+      .flatMap(([name, opts]) =>
+        Object.entries(opts)
+          .filter(([key, value]) => /Permission$/.test(key) && typeof value === "string")
+          .map(([key]) => `${name}:${key}`),
+      )
+      .sort();
+    expect(declared).toEqual([
+      "expo-camera:cameraPermission",
+      "expo-location:locationWhenInUsePermission",
+    ]);
+  });
+
+  it("does not depend on the media pickers no source file imports", () => {
+    const pkg = requireConfig("./package.json") as {
+      dependencies: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const all = { ...pkg.dependencies, ...(pkg.devDependencies ?? {}) };
+    // Re-add these in the slice that actually builds a picker surface (#1045
+    // added them ahead of one); expo-image-picker also strips CAMERA above.
+    expect(all["expo-image-picker"]).toBeUndefined();
+    expect(all["expo-document-picker"]).toBeUndefined();
+  });
+});

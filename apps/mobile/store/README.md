@@ -191,7 +191,7 @@ offers a fixed list, so this is the paste, not a paraphrase.
 | Contact Info → Email Address | App Functionality | Yes | No |
 | Contact Info → Phone Number | App Functionality | Yes | No |
 | Location → Precise Location | App Functionality | Yes | No |
-| User Content → Photos or Videos | App Functionality | Yes | No |
+| ~~User Content → Photos or Videos~~ † | — | — | — |
 | User Content → Other User Content | App Functionality | Yes | No |
 | Identifiers → User ID | App Functionality, **Analytics** | Yes | No |
 | Identifiers → Device ID | App Functionality | Yes | No |
@@ -202,6 +202,16 @@ offers a fixed list, so this is the paste, not a paraphrase.
 Declared **not** collected: all Financial Info (including Payment Info),
 Purchases, Sensitive Info, Contacts, Health & Fitness, Emails or Text Messages,
 Advertising Data, Browsing History, Search History.
+
+> † **Withdrawn — still to be corrected in the console (owner action, #2196 §4).**
+> This row is struck rather than deleted because this table is the record of what was
+> *actually entered* on 2026-09-14, and it was entered. The app cannot access the photo
+> library and never could: the declaration rode on `expo-image-picker`, which no source
+> file ever imported, and #2296 removed the package and its purpose string outright.
+> Until someone clears this answer in App Store Connect the console still claims a
+> collection the binary cannot perform, which is the label half of the same Guideline
+> 5.1.2 problem #2305 tracks in the privacy policy. Nothing in CI can see the console,
+> so this line is the only reminder.
 
 Where each answer comes from:
 

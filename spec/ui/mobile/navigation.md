@@ -130,3 +130,17 @@ camera capture is not used); `expo-document-picker`'s plugin only touches iCloud
 entitlements behind `ios.usesIcloudStorage`, which this app does not set, so it needs no
 `plugins` entry. Same integrator carve-out as the rest of this section — the three
 surfaces themselves are still unbuilt and land as their own slices.
+
+**Both were removed again** (#2296) — the three surfaces were still unbuilt a month
+later, and the declarations were not merely premature but actively harmful. The
+`photosPermission` string shipped in the binary as a purpose string for a feature that
+does not exist (Guideline 5.1.1(i)), and the `cameraPermission: false` above compiled
+to `withBlockedPermissions(['android.permission.CAMERA'])`, which *removed* the
+permission `expo-camera` contributes and wrote `tools:node="remove"` into the manifest —
+silently breaking QR check-in (`app/(tabs)/check-in.tsx`) on every Android build. The
+declining-a-permission half is the reusable lesson: a plugin option that declines a
+permission is not inert, it overrides other plugins, so it can only be set for a
+permission nothing in the app requests. `app.config.spec.ts` now pins both halves, so
+re-adding a picker cannot reintroduce either defect silently. Re-add the dependency and
+its plugin entry in the slice that actually builds a picker surface — which is what
+#1045 should have been.
