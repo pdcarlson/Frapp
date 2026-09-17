@@ -164,6 +164,14 @@ export default function JoinChapter() {
   // it navigates. Without it every control re-enables for those round trips —
   // the exact window where a delete would strand the membership the redeem
   // just created.
+  //
+  // This cannot strand the screen, and the reason is worth keeping: a
+  // successful redeem always reaches `router.replace`, because everything
+  // between the two is total. `selectChapter` catches its own failures and
+  // returns a boolean rather than throwing (`lib/select-chapter.ts`), and
+  // `consumeRememberedInviteToken` / `redeemChapterId` are pure. If any of
+  // those grows a throw path, the catch would leave `isSuccess` true on a
+  // mounted screen and lock every control — including this one.
   const submitting =
     redeemInvite.isPending || redeemInvite.isSuccess || deleting;
   // The primary button's spinner stays tied to redemption alone. `submitting`
