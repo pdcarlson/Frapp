@@ -1,4 +1,6 @@
 import { createRequire } from "node:module";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   PRODUCTION_API_ORIGIN as SHARED_PRODUCTION_API_ORIGIN,
   PRODUCTION_APP_ORIGIN as SHARED_PRODUCTION_APP_ORIGIN,
@@ -618,3 +620,62 @@ describe("PRODUCTION_APP_ORIGIN", () => {
     expect(PRODUCTION_APP_ORIGIN).toBe(SHARED_PRODUCTION_APP_ORIGIN);
   });
 });
+
+/**
+ * App Store compliance: the iOS privacy manifest (#2294) and the native
+ * permission regression guard (#2296).
+ *
+ * `getConfig` is the real resolution path — it loads `app.json`, hands it to
+ * `app.config.js`, and evaluates the `plugins` list. That is the right assertion
+ * for `ios.privacyManifests`, which is a *static* key the dynamic layer must not
+ * drop: `applyMobileConfig` spreads `config` and overrides only `extra` and
+ * `android`, and this pins that it keeps doing so.
+ *
+ * It is deliberately NOT used for `android.permissions`. CAMERA is contributed by
+ * `expo-camera`'s plugin and can be taken away again by any plugin calling
+ * `withBlockedPermissions`; both land in the Gradle/Xcode mods that only
+ * `expo prebuild` (or `expo config --type introspect`) runs, so `getConfig`
+ * reports a partial list. Rather than shell out to the CLI — slow, and it needs
+ * the whole native toolchain in CI — the Android half is guarded at its *cause*:
+ * no plugin entry may decline a permission this app requests at runtime. That is
+ * the exact mechanism by which `expo-image-picker`'s `cameraPermission: false`
+ * silently broke QR check-in on every Android build, and it is hermetic.
+ */
+describe("iOS privacy manifest (#2294)", () => {
+  function resolvedIos() {
+    const { getConfig } = requireConfig("expo/config") as {
+      getConfig: (
+        dir: string,
+        opts?: { skipSDKVersionRequirement?: boolean; isModdedConfig?: boolean },
+      ) => { exp: { ios?: { privacyManifests?: Record<string, unknown> } } };
+    };
+    return getConfig(path.dirname(fileURLToPath(import.meta.url)), {
+      skipSDKVersionRequirement: true,
+      isModdedConfig: true,
+    }).exp.ios;
+  }
+
+  it("declares no tracking, so the manifest cannot contradict the nutrition label", () => {
+    const manifests = resolvedIos()?.privacyManifests;
+    expect(manifests).toBeDefined();
+    expect(manifests?.NSPrivacyTracking).toBe(false);
+    expect(manifests?.NSPrivacyTrackingDomains).toEqual([]);
+  });
+
+  it("declares a required reason for every bundled SDK that touches one", () => {
+    const types = resolvedIos()?.privacyManifests?.NSPrivacyAccessedAPITypes as
+      | { NSPrivacyAccessedAPIType: string; NSPrivacyAccessedAPITypeReasons: string[] }[]
+      | undefined;
+
+    // UserDefaults: @stripe/stripe-react-native (StripeSdkImpl.swift) and
+    // expo-sharing (SharingModule.swift), neither of which ships a manifest of
+    // its own. FileTimestamp: the app container's own file reads.
+    // Absent these two, App Store Connect returns ITMS-91053 on upload.
+    const byCategory = new Map(
+      (types ?? []).map((t) => [t.NSPrivacyAccessedAPIType, t.NSPrivacyAccessedAPITypeReasons]),
+    );
+    expect(byCategory.get("NSPrivacyAccessedAPICategoryUserDefaults")).toEqual(["CA92.1"]);
+    expect(byCategory.get("NSPrivacyAccessedAPICategoryFileTimestamp")).toEqual(["C617.1"]);
+  });
+});
+
