@@ -110,7 +110,10 @@ it once its own preset reads bare `var(--token)` throughout. The web shell made 
 
 **The web preset is fully migrated: one format, no pairing rule.** Every colour token in both
 stylesheets is stored as a **complete colour** (`hsl(30 45% 32%)`, `#C49A3A`,
-`rgba(255,255,255,.08)`) and read through `colorVar()` as a bare `var(--token)`. There is no second
+`rgba(255,255,255,.08)`, and `color-mix(...)` for the two derived button states `--primary-pressed`
+and `--accent-subtle-hover`) and read through `colorVar()` as a bare `var(--token)`.
+A `color-mix()` resolves to no fill at all below its browser support floor, so it is reserved for
+hover/pressed states that stay legible without it — never a rest state. There is no second
 convention left to pair against, which is the precondition the shell cutover then built on. Both
 web surfaces now import `packages/theme/src/signet.css` — `apps/web` since the #920 shell slice,
 `apps/landing` since its token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) —

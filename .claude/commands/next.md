@@ -453,9 +453,13 @@ a run finish instead of stopping to ask. Its sub-agents inherit the session mode
 
 **The *Flagged for review* block is a record, not an ask.** Anything on it that needs Paul to *act
 or decide* — a dashboard toggle, a credential, an unmet acceptance criterion you are shipping
-around — also goes in your **end-of-run report as an explicit question**, per
-[`.claude/skills/file-follow-up/SKILL.md`](../skills/file-follow-up/SKILL.md). A PR section is read after merge if at all;
-the report is the only thing guaranteed to be read. File the issue *and* ask. And if Paul is
+around — also goes to him as an explicit question, per
+[`.claude/skills/file-follow-up/SKILL.md`](../skills/file-follow-up/SKILL.md): `AskUserQuestion`
+when it is a decision and you are not holding sibling claims, your **end-of-run report** otherwise
+— for an action, or for any run where blocking on a prompt would stall it. The *Flagged for
+review* block still gets written — routine 3 harvests those sections into the Human Action List,
+so it is read on a schedule — but it is a record, and a record is not an ask. File the issue
+*and* ask. And if Paul is
 present and the action is small, just ask on the spot — a 15-second toggle is not worth a
 follow-up issue's lifecycle.
 

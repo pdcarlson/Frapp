@@ -9,7 +9,7 @@
 - **Why it was abandoned rather than tuned:** even reconfigured to Opus-once-on-open, it carried disproportionate machinery for a solo repo, and per-push review drained both metered Actions minutes and subscription quota. The measured driver was the imminent **Max-5× → Pro downgrade, ~80% less quota** — a plan change, so do not read "drained quota" as a property of the plan in force today.
 - **Evidence that anyone rebuilding this will need, and that exists nowhere else in the tree.** The gate deliberately did **not** key on the action's exit code, because of two upstream defects: **`claude-code-action#1299`**, a permanent-red-required-check failure mode, and **`#846`**, spurious non-zero exits. The workaround was a `--json-schema` `structured_output`, with a `<!-- claude-review-verdict: important=N sha=<head_sha> -->` marker as **fallback**, and a separate gate job failing only on `important > 0`. That gate **always reported a conclusion** (so a required check never hung "pending") and passed for bot/draft/fork/no-token/skipped runs — and it is that always-reporting property, not anything upstream, that avoided both defects. Drop it when rebuilding and the required check hangs on any run where the action dies before emitting a verdict; the `sha=` was added by **#599** so a prior commit's verdict could not mask a failed run. A second trap: an `issue_comment`-triggered run's implicit check-run attaches to the **default-branch head**, not the PR head, so the gate had to post an explicit commit status to the resolved PR head SHA. And the purpose-built **`claude-code-security-review`** action was rejected as **API-key-only** — it cannot authenticate with the subscription OAuth token this repo holds, which is why the general `claude-code-action` carried a custom prompt instead.
 
-The live rules are the 2026-08-01 amendment (local [`/diff-review`](../../../.claude/skills/diff-review/SKILL.md) gate), the 2026-09-16 amendment (that gate is enforced by [`.githooks/pre-push`](../../../.githooks/pre-push), provider-neutral), and the 2026-09-18 amendment (CodeRabbit retirement **decided**; an advisory BYOK `codex review` CI job decided but **not yet implemented**). The 2026-09-08 amendment (CodeRabbit comment-only) is **still in force**: the App remains installed and commenting, and its [`.coderabbit.yaml`](../../../.coderabbit.yaml) pin is the only thing keeping a write-access `CHANGES_REQUESTED` from blocking squash. Do not delete that file until the App is uninstalled. Runbook: `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`.
+The live rules are the 2026-08-01 amendment (local [`/diff-review`](../../../.claude/skills/diff-review/SKILL.md) gate), the 2026-09-16 amendment (that gate is enforced by [`.githooks/pre-push`](../../../.githooks/pre-push), provider-neutral), the 2026-09-18 decision amendment (CodeRabbit retirement **decided**), and the 2026-09-18 implementation amendment (the advisory BYOK `codex review` CI job is **built**, and CodeRabbit's retirement is now **executed**). The 2026-09-08 amendment (CodeRabbit comment-only) is **spent**: the App was uninstalled by the owner on 2026-09-18 and `.coderabbit.yaml` was deleted with it, so there is no CodeRabbit pin to maintain and no CodeRabbit review to keep out of the merge ruleset. The constraint it discovered outlives the vendor and is the part to carry forward: **any** automated reviewer must post plain comments and never a GitHub review event. Runbook: `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`.
 
 - **Amendment (2026-06-04) — the CI Claude review is removed entirely; review moves to a local pre-push gate.** The GitHub Actions reviewer (`.github/workflows/claude-review.yml`), the `claude-review-gate` required check (and its `claude-review-gate-runner` job + `evaluate-review-gate.mjs` decision logic and tests), the `.github/claude-review/` rubric + learnings, and the `CLAUDE_CODE_OAUTH_TOKEN` dependency are **all deleted**. Even reconfigured to Opus-once-on-open, the CI reviewer was not working as designed and carried disproportionate machinery (gate status plumbing across two event shapes, the override label, fork/draft/no-token special-casing, branch-protection coupling). **Replacement:** a local Claude Code **PreToolUse hook** (`.claude/hooks/pre-push-review-gate.sh`, wired in `.claude/settings.json`) gates `git push` — the first push of each branch HEAD is blocked with guidance to run the built-in **`/code-review`** skill in-session on the diff; a HEAD-keyed, session-scoped sentinel makes it deny-once-then-allow (no loop), and a new HEAD (after committing fixes) re-gates so the review always covers what is pushed. This is now the **single** pre-PR review gate (the `/next` flow no longer runs `/code-review` as a separate step — the push hook drives it once). Review sub-agents inherit the session model (Opus): the `CLAUDE_CODE_SUBAGENT_MODEL` Sonnet pin is also removed from `.claude/settings.json`. **Trade-offs:** review now happens on the author's machine before the PR exists (no server-side enforcement on merge, and no inline GitHub review comments) — acceptable for a solo project where every PR is authored by an agent that runs the gate; and a PreToolUse hook can only *instruct* Claude to run `/code-review` (it cannot invoke a skill), so the gate reliably interrupts the first push per HEAD rather than hard-blocking. `claude-review-gate` is removed from `scripts/configure-branch-protection.mjs` and de-required via `npm run configure:branch-protection`. Runbook updated: `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`.
 
@@ -17,7 +17,7 @@ The live rules are the 2026-08-01 amendment (local [`/diff-review`](../../../.cl
 
 - **Amendment (2026-08-01) — `/code-review` is *conditionally* model-invocable; the 2026-07-30 premise was wrong.** Measured against Claude Code **2.1.220** (`AI_AGENT=claude-code_2-1-220_agent`). `disableModelInvocation` is real, but the runtime check is `disableModelInvocation && !userTypedThisTurn`, and `userTypedThisTurn` is **not** a keystroke flag: it scans the current turn for a message that is `type: "user"`, not `isMeta`, and matches the bare token `/code-review`. So an agent **can** call `Skill(skill: "code-review")` when the turn's prompt carries that token **whitespace-delimited on both sides**. ⚠️ **Precision fix (2026-08-02):** this amendment originally said "whenever the turn's prompt mentions it in prose", which overstates reachability. The regex is `(?<!\S)/code-review(?=$|\s)`, so backticks, surrounding quotes, `**bold**`, and a trailing `.` or `,` all **defeat** it — and backticking commands is this repo's own house style. Re-measured against the running 2.1.220 build: a session referencing `/code-review` eight times, every occurrence backticked, was still refused with `disable-model-invocation`. The conclusion below is unchanged and in fact strengthened — `/code-review` is reachable *less* often than the 2026-08-01 text implied, so `/diff-review` carries more of the load, not less. It **cannot** when the token is absent or only present in a rejected form, inside a sub-agent, from a slash-command expansion (skipped via `<command-message>` — so **never under `/next`**), or from a hook (all hook `additionalContext`, on every event, renders `isMeta: true`, so a hook can neither invoke a skill nor enable one). **Evidence:** both directions executed in one session — token present → a full forked review ran; token absent → `Skill code-review cannot be used with Skill tool due to disable-model-invocation`. The scan rule, the `isMeta` renderer and the check ordering were read out of the 2.1.220 bundle, not merely inferred from those two observations. **Consequence:** `/diff-review` is retained, but as *the always-reachable review* rather than *the only one* — `/code-review` is now preferred wherever it is reachable. Its remaining unique value is the Frapp-specific angle set; its generic half duplicates a harness that is tuned per model upstream (tracked separately for a measure-then-cut decision). `skillOverrides` remains a verified no-op: `disableModelInvocation` returns before that branch is reached. Version-pinning is not an escape either — the command did not exist in 2.1.42 (whose `pluginCommand: "code-review"` registers `/review`), and 2.1.220 was the latest published release at the time of writing.
 
-- **Amendment (2026-09-08) — CodeRabbit is live again on the public repo; it must not block squash.** ADR-13's 2026-09-05 correction already noted that the private-repo reason for dropping CodeRabbit had lapsed. CodeRabbit's GitHub App is installed and Organization UI is ASSERTIVE with request-changes on, so a finding is a real `CHANGES_REQUESTED` review. A write-access reviewer in that state trips the merge ruleset (`1 review requesting changes by reviewers with write access`) even when required checks are green — measured on [#1875](https://github.com/pdcarlson/Frapp/pull/1875). Agents cannot dismiss that review (`GITHUB_PAT` 401; GitHub MCP has no dismiss tool; the PR author cannot approve their own PR). **Repo pin:** [`.coderabbit.yaml`](../../../.coderabbit.yaml) sets `reviews.request_changes_workflow: false` (comment-only, never `CHANGES_REQUESTED` / `APPROVED`) and `reviews.auto_review.drafts: false` so drafts do not consume the OSS 1-review/hour slot. The local `/diff-review` gate is still the merge-quality gate; CodeRabbit is advisory comments only. This does not reintroduce a required CI review check. ⚠️ **Retirement decided 2026-09-18, not yet executed.** CodeRabbit is retired by owner decision (2026-09-18 amendment), but **this amendment is still in force until that decision is executed**: the App is installed and still commenting, so the `.coderabbit.yaml` pin is still the only thing preventing a squash-blocking `CHANGES_REQUESTED`. **Uninstall the App first, then delete the config** — deleting it while the App is installed drops CodeRabbit to its unconfigured defaults, which is exactly the review-event behaviour this pin exists to prevent. The *constraint* discovered here outlives the vendor either way: **any** automated reviewer must post plain comments and never a review event.
+- **Amendment (2026-09-08) — CodeRabbit is live again on the public repo; it must not block squash.** ADR-13's 2026-09-05 correction already noted that the private-repo reason for dropping CodeRabbit had lapsed. CodeRabbit's GitHub App is installed and Organization UI is ASSERTIVE with request-changes on, so a finding is a real `CHANGES_REQUESTED` review. A write-access reviewer in that state trips the merge ruleset (`1 review requesting changes by reviewers with write access`) even when required checks are green — measured on [#1875](https://github.com/pdcarlson/Frapp/pull/1875). Agents cannot dismiss that review (`GITHUB_PAT` 401; GitHub MCP has no dismiss tool; the PR author cannot approve their own PR). **Repo pin:** `.coderabbit.yaml` (deleted 2026-09-18, so this is a historical reference, not a link) set `reviews.request_changes_workflow: false` (comment-only, never `CHANGES_REQUESTED` / `APPROVED`) and `reviews.auto_review.drafts: false` so drafts do not consume the OSS 1-review/hour slot. The local `/diff-review` gate is still the merge-quality gate; CodeRabbit is advisory comments only. This does not reintroduce a required CI review check. ✅ **Executed 2026-09-18.** The owner uninstalled the CodeRabbit App and `.coderabbit.yaml` was deleted in the same change, in that order — the order mattered, because deleting the config while the App was installed would have dropped CodeRabbit to its unconfigured defaults, where `request_changes_workflow` is ON, reproducing the very squash block this pin existed to prevent. **This amendment is now spent**: there is no CodeRabbit App, no config, and nothing here to maintain. The *constraint* discovered here outlives the vendor either way: **any** automated reviewer must post plain comments and never a review event.
 
 **Trigger to revisit:**
 
@@ -38,7 +38,7 @@ history. The new gate is provider-neutral for Codex, Claude, Cursor, and humans 
 not server-side or unconditional: Git's `--no-verify`, a changed `core.hooksPath`, or skipped
 installation can bypass it. A nonzero hook result otherwise aborts the push.
 
-## Amendment — 2026-09-18: CodeRabbit retirement decided; advisory CI review to return as a BYOK `codex review` CLI job
+## Amendment — 2026-09-18 (decision): CodeRabbit retirement decided; advisory CI review to return as a BYOK `codex review` CLI job
 
 **Decision.** CodeRabbit is retired by owner decision. Its intended replacement is an **advisory,
 comment-only CI reviewer built on the Codex CLI's first-class `codex review` subcommand**, run with
@@ -48,10 +48,11 @@ post a GitHub review event. The merge-quality gate remains the local
 [`.githooks/pre-push`](../../../.githooks/pre-push) + [`/diff-review`](../../../.claude/skills/diff-review/SKILL.md)
 path from the 2026-08-01 and 2026-09-16 amendments.
 
-**Nothing here is in force.** No workflow exists; the CodeRabbit App is still installed and still
-posting; `.coderabbit.yaml` is still the live pin that keeps it from blocking squash. This amendment
-records a decision and the evidence for it. Both the workflow and the CodeRabbit uninstall are
-separate changes.
+**Both halves of this decision are now executed** (2026-09-18, same day): the workflow exists —
+see the implementation amendment below — and the CodeRabbit App has been uninstalled with
+`.coderabbit.yaml` deleted. What follows in this amendment is the decision and the evidence for it,
+kept as the record of why; read the implementation amendment for what the reviewer actually does, and
+note that several factual claims here were corrected there by execution.
 
 ### Which revisit trigger this fires: none, and that is deliberate
 
@@ -254,10 +255,12 @@ only debt list, and the implementation issue is where these belong when that wor
   [#1540](https://github.com/pdcarlson/Frapp/issues/1540)** and must not be re-filed.
 - [`AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md)'s workflow roster will need a row,
   and [`AI_CODE_REVIEW_RUNBOOK.md`](../../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md) an
-  advisory-CI-review section, **when the workflow lands**. Neither is stale today: both describe the
-  live pre-push gate accurately, and the runbook's 2026-09-08 CodeRabbit paragraph is still true —
-  the App is installed and still commenting. A *decision* to retire CodeRabbit is not a state change;
-  those docs go stale when the App is uninstalled, not when this amendment is written.
+  advisory-CI-review section, **when the workflow lands**. Neither was stale when this was written:
+  both described the live pre-push gate accurately, and the runbook's 2026-09-08 CodeRabbit paragraph
+  was still true then. A *decision* to retire CodeRabbit was not a state change; those docs went stale
+  when the App was uninstalled, not when this amendment was written. **Both were done 2026-09-18** —
+  the workflow landed and the App was uninstalled the same day, so the row, the section and the
+  CodeRabbit paragraph are all current as of the implementation amendment.
 
 ### Alternative not priced: paying for the native Codex reviewer
 
@@ -284,3 +287,241 @@ predates CodeRabbit's retirement.
   amendment does not relax.
 - `/code-review` becomes unconditionally agent-invocable → retire `/diff-review` per the original
   trigger 2, unchanged.
+
+## Amendment — 2026-09-18 (implementation): the reviewer is built, and the output contract is settled
+
+The 2026-09-18 decision amendment above is now implemented:
+[`.github/workflows/codex-review.yml`](../../../.github/workflows/codex-review.yml) installs
+`@openai/codex@0.155.0` and calls `codex review`;
+[`scripts/ci/codex-review.mjs`](../../../scripts/ci/codex-review.mjs) posts the result through the
+tested `upsertWakeComment` and raises a `routine-state` alert when the reviewer does not work.
+It is advisory: absent from [`required-checks.mjs`](../../../scripts/ci/lib/required-checks.mjs),
+plain issue comments only, and green even when the reviewer fails.
+
+**CodeRabbit is retired, executed 2026-09-18.** The owner uninstalled the App and `.coderabbit.yaml`
+was deleted in this change, in that order. The interlock was real up to that point and is worth keeping
+as a record rather than a rule: deleting the config while the App was installed would have dropped
+CodeRabbit to unconfigured defaults, where `request_changes_workflow` is ON, posting a write-access
+`CHANGES_REQUESTED` that blocks squash on green checks and that no agent can clear (`GITHUB_PAT` 401,
+no MCP dismiss tool, an author cannot self-approve). Measured on
+[#1875](https://github.com/pdcarlson/Frapp/pull/1875).
+
+An earlier revision of this amendment recorded the App as still installed, citing a
+`coderabbitai[bot]` walkthrough on [#2395](https://github.com/pdcarlson/Frapp/pull/2395) at
+2026-09-18T18:30:00Z. That observation was real but **pre-dated the uninstall** by a few hours, which
+is the trap worth naming: a bot comment is evidence of the installation state *at the time it was
+posted*, and on an OSS tier rate-limited to one review an hour, the absence of newer comments is not
+evidence either way. Neither direction can be inferred from comment history — only the installations
+page settles it, and only the owner can read it.
+
+### The sandbox egress block was not the obstacle it looked like
+
+Every earlier session recorded the output contract as unknowable because `openrouter.ai` and
+`api.openai.com` are egress-blocked. **`127.0.0.1` is not.** A ~30-line Node stub speaking the
+Responses API (SSE: `response.created` → `output_text.delta` → `response.completed`) was enough to
+drive `codex review` end to end, offline, and every claim in this section was **executed** against
+it on CLI 0.155.0. This is the technique to reuse for any future Codex-CLI question; it does not need
+a key, a vendor, or egress.
+
+**BYOK is real, and nothing forces OpenAI auth.** A custom provider id, a custom `base_url` over
+plain HTTP, a custom `env_key` and a non-OpenAI model slug produced a complete review turn at
+exit 0, with the CLI reporting `provider: orx`. That was the open question and the answer is yes.
+
+### `codex review` renders the JSON itself — post its stdout, do not parse JSON
+
+Both contracts are in the binary, and the decision amendment could not say which one `review`
+drives. It drives **the strict-JSON one, and then renders it for you**:
+
+- The schema is sent in the **system prompt**, and the request's `text.format` is **null** — so the
+  contract is **prompt-enforced, never API-enforced**. No `response_format`, no `json_schema`.
+- The CLI parses the model's JSON and writes **Markdown to stdout**: `overall_explanation`, then
+  `Review comment:` (one finding) or `Full review comments:` (two or more), then one
+  `- [P<n>] <title> — <absolute_file_path>:<start>-<end>` bullet per finding with the body indented
+  beneath. The section header's wording differs between the singular and plural cases, so
+  `codex-review.mjs` keys on the **bullet**, not the header.
+- **stdout is the payload; the banner, warnings and turn transcript go to stderr.** So
+  `codex review 2>/dev/null` is the review, and the "two competing output contracts" problem
+  dissolves: neither "post stdout verbatim" nor "parse the JSON" was the right design.
+- The `No findings.` Markdown contract in the binary is **not** what `review` emits. A clean review
+  renders `overall_explanation` alone.
+
+**The `@`-mention defect is confirmed, not theoretical.** A finding body containing `@octocat` and
+`owner/repo#42` came through the renderer completely untouched, so posting stdout unmodified really
+would reach GitHub's notification machinery through the repo's bot. `sanitizeMentions` breaks `@name`,
+`#123` and `GH-123` with an empty HTML comment, and deliberately leaves fenced blocks and inline code
+spans byte-identical so `suggestion` blocks stay copy-pasteable.
+
+### Why liveness needed more than "non-empty output"
+
+The decision amendment asked for an exit-code check and a non-empty-output assertion. Executed
+behaviour shows those are **necessary but not sufficient**:
+
+| Case | stdout | exit |
+|---|---|---|
+| Valid JSON, findings | rendered bullets | 0 |
+| Valid JSON, no findings | the model's `overall_explanation`, alone — arbitrary prose, NOT a fixed string | 0 |
+| **Model ignores the schema** | **its raw prose, verbatim** | **0** |
+| Provider env key missing | `ERROR: Missing environment variable` (stderr) | **1** |
+| Reserved built-in provider id, or unknown key under `--strict-config` | config error (stderr) | **1** |
+| Bad CLI argument (e.g. a PR title starting with `-`) | clap arg error (stderr) | 2 |
+| Unreachable `base_url` | **hangs — it retries rather than failing** | — |
+
+Row 2 and row 3 are **byte-indistinguishable**: both are short prose at exit 0. So a clean review and
+a model that ignored the contract cannot be told apart from stdout, and no amount of output-shape
+checking fixes it. `codex-review.mjs` recovers the **raw pre-render model message** from the session
+rollout (`CODEX_HOME/sessions/**/rollout-*.jsonl`, the `event_msg` whose `payload.type` is
+`agent_message`) and validates it against the schema. That path is Codex-internal, so an unreadable
+rollout yields a tri-state `null` — "no claim" — which is reported as `clean-unverified` and
+**does not** raise an alert. Failing to read a rollout must never manufacture a failure, and rendered
+findings are never downgraded by it.
+
+The hanging row is why the CLI call is wrapped in `timeout 900`; `124` classifies as a failure.
+
+**Correction, same day: the missing-key exit code is 1, not 101.** An earlier revision of this
+amendment recorded 101, in five places. That number was an artifact of the probe rather than the CLI —
+the command was piped into `head`, which closed stdout and aborted the process. Re-measured directly
+with the key unset, the key empty, and with and without `--strict-config`: it is **1** every time.
+The consequence is design-relevant, not cosmetic: **a missing credential and a config error are the
+same exit code**, so neither the alert nor the runbook can route an operator by code alone.
+`scripts/ci/codex-review.mjs` therefore classifies stderr (`Missing environment variable` vs
+`Error loading config.toml`) and emits a distinct `missing-credential` / `config-error` verdict. This
+is exactly the provenance trap the rest of this section is written to avoid, caught by review on the
+implementing branch.
+
+### Corrections to the decision amendment
+
+- **The model slug was wrong.** `muse-spark-1.3` is not an OpenRouter id — the vendor prefix is part
+  of it: **`meta/muse-spark-1.3`**. This is precisely the "a wrong slug fails the workflow silently"
+  risk the decision named. Still not vendor-verified (`openrouter.ai` remains egress-blocked); it
+  comes from a search index, as do the sibling `meta/muse-spark-1.3-contributor` and the 1.1/1.2
+  versions.
+- **`--model` is rejected too, not just `--profile`.** `codex review --model foo` →
+  `error: unexpected argument '--model' found`. The model is selected with `-c model=…`, the provider
+  with `-c model_provider=…`. There is no `-C`/`--cd` either: `review` works on the cwd.
+- **`wire_api = "chat"` was removed in 0.155.0** — `` `wire_api = "chat"` is no longer supported ``,
+  with the fix named as `responses`. So BYOK here **hard-requires** the Responses API. OpenRouter
+  exposes `POST /v1/responses` at `https://openrouter.ai/api/v1` but documents it as **beta** (search
+  index, not the vendor). **There is no wire-protocol fallback** if that endpoint misbehaves — this is
+  now the single largest remaining risk, and it is the thing the smoke test is really testing.
+- **`CODEX_HOME` is not created on demand.** A non-existent path fails with
+  `Error finding codex home`, so the workflow `mkdir -p`s it.
+- **`project_doc_fallback_filenames` is the key** that closes the half of the injection channel the
+  purge cannot: the precedence chain's *"configured fallback filenames"* tail. Set to `[]`, with
+  `--strict-config` so a renamed key fails loudly instead of failing open. The full production
+  config was executed under `--strict-config` and loads clean.
+- **A non-OpenAI slug always warns**: ``warning: Model metadata for `<slug>` not found. Defaulting to
+  fallback metadata; this can degrade performance and cause issues.`` It is a warning, not a failure,
+  and it fires for `gpt-5` too under a custom provider — so it indicates the BYOK path, **not** a bad
+  slug, and must not be used as slug validation. The workflow prints stderr so it is visible.
+- **The reviewer's own confirmation**: its instructions do tell it to *"use the root and scoped
+  project instruction files applicable to changed files, respecting normal project-document precedence
+  (`AGENTS.override.md`, `AGENTS.md`, then configured fallback filenames)"* — read out of the live
+  request this session, which settles the injection analysis as fact rather than inference. The purge
+  restores from the **merge base**, not the base tip, which is what keeps it diff-neutral: restored
+  content matches what `codex review` diffs against, so instruction files simply do not appear in the
+  review.
+
+### The docs-only figure, re-derived
+
+The spike's unsourced "~22%" **does not reproduce**. Measured 2026-09-18 over `origin/main`, where
+docs-only means every changed path matches `*.md`, `*.mdx`, `docs/**` or `spec/**`:
+
+- last 100 commits (2026-09-09 .. 2026-09-18): **12.0%**
+- last 250 commits (2026-09-06 .. 2026-09-18): **8.8%**
+
+So the path gate is worth having but is **not** a major cost lever, and no cost model should lean on
+it. **A cost ceiling is still unset** — the budget question was answered with a model name, and
+per-PR cost stays unknown while `openrouter.ai` is unreachable.
+
+### Defects the implementing review caught, and what they generalise to
+
+These were found by the pre-push review on the implementing branch and fixed there. They are recorded
+because most are properties of `codex review` rather than of this repo's code, so anyone rebuilding
+this will meet them again.
+
+- **`--base` must be the remote-tracking ref.** `actions/checkout` with `ref: <sha>` leaves a detached
+  HEAD and creates no local branch, so `main` does not resolve — and `codex review` does **not** fail
+  when it cannot resolve the base. It silently falls back to a prompt asking the *model* to find the
+  merge base via `main@{upstream}`, which does not resolve either. Executed against a replica of the
+  runner's checkout: `--base main` sent **no merge-base SHA** and still exited 0, while
+  `--base origin/main` sent the correct one. **This is the single highest-impact trap in the whole
+  design** — the bare form is a green check over a review of nothing, on every PR, forever.
+- **`--title` needs the `=` form.** The PR title is author-controlled and clap parses a leading `-` as
+  a flag: `--title "-x fix"` exits **2** before the review starts (executed). On a public repo that
+  turns a PR title into a public "the reviewer is broken" alert issue. `--title="$PR_TITLE"` fixes it.
+- **`set -uo pipefail` does not disable errexit.** Actions runs the script as `bash -e {0}`, so `-e` is
+  inherited; a step that means to be lenient must say `set +e` explicitly. Otherwise a failure before
+  the `exit_code` write makes a failed reviewer indistinguishable from one that never ran.
+- **A fence inside a finding body is indented.** `codex review` indents each body two spaces, so a
+  column-anchored fence regex does not match and a sanitiser rewrites the contents of the
+  ```suggestion block GitHub offers a copy button for. The bound matters in both directions: at 4+
+  spaces GitHub sees an indented code block rather than a fence, so a tracker that toggles on any
+  indent believes it is inside code while GitHub believes it is in prose — and the paragraph after it
+  ships a live `@mention`. Closing also requires the **same** fence character and at least the
+  opener's length.
+- **Model output reaches GitHub through paths Actions does not mask.** Secret masking covers logs, not
+  REST bodies. A credential-bearing agent whose stdout is republished to a public comment and a public
+  issue needs redaction at the publishing boundary, and the `shell_environment_policy` that keeps the
+  key out of the agent's environment should be pinned rather than inherited from an upstream default.
+- **The alert's own sample can break its own fence.** Wrapping untrusted output in ``` lets any fence
+  inside it terminate the wrapper, after which the remainder renders as live Markdown — reopening the
+  notification defect on the alert path. The opener has to outgrow the longest run inside.
+- **Posting the review wakes an agent.** `upsertWakeComment` deletes-then-creates precisely so GitHub
+  delivers `action=created`, which is what the PR-babysitting sessions listen for. So the reviewer's
+  output — model text quoting the PR's own head code — arrives at a session holding push access, from
+  the repo's own trusted bot. This amendment's injection analysis closes what steers *the reviewer*;
+  it never asked what the reviewer's output steers. The comment now wraps the review in an explicit
+  untrusted-data delimiter naming the reviewed SHA. **Generalisation: any advisory bot that posts into
+  a channel agents read is an injection path, not just an output.**
+- **A boolean contract check hid real findings.** Recording only "schema-valid: yes/no" lost the
+  finding *count*, so schema-valid findings that the renderer's bullet form did not match were
+  reported as "clean" — with the literally false reason "schema-valid JSON with no findings" — and real
+  P0s were dropped behind a green check. The count is now compared against what rendered, and a
+  mismatch alerts.
+- **`Number("")` is 0.** An exit code arriving empty because the step died must never coerce to
+  success. It is parsed explicitly and classified as `reviewer-did-not-run`.
+- **"Could not tell" must not clear an alert.** Resolving the alert on `clean-unverified` meant the one
+  failure that blinds the detector (a changed rollout layout, a new CLI pin) would also close the
+  standing alert and post "Recovered" on every run, forever.
+
+### What the first live runs against OpenRouter established
+
+The harness was proven against a stub; these are from the real provider, on PR #2405.
+
+- **`POST https://openrouter.ai/api/v1/responses` accepts Codex's payload.** This was the largest
+  open risk, because `wire_api = "chat"` was removed in 0.155.0 and there is no fallback. Both
+  failures below are *semantic* refusals from the provider — a policy 404 and a cost 402 — reached
+  after the request was parsed and routed to a model. The beta endpoint does not choke on the
+  OpenAI-specific parameters the CLI always sends (`include: ["reasoning.encrypted_content"]`,
+  `reasoning`, `prompt_cache_key`, `client_metadata`). **The endpoint risk is retired.**
+- **Account data policy can exclude every endpoint for a model.** Verbatim: *"0 endpoints out of 1
+  requested are available matching your guardrail restrictions and data policy … ZDR violation
+  (account settings)"*. Note **"out of 1 requested"** — the slug matched an endpoint and policy then
+  removed it, which is what distinguishes this from a wrong slug (zero matches). Verdict
+  `provider-policy-blocked`. A more data-sharing model tier is **not** the remedy for a ZDR
+  exclusion; it is likelier to be excluded for the same reason.
+- **The `Model metadata not found` warning is not cosmetic, and an earlier revision of this amendment
+  was wrong to imply it was.** No metadata for a BYOK slug means Codex falls back to defaults that
+  reserve the model's full output width — **65536 tokens**, observed. Providers check affordability
+  against that *reservation* before generating anything, so a metered key whose remaining limit is
+  below it refuses every request: *"You requested up to 65536 tokens, but can only afford 9411."*
+  Verdict `insufficient-credits`. Two consequences worth stating plainly:
+  - **A key limit sized to expected spend does not work.** It must clear the reservation, which is
+    far larger. Raising it does not raise what a review costs — a reservation is not a charge.
+  - **The reservation cannot be capped from the `codex review` side.** `max_output_tokens` exists in
+    the binary but is not a settable top-level config key in 0.155.0 (probed under
+    `--strict-config`); `model_context_window` and `model_auto_compact_token_limit` are accepted but
+    govern input context, not the output reservation.
+
+Both were classified as a generic `reviewer-failed` telling the operator to read stderr until each
+got its own signature. Their test fixtures are the real stderr, verbatim.
+
+### Still not verified, and still needing the owner
+
+- The smoke test itself: one real `codex review` against `meta/muse-spark-1.3` through OpenRouter's
+  beta Responses endpoint, confirming a schema-honouring reply. Everything above is executed against
+  a stub, which proves the **harness** and proves nothing about the **model**.
+- Per-PR cost, and a ceiling to size against it.
+- The credits path for the native Codex reviewer, still dashboard-only and still the first
+  alternative if the smoke test fails (unchanged trigger).
+- ~~The CodeRabbit App uninstall, which must precede deleting `.coderabbit.yaml`.~~ **Done 2026-09-18** — the App is uninstalled and the config is deleted.
