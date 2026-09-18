@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cursor Cloud Agent INSTALL phase. Idempotent. Provisions the Cursor VM to run
-# Frapp's Docker-based local stack, installs Node 20 + npm deps, builds the shared
+# Frapp's Docker-based local stack, installs the repo's Node + npm deps, builds the shared
 # workspace `dist/` outputs, and pre-pulls the Supabase images so per-session `start`
 # is fast. When Cursor "builds" are enabled this runs once and its filesystem becomes
 # the boot snapshot; per-boot work belongs in scripts/cursor-cloud-up.sh instead.
@@ -56,7 +56,7 @@ printf '%s\n' '{
 sudo groupadd -f docker
 sudo usermod -aG docker "$(id -un)" || true
 
-# ─── 3. Node 20 (the repo's pinned runtime) ───────────────────────────────────────────
+# ─── 3. Node (the repo's pinned runtime, read from .nvmrc) ────────────────────────────
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
   log "Installing nvm..."
@@ -64,14 +64,19 @@ if [ ! -s "$NVM_DIR/nvm.sh" ]; then
 fi
 # shellcheck disable=SC1091
 . "$NVM_DIR/nvm.sh"
-nvm install 20
-nvm alias default 20
-NODE20BIN="$(dirname "$(nvm which 20)")"
-export PATH="${NODE20BIN}:${PATH}"
+# Version comes from .nvmrc — the single home for the dev Node, alongside `engines.node`
+# in package.json, `node-version:` in every CI job and `FROM node:` in apps/api/Dockerfile.
+# Hardcoding it here is what let this script keep installing Node 20 after the repo moved
+# to 24, so `npm ci` would EBADENGINE and the dependency-cruiser gate would hard-exit.
+NODE_VERSION="$(tr -d '[:space:]' <"$ROOT/.nvmrc")"
+nvm install "$NODE_VERSION"
+nvm alias default "$NODE_VERSION"
+NODEBIN="$(dirname "$(nvm which "$NODE_VERSION")")"
+export PATH="${NODEBIN}:${PATH}"
 log "Using node $(node -v), npm $(npm -v)"
 
 # ─── 4. Dependencies + shared-package build ───────────────────────────────────────────
-# npm ci under Node 20 for the correct toolchain, then build ONLY the shared @repo/*
+# npm ci under the repo's Node for the correct toolchain, then build ONLY the shared @repo/*
 # packages so they produce the `dist/` that apps/api's `start:dev` typechecks against
 # (without it, `nest start` reports dozens of TS2307/TS2339 errors from @repo/validation).
 #

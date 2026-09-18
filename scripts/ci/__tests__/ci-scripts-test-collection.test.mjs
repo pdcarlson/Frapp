@@ -21,21 +21,22 @@ import test from "node:test";
  * `sh` — dash on CI's Ubuntu — which expands `*` but does not brace-expand.
  * All three tempting rewrites are worse, and none of them is portable:
  *
- *   - `node --test scripts/ci/__tests__/` — Node 20 recurses into the
+ *   - `node --test scripts/ci/__tests__/` — Node 20 recursed into the
  *     directory; Node 22+ stopped treating a positional as a directory and
- *     throws `MODULE_NOT_FOUND`. CI pins Node 20, so this stays green in CI
- *     and breaks every local run.
- *   - `"scripts/ci/__tests__/*.test.mjs"` quoted, so Node globs it — the
- *     inverse: fine on Node 22, and on Node 20 a literal path that fails with
- *     `Could not find '…'`.
+ *     throws `MODULE_NOT_FOUND`. CI now pins Node 24, so this one is no longer
+ *     a CI-vs-local split — it is simply broken everywhere.
+ *   - `"scripts/ci/__tests__/*.test.mjs"` quoted, so Node globs it — worked on
+ *     Node 22+, and on Node 20 was a literal path failing `Could not find '…'`.
+ *     Legal on today's floor, but it hands collection to Node's glob engine
+ *     for no gain, so the guard below still rejects it.
  *   - `*.{test,spec}.mjs` — dash leaves the braces alone and hands the literal
- *     to Node. Node 22's own glob engine then expands it and quietly collects
- *     more than intended; Node 20 exits 1 with `Could not find '…'`. Loud in
- *     one place, over-matching in the other.
+ *     to Node. Node 22+'s own glob engine then expands it and quietly collects
+ *     more than intended; Node 20 exited 1 with `Could not find '…'`. The
+ *     over-matching half is the half that survives, and it is the silent one.
  *
- * Unquoted `*.test.mjs` is the only form that works on both, because the shell
- * expands it to explicit paths first and explicit paths are honoured by every
- * version.
+ * Unquoted `*.test.mjs` is the form that works on every version this repo has
+ * run, because the shell expands it to explicit paths first and explicit paths
+ * are honoured everywhere.
  *
  * The collection test below asserts the PROPERTY (everything suite-shaped in
  * this tree is actually run) rather than the proxy (filenames end in
@@ -94,7 +95,7 @@ function collectedByTheScript() {
   );
 }
 
-test("test:ci-scripts keeps the one invocation form that works on Node 20 and 22", () => {
+test("test:ci-scripts keeps the one invocation form that works on every Node it has run", () => {
   const { scripts } = JSON.parse(
     readFileSync(join(repoRoot, "package.json"), "utf8"),
   );
@@ -107,7 +108,7 @@ test("test:ci-scripts keeps the one invocation form that works on Node 20 and 22
   assert.ok(
     script.split(/\s+/).includes("scripts/ci/__tests__/*.test.mjs"),
     `test:ci-scripts no longer passes the bare glob \`scripts/ci/__tests__/*.test.mjs\` ` +
-      `(found: ${script}). The directory form breaks on Node 22 — read the notes ` +
+      `(found: ${script}). The directory form breaks on Node 22+ — read the notes ` +
       `at the top of this file before changing it.`,
   );
 
@@ -116,7 +117,7 @@ test("test:ci-scripts keeps the one invocation form that works on Node 20 and 22
     unportable,
     [],
     `test:ci-scripts must not quote or brace-expand its glob (found: ${script}). ` +
-      `Quoting breaks on Node 20; braces over-match on Node 22 and fail on Node 20.`,
+      `Quoting hands collection to Node's glob engine; braces over-match silently.`,
   );
 });
 

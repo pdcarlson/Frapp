@@ -207,7 +207,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       # Ancestry + CI-green. Both assertions are fatal, and an unreadable checks
       # API is a failure rather than a pass.
@@ -275,7 +275,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       # Also from trusted code, and before anything is applied or built. Both
       # auto-deploy and the Vercel Git-link fail OPEN: if Render's auto-deploy

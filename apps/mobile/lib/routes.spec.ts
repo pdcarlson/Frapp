@@ -30,9 +30,11 @@ const scanRoots = [appDir, here, path.join(here, "..", "components")];
 function walk(dir: string): string[] {
   // The string form, matching `apps/api/.../dto-constraint-coverage.spec.ts`.
   // `withFileTypes` would be tidier but needs `Dirent.parentPath`, which only
-  // exists from Node 20.12 — and `package.json` engines allows >=18, so a
-  // contributor on 18 or 20.11 would get a TypeError at collection time and
-  // lose both guards in this file. CI's floating Node 20 would never show it.
+  // exists from Node 20.12. That was load-bearing when `engines` allowed >=18:
+  // a contributor on 18 or 20.11 got a TypeError at collection time and lost
+  // both guards in this file, and CI's Node 20 would never have shown it.
+  // `engines` is now `>=24` and CI pins 24, so the hazard is gone — the string
+  // form stays only to match its sibling, not because it is still required.
   // Directories are harmless here: every caller filters by file extension.
   return readdirSync(dir, { recursive: true })
     .map(String)

@@ -76,7 +76,7 @@ runs:
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
-        node-version: 20
+        node-version: 24
 
     # Same fence as the CLI (`assertStorageBackupTarget`). The service-role key
     # reads whichever project SUPABASE_URL names, and a production job injects
@@ -84,7 +84,7 @@ runs:
     # the project this environment's prefix claims to hold, and that the prefix
     # itself belongs to that environment. Do not re-parse the hostname in bash;
     # a second copy is what a local rehearsal used to skip. Setup Node runs
-    # first so this import uses Node 20, not the runner's default.
+    # first so this import uses Node 24, not the runner's default.
     - name: Assert the injected project URL is this environment's
       shell: bash
       env:

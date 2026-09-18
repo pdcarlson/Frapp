@@ -23,16 +23,13 @@
  *
  * ## Version constraint — read before bumping
  *
- * `dependency-cruiser` is pinned to **17.x** because CI runs **Node 20**, and
- * 18.x raised its floor to `^22||^24||>=26`. 17.4.3 accepts
- * `^20.12||^22||>=24`, which covers both CI and a typical dev machine.
- *
- * This failure does not reproduce locally on a modern Node — 18.x installed and
- * ran fine here and only failed in CI, with `ERROR: Your node version (20.20.2)
- * is not supported`. So before bumping the major, check its `engines` against
- * the `node-version:` in `.github/workflows/ci.yml`, or bump CI's Node first
- * (which is its own decision: `apps/api` pins Node 20 deliberately — see the
- * WebSocket note in `apps/api/src/infrastructure/supabase/supabase.provider.ts`).
+ * This package's `engines` has to be checked against the repo's Node floor
+ * before any major bump — 18.x raised its floor and failed only on the runner,
+ * never locally. That story, and the three places the Node version lives, are
+ * in `docs/internal/ci-cd/QUALITY_GATES.md` § "On 18.x — check `engines`
+ * before bumping". Deliberately not restated here: this comment carried a copy
+ * that went false the moment the repo moved to Node 24, which is the whole
+ * argument for one home and a link.
  *
  * ## Rollout
  *

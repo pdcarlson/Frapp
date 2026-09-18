@@ -91,7 +91,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       # `vercel build` runs the app's own build, which needs the workspace's
       # dependencies present — this is a monorepo and both apps import from

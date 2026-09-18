@@ -10,7 +10,7 @@ This guide walks you through setting up the Frapp monorepo and running the full 
 
 ## Prerequisites
 
-- **Node.js** 20+
+- **Node.js** 24+ (`nvm use` reads `.nvmrc`)
 - **npm** 10+
 - **Docker Desktop** (for Supabase)
 - **Supabase CLI**: `npm install -g supabase` or `npx supabase --version`

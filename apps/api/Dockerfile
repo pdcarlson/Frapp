@@ -1,7 +1,7 @@
 # Build context: repo root (run: docker build -f apps/api/Dockerfile .)
 #
 # Stage 1: Install ALL dependencies (dev included, needed for build)
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/
@@ -15,7 +15,7 @@ COPY packages/typescript-config/package.json ./packages/typescript-config/
 RUN npm ci --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/color --workspace=packages/formatting --workspace=packages/observability --workspace=packages/typescript-config --include-workspace-root
 
 # Stage 2: Compile TypeScript
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/ ./
 COPY packages/typescript-config/ ./packages/typescript-config/
@@ -65,7 +65,7 @@ RUN if [ -n "$SENTRY_AUTH_TOKEN" ]; then apk add --no-cache gcompat; fi \
     && node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js
 
 # Stage 3: Production-only dependencies (clean install, no dev deps)
-FROM node:20-alpine AS prod-deps
+FROM node:24-alpine AS prod-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/
@@ -95,7 +95,7 @@ RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --wor
        packages/observability/node_modules
 
 # Stage 4: Minimal production image
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 RUN addgroup -S frapp && adduser -S frapp -G frapp
 
