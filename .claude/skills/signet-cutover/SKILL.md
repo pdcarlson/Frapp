@@ -64,9 +64,9 @@ dashboard screen is a defect now, not a pending slice
 by [#2364](https://github.com/pdcarlson/Frapp/issues/2364) slice 0, so that doc now carries the
 reskin's nine decisions, three marketing type roles and marketing copy rules — read and implement
 them. What survives the lift: `apps/landing` still ships Geist + bone/bronze until
-[#2366](https://github.com/pdcarlson/Frapp/issues/2366) merges, so do not file
-spec-vs-implementation drift against those leftover tokens, and do not copy the surface's
-current visual patterns into new Signet work. The target boards under
+[#2366](https://github.com/pdcarlson/Frapp/issues/2366) merges, so do not copy the surface's
+current visual patterns into new Signet work. That README states the drift rule for those leftover
+tokens; read it there rather than assuming it from this table. The target boards under
 [`spec/ui/landing/reference/`](../../../spec/ui/landing/reference/README.md) are **target state**:
 they bind nothing until the cutover, and their README is the one place that status is stated.
 

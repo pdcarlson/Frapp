@@ -45,7 +45,7 @@ not by the Governs column here. No CI check asserts this table is complete or it
 
 `landing/` is **no longer frozen.** [#2364](https://github.com/pdcarlson/Frapp/issues/2364) is reskinning the storefront from a committed set of target boards, so that README now records the reskin's nine decisions, the marketing type roles and the marketing copy rules alongside the storefront as built. Two things did not change with the freeze lift:
 
-- **`apps/landing` still ships Geist + bone/bronze tokens** until the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merges. Until then, do not file spec-vs-implementation drift against those leftover tokens, and do not mix the two systems on the surface.
+- **`apps/landing` still ships Geist + bone/bronze tokens** until the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merges, and the two systems still MUST NOT mix on the surface. The drift rule that follows from that is stated once, in [`landing/README.md`](landing/README.md), and not repeated here.
 - **It still MUST NOT be extended with new visual design decisions of its own** — those belong in [`design-system/`](design-system/README.md). What `landing/` owns is this surface's application of them: its decisions, its three marketing type roles, and its copy rules.
 
 The web dashboard left the frozen list with the #920 shell slice; its per-screen-family truing-up is tracked on #920.
