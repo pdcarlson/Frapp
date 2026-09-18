@@ -152,6 +152,7 @@ const CONSUMERS = [
   "dependency-cruiser",
   "mobile-validate",
   "web-responsive-floor",
+  "landing-fold",
 ];
 const PRODUCER = "packages-build";
 

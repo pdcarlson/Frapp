@@ -19,12 +19,12 @@ concurrency:
 
 # ---------------------------------------------------------------------------
 # Domain-specific parallel jobs. `packages-build` runs first (shared
-# dependency). web-tests, web-responsive-floor, and pglite-migrations are
-# path-gated on PRs via the `changes` job and run unconditionally on push;
-# everything else always runs.
+# dependency). web-tests, web-responsive-floor, landing-fold, and
+# pglite-migrations are path-gated on PRs via the `changes` job and run
+# unconditionally on push; everything else always runs.
 #
-# Path-gated does NOT mean advisory. web-tests and web-responsive-floor are both
-# REQUIRED checks — a job skipped by a job-level `if:` reports Success, which
+# Path-gated does NOT mean advisory. web-tests, web-responsive-floor and
+# landing-fold are all REQUIRED checks — a job skipped by a job-level `if:` reports Success, which
 # satisfies one. That is also why `changes` is itself required: a required job
 # skipped because a `needs:` parent FAILED also reports skipped, so a
 # non-required parent would be a hole. See scripts/ci/lib/required-checks.mjs.
@@ -46,6 +46,7 @@ jobs:
       pull-requests: read
     outputs:
       web: ${{ steps.filter.outputs.web }}
+      landing: ${{ steps.filter.outputs.landing }}
       pglite: ${{ steps.filter.outputs.pglite }}
     steps:
       - name: Checkout
@@ -65,6 +66,15 @@ jobs:
               # as build-affecting as `turbo.json`. Omitting it would let a PR
               # that edits only the action skip two REQUIRED checks, which
               # report Success when skipped (see the header above).
+              - '.github/actions/**'
+            landing:
+              - 'apps/landing/**'
+              - 'packages/**'
+              - 'package-lock.json'
+              - 'turbo.json'
+              # Same reasoning as `web` above: the landing job builds
+              # `packages/*` through this action, so a change to it is
+              # build-affecting and must not let a REQUIRED check skip.
               - '.github/actions/**'
             pglite:
               - 'supabase/migrations/**'
@@ -960,11 +970,12 @@ jobs:
 
   # ── 375px responsive floor (REQUIRED) ───────────────────────────────────
   #
-  # The only Playwright job in this workflow. It was split out of the advisory
-  # `web-visual-regression` snapshot job in #1152 precisely so it could be
-  # required, and that snapshot job has since been deleted outright — baselines
-  # pinned to CI's Chromium build drifted with every bump, and an advisory gate
-  # nobody could act on was costing more than it caught.
+  # One of two Playwright jobs in this workflow; `landing-fold` is the other,
+  # added by #2368 and in the same no-baseline lane. This one was split out of
+  # the advisory `web-visual-regression` snapshot job in #1152 precisely so it
+  # could be required, and that snapshot job has since been deleted outright —
+  # baselines pinned to CI's Chromium build drifted with every bump, and an
+  # advisory gate nobody could act on was costing more than it caught.
   #
   # This suite has none of those failure modes: it stores no baseline and
   # compares no pixels, reading one integer per route and comparing it to 375.
@@ -1080,3 +1091,109 @@ jobs:
       # because a pixel diff cannot be read from its logs; this suite's failure
       # message already names the offending route, the widest element inside
       # `<main>`, its width against the budget, and its classes.
+
+  # ── The landing fold (REQUIRED) ─────────────────────────────────────────
+  #
+  # The second Playwright job, and the same LANE as `web-responsive-floor`
+  # rather than a revival of the deleted snapshot one: it stores no baseline and
+  # compares no pixels. It reads geometry off the rendered page and compares it
+  # to what the reskin boards commit to — the 1440x900 fold on `HeroB.dc.html`
+  # and the 390 phone board D6 pins, at 390x844 — plus the two motion
+  # properties a still page cannot show: that a scroll which JUMPS past a reveal
+  # still finishes it, and that reduced motion arms nothing.
+  #
+  # It serves a PRODUCTION build, which the config explains at length and is not
+  # a preference: under `next dev` the stylesheet arrives after hydration, every
+  # reveal wrapper measures itself inside the viewport, takes its
+  # measure-before-arm early return and never arms. A suite pointed at dev would
+  # assert against a page whose motion never engages.
+  #
+  # Selection is by directory, so a new spec added to `apps/landing/tests/visual/`
+  # joins this job by default rather than falling into no job at all. That
+  # directory holds ONE spec on purpose: Playwright exits 1 when a run collects
+  # no tests, which is what stops this job going green having asserted nothing,
+  # and that guard keys on the collected-test count — a second spec here would
+  # mask the first one's removal, exactly as `apps/web/playwright.config.ts`
+  # warns. Adding one means porting apps/web's sibling-reading guard too.
+  #
+  # No `continue-on-error`, per docs/internal/ci-cd/QUALITY_GATES.md: that key
+  # rewrites the step's conclusion to success, and a required check that cannot
+  # fail is not a gate.
+  #
+  # Path-gated on `changes.landing`, which does NOT overlap `changes.web`: a PR
+  # touching only `apps/landing/**` skips `web-responsive-floor` and runs this,
+  # and vice versa. Both `needs:` parents are themselves required checks, which
+  # is the invariant scripts/ci/lib/required-checks.mjs spells out.
+  landing-fold:
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.landing == 'true' }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        uses: ./.github/actions/turbo-packages-build
+
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Same version-keyed entry as `web-responsive-floor`. The two jobs can run
+      # concurrently within a run and both reserve the same key; `actions/cache`
+      # lets the first reservation win and warns on the second, so the "Unable to
+      # reserve cache" annotation is harmless where it appears and the restore
+      # path is unaffected.
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      # The same apt Hash-Sum-mismatch workaround web-responsive-floor carries,
+      # and it is pinned by scripts/ci/__tests__/playwright-install-deps-retry.test.mjs
+      # for every workflow that runs install-deps. Do not skip apt hash checks
+      # and do not swallow a failure with `|| true`.
+      - name: Install Playwright OS deps
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+            /etc/apt/sources.list.d/google-chrome.list.save \
+            /etc/apt/sources.list.d/google-chrome.sources \
+            /etc/apt/sources.list.d/google.list
+          for i in 1 2 3; do
+            if npx playwright install-deps chromium; then
+              exit 0
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::playwright install-deps failed after 3 attempts (see prior apt output)."
+              exit 1
+            fi
+            echo "Attempt $i/3 failed — retrying in 20s..."
+            sudo rm -rf /var/lib/apt/lists/* || true
+            sleep 20
+          done
+          echo "::error::playwright install-deps retry loop ended without success."
+          exit 1
+
+      - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+
+      # The config's `webServer` produces the production build and serves it.
+      - name: Assert the fold holds the boards' geometry
+        run: npm run test:fold -w apps/landing
+
+      # No artifact upload, same reasoning as the job above: every assertion
+      # here fails with the measurement and the element that broke it.

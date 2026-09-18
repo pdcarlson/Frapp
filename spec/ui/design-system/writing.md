@@ -16,14 +16,47 @@ Vague copy is banned: never ship "Something happened" or "Please try again later
 
 ## 2. CTA conventions
 
-CTAs MUST name the action they perform.
+CTAs MUST name the action they perform, and MUST be written in **sentence case**.
 
 | Do | Don't |
 |---|---|
-| `Get Started` | `Submit` |
-| `Create Event` | `Continue` (when the action is specific) |
-| `Adjust Points` | |
-| `Invite Member` | |
+| `Get started` | `Submit` |
+| `Create event` | `Continue` (when the action is specific) |
+| `Adjust points` | `Get Started` (title case) |
+| `Invite member` | |
+
+**The case half of that rule is new here, and it settles a question this table was answering wrongly**
+(2026-09-18). The `Do` column read `Get Started` / `Create Event` / `Adjust Points` / `Invite Member`
+until the landing reskin's decision D5 ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)) took
+sentence case and required the losing document to be amended rather than leaving two cases in the repo.
+Three things already pointed the same way:
+
+- **Both committed design-system references draw sentence case** — `Create an event`, `Start session`,
+  `Join chapter`, `Create task`, `Pay now`, `Submit for approval`, `Continue with Apple`. No Title Case
+  control label appears on either.
+- **Those four exact strings ship nowhere.** `Get Started`, `Create Event`, `Adjust Points` and
+  `Invite Member` appear in no file under `apps/`, while their sentence-case forms do.
+- **The rest of this document never followed them.** Every other control string it approves — `Retry`,
+  `Reload`, `Try again`, `Back to chat`, `Transfer presidency`, `Start new semester` — is sentence
+  case. These four rows were the document's only Title Case strings.
+
+**What this rule does NOT already describe, stated so nobody reads it as settled everywhere.** Two
+Title Case controls ship on the web dashboard today — `New Event`
+(`apps/web/components/events/events-page.tsx`) and `Open Documents`
+(`apps/web/components/layout/ask-pill.tsx`) — and
+[`../web-greenfield/reference/web-framework.dc.html`](../web-greenfield/reference/web-framework.dc.html),
+which outranks written docs on the web surface while
+[#2140](https://github.com/pdcarlson/Frapp/issues/2140) is open, draws Title Case on some of its
+controls. That is real drift against this rule rather than an exception to it, it is tracked as
+[#2386](https://github.com/pdcarlson/Frapp/issues/2386), and that issue carries the question the
+drift actually turns on: whether a board outranks this document on a control's *words* as well as on
+its looks. Do not "fix" it by re-widening this rule.
+
+Out of scope here either way: **nav labels, page and screen titles, and segmented-control options are
+not CTAs** and this section has never governed them, which is why `Study Zones`, `Chat Admin`,
+`Discord Import` and `All Time` are not on that list.
+
+The verb-plus-object rule above is unchanged, and it is the half this section is cited for elsewhere.
 
 ## 3. Error copy pattern
 

@@ -55,8 +55,11 @@ const config: Config = {
     extend: {
       /*
        * The one shadow key the shared preset deliberately leaves unbound, for
-       * the reason that file records: it still serves frozen `apps/landing`,
-       * which has real shadows and no `--shadow-md`.
+       * the reason that file records: it used to serve the frozen
+       * `apps/landing`, which had real shadows and no `--shadow-md`. #2366
+       * retired that consumer and the landing is neither frozen nor legacy any
+       * more, so the preset's own comment is the live account of why the key is
+       * still parked there rather than promoted (#2371).
        *
        * Signet needs it bound, and the omission was a live defect rather than
        * a tidiness point. Every other `shadow-*` utility resolves to a token

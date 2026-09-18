@@ -173,6 +173,31 @@ export const CI_CHECKS = [
   // ROLLOUT: same caveat as secret-scan — required only once the web-responsive-floor
   // job exists on the target branch and has run green.
   "web-responsive-floor",
+  // The landing fold (issue #2368, slice 3 of the reskin epic #2364). Same lane as
+  // the job above and for the same reason it survives: no baseline, no pixels. It
+  // reads geometry off the rendered page and compares it to what the committed
+  // reskin boards commit to — the 1440x900 fold on `HeroB.dc.html`, the 390 phone
+  // board D6 pins at 390x844 — plus the two motion properties a still page cannot
+  // show: a scroll that JUMPS past a reveal still finishes it, and reduced motion
+  // arms nothing.
+  //
+  // It serves a PRODUCTION build rather than `next dev`, which is load-bearing and
+  // not a preference: under dev the stylesheet arrives after hydration, so every
+  // reveal wrapper measures itself inside the viewport, takes its measure-before-arm
+  // early return, and never arms. Measured on this page at 1440x900 — dev arms 0
+  // blocks, `next start` arms 6 — so a dev-served suite would assert against a page
+  // whose motion never engages. The suite carries its own anti-vacuity assertion for
+  // exactly that.
+  //
+  // Path-gated on `changes.landing`, which does NOT overlap `changes.web`: the web
+  // filter covers `apps/web/**` and this one `apps/landing/**`, so a PR touching one
+  // surface skips the other's job. Both `needs:` parents are required checks.
+  //
+  // ROLLOUT: same caveat as secret-scan — required only once the landing-fold job
+  // exists on the target branch and has run green. The apply must happen AFTER the
+  // PR adding the job merges, not before, or every open PR blocks on a check that
+  // does not exist yet. Applying is a human step.
+  "landing-fold",
   // Architectural boundary linting (dependency-cruiser): the API's layer direction
   // and the monorepo's app/package separation. HARD GATE from day one, which is only
   // survivable because `scripts/dependency-cruiser-known-violations.json` grandfathers the

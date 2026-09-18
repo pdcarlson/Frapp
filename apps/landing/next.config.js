@@ -66,6 +66,28 @@ const nextConfig = {
   typescript: {
     tsconfigPath: "tsconfig.build.json",
   },
+  /**
+   * The social card reads two font files off disk, and a `readFile` off a
+   * computed path is invisible to Next's dependency tracer — nothing imports
+   * them, so nothing would carry them into a deployed function.
+   *
+   * **Today this changes nothing, and it is kept anyway.** `/opengraph-image`
+   * prerenders as static content, so the read happens during `next build`, where
+   * the whole monorepo is on disk and no tracing is involved. The entry exists
+   * for the version of this route that is not static — anything that makes it
+   * dynamic (a `dynamic` export, reading a request) moves the read to a
+   * serverless function that would not otherwise contain the fonts, and the
+   * failure would be a broken share card in production with every check green.
+   *
+   * The fonts live in `packages/theme/fonts/` because that is where this repo's
+   * typeface lives; Satori cannot parse the variable `.woff2` beside them, so
+   * `app/opengraph-image.tsx` reads the static instances instead and explains
+   * why at length. The tracing root is inferred from the lockfile, so the
+   * monorepo-relative path below resolves.
+   */
+  outputFileTracingIncludes: {
+    "/opengraph-image": ["../../packages/theme/fonts/Figtree-*.ttf"],
+  },
   env: {
     /**
      * Sentry environment tag, **derived** from Vercel's `VERCEL_ENV` rather

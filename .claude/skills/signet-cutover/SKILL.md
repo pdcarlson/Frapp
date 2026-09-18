@@ -74,9 +74,11 @@ crest is cut until brand sign-off clears ([#2378](https://github.com/pdcarlson/F
 The landing's three marketing type roles (`--text-hero`, `--text-display-lg`, `--text-lead`) sit
 **above** `foundations.md` §7's locked six and are declared in `apps/landing/app/globals.css`.
 They are landing-only: reaching for one on a product surface is an off-scale defect, exactly as a
-raw hex is. §7's amendment records why. The target boards under
-[`spec/ui/landing/reference/`](../../../spec/ui/landing/reference/README.md) are **target state**:
-they bind nothing until the cutover, and their README is the one place that status is stated.
+raw hex is. §7's amendment records why. The boards under
+[`spec/ui/landing/reference/`](../../../spec/ui/landing/reference/README.md) were target state and
+**now bind** — both cutover slices merged, so they are rank-1 visual truth for this surface and drift
+against them is filable. Their README is the one place that status is stated, including the standing
+exceptions.
 
 Product marks ship locked emblem B from [`spec/ui/assets.md`](../../../spec/ui/assets.md); do not
 restyle them piecemeal.
