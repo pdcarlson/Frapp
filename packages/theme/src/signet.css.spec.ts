@@ -15,8 +15,8 @@ import config from "./tailwind.config";
  *
  * `signet.css` is the Signet stylesheet BOTH web surfaces ship — `apps/web`
  * since the #920 shell cutover, `apps/landing` since the #2366 token cutover.
- * The legacy `globals.css` it used to be a sibling of now has no importer. It
- * is hand-written CSS with three sources of truth it must not drift from, so
+ * The legacy `globals.css` it used to be a sibling of was deleted in that same
+ * cutover. It is hand-written CSS with three sources of truth it must not drift from, so
  * each is asserted rather than trusted:
  *
  *  1. The fixed foundations — `getSignetCssVars()` in `signet.ts`, itself
@@ -241,8 +241,10 @@ describe("every token the presets read is defined as a complete color", () => {
   it("defines every radius token the preset reads", () => {
     // Both halves: the shared preset's scale keys, and the Signet-only ones
     // the `apps/web` config adds on top. The 20 step lives in the app config
-    // because the legacy stylesheet has no `--radius-2xl`, so scanning only
-    // the shared preset would leave exactly the newest key unguarded.
+    // because the legacy stylesheet — since deleted (#2366) — had no
+    // `--radius-2xl`, so scanning only the shared preset would leave exactly
+    // the newest key unguarded. Both app configs declare it now; it moves up
+    // with the rest of the common subset in #2371.
     const shared = Object.values(
       config.theme!.extend!.borderRadius as Record<string, string>,
     ).map((value) => String(value).match(/var\((--[\w-]+)\)/)?.[1]);

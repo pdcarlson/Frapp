@@ -181,9 +181,12 @@ const config: Config = {
         /*
          * The 20 step — sheets and the AI answer card (foundations.md §8), the
          * ceiling of the map. It lives here rather than in the shared preset
-         * for the same reason the colors above do: the legacy stylesheet the
-         * frozen landing surface ships defines no `--radius-2xl`, and a preset
-         * key reading an undefined token is #1145's silent failure.
+         * for the same reason the colors above do, and with the same expiry:
+         * the legacy stylesheet the frozen landing surface used to ship defined
+         * no `--radius-2xl`, and a preset key reading an undefined token is
+         * #1145's silent failure. That stylesheet is gone (#2366) and
+         * `apps/landing` declares this key too, so it is part of the common
+         * subset #2371 moves up.
          */
         "2xl": "var(--radius-2xl)",
       },

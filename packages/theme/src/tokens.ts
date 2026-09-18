@@ -1,10 +1,10 @@
 /*
  * Frapp typed design tokens — bone / bronze / ink.
  *
- * Mirrors the CSS variables in `globals.css` so the mobile app, JS-side
- * theming, and any non-Tailwind consumer reach the same palette. CSS
- * variables remain the source of truth for the web app; this file is the
- * source of truth for mobile (which reads through `getFrappTokens()`).
+ * Mirrored the CSS variables in `globals.css` — deleted with the landing
+ * cutover (#2366) — so the mobile app, JS-side theming and any non-Tailwind
+ * consumer reached the same palette. Both halves of that arrangement are
+ * retired: no stylesheet, and no surface reading these values.
  *
  * This is the legacy Frapp palette and **no surface consumes it** any more:
  * `apps/web` and `apps/mobile` ship Signet (`./signet.ts`), and `apps/landing`

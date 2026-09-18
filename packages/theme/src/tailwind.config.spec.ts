@@ -179,7 +179,7 @@ describe("every token the preset reads is defined", () => {
         expect(root.has(token!), `${group}.${key} reads undefined ${token}`).toBe(true);
       }
     }
-    // `fontFamily` is deliberately not checked: `--font-geist-sans` is injected
+    // `fontFamily` is deliberately not checked: `--font-figtree` is injected
     // by the consuming app's Next font loader, not by this stylesheet.
   });
 });
