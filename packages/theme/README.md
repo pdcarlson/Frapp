@@ -38,7 +38,8 @@ is the stylesheet, not the token module.
 **Figtree** is the Signet typeface. The variable font (400–700) lives at
 `fonts/FigtreeVF.woff2` (OFL license alongside as `fonts/OFL-Figtree.txt`);
 `apps/web` loads it with `next/font/local` from `app/layout.tsx` as
-`--font-figtree`, and its Tailwind config sets it as `fontFamily.sans`.
+`--font-figtree`, and the shared Tailwind preset in this package sets it as
+`fontFamily.sans` for both Next surfaces.
 `apps/mobile` instead loads Figtree from `@expo-google-fonts/figtree` (one
 static TTF per locked weight — 400/600/700 — registered under per-weight family
 names, which Android requires). The `typography.family.mono` token is a CSS

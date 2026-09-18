@@ -8,6 +8,12 @@ import {
 } from "@repo/chapter-theme";
 import { describe, expect, it } from "vitest";
 
+import { isCompleteColor, SIMPLE_COLOR } from "./complete-color";
+import {
+  LANDING_TAILWIND,
+  readConfigCode,
+  WEB_TAILWIND,
+} from "./config-sources";
 import config from "./tailwind.config";
 
 /**
@@ -143,7 +149,24 @@ function scanColors(): { references: Reference[]; unrecognised: string[] } {
 const { references, unrecognised } = scanColors();
 
 const HSL_TRIPLE = /^\d+(\.\d+)?\s+\d+(\.\d+)?%\s+\d+(\.\d+)?%$/;
-const COMPLETE_COLOR = /^(#[0-9a-f]{3,8}|(hsla?|rgba?)\([^)]*\))$/i;
+/*
+ * #2371 moved `--primary-pressed` and `--accent-subtle-hover` into the shared
+ * preset, which put a `color-mix()` value inside this file's scanned surface
+ * for the first time — they were app-local before, and this suite scans the
+ * preset. `isCompleteColor` (shared with `signet.css.spec.ts`, see
+ * `./complete-color`) is what understands that form: a regex cannot, because
+ * `color-mix()` nests parens and any pattern loose enough to cross them also
+ * accepts a single colour argument or a dropped paren — invalid CSS that
+ * paints nothing, which is the #1145 failure this guard exists to catch.
+ *
+ * **`color-mix()` is allowed for exactly two tokens, by name.** `colorVar`'s
+ * docstring records why: a `color-mix()` token degrades to NO FILL below the
+ * `color-mix` support floor, and those two are hover/pressed states on
+ * controls that stay legible without them — "Do not reach for a `color-mix`
+ * token for a *rest* state." A third one is a decision, not a typo, so it
+ * fails here rather than passing quietly.
+ */
+const MIX_ALLOWED = new Set(["--primary-pressed", "--accent-subtle-hover"]);
 
 // ── Assertions ───────────────────────────────────────────────────────────────
 
@@ -170,13 +193,41 @@ describe("every token the preset reads is defined", () => {
     ).toBe(true);
   });
 
-  it("defines every referenced radius and shadow", () => {
-    const { borderRadius, boxShadow } = config.theme!.extend!;
-    for (const [group, values] of Object.entries({ borderRadius, boxShadow })) {
-      for (const [key, value] of Object.entries(values as Record<string, string>)) {
-        const token = String(value).match(/var\((--[\w-]+)\)/)?.[1];
-        expect(token, `${group}.${key} should read a custom property`).toBeDefined();
-        expect(root.has(token!), `${group}.${key} reads undefined ${token}`).toBe(true);
+  it("defines every non-colour token the preset reads", () => {
+    // `fontSize`, `minHeight` and `minWidth` joined this check with #2371,
+    // which moved them into the preset. Before that they were app-local and
+    // NOTHING walked preset -> stylesheet for them, so a key reading an
+    // undefined property would have compiled to `font-size: var(--nope)` —
+    // #1145's silent failure — with both suites green.
+    //
+    // Every `var()` in the value is checked, not just the first: a `fontSize`
+    // entry is `[size, { lineHeight, fontWeight }]`, and the weight is a token
+    // too. The literal line heights are not tokens and are skipped by the same
+    // pass (tracked as L-09).
+    const { borderRadius, boxShadow, fontSize, minHeight, minWidth } =
+      config.theme!.extend!;
+    for (const [group, values] of Object.entries({
+      borderRadius,
+      boxShadow,
+      fontSize,
+      minHeight,
+      minWidth,
+    })) {
+      for (const [key, value] of Object.entries(
+        values as Record<string, unknown>,
+      )) {
+        const tokens = [
+          ...JSON.stringify(value).matchAll(/var\((--[\w-]+)\)/g),
+        ].map((m) => m[1]!);
+        expect(
+          tokens.length,
+          `${group}.${key} should read at least one custom property`,
+        ).toBeGreaterThan(0);
+        for (const token of tokens) {
+          expect(root.has(token), `${group}.${key} reads undefined ${token}`).toBe(
+            true,
+          );
+        }
       }
     }
     // `fontFamily` is deliberately not checked: `--font-figtree` is injected
@@ -186,14 +237,23 @@ describe("every token the preset reads is defined", () => {
 
 describe("token format matches how the preset reads it", () => {
   it.each(references)("$token is stored as a $style value", ({ token, style }) => {
-    const pattern = style === "triple" ? HSL_TRIPLE : COMPLETE_COLOR;
     const value = root.get(token);
     if (value === undefined) return; // covered by the "is defined" assertion above
+    const ok =
+      style === "triple"
+        ? HSL_TRIPLE.test(value)
+        : MIX_ALLOWED.has(token)
+          ? isCompleteColor(value)
+          : SIMPLE_COLOR.test(value);
     expect(
-      value,
+      ok,
       `:root defines ${token} as "${value}", but the preset reads it as a ` +
-        `${style} value. A mismatch here renders nothing at all (#1143).`,
-    ).toMatch(pattern);
+        `${style} value. A mismatch here renders nothing at all (#1143).` +
+        (MIX_ALLOWED.has(token)
+          ? ""
+          : " Only the two button-state tokens in MIX_ALLOWED may be a" +
+            " `color-mix()`; a rest-state token must be a finished colour."),
+    ).toBe(true);
   });
 });
 
@@ -343,7 +403,7 @@ describe("nothing hand-writes hsl(var(--x)) around a complete-colour token", () 
   /** Every token this stylesheet stores as a complete colour, in either block. */
   const completeTokens = new Set(
     [...root]
-      .filter(([, value]) => COMPLETE_COLOR.test(value))
+      .filter(([, value]) => isCompleteColor(value))
       .map(([token]) => token),
   );
 
@@ -482,5 +542,108 @@ describe("opacity modifiers survive the format-agnostic reader", () => {
     ] as const) {
       expect(css, `${cls} compiled to nothing`).toContain(`var(${token})`);
     }
+  });
+});
+
+/**
+ * The boundary #2371 deliberately did NOT collapse.
+ *
+ * That issue moved every key both Next surfaces bind into this preset. Two
+ * families stayed app-local on purpose, and until now nothing asserted it:
+ * `signet.spec.ts` guards the §7 amendment against `signet.ts`'s emitted CSS
+ * variables, which is a different file and a different failure. The risk the
+ * consolidation introduces is the mirror of the one it removed — a later
+ * "tidy-up" sweeping the last two remainders up here too, which would put a
+ * 72px marketing headline one import away from every product screen.
+ *
+ * Asserted from the real configs rather than restated, so a key that moves
+ * fails here instead of being discovered on a screen.
+ */
+describe("the surface-specific keys stay out of the shared preset (#2371)", () => {
+  const fontSize = (config.theme?.extend?.fontSize ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const colors = (config.theme?.extend?.colors ?? {}) as Record<
+    string,
+    unknown
+  >;
+
+  it("carries all six of foundations §7's locked type roles", () => {
+    expect(Object.keys(fontSize).sort()).toEqual([
+      "body",
+      "caption",
+      "display",
+      "headline",
+      "label",
+      "title",
+    ]);
+  });
+
+  it("carries none of the landing's three marketing type roles", () => {
+    // `foundations.md` §7 Amendment and `design-system/README.md` §3 rule 4:
+    // these sit ABOVE the locked scale and are `apps/landing`'s alone.
+    for (const role of ["hero", "display-lg", "lead"]) {
+      expect(
+        fontSize,
+        `${role} is a landing-only marketing role and must not be in the preset`,
+      ).not.toHaveProperty(role);
+    }
+  });
+
+  it("does not carry the web-only `gold` family", () => {
+    // The Ask pill is an `apps/web` treatment; `apps/landing` implements no
+    // such control, so binding it here would claim a treatment it does not draw.
+    expect(colors).not.toHaveProperty("gold");
+  });
+
+  it("leaves each remainder in the app config that owns it", () => {
+    // The other half of the boundary: a key deleted from an app config without
+    // landing anywhere is #1145's silent no-colour failure, which reads
+    // identically to a successful move.
+    const web = readConfigCode(WEB_TAILWIND);
+    const landing = readConfigCode(LANDING_TAILWIND);
+
+    // Matched as the BINDING, not as the bare token name. Both configs are
+    // comment-heavy and each discusses the other's remainder in prose, so
+    // `toContain("--text-hero")` would be satisfied by a sentence about it —
+    // and by the `--text-hero-line` sibling, which would let the size token be
+    // renamed out from under `text-hero` with the guard still green.
+    for (const token of [
+      "--gold-house",
+      "--gold-on-house",
+      "--gold-ask-fill",
+      "--gold-ask-border",
+      "--gold-ask-text",
+    ]) {
+      expect(web, `apps/web must still bind ${token}`).toContain(
+        `colorVar("${token}")`,
+      );
+    }
+    expect(landing).not.toContain("colorVar(");
+
+    for (const token of ["--text-hero", "--text-display-lg", "--text-lead"]) {
+      expect(landing, `apps/landing must still bind ${token}`).toContain(
+        `var(${token})`,
+      );
+      expect(web, `${token} is landing-only and must not reach apps/web`).not.toContain(
+        `var(${token})`,
+      );
+    }
+  });
+
+  it("keeps a colour key out of the landing config, where the scan is now blind", () => {
+    // `signet.css.spec.ts`'s per-app scan greps for the literal
+    // `colorVar("--x")`. #2371 took the last colour out of this config and its
+    // `colorVar` import with it, so the next colour added here would most
+    // likely be written as a bare `var(--x)` — invisible to that scan, never
+    // checked against `signet.css`, and #1145's silent no-fill if the token is
+    // undefined. That is the defect #1423 fixed twice; it must not become
+    // reachable again behind a green suite.
+    const landing = readConfigCode(LANDING_TAILWIND);
+    expect(
+      landing,
+      "a colour key here needs `colorVar` so signet.css.spec.ts can see it",
+    ).not.toMatch(/^\s*colors\s*:/m);
   });
 });

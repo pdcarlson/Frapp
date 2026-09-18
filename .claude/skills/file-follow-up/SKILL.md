@@ -51,13 +51,38 @@ nothing until the owner sees it. When a run hits one:
 1. **Keep building everything that does not depend on it.** Do not stall the whole unit on a
    blocker that gates one acceptance criterion.
 2. **File the issue as you go**, per the hard rule above.
-3. **Put it to the owner as an explicit question in your end-of-run report** — the last thing
-   they read, phrased as a decision or an action with the exact steps, and `AskUserQuestion` when
-   a choice is involved. **Not** as a subsection of a long PR body: a *Flagged for review* block
-   is a record, not an ask, and it will be read after merge if at all.
+3. **Ask it — and pick the channel by what the blocker is and who is actually there.**
+
+   - **A choice, with the owner reachable → `AskUserQuestion`.** That is the default for a
+     decision, not a garnish on a written summary: a question rendered as options is one the
+     owner answers in a click, where the same question in prose has to be reconstructed from a
+     report they are skimming. Give every option the trade-off that actually decides it **and the
+     exact steps its answer commits to**, and lead with your recommendation — you did the
+     measurement, so withholding a view is not neutrality.
+
+     **Release the claim before you ask.** Deliberation is unbounded and a held claim starves
+     every other session — [`next.md`](../../commands/next.md) §1.3, which is where the
+     re-claim-afterwards rule lives too.
+   - **An action only they can take, or any blocker in a run nobody is watching → the end-of-run
+     report**, as the last thing they read, with the exact steps. A prompt nobody is there to
+     answer is not an ask, it is a stall: the scheduled routines run unattended, and a `/next`
+     batch that blocks on one starves the sibling claims it is holding. That command bans a
+     mid-batch ask outright and routes the question to the release comment and the report
+     instead (§1.3 and that command's Exits table); this is the same rule, not an exception to it.
+
+   Either way the ask lands **at the end of the run** — that is what keeps it to the one
+   interruption, at the predictable moment, that the line below promises.
+
+   **A PR body is neither channel.** Still write the *Flagged for review* block: `/next` requires
+   it as the valve that lets a run finish instead of stopping, and the weekly PR Follow-ups
+   routine harvests those sections into the Human Action List, so it is read on a schedule. But
+   it is a **record of what you found, not an ask** — anything on it needing the owner to act or
+   decide goes through one of the two channels above as well.
 
 One interruption per run, at a predictable moment. If the owner is present and the blocker is
-small, asking on the spot beats all of this.
+small, asking on the spot beats waiting for the end of the run — but it never replaces step 2. A
+blocker with no issue behind it is invisible to the next session and to the Human Action List,
+whatever the owner said in the moment.
 
 ## When to file
 

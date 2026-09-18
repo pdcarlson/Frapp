@@ -216,17 +216,18 @@ for each is below the list rather than left implied.
       reasoning in `tailwind.config.ts` and the token in `signet.css`. A proof that cannot fail is
       not evidence, and neither is one that fails on its own footnotes.
 
-      **Where the `md` key lives is load-bearing.** It is bound in
-      `apps/web/tailwind.config.ts`, with the other Signet-only keys, and deliberately **not** in
-      the shared preset. The original reason was that the preset also served the legacy
-      `apps/landing` stylesheet, which had real shadows and no `--shadow-md`, so binding it there
-      would make `shadow-md` resolve against an undefined property and be dropped — the silent
-      failure #1145 documented, which is the whole reason that app config exists. The landing's
-      token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) removed that
-      particular consumer, and the key stayed put: `apps/landing/tailwind.config.ts` now binds its
-      own `md` the same way, so both surfaces neutralize `shadow-md` and the preset still binds
-      nothing its stylesheet does not define. Collapsing the two app configs into the preset is a
-      `@repo/theme` refactor of its own, not a consequence of the cutover. `signet.css.spec.ts`'s shadow roster now includes
+      **Where the `md` key lives is load-bearing**, and as of
+      [#2371](https://github.com/pdcarlson/Frapp/issues/2371) it lives in the shared preset
+      (`packages/theme/src/tailwind.config.ts`) — one home, bound for every surface that reads the
+      preset. It was app-local until then. The original reason was that the preset also served the
+      legacy `apps/landing` stylesheet, which had real shadows and no `--shadow-md`, so binding it
+      there would make `shadow-md` resolve against an undefined property and be dropped — the
+      silent failure #1145 documented, which is the whole reason those app configs existed. The
+      landing's token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) removed
+      that consumer; the key then sat duplicated in both app configs until #2371 collapsed the
+      common subset. What has not changed is why leaving it UNBOUND is not the safe default:
+      an unbound key does not inherit the `none` tokens, it falls through to Tailwind's stock
+      scale and compiles a real drop shadow. `signet.css.spec.ts`'s shadow roster includes
       `--shadow-md`, so deleting the token fails a test rather than quietly reopening the gap.
 
       **The box is ticked for "no shadow that renders", not "no `shadow-` string".** One inert class
