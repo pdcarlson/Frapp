@@ -1,4 +1,5 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InviteController } from './invite.controller';
 import { InviteService } from '../../application/services/invite.service';
 import { AuthService } from '../../application/services/auth.service';
@@ -27,7 +28,7 @@ describe('InviteController', () => {
       // Mock any methods if needed
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [InviteController],
       providers: [
         {
@@ -37,10 +38,6 @@ describe('InviteController', () => {
         {
           provide: AuthService,
           useValue: mockAuthService,
-        },
-        {
-          provide: 'SUPABASE_CLIENT',
-          useValue: {},
         },
       ],
     }).compile();

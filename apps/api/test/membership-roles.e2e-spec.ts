@@ -10,7 +10,7 @@ import { createSupabaseMock } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
 import {
   createGuardStubs,
-  PermissionsGuardStub,
+  AllowAllGuard,
   STUB_MEMBER_ID,
 } from './helpers/guard-stubs.factory';
 
@@ -61,7 +61,7 @@ describe('Membership + roles (e2e)', () => {
       .overrideGuard(ChapterGuard)
       .useClass(ChapterGuardStub)
       .overrideGuard(PermissionsGuard)
-      .useClass(PermissionsGuardStub)
+      .useClass(AllowAllGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();

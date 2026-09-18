@@ -1,6 +1,7 @@
 import { ServerResponse } from 'node:http';
 import { BadRequestException } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ReportController } from './report.controller';
 import {
   REPORT_MAX_ROWS,
@@ -8,9 +9,6 @@ import {
   type ReportResult,
 } from '../../application/services/report.service';
 import { ReportExportService } from '../../application/services/report-export.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import {
   AttendanceReportDto,
   PointsReportDto,
@@ -73,20 +71,13 @@ describe('ReportController', () => {
       exportPdf: jest.fn().mockResolvedValue(exportResult),
     } as any;
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ReportController],
       providers: [
         { provide: ReportService, useValue: reportService },
         { provide: ReportExportService, useValue: reportExportService },
       ],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     controller = module.get<ReportController>(ReportController);
   });

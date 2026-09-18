@@ -24,14 +24,12 @@ jest.mock('@repo/chapter-theme', () => ({
   })),
 }));
 
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { InternalServerErrorException } from '@nestjs/common';
 import { ChapterController } from './chapter.controller';
 import { ChapterService } from '../../application/services/chapter.service';
 import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import {
   CreateChapterDto,
@@ -58,7 +56,7 @@ describe('ChapterController', () => {
     } as any;
     chapterOnboardingService = { onboard: jest.fn() };
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ChapterController],
       providers: [
         { provide: ChapterService, useValue: chapterService },
@@ -68,12 +66,6 @@ describe('ChapterController', () => {
         },
       ],
     })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
       .overrideInterceptor(AuthSyncInterceptor)
       .useValue({ intercept: (context: any, next: any) => next.handle() })
       .compile();

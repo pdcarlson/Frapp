@@ -13,10 +13,7 @@ import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
-import {
-  createGuardStubs,
-  PermissionsGuardStub,
-} from './helpers/guard-stubs.factory';
+import { createGuardStubs, AllowAllGuard } from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
 const CHAPTER_ID = 'chapter-1';
@@ -110,7 +107,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .overrideGuard(ChapterGuard)
       .useClass(ChapterGuardStub)
       .overrideGuard(PermissionsGuard)
-      .useClass(PermissionsGuardStub)
+      .useClass(AllowAllGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();
