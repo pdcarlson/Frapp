@@ -205,7 +205,9 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MAN
 
 Repository secrets for Infisical bootstrap: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_PROJECT_ID`.
 
-Additional repo-level secrets: `RENDER_API_KEY`, `VERCEL_API_KEY`. Read-only consumers: `production-guardrails.yml` (both keys), `verify-deployments.yml` and `staging-conformance.yml` (`RENDER_API_KEY`). `deploy-production.yml` uses the same two keys to **create** deploys — a Render deploy by `commitId` and a Vercel deployment with `target: production`. They still never carry runtime values.
+Additional repo-level secrets: `RENDER_API_KEY`, `VERCEL_API_KEY`, `OPENROUTER_API_KEY`. Read-only consumers: `production-guardrails.yml` (both deploy keys), `verify-deployments.yml` and `staging-conformance.yml` (`RENDER_API_KEY`), `codex-review.yml` (`OPENROUTER_API_KEY`). `deploy-production.yml` uses the same two keys to **create** deploys — a Render deploy by `commitId` and a Vercel deployment with `target: production`. They still never carry runtime values.
+
+`OPENROUTER_API_KEY` is a **repository** secret, deliberately not an Infisical secret and not environment-scoped. Not Infisical because GitHub Actions is not one of the syncs (see the map above) — `codex-review.yml` would have nothing to pull it from. Not environment-scoped because the job declares no `environment:`, and naming one that carries required reviewers would suspend an advisory reviewer behind an Approve click. It is also the only **billing** credential in this repo's CI: unlike the deploy keys it spends money per use, which is why its workflow pins `shell_environment_policy.exclude` to keep it out of the reviewing agent's environment and why `scripts/ci/codex-review.mjs` redacts it before publishing anything — Actions masks secrets in logs but not in REST payloads, and this repo is public.
 
 Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`) from Infisical at workflow time via `Infisical/secrets-action`. No GitHub environment-scoped runtime secrets are required beyond the Infisical bootstrap listed above.
 

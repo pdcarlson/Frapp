@@ -273,16 +273,19 @@ transcribed from real CLI output, not invented.
 
 ## Rationale & history
 
-See **ADR-14** and its **2026-06-04 amendment** in [`spec/architecture/adr/adr-14.md`](../../../spec/architecture/adr/adr-14.md)
-for why the CI reviewer (CodeRabbit → self-hosted Claude Action → removed) was retired in favor of this
-local gate. **Correction (2026-09-08):** CodeRabbit comments on ready PRs again (public-repo OSS
-tier). That is advisory only — [`.coderabbit.yaml`](../../../.coderabbit.yaml) sets
-`request_changes_workflow: false` so a write-access `CHANGES_REQUESTED` cannot block squash
-(ADR-14 2026-09-08 amendment). The merge-quality gate is still this local `/diff-review` path.
+See **ADR-14** in [`spec/architecture/adr/adr-14.md`](../../../spec/architecture/adr/adr-14.md) for
+the whole arc: CodeRabbit → a self-hosted Claude review Action → removed entirely (2026-06-04
+amendment) → this local gate → the advisory `codex review` job above.
 
-**CodeRabbit's retirement is decided but NOT executed (2026-09-18).** The advisory `codex review`
-job above is the intended replacement and is already live; the two overlap until the App is
-uninstalled, which is dashboard-only and needs the owner. **The deletion order for
-`.coderabbit.yaml` is a safety interlock — uninstall the App first — and its one home is that
-file's own header comment**, with the reasoning in ADR-14's 2026-09-18 amendments. Do not restate
-the rule here: a fourth copy is a fourth thing to forget to update when the App finally goes.
+**CodeRabbit is gone (2026-09-18).** The App was uninstalled by the owner and `.coderabbit.yaml`
+deleted in the same change, in that order — the order mattered at the time, because deleting the
+config first would have dropped CodeRabbit to unconfigured defaults where `request_changes_workflow`
+is ON. There is no CodeRabbit config, App, or review to account for any more, and the two 2026-09-08
+and 2026-09-18 amendments that governed it are spent.
+
+**The one thing to carry forward outlives the vendor:** any automated reviewer here must post plain
+comments and **never** a GitHub review event, because a write-access `CHANGES_REQUESTED` blocks squash
+on green checks and no agent can clear it (#1875). That constraint is why the `codex review` job holds
+`issues: write` rather than `pull-requests: write`.
+
+The merge-quality gate is, as it has been since 2026-08-01, this local `/diff-review` path.
