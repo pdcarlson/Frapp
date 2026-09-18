@@ -1,5 +1,6 @@
 import { TaskStatus } from '#domain/entities/task.entity';
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { TaskController } from './task.controller';
 import { TaskService } from '../../application/services/task.service';
 import { RbacService } from '../../application/services/rbac.service';
@@ -10,9 +11,6 @@ import {
   UpdateTaskStatusDto,
   RejectTaskCompletionDto,
 } from '../dtos/task.dto';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 
 describe('TaskController', () => {
   let controller: TaskController;
@@ -34,20 +32,13 @@ describe('TaskController', () => {
       memberHasAnyPermission: jest.fn(),
     } as any;
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [TaskController],
       providers: [
         { provide: TaskService, useValue: taskService },
         { provide: RbacService, useValue: rbacService },
       ],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     controller = module.get<TaskController>(TaskController);
   });

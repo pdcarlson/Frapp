@@ -139,9 +139,15 @@ each:
 5. **Epic attach.** Attach as a sub-issue (`sub_issue_write`) when it clearly belongs to an open
    epic. If none fit, leave it standalone. **Match both title forms** — `[Epic] <name>` and
    `Epic: <name>` are both in live use, so a brackets-only reading skips the colon form, and
-   `has_children: true` is the structural check that does not depend on the title at all. Verified
-   2026-09-13 by a sweep of every open issue: 14 epics carry the bracketed form, and exactly one
-   (#2140) carries the colon form — so a bracketed match silently declines to attach anything to it.
+   `has_children: true` is the structural check that does not depend on the title at all. A
+   2026-09-13 sweep of every open issue found 14 epics in the bracketed form and one (#2140) in the
+   colon form — so a bracketed match silently declines to attach anything to it. **Treat the colon
+   form as a live, growing convention rather than a single exception:** #2351 ("Epic: Signet Release
+   Train", filed 2026-09-17, 5 workstreams, `has_children: true`) is a second, found by the
+   2026-09-18 triage run. Do not hard-code #2140 as *the* colon-form epic, and do not trust either
+   count as current — the bracketed total has not been re-swept since 2026-09-13. Which form is
+   canonical is an open docs question tracked in **#2189**, not a matter for a routine to settle;
+   until it closes, match both and let `has_children` arbitrate.
 
    **Neither check finds a *new* umbrella, and that is the case that costs the most.** #2196
    ("Ship Signet to the iOS App Store — submission track") is an umbrella by construction — its

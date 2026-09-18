@@ -12,6 +12,7 @@ import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { configureApp } from '../src/bootstrap';
+import { AllowAllGuard } from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
 
@@ -50,8 +51,16 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
     // the class-level SupabaseAuthGuard; list and mark-read now also declare
     // ChapterGuard + PermissionsGuard at method level. Nest instantiates those
     // method guards when compiling the controller even though this suite never
-    // hits those routes, so they are stubbed here the same way the unit spec
-    // does. Mounting the real controller with the real ValidationPipe keeps
+    // hits those routes, so they take `AllowAllGuard` from the shared factory —
+    // the same class the controller specs' `createUnguardedTestingModule` uses.
+    // The local `AuthGuardStub` stays, and `AllowAllGuard` could not replace it:
+    // the route reads `@CurrentUser('id')`, i.e. `request.appUser`, which the
+    // class-level AuthSyncInterceptor derives from `request.supabaseUser` — and
+    // `AllowAllGuard` deliberately writes neither. Only that stub's
+    // `supabaseUser` write is load-bearing: its `appUser` write is dead, because
+    // the interceptor always overwrites it from the mocked `AuthService.syncUser`
+    // before the handler runs. Do not copy that line into a new stub.
+    // Mounting the real controller with the real ValidationPipe keeps
     // both links under test: the @Body() DTO binding and the pipe, which is
     // what the DTO unit spec cannot reach.
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -69,9 +78,9 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
       .overrideGuard(SupabaseAuthGuard)
       .useClass(AuthGuardStub)
       .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
+      .useClass(AllowAllGuard)
       .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
+      .useClass(AllowAllGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();

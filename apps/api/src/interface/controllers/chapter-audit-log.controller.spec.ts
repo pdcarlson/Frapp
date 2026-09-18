@@ -1,9 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { ChapterAuditLogController } from './chapter-audit-log.controller';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 
 const MEMBER = {
   id: 'member-1',
@@ -25,17 +23,10 @@ describe('ChapterAuditLogController', () => {
       list: jest.fn(),
     } as never;
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [ChapterAuditLogController],
       providers: [{ provide: ChapterAuditLogService, useValue: service }],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     controller = module.get<ChapterAuditLogController>(
       ChapterAuditLogController,

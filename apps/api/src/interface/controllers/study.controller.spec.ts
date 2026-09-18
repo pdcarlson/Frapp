@@ -1,12 +1,10 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import {
   StudyGeofenceController,
   StudySessionController,
 } from './study.controller';
 import { StudyService } from '../../application/services/study.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 
 describe('StudyController', () => {
   let geofenceController: StudyGeofenceController;
@@ -27,26 +25,15 @@ describe('StudyController', () => {
       listSessions: jest.fn(),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [StudyGeofenceController, StudySessionController],
       providers: [
         {
           provide: StudyService,
           useValue: mockStudyService,
         },
-        {
-          provide: 'SUPABASE_CLIENT',
-          useValue: {},
-        },
       ],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     geofenceController = module.get<StudyGeofenceController>(
       StudyGeofenceController,
