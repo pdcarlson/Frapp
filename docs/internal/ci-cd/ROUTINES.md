@@ -143,9 +143,10 @@ this block. Policy detail: [`GITHUB_PM.md` → Ownership boundary](GITHUB_PM.md#
    2026-08-27, so the body cannot have lost and regained them. A comment thread is an append-only
    log of what was true when each entry was written, and no run goes back to correct one. Read the
    body and the blockers' current state; that takes two calls and is the only account that cannot
-   be stale. The rule itself is unchanged and still verified 2026-09-03 against `next.md:199` and
-   `:335` — note `:199`'s predicate is "no open blocker **surviving §1.1**", so a tracker-open
-   blocker screens a candidate at §0.2 and §1.1 adjudicates it against the repo.
+   be stale. The rule itself is unchanged and still verified 2026-09-03 against
+   [`next.md`](../../../.claude/commands/next.md) §0.2 condition 3 and §1.1 — note condition 3's
+   predicate is "no open blocker **surviving §1.1**", so a tracker-open blocker screens a candidate
+   at §0.2 and §1.1 adjudicates it against the repo.
 
 Triage (only) may *organize* any `triage` item (priority, `Blocked by`, promote). That exception
 is spelled in the triage skill; it does not widen destructive writes.

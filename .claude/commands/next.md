@@ -191,9 +191,12 @@ it silently makes that condition unevaluable, which fails **open**). An issue is
 **all** hold:
 
 1. It carries **no state label** (`triage`, `in-progress`, `in-review` all disqualify — `triage`
-   needs a human-accepted promotion and a priority first; `in-review` means a PR is already
-   waiting on a human) and **no `routine-state` label** (routine infrastructure — e.g. the
-   "PR Follow-ups — Human Action List" tracking issue — is never work to claim).
+   means the item is still in the inbox and needs promotion plus a priority first; **who** may
+   promote it is
+   [`GITHUB_PM.md` → Ownership boundary](../../docs/internal/ci-cd/GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly)'s
+   to state rather than this file's; `in-review` means a PR is already waiting on a human) and
+   **no `routine-state` label** (routine infrastructure — e.g. the "PR Follow-ups — Human Action
+   List" tracking issue — is never work to claim).
 2. No live claim comment (`issue_read get_comments`; skip the read for issues untouched since
    before `LEASE`).
 3. No open blocker surviving §1.1 — a `Blocked by #N` body line whose #N is still open.
