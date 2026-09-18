@@ -36,14 +36,19 @@ not by the Governs column here. No CI check asserts this table is complete or it
 | [`mobile/`](mobile/README.md) | Mobile app: screen inventory, navigation, interaction patterns | Active |
 | [`web-greenfield/`](web-greenfield/README.md) | The web UI rebuild (#2140): trust order, brand locks, foundation tokens, deletion acceptance | Active — **outranks `web-dashboard/` on visuals and structure while #2140 is open** |
 | [`web-dashboard/`](web-dashboard/README.md) | Admin web app: shell, nav, screens, state | Active (Signet since the #920 shell slice), but see the note below |
-| [`landing/`](landing/README.md) | Marketing site | **Visual freeze** (bone/bronze/Geist); copy and mark are Signet |
+| [`landing/`](landing/README.md) | Marketing site | **Reskin in progress** ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)) — the visual freeze is lifted and the decisions are taken; `apps/landing` still ships bone/bronze/Geist until the token cutover |
 | [`brand-identity.md`](brand-identity.md) | Signet identity: name, tagline, mark/logo rules, house gold | Active |
 | [`assets.md`](assets.md) | Logos, icons, asset sync | Active |
 | [`resilience/`](resilience/README.md) | Network resilience, loading/empty/error delivery guarantees, message delivery | Active |
 
-### Frozen surfaces
+### The landing during its reskin
 
-`landing/` documents the storefront as built. Product copy and the locked crest are Signet; Geist + bone/bronze tokens stay until the visual reskin. It MUST NOT be extended with new visual design decisions — those belong in [`design-system/`](design-system/README.md). The web dashboard left this list with the #920 shell slice; its per-screen-family truing-up is tracked on #920.
+`landing/` is **no longer frozen.** [#2364](https://github.com/pdcarlson/Frapp/issues/2364) is reskinning the storefront from a committed set of target boards, so that README now records the reskin's nine decisions, the marketing type roles and the marketing copy rules alongside the storefront as built. Two things did not change with the freeze lift:
+
+- **`apps/landing` still ships Geist + bone/bronze tokens** until the token cutover ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)) merges. Until then, do not file spec-vs-implementation drift against those leftover tokens, and do not mix the two systems on the surface.
+- **It still MUST NOT be extended with new visual design decisions of its own** — those belong in [`design-system/`](design-system/README.md). What `landing/` owns is this surface's application of them: its decisions, its three marketing type roles, and its copy rules.
+
+The web dashboard left the frozen list with the #920 shell slice; its per-screen-family truing-up is tracked on #920.
 
 ### The web dashboard during #2140
 

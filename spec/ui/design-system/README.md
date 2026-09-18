@@ -4,7 +4,7 @@
 
 > The rules shared by every Signet surface: direction, guardrails, component ownership, state completeness, entitlement gating, accessibility, motion, and the quality gate. Token values live in the sibling docs below; the committed HTML references are the visual truth.
 
-**Scope.** The *process* standards — component ownership (§3), state completeness (§4), entitlement gating (§5), accessibility (§6), motion discipline (§7), the quality gate (§8), and the behavioral bans in §2 — bind **every** UI surface, including the frozen [`../landing/README.md`](../landing/README.md). The *visual* specification — §1, the visual bans in §2, and the token docs below — binds the **Signet surfaces**: mobile and the web dashboard ([`../web-dashboard/README.md`](../web-dashboard/README.md)). Landing is the one frozen carve-out — it keeps shipping its legacy design system, and [`foundations.md`](foundations.md) §1 owns that split.
+**Scope.** The *process* standards — component ownership (§3), state completeness (§4), entitlement gating (§5), accessibility (§6), motion discipline (§7), the quality gate (§8), and the behavioral bans in §2 — bind **every** UI surface, including [`../landing/README.md`](../landing/README.md). The *visual* specification — §1, the visual bans in §2, and the token docs below — binds the **Signet surfaces**: mobile and the web dashboard ([`../web-dashboard/README.md`](../web-dashboard/README.md)). Landing is the one carve-out left, and it is closing: its reskin is approved and staged ([#2364](https://github.com/pdcarlson/Frapp/issues/2364)), it keeps shipping its legacy design system until the token cutover merges, and [`foundations.md`](foundations.md) §1 owns that split.
 
 ---
 

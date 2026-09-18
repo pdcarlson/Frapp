@@ -3,8 +3,8 @@ name: signet-cutover
 description: >
   Signet-surface cutover checklist — which tokens and typefaces are current vs legacy Frapp, that
   a cutover deletes what it replaces, and which committed reference board is visual truth. Use
-  when building or reskinning UI, touching theme tokens, chapter accents, brand assets, frozen
-  web/landing surfaces, or anything under spec/ui/.
+  when building or reskinning UI, touching theme tokens, chapter accents, brand assets, the
+  web/landing surfaces mid-cutover, or anything under spec/ui/.
 ---
 
 # Signet surface cutover
@@ -52,18 +52,26 @@ Canonical docs (link, don't restate values):
 | Typeface | **Figtree**. Geist is rejected. Web ships it vendored at `packages/theme/fonts/FigtreeVF.woff2` (`next/font/local`, `--font-figtree`). | Geist Sans in `@repo/theme` — now landing-only |
 | House accent | Gold/amber: house gold `#EFB63B`, accent seed `#DDB844` (the mark gold) — never brown-bronze, never royal blue | Bronze `primary`, royal blue leftovers in old specs |
 | Token home | `spec/ui/design-system/foundations.md` (ladder `#131211` / `#1A1A1A` / `#211E1A` / `#2A2621` since #2143); web implementation: `packages/theme/src/signet.css` + `packages/theme/src/signet.ts` | `packages/theme/src/globals.css` (legacy `@repo/theme` exports, imported by landing) |
-| Spec status | Live — [`web-dashboard`](../../../spec/ui/web-dashboard/README.md) is **Active (Signet)**, but [`web-greenfield`](../../../spec/ui/web-greenfield/README.md) outranks it on web visuals while #2140 is open | Frozen README: [`landing`](../../../spec/ui/landing/README.md) |
+| Spec status | Live — [`web-dashboard`](../../../spec/ui/web-dashboard/README.md) is **Active (Signet)**, but [`web-greenfield`](../../../spec/ui/web-greenfield/README.md) outranks it on web visuals while #2140 is open | Reskin in progress, README **no longer frozen**: [`landing`](../../../spec/ui/landing/README.md) |
 
-**The two systems MUST NOT mix on one surface.** Do not import Signet tokens onto the frozen
-landing surface, and do not copy bone/bronze/Geist/`#2563EB` onto a Signet screen. The frozen
-landing README means: do not implement visual changes from that doc, and do not file
-spec-vs-implementation drift against it. The `apps/web` migration window is **closed**: a legacy
-class or a live `dark:` variant on a dashboard screen is a defect now, not a pending slice
+**The two systems MUST NOT mix on one surface.** Do not import Signet tokens onto the landing
+surface before its token cutover lands, and do not copy bone/bronze/Geist/`#2563EB` onto a Signet
+screen. The `apps/web` migration window is **closed**: a legacy class or a live `dark:` variant on a
+dashboard screen is a defect now, not a pending slice
 ([`ui-development`](../ui-development/SKILL.md)).
 
-New Signet work MUST NOT copy visual patterns from frozen surfaces. Product marks ship locked
-emblem B from [`spec/ui/assets.md`](../../../spec/ui/assets.md); do not restyle them piecemeal.
-Landing tokens (Geist, bone/bronze) stay frozen until that surface's visual reskin.
+**The landing is mid-cutover, and that changes what its README means.** Its visual freeze was lifted
+by [#2364](https://github.com/pdcarlson/Frapp/issues/2364) slice 0, so that doc now carries the
+reskin's nine decisions, three marketing type roles and marketing copy rules — read and implement
+them. What survives the lift: `apps/landing` still ships Geist + bone/bronze until
+[#2366](https://github.com/pdcarlson/Frapp/issues/2366) merges, so do not file
+spec-vs-implementation drift against those leftover tokens, and do not copy the surface's
+current visual patterns into new Signet work. The target boards under
+[`spec/ui/landing/reference/`](../../../spec/ui/landing/reference/README.md) are **target state**:
+they bind nothing until the cutover, and their README is the one place that status is stated.
+
+Product marks ship locked emblem B from [`spec/ui/assets.md`](../../../spec/ui/assets.md); do not
+restyle them piecemeal.
 
 ## Naming
 
@@ -85,8 +93,8 @@ documented migration window). Concrete:
 
 ## Before you ship a visual change
 
-1. Name the surface: Signet or frozen-legacy.
-2. Read the matching spec (brand-identity + foundations for Signet; frozen README for web/landing).
+1. Name the surface: Signet, or legacy pending its cutover.
+2. Read the matching spec (brand-identity + foundations for Signet; the surface README for web/landing — the landing's is live, not frozen, and carries the reskin's decisions).
 3. Check the reference board, not a screenshot of current code, when the two disagree.
 4. Confirm you are not mixing token systems.
 5. Delete the path you replaced.
