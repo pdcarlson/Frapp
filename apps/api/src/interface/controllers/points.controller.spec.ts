@@ -1,9 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { TestingModule } from '@nestjs/testing';
+import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { PointsController } from './points.controller';
 import { PointsService } from '../../application/services/points.service';
-import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   AdjustPointsDto,
@@ -24,17 +22,10 @@ describe('PointsController', () => {
       listTransactions: jest.fn(),
     } as any;
 
-    const module: TestingModule = await Test.createTestingModule({
+    const module: TestingModule = await createUnguardedTestingModule({
       controllers: [PointsController],
       providers: [{ provide: PointsService, useValue: pointsService }],
-    })
-      .overrideGuard(SupabaseAuthGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ChapterGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     controller = module.get<PointsController>(PointsController);
   });

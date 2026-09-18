@@ -10,10 +10,7 @@ import {
   createSupabaseQueryBuilder,
 } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
-import {
-  createGuardStubs,
-  PermissionsGuardStub,
-} from './helpers/guard-stubs.factory';
+import { createGuardStubs, AllowAllGuard } from './helpers/guard-stubs.factory';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
@@ -262,7 +259,7 @@ describe('Chat hot path (e2e)', () => {
       .overrideGuard(ChapterGuard)
       .useClass(ChapterGuardStub)
       .overrideGuard(PermissionsGuard)
-      .useClass(PermissionsGuardStub)
+      .useClass(AllowAllGuard)
       .compile();
 
     app = moduleFixture.createNestApplication();

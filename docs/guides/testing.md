@@ -168,6 +168,25 @@ Interceptors / middleware:
 - `requestIdMiddleware` — attaches `x-request-id` when missing and forwards when present (Express middleware, before guards)
 - Logging interceptor — ensures it logs request/response metadata (can be smoke-tested)
 
+### Getting past the guard chain in a controller spec
+
+A controller spec compiles the controller and calls its methods directly, so the guards never
+*run* — but Nest instantiates a controller's enhancers during `.compile()`, and `SupabaseAuthGuard`
+injects `SUPABASE_CLIENT`, which a controller-only testing module does not provide. Use
+`createUnguardedTestingModule()` from `apps/api/test/helpers/guard-stubs.factory.ts` in place of
+`Test.createTestingModule()`; it returns the builder, so any further `.overrideProvider()` /
+`.overrideInterceptor()` chains onto it as usual. Do **not** instead provide a stub
+`'SUPABASE_CLIENT'` so the *real* guards can construct — that was the minority pattern the helper
+replaced, and it leaves a guard live in a spec that never exercises it. The axis is **who injects
+the token**: supplying it because the code under test injects it is right (`health.controller.spec.ts`
+does, because `HealthController` itself injects it); supplying it so a guard you are not testing can
+construct is not. Prefer the exported `SUPABASE_CLIENT` constant to the bare string either way.
+
+Four specs in `interface/controllers/` do not use the helper: `health` and `webhook` declare no
+guards at all, and `analytics` and `write-payload-ordering` construct their controllers with `new`,
+which is simpler wherever a controller is thin enough for it. The helper's docblock names all four
+and why.
+
 ## 4a. Repository tenant-scope tests
 
 The 33 Supabase repositories under `apps/api/src/infrastructure/supabase/repositories/` long had no
@@ -368,16 +387,21 @@ That is not hypothetical. Each spec used to hand-roll its own copy and none inst
 filter, so the suite ran under Nest's *default* filter, which serialises an exception's response
 object verbatim while production ships four fixed keys. `cross-tenant-isolation.e2e-spec.ts` asserted
 a structured `code` on an error body and passed in CI every run until it was fixed, against a shape
-`main.ts` cannot emit (#1020). Three different bootstrap shapes had drifted across the twelve specs before they were
+`main.ts` cannot emit (#1020). Three different bootstrap shapes had drifted across the e2e specs before they were
 consolidated.
 
-E2E specs build the Nest app from `AppModule` but **mock external dependencies** rather than hitting a
-live backend: the Supabase client is overridden via the `SUPABASE_CLIENT` provider token (see
+E2E specs usually build the Nest app from `AppModule` but **mock external dependencies** rather than
+hitting a live backend: the Supabase client is overridden via the `SUPABASE_CLIENT` provider token (see
 `apps/api/test/helpers/supabase-mock.factory.ts` / `createSupabaseMock()`), and auth/chapter/permission
 guards are replaced with stubs from `apps/api/test/helpers/guard-stubs.factory.ts`
-(`createGuardStubs()` / `PermissionsGuardStub`). Not every spec uses all of it — `cross-tenant-isolation`
-runs the real auth and chapter guards and takes only `PermissionsGuardStub`, and two specs cannot use
-the factory at all; its docblock names them and why. UUID-typed DTO fields (`@IsUUID()`) must use RFC-4122-valid UUIDs in
+(`createGuardStubs()` / `AllowAllGuard`). Deviations are normal and deliberate, so read the spec
+rather than assuming: `cross-tenant-isolation` runs the real auth and chapter guards and takes only
+`AllowAllGuard`; `attendance-points` runs the whole real chain to assert 401s; `settings-quiet-hours-tz`
+mounts one controller instead of `AppModule` and hand-rolls its own auth stub; `analytics-identity`
+cannot use the factory at all. That list is a sample, not a roster — `grep -L guard-stubs.factory
+apps/api/test/*.e2e-spec.ts` is the live one. Controller specs under `apps/api/src` are unit
+tests and take a different helper from the same file — see [§4](#4-guards-and-interceptors).
+UUID-typed DTO fields (`@IsUUID()`) must use RFC-4122-valid UUIDs in
 fixtures (correct version/variant nibbles) or the `ValidationPipe` rejects the request with `400`.
 
 Because `AppModule`'s `ConfigModule.forRoot` runs `validateEnv` (`src/config/env.validation.ts`) at
