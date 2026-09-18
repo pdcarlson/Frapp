@@ -80,10 +80,16 @@ jobs:
 
       - name: Build review prompt
         env:
-          # Title and body are ATTACKER-CONTROLLED on a public repo: anyone can
-          # open a PR. They are passed through the environment and written with
+          # Title and body are passed through the environment and written with
           # a quoted heredoc, never interpolated as `${{ }}` into a shell or
-          # prompt string, so they cannot break out of the fence below.
+          # prompt string. NOTE the scope: the job's fork guard above restricts
+          # runs to same-repo PRs, so today these values come from someone who
+          # already has push access — the fencing is defence in depth against a
+          # future `workflow_run` variant, NOT a control proven against
+          # anonymous input. A STRONGER channel is unfenced: the prompt points
+          # the agent at AGENTS.md and the ADRs, which are read from the PR
+          # merge commit, so a PR can edit its own reviewing instructions.
+          # Unresolved — see the ADR's open-issues list.
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -92,10 +98,14 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           # Per-run unguessable fence. A STATIC delimiter is forgeable: a PR
-          # body containing the literal end-marker closes the block early and
-          # everything after it reads as trusted context. Measured against this
-          # exact workflow before the nonce was added — the escape worked. The
-          # attacker cannot predict 16 random bytes, so the fence holds.
+          # body containing the literal end-marker closes the block early.
+          # WHAT WAS ACTUALLY MEASURED: this step's shell was reproduced
+          # locally, and a marker-bearing body does close the block early in
+          # the generated file. Whether a model then treats the trailing text
+          # as trusted was NOT tested — that needs a live run. The nonce makes
+          # the marker unguessable; treat the rest as defence in depth, not as
+          # a proven control, and do not weaken it on the strength of this
+          # comment.
           FENCE="UNTRUSTED-$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
           {
             echo "You are reviewing pull request #${PR_NUMBER} of ${REPO}."
@@ -207,8 +217,13 @@ jobs:
           model: ${{ vars.CODEX_REVIEW_MODEL || 'meta/muse-spark-1.3' }}
           prompt-file: ${{ runner.temp }}/codex-review-prompt.md
           permission-profile: ":workspace"
-          # Default, stated explicitly: revokes the runner user's sudo before
-          # invoking Codex.
+          # LOAD-BEARING, not a cosmetic restatement of a default. Upstream's
+          # own action.yml warns that under `read-only` "Codex will still run
+          # as the default user ... which likely has sudo privileges, so it
+          # could read `openai-api-key` from memory and reveal it by printing
+          # it to the output". This job's final message is posted publicly, so
+          # `read-only` and `unsafe` are BOTH less safe here than `drop-sudo`
+          # despite their names. Do not "harden" this value.
           safety-strategy: drop-sudo
 
   post_feedback:
@@ -218,10 +233,11 @@ jobs:
     if: needs.codex.outputs.final_message != ''
     permissions:
       # `issues.createComment` against a PR number writes to the PR's issue
-      # thread. `pull-requests: write` alone is very likely sufficient, but the
-      # upstream reference workflow grants both and that is the only evidence
-      # available without a live run — a 403 here costs a whole PR cycle to
-      # discover. If you tighten this, drop `issues` first and watch one PR.
+      # thread, so `issues: write` is the load-bearing grant. Measured in this
+      # repo, not guessed: `.github/workflows/pr-base-sync.yml` runs with
+      # `pull-requests: read` + `issues: write` and creates PR comments through
+      # `upsertWakeComment` (scripts/ci/ci-wake.mjs). `pull-requests: write` is
+      # therefore the removable one — drop THAT first if tightening.
       issues: write
       pull-requests: write
     steps:

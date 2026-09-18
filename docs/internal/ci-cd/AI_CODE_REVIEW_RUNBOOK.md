@@ -5,7 +5,14 @@
 > secret, or a `.github/claude-review/` rubric. The **merge-quality gate** happens **locally, before
 > the push** — that is what this runbook documents.
 >
-> **Update (2026-09-18):** a CI reviewer exists again, but it is **advisory and blocks nothing** —
+> **Update (2026-09-18) — PROPOSED, NOT YET IN FORCE. Do not operate from this section yet.**
+> **CodeRabbit is being retired by owner decision — assume none going forward.** What remains open is
+> the replacement: the harness below is under reconsideration, because Codex ships a purpose-built
+> `codex review` subcommand that `openai/codex-action` cannot reach, and this repo's own Codex
+> reviewer is already installed and merely out of quota. See § Open issues in ADR-14's 2026-09-18
+> amendment before acting. The description that follows is a proposal, not the live state.
+>
+> a CI reviewer exists again, but it is **advisory and blocks nothing** —
 > [`.github/workflows/codex-review.yml`](../../../.github/workflows/codex-review.yml), Muse Spark 1.3
 > via OpenRouter, posting one PR comment. It is deliberately **not** a required check and is absent
 > from `scripts/ci/lib/required-checks.mjs`. It replaces CodeRabbit, which was removed the same day.
@@ -208,7 +215,8 @@ so a direct Meta endpoint fails at config load. OpenRouter implements `/v1/respo
 See **ADR-14** and its **2026-06-04 amendment** in [`spec/architecture/adr/adr-14.md`](../../../spec/architecture/adr/adr-14.md)
 for why the original CI reviewer (CodeRabbit → self-hosted Claude Action → removed) was retired in
 favor of this local gate. **Superseded (2026-09-18):** the 2026-09-08 CodeRabbit correction no longer
-applies — CodeRabbit is gone (`.coderabbit.yaml` deleted, GitHub App uninstalled) and the advisory
+applies *once the App is uninstalled* — which has NOT happened yet (see the banner above). The
+intent is that CodeRabbit goes (`.coderabbit.yaml` deleted, GitHub App uninstalled) and the advisory
 slot is now the Codex workflow above. ADR-14's 2026-09-18 amendment records why re-adding a CI
 reviewer does not re-litigate the 2026-06-04 removal: every objection it raised was either lapsed
 (Actions unmetered on a public repo), sidestepped (BYOK does not draw on subscription quota), or

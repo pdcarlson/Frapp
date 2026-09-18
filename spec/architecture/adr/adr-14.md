@@ -40,6 +40,12 @@ installation can bypass it. A nonzero hook result otherwise aborts the push.
 
 ## Amendment — 2026-09-18: CodeRabbit removed; advisory BYOK Codex review on GitHub Actions
 
+**Status: PROPOSED, NOT IN FORCE.** The uninstall this decision depends on has **not** happened —
+`coderabbitai[bot]` posted on [#2395](https://github.com/pdcarlson/Frapp/pull/2395) at
+2026-09-18T18:30:00Z (read via the PR comments API), citing `Configuration used: Path:
+.coderabbit.yaml`. Until the App is uninstalled, merging the `.coderabbit.yaml` deletion **causes**
+the #1875 outage rather than concluding it. See § Open issues at the foot of this amendment.
+
 **Decision:** CodeRabbit is retired entirely (`.coderabbit.yaml` deleted, GitHub App uninstalled) and
 replaced by [`.github/workflows/codex-review.yml`](../../../.github/workflows/codex-review.yml) —
 `openai/codex-action@v1` reviewing each ready PR and posting **one advisory comment**. The local
@@ -110,9 +116,11 @@ are load-bearing:
   into a fenced, explicitly-untrusted block, never interpolated as `${{ }}` into a shell or prompt
   string. The upstream example workflow does interpolate them directly; that shape was deliberately
   not copied.
-- **The fence delimiter is a per-run nonce, and that is load-bearing.** A static marker was built
-  first and *measured escapable*: a PR body containing the literal `----- END UNTRUSTED PR BODY -----`
-  closed the block early, so text after it rendered as trusted context. Sixteen random bytes from
+- **The fence delimiter is a per-run nonce.** A static marker was built first, and the prompt-builder
+  shell was reproduced locally: a PR body containing the literal `----- END UNTRUSTED PR BODY -----`
+  does close the block early in the generated file. **What was not tested is the half that matters** —
+  whether a model then treats the trailing text as trusted. That needs a live run, which has not
+  happened. Read the nonce as defence in depth, not as a proven control. Sixteen random bytes from
   `/dev/urandom` are embedded in the BEGIN/END markers and quoted back to the model as the run's
   token. Anyone simplifying this back to a fixed string reopens the escape — the shell-injection
   defense (`printf` on an env var) never covered it, because this is a prompt-level break, not a
@@ -130,3 +138,42 @@ are load-bearing:
   action pointed at Meta directly.
 - External human contributors start opening fork PRs → the silent skip becomes a coverage hole;
   revisit with a `workflow_run`-triggered job that never checks out fork code alongside the key.
+
+### Open issues — this amendment is not shippable until these close
+
+1. **CodeRabbit: RESOLVED by decision (2026-09-18).** It was still installed and reviewing at the
+   time this amendment was drafted (`coderabbitai[bot]` on #2395, 18:30:00Z) — the evidence above is
+   kept because it dates the state, not because it is still open. The repo owner has since decided to
+   uninstall the App outright: **assume no CodeRabbit going forward.** The `.coderabbit.yaml`
+   deletion in this branch is therefore correct rather than hazardous, provided the uninstall lands
+   first; nothing in CI can assert that ordering, so it stays a human step.
+2. **The harness is the wrong one.** `openai/codex-action` runs `codex exec` — a generic agent
+   reviewing because the prompt says so. Codex ships a purpose-built reviewer as a first-class
+   subcommand (`codex review`, "Run a code review non-interactively", presets `--base` / `--commit` /
+   `--uncommitted`, optional custom instructions layered on top), verified against Codex CLI 0.155.0.
+   The action cannot reach it: it exposes no subcommand input and `codex-args` appends to `exec`
+   only. Reaching the real harness means installing the CLI and invoking `codex review` directly.
+3. **The repo's own Codex reviewer is already installed and merely out of quota.**
+   `chatgpt-codex-connector[bot]` posted "You have reached your Codex usage limits for code reviews …
+   add credits to your account and enable them for code reviews" on #2395 at 2026-09-18T18:29:49Z.
+   Pricing that credits path may retire this entire amendment — it keeps the tuned product and its
+   inline comments. Settle this before building anything further.
+4. **Governing docs are read from the PR merge commit.** The prompt points the agent at `AGENTS.md`
+   and the ADRs as authoritative, so a PR can edit its own reviewing instructions — a stronger
+   injection channel than the fenced title/body, and unfenced. Read them from the base ref, or
+   declare every in-diff file untrusted.
+5. **`meta/muse-spark-1.3` is unverified.** openrouter.ai was egress-blocked from the authoring
+   sandbox; the slug and the `/v1/responses` endpoint come from search indexes, not the vendor. A
+   wrong slug fails the job silently — nothing is required, so the PR stays green with no review.
+6. **No failure signal.** All skips are silent and an empty `final-message` posts nothing, so "dead
+   reviewer" and "reviewed, nothing to say" are indistinguishable. Every other non-required workflow
+   here upserts a `routine-state` alert issue; this one does not.
+7. **Smaller, confirmed:** no `timeout-minutes` on an unbounded agent job (repo convention sets one
+   on ~12 workflows; GitHub's default is 360 min); no path gate though ~22% of recent PRs are
+   docs-only by design; `Pre-fetch base and head refs` became dead once `fetch-depth: 0` landed, and
+   can still fail the job; the comment upsert is hand-rolled instead of reusing the tested
+   `upsertWakeComment`, and introduces `actions/github-script@v7`, used nowhere else here;
+   `openai/codex-action@v1` is a mutable tag in the only job holding a billing credential, and
+   `.github/dependabot.yml` does not watch the `github-actions` ecosystem;
+   `docs/internal/ci-cd/AGENT_INFRA.md`'s workflow roster has no `codex-review.yml` row; ADR-14's
+   own "live rules" line 12 still routes readers to the superseded 2026-09-08 amendment.
