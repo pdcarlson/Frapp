@@ -10,6 +10,7 @@ const {
   activateMutate,
   refreshSession,
   routerPush,
+  routerReplace,
 } = vi.hoisted(() => ({
   onboardMutate: vi.fn(),
   createInviteMutate: vi.fn(),
@@ -17,6 +18,10 @@ const {
   activateMutate: vi.fn(),
   refreshSession: vi.fn(),
   routerPush: vi.fn(),
+  // Hoisted like `routerPush` so the wizard's finish destination is
+  // assertable. It was a throwaway `vi.fn()` inline in the mock factory, which
+  // made the one thing #2297 changes about this component untestable.
+  routerReplace: vi.fn(),
 }));
 
 // useSelectChapter refreshes the Supabase session so the new chapter's
@@ -50,7 +55,11 @@ vi.mock("@repo/org-archetypes", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn(), push: routerPush }),
+  useRouter: () => ({
+    replace: routerReplace,
+    refresh: vi.fn(),
+    push: routerPush,
+  }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -94,6 +103,7 @@ describe("ChapterWizard legal acceptance gate", () => {
     createInviteMutate.mockReset();
     emailInvitesMutate.mockReset();
     routerPush.mockReset();
+    routerReplace.mockReset();
   });
 
   it("sends an invited member to /join instead of forcing chapter create", () => {
@@ -311,5 +321,58 @@ describe("the wizard header", () => {
     expect(
       screen.getByRole("group", { name: "Step 1 of 4" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("where the wizard leaves a brand-new founder", () => {
+  beforeEach(() => {
+    onboardMutate.mockReset();
+    onboardMutate.mockResolvedValue({ id: "ch-1" });
+    createInviteMutate.mockReset();
+    emailInvitesMutate.mockReset();
+    routerPush.mockReset();
+    routerReplace.mockReset();
+  });
+
+  /**
+   * `ChapterService.create` has no billing dependency, so the chapter this
+   * wizard just made is `subscription_status 'incomplete'`: every screen loads
+   * and every paid-ops write 403s permanently (#2297). Landing on chat left
+   * the founder in exactly that state, which is the Guideline 2.1 finding.
+   */
+  it("lands on checkout rather than chat, because a fresh chapter is incomplete", async () => {
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
+    await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Skip for now|Finish/ }),
+    );
+
+    expect(routerReplace).toHaveBeenCalledWith("/billing");
+  });
+
+  it("does not send the founder to the chat landing", async () => {
+    // Asserted by absence, and separately from the positive case: the bug this
+    // closes is *reachability* of the `incomplete` state, so a revert to
+    // `/chat?channel=general` has to fail a test rather than only manual QA.
+    render(<ChapterWizard onComplete={() => {}} />);
+    gotoIdentityStep();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
+    await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Skip for now|Finish/ }),
+    );
+
+    const destinations = routerReplace.mock.calls.map(([path]) => String(path));
+    expect(destinations).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("/chat")]),
+    );
   });
 });

@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import {
   SUBSCRIPTION_GRACE_PERIOD_MS,
   isWithinSubscriptionGrace,
+  subscriptionRefusalFromServerMessage,
   subscriptionWriteState,
 } from "./subscription";
 
@@ -119,5 +120,83 @@ describe("subscriptionWriteState", () => {
         }),
       ).toMatchObject({ code: "chapter.subscription.write_locked" });
     });
+  });
+});
+
+describe("subscriptionRefusalFromServerMessage", () => {
+  /**
+   * The messages this matches are the only thing that survives the wire.
+   * `AllExceptionsFilter` serialises `{statusCode, error, message, requestId}`
+   * and drops the `code` the guard throws (#1020), so a client branching on
+   * `codeOf` gets `null` for every real response. #2297 is the bug that
+   * caused: three mobile write surfaces read a permanent subscription refusal
+   * as an ordinary save failure and invited a retry that cannot win.
+   */
+  it("recognises all four refusals the guard can throw", () => {
+    const messages = [
+      "Chapter subscription is canceled; this chapter is read-only.",
+      "Chapter subscription is past due; write actions are blocked until payment is resolved.",
+      "Chapter subscription is past due; new invites are blocked until payment is resolved.",
+      "Chapter subscription is not active; complete checkout to use this feature.",
+    ];
+    const codes = messages.map(
+      (m) => subscriptionRefusalFromServerMessage(m)?.code,
+    );
+    expect(codes).toEqual([
+      "chapter.subscription.canceled",
+      "chapter.subscription.write_locked",
+      "chapter.subscription.invite_blocked",
+      "chapter.subscription.required",
+    ]);
+  });
+
+  it("carries the recoverable flag, so canceled can be told from the rest", () => {
+    // `canceled` is the one state a member cannot have resolved by payment, so
+    // copy keyed off this must not promise that paying fixes it.
+    expect(
+      subscriptionRefusalFromServerMessage(
+        "Chapter subscription is canceled; this chapter is read-only.",
+      )?.recoverable,
+    ).toBe(false);
+    expect(
+      subscriptionRefusalFromServerMessage(
+        "Chapter subscription is not active; complete checkout to use this feature.",
+      )?.recoverable,
+    ).toBe(true);
+  });
+
+  it("does not match on a prefix, which would claim a BillingService 400", () => {
+    // `billing.service.ts` throws "Chapter subscription is past due, not
+    // cancelled. Update the payment method…" as a 400 on the checkout path. A
+    // `startsWith("Chapter subscription")` test would call that a guard
+    // refusal and strip the retry from a recoverable failure.
+    expect(
+      subscriptionRefusalFromServerMessage(
+        "Chapter subscription is past due, not cancelled. Update the payment method from the billing portal.",
+      ),
+    ).toBeNull();
+    expect(
+      subscriptionRefusalFromServerMessage("Chapter subscription"),
+    ).toBeNull();
+  });
+
+  it("returns null for the other refusals that share these routes", () => {
+    // These arrive as 403 on the very same write routes. Treating them as a
+    // permanent gate is the regression that got a previous attempt reverted:
+    // each recovers on its own and must keep its retry control.
+    for (const message of [
+      "No roles assigned",
+      "No valid roles found",
+      "Chapter context is required",
+      "Your chapter isn't tracking study hours right now.",
+    ]) {
+      expect(subscriptionRefusalFromServerMessage(message)).toBeNull();
+    }
+  });
+
+  it("is null-safe, because serverMessageOf returns null for an absent message", () => {
+    expect(subscriptionRefusalFromServerMessage(null)).toBeNull();
+    expect(subscriptionRefusalFromServerMessage(undefined)).toBeNull();
+    expect(subscriptionRefusalFromServerMessage("")).toBeNull();
   });
 });

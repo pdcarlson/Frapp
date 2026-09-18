@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import {
   useAccessibleChapters,
@@ -117,7 +118,22 @@ const STEPS: Step[] = [
  * `/v1/members/me/onboarding` both dismisses the modal and mirrors the
  * mobile onboarding flag so the two surfaces stay consistent.
  */
+/**
+ * The routes this tour must not open over.
+ *
+ * It is mounted in `dashboard-shell.tsx` and gated only on
+ * `has_completed_onboarding`, so it is otherwise route-agnostic: it opens over
+ * whatever the member landed on. Since #2297 the wizard lands a new founder on
+ * `/billing` to complete checkout, and this modal would cover that CTA and
+ * then end on "Dive into your home dashboard."
+ *
+ * Suppressed, not dismissed — the flag is left alone, so the tour still opens
+ * the next time the founder is anywhere else in the dashboard.
+ */
+const TOUR_SUPPRESSED_PREFIXES = ["/billing"] as const;
+
 export function OnboardingTutorial() {
+  const pathname = usePathname();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const chaptersQuery = useAccessibleChapters();
   const currentChapter = useCurrentChapter({
@@ -145,10 +161,15 @@ export function OnboardingTutorial() {
     activeMembership?.chapter?.name ??
     "your chapter";
 
+  const onSuppressedRoute = TOUR_SUPPRESSED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname?.startsWith(`${prefix}/`),
+  );
+
   const shouldShow =
     Boolean(activeMembership) &&
     activeMembership?.has_completed_onboarding === false &&
-    !manuallyDismissed;
+    !manuallyDismissed &&
+    !onSuppressedRoute;
 
   async function completeOnboarding() {
     setManuallyDismissed(true);

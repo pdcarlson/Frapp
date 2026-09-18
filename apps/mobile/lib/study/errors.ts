@@ -12,6 +12,10 @@
  */
 
 import { codeOf, serverMessageOf, statusOf } from "@repo/api-sdk";
+import {
+  SUBSCRIPTION_REFUSAL_COPY,
+  subscriptionRefusalOf,
+} from "@/lib/subscription-refusal";
 
 export { serverMessageOf, statusOf };
 
@@ -39,6 +43,14 @@ export function isActiveSessionConflict(error: unknown): boolean {
 export function startErrorCopy(error: unknown): string {
   const status = statusOf(error);
   const serverMessage = serverMessageOf(error);
+
+  // The subscription gate, above the generic 403 arm because both arrive as
+  // 403 and the arm below relays the server's own words — which for an
+  // `incomplete` chapter are "…complete checkout to use this feature.", a
+  // purchase instruction the store declaration forbids in this app (#2297).
+  // Unlike the module-gate branch below this one is NOT keyed on `codeOf`,
+  // which is `null` on every real response (#1020).
+  if (subscriptionRefusalOf(error)) return SUBSCRIPTION_REFUSAL_COPY.study;
 
   // The module gate speaks to officers: "Re-enable it in Settings → Modules to
   // make changes." A member cannot do that and should not be told to. The
@@ -81,6 +93,14 @@ export function startErrorCopy(error: unknown): string {
 export function sessionErrorCopy(error: unknown): string {
   const status = statusOf(error);
   const serverMessage = serverMessageOf(error);
+
+  // The subscription gate, above the generic 403 arm because both arrive as
+  // 403 and the arm below relays the server's own words — which for an
+  // `incomplete` chapter are "…complete checkout to use this feature.", a
+  // purchase instruction the store declaration forbids in this app (#2297).
+  // Unlike the module-gate branch below this one is NOT keyed on `codeOf`,
+  // which is `null` on every real response (#1020).
+  if (subscriptionRefusalOf(error)) return SUBSCRIPTION_REFUSAL_COPY.study;
 
   switch (status) {
     case 404:

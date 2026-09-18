@@ -34,6 +34,7 @@ import {
   requestForegroundPermission,
 } from "@/lib/location";
 import { statusOf } from "@repo/api-sdk";
+import { subscriptionRefusalOf } from "@/lib/subscription-refusal";
 import {
   clearStudyPausedNotification,
   notifyStudyPaused,
@@ -144,6 +145,13 @@ export default function StudyScreen() {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  /**
+   * The subscription gate refused a session write (#2297). Tracked separately
+   * from `failure` because it is the one failure that must not be retried:
+   * it disables Start and stops the mirror-retry timer below, which otherwise
+   * re-fires every `MIRROR_RETRY_MS` forever against a permanent 403.
+   */
+  const [subscriptionRefused, setSubscriptionRefused] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
   const [canAskForLocation, setCanAskForLocation] = useState(true);
@@ -396,6 +404,8 @@ export default function StudyScreen() {
         applyResponse(response, seq);
       } catch (error) {
         if (cancelled) return;
+        const refused = subscriptionRefusalOf(error) !== null;
+        if (refused) setSubscriptionRefused(true);
         if (target) {
           setFailure(sessionErrorCopy(error));
           // A resume that keeps failing leaves the paused card on screen and
@@ -405,10 +415,15 @@ export default function StudyScreen() {
           // is still there and is the honest surface for a failed resume.
           void clearStudyPausedNotification();
         }
-        retryTimer = setTimeout(
-          () => setMirrorRetry((count) => count + 1),
-          MIRROR_RETRY_MS,
-        );
+        // A refusal is permanent until the chapter's subscription is sorted
+        // out, so re-arming here would spin the pause/resume mirror forever
+        // against a 403 nothing on this device can clear.
+        if (!refused) {
+          retryTimer = setTimeout(
+            () => setMirrorRetry((count) => count + 1),
+            MIRROR_RETRY_MS,
+          );
+        }
       }
     })();
 
@@ -483,6 +498,7 @@ export default function StudyScreen() {
       } else {
         setFailure(startErrorCopy(error));
       }
+      if (subscriptionRefusalOf(error)) setSubscriptionRefused(true);
     } finally {
       setIsStarting(false);
     }
@@ -659,6 +675,7 @@ export default function StudyScreen() {
             zone={selectedZone}
             canChooseZone={zones.length > 1}
             isStarting={isStarting}
+            isBlocked={subscriptionRefused}
             graceCopy={graceWindowCopy(selectedZone)}
             onChooseZone={() => zoneSheetRef.current?.present()}
             onStart={handleStartPress}

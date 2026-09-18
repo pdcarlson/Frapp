@@ -19,6 +19,10 @@ import {
 } from "@/lib/events/check-in-code";
 import { createScanLatch } from "@/lib/events/scan-latch";
 import { serverMessageOf, statusOf } from "@repo/api-sdk";
+import {
+  SUBSCRIPTION_REFUSAL_COPY,
+  subscriptionRefusalOf,
+} from "@/lib/subscription-refusal";
 import { latLngOf, requireForegroundFix } from "@/lib/location";
 import { selectEventDetail } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
@@ -46,13 +50,38 @@ type Status =
   | { kind: "idle" }
   | { kind: "submitting" }
   | { kind: "success"; message: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  /**
+   * The subscription gate refused the write (#2297). Terminal for as long as
+   * the chapter is not active, so — unlike `error` — it re-arms neither the
+   * scanner nor the manual field. A separate variant rather than a flag on
+   * `error`, so "no retry" is structural and a future branch cannot forget it.
+   */
+  | { kind: "blocked"; message: string };
 
 function errorMessage(error: unknown, fallback: string): string {
   if (statusOf(error) === 409) {
     return "You're already checked in for this event.";
   }
   return serverMessageOf(error) ?? fallback;
+}
+
+/**
+ * Which terminal state a failed check-in lands in.
+ *
+ * A subscription refusal must not fall through to `errorMessage`, which
+ * relays the server string verbatim — for an `incomplete` chapter that reads
+ * "…complete checkout to use this feature.", i.e. a purchase instruction
+ * rendered inside the iOS app, which the store declaration forbids.
+ */
+function failureStatus(error: unknown): Status {
+  if (subscriptionRefusalOf(error)) {
+    return { kind: "blocked", message: SUBSCRIPTION_REFUSAL_COPY.checkIn };
+  }
+  return {
+    kind: "error",
+    message: errorMessage(error, "Couldn't check you in."),
+  };
 }
 
 export default function CheckInScreen() {
@@ -134,10 +163,7 @@ export default function CheckInScreen() {
             : "You're checked in.",
         });
       } catch (error) {
-        setStatus({
-          kind: "error",
-          message: errorMessage(error, "Couldn't check you in."),
-        });
+        setStatus(failureStatus(error));
       } finally {
         // Released on both paths so a failed scan can be retried. A latch that
         // stayed closed after an error would strand the member on a dead screen.
@@ -190,12 +216,16 @@ export default function CheckInScreen() {
     void requestCameraPermission();
   }, [cameraPermission, requestCameraPermission]);
 
-  const scanning = status.kind !== "submitting" && status.kind !== "success";
+  const scanning =
+    status.kind !== "submitting" &&
+    status.kind !== "success" &&
+    status.kind !== "blocked";
 
   const manualSubmitDisabled =
     !isPlausibleManualCode(manualCode) ||
     writeBlockedReason !== null ||
     status.kind === "submitting" ||
+    status.kind === "blocked" ||
     checkIn.isPending;
 
   return (
@@ -277,7 +307,7 @@ export default function CheckInScreen() {
             </View>
           ) : status.kind === "success" ? (
             <Text style={styles.success}>{status.message}</Text>
-          ) : status.kind === "error" ? (
+          ) : status.kind === "error" || status.kind === "blocked" ? (
             <Text style={styles.error}>{status.message}</Text>
           ) : null}
 
