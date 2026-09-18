@@ -328,6 +328,15 @@ writing a screen. The constraints below are the ones most often violated by web 
   gitignored and only `expo start` writes them, so under a bare `tsc` `Href` is just `string`.
   `apps/mobile/lib/routes.spec.ts` is the guard that actually runs — if you add or move a route, it
   is what tells you a link went stale.
+- **Everything under `app/` ships.** expo-router builds the route table from a `require.context`
+  over the whole directory, so any file you drop in it — a spec, a fixture, a render helper — is a
+  route module and lands in the production bundle. A spec next to its screen drags `vitest` into the
+  Metro graph and kills `expo export`; that is how #2347 broke an iOS production build, and
+  `apps/mobile/lib/routes.spec.ts` now fails if it finds one. Screen-adjacent logic that wants a test
+  goes in `lib/`, and a spec that must render the whole screen lives there too, reaching back through
+  the `@/` alias (`lib/onboarding/join-screen.spec.tsx`). Full rule:
+  [`docs/internal/mobile/MOBILE_TESTING.md`](../../../docs/internal/mobile/MOBILE_TESTING.md)
+  § Gotchas.
 
 Everything else — component variants, states, iconography, copy — is specified in the docs linked
 above and is not restated here.
