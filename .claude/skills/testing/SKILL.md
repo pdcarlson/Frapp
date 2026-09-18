@@ -38,6 +38,7 @@ description: >
 | npm audit gate (high/critical) | `npm run check:npm-audit` (offline: `-- --soft-network`) |
 | Vercel-parity production build | `npm ci --omit=dev && npx turbo run build --filter=web --filter=landing` — **destroys your dev tree**; `npm ci` to restore |
 | 375px responsive floor (Playwright, blocking gate once rolled out) | `npm run test:floor -w apps/web` |
+| Landing fold geometry (Playwright, blocking gate once rolled out) | `npm run test:fold -w apps/landing` |
 
 ---
 
@@ -283,7 +284,9 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    `packages/**` — the job's path filter covers that glob, so a change there
    exercises those suites. `web-tests` is a required check (ADR-15 2026-08-19
    amendment).
-7. The shared-package and landing unit suites → `CI / lint-and-typecheck`. The job runs
+7. The shared-package and landing unit suites → `CI / lint-and-typecheck`. **This is not all of
+   landing's coverage** — `apps/landing/vitest.config.ts` excludes `**/tests/visual/**`, whose
+   Playwright fold suite runs separately, see item 14. The job runs
    `npm run test -w apps/landing` plus `-w @repo/validation`, `@repo/color`, `@repo/formatting`,
    `@repo/chapter-theme`, `@repo/theme`, and `@repo/api-sdk` — the canonical roster is the
    `lint-and-typecheck` entry in
@@ -345,6 +348,32 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
 
    Neither is exotic: a local run is only evidence when it fails for the reason
    CI would.
+
+14. `npm run test:fold -w apps/landing` → `CI / landing-fold` (added by
+   [#2368](https://github.com/pdcarlson/Frapp/issues/2368)). The landing's fold
+   at the two widths the reskin boards commit to, 1440x900 and 390x844. Same
+   lane as item 12 and for the same reason it is allowed to block: **it stores
+   no baseline and compares no pixels**, so there is nothing to drift and
+   nothing to regenerate. It reads geometry off the rendered page.
+
+   Two things about it are load-bearing:
+
+   - **It serves a production build**, not `next dev`. Under dev the stylesheet
+     arrives after hydration, so every `RevealOnView` measures itself inside the
+     viewport, takes its measure-before-arm early return and never arms —
+     measured at 1440x900, dev arms 0 blocks and `next start` arms 6. A
+     dev-served run would assert against a page whose motion never engages, so
+     the suite carries an explicit assertion that something armed.
+   - **The directory holds one spec on purpose.** Playwright exits 1 on a run
+     that collects no tests, which is what stops the job going green having
+     asserted nothing, and that guard keys on the collected-test count. A second
+     spec here would mask the first one's removal — see
+     `apps/web/playwright.config.ts`, and port apps/web's sibling-reading guard
+     if you add one.
+
+   Same sandbox caveat as item 12: the preinstalled Chromium's revision may not
+   match the pinned `@playwright/test`, and because this suite compares no
+   pixels the skew cannot affect its result — the browser only has to launch.
 
 ---
 

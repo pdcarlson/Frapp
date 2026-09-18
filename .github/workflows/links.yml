@@ -70,9 +70,13 @@ jobs:
       # one value per occurrence and the flag repeats, verified on lychee
       # 0.24.2. That was never the reason `.claude` is an input.)
       #
-      # apps/web/AGENTS.md and .github/pull_request_template.md are named
-      # explicitly because the walked roots below (docs, spec, .claude) do not
-      # reach them and the repo-root file list covers only the root AGENTS.md.
+      # apps/web/AGENTS.md, apps/landing/AGENTS.md and
+      # .github/pull_request_template.md are named explicitly because the walked
+      # roots below (docs, spec, .claude) do not reach them and the repo-root
+      # file list covers only the root AGENTS.md. (The landing one arrived with
+      # #2368: Next 16 writes a per-app AGENTS.md and re-adds it on every
+      # `next dev`, so the landing gained one the moment it grew a Playwright
+      # suite that boots a server.)
       # Both were read by the four docs gates deleted in this change. Listing
       # them here does not restore that: neither carries a markdown link today,
       # so lychee finds nothing to check. It is scope for the links they may
@@ -81,5 +85,5 @@ jobs:
       - name: Check internal markdown links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference --exclude-path spec/ui/web-greenfield/reference/web-framework.dc.html --exclude-path spec/ui/landing/reference/canvas docs spec .claude AGENTS.md README.md CONTRIBUTING.md apps/web/AGENTS.md .github/pull_request_template.md"
+          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference --exclude-path spec/ui/web-greenfield/reference/web-framework.dc.html --exclude-path spec/ui/landing/reference/canvas docs spec .claude AGENTS.md README.md CONTRIBUTING.md apps/web/AGENTS.md apps/landing/AGENTS.md .github/pull_request_template.md"
           fail: true

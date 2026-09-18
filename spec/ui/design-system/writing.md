@@ -52,9 +52,11 @@ controls. That is real drift against this rule rather than an exception to it, i
 drift actually turns on: whether a board outranks this document on a control's *words* as well as on
 its looks. Do not "fix" it by re-widening this rule.
 
-Out of scope here either way: **nav labels, page and screen titles, and segmented-control options are
-not CTAs** and this section has never governed them, which is why `Study Zones`, `Chat Admin`,
-`Discord Import` and `All Time` are not on that list.
+Out of scope here either way: **nav labels, page and screen titles, segmented-control options, and
+the proper name of a document are not CTAs** and this section has never governed them — which is why
+`Study Zones`, `Chat Admin`, `Discord Import`, `All Time`, `Terms of Service` and `Privacy Policy`
+are not on that list. A link is a CTA when it asks for an action (`Open billing`) and is not one when
+it names a thing (`Privacy Policy`); case follows that, not the element.
 
 The verb-plus-object rule above is unchanged, and it is the half this section is cited for elsewhere.
 

@@ -189,9 +189,16 @@ export const CI_CHECKS = [
   // whose motion never engages. The suite carries its own anti-vacuity assertion for
   // exactly that.
   //
-  // Path-gated on `changes.landing`, which does NOT overlap `changes.web`: the web
-  // filter covers `apps/web/**` and this one `apps/landing/**`, so a PR touching one
-  // surface skips the other's job. Both `needs:` parents are required checks.
+  // Path-gated on `changes.landing`. The two filters are NOT disjoint — they share
+  // `packages/**`, `package-lock.json`, `turbo.json` and `.github/actions/**`, and a
+  // change to any of those runs both jobs, which is correct. What differs is the app
+  // directory, so a PR touching only `apps/landing/**` skips `web-responsive-floor`
+  // and vice versa. `changes.landing` also carries `scripts/**`, which `web:` does
+  // not need: this job's Playwright `webServer` runs `npm run build`, so the repo's
+  // build scripts are inputs to it. Do not trim the shared patterns out on the
+  // strength of "these are different surfaces" — a skipped job reports Success, so
+  // dropping `packages/**` would take this gate green on the changes most likely to
+  // break the landing build. Both `needs:` parents are required checks.
   //
   // ROLLOUT: same caveat as secret-scan — required only once the landing-fold job
   // exists on the target branch and has run green. The apply must happen AFTER the

@@ -76,6 +76,18 @@ jobs:
               # `packages/*` through this action, so a change to it is
               # build-affecting and must not let a REQUIRED check skip.
               - '.github/actions/**'
+              # `scripts/**` is here and NOT in `web:` on purpose. This is the
+              # only path-gated job whose server command runs repo scripts:
+              # its Playwright `webServer` does `npm run build`, which is
+              # `scripts/sync-brand-assets.mjs` (prebuild) then
+              # `scripts/next-build.mjs`, which reads
+              # `scripts/lib/brand-pixels.mjs`. Without this, a PR editing only
+              # those makes `changes.landing` false, the job skips, and a
+              # skipped job reports Success — so a REQUIRED gate would go green
+              # having never built the landing, on exactly the change class
+              # that can break its build command. `apps/web`'s webServer is a
+              # bare `npm run dev`, so `web:` needs no equivalent.
+              - 'scripts/**'
             pglite:
               - 'supabase/migrations/**'
               - 'scripts/check-pglite-migrations.mjs'

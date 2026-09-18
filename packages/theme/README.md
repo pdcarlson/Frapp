@@ -49,6 +49,23 @@ variable and RN-invalid; mobile maps mono to the system stack via
 own `app/layout.tsx` and `app/global-error.tsx`, since its token cutover
 ([#2366](https://github.com/pdcarlson/Frapp/issues/2366)).
 
+**Two static instances sit beside the variable font, and they are not a second
+source.** `fonts/Figtree-Regular.ttf` and `fonts/Figtree-Bold.ttf` are the same
+upstream Figtree 2.002 release, vendored by
+[#2368](https://github.com/pdcarlson/Frapp/issues/2368) for exactly one consumer:
+`apps/landing/app/opengraph-image.tsx`, which renders through Satori
+(`next/og`). Satori cannot parse the variable `.woff2` — it throws
+`Unsupported OpenType signature wOF2`, and a variable TTF fails in its own way —
+so a card set in the house typeface needs static instances or it is not set in
+the house typeface. Only 400 and 700 are vendored, because only those two are
+used; add a weight when something uses it, not before.
+
+**So: one typeface, three containers, each for a renderer that needs it.** The
+browser gets the variable `.woff2` through `next/font/local`, React Native gets
+`@expo-google-fonts/figtree`, and Satori gets these. Before vendoring a fourth
+copy anywhere, check whether one of the three already fits — that duplication is
+the thing this section exists to prevent.
+
 **Geist Sans is gone.** `fonts/GeistVF.woff2` was deleted with its last
 consumer in the same cutover: `apps/landing` moved to Figtree, and a replaced
 asset does not outlive the thing that replaced it. Geist is explicitly rejected

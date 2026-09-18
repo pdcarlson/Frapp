@@ -7,11 +7,16 @@ export default defineConfig({
     /*
      * `tests/visual/` is the Playwright fold suite and runs under
      * `npm run test:fold`, not vitest — its specs import `@playwright/test`,
-     * which throws outside a Playwright runner. It is EXCLUDED rather than left
-     * unmatched on purpose: `vitest-collection.spec.ts` walks every
-     * suite-shaped file under this workspace and fails if one is neither
-     * included nor deliberately excluded, so silence here would be a failure,
-     * not a default.
+     * which throws `did not expect test.describe() to be called here` outside a
+     * Playwright runner. So this entry is load-bearing: drop it and
+     * `npm run test -w apps/landing` dies on collection.
+     *
+     * **Nothing catches that for you.** `vitest-collection.spec.ts` reports
+     * files matching NEITHER array, and `tests/visual/fold.spec.ts` matches
+     * `include` — so that guard returns clean with or without this line, and a
+     * second Playwright spec added under some other directory would slip past
+     * it the same way. The guard covers silently-skipped suites, not
+     * wrongly-collected ones. Same shape as `apps/web/vitest.config.ts`.
      */
     exclude: ["**/node_modules/**", "**/.next/**", "**/tests/visual/**"],
   },

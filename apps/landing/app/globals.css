@@ -239,10 +239,13 @@
    * (`apps/mobile/app/(tabs)/event-details.tsx`). What is drawn here is emphasis
    * on that fact arriving, not a claim that the product animates a dot.
    *
-   * **The whole gesture is 280ms, and that number is the point.** Two beats at
-   * `--motion-micro` is the entire ring; it ends inside the 300ms context
-   * duration that `spec/ui/design-system/README.md` §7 sets as the ceiling for
-   * anything below the fold. The obvious alternative — one beat at
+   * **It is the micro-feedback class, played twice, and the whole gesture still
+   * ends inside the context ceiling.** Each beat is one `--motion-micro`, which
+   * is the class §7 gives 100 to 180ms; two of them is 280, under the 300ms
+   * context duration §7 sets as the ceiling for anything below the fold. So it
+   * claims an existing class rather than arriving at one by arithmetic — and if
+   * a later gesture cannot be described that way, it is a new class and needs
+   * the amendment, not a cleverer sum. The obvious alternative — one beat at
    * `--motion-context`, iterated twice — runs for twice that ceiling and would
    * only be legal by the letter: it writes no number above the limit, so it
    * slips past `app/page.spec.ts`'s duration guard while breaching the budget

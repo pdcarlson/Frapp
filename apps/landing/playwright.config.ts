@@ -38,15 +38,16 @@ export default defineConfig({
    */
   forbidOnly: isCi,
   /*
-   * One retry in CI only. This suite boots a cold `next dev` and pays each
-   * route's first compile, and unlike the dashboard floor it has no warm
-   * sibling job. It is insurance against a slow first compile, not evidence
-   * that the suite flakes: a geometry assertion either holds or does not.
+   * One retry in CI only, and it is insurance rather than evidence that the
+   * suite flakes: a geometry assertion either holds or it does not. What it
+   * covers is the boot, not the tests — this job builds the app and starts a
+   * server before anything runs, so a slow runner shows up as a `webServer`
+   * timeout, and a retry is cheap next to a re-queued required check.
    */
   retries: isCi ? 1 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3002",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3102",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -61,12 +62,28 @@ export default defineConfig({
    * dev would assert against a page whose motion never engages, which is most of
    * what there is to assert.
    */
+  /*
+   * **Port 3102, not the app's own 3002, and `reuseExistingServer: false`.**
+   * Both are about not silently measuring the wrong server.
+   *
+   * `npm run dev -w apps/landing` serves on 3002. With `reuseExistingServer`
+   * and that port, a developer who happens to have the dev server up gets the
+   * whole suite run against it — and per the note above that is the one server
+   * these assertions do not hold on. The failure would read as a page
+   * regression rather than a harness mismatch, and two of the tests would pass
+   * for the wrong reason. `apps/web` can set that flag safely because its
+   * webServer command IS `npm run dev`; here the two differ, so the port has to.
+   *
+   * Never reusing also means a local run always serves the build it just made.
+   * A `next start` left over from an earlier run happily serves a stale
+   * `.next`, which is the same class of silent-wrong-target mistake.
+   */
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: "npm run build && npx next start --port 3002",
-        url: "http://127.0.0.1:3002",
-        reuseExistingServer: !isCi,
+        command: "npm run build && npx next start --port 3102",
+        url: "http://127.0.0.1:3102",
+        reuseExistingServer: false,
         timeout: 240_000,
       },
 });
