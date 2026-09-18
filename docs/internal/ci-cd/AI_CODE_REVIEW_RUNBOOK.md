@@ -2,7 +2,15 @@
 
 > **The CI Claude review was removed (2026-06-04, ADR-14 amendment).** There is no longer a
 > `claude-review.yml` workflow, a `claude-review-gate` required check, a `CLAUDE_CODE_OAUTH_TOKEN`
-> secret, or a `.github/claude-review/` rubric. PR review now happens **locally, before the push**.
+> secret, or a `.github/claude-review/` rubric. The **merge-quality gate** happens **locally, before
+> the push** — that is what this runbook documents.
+>
+> **Update (2026-09-18):** a CI reviewer exists again, but it is **advisory and blocks nothing** —
+> [`.github/workflows/codex-review.yml`](../../../.github/workflows/codex-review.yml), Muse Spark 1.3
+> via OpenRouter, posting one PR comment. It is deliberately **not** a required check and is absent
+> from `scripts/ci/lib/required-checks.mjs`. It replaces CodeRabbit, which was removed the same day.
+> A red or missing Codex comment never blocks a merge; the local gate below still does the gating.
+> See § Advisory CI review.
 
 ## What runs now
 
@@ -159,11 +167,56 @@ exercises nonzero denial, repeated retries, exact-SHA and multi-ref evidence, de
 tags, installer wiring, provider-hook removal, and the `/code-review` invocation rule. Each behavior
 test uses a throwaway repository and never touches live evidence.
 
+## Advisory CI review
+
+[`.github/workflows/codex-review.yml`](../../../.github/workflows/codex-review.yml) runs
+`openai/codex-action@v1` on each ready PR and posts a single comment, edited in place on every push.
+It is **advisory**: nothing depends on its conclusion.
+
+**Setup (one-time, human).** Add repository secret **`OPENROUTER_API_KEY`**. Optionally set
+repository variable **`CODEX_REVIEW_MODEL`** to override the model slug without editing the workflow.
+Cap spend on the OpenRouter side — the workflow has no budget guard.
+
+**Why OpenRouter and not Meta directly.** Codex speaks only the Responses API (`wire_api = "chat"`
+was removed in early February 2026). Meta's Model API serves Muse Spark at `/v1/chat/completions`,
+so a direct Meta endpoint fails at config load. OpenRouter implements `/v1/responses`. The action's
+`responses-api-endpoint` override points there, and its proxy forwards the supplied key as
+`Authorization: Bearer` — which is why the input named `openai-api-key` correctly holds an
+*OpenRouter* key. This is load-bearing; do not "simplify" it to Meta's base URL.
+
+**When it does not run**, by design, silently and without failing:
+
+| Case | Why |
+|---|---|
+| Draft PR | Not ready for review, and every run costs tokens. |
+| Fork PR | GitHub withholds secrets from fork `pull_request` events. `pull_request_target` is rejected — it would hand the API key to untrusted fork code. |
+| Dependabot PR | Dependabot has a separate secret store, so the key is empty. Lockfile bumps are CI's job. |
+
+**Troubleshooting.**
+
+- *No comment appeared.* Check the run was not skipped by one of the rows above; then confirm
+  `OPENROUTER_API_KEY` exists and has credit. An empty `final-message` skips `post_feedback` by design.
+- *`wire_api = "chat" is no longer supported`.* Something repointed the endpoint at a
+  Chat-Completions backend. Restore the OpenRouter `/v1/responses` URL.
+- *Model-not-found.* The OpenRouter slug changed, or you are entitled only to the `-contributor`
+  variant. Set `CODEX_REVIEW_MODEL`; no workflow edit needed.
+- *The review says something odd about the PR description.* Title and body are fenced as untrusted
+  input. A finding that reports an injection attempt in them is the workflow behaving correctly.
+
 ## Rationale & history
 
 See **ADR-14** and its **2026-06-04 amendment** in [`spec/architecture/adr/adr-14.md`](../../../spec/architecture/adr/adr-14.md)
-for why the CI reviewer (CodeRabbit → self-hosted Claude Action → removed) was retired in favor of this
-local gate. **Correction (2026-09-08):** CodeRabbit comments on ready PRs again (public-repo OSS
-tier). That is advisory only — [`.coderabbit.yaml`](../../../.coderabbit.yaml) sets
-`request_changes_workflow: false` so a write-access `CHANGES_REQUESTED` cannot block squash
-(ADR-14 2026-09-08 amendment). The merge-quality gate is still this local `/diff-review` path.
+for why the original CI reviewer (CodeRabbit → self-hosted Claude Action → removed) was retired in
+favor of this local gate. **Superseded (2026-09-18):** the 2026-09-08 CodeRabbit correction no longer
+applies — CodeRabbit is gone (`.coderabbit.yaml` deleted, GitHub App uninstalled) and the advisory
+slot is now the Codex workflow above. ADR-14's 2026-09-18 amendment records why re-adding a CI
+reviewer does not re-litigate the 2026-06-04 removal: every objection it raised was either lapsed
+(Actions unmetered on a public repo), sidestepped (BYOK does not draw on subscription quota), or
+inapplicable (the deleted machinery existed to *block merges*, and nothing here blocks). The
+merge-quality gate is still this local `/diff-review` path.
+
+> **Ordering trap, recorded because the reverse order is a live merge outage.** CodeRabbit's
+> Organization UI was ASSERTIVE with request-changes on, and `.coderabbit.yaml` was the *only* thing
+> pinning `request_changes_workflow: false`. Deleting the file without uninstalling the App would
+> have **re-armed** blocking `CHANGES_REQUESTED` reviews that agents cannot dismiss (`GITHUB_PAT`
+> 401, no MCP dismiss tool, author cannot self-approve) — see #1875, #1880. Uninstall first.

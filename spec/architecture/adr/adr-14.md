@@ -17,7 +17,7 @@ The live rules are the 2026-08-01 amendment (local [`/diff-review`](../../../.cl
 
 - **Amendment (2026-08-01) — `/code-review` is *conditionally* model-invocable; the 2026-07-30 premise was wrong.** Measured against Claude Code **2.1.220** (`AI_AGENT=claude-code_2-1-220_agent`). `disableModelInvocation` is real, but the runtime check is `disableModelInvocation && !userTypedThisTurn`, and `userTypedThisTurn` is **not** a keystroke flag: it scans the current turn for a message that is `type: "user"`, not `isMeta`, and matches the bare token `/code-review`. So an agent **can** call `Skill(skill: "code-review")` when the turn's prompt carries that token **whitespace-delimited on both sides**. ⚠️ **Precision fix (2026-08-02):** this amendment originally said "whenever the turn's prompt mentions it in prose", which overstates reachability. The regex is `(?<!\S)/code-review(?=$|\s)`, so backticks, surrounding quotes, `**bold**`, and a trailing `.` or `,` all **defeat** it — and backticking commands is this repo's own house style. Re-measured against the running 2.1.220 build: a session referencing `/code-review` eight times, every occurrence backticked, was still refused with `disable-model-invocation`. The conclusion below is unchanged and in fact strengthened — `/code-review` is reachable *less* often than the 2026-08-01 text implied, so `/diff-review` carries more of the load, not less. It **cannot** when the token is absent or only present in a rejected form, inside a sub-agent, from a slash-command expansion (skipped via `<command-message>` — so **never under `/next`**), or from a hook (all hook `additionalContext`, on every event, renders `isMeta: true`, so a hook can neither invoke a skill nor enable one). **Evidence:** both directions executed in one session — token present → a full forked review ran; token absent → `Skill code-review cannot be used with Skill tool due to disable-model-invocation`. The scan rule, the `isMeta` renderer and the check ordering were read out of the 2.1.220 bundle, not merely inferred from those two observations. **Consequence:** `/diff-review` is retained, but as *the always-reachable review* rather than *the only one* — `/code-review` is now preferred wherever it is reachable. Its remaining unique value is the Frapp-specific angle set; its generic half duplicates a harness that is tuned per model upstream (tracked separately for a measure-then-cut decision). `skillOverrides` remains a verified no-op: `disableModelInvocation` returns before that branch is reached. Version-pinning is not an escape either — the command did not exist in 2.1.42 (whose `pluginCommand: "code-review"` registers `/review`), and 2.1.220 was the latest published release at the time of writing.
 
-- **Amendment (2026-09-08) — CodeRabbit is live again on the public repo; it must not block squash.** ADR-13's 2026-09-05 correction already noted that the private-repo reason for dropping CodeRabbit had lapsed. CodeRabbit's GitHub App is installed and Organization UI is ASSERTIVE with request-changes on, so a finding is a real `CHANGES_REQUESTED` review. A write-access reviewer in that state trips the merge ruleset (`1 review requesting changes by reviewers with write access`) even when required checks are green — measured on [#1875](https://github.com/pdcarlson/Frapp/pull/1875). Agents cannot dismiss that review (`GITHUB_PAT` 401; GitHub MCP has no dismiss tool; the PR author cannot approve their own PR). **Repo pin:** [`.coderabbit.yaml`](../../../.coderabbit.yaml) sets `reviews.request_changes_workflow: false` (comment-only, never `CHANGES_REQUESTED` / `APPROVED`) and `reviews.auto_review.drafts: false` so drafts do not consume the OSS 1-review/hour slot. The local `/diff-review` gate is still the merge-quality gate; CodeRabbit is advisory comments only. This does not reintroduce a required CI review check.
+- **Amendment (2026-09-08) — CodeRabbit is live again on the public repo; it must not block squash.** ADR-13's 2026-09-05 correction already noted that the private-repo reason for dropping CodeRabbit had lapsed. CodeRabbit's GitHub App is installed and Organization UI is ASSERTIVE with request-changes on, so a finding is a real `CHANGES_REQUESTED` review. A write-access reviewer in that state trips the merge ruleset (`1 review requesting changes by reviewers with write access`) even when required checks are green — measured on [#1875](https://github.com/pdcarlson/Frapp/pull/1875). Agents cannot dismiss that review (`GITHUB_PAT` 401; GitHub MCP has no dismiss tool; the PR author cannot approve their own PR). **Repo pin:** `.coderabbit.yaml` (**deleted 2026-09-18** — link removed, see the amendment at the foot of this file) set `reviews.request_changes_workflow: false` (comment-only, never `CHANGES_REQUESTED` / `APPROVED`) and `reviews.auto_review.drafts: false` so drafts did not consume the OSS 1-review/hour slot. The local `/diff-review` gate is still the merge-quality gate; CodeRabbit is advisory comments only. This does not reintroduce a required CI review check.
 
 **Trigger to revisit:**
 
@@ -37,3 +37,80 @@ This corrects the 2026-06-04 amendment's provider-specific and deny-once design 
 history. The new gate is provider-neutral for Codex, Claude, Cursor, and humans once installed. It is
 not server-side or unconditional: Git's `--no-verify`, a changed `core.hooksPath`, or skipped
 installation can bypass it. A nonzero hook result otherwise aborts the push.
+
+## Amendment — 2026-09-18: CodeRabbit removed; advisory BYOK Codex review on GitHub Actions
+
+**Decision:** CodeRabbit is retired entirely (`.coderabbit.yaml` deleted, GitHub App uninstalled) and
+replaced by [`.github/workflows/codex-review.yml`](../../../.github/workflows/codex-review.yml) —
+`openai/codex-action@v1` reviewing each ready PR and posting **one advisory comment**. The local
+`.githooks/pre-push` + `/diff-review` path remains the merge-quality gate; this adds no required check.
+
+**Why this does not re-litigate the 2026-06-04 removal.** That amendment deleted the CI reviewer for
+three reasons. Each was re-checked, and none survives against *this* design:
+
+- *Metered Actions minutes.* **Lapsed.** The repo is public; ADR-13's 2026-09-05 correction records
+  Actions minutes as unmetered. The compute is free.
+- *Drained subscription quota.* **Sidestepped.** BYOK bills an OpenRouter account per token, not a
+  ChatGPT/Codex plan. ADR-14 already warned not to read "drained quota" as a property of the plan in
+  force; under BYOK the coupling does not exist at all. The measured driver was the Max-5× → Pro
+  downgrade, which BYOK routes around rather than depends on.
+- *Disproportionate machinery.* **Not reintroduced.** The machinery that amendment enumerated —
+  the `claude-review-gate` required check, commit-status plumbing across two event shapes, the
+  always-reports-a-conclusion property, the `sha=` verdict marker, the override label,
+  branch-protection coupling — existed to make a review *block a merge*. Nothing here blocks: a
+  failed or skipped run costs a missing comment. The two upstream defects that gate worked around
+  (`claude-code-action#1299`, `#846`) are therefore not reachable, because no required check
+  can hang when none exists.
+
+**Why CodeRabbit went rather than staying as a free backstop.** Its OSS tier is free but rate-limited,
+and the 2026-09-08 amendment's pin was load-bearing in a fragile way: Organization UI is ASSERTIVE
+with request-changes on, so `.coderabbit.yaml` was the *only* thing preventing a write-access
+`CHANGES_REQUESTED` that trips the merge ruleset (measured on
+[#1875](https://github.com/pdcarlson/Frapp/pull/1875)) and that agents cannot dismiss. **Deleting the
+file alone would have re-armed that failure, not disarmed it** — so the App had to be uninstalled,
+and the uninstall must land *before or with* the file deletion. Ordering recorded here because the
+reverse order is a live merge outage.
+
+**Model routing — the non-obvious part.** The model is Meta's **Muse Spark 1.3**, reached **through
+OpenRouter**, and the indirection is mandatory rather than preference. Codex speaks only the
+Responses API: `wire_api = "chat"` was deprecated in December 2025 and removed in early February
+2026. Meta's Model API serves Muse Spark at `/v1/chat/completions`, so a direct Meta `base_url`
+fails at config load. OpenRouter implements `/v1/responses`, which is what makes the model reachable
+from Codex at all. Implemented with the action's `responses-api-endpoint` override rather than a
+`codex-home/config.toml` provider block — fewer moving parts, and the action's proxy forwards the
+supplied key as `Authorization: Bearer` upstream, so the input named `openai-api-key` legitimately
+carries an OpenRouter key. `CODEX_REVIEW_MODEL` (repository variable) overrides the slug without a
+code change; note OpenRouter also lists a discounted `-contributor` variant with different
+data-sharing terms.
+
+**Consequences.**
+
+- First recurring per-token cost for review (previously $0). Cap it on the OpenRouter side; there is
+  no spend guard in the workflow.
+- Fork and Dependabot PRs are **silently skipped** — GitHub withholds secrets from both, and
+  `pull_request_target` is rejected as it would expose the key to untrusted fork code. Fork PRs are a
+  live case on a public repo, not hypothetical.
+- PR title and body are attacker-controlled on a public repo. They are passed via the environment
+  into a fenced, explicitly-untrusted block, never interpolated as `${{ }}` into a shell or prompt
+  string. The upstream example workflow does interpolate them directly; that shape was deliberately
+  not copied.
+- **The fence delimiter is a per-run nonce, and that is load-bearing.** A static marker was built
+  first and *measured escapable*: a PR body containing the literal `----- END UNTRUSTED PR BODY -----`
+  closed the block early, so text after it rendered as trusted context. Sixteen random bytes from
+  `/dev/urandom` are embedded in the BEGIN/END markers and quoted back to the model as the run's
+  token. Anyone simplifying this back to a fixed string reopens the escape — the shell-injection
+  defense (`printf` on an env var) never covered it, because this is a prompt-level break, not a
+  shell-level one.
+- One comment per PR, edited in place on each push rather than appended, so a `synchronize`-heavy PR
+  does not bury its own thread.
+
+**Trigger to revisit:**
+
+- Per-token spend exceeds what the review is worth → drop to a cheaper slug via `CODEX_REVIEW_MODEL`,
+  or restrict the trigger to `opened` + `ready_for_review` only.
+- Muse Spark review quality proves worse than a native Codex model through the same harness → switch
+  the slug; the endpoint override stays valid for any OpenRouter-served model.
+- Meta's Model API ships a `/v1/responses` endpoint → the OpenRouter hop can be removed and the
+  action pointed at Meta directly.
+- External human contributors start opening fork PRs → the silent skip becomes a coverage hole;
+  revisit with a `workflow_run`-triggered job that never checks out fork code alongside the key.
