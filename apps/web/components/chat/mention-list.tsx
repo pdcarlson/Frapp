@@ -145,11 +145,22 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
             type="button"
             role="option"
             aria-selected={index === clampedIndex}
+            /*
+             * The hover fill is the accent tint, not a ladder step. This list
+             * is seated on `--popover`, the top of the ladder, so there is no
+             * step above it to raise a row to, and the step below (`--card`)
+             * measures 1.1046:1 against it — under the contrast fixture's
+             * `INDISTINGUISHABLE` (1.15), which `shared/elevation-contrast.spec.ts`
+             * pins as reading like a hole rather than a state. `onMouseEnter`
+             * below also promotes the row to selected, so this resolves to the
+             * fill the row is about to take anyway. This was `hover:bg-surface-2`,
+             * which no config or stylesheet has ever defined (#1423).
+             */
             className={cn(
               "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[13px]",
               index === clampedIndex
                 ? "bg-accent-subtle text-accent-text"
-                : "hover:bg-surface-2",
+                : "hover:bg-accent-subtle",
             )}
             onMouseEnter={() => setSelectedIndex(index)}
             onClick={() => selectItem(index)}
