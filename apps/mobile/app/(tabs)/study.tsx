@@ -178,16 +178,20 @@ export default function StudyScreen() {
   useFocusEffect(
     useCallback(() => {
       setSubscriptionRefused(false);
-      // The copy goes with the latch. Clearing one without the other leaves an
-      // enabled Start button sitting directly under a sentence saying study
-      // sessions cannot be recorded — the screen offering and denying the same
-      // action at once. Scoped to the refusal strings so an ordinary failure's
-      // message still survives a tab switch, as it always has.
+      // The copy goes with the latch, but ONLY the start-path copy. Clearing
+      // that one without the latch would leave an enabled Start button sitting
+      // directly under a sentence saying study sessions cannot be recorded —
+      // the screen offering and denying the same action at once.
+      //
+      // `studySession` is deliberately NOT cleared. It explains a refused
+      // pause, heartbeat or End on a session that is still running, and
+      // nothing re-renders it on return: wiping it would leave a live timer
+      // and an End button with no reason attached until the next refused
+      // write, which may be `HEARTBEAT_INTERVAL_MS` away or never. An ordinary
+      // failure's message survives a tab switch for the same reason, as it
+      // always has.
       setFailure((current) =>
-        current === SUBSCRIPTION_REFUSAL_COPY.study ||
-        current === SUBSCRIPTION_REFUSAL_COPY.studySession
-          ? null
-          : current,
+        current === SUBSCRIPTION_REFUSAL_COPY.study ? null : current,
       );
       return undefined;
     }, []),

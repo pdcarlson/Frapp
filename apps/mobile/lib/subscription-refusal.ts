@@ -104,7 +104,13 @@ export const SUBSCRIPTION_REFUSAL_COPY = {
    *
    * What is left is the honest middle: name the state, name the actor, and
    * say the credit is at risk without implying the member can rescue it.
+   *
+   * It also avoids "until an officer fixes it", which would be a third wrong
+   * claim: past the stale window nothing an officer does credits the session,
+   * and a session that was already `paused_at` is settled `PAUSED_EXPIRED`
+   * **with** points by a plain GET, so there the officer is irrelevant. "May
+   * not be credited" is true in all three cases, which is why it hedges.
    */
   studySession:
-    "Your chapter's subscription isn't active, so that didn't save. An officer needs to sort it out — until they do, this session's time may not be credited.",
+    "Your chapter's subscription isn't active, so that didn't save. An officer needs to sort it out — study time tracked now may not be credited.",
 } as const;
