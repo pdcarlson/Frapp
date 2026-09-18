@@ -151,9 +151,13 @@ export default function StudyScreen() {
   const [failure, setFailure] = useState<string | null>(null);
   /**
    * The subscription gate refused a session write (#2297). Tracked separately
-   * from `failure` because it is the one failure that must not be retried:
-   * it disables Start and stops the mirror-retry timer below, which otherwise
-   * re-fires every `MIRROR_RETRY_MS` forever against a permanent 403.
+   * from `failure` because it is the one failure that must not be retried.
+   *
+   * Its only consumer is `isBlocked` on `StartCard`. The mirror-retry timer is
+   * stopped by the local `refused` const in that effect's catch, NOT by this
+   * state — do not merge the two. Reading this state there would re-arm the
+   * timer on every tab return, and deleting the local guard on the belief that
+   * this state covers it would spin the mirror against a permanent 403.
    */
   const [subscriptionRefused, setSubscriptionRefused] = useState(false);
   /**
@@ -174,6 +178,17 @@ export default function StudyScreen() {
   useFocusEffect(
     useCallback(() => {
       setSubscriptionRefused(false);
+      // The copy goes with the latch. Clearing one without the other leaves an
+      // enabled Start button sitting directly under a sentence saying study
+      // sessions cannot be recorded — the screen offering and denying the same
+      // action at once. Scoped to the refusal strings so an ordinary failure's
+      // message still survives a tab switch, as it always has.
+      setFailure((current) =>
+        current === SUBSCRIPTION_REFUSAL_COPY.study ||
+        current === SUBSCRIPTION_REFUSAL_COPY.studySession
+          ? null
+          : current,
+      );
       return undefined;
     }, []),
   );

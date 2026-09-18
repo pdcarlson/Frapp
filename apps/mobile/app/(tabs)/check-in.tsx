@@ -116,13 +116,19 @@ export default function CheckInScreen() {
    * weeks later, under copy naming a chapter state that has since been fixed.
    * Only killing the app would clear it.
    *
-   * Scoped to `blocked` so the 409 "already checked in" and ordinary failures
-   * keep behaving exactly as they did.
+   * `success` is reset for the same reason and was already wrong before this
+   * change: it disarms the same decoder, so a member who checked in at one
+   * event re-entered at the next one to a live-but-deaf camera under "You're
+   * checked in. +10 pts" for the *previous* event — and believed it. Ordinary
+   * failures and the 409 "already checked in" keep behaving exactly as they
+   * did, because those leave the scanner armed.
    */
   useFocusEffect(
     useCallback(() => {
       setStatus((current) =>
-        current.kind === "blocked" ? { kind: "idle" } : current,
+        current.kind === "blocked" || current.kind === "success"
+          ? { kind: "idle" }
+          : current,
       );
       return undefined;
     }, []),

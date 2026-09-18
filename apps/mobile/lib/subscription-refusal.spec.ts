@@ -100,10 +100,30 @@ describe("subscriptionRefusalOf", () => {
  * patterns are asserted against known-bad candidates below before they are
  * applied to the shipped copy.
  */
-const PURCHASE_PATH =
-  /\b(?:purchas\w*|buy|buying|bought|renew\w*|pay|pays|paying|paid|payment\w*|price\w*|pricing|cost\w*|plan|plans|billing|checkout|check out|subscribe|subscribing|upgrade\w*|card|invoice)\b|\$|\d+\s*(?:\/|per|a)\s*(?:month|year|mo\b|yr\b)|https?:\/\/|\b[a-z0-9-]+\.(?:live|com|app|io|net|org|co)\b/i;
+const PURCHASE_PATH = new RegExp(
+  [
+    // Buying, in any inflection.
+    String.raw`\b(?:purchas\w*|buy|buying|bought|renew\w*|pay|pays|paying|payment\w*|billing|checkout|check out|subscribe|subscribing|upgrade\w*)\b`,
+    // Money, symbol or spelled. "forty-nine dollars a month" has neither a
+    // digit nor a symbol and passed the first version of this guard.
+    String.raw`\$|€|£|\b(?:usd|dollars?|cents?|price\w*|pricing|cost\w*|free trial|trial period)\b`,
+    String.raw`\d+\s*(?:\/|per|a|an)?\s*(?:month|year|mo|yr)\b`,
+    // The VENUE is the breach, not just the transaction: the store answers say
+    // subscriptions are "not offered, LINKED OR MENTIONED in the app".
+    String.raw`\b(?:web dashboard|web app|website|dashboard online|on the web)\b`,
+    // Links, with or without a scheme.
+    String.raw`https?:\/\/|\b[a-z0-9-]+\.(?:live|com|app|io|net|org|co)\b`,
+  ].join("|"),
+  "i",
+);
 
-const INVITES_RETRY = /\b(?:try again|tries again|retry|retrying|again later|another go|once more|re-?try)\b/i;
+// Deliberately NOT banned: `plan`, `card`, `paid`. Each is an ordinary state
+// word here ("you can't plan study time", "this card is read-only", "dues
+// can't be paid") and banning them blocks correct copy without catching a
+// purchase path, which is what the patterns above are for.
+
+const INVITES_RETRY =
+  /\b(?:try (?:again|that again|it again|once more)|tries again|retry|retrying|again later|another (?:go|crack|attempt)|once more|re-?try|have another)\b/i;
 
 describe("the copy guard itself", () => {
   it("rejects the wordings that would breach the store declaration", () => {
@@ -117,6 +137,13 @@ describe("the copy guard itself", () => {
       "Ask an officer to subscribe.",
       "An officer can upgrade the chapter's plan.",
       "See https://frapp.live/billing to fix this.",
+      // These four passed the SECOND version of this guard too, and are why
+      // it is asserted rather than eyeballed: naming the venue is itself the
+      // breach, and money need not carry a digit or a symbol.
+      "An officer can sort this out from the Frapp web dashboard.",
+      "An officer can fix it on the website.",
+      "An officer can sort this out — it's forty-nine dollars a month.",
+      "An officer can sort this out; 49 USD monthly.",
     ]) {
       expect(bad).toMatch(PURCHASE_PATH);
     }
@@ -128,6 +155,8 @@ describe("the copy guard itself", () => {
       "Give it another go.",
       "Retry in a moment.",
       "Check your connection and try again later.",
+      "Try that again in a moment.",
+      "Have another crack at it.",
     ]) {
       expect(bad).toMatch(INVITES_RETRY);
     }
@@ -142,9 +171,15 @@ describe("the copy guard itself", () => {
     expect("An officer can sort this out for the chapter.").not.toMatch(
       PURCHASE_PATH,
     );
-    expect("Your session is still running and its time is safe.").not.toMatch(
-      INVITES_RETRY,
-    );
+    expect("Your session is still running.").not.toMatch(INVITES_RETRY);
+    // The words the guard must NOT claim, or it blocks correct copy.
+    for (const fine of [
+      "so you can't plan new study time",
+      "so this card is read-only",
+      "so dues can't be paid right now",
+    ]) {
+      expect(fine).not.toMatch(PURCHASE_PATH);
+    }
   });
 });
 
@@ -179,11 +214,20 @@ describe("SUBSCRIPTION_REFUSAL_COPY", () => {
     expect(SUBSCRIPTION_REFUSAL_COPY.task).toMatch(/task/i);
     expect(SUBSCRIPTION_REFUSAL_COPY.checkIn).toMatch(/check-in/i);
     expect(SUBSCRIPTION_REFUSAL_COPY.study).toMatch(/study/i);
-    // The in-session variant must NOT claim the time was lost — the session is
-    // still live server-side and the End button is still on screen.
-    expect(SUBSCRIPTION_REFUSAL_COPY.studySession).toMatch(/still running/i);
+    // The in-session variant has to hold a narrow line, and it has been wrong
+    // in both directions. It must not claim the time was lost (the session is
+    // still live server-side and quick resolution credits it in full), and it
+    // must not promise the time is safe (`stop` is paid-ops too, so the member
+    // cannot bank it, and a session stale past HEARTBEAT_STALE_MINUTES is
+    // closed EXPIRED awarding nothing).
     expect(SUBSCRIPTION_REFUSAL_COPY.studySession).not.toMatch(
-      /can't be recorded|wasn't saved|lost/i,
+      /can't be recorded|wasn't saved|nothing was saved/i,
+    );
+    expect(SUBSCRIPTION_REFUSAL_COPY.studySession).not.toMatch(
+      /is safe|are safe|won't be lost|will be credited\b/i,
+    );
+    expect(SUBSCRIPTION_REFUSAL_COPY.studySession).toMatch(
+      /may not be credited/i,
     );
     expect(new Set(all).size).toBe(all.length);
   });

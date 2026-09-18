@@ -70,7 +70,7 @@ export function subscriptionRefusalOf(
 /**
  * Per-surface member copy.
  *
- * `writing.md` §Errors wants each message to name what failed, why, and what
+ * `writing.md` §3 (Error copy pattern) wants each message to name what failed, why, and what
  * to do next. The "what next" is always the same actor — an officer — because
  * it is the only one a member has. Deliberately one sentence per surface
  * rather than one shared string: naming the actual blocked action is the
@@ -85,18 +85,26 @@ export const SUBSCRIPTION_REFUSAL_COPY = {
   /**
    * Pause, resume, heartbeat and stop — a session that is ALREADY RUNNING.
    *
-   * Deliberately different from `study`, and the difference is load-bearing.
-   * Every non-404 failure on these routes leaves the session **active
-   * server-side**, so the member has lost nothing and the End button stays on
-   * screen by design. Telling them study "can't be recorded" here would be
-   * false and expensive: they would walk away believing nothing was banked,
-   * and the stale-heartbeat rule would then close the session EXPIRED for
-   * zero — when tapping End again after an officer sorts the billing out
-   * would have credited the whole thing.
+   * Deliberately different from `study`, and the wording has been wrong in
+   * both directions, so the reasoning is worth keeping.
    *
-   * So this names the state without withdrawing the affordance. It still
-   * offers no *retry-now* instruction, because retrying now cannot win.
+   * It must not say study "can't be recorded": the session is still active
+   * server-side, and if an officer resolves the billing quickly the member's
+   * time is credited in full. A member who reads "nothing was recorded" and
+   * walks away loses time they would otherwise have kept.
+   *
+   * It must not promise the time is safe either, which is what this string
+   * said first. `stop` is paid-ops on the same controller, so the member
+   * cannot end the session to bank it; meanwhile every refused heartbeat
+   * leaves `last_heartbeat_at` behind, and `StudyService` closes a session
+   * stale by more than `HEARTBEAT_STALE_MINUTES` (10) as **EXPIRED**, which
+   * `spec/behavior/study-sessions.md` says awards nothing. So "its time is
+   * safe" is true for about ten minutes and false afterwards, and there is
+   * nothing the member can do either way.
+   *
+   * What is left is the honest middle: name the state, name the actor, and
+   * say the credit is at risk without implying the member can rescue it.
    */
   studySession:
-    "Your chapter's subscription isn't active, so that didn't save. Your session is still running and its time is safe — an officer can sort this out for the chapter.",
+    "Your chapter's subscription isn't active, so that didn't save. An officer needs to sort it out — until they do, this session's time may not be credited.",
 } as const;

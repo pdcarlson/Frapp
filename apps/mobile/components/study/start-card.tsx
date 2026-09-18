@@ -84,8 +84,13 @@ export function StartCard({
         style={({ pressed }) => [
           styles.startButton,
           { backgroundColor: accent },
-          !zone || isStarting ? styles.startButtonDisabled : null,
-          pressed && zone && !isStarting ? styles.startButtonPressed : null,
+          // `isBlocked` greys it too. Disabling without greying leaves a
+          // control that reads as live and silently swallows the tap — the
+          // dead end #2297 removes, not a smaller version of it.
+          !zone || isStarting || isBlocked ? styles.startButtonDisabled : null,
+          pressed && zone && !isStarting && !isBlocked
+            ? styles.startButtonPressed
+            : null,
         ]}
       >
         <Text style={[styles.startLabel, { color: tokens.color.gold.onHouse }]}>

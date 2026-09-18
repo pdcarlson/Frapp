@@ -91,8 +91,9 @@ function readRepo(rel) {
  * none of the scanned messages is one, and interpolation could not be compared
  * byte-for-byte anyway.
  */
-function stringLiterals(source) {
-  const out = [];
+function scan(source) {
+  const literals = [];
+  let code = "";
   let i = 0;
   while (i < source.length) {
     const c = source[i];
@@ -108,46 +109,109 @@ function stringLiterals(source) {
         i += 1;
       }
       i += 2;
+      code += " ";
       continue;
     }
-    if (c === '"' || c === "'") {
+    if (c === '"' || c === "'" || c === "`") {
       const quote = c;
       let value = "";
+      const at = code.length;
+      code += quote;
       i += 1;
       while (i < source.length && source[i] !== quote) {
         if (source[i] === "\\") {
-          // Keep the escaped character itself, so `\'` compares equal to a
-          // plain `'` written inside double quotes.
           value += source[i + 1] ?? "";
+          code += source.slice(i, i + 2);
           i += 2;
           continue;
         }
         value += source[i];
+        code += source[i];
         i += 1;
       }
+      code += quote;
       i += 1;
-      out.push(value);
+      // Template literals are scanned so their contents cannot be mistaken for
+      // code, but they are not offered as refusal messages: an interpolated
+      // string could not be compared byte-for-byte anyway.
+      if (quote !== "`") literals.push({ value, at });
       continue;
     }
+    code += c;
     i += 1;
   }
-  return out;
+  return { literals, code };
+}
+
+/** Every non-template string literal in a file, comments excluded. */
+function stringLiterals(rel) {
+  return scan(readRepo(rel)).literals.map((l) => l.value);
+}
+
+/**
+ * Source with comments removed, for the wiring assertions.
+ *
+ * Shares the scanner above rather than running its own regexes. The earlier
+ * regex version stripped block comments FIRST, so a `/*` inside a line comment
+ * or a string ate everything up to the next `*\/` anywhere in the file — which
+ * would have made `assert.doesNotMatch(detector, /codeOf/)` pass while the
+ * detector really did use it. A guard that fails open is the one thing this
+ * file must not contain.
+ */
+function readCode(rel) {
+  return scan(readRepo(rel)).code;
 }
 
 /**
  * The refusal messages a file declares.
  *
- * Adjacent literals are NOT joined: a `'…' + '…'` concatenation would compare
- * as two fragments and fail loudly rather than silently half-matching. If
- * Prettier ever wraps one of these messages that way, fix the wrap — do not
- * teach this function to concatenate, because then a real divergence in the
- * tail could hide behind a matching head.
+ * Adjacent literals are NOT joined: a `'…' + '…'` concatenation compares as
+ * two fragments and fails loudly rather than silently half-matching.
  */
 function refusalMessages(rel) {
-  const found = stringLiterals(readRepo(rel)).filter((v) =>
+  const found = stringLiterals(rel).filter((v) =>
     v.startsWith("Chapter subscription "),
   );
   return [...new Set(found)].sort();
+}
+
+/**
+ * Every message `enforceSubscription` throws, however it is worded.
+ *
+ * Counted from the function body rather than by prefix, because the prefix
+ * filter can only ever see messages that already conform: adding a fifth
+ * refusal worded "Your chapter trial has ended…" left the count at 4, the
+ * mirror un-updated, and the lock green while that 403 rendered to members as
+ * an ordinary retryable failure.
+ */
+function guardRefusalThrows() {
+  const code = readCode(GUARD);
+  const start = code.indexOf("private enforceSubscription(");
+  assert.ok(start !== -1, `${GUARD} no longer declares enforceSubscription`);
+  let depth = 0;
+  let i = code.indexOf("{", start);
+  const bodyStart = i;
+  for (; i < code.length; i += 1) {
+    if (code[i] === "{") depth += 1;
+    else if (code[i] === "}") {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+  }
+  const body = code.slice(bodyStart, i);
+  const { literals } = scan(readRepo(GUARD));
+  const inBody = literals
+    .filter((l) => l.at >= bodyStart && l.at < i)
+    .map((l) => l.value);
+  return {
+    throwCount: (body.match(/new ForbiddenException\(/g) ?? []).length,
+    // A space is what separates a message from a `code`: the codes are
+    // dotted identifiers (`chapter.subscription.canceled`), the messages are
+    // sentences. Without this the count reads 8 against 4 throws.
+    messages: inBody.filter(
+      (v) => v.includes(" ") && v.toLowerCase().includes("subscription"),
+    ),
+  };
 }
 
 /**
@@ -155,27 +219,31 @@ function refusalMessages(rel) {
  *
  * WHY ASSERTIONS ARE ANCHORED THIS WAY. Matching a token against the whole
  * file proves the token exists somewhere, not that the control is gated — and
- * it fails in BOTH directions. Removing `status.kind === "blocked" ||` from
- * `manualSubmitDisabled` and reordering the unrelated render ternary to start
- * with `blocked` left this lock fully green while a refused member could still
- * submit a manual code; and merely reordering the disjuncts, which changes
- * nothing, turned it red. Both were reproduced against the first version of
- * this file. Slice the declaration, then assert inside it.
+ * it failed in BOTH directions. Removing the gate from `manualSubmitDisabled`
+ * and reordering an unrelated render ternary left the lock fully green while a
+ * refused member could still submit; merely reordering the disjuncts, which
+ * changes nothing, turned it red. Both were reproduced against earlier
+ * versions of this file.
+ *
+ * The slice ends at the first `;` at brace/paren depth 0, so a declaration
+ * containing an inner `;` (a `useMemo` with a block body, say) is captured
+ * whole instead of truncating to a head that passes every `doesNotMatch`
+ * vacuously. The name must be followed by a non-identifier character, so a
+ * `const scanningPaused` declared above `const scanning` cannot silently
+ * redirect the assertions to the wrong statement.
  */
 function declaration(rel, name) {
   const code = readCode(rel);
-  const start = code.indexOf(`const ${name}`);
-  assert.ok(start !== -1, `${rel} no longer declares \`${name}\``);
-  const end = code.indexOf(";", start);
-  assert.ok(end !== -1, `${rel}: could not find the end of \`${name}\``);
-  return code.slice(start, end);
-}
-
-/** Source with comments removed, for the wiring assertions further down. */
-function readCode(rel) {
-  return readRepo(rel)
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+  const at = new RegExp(`const ${name}(?![A-Za-z0-9_$])`).exec(code);
+  assert.ok(at, `${rel} no longer declares \`${name}\``);
+  let depth = 0;
+  for (let i = at.index; i < code.length; i += 1) {
+    const c = code[i];
+    if (c === "{" || c === "(" || c === "[") depth += 1;
+    else if (c === "}" || c === ")" || c === "]") depth -= 1;
+    else if (c === ";" && depth === 0) return code.slice(at.index, i);
+  }
+  assert.fail(`${rel}: could not find the end of \`${name}\``);
 }
 
 test("the guard and the shared mirror carry byte-identical refusal messages", () => {
@@ -197,6 +265,31 @@ test("the guard and the shared mirror carry byte-identical refusal messages", ()
       `subscription refusal by matching these strings exactly, so a mismatch ` +
       `restores the retry-forever bug in #2297 with every unit test still green.`,
   );
+});
+
+test("every refusal the guard throws is one the mirror knows", () => {
+  const { throwCount, messages } = guardRefusalThrows();
+  const known = refusalMessages(MIRROR);
+
+  // Counted from the function body, not filtered by prefix. A fifth refusal
+  // worded "Your chapter trial has ended…" previously left the count at 4 and
+  // the lock green, while that 403 rendered to members as an ordinary
+  // retryable failure.
+  assert.equal(
+    messages.length,
+    throwCount,
+    `enforceSubscription throws ${throwCount} ForbiddenException(s) but only ` +
+      `${messages.length} carry a subscription message this lock can read: ` +
+      `${JSON.stringify(messages)}`,
+  );
+  for (const message of messages) {
+    assert.ok(
+      known.includes(message),
+      `the guard throws a refusal the mirror does not know:\n  ${message}\n` +
+        `Add it to packages/validation/src/subscription.ts, or every client ` +
+        `will read that 403 as an ordinary retryable failure.`,
+    );
+  }
 });
 
 test("the mirror exposes the message lookup, and does not reach for `code`", () => {
@@ -316,16 +409,45 @@ test("a refusal does not outlive the visit that produced it", () => {
   // chapter's billing and the member would still be locked out until they
   // force-quit. "Dead until a force-quit" is what got the previous attempt
   // at #2297 reverted; it must not come back as the fix.
+  //
+  // LIMITS, STATED. `apps/mobile/app/(tabs)` has no render harness, so this is
+  // a source tripwire, not a behaviour test: it cannot prove the effect runs,
+  // and hoisting the callback to a named `const` will trip it even though
+  // behaviour is unchanged. If you are here because a refactor turned it red,
+  // re-point the assertion — do not delete it. The real fix is a harness for
+  // these two screens.
+  const study = readCode(STUDY);
   assert.match(
-    readCode((STUDY)),
-    /useFocusEffect\([\s\S]{0,200}setSubscriptionRefused\(false\)/,
-    "study never clears its refusal latch, so Start stays dead for the process",
+    study,
+    /useFocusEffect\(/,
+    "study no longer resets anything on focus",
   );
+  // Unconditional, so a reset neutered into a branch that never runs fails.
   assert.match(
-    readCode((CHECK_IN)),
-    /useFocusEffect\([\s\S]{0,300}kind === "blocked"/,
-    "check-in never clears its blocked state, so the scanner stays dead",
+    study,
+    /\n\s*setSubscriptionRefused\(false\);/,
+    "study's latch reset is gone or is no longer unconditional",
   );
+
+  const checkIn = readCode(CHECK_IN);
+  assert.match(
+    checkIn,
+    /useFocusEffect\(/,
+    "check-in no longer resets anything on focus",
+  );
+  // The MAPPING, not the tokens: an inverted ternary (`? current : idle`)
+  // names all the same identifiers while leaving both latches in place.
+  assert.match(
+    checkIn,
+    /\?\s*\{ kind: "idle" \}/,
+    "check-in's focus reset no longer maps the dead states to idle",
+  );
+  for (const dead of ['"blocked"', '"success"']) {
+    assert.ok(
+      checkIn.includes(`current.kind === ${dead}`),
+      `check-in does not clear ${dead} on focus, and it disarms the scanner`,
+    );
+  }
 });
 
 test("study does not re-arm its automatic retry against a refusal", () => {

@@ -46,6 +46,20 @@ const ZONE = {
   pointsPerHour: 10,
 } as unknown as StudyZoneModel;
 
+/**
+ * The resolved style of a node.
+ *
+ * `Pressable`'s `style` is a function of `{ pressed }`, so it has to be called
+ * before anything can be asserted about it — reading `props.style` directly
+ * yields the function and every style assertion silently passes on `undefined`.
+ */
+function flatStyle(node: { props: { style?: unknown } }) {
+  const raw = node.props.style;
+  const resolved = typeof raw === "function" ? raw({ pressed: false }) : raw;
+  const parts = Array.isArray(resolved) ? resolved.flat(Infinity) : [resolved];
+  return Object.assign({}, ...parts.filter(Boolean)) as Record<string, number>;
+}
+
 function startButton(tree: ReactTestRenderer) {
   return tree.root.findAll(
     (node) => node.props?.accessibilityLabel === "Start session",
@@ -71,6 +85,16 @@ describe("StartCard, when the subscription refused a write", () => {
     const button = startButton(renderStart({ isBlocked: true }));
     expect(button.props.disabled).toBe(true);
     expect(button.props.accessibilityState.disabled).toBe(true);
+  });
+
+  it("also renders as disabled, rather than looking live and eating the tap", () => {
+    // `disabled` alone is not enough: a sighted member sees a full-opacity
+    // button that does nothing, which is the silently-dead control #2297
+    // exists to remove. Compare the resolved style against the enabled one.
+    const blocked = flatStyle(startButton(renderStart({ isBlocked: true })));
+    const enabled = flatStyle(startButton(renderStart({})));
+    expect(blocked.opacity).toBeLessThan(1);
+    expect(enabled.opacity ?? 1).toBe(1);
   });
 
   it("leaves Start enabled when nothing is blocking it", () => {

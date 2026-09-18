@@ -355,8 +355,10 @@ The strings live in `apps/mobile/lib/subscription-refusal.ts` and are asserted
 against these rules in `subscription-refusal.spec.ts`. Two constraints bind
 every one of them, and both are the point rather than style:
 
-- **No price, plan, purchase path or link**, per the submitted App Store
-  Connect answers. Point at a chapter officer, who is the actor a member has.
+- **No price, plan, purchase path or link.** The constraint itself is owned by
+  `apps/mobile/store/README.md` (the submitted App Store Connect answers) — read
+  it there rather than trusting this restatement, which exists only to say that
+  the rule reaches copy. Point at a chapter officer, the actor a member has.
 - **No retry.** The refusal cannot be retried into success, so the copy must
   not invite one and the control is withdrawn alongside it.
 
@@ -378,7 +380,7 @@ different", the member surface gets its own rows rather than inline strings.
 |---|---|---|
 | Loading | — | Skeleton (`components/state-block.tsx`); no loading copy. |
 | Module off | `Study hours are turned off` | `Your chapter isn't tracking study hours right now. An officer can turn the module back on.` The same sentence is what a failed Start renders when the server refuses with `chapter.module.disabled` — the empty state is unreachable while `useCurrentChapter` is disabled (no claim on the token), so the error path has to carry the member-facing wording rather than relaying the guard's officer instructions ("Re-enable it in Settings → Modules"). |
-| Subscription refused (start) | — | `Your chapter's subscription isn't active, so study sessions can't be recorded. An officer can sort this out for the chapter.` Rendered when `POST /study-sessions` is refused by the subscription gate. **Names no price, plan, purchase path or link** — the submitted App Store Connect answers (`apps/mobile/store/README.md`) declare the app has no in-app purchases and does not mention subscriptions, so relaying the server's own "complete checkout to use this feature" here would be a Guideline 3.1.1 exposure. It also offers no retry: the refusal is permanent until an officer acts. |
+| Subscription refused (start) | — | `Your chapter's subscription isn't active, so study sessions can't be recorded. An officer can sort this out for the chapter.` Rendered when `POST /study-sessions` is refused by the subscription gate; the two rules binding it are in § *Subscription refused (mobile, cross-surface)* above. |
 | Subscription refused (session running) | — | `Your chapter's subscription isn't active, so that didn't save. Your session is still running and its time is safe — an officer can sort this out for the chapter.` Deliberately **not** the row above. Pause, resume, heartbeat and stop all leave the session active server-side and the End button on screen, so telling the member study "can't be recorded" would be false and would cost them the banked time if they walked away. |
 | No zones | `No study zones yet` | `Sessions are tracked inside a zone. An officer with geofences:manage can add one.` |
 | Error (sessions) | `Couldn't load study hours` | `Your sessions are still recorded — this was a problem fetching them.` |
