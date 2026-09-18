@@ -2,11 +2,15 @@
 
 ## Running the app on a device
 
-There is **no EAS build**. `apps/mobile/eas.json` defines `development` / `preview` /
-`production` profiles, but no EAS project has been provisioned, so the only way to
-see the app today is Expo Go against a local Metro server. This cannot be done from
-a headless cloud VM — it needs a physical device (or a local simulator) on the same
-network as the machine running Metro.
+This section is the **Expo Go** path — `npx expo start` against a local Metro
+server. It cannot be done from a headless cloud VM: it needs a physical device
+(or a local simulator) on the same network as the machine running Metro.
+
+EAS builds are a separate path with a separate owner. `apps/mobile/eas.json`
+defines `development` / `preview` / `production` profiles against a linked EAS
+project (`extra.eas.projectId` and `owner` are committed in
+`apps/mobile/app.json`); the `eas build` commands and that linkage live in
+[`docs/internal/ops/deployment/mobile.md`](../ops/deployment/mobile.md#6-mobile-eas-setup).
 
 ### 1. Provide the environment
 
@@ -117,11 +121,12 @@ native Expo modules (`expo-file-system/legacy`, `expo-sharing`, `expo-font`,
 stand-ins for Signet token-factory tests).
 
 Two suites are static rather than render-based, and deliberately so:
-`lib/routes.spec.ts` walks the real route tree to check every route literal —
-it is what stands in for typed routes, which do not bind under CI's bare `tsc`
-(see [`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md)) —
-and `lib/auth-gate.spec.ts` enumerates every session/chapter state to prove the
-two routing gates cannot redirect into each other.
+`lib/routes.spec.ts` walks the real route tree — it checks every route literal,
+standing in for typed routes, which do not bind under CI's bare `tsc` (see
+[`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md)), and it
+keeps test files out of `app/` (see [§ Gotchas](#gotchas)) — and
+`lib/auth-gate.spec.ts` enumerates every session/chapter state to prove the two
+routing gates cannot redirect into each other.
 
 ```bash
 npm run test -w apps/mobile
@@ -133,19 +138,34 @@ npm run test -w apps/mobile
 `requireContext` over the whole `app/` tree, so a spec placed next to the screen
 it tests is bundled _into the app_. That drags `vitest` — and through it Vite's
 module runner — into the Metro graph, and `expo export` dies with
-`SyntaxError: Invalid call at line 1018: import(filepath)`. Every local check
-stays green while this is true: `npm run test`, `npm run lint`, and
-`npm run check-types` all pass, because none of them bundles.
+`SyntaxError: Invalid call at line 1018: import(filepath)`.
 
-Put screen-adjacent logic that wants a test in `lib/` and import it from the
-screen — `lib/chat/channel-list.ts` and its spec are the pattern. Note that
-`lib/routes.spec.ts` skips `.spec.` files in its own route walk, so it will _not_
-warn you about this; the only thing that catches it is bundling.
+This rule was already written here when #2347 added `app/(auth)/join.spec.tsx`
+next to its screen, and nothing stopped it: lint, `tsc` and the unit suite were
+all green, because none of them bundles. It surfaced days later as an iOS
+production EAS build dying with "Unknown error" in the **Bundle JavaScript**
+phase — EAS has no classifier for a Metro transform error.
+
+`lib/routes.spec.ts` now enforces it. The suite that already walks `app/` for
+route literals fails on any `.spec.`/`.test.` file it finds there and names
+where to move it, so `npm run test -w apps/mobile` catches this in seconds.
+
+It is a file-placement check, not an import check. A route module that reaches
+test tooling under some other name — a fixture, a render helper — still fails
+only at bundle time, as does a `lib/` or `components/` module that a screen
+imports. Nothing in CI bundles the app, so run the export yourself before
+trusting a mobile change that moves modules around:
 
 ```bash
-# The one check that catches route-tree and Metro-resolution breakage.
+# Catches route-tree and Metro-resolution breakage end to end.
+# EAS runs the embed form of this in its "Bundle JavaScript" phase.
 npx expo export --platform ios
 ```
+
+Put screen-adjacent logic that wants a test in `lib/` and import it from the
+screen — `lib/chat/channel-list.ts` and its spec are the pattern. A spec that
+must render a whole screen goes in `lib/` as well and reaches back through the
+`@/` alias, as `lib/onboarding/join-screen.spec.tsx` does.
 
 **Do not widen the React version range.** React is pinned to an exact `19.2.3` in
 every workspace and in the root `overrides`. React Native 0.86.2 bundles

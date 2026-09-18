@@ -25,6 +25,11 @@ import {
  * That is what these pin: the affordance is rendered here, it is destructive
  * and confirmed, it actually calls the endpoint, and a failure neither signs
  * the user out nor disappears.
+ *
+ * It renders `app/(auth)/join.tsx` but lives here, not beside it: a spec under
+ * `app/` is a route module and ships in the production bundle, which is what
+ * broke the iOS build after #2347. `docs/internal/mobile/MOBILE_TESTING.md`
+ * § Gotchas has the mechanism; `lib/routes.spec.ts` enforces it.
  */
 
 const signOut = vi.fn().mockResolvedValue(undefined);
@@ -45,7 +50,7 @@ vi.mock("@repo/hooks", () => ({
   useDeleteAccount: () => ({ isPending, isSuccess, mutateAsync }),
 }));
 
-import JoinChapter from "./join";
+import JoinChapter from "@/app/(auth)/join";
 
 type Node = ReactTestRenderer["root"];
 type AlertButton = { text: string; style?: string; onPress?: () => void };

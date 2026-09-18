@@ -47,8 +47,7 @@ function isRouteFile(file: string): boolean {
     file.endsWith(".tsx") &&
     base !== "_layout.tsx" &&
     // `+not-found` is expo-router's catch-all, not an addressable route.
-    !base.startsWith("+") &&
-    !base.includes(".spec.")
+    !base.startsWith("+")
   );
 }
 
@@ -64,7 +63,9 @@ function hrefVariants(routeFile: string): string[] {
     .split(path.sep);
 
   const withoutIndex =
-    segments[segments.length - 1] === "index" ? segments.slice(0, -1) : segments;
+    segments[segments.length - 1] === "index"
+      ? segments.slice(0, -1)
+      : segments;
   const withoutGroups = withoutIndex.filter((s) => !s.startsWith("("));
 
   return [`/${withoutIndex.join("/")}`, `/${withoutGroups.join("/")}`];
@@ -129,7 +130,9 @@ describe("route literals", () => {
       broken,
       `Unresolvable route literals (the route file was renamed or deleted):\n${broken
         .map((b) => `  ${b.file} -> ${b.href}`)
-        .join("\n")}\n\nKnown routes:\n  ${[...validHrefs].sort().join("\n  ")}`,
+        .join(
+          "\n",
+        )}\n\nKnown routes:\n  ${[...validHrefs].sort().join("\n  ")}`,
     ).toEqual([]);
   });
 
@@ -143,8 +146,48 @@ describe("route literals", () => {
   });
 });
 
+/**
+ * `expo-router/entry` discovers routes with a `require.context` over the whole
+ * `app/` tree — `node_modules/expo-router/_ctx.ios.js` holds the live pattern,
+ * and it excludes only `+api`, `+html` and `+middleware`. Every other file
+ * under `app/` is a route module, so Metro walks its imports when it builds the
+ * production bundle.
+ *
+ * #2347 put `app/(auth)/join.spec.tsx` next to the screen it tests. Metro
+ * followed its `vitest` import into `node_modules/vite/dist/node/module-runner.js`,
+ * whose `import(filepath)` the transform worker rejects, and the iOS production
+ * build died in EAS's "Bundle JavaScript" phase with no error EAS could name.
+ * Lint, `tsc` and this suite stayed green throughout, because none of them
+ * bundles — which is why the rule needs a check and not just a paragraph.
+ *
+ * It lives here because this file already walks `app/`, and it is why
+ * `isRouteFile` no longer skips `.spec.` files: nothing to skip.
+ * `docs/internal/mobile/MOBILE_TESTING.md` § Gotchas owns the rule itself and
+ * says where a screen-adjacent spec goes instead.
+ */
+describe("app/ is the shipped route graph", () => {
+  it("holds no test files", () => {
+    const tests = walk(appDir)
+      .filter((file) => /\.(spec|test)\.[tj]sx?$/.test(path.basename(file)))
+      .map((file) => path.relative(appDir, file))
+      .sort();
+
+    expect(
+      tests,
+      `Test files under app/ are route modules and ship in the production bundle:\n${tests
+        .map((t) => `  app/${t}`)
+        .join(
+          "\n",
+        )}\n\nMove each one under lib/ or components/ and reach the screen through the "@/" alias — lib/onboarding/join-screen.spec.tsx is the pattern. See docs/internal/mobile/MOBILE_TESTING.md § Gotchas.`,
+    ).toEqual([]);
+  });
+});
+
 describe("tab bar", () => {
-  const layout = readFileSync(path.join(appDir, "(tabs)", "_layout.tsx"), "utf8");
+  const layout = readFileSync(
+    path.join(appDir, "(tabs)", "_layout.tsx"),
+    "utf8",
+  );
 
   // Split on the element start rather than matching a whole element. The
   // previous pattern (`<Tabs.Screen\s+name="…"([\s\S]*?)/>`) required `name=` to
