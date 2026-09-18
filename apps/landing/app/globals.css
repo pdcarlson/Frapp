@@ -155,9 +155,12 @@
    * neither class is ever added and the block is simply drawn. Nothing here
    * hides content that something else has to un-hide.
    *
-   * Arming after paint cannot flash, because a reveal is only ever placed on a
-   * block below the fold: by the time hydration runs, the block has not been
-   * painted. A block already on screen intersects immediately and plays at once.
+   * Arming after paint would flash if it ever armed something already painted,
+   * so the wrapper measures before it arms and leaves such a block drawn. A
+   * reveal is normally placed below the fold and unpainted at hydration, but a
+   * direct `/#pricing` load, a restored scroll position or a scroll that beats
+   * hydration all put one on screen first; the wrapper's comment records what
+   * that measured before the guard existed.
    */
   @media (prefers-reduced-motion: no-preference) {
     .reveal-armed .reveal-item {

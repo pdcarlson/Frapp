@@ -401,12 +401,16 @@ export default function Home() {
 
         {/* ── 4 · Proof, events ──────────────────────────────────────────── */}
         <section aria-labelledby="events" className={`${SHELL} ${SECTION_GAP}`}>
+          {/*
+            The copy leads in the DOM and the frame follows, which is the phone
+            board's order and the sensible one for a screen reader: the heading
+            that names the section before the picture of it. Desktop keeps the
+            frame on the left, as `Main.dc.html` draws it, through explicit grid
+            placement rather than a flex `order`, so the two live in the same
+            row without the source order changing.
+          */}
           <div className="grid gap-10 lg:grid-cols-12 lg:gap-x-6">
-            <div className="flex justify-center lg:col-span-5 lg:justify-start">
-              <EventFrame />
-            </div>
-
-            <RevealOnView className="flex flex-col gap-6 lg:col-span-5 lg:col-start-6">
+            <RevealOnView className="flex flex-col gap-6 lg:col-span-5 lg:col-start-6 lg:row-start-1">
               <p className={`${EYEBROW} reveal-item`}>Events and check-in</p>
               <h2
                 id="events"
@@ -437,6 +441,10 @@ export default function Home() {
                 Demo chapter. Names and events are illustrative.
               </p>
             </RevealOnView>
+
+            <div className="flex justify-center lg:col-span-5 lg:col-start-1 lg:row-start-1 lg:justify-start">
+              <EventFrame />
+            </div>
           </div>
         </section>
 
@@ -1027,7 +1035,15 @@ function EventFrame() {
     <div
       role="img"
       aria-label="The Signet mobile app: an event detail with check-in open, a Scan QR to check in button, and an Add to calendar action."
-      className="flex h-[600px] w-[350px] max-w-full flex-col overflow-hidden rounded-[36px] border border-input bg-background px-5 pt-14 sm:w-[390px]"
+      /*
+       * Phone geometry is the base and desktop is the override, because the two
+       * boards draw different frames rather than one frame at two widths:
+       * `Phone.dc.html` is 350x560 at radius 28 with 44/16 insets,
+       * `Main.dc.html` is 390x600 at radius 36 with 56/20. Varying only the
+       * width would have shipped a phone frame at the desktop's height and
+       * insets, cropping different content than the board approves.
+       */
+      className="flex h-[560px] w-[350px] max-w-full flex-col overflow-hidden rounded-[28px] border border-input bg-background px-4 pt-11 sm:h-[600px] sm:w-[390px] sm:rounded-[36px] sm:px-5 sm:pt-14"
     >
       <p className="text-[15px] font-semibold leading-5 text-accent-text">
         ‹ Events

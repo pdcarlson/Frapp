@@ -29,6 +29,23 @@ export function RevealOnView({
     if (typeof IntersectionObserver === "undefined") return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
+    /*
+     * Never arm a block the browser has already painted. Arming sets its
+     * children to `opacity: 0`, and the observer's first callback is
+     * asynchronous, so a block that was on screen at mount disappears for a
+     * frame or two and then fades back in: a replay of something the visitor
+     * has already seen, which is worse than no entrance at all.
+     *
+     * It is reachable three ways, none of them exotic: a direct `/#pricing`
+     * load, a restored scroll position on a back navigation, and a scroll that
+     * beats hydration on a slow connection. Measured on a `/#pricing` load
+     * before this guard: six frames at opacity 1, two at 0, then a 300ms fade.
+     *
+     * A block whose top edge is already above the viewport's bottom has
+     * arrived, so it stays drawn and simply never animates.
+     */
+    if (node.getBoundingClientRect().top < window.innerHeight) return;
+
     node.classList.add("reveal-armed");
     const observer = new IntersectionObserver(
       (entries) => {

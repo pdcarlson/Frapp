@@ -162,6 +162,40 @@ describe("landing page structure", () => {
     expect(hero).not.toContain("reveal-item");
   });
 
+  it("leads the events section with its copy, and keeps the frame left on desktop", () => {
+    // The phone board orders the section copy-first and the desktop board puts
+    // the frame on the left. Collapsing to one column in DOM order would have
+    // shown a 560px mockup before the heading that names it.
+    const events = renderedPage.slice(
+      renderedPage.indexOf('aria-labelledby="events"'),
+      renderedPage.indexOf('id="pricing"'),
+    );
+    expect(events.indexOf("Check-in that keeps its own books.")).toBeLessThan(
+      events.indexOf("<EventFrame"),
+    );
+    // Desktop puts it back on the left without disturbing that source order.
+    expect(events).toMatch(/lg:col-start-1[^"]*lg:row-start-1|lg:row-start-1[^"]*lg:col-start-1/);
+  });
+
+  it("gives the event frame the phone board's geometry as its base", () => {
+    // 350x560 at radius 28 with 44/16 insets, overridden at `sm` to the desktop
+    // board's 390x600 at radius 36 with 56/20. Varying only the width shipped a
+    // phone frame at the desktop's height and cropped different content.
+    const frame = renderedPage.slice(renderedPage.indexOf("function EventFrame"));
+    for (const base of ["h-[560px]", "w-[350px]", "rounded-[28px]", "px-4", "pt-11"]) {
+      expect(frame, `event frame is missing the phone base ${base}`).toContain(base);
+    }
+    for (const up of [
+      "sm:h-[600px]",
+      "sm:w-[390px]",
+      "sm:rounded-[36px]",
+      "sm:px-5",
+      "sm:pt-14",
+    ]) {
+      expect(frame, `event frame is missing the desktop override ${up}`).toContain(up);
+    }
+  });
+
   it("routes every tracked control through the auth URL builders", () => {
     // The Spec sheet's §5 routes contract, one assertion per row.
     for (const [cta, surface] of [
@@ -280,6 +314,26 @@ describe("landing motion stylesheet", () => {
       foundations,
       "foundations §11 needs the signature paragraph in this PR",
     ).toMatch(/signature/i);
+  });
+
+  it("never arms a block the browser has already painted", () => {
+    /*
+     * Arming sets `opacity: 0` and the observer's first callback is async, so
+     * arming something already on screen is a visible disappear-and-replay. It
+     * is reachable by a direct `/#pricing` load, a restored scroll position, or
+     * a scroll that beats hydration. The wrapper measures first.
+     */
+    const wrapper = readFileSync(
+      join(landingRoot, "components/reveal-on-view.tsx"),
+      "utf8",
+    );
+    const guard = wrapper.indexOf("getBoundingClientRect");
+    const arm = wrapper.indexOf('classList.add("reveal-armed")');
+    expect(guard, "the wrapper must measure before it arms").toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(arm);
+    expect(wrapper).toMatch(
+      /getBoundingClientRect\(\)\.top\s*<\s*window\.innerHeight\)\s*return;/,
+    );
   });
 
   it("draws every reveal at rest when printing", () => {
