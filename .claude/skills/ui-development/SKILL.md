@@ -106,14 +106,19 @@ Figtree via `--font-figtree`), and all nine #920 slices have landed — the shel
 primitives, and every screen family. The migration window is closed, so a legacy class or a live
 `dark:` variant on a dashboard screen is a defect now, not a pending slice. **The landing site has
 NOT been reskinned**: it still ships the legacy chat-first **bone / bronze / ink** palette
-(`packages/theme/src/globals.css`), light-first with Geist Sans, its spec frozen at that state
-([`spec/ui/README.md`](../../../spec/ui/README.md)) — do not restyle it toward Signet ad hoc. The
-legacy `navy` / `emerald` **preset keys survive for `apps/landing` alone** (existing utility
-classes keep compiling, but their values map to ink / moss / bone-era colors) and go with its
-reskin. That reskin has **no tracked issue of its own** — #920 is `apps/web`, #937 is
-`apps/mobile`, and the Chunk-12 landing issues (#447, #491) are pre-Signet copy work that
-prescribes the bone/bronze/ink palette landing already ships. Do not reach for #913/#914 either:
-they are the two `area:product` pricing decisions that *block* the reskin, not the reskin itself. `royal-blue` is **gone** — the #920 slice-9 cutover deleted it outright,
+(`packages/theme/src/globals.css`), light-first with Geist Sans — but **its spec is no longer
+frozen**: [#2364](https://github.com/pdcarlson/Frapp/issues/2364) lifted the freeze, took the
+reskin's nine decisions, and staged the cutover, so read
+[`spec/ui/landing/README.md`](../../../spec/ui/landing/README.md) for what the surface is becoming.
+Still do not restyle it toward Signet ad hoc — the cutover is staged and owned, which is a stronger
+reason than the freeze was, not a weaker one. The legacy `navy` / `emerald` **preset keys survive
+for `apps/landing` alone** (existing utility classes keep compiling, but their values map to ink /
+moss / bone-era colors) and go with the token cutover
+([#2366](https://github.com/pdcarlson/Frapp/issues/2366)). That reskin **is** tracked now — #2364 is
+the epic, #920 is `apps/web`, #937 is `apps/mobile`, and the Chunk-12 landing issues (#447, #491)
+are pre-Signet copy work superseded by the epic's page-rebuild slice
+([#2367](https://github.com/pdcarlson/Frapp/issues/2367)). The pricing question that #913/#914
+raised is settled for this surface by decision D3. `royal-blue` is **gone** — the #920 slice-9 cutover deleted it outright,
 along with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed).
 
 **`packages/theme` is the shared token package for every surface, not a web-only one.** It already

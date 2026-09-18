@@ -1,11 +1,12 @@
 # Landing reskin reference (target state)
 
 > **Target state, not yet built.** [`../README.md`](../README.md) still governs what `apps/landing`
-> ships, and its visual freeze still holds. The boards under [`canvas/`](canvas/) become the rank-1
-> visual truth for the landing surface ([`../../README.md`](../../README.md) § Precedence, rule 1)
-> only when the reskin epic's cutover PR lands. Until then they bind nothing, and drift between them
-> and [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) is expected, not a bug to
-> file.
+> ships. Its *visual freeze* was lifted by the reskin epic's slice 0 and the nine decisions are
+> taken, but that changed the spec, not the code: the boards under [`canvas/`](canvas/) become the
+> rank-1 visual truth for the landing surface ([`../../README.md`](../../README.md) § Precedence,
+> rule 1) only when the epic's cutover PR lands. Until then they bind nothing, and drift between
+> them and [`apps/landing/app/page.tsx`](../../../../apps/landing/app/page.tsx) is expected, not a
+> bug to file.
 
 ## What this is
 
@@ -53,8 +54,27 @@ Two things to know before reading values off them:
 ## What is decided and what is not
 
 The Spec sheet's §3 lists nine decisions, each drawn one way with the alternative a flip away; the
-`decisions` note in `canvas.json` is the short form. None is taken. The reskin epic on GitHub tracks
-them, and an implementer starts by reading that issue, not by guessing.
+`decisions` note in `canvas.json` is the short form. **All nine are now taken** (2026-09-18), and
+they are recorded once, in [`../README.md`](../README.md#decisions-d1-to-d9), with the epic
+[#2364](https://github.com/pdcarlson/Frapp/issues/2364) carrying the owner's answers. They are not
+restated here; read them there before implementing.
+
+Seven answers match what these boards draw. **Two do not, and where they disagree the decision
+wins, not the board:**
+
+- **D9 takes hero B, not hero A.** The shipping fold is
+  [`canvas/HeroB.dc.html`](canvas/HeroB.dc.html) — the officer's chat bleeding off the right edge —
+  so the hero drawn on [`canvas/Main.dc.html`](canvas/Main.dc.html) and
+  [`canvas/Phone.dc.html`](canvas/Phone.dc.html) is superseded. Everything below the fold on those
+  two boards still stands. D4's signature moment moves with it, onto the **closing** crest.
+- **D8 holds the tagline.** The close drawn on the page boards reads "Ask your chapter anything.";
+  the page ships "Everything your chapter needs is already in chat." instead, until Ask is real.
+  The scope is the page body only — `layout.tsx`'s meta title and the OG title keep the tagline as
+  built.
+
+Both are decisions about the page, not corrections to the boards: the boards are a record of the
+design as delivered and are **not** edited to match. If the canvas itself is revised, re-copy it per
+the rule above and re-check these two notes.
 
 What the boards claim about the product was checked against `spec/behavior/` (Spec sheet §6):
 pre-event RSVP is not modelled, the event chat card carries only Check in, the dues chat card is a
