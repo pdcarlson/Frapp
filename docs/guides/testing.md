@@ -398,8 +398,8 @@ guards are replaced with stubs from `apps/api/test/helpers/guard-stubs.factory.t
 rather than assuming: `cross-tenant-isolation` runs the real auth and chapter guards and takes only
 `AllowAllGuard`; `attendance-points` runs the whole real chain to assert 401s; `settings-quiet-hours-tz`
 mounts one controller instead of `AppModule` and hand-rolls its own auth stub; `analytics-identity`
-cannot use the factory at all. Each of those says why at its own `beforeAll`, and the factory's
-docblocks explain the two it turns away. Controller specs under `apps/api/src` are unit
+cannot use the factory at all. That list is a sample, not a roster — `grep -L guard-stubs.factory
+apps/api/test/*.e2e-spec.ts` is the live one. Controller specs under `apps/api/src` are unit
 tests and take a different helper from the same file — see [§4](#4-guards-and-interceptors).
 UUID-typed DTO fields (`@IsUUID()`) must use RFC-4122-valid UUIDs in
 fixtures (correct version/variant nibbles) or the `ValidationPipe` rejects the request with `400`.

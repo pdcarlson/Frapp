@@ -100,8 +100,11 @@ export const STUB_MEMBER_ID = 'member-1';
  * });
  * ```
  *
- * **Two e2e specs deliberately do not use this**, and the exceptions are named
- * here so the claim above is checkable rather than vacuous:
+ * **Two e2e specs hand-roll an identity-writing auth stub rather than use this**,
+ * and they are named here so the claim above is checkable rather than vacuous.
+ * (Specs with no identity to write — `cross-tenant-isolation`, which runs the
+ * real guards, and the 401-asserting and webhook suites — are not exceptions to
+ * anything; they never needed these stubs.)
  *
  * - `settings-quiet-hours-tz.e2e-spec.ts`. `PATCH /v1/settings` carries only the
  *   class-level `SupabaseAuthGuard`, so a `ChapterGuardStub` would never run —
