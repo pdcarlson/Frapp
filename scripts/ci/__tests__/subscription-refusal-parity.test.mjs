@@ -152,7 +152,7 @@ function scan(source) {
  * named constant; a false negative is a silent misparse, which is what this
  * exists to prevent. `/>` is excluded so JSX self-closing tags do not trip it.
  */
-const REGEX_LITERAL = /(?:^|[=(,:[!&|?;]|=>|\breturn)\s*\/(?![\s/*>=])/m;
+const REGEX_LITERAL = /(?:^|[=(,:[!&|?;{}]|=>|\breturn)\s*\/(?![/*>=])/m;
 
 function assertNoRegexLiterals(rel) {
   const { code } = scan(readRepo(rel));
@@ -329,13 +329,54 @@ test("a semicolon inside a string cannot truncate a declaration", () => {
 test("a brace inside a string cannot truncate a function body", () => {
   // PROVEN EXPLOIT: this made the refusal count compare 0 against 0 while a
   // new refusal went unknown to the mirror.
-  const src = `class G { private enforceSubscription() { const s = "a } here"; throw new ForbiddenException({ message: 'Chapter subscription x' }); } }`;
+  // No space after the closing quote in `{code: "x"}` — with one, an
+  // off-by-one in the span jump survives, because the skipped character is
+  // only whitespace. This is ordinary object-literal style, so a plain
+  // reformat of the guard would otherwise reach it.
+  const src = `class G { private enforceSubscription() { const s = "a } here"; const m = {code: "x"}; throw new ForbiddenException({ message: 'Chapter subscription x' }); } private other() { const marker = "OUTSIDE"; } }`;
   const { code, spans } = scan(src);
   const found = functionBodyIn(code, spans, "private enforceSubscription(");
   assert.match(
     found.body,
     /ForbiddenException/,
     "the function body was truncated at a brace inside a string",
+  );
+  // And it must not OVER-run. `{code: "x"}` has no space after the closing
+  // quote, so an off-by-one in the span jump swallows that `}` and the walk
+  // runs past enforceSubscription's own closing brace into the next method —
+  // counting throws and literals that are not its own.
+  assert.doesNotMatch(
+    found.body,
+    /OUTSIDE/,
+    "the function body over-ran into the following method",
+  );
+});
+
+test("a declaration with an inner semicolon is captured whole", () => {
+  // PROVEN EXPLOIT: dropping the depth-0 condition truncates at the `;` inside
+  // the arrow body, so `doesNotMatch(slice, /submitFailed/)` passes with
+  // `submitFailed` sitting just past the cut — which is the regression that
+  // reverted the earlier attempt at this issue.
+  const src = `const canSubmit = useMemo(() => { const t = title.trim(); return t.length > 0 && !submitFailed; }, [title]);`;
+  const { code, spans } = scan(src);
+  assert.match(
+    declarationIn(code, spans, "canSubmit"),
+    /submitFailed/,
+    "the declaration slice truncated at a semicolon nested inside it",
+  );
+});
+
+test("a similarly-named declaration cannot capture the assertions", () => {
+  // Dropping the identifier-boundary lookahead silently re-points every
+  // assertion at a neighbour's statement.
+  const src = `const scanningPaused = a !== "paused";\nconst scanning = b !== "blocked";`;
+  const { code, spans } = scan(src);
+  const slice = declarationIn(code, spans, "scanning");
+  assert.match(slice, /"blocked"/);
+  assert.doesNotMatch(
+    slice,
+    /"paused"/,
+    "declarationIn matched `scanningPaused` when asked for `scanning`",
   );
 });
 
@@ -392,6 +433,16 @@ test("every refusal the guard throws is one the mirror knows", () => {
   // worded "Your chapter trial has ended…" previously left the count at 4 and
   // the lock green, while that 403 rendered to members as an ordinary
   // retryable failure.
+  // A non-zero floor. Without it, any misparse that empties the body makes
+  // this compare 0 against 0 and the loop below iterate zero times — the
+  // "a fifth refusal goes unnoticed" fail-open this function exists to stop,
+  // reachable without renaming anything.
+  assert.ok(
+    throwCount >= REFUSAL_COUNT,
+    `only ${throwCount} ForbiddenException(s) found in enforceSubscription; ` +
+      `expected at least ${REFUSAL_COUNT}. The body scan is probably empty, ` +
+      `which would make every assertion below pass vacuously.`,
+  );
   assert.equal(
     messages.length,
     throwCount,

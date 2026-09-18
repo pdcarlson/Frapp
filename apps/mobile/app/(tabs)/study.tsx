@@ -297,13 +297,22 @@ export default function StudyScreen() {
   const reportingStale = session !== null && isReportingStale(session, now);
 
   /**
-   * Drop the in-session refusal sentence, and only that one.
+   * A session write just succeeded, so nothing about the refusal still holds.
    *
-   * Scoped by value so an ordinary failure's message is never swallowed. The
-   * start-path copy is not cleared here — it is paired with the
-   * `subscriptionRefused` latch and cleared with it on focus.
+   * Clears the latch as well as the sentence, and the pairing is the point: a
+   * successful response proves the gate is passing, so a latch left `true`
+   * here would grey out Start while the only explanation for it — the
+   * `failure` line — had just been wiped. That is the silently dead control
+   * this issue exists to remove, and it is reachable: heartbeats are refused,
+   * an officer fixes the billing, and the next heartbeat succeeds but reports
+   * the session already EXPIRED by the server's stale rule.
+   *
+   * The sentence is cleared by value so an ordinary failure's message is
+   * never swallowed. The start-path copy is not touched here; it is paired
+   * with the same latch and cleared with it on focus.
    */
-  const clearInSessionRefusal = useCallback(() => {
+  const clearRefusalState = useCallback(() => {
+    setSubscriptionRefused(false);
     setFailure((current) =>
       current === SUBSCRIPTION_REFUSAL_COPY.studySession ? null : current,
     );
@@ -328,7 +337,7 @@ export default function StudyScreen() {
       // the sentence is stale, and leaving it would render "that didn't save
       // … may not be credited" directly under a re-enabled Start button —
       // the screen offering and denying the same action at once.
-      clearInSessionRefusal();
+      clearRefusalState();
       // A session that ended while paused would otherwise leave its "return to
       // Signet to resume" notice in the tray, inviting the member back to a
       // session that no longer exists (#1065).
@@ -348,8 +357,8 @@ export default function StudyScreen() {
     // Nothing else clears it: the focus reset deliberately leaves it alone
     // (it explains a failed End on a session that is still running), so
     // without this it survives for the life of the session.
-    clearInSessionRefusal();
-  }, [clearInSessionRefusal]);
+    clearRefusalState();
+  }, [clearRefusalState]);
 
   /** Let go of a session the server says is gone, and say so. */
   const releaseSession = useCallback((notice: string) => {
