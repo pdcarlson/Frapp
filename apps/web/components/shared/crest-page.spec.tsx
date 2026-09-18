@@ -12,6 +12,7 @@ const { back, push, captureException } = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ back, push }) }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
+import sharedConfig from "@repo/theme/tailwind";
 import tailwindConfig from "@/tailwind.config";
 import NotFound from "@/app/not-found";
 import RouteError from "@/app/error";
@@ -252,27 +253,20 @@ describe("the type roles it is the first caller of", () => {
     // so the three this file reaches are asserted against the config rather
     // than trusted.
     //
-    // Resolved across the app config AND its presets, because that is what
-    // Tailwind itself merges: #2371 moved the six locked roles into the shared
-    // preset, and a check that reads only `tailwind.config.ts` would have gone
-    // red for a move that changed no compiled output. What matters here is
-    // whether `text-display` emits a rule, not which file declares it.
-    const extendsOf = (c: unknown): Record<string, unknown>[] => {
-      const cfg = c as {
-        theme?: { extend?: Record<string, unknown> };
-        presets?: unknown[];
-      };
-      return [
-        ...(cfg.theme?.extend ? [cfg.theme.extend] : []),
-        ...(cfg.presets ?? []).flatMap(extendsOf),
-      ];
+    // The preset is merged in explicitly, because #2371 moved the six locked
+    // roles there and a plain module import does not resolve `presets` — a
+    // check reading only `tailwind.config.ts` would go red for a move that
+    // changed no compiled output. Spelled out rather than walked generically:
+    // the chain is one preset deep, and `packages/theme`'s own suite is what
+    // asserts the preset's key set. What matters here is that `text-display`
+    // emits a rule, not which file declares it.
+    const fontSize = {
+      ...(sharedConfig.theme?.extend as { fontSize?: Record<string, unknown> })
+        ?.fontSize,
+      ...(
+        tailwindConfig.theme?.extend as { fontSize?: Record<string, unknown> }
+      )?.fontSize,
     };
-    const fontSize = Object.assign(
-      {},
-      ...extendsOf(tailwindConfig)
-        .reverse()
-        .map((e) => (e as { fontSize?: Record<string, unknown> }).fontSize),
-    ) as Record<string, unknown>;
     expect(Object.keys(fontSize)).toEqual(
       expect.arrayContaining(["display", "body", "caption"]),
     );

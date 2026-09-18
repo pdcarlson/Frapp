@@ -225,8 +225,9 @@ export function ChapterNavHeader({
                 /*
                  * `hover:bg-popover`, not `hover:bg-card`. A row seated on
                  * `--surface-1` moving to `--card` measures 1.0486:1 on the
-                 * greenfield ladder, under the 1.1 the contrast fixture treats
-                 * as "reads as the same colour". Skipping to the next step up
+                 * greenfield ladder, under `INDISTINGUISHABLE` — the bound the
+                 * contrast fixture treats as "reads as the same colour", which
+                 * is 1.15 and has never been 1.1. Skipping to the next step up
                  * is a hover a person can actually see, and it does not require
                  * re-pitching a ladder value to fix one call site.
                  */

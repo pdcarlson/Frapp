@@ -7,6 +7,13 @@ import {
 } from "@repo/chapter-theme";
 import { describe, expect, it } from "vitest";
 
+import { isCompleteColor, SIMPLE_COLOR } from "./complete-color";
+import {
+  LANDING_TAILWIND,
+  readConfigCode,
+  WEB_TAILWIND,
+} from "./config-sources";
+
 import { getSignetCssVars, signetDarkTokens } from "./signet";
 import config from "./tailwind.config";
 
@@ -51,12 +58,7 @@ const LANDING_GLOBALS = fileURLToPath(
  * builds. Every Signet-only color key in that config reads its token through
  * `colorVar("--x")`, so the literal scan sees exactly the set the walker would.
  */
-const WEB_TAILWIND = fileURLToPath(
-  new URL("../../../apps/web/tailwind.config.ts", import.meta.url),
-);
-const LANDING_TAILWIND = fileURLToPath(
-  new URL("../../../apps/landing/tailwind.config.ts", import.meta.url),
-);
+/* Paths and the comment-stripping reader are shared with `tailwind.config.spec.ts`. */
 
 /** `--token` → declared value, for the single `:root` block. */
 function declaredIn(source: string): Map<string, string> {
@@ -72,57 +74,6 @@ function declaredIn(source: string): Map<string, string> {
 }
 
 const root = declaredIn(css);
-
-/*
- * A value the preset can hand Tailwind as a bare `var(--token)` and have the
- * browser paint. `color-mix()` is in the set because the derived accent steps
- * (`--primary-pressed`, `--accent-subtle-hover`) are mixes of the accent slot
- * rather than fixed values — that is what keeps them tracking a chapter's
- * override instead of needing a second thing to re-derive.
- *
- * A regex alone is the wrong shape for `color-mix()`: its arguments nest
- * parens, and a pattern loose enough to cross them (`.+\)`) also accepts a
- * dropped closing paren or a single colour argument — both invalid CSS that
- * would paint nothing, which is precisely what this guard exists to catch.
- * Parens are therefore balanced by counting and the argument count checked.
- */
-const SIMPLE_COLOR = /^(#[0-9a-f]{3,8}|(hsla?|rgba?)\([^)]*\))$/i;
-
-function isBalanced(value: string): boolean {
-  let depth = 0;
-  for (const char of value) {
-    if (char === "(") depth += 1;
-    else if (char === ")") {
-      depth -= 1;
-      if (depth < 0) return false;
-    }
-  }
-  return depth === 0;
-}
-
-function isCompleteColor(value: string): boolean {
-  if (SIMPLE_COLOR.test(value)) return true;
-  const mix = /^color-mix\(in ([\w-]+(?: [\w-]+)?),(.+)\)$/i.exec(value);
-  if (!mix || !isBalanced(value)) return false;
-  // Split the argument list on top-level commas only — `var(--a, fallback)`
-  // and a nested mix both carry commas that are not argument separators.
-  let depth = 0;
-  const parts: string[] = [];
-  let current = "";
-  for (const char of mix[2]!) {
-    if (char === "(") depth += 1;
-    if (char === ")") depth -= 1;
-    if (char === "," && depth === 0) {
-      parts.push(current);
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-  parts.push(current);
-  // `color-mix()` takes exactly two colours, each optionally with a percentage.
-  return parts.length === 2 && parts.every((part) => part.trim().length > 0);
-}
 
 /** Every custom property a config's color keys read through `colorVar`. */
 function tokensReadBy(colors: unknown): string[] {
@@ -157,8 +108,9 @@ describe("signet.css is dark-only and side-token-free", () => {
 
   it("neutralizes every shadow token — elevation is a lighter surface", () => {
     // `--shadow-md` is load-bearing rather than decorative: `shadow-md` is
-    // bound to it in `apps/web/tailwind.config.ts` precisely so the utility
-    // cannot fall through to Tailwind's stock scale and draw a real shadow. If
+    // bound to it in the shared preset `packages/theme/src/tailwind.config.ts`
+    // (app-local until #2371) precisely so the utility cannot fall through to
+    // Tailwind's stock scale and draw a real shadow. If
     // this token is ever dropped, that binding resolves to nothing and the ban
     // reopens silently — which is what this roster is here to prevent.
     for (const key of [
@@ -207,7 +159,7 @@ describe("the accent-slot defaults are the house seed through the real engine", 
 describe("every token the presets read is defined as a complete color", () => {
   const shared = tokensReadBy(config.theme?.extend?.colors);
   const appExtension = (source: string): string[] =>
-    [...readFileSync(source, "utf8").matchAll(/colorVar\("(--[\w-]+)"\)/g)].map(
+    [...readConfigCode(source).matchAll(/colorVar\("(--[\w-]+)"\)/g)].map(
       (m) => m[1]!,
     );
   const webExtension = appExtension(WEB_TAILWIND);
@@ -264,14 +216,16 @@ describe("every token the presets read is defined as a complete color", () => {
     const shared = Object.values(
       config.theme!.extend!.borderRadius as Record<string, string>,
     ).map((value) => String(value).match(/var\((--[\w-]+)\)/)?.[1]);
-    const webOnly = [
-      ...readFileSync(WEB_TAILWIND, "utf8").matchAll(
-        /var\((--radius-[\w-]+)\)/g,
+    // BOTH configs, not just `apps/web`: `apps/landing` also lost a
+    // `borderRadius` block to #2371, so it is equally a re-drift site.
+    const appOnly = [WEB_TAILWIND, LANDING_TAILWIND].flatMap((source) =>
+      [...readConfigCode(source).matchAll(/var\((--radius-[\w-]+)\)/g)].map(
+        (m) => m[1]!,
       ),
-    ].map((m) => m[1]!);
+    );
 
     expect(shared).toContain("--radius-2xl");
-    expect(webOnly).toEqual([]);
+    expect(appOnly).toEqual([]);
     for (const token of shared) {
       expect(token).toBeDefined();
       expect(root.has(token!), `signet.css must define ${token}`).toBe(true);

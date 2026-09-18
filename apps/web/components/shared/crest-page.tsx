@@ -59,8 +59,10 @@ import { cn } from "@/lib/utils";
  *
  * These are the first call sites for lane 1's `--text-*` utilities, which shipped
  * with none. An unbound Tailwind key emits no CSS and raises nothing — #1145's
- * failure mode — so `crest-page.spec.tsx` asserts the three keys against
- * `tailwind.config.ts` rather than trusting that they resolve.
+ * failure mode — so `crest-page.spec.tsx` asserts the three keys against the
+ * app config merged with the shared preset that now declares them
+ * (`packages/theme/src/tailwind.config.ts`), rather than trusting that they
+ * resolve.
  *
  * ## Why the two pages paint their code label from different tokens
  *

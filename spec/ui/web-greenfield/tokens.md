@@ -346,9 +346,11 @@ contrast merits — most likely by re-pitching `--card`. The rung stays as shipp
 lane changes no value.
 
 One live call site was known to be affected and was fixed at the call site rather than by moving a
-token (`chapter-nav-header.tsx:226`, whose row hover skips to `--popover`). **A later sweep found
-about ten more** on the same rung, across the nav rail, top bar and channel list — see
-[#2399](https://github.com/pdcarlson/Frapp/issues/2399). The ladder itself is left as
+token (`chapter-nav-header.tsx`, whose chapter-picker row hover skips to `--popover`). **It is not
+the only one.** A later sweep — `git grep -n "hover:bg-card\\|bg-card" apps/web`, cross-referenced
+against the container each site is seated in — found the same rung under the nav rail, the top bar
+and the channel list. [#2399](https://github.com/pdcarlson/Frapp/issues/2399) carries the table, and
+is where the count belongs: a number restated here is one nobody can re-derive. The ladder itself is left as
 [#2143](https://github.com/pdcarlson/Frapp/issues/2143) specified, because re-pitching it is a
 design decision for the framework, not a review fix. For reference, `--card` at `#232019` would give
 1.0709 / 1.0817 — better balanced than either the old or the new ladder — if the framework wants it.
@@ -535,7 +537,8 @@ matches the spec and a screen that matches the utilities can disagree, with noth
 - **Almost no new token was invented for a value the spec did not already carry.** The scrollbar
   family is the recorded exception, added as a new section rather than slipped in. One further
   exception was *not* recorded at the time and is now L-09: five of the six `--text-*` line heights
-  are literals in `apps/web/tailwind.config.ts` that the type scale never states.
+  are literals in the shared preset `packages/theme/src/tailwind.config.ts` (app-local until
+  [#2371](https://github.com/pdcarlson/Frapp/issues/2371)) that the type scale never states.
 - **No guard was loosened to make the change pass.** Where a measurement moved, the pin moved with
   it and says why. Where a floor was genuinely breached, the implementation changed instead. The one
   threshold that was raised, `INDISTINGUISHABLE` in `apps/web/tests/signet-contrast.ts`, is a

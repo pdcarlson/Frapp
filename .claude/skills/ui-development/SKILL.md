@@ -178,8 +178,8 @@ Two remainders stay **app-local**, and they are deliberate rather than leftovers
 `hero` / `display-lg` / `lead` in `apps/landing/tailwind.config.ts`, which sit above
 `foundations.md` §7's locked six by decision. Those two configs hold nothing else. They used to
 hold the whole set twice over: the keys were app-local because the preset must bind nothing its
-stylesheet defines (#1145), which was true while `apps/landing` was frozen on the legacy
-stylesheet and stopped being true when #2366 put it on `signet.css`. **Read that file rather than this list** — it is the one that compiles,
+stylesheet does **not** define (#1145), which was true while `apps/landing` was frozen on the
+legacy stylesheet and stopped being true when #2366 put it on `signet.css`. **Read that file rather than this list** — it is the one that compiles,
 and it carries the reasoning for each. `packages/theme/src/signet.css.spec.ts` asserts every key
 reads a defined token.
 
@@ -213,7 +213,8 @@ it (#1151). In a Tailwind arbitrary value the correct form carries the type hint
 
 > **Nothing below is a key you can reach for.** The shared preset carries no legacy brand scale any
 > more. This section is kept for the class of defect it documents (#916, #1145, #1151), not as an
-> inventory. For current values read `packages/theme/src/signet.css` and the two app configs.
+> inventory. For current values read `packages/theme/src/signet.css` and the shared preset
+> `packages/theme/src/tailwind.config.ts`.
 
 `navy` and `emerald` were the last two, surviving for `apps/landing` alone until
 [#2366](https://github.com/pdcarlson/Frapp/issues/2366) moved that surface to Signet and deleted
@@ -240,8 +241,8 @@ emerald text beside a moss `emerald-100` fill and nothing flagged it.
 that surface moved to Signet — its `text-navy` and `text-emerald-600` sites went to
 `text-foreground` and the semantic `text-success` in the same change. The two paragraphs above are
 kept as the reasoning for a class of defect (#916, #1145, #1151), not as a description of keys you
-can still reach for. Read current values from `packages/theme/src/signet.css` and the two app
-configs rather than trusting any doc's hex table.
+can still reach for. Read current values from `packages/theme/src/signet.css` and the shared preset
+`packages/theme/src/tailwind.config.ts` rather than trusting any doc's hex table.
 
 ### Custom animations
 

@@ -146,21 +146,24 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>(
             role="option"
             aria-selected={index === clampedIndex}
             /*
-             * The hover fill is the accent tint, not a ladder step. This list
-             * is seated on `--popover`, the top of the ladder, so there is no
-             * step above it to raise a row to, and the step below (`--card`)
-             * measures 1.1046:1 against it — under the contrast fixture's
-             * `INDISTINGUISHABLE` (1.15), which `shared/elevation-contrast.spec.ts`
-             * pins as reading like a hole rather than a state. `onMouseEnter`
-             * below also promotes the row to selected, so this resolves to the
-             * fill the row is about to take anyway. This was `hover:bg-surface-2`,
-             * which no config or stylesheet has ever defined (#1423).
+             * There is no hover fill, deliberately: `onMouseEnter` below makes
+             * the hovered row the SELECTED row, so selection is the hover
+             * feedback and a second recipe can only disagree with it.
+             *
+             * This carried `hover:bg-surface-2`, which no config or stylesheet
+             * has ever defined, so it emitted nothing (#1423). Repointing it at
+             * a real fill is what surfaces the problem: the keyboard handler
+             * moves selection without the pointer moving, so a row left under a
+             * stationary cursor keeps `:hover` while another row is selected,
+             * and any fill here paints a second row that looks chosen. The
+             * ladder offers nothing anyway — this list is seated on `--popover`,
+             * the top of it, and the step below measures 1.1046:1, under the
+             * fixture's `INDISTINGUISHABLE` and pinned as such by
+             * `shared/elevation-contrast.spec.ts`.
              */
             className={cn(
               "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-[13px]",
-              index === clampedIndex
-                ? "bg-accent-subtle text-accent-text"
-                : "hover:bg-accent-subtle",
+              index === clampedIndex && "bg-accent-subtle text-accent-text",
             )}
             onMouseEnter={() => setSelectedIndex(index)}
             onClick={() => selectItem(index)}

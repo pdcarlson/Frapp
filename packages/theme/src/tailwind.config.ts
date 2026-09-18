@@ -182,7 +182,10 @@ const config: Partial<Config> = {
         "destructive-text": colorVar("--destructive-text"),
         // Its info twin, added with the greenfield ladder: solid `--info`
         // fell under 4.5:1 on `--card` and `--popover` when the ladder
-        // lightened.
+        // lightened. Without this key the token would be declared in
+        // `signet.css`, documented in foundations §5, and unreachable from any
+        // component — the token guards run preset -> CSS, never CSS -> preset,
+        // so nothing fails when a declared token has no key to reach it by.
         "info-text": colorVar("--info-text"),
         /*
          * "You were addressed". Both halves are needed: `mention` /

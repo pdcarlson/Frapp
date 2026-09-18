@@ -1279,8 +1279,9 @@ export function Composer({
                  * composer well, which is `bg-surface-1`
                  * (`COMPOSER_WELL_CLASS`), and `--card` on `--surface-1`
                  * measures 1.0486:1 — under the contrast fixture's
-                 * `INDISTINGUISHABLE` (1.15), so the chip would read as no
-                 * fill at all. `--popover` on `--surface-1` is 1.1583:1.
+                 * `INDISTINGUISHABLE` (`apps/web/tests/signet-contrast.ts`, the
+                 * one place that bound is written), so the chip would read as
+                 * no fill at all. `--popover` on `--surface-1` is 1.1583:1.
                  * Same skip, for the same reason, as the chapter picker row in
                  * `layout/chapter-nav-header.tsx`. This was `bg-surface-2`,
                  * which no config or stylesheet has ever defined (#1423).
