@@ -35,6 +35,22 @@ export const config = [
     // which `--max-warnings 0` turns into a failure. Running `npm run test:cov`
     // in a workspace would then fail `npm run lint` there forever, pointing at a
     // gitignored file that `git status` does not show.
-    ignores: ["dist/**", "coverage/**"],
+    //
+    // `playwright-report/**` and `test-results/**` are the same trap with a
+    // different generator: Playwright's HTML reporter writes a bundled
+    // `index.html` whose inlined script lints as thousands of `no-undef` and
+    // `no-unused-expressions` warnings. Running `npm run test:floor -w apps/web`
+    // or `npm run test:fold -w apps/landing` and then `npm run lint` in that
+    // workspace fails on generated output, and the root `.gitignore` covers both
+    // directories so `git status` shows nothing to explain it. CI never hit this
+    // because the Playwright jobs and `lint-and-typecheck` are separate runners;
+    // it only ever bites locally, which is why it went unnoticed until a second
+    // Playwright suite landed (#2368).
+    ignores: [
+      "dist/**",
+      "coverage/**",
+      "playwright-report/**",
+      "test-results/**",
+    ],
   },
 ];

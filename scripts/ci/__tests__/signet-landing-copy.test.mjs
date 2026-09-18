@@ -14,12 +14,19 @@
 // Do not walk apps/web (those titles are already Signet).
 //
 // THE STATUS BANNER TRACKS THE RESKIN, SO IT MOVES. It asserted the
-// visual-freeze banner until #2365 lifted that freeze; it now asserts
-// the reskin-in-progress banner. This is the guard working, not an
-// obstacle: the landing spec must always announce its own status at the
-// top, so a slice that changes the status has to come here and say so
-// rather than letting the doc go quiet. The epic (#2364) retires the
-// banner with its last slice, and that slice updates this lock.
+// visual-freeze banner until #2365 lifted that freeze, then the
+// reskin-in-progress banner, and since slice 3 (#2368) it asserts the
+// built-out one. This is the guard working, not an obstacle: the landing
+// spec must always announce its own status at the top, so a slice that
+// changes the status has to come here and say so rather than letting the
+// doc go quiet.
+//
+// WHY THE BANNER IS NOT RETIRED HERE, although slice 3 was the epic's
+// last build slice. What is left of #2364 is owner decisions rather than
+// work — D4's brand sign-off (#2378), the typing row (#2387), and three
+// deferred follow-ups — so the surface's status is still something a
+// reader needs told at the top. Retire the banner when those close, and
+// delete this assertion in the same change rather than loosening it.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -135,8 +142,8 @@ export function chromeSurfaceProblems({ lockup, spec }) {
   if (/aria-label=["']Frapp["']/.test(lockup)) {
     problems.push("lockup aria-label must not be Frapp");
   }
-  if (!/> \*\*RESKIN IN PROGRESS\*\*/.test(spec)) {
-    problems.push("spec must keep the reskin-in-progress banner");
+  if (!/> \*\*RESKIN BUILT OUT\*\*/.test(spec)) {
+    problems.push("spec must keep the reskin-built-out banner");
   }
   return problems;
 }
@@ -270,12 +277,12 @@ test("dropping the status banner fails", () => {
   const problems = chromeSurfaceProblems({
     lockup: readRepo(LOCKUP),
     spec: readRepo(SPEC).replace(
-      "> **RESKIN IN PROGRESS**",
+      "> **RESKIN BUILT OUT**",
       "> **DONE (Signet).**",
     ),
   });
   assert.ok(
-    problems.some((problem) => problem.includes("reskin-in-progress banner")),
+    problems.some((problem) => problem.includes("reskin-built-out banner")),
     problems.join("; "),
   );
 });

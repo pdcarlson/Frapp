@@ -68,7 +68,7 @@ Requirements:
 | Synced Apple touch icons              | `apps/landing/app/apple-icon.png`, `apps/web/app/apple-icon.png`                                       |
 | Synced favicon                        | `apps/web/app/favicon.ico` — the 16/32/48 container; `apps/landing` serves `icon.png` only            |
 | In-app / lockup tile                | `apps/landing/public/brand/signet-emblem-B.png`, `apps/web/public/brand/signet-emblem-B.png`           |
-| Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — emblem raster + Signet word. Tile/crest are `#1A1A1A` / `#DDB844`. |
+| Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — Signet word plus the crest from [`signet-crest.tsx`](../../apps/landing/components/signet-crest.tsx), inlined as one path since #2366 and no longer a raster. Tile/crest are `#1A1A1A` / `#DDB844`. |
 | OG image                              | `apps/landing/app/opengraph-image.tsx`                                                                 |
 
 | Command | Effect |
@@ -119,7 +119,7 @@ After the SVG master changes:
 
 1. Edit `packages/brand-assets/assets/signet-emblem-B.svg`. Apply the same path edit to `signet-emblem-B-glyph.svg`, `signet-emblem-B-rounded.svg`, and `frapp-lockup.svg` — they share the master's coordinate frame, so the `d` string copies verbatim, and a test fails if they diverge. Do not change any `fill`: `check:brand-assets` reads every shipped SVG, including the two that are never rasterized.
 2. Run `npm run rasterize:brand-assets` then `npm run sync:brand-assets` from the repo root. Do **not** hand-commit a raster; all of them are generated.
-3. Align `apps/landing/components/frapp-lockup.tsx` and `apps/web/components/auth/signet-mark.tsx` if the in-app tile path changed.
+3. Align `apps/landing/components/signet-crest.tsx` and `apps/web/components/auth/signet-mark.tsx` if the in-app tile path changed. The landing's crest geometry and its `#DDB844` fill moved into that module in [#2368](https://github.com/pdcarlson/Frapp/issues/2368) and are read from there by the header lockup, the closing crest and the social card, so it is the only landing file to edit. Nothing checks this literal against the vector — `check:brand-assets` compares SVGs and rasters only — so a missed alignment is silent.
 4. Run `npm run check:brand-assets` and `npm run test:ci-scripts` (root) before PR.
 
 A Design hand-off that arrives as a PNG or JPEG is **not** committable as-is: it has to be traced to vectors first. A lossy raster as source of truth is the whole of #2153.

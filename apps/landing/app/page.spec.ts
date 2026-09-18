@@ -280,6 +280,66 @@ describe("landing motion stylesheet", () => {
     expect(overLongs).toEqual([]);
   });
 
+  it("keeps every gesture inside the context ceiling, iterations included", () => {
+    /*
+     * The duration guard above reads LITERAL `NNNms` tokens, so it cannot see
+     * the two ways a gesture gets long without writing a long number: an
+     * iteration count, and a delay. `animation: x var(--motion-context) ... 2`
+     * runs for twice the ceiling while declaring nothing over 300.
+     *
+     * That is not hypothetical — it is the shape slice 3 rejected when it built
+     * the check-in ring, and #2387 tells whoever builds the typing row that this
+     * file enforces the rule. So it has to actually enforce it.
+     *
+     * `infinite` fails outright: the Motion sheet opens "Nothing loops on the
+     * page." The skeleton shimmer that does loop lives in `@repo/theme`'s
+     * stylesheet, not this one, and is out of this file's scope.
+     */
+    const ceiling = cssMs("motion-context");
+    const durations = new Map<string, number>();
+    for (const match of globalsSource.matchAll(/--(motion-[a-z-]+):\s*(\d+)ms/g)) {
+      durations.set(String(match[1]), Number(match[2]));
+    }
+
+    const offenders: string[] = [];
+    for (const match of globalsSource.matchAll(/animation:\s*([^;]+);/g)) {
+      const decl = String(match[1]).replace(/\s+/g, " ").trim();
+      // `animation: none` is the print branch cancelling a reveal, not a gesture.
+      if (decl === "none") continue;
+
+      const named = /var\(--(motion-[a-z-]+)\)/.exec(decl)?.[1];
+      const literal = /\b(\d+)ms\b/.exec(decl)?.[1];
+      const duration = named ? durations.get(named) : literal ? Number(literal) : undefined;
+      if (duration === undefined) {
+        offenders.push(`${decl} — no duration this test can resolve`);
+        continue;
+      }
+
+      // Strip `var(...)` and `NNNms` so what is left of the shorthand can be
+      // scanned for a bare iteration count.
+      const rest = decl.replace(/var\([^)]*\)/g, " ").replace(/\b\d+ms\b/g, " ");
+      if (/\binfinite\b/.test(rest)) {
+        offenders.push(`${decl} — loops, and nothing on this page may loop`);
+        continue;
+      }
+      const iterations = Number(/\b(\d+)\b/.exec(rest)?.[1] ?? 1);
+      const total = duration * iterations;
+      if (total > ceiling) {
+        offenders.push(
+          `${decl} — ${duration}ms x ${iterations} runs past the ${ceiling}ms ceiling`,
+        );
+      }
+    }
+
+    expect(
+      offenders,
+      "a gesture runs longer than the context duration `spec/ui/design-system/README.md` §7 sets " +
+        "as the ceiling. Declaring no single number over the limit does not make it shorter; a " +
+        "gesture that needs longer is the Motion sheet's signature class, and that class needs the " +
+        "taxonomy amendment #2378 is blocked on, in the same pull request.",
+    ).toEqual([]);
+  });
+
   it("does not claim a fourth motion class without the amendment that pays for it", () => {
     /*
      * D4's signature moment is cut until brand sign-off clears (#2378). If a
