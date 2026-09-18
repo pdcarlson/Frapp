@@ -136,8 +136,9 @@ Signet tokens via **`@repo/theme/signet`** in 61 files at last count
 (`grep -rl "@repo/theme/signet" apps/mobile | wc -l`), plus `@repo/theme/accent` at **exactly one
 call site**, `apps/mobile/lib/chapter-branding.ts` (`grep -rn "@repo/theme/accent" apps/mobile`).
 That one-site bound is what keeps the accent engine's blast radius auditable: re-run the grep rather
-than trusting this line, and treat a second importer as a change to argue for, not a detail. Mobile
-does not import `@repo/theme/tokens` at all, and nothing outside `packages/theme` does. The Signet
+than trusting this line, and treat a second importer as a change to argue for, not a detail. There is no `@repo/theme/tokens`
+export any more — #2366 removed it along with `./globals.css`, since nothing
+outside the package imported either. The Signet
 tokens live in `packages/theme` too (`src/signet.css`, `src/signet.ts`), and since
 [#2366](https://github.com/pdcarlson/Frapp/issues/2366) they are the **only** tokens it ships: the
 legacy `./globals.css` stylesheet and export are deleted, so there is no second system to bleed

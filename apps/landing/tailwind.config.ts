@@ -8,12 +8,15 @@ import sharedConfig, { colorVar } from "@repo/theme/tailwind";
  * keys sit in the app config rather than the shared preset, because the preset
  * binds nothing that its stylesheet does not define and a preset key reading an
  * undefined token is #1145's silent no-color failure. Both surfaces now ship
- * `packages/theme/src/signet.css`, so the two key sets are the same set — that
- * duplication is the next thing to collapse (#2371). It stays a `@repo/theme`
- * refactor rather than landing work: moving these keys up touches `apps/web`'s
- * config too, and the acceptance test is that BOTH apps' compiled stylesheets
- * come out byte-identical, which is not something to prove inside a reskin
- * slice.
+ * `packages/theme/src/signet.css`, so the two configs OVERLAP heavily — and it
+ * is only an overlap, not an identity. `apps/web` alone carries the `mention`
+ * and `gold` families; this config alone carries `hero`, `display-lg` and
+ * `lead`. Only the common subset is a candidate for the shared preset (#2371);
+ * the surface-specific keys stay where they are, deliberately, and promoting
+ * them would be the defect that issue exists to avoid. Collapsing even the
+ * common subset stays a `@repo/theme` refactor rather than landing work: it
+ * touches `apps/web`'s config too, and the acceptance test is that BOTH apps'
+ * compiled stylesheets come out byte-identical.
  *
  * `darkMode` stays on the class strategy with nothing setting the class, for
  * the same reason `apps/web` does: Signet is dark-only — the single `:root` IS

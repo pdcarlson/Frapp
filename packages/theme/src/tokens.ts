@@ -6,8 +6,12 @@
  * variables remain the source of truth for the web app; this file is the
  * source of truth for mobile (which reads through `getFrappTokens()`).
  *
- * This is the legacy Frapp palette, and `apps/landing` is its last consumer —
- * `apps/web` and `apps/mobile` ship Signet (`./signet.ts`). Chapter branding no
+ * This is the legacy Frapp palette and **no surface consumes it** any more:
+ * `apps/web` and `apps/mobile` ship Signet (`./signet.ts`), and `apps/landing`
+ * cut over with #2366, which deleted `globals.css` and both package exports.
+ * The module stays because two live things read it INSIDE this package — the
+ * accent engine's bronze fallback in `accent.ts`, and the motion scale that
+ * `signet.ts` and the Tailwind preset both import. Do not wire a surface to it. Chapter branding no
  * longer overlays these values at all: the Signet accent engine derives its
  * roles from one seed into `--signet-*` custom properties, and the neutral
  * ladder is fixed (`spec/ui/design-system/accent-engine.md` §5).

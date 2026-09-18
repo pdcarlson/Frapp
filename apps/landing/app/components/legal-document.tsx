@@ -14,10 +14,12 @@ type LegalDocumentProps = {
 
 /*
  * The legal prose layout, on the LOCKED six type roles (foundations.md §7) —
- * not on the landing's three marketing roles. Those are for the storefront:
- * `--text-hero` is "the hero H1, and nothing else" and `--text-lead` is the
- * hero and closing paragraphs. A Terms page is a document, so its title is
- * `display` and its body is `body`, the 16px paragraph floor.
+ * not on the landing's three marketing roles. Those belong to the storefront:
+ * §7's amendment scopes `--text-hero` to the hero H1 (plus the pricing figures
+ * on phone, the one sanctioned crossover) and `--text-lead` to the hero and
+ * closing paragraphs. Neither has anything to do with a legal page, which is a
+ * document: its title is `display` and its body is `body`, the 16px paragraph
+ * floor. Read §7 rather than restating its rules here.
  *
  * Colours were already semantic before the #2366 cutover, so they re-pointed at
  * the Signet ladder with the stylesheet swap and needed no edit here.

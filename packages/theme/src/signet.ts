@@ -1,10 +1,12 @@
 /**
  * Signet design tokens — the dark-first warm palette.
  *
- * This is an ADDITIVE entrypoint. `apps/web` and `apps/landing` ship the legacy
- * bone/bronze/ink tokens from `tokens.ts` until their own reskin, and the two
- * systems must not mix on one surface, so nothing here is reachable from the
- * existing exports. `apps/mobile` is the first consumer.
+ * This started as an ADDITIVE entrypoint beside the legacy bone/bronze/ink
+ * tokens, with `apps/mobile` its first consumer. It is now the ONLY token set
+ * the package ships for a surface: `apps/web` cut over with the #920 shell
+ * slice and `apps/landing` with #2366, which also deleted the legacy stylesheet.
+ * `tokens.ts` survives as an internal dependency — the accent engine's bronze
+ * fallback and the motion scale — never as a surface's token source.
  *
  * Values are transcribed from `spec/ui/design-system/foundations.md`, which is
  * canonical, and which in turn transcribes panel 4h of the committed design

@@ -27,7 +27,8 @@ in that same cutover — a cutover deletes what it replaces, and a stylesheet no
 surface imports is not a migration window. `src/tailwind.config.spec.ts` was
 re-pointed at `signet.css` in the same change.
 
-The `./tokens` entrypoint it used to pair with **stays**, and is not dead:
+The `./tokens` **export** is removed with it — nothing outside the package ever
+imported it. The module itself **stays**, and is not dead:
 `accent.ts` reads `frappTokens.color.brand.bronze` as the accent engine's
 fallback, and both the preset and `signet.ts` read its motion scale. What went
 is the stylesheet, not the token module.

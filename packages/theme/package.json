@@ -6,7 +6,6 @@
   "exports": {
     "./tailwind": "./src/tailwind.config.ts",
     "./signet.css": "./src/signet.css",
-    "./tokens": "./src/tokens.ts",
     "./accent": "./src/accent.ts",
     "./signet": "./src/signet.ts"
   },

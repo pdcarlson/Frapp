@@ -154,13 +154,16 @@ const config: Partial<Config> = {
         xl: "var(--radius-xl)",
       },
       /*
-       * No `md` key here on purpose, and the omission is not the gap it looks
-       * like. This preset still serves the frozen `apps/landing`, whose
-       * `globals.css` defines real shadows and no `--shadow-md`; binding `md`
-       * here would make `shadow-md` resolve against an undefined property
-       * there, and the declaration would be dropped — the silent failure #1145
-       * documented and `apps/web/tailwind.config.ts` exists to avoid. Landing
-       * is not Signet and is not under the no-shadow ban, so falling through to
+       * No `md` key here on purpose. The original reason was that this preset
+       * also served the frozen `apps/landing`, whose `globals.css` defined real
+       * shadows and no `--shadow-md`; binding `md` here would have made
+       * `shadow-md` resolve against an undefined property there and be dropped
+       * — the silent failure #1145 documented. #2366 retired that consumer, and
+       * both app configs now bind their own `md` to the `none` token, so the
+       * key can move up with the rest of the common subset (#2371). Left as-is
+       * for now so this PR changes no compiled output. What follows describes
+       * the retired arrangement: landing was not Signet and not under the
+       * no-shadow ban, so falling through to
        * Tailwind's stock `shadow-md` is the right answer for it.
        *
        * Signet's own `md` binding lives in `apps/web/tailwind.config.ts` with

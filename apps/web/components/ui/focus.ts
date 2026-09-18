@@ -96,13 +96,14 @@ export const FOCUS_RING =
  *
  * `ring-accent-text` resolves through `apps/web/tailwind.config.ts`, which
  * already carries `"accent-text": colorVar("--accent-text")` alongside the rest
- * of the Signet-only keys. Do not "tidy" it up into the SHARED preset
- * (`packages/theme/src/tailwind.config.ts`): that one is also read by
- * `apps/landing`, and `tailwind.config.spec.ts` asserts every token the preset
- * reads is defined in the legacy `globals.css` `:root`. `--accent-text` has no
- * legacy counterpart, so a preset key would either fail that guard or force a
- * Signet token onto the frozen landing surface, which `foundations.md` §1
- * forbids. The app config is where this belongs, and its own header says so.
+ * of the Signet-only keys. It used to be unmovable: the shared preset was also
+ * read by the frozen `apps/landing`, and `tailwind.config.spec.ts` asserted
+ * every preset token was defined in the legacy `globals.css` `:root`, which had
+ * no `--accent-text`. #2366 removed both halves of that — landing ships
+ * `signet.css`, the legacy stylesheet is deleted, and that spec now reads
+ * `signet.css` — so moving this key up is merely UNDONE work rather than
+ * forbidden. It is tracked as #2371 and should happen there, with both apps'
+ * compiled stylesheets diffed, not as a drive-by tidy-up here.
  *
  * ## `ring-offset-background` is load-bearing — do not "simplify" it away
  *
