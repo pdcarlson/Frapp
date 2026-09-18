@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#131211;color:#EDEAE3;font-family:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+a{color:#E7C86B;text-decoration:none}a:hover{text-decoration:underline;text-underline-offset:3px}
+/* Signature moment on the crest band: rules draw, light blooms, crest settles and wipes in. Once, motion-safe only. */
+.crest-band{position:relative;overflow:clip}
+.crest-band::before,.crest-band::after{content:"";position:absolute;left:0;width:100%;height:1px;background:rgba(255,255,255,.08)}
+.crest-band::before{top:0}.crest-band::after{bottom:0}
+.signet-stage{position:relative;width:220px;height:220px;flex:none}
+.signet-light{position:absolute;left:50%;top:38%;width:200%;height:165%;transform:translate(-50%,-50%);pointer-events:none;background:radial-gradient(50% 50% at 50% 50%,rgba(221,184,68,.06) 0%,rgba(221,184,68,.026) 44%,rgba(221,184,68,0) 72%)}
+.signet-mark{position:relative;display:block;width:100%;height:100%}
+.signet-crest{display:block;width:100%;height:100%}
+@keyframes signet-wipe{from{-webkit-mask-position:100% 0%;mask-position:100% 0%}to{-webkit-mask-position:0% 100%;mask-position:0% 100%}}
+@keyframes signet-settle{from{transform:translate3d(0,10px,0) scale(.972)}to{transform:none}}
+@keyframes signet-bloom{from{opacity:0}to{opacity:1}}
+@keyframes signet-rule-x{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@media (prefers-reduced-motion:no-preference){
+  .signet-mark{animation:signet-settle 640ms cubic-bezier(.22,1,.36,1) both}
+  .signet-light{animation:signet-bloom 660ms cubic-bezier(.45,0,.55,1) 60ms both}
+  .crest-band::before,.crest-band::after{transform-origin:center;animation:signet-rule-x 300ms cubic-bezier(.16,1,.3,1) 120ms both}
+  @supports ((mask-image:linear-gradient(#000,#000)) or (-webkit-mask-image:linear-gradient(#000,#000))){
+    .signet-crest{--wipe:linear-gradient(35deg,#000 0 42%,rgba(0,0,0,.45) 53%,transparent 64%);-webkit-mask-image:var(--wipe);mask-image:var(--wipe);-webkit-mask-size:260% 260%;mask-size:260% 260%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:signet-wipe 520ms cubic-bezier(.45,.05,.15,1) 60ms both}
+  }
+}
+</style>
+</helmet>
+<div style="width:390px;height:6040px;box-sizing:border-box;display:flex;flex-direction:column;background:#131211;color:#EDEAE3;overflow:hidden;font-family:'Figtree',system-ui,sans-serif">
+
+<header style="height:64px;flex:none;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;padding:0 20px;border-bottom:1px solid rgba(255,255,255,.08)">
+  <a href="#top" aria-label="Signet home" style="display:flex;align-items:center;gap:8px;color:#EDEAE3;height:44px">
+    <span style="width:28px;height:28px;border-radius:8px;background:#1A1A1A;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 1024 1024" aria-hidden="true"><path fill="#DDB844" d="M188.98 592.26C188.6 595.81 190.31 599.31 191.21 602.67 C192.59 607.82 193.92 612.93 195.64 617.99C201.79 636.11 209.25 654 218.22 670.92 C267.26 763.42 350.53 832.37 437.81 887.43C454.9 898.21 472.03 908.94 489.15 919.67 C494.21 922.84 499.31 925.92 504.43 928.99C506.9 930.47 509.97 933.16 513 932.89 C516.21 931.55 518.79 927.14 520.96 924.49C526.22 918.09 531.25 911.52 535.94 904.69 C550.88 882.9 563.79 859.35 572.88 834.49C592.01 782.13 597.69 723.86 581.4 669.85 C572.94 641.79 559.85 615.7 543.19 591.62C514.52 550.21 473.55 519.59 443.03 479.74 C418.94 448.28 403.41 410.82 398.95 371.41C397.67 360.06 396.7 348.99 396.67 337.54 C396.65 333.35 395.65 327.04 397.64 323.23C398.61 322.65 402.87 333.99 403.56 335.54 C409.84 349.67 417.72 363.45 426.95 375.87C456.99 416.33 500.91 443.82 546.91 462.85 C554.25 465.89 561.55 469.05 568.9 472.1C572.15 473.45 576.33 476.04 579.93 475.61 C583.26 474.33 585.66 469.9 588 467.31C592.67 462.14 597.73 457.34 602.98 452.76 C619.64 438.24 638.1 426.94 658.47 418.4C677.36 410.49 698.21 406.45 718.51 404.41 C730.73 403.18 743.25 403.88 755.26 400.79C793.72 390.89 822.82 359.69 831.62 321.02 C832.37 317.72 833.7 312.59 832.74 309.27C831.34 304.47 823.85 300.08 820.2 296.94 C812.17 290.02 803.98 283.22 796.21 276C794.2 274.13 787.16 269.58 787.63 266.66 C789.39 264.15 793.47 263.83 796.22 263.06C801.87 261.47 808.05 260.49 813.91 259.96 C816.83 259.7 833.44 261.13 833.83 258.7C833.12 256.13 830.24 254.07 828.26 252.43 C821.65 246.96 813.33 243.62 805.24 241.04C781.88 233.6 757.56 228.61 733.55 223.72 C726.37 222.26 719.22 220.81 712.07 219.2C707.47 218.17 701.79 217.88 698 214.78 C691.19 209.2 686.5 200.91 680.54 194.47C672.01 185.24 661.53 177.81 650.38 172.09 C634.03 163.72 616.35 158.99 598.54 155.04C560.49 146.61 519.5 147.45 481.42 155.11 C454.91 160.44 428.32 168.81 405.82 184.28C384.17 199.16 368.22 219.58 354.92 241.95 C333.13 278.62 319.26 321.41 309.44 362.71C299.8 403.2 293.23 444.11 276.67 482.63 C264.4 511.19 245.85 538.41 224.18 560.67C217.25 567.79 209.99 574.74 202.34 581.08 C198.68 584.12 190.72 587.8 188.98 592.26ZM637.89 843.52 C642.22 842.8 647.64 835.39 650.86 832.47C663.14 821.35 674.65 809.27 685.44 796.71 C714.5 762.88 742.28 720.43 730.02 673.67C724.4 652.25 715.33 631.67 704.92 612.13 C691.03 586.02 675.21 559.91 668.16 530.91C663.39 511.29 662.93 489.19 668.04 469.57 C668.88 466.33 677.4 446.98 675.61 445.52C673.05 445.5 669.99 448.94 668.05 450.44 C661.4 455.58 655.48 461.07 650.42 467.8C646.82 472.58 643.07 477.16 640.01 482.32 C635.9 489.25 632.7 496.4 630.44 504.12C615.15 556.28 645.87 607.39 659.04 656.45 C661.42 665.3 664.24 674.56 665.2 683.69C669.51 724.75 667.12 764.52 653.33 803.75 C651.46 809.07 649.79 814.4 647.67 819.64C646.6 822.27 636.73 842.86 637.89 843.52ZM637.98 233.8 C635.99 238.01 627.34 242.23 623.53 244.98C608.22 256.03 590.81 261.83 572.01 256.79 C564.57 254.8 558.08 250.56 551.82 246.22C548.79 244.12 541.73 241.42 540.07 238.22 C540.19 234.79 548.21 228.75 550.62 226.24C564.62 211.66 584.01 206.35 603.46 212.61 C611.35 215.16 618.44 219.88 625.22 224.52C627.84 226.31 637.68 230.62 637.98 233.8Z"></path></svg></span>
+    <span style="font-size:17px;font-weight:700;line-height:17px">Signet</span>
+  </a>
+  <div style="display:flex;align-items:center;gap:16px">
+    <a href="https://app.frapp.live/sign-in" style="font-size:14px;font-weight:600;line-height:44px;color:#EDEAE3">Sign in</a>
+    <a href="https://app.frapp.live/sign-up" style="height:44px;padding:0 14px;border-radius:12px;background:{{accent}};color:{{accentOn}};font-size:14px;font-weight:700;display:inline-flex;align-items:center;box-sizing:border-box">Get started</a>
+  </div>
+</header>
+
+<section id="top" style="min-height:910px;padding:40px 20px 0;box-sizing:border-box;display:flex;flex-direction:column;gap:16px;align-items:flex-start">
+  <p style="margin:0;font-size:14px;line-height:18px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:{{accentText}}">Chapter operations, chat first</p>
+  <h1 style="margin:0;font-size:40px;line-height:44px;font-weight:700;letter-spacing:-.02em;text-wrap:balance">Run your chapter where it already talks.</h1>
+  <p style="margin:0;font-size:18px;line-height:27px;color:#A9A399;text-wrap:pretty">Signet is chat first. Events, check-in and points land in the conversation your members already read. Officers stop chasing. Members stop asking where things are.</p>
+  <a href="https://app.frapp.live/sign-up" style="width:100%;height:48px;border-radius:12px;background:{{accent}};color:{{accentOn}};font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;box-sizing:border-box;margin-top:8px">Get started</a>
+  <a href="https://frapp.live/join" style="font-size:16px;line-height:44px;font-weight:600;color:{{accentText}}">Have an invite? Join your chapter</a>
+  <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Free for chat, members and announcements. No card. Officers add Chapter Pro when the chapter needs events, dues and points.</p>
+  <div class="crest-band" style="width:100%;margin-top:24px;padding:32px 0;display:flex;flex-direction:column;align-items:center">
+    <div class="signet-stage">
+      <span class="signet-light" aria-hidden="true"></span>
+      <span class="signet-mark"><svg class="signet-crest" viewBox="0 0 1024 1024" role="img" aria-label="The Signet crest"><path fill="#DDB844" d="M188.98 592.26C188.6 595.81 190.31 599.31 191.21 602.67 C192.59 607.82 193.92 612.93 195.64 617.99C201.79 636.11 209.25 654 218.22 670.92 C267.26 763.42 350.53 832.37 437.81 887.43C454.9 898.21 472.03 908.94 489.15 919.67 C494.21 922.84 499.31 925.92 504.43 928.99C506.9 930.47 509.97 933.16 513 932.89 C516.21 931.55 518.79 927.14 520.96 924.49C526.22 918.09 531.25 911.52 535.94 904.69 C550.88 882.9 563.79 859.35 572.88 834.49C592.01 782.13 597.69 723.86 581.4 669.85 C572.94 641.79 559.85 615.7 543.19 591.62C514.52 550.21 473.55 519.59 443.03 479.74 C418.94 448.28 403.41 410.82 398.95 371.41C397.67 360.06 396.7 348.99 396.67 337.54 C396.65 333.35 395.65 327.04 397.64 323.23C398.61 322.65 402.87 333.99 403.56 335.54 C409.84 349.67 417.72 363.45 426.95 375.87C456.99 416.33 500.91 443.82 546.91 462.85 C554.25 465.89 561.55 469.05 568.9 472.1C572.15 473.45 576.33 476.04 579.93 475.61 C583.26 474.33 585.66 469.9 588 467.31C592.67 462.14 597.73 457.34 602.98 452.76 C619.64 438.24 638.1 426.94 658.47 418.4C677.36 410.49 698.21 406.45 718.51 404.41 C730.73 403.18 743.25 403.88 755.26 400.79C793.72 390.89 822.82 359.69 831.62 321.02 C832.37 317.72 833.7 312.59 832.74 309.27C831.34 304.47 823.85 300.08 820.2 296.94 C812.17 290.02 803.98 283.22 796.21 276C794.2 274.13 787.16 269.58 787.63 266.66 C789.39 264.15 793.47 263.83 796.22 263.06C801.87 261.47 808.05 260.49 813.91 259.96 C816.83 259.7 833.44 261.13 833.83 258.7C833.12 256.13 830.24 254.07 828.26 252.43 C821.65 246.96 813.33 243.62 805.24 241.04C781.88 233.6 757.56 228.61 733.55 223.72 C726.37 222.26 719.22 220.81 712.07 219.2C707.47 218.17 701.79 217.88 698 214.78 C691.19 209.2 686.5 200.91 680.54 194.47C672.01 185.24 661.53 177.81 650.38 172.09 C634.03 163.72 616.35 158.99 598.54 155.04C560.49 146.61 519.5 147.45 481.42 155.11 C454.91 160.44 428.32 168.81 405.82 184.28C384.17 199.16 368.22 219.58 354.92 241.95 C333.13 278.62 319.26 321.41 309.44 362.71C299.8 403.2 293.23 444.11 276.67 482.63 C264.4 511.19 245.85 538.41 224.18 560.67C217.25 567.79 209.99 574.74 202.34 581.08 C198.68 584.12 190.72 587.8 188.98 592.26ZM637.89 843.52 C642.22 842.8 647.64 835.39 650.86 832.47C663.14 821.35 674.65 809.27 685.44 796.71 C714.5 762.88 742.28 720.43 730.02 673.67C724.4 652.25 715.33 631.67 704.92 612.13 C691.03 586.02 675.21 559.91 668.16 530.91C663.39 511.29 662.93 489.19 668.04 469.57 C668.88 466.33 677.4 446.98 675.61 445.52C673.05 445.5 669.99 448.94 668.05 450.44 C661.4 455.58 655.48 461.07 650.42 467.8C646.82 472.58 643.07 477.16 640.01 482.32 C635.9 489.25 632.7 496.4 630.44 504.12C615.15 556.28 645.87 607.39 659.04 656.45 C661.42 665.3 664.24 674.56 665.2 683.69C669.51 724.75 667.12 764.52 653.33 803.75 C651.46 809.07 649.79 814.4 647.67 819.64C646.6 822.27 636.73 842.86 637.89 843.52ZM637.98 233.8 C635.99 238.01 627.34 242.23 623.53 244.98C608.22 256.03 590.81 261.83 572.01 256.79 C564.57 254.8 558.08 250.56 551.82 246.22C548.79 244.12 541.73 241.42 540.07 238.22 C540.19 234.79 548.21 228.75 550.62 226.24C564.62 211.66 584.01 206.35 603.46 212.61 C611.35 215.16 618.44 219.88 625.22 224.52C627.84 226.31 637.68 230.62 637.98 233.8Z"></path></svg></span>
+    </div>
+  </div>
+</section>
+
+<section aria-label="Built for officers" style="min-height:420px;padding:40px 20px 0;box-sizing:border-box;display:flex;flex-direction:column;gap:16px">
+  <p style="margin:0;font-size:14px;line-height:18px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:{{accentText}}">Built for officers</p>
+  <div style="display:flex;flex-direction:column;border-top:1px solid rgba(255,255,255,.08)">
+    <div style="display:flex;flex-direction:column;gap:8px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.08)"><h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">President</h2><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Chapter meeting check-in is a QR on the screen. Attendance and points post themselves.</p></div>
+    <div style="display:flex;flex-direction:column;gap:8px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.08)"><h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">Treasurer</h2><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Dues invoices go out through Stripe. Paid, open and overdue are one list, not a DM thread.</p></div>
+    <div style="display:flex;flex-direction:column;gap:8px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.08)"><h2 style="margin:0;font-size:18px;line-height:23px;font-weight:600">Secretary</h2><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Minutes, bylaws and the audit log live where members already look. Nobody asks for the link twice.</p></div>
+  </div>
+</section>
+
+<section id="product" style="min-height:1230px;padding:64px 20px 0;box-sizing:border-box;display:flex;flex-direction:column;gap:16px">
+  <p style="margin:0;font-size:14px;line-height:18px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:{{accentText}}">Chat is the spine</p>
+  <h2 style="margin:0;font-size:32px;line-height:37px;font-weight:700;letter-spacing:-.02em;text-wrap:balance">Ops happen in the thread.</h2>
+  <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399;text-wrap:pretty">Members open chat. So that is where the event lands, where the check-in happens, and where the treasurer says the invoice batch went out. Nothing sits behind a tab nobody opens.</p>
+  <div style="display:flex;flex-direction:column;border-top:1px solid rgba(255,255,255,.08)">
+    <div style="display:flex;flex-direction:column;gap:4px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.08)"><p style="margin:0;font-size:16px;line-height:25px;font-weight:600">Events post as cards.</p><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Check in without leaving the thread. Officers watch the count update live.</p></div>
+    <div style="display:flex;flex-direction:column;gap:4px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.08)"><p style="margin:0;font-size:16px;line-height:25px;font-weight:600">Red means you.</p><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Mentions and DMs are red. Channel unread stays neutral.</p></div>
+    <div style="display:flex;flex-direction:column;gap:4px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.08)"><p style="margin:0;font-size:16px;line-height:25px;font-weight:600">Officer changes are public.</p><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Dues, roles and module changes post to #chapter-audit. Every member can read it.</p></div>
+  </div>
+  <div role="img" aria-label="The Signet mobile app: the general channel, where an event card sits in the conversation with a Check in button." style="width:350px;height:600px;box-sizing:border-box;border:1px solid rgba(255,255,255,.14);border-radius:28px;background:#131211;overflow:hidden;display:flex;flex-direction:column;margin-top:16px;padding-top:36px">
+    <div style="display:flex;align-items:center;gap:12px;padding:8px 20px 12px;border-bottom:1px solid rgba(255,255,255,.08)">
+      <span style="font-size:16px;color:#E7C86B;font-weight:600">‹</span>
+      <div style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:17px;font-weight:700"># general</span><span style="font-size:12.5px;color:#A9A399">42 members</span></div>
+      <span style="width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#A9A399;font-size:18px;font-weight:700;letter-spacing:.5px">⋯</span>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:14px;padding:16px;overflow:hidden">
+      <div style="display:flex;gap:10px;max-width:90%"><span style="width:32px;height:32px;border-radius:50%;background:#2A2621;color:#A9A399;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none">JE</span><div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12.5px;color:#A9A399;margin-left:4px">Jordan Ellis · 4:02 PM</span><span style="background:#211E1A;border:1px solid rgba(255,255,255,.08);border-radius:18px 18px 18px 6px;padding:11px 14px;font-size:16px;line-height:23px">Chapter is 6:30 tonight. Dues forms in by then if yours is not.</span></div></div>
+      <div style="display:flex;gap:10px"><span style="width:32px;flex:none"></span><div style="flex:1;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:#211E1A;padding:14px;display:flex;flex-direction:column;gap:4px"><span style="font-size:12.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#A9A399">Event</span><span style="font-size:16px;font-weight:700">Chapter meeting</span><span style="font-size:14px;color:#A9A399">Tonight · 6:30 PM · 10 pts</span><div style="display:flex;gap:12px;align-items:center;margin-top:8px"><span style="height:42px;padding:0 16px;border-radius:11px;background:#DDB844;color:#292109;font-size:14px;font-weight:700;display:flex;align-items:center">Check in</span><span style="font-size:12.5px;color:#A9A399">closes 6:45</span></div></div></div>
+      <div style="align-self:flex-end;max-width:90%;display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span style="background:#DDB844;color:#292109;border-radius:18px 18px 6px 18px;padding:11px 14px;font-size:16px;line-height:23px;font-weight:500">On it. Roster is pulled, 42 for food.</span><span style="font-size:12.5px;color:#A9A399;margin-right:4px">4:05 PM · read</span></div>
+      <div style="display:flex;gap:10px;max-width:90%"><span style="width:32px;height:32px;border-radius:50%;background:#2A2621;color:#A9A399;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none">MC</span><div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12.5px;color:#A9A399;margin-left:4px">Maya Chen · 4:06 PM</span><span style="background:#211E1A;border:1px solid rgba(255,255,255,.08);border-radius:18px 18px 18px 6px;padding:11px 14px;font-size:16px;line-height:23px"><span style="background:#4C3A1A;color:#FAA81A;border-radius:5px;padding:0 4px;font-weight:600">@Jordan</span> pin the parking map before people leave?</span></div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 16px 16px;border-top:1px solid rgba(255,255,255,.08)">
+      <span style="width:38px;height:38px;border-radius:11px;background:#211E1A;border:1px solid rgba(255,255,255,.14);color:#A9A399;font-size:19px;display:flex;align-items:center;justify-content:center;box-sizing:border-box">+</span>
+      <span style="flex:1;height:44px;border-radius:12px;background:#1A1A1A;border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;padding:0 14px;color:#A9A399;font-size:15.5px;box-sizing:border-box">Message #general</span>
+      <span style="width:38px;height:38px;border-radius:11px;background:#DDB844;display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 17 17" aria-hidden="true"><path d="M2.5 8.5h9M8 3.5l6 5-6 5" stroke="#292109" stroke-width="1.9" fill="none" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+    </div>
+  </div>
+  <p style="margin:0;font-size:12.5px;line-height:17px;color:#A9A399">Demo chapter. Names and messages are illustrative.</p>
+</section>
+
+<section aria-label="Events and check-in" style="min-height:1170px;padding:64px 20px 0;box-sizing:border-box;display:flex;flex-direction:column;gap:16px">
+  <p style="margin:0;font-size:14px;line-height:18px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:{{accentText}}">Events and check-in</p>
+  <h2 style="margin:0;font-size:32px;line-height:37px;font-weight:700;letter-spacing:-.02em;text-wrap:balance">Check-in that keeps its own books.</h2>
+  <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399;text-wrap:pretty">An officer opens check-in for a window. Members scan the QR in the room, attendance is recorded, and the points post. Nobody keeps a spreadsheet.</p>
+  <div style="display:flex;flex-direction:column;border-top:1px solid rgba(255,255,255,.08)">
+    <div style="display:flex;flex-direction:column;gap:4px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.08)"><p style="margin:0;font-size:16px;line-height:25px;font-weight:600">One check-in, everywhere.</p><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Checked in on the card is checked in on the app. Same state, no drift.</p></div>
+    <div style="display:flex;flex-direction:column;gap:4px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.08)"><p style="margin:0;font-size:16px;line-height:25px;font-weight:600">Points post themselves.</p><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Attendance inside the window awards the event's points. Nobody types a number.</p></div>
+    <div style="display:flex;flex-direction:column;gap:4px;padding:16px 0;border-bottom:1px solid rgba(255,255,255,.08)"><p style="margin:0;font-size:16px;line-height:25px;font-weight:600">Past events keep their record.</p><p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Attendance status stays on every past event, per member.</p></div>
+  </div>
+  <div role="img" aria-label="The Signet mobile app: an event detail with check-in open, a Scan QR to check in button, and an Add to calendar action." style="width:350px;height:560px;box-sizing:border-box;border:1px solid rgba(255,255,255,.14);border-radius:28px;background:#131211;overflow:hidden;display:flex;flex-direction:column;margin-top:16px;padding:44px 16px 0">
+    <p style="margin:0;font-size:15px;line-height:20px;font-weight:600;color:#E7C86B">‹ Events</p>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:16px"><span style="height:24px;border-radius:8px;background:rgba(248,81,73,.13);color:#FF7B72;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;padding:0 9px">Mandatory</span><span style="height:24px;border-radius:8px;background:#282314;border:1px solid #5F522C;color:#E7C86B;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;padding:0 9px;box-sizing:border-box">+10 pts</span></div>
+    <p style="margin:12px 0 0;font-size:32px;line-height:37px;font-weight:700;letter-spacing:-.02em">Chapter meeting</p>
+    <p style="margin:6px 0 0;font-size:16px;line-height:25px;color:#A9A399">Tonight · 6:30 to 7:30 PM · Chapter room</p>
+    <div style="border-radius:14px;background:#282314;border:1px solid #5F522C;padding:16px;margin-top:20px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="width:9px;height:9px;border-radius:50%;background:#3FB950"></span><span style="font-size:16px;font-weight:600;color:#E7C86B">Check-in is open</span><span style="margin-left:auto;font-size:12.5px;color:#A9A399">closes 6:45</span></div>
+      <span style="height:48px;border-radius:12px;background:#DDB844;color:#292109;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="2" y="2" width="6" height="6" rx="1.5" stroke="#292109" stroke-width="1.7" fill="none"></rect><rect x="10" y="2" width="6" height="6" rx="1.5" stroke="#292109" stroke-width="1.7" fill="none"></rect><rect x="2" y="10" width="6" height="6" rx="1.5" stroke="#292109" stroke-width="1.7" fill="none"></rect><path d="M10 13h3v3M16 10v2" stroke="#292109" stroke-width="1.7"></path></svg>Scan QR to check in</span>
+    </div>
+    <span style="height:46px;border-radius:12px;background:#211E1A;border:1px solid rgba(255,255,255,.14);color:#EDEAE3;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;box-sizing:border-box;margin-top:16px">Add to calendar</span>
+    <p style="margin:24px 0 0;font-size:12.5px;line-height:17px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#A9A399">Details</p>
+    <p style="margin:8px 0 0;font-size:16px;line-height:25px;color:#A9A399">Committee reports and the philanthropy vote. Attendance inside the window awards the event's points.</p>
+  </div>
+  <p style="margin:0;font-size:12.5px;line-height:17px;color:#A9A399">Demo chapter. Names and events are illustrative.</p>
+</section>
+
+<section id="pricing" style="min-height:1390px;padding:64px 20px 0;box-sizing:border-box;display:flex;flex-direction:column;gap:16px">
+  <p style="margin:0;font-size:14px;line-height:18px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:{{accentText}}">Pricing</p>
+  <h2 style="margin:0;font-size:32px;line-height:37px;font-weight:700;letter-spacing:-.02em;text-wrap:balance">Free for chat. Pro for the ops.</h2>
+  <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399;text-wrap:pretty">Every chapter starts on Free. Chapter Pro is one flat price per chapter, whatever your size, and it turns on the officer tools.</p>
+  <div style="border-radius:16px;background:#211E1A;border:1px solid rgba(255,255,255,.08);padding:24px;box-sizing:border-box;display:flex;flex-direction:column;gap:20px;margin-top:8px">
+    <h3 style="margin:0;font-size:18px;line-height:23px;font-weight:600">Free</h3>
+    <div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:40px;line-height:44px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums">$0</span><span style="font-size:16px;color:#A9A399">per chapter</span></div>
+    <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid rgba(255,255,255,.08)">
+      <li style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:16px;line-height:25px">Unlimited chat, members and chapters</li>
+      <li style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:16px;line-height:25px">Announcements and direct messages</li>
+      <li style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:16px;line-height:25px">Member directory and invites</li>
+      <li style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:16px;line-height:25px">Chapter settings and the member-visible audit log</li>
+      <li style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:16px;line-height:25px">No card</li>
+    </ul>
+    <a href="https://app.frapp.live/sign-up" style="height:48px;border-radius:12px;background:{{accent}};color:{{accentOn}};font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;box-sizing:border-box">Get started</a>
+  </div>
+  <div style="border-radius:16px;background:#211E1A;border:1px solid {{accentBorder}};padding:24px;box-sizing:border-box;display:flex;flex-direction:column;gap:20px;position:relative;overflow:hidden">
+    <span aria-hidden="true" style="position:absolute;left:0;top:0;width:100%;height:2px;background:{{accent}}"></span>
+    <div style="display:flex;align-items:center;justify-content:space-between"><h3 style="margin:0;font-size:18px;line-height:23px;font-weight:600">Chapter Pro</h3><span style="height:24px;padding:0 9px;border-radius:8px;background:{{accentSubtle}};border:1px solid {{accentBorder}};color:{{accentText}};font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;box-sizing:border-box">14-day trial</span></div>
+    <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:40px;line-height:44px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums">$149</span><span style="font-size:16px;color:#A9A399">per chapter, per month. Flat.</span></div>
+    <ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-top:1px solid rgba(255,255,255,.08)">
+      <li style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:16px;line-height:25px">Everything in Free</li>
+      <li style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:16px;line-height:25px">Events with QR check-in and attendance</li>
+      <li style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:16px;line-height:25px">Points ledger and leaderboard</li>
+      <li style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:16px;line-height:25px">Dues invoicing, collected through Stripe</li>
+      <li style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:16px;line-height:25px">Backwork library, reports and exports</li>
+    </ul>
+    <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399">Upgrade any time from Settings inside the app.</p>
+  </div>
+  <p style="margin:0;font-size:16px;line-height:25px;color:#A9A399;padding-top:8px">The trial starts at checkout inside the app: 14 days, card up front, first charge on day 15, once per chapter.</p>
+</section>
+
+<section aria-label="Closing" style="min-height:530px;padding:80px 20px 64px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;text-align:center;gap:20px">
+  <svg width="56" height="56" viewBox="0 0 1024 1024" aria-hidden="true"><path fill="#DDB844" d="M188.98 592.26C188.6 595.81 190.31 599.31 191.21 602.67 C192.59 607.82 193.92 612.93 195.64 617.99C201.79 636.11 209.25 654 218.22 670.92 C267.26 763.42 350.53 832.37 437.81 887.43C454.9 898.21 472.03 908.94 489.15 919.67 C494.21 922.84 499.31 925.92 504.43 928.99C506.9 930.47 509.97 933.16 513 932.89 C516.21 931.55 518.79 927.14 520.96 924.49C526.22 918.09 531.25 911.52 535.94 904.69 C550.88 882.9 563.79 859.35 572.88 834.49C592.01 782.13 597.69 723.86 581.4 669.85 C572.94 641.79 559.85 615.7 543.19 591.62C514.52 550.21 473.55 519.59 443.03 479.74 C418.94 448.28 403.41 410.82 398.95 371.41C397.67 360.06 396.7 348.99 396.67 337.54 C396.65 333.35 395.65 327.04 397.64 323.23C398.61 322.65 402.87 333.99 403.56 335.54 C409.84 349.67 417.72 363.45 426.95 375.87C456.99 416.33 500.91 443.82 546.91 462.85 C554.25 465.89 561.55 469.05 568.9 472.1C572.15 473.45 576.33 476.04 579.93 475.61 C583.26 474.33 585.66 469.9 588 467.31C592.67 462.14 597.73 457.34 602.98 452.76 C619.64 438.24 638.1 426.94 658.47 418.4C677.36 410.49 698.21 406.45 718.51 404.41 C730.73 403.18 743.25 403.88 755.26 400.79C793.72 390.89 822.82 359.69 831.62 321.02 C832.37 317.72 833.7 312.59 832.74 309.27C831.34 304.47 823.85 300.08 820.2 296.94 C812.17 290.02 803.98 283.22 796.21 276C794.2 274.13 787.16 269.58 787.63 266.66 C789.39 264.15 793.47 263.83 796.22 263.06C801.87 261.47 808.05 260.49 813.91 259.96 C816.83 259.7 833.44 261.13 833.83 258.7C833.12 256.13 830.24 254.07 828.26 252.43 C821.65 246.96 813.33 243.62 805.24 241.04C781.88 233.6 757.56 228.61 733.55 223.72 C726.37 222.26 719.22 220.81 712.07 219.2C707.47 218.17 701.79 217.88 698 214.78 C691.19 209.2 686.5 200.91 680.54 194.47C672.01 185.24 661.53 177.81 650.38 172.09 C634.03 163.72 616.35 158.99 598.54 155.04C560.49 146.61 519.5 147.45 481.42 155.11 C454.91 160.44 428.32 168.81 405.82 184.28C384.17 199.16 368.22 219.58 354.92 241.95 C333.13 278.62 319.26 321.41 309.44 362.71C299.8 403.2 293.23 444.11 276.67 482.63 C264.4 511.19 245.85 538.41 224.18 560.67C217.25 567.79 209.99 574.74 202.34 581.08 C198.68 584.12 190.72 587.8 188.98 592.26ZM637.89 843.52 C642.22 842.8 647.64 835.39 650.86 832.47C663.14 821.35 674.65 809.27 685.44 796.71 C714.5 762.88 742.28 720.43 730.02 673.67C724.4 652.25 715.33 631.67 704.92 612.13 C691.03 586.02 675.21 559.91 668.16 530.91C663.39 511.29 662.93 489.19 668.04 469.57 C668.88 466.33 677.4 446.98 675.61 445.52C673.05 445.5 669.99 448.94 668.05 450.44 C661.4 455.58 655.48 461.07 650.42 467.8C646.82 472.58 643.07 477.16 640.01 482.32 C635.9 489.25 632.7 496.4 630.44 504.12C615.15 556.28 645.87 607.39 659.04 656.45 C661.42 665.3 664.24 674.56 665.2 683.69C669.51 724.75 667.12 764.52 653.33 803.75 C651.46 809.07 649.79 814.4 647.67 819.64C646.6 822.27 636.73 842.86 637.89 843.52ZM637.98 233.8 C635.99 238.01 627.34 242.23 623.53 244.98C608.22 256.03 590.81 261.83 572.01 256.79 C564.57 254.8 558.08 250.56 551.82 246.22C548.79 244.12 541.73 241.42 540.07 238.22 C540.19 234.79 548.21 228.75 550.62 226.24C564.62 211.66 584.01 206.35 603.46 212.61 C611.35 215.16 618.44 219.88 625.22 224.52C627.84 226.31 637.68 230.62 637.98 233.8Z"></path></svg>
+  <h2 style="margin:0;font-size:32px;line-height:37px;font-weight:700;letter-spacing:-.02em">Ask your chapter anything.</h2>
+  <p style="margin:0;font-size:18px;line-height:27px;color:#A9A399;text-wrap:pretty">Sign up, name the chapter, invite the members. The officer tools are there when the chapter needs them.</p>
+  <a href="https://app.frapp.live/sign-up" style="width:100%;height:48px;border-radius:12px;background:{{accent}};color:{{accentOn}};font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:center;box-sizing:border-box;margin-top:4px">Get started</a>
+  <a href="https://app.frapp.live/sign-in" style="font-size:16px;line-height:44px;font-weight:600;color:{{accentText}}">Sign in</a>
+</section>
+
+<footer style="min-height:280px;border-top:1px solid rgba(255,255,255,.08);padding:24px 20px 40px;box-sizing:border-box;display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:center;gap:10px;color:#A9A399;font-size:14px;line-height:18px">
+    <span style="width:28px;height:28px;border-radius:8px;background:#1A1A1A;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 1024 1024" aria-hidden="true"><path fill="#DDB844" d="M188.98 592.26C188.6 595.81 190.31 599.31 191.21 602.67 C192.59 607.82 193.92 612.93 195.64 617.99C201.79 636.11 209.25 654 218.22 670.92 C267.26 763.42 350.53 832.37 437.81 887.43C454.9 898.21 472.03 908.94 489.15 919.67 C494.21 922.84 499.31 925.92 504.43 928.99C506.9 930.47 509.97 933.16 513 932.89 C516.21 931.55 518.79 927.14 520.96 924.49C526.22 918.09 531.25 911.52 535.94 904.69 C550.88 882.9 563.79 859.35 572.88 834.49C592.01 782.13 597.69 723.86 581.4 669.85 C572.94 641.79 559.85 615.7 543.19 591.62C514.52 550.21 473.55 519.59 443.03 479.74 C418.94 448.28 403.41 410.82 398.95 371.41C397.67 360.06 396.7 348.99 396.67 337.54 C396.65 333.35 395.65 327.04 397.64 323.23C398.61 322.65 402.87 333.99 403.56 335.54 C409.84 349.67 417.72 363.45 426.95 375.87C456.99 416.33 500.91 443.82 546.91 462.85 C554.25 465.89 561.55 469.05 568.9 472.1C572.15 473.45 576.33 476.04 579.93 475.61 C583.26 474.33 585.66 469.9 588 467.31C592.67 462.14 597.73 457.34 602.98 452.76 C619.64 438.24 638.1 426.94 658.47 418.4C677.36 410.49 698.21 406.45 718.51 404.41 C730.73 403.18 743.25 403.88 755.26 400.79C793.72 390.89 822.82 359.69 831.62 321.02 C832.37 317.72 833.7 312.59 832.74 309.27C831.34 304.47 823.85 300.08 820.2 296.94 C812.17 290.02 803.98 283.22 796.21 276C794.2 274.13 787.16 269.58 787.63 266.66 C789.39 264.15 793.47 263.83 796.22 263.06C801.87 261.47 808.05 260.49 813.91 259.96 C816.83 259.7 833.44 261.13 833.83 258.7C833.12 256.13 830.24 254.07 828.26 252.43 C821.65 246.96 813.33 243.62 805.24 241.04C781.88 233.6 757.56 228.61 733.55 223.72 C726.37 222.26 719.22 220.81 712.07 219.2C707.47 218.17 701.79 217.88 698 214.78 C691.19 209.2 686.5 200.91 680.54 194.47C672.01 185.24 661.53 177.81 650.38 172.09 C634.03 163.72 616.35 158.99 598.54 155.04C560.49 146.61 519.5 147.45 481.42 155.11 C454.91 160.44 428.32 168.81 405.82 184.28C384.17 199.16 368.22 219.58 354.92 241.95 C333.13 278.62 319.26 321.41 309.44 362.71C299.8 403.2 293.23 444.11 276.67 482.63 C264.4 511.19 245.85 538.41 224.18 560.67C217.25 567.79 209.99 574.74 202.34 581.08 C198.68 584.12 190.72 587.8 188.98 592.26ZM637.89 843.52 C642.22 842.8 647.64 835.39 650.86 832.47C663.14 821.35 674.65 809.27 685.44 796.71 C714.5 762.88 742.28 720.43 730.02 673.67C724.4 652.25 715.33 631.67 704.92 612.13 C691.03 586.02 675.21 559.91 668.16 530.91C663.39 511.29 662.93 489.19 668.04 469.57 C668.88 466.33 677.4 446.98 675.61 445.52C673.05 445.5 669.99 448.94 668.05 450.44 C661.4 455.58 655.48 461.07 650.42 467.8C646.82 472.58 643.07 477.16 640.01 482.32 C635.9 489.25 632.7 496.4 630.44 504.12C615.15 556.28 645.87 607.39 659.04 656.45 C661.42 665.3 664.24 674.56 665.2 683.69C669.51 724.75 667.12 764.52 653.33 803.75 C651.46 809.07 649.79 814.4 647.67 819.64C646.6 822.27 636.73 842.86 637.89 843.52ZM637.98 233.8 C635.99 238.01 627.34 242.23 623.53 244.98C608.22 256.03 590.81 261.83 572.01 256.79 C564.57 254.8 558.08 250.56 551.82 246.22C548.79 244.12 541.73 241.42 540.07 238.22 C540.19 234.79 548.21 228.75 550.62 226.24C564.62 211.66 584.01 206.35 603.46 212.61 C611.35 215.16 618.44 219.88 625.22 224.52C627.84 226.31 637.68 230.62 637.98 233.8Z"></path></svg></span>
+    <span>© 2026 Signet</span>
+  </div>
+  <nav aria-label="Footer" style="display:flex;flex-wrap:wrap;gap:16px 24px">
+    <a href="#product" style="font-size:14px;line-height:44px;font-weight:600;color:#A9A399">Product</a>
+    <a href="#pricing" style="font-size:14px;line-height:44px;font-weight:600;color:#A9A399">Pricing</a>
+    <a href="https://app.frapp.live/sign-in" style="font-size:14px;line-height:44px;font-weight:600;color:#A9A399">Sign in</a>
+    <a href="https://frapp.live/support" style="font-size:14px;line-height:44px;font-weight:600;color:#A9A399">Support</a>
+    <a href="https://frapp.live/privacy" style="font-size:14px;line-height:44px;font-weight:600;color:#A9A399">Privacy</a>
+    <a href="https://frapp.live/terms" style="font-size:14px;line-height:44px;font-weight:600;color:#A9A399">Terms</a>
+    <a href="https://frapp.live/ferpa" style="font-size:14px;line-height:44px;font-weight:600;color:#A9A399">FERPA</a>
+    <a href="mailto:team@frapp.live" style="font-size:14px;line-height:44px;font-weight:600;color:#A9A399">team@frapp.live</a>
+  </nav>
+</footer>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#DDB844","options":["#DDB844","#EFB63B"],"section":"Gold (decision for Paul)"},"$preview":{"width":390,"height":6040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const GOLD = {
+      '#DDB844': { on: '#292109', text: '#E7C86B', subtle: '#282314', border: '#5F522C' },
+      '#EFB63B': { on: '#2C2000', text: '#F4CB63', subtle: '#251E0E', border: '#6B5619' }
+    };
+    const accent = (this.props.accent ?? '#DDB844').toUpperCase();
+    const g = GOLD[accent] ?? GOLD['#DDB844'];
+    return { accent: accent, accentOn: g.on, accentText: g.text, accentSubtle: g.subtle, accentBorder: g.border };
+  }
+}
+</script>
+</body>
+</html>

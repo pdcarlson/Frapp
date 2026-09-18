@@ -1,0 +1,156 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Main.dc.html": {
+      "guides": [
+        {
+          "count": 12,
+          "gutter": 24,
+          "kind": "columns",
+          "margin": 80,
+          "color": "rgba(237,234,227,0.05)"
+        }
+      ],
+      "h": 3600,
+      "title": "Desktop 1440 · the page",
+      "w": 1440,
+      "x": 0,
+      "y": 0
+    },
+    "Phone.dc.html": {
+      "guides": [
+        {
+          "count": 4,
+          "gutter": 16,
+          "kind": "columns",
+          "margin": 20,
+          "color": "rgba(237,234,227,0.05)"
+        }
+      ],
+      "h": 6040,
+      "title": "Phone 390 · the page",
+      "w": 390,
+      "x": 1520,
+      "y": 0
+    },
+    "System.dc.html": {
+      "h": 2160,
+      "title": "System sheet · tokens, type, crest, motion",
+      "w": 1440,
+      "x": 0,
+      "y": 6420
+    },
+    "Spec.dc.html": {
+      "h": 3600,
+      "title": "Spec sheet · section map, kill list, decisions, code epic",
+      "w": 1440,
+      "x": 1520,
+      "y": 6420
+    },
+    "Motion.dc.html": {
+      "h": 2000,
+      "title": "Motion sheet · first light, warm room (demos loop; press Play)",
+      "w": 1440,
+      "x": 3040,
+      "y": 6420,
+      "is_interactive": true
+    },
+    "HeroB.dc.html": {
+      "h": 900,
+      "title": "Hero B · the thread at the fold",
+      "w": 1440,
+      "x": 2300,
+      "y": 0
+    },
+    "HeroC.dc.html": {
+      "h": 900,
+      "title": "Hero C · type as the image",
+      "w": 1440,
+      "x": 3820,
+      "y": 0
+    },
+    "HeroD.dc.html": {
+      "h": 900,
+      "title": "Hero D · the member's phone",
+      "w": 1440,
+      "x": 5340,
+      "y": 0
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-09-17T22:10:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "decisions": {
+      "color": "blue",
+      "maxH": 820,
+      "text": "Decisions for Paul (details on the Spec sheet, §3):\nD1 Gold: drawn #DDB844; alt #EFB63B. Flip in Tweaks → Gold.\nD2 Privacy/Terms in nav: drawn no. Flip in Tweaks → Nav.\nD3 Pricing section: drawn in, one button.\nD4 Motion: re-decided. Signature moment on the crest + once-only reveals + chrome. Needs a written fourth motion class and brand sign-off on the mask and light.\nD5 CTA case: sentence case.\nD6 Phone: 390.\nD7 Footer Documentation link: dropped.\nD8 Tagline: kept once, at the close; the claim check flagged it against ai.md.\nD9 Hero: A crest (drawn), B thread, C type, D phone. Recommendation B. Boards to the right of the phone.",
+      "w": 300,
+      "x": -340,
+      "y": 0
+    },
+    "fold": {
+      "color": "orange",
+      "text": "Fold: a 1440×900 viewport ends here. Nav, hero, crest and the officer strip all sit above it. Hero LCP is the H1; the crest is an inline SVG, not an image. The crest wipe, settle, light and rule play once on open (motion-safe).",
+      "w": 300,
+      "x": -340,
+      "y": 860
+    },
+    "frames": {
+      "color": "gray",
+      "text": "Product frames are drawn on product tokens (web --primary #DDB844, the §2 ladder) and do not follow the Gold tweak. They show what ships: Check in on the event card, no RSVP, no Ask pill. The desktop frame is an officer's view, which is why it shows the live count.",
+      "w": 300,
+      "x": 1960,
+      "y": 0
+    },
+    "row1": {
+      "kind": "title1",
+      "maxW": 2200,
+      "text": "frapp.live · crest-editorial redesign · page boards",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "row2": {
+      "kind": "title1",
+      "maxW": 4480,
+      "text": "System, spec and motion sheets · what Claude Code implements from",
+      "w": 240,
+      "x": 0,
+      "y": 6120
+    },
+    "heroes": {
+      "kind": "title1",
+      "x": 2300,
+      "y": -300,
+      "text": "Hero options · A is the crest on the Desktop board · B, C, D here · decision D9",
+      "maxW": 4480
+    },
+    "heropick": {
+      "x": 2300,
+      "y": 960,
+      "w": 420,
+      "maxH": 420,
+      "text": "D9 · Which hero. A (crest, on the Desktop board) is the brief's crest-editorial hero and carries the signature moment. B puts the proof at the fold: the officer's chat with the event card, bleeding off the right edge; the crest keeps the closing and the lockup. C is all type: a 96px H1 across twelve columns and a three-row ledger of what ships; the crest is a 40px mark on the eyebrow rule. D is the member's phone, the locked s04 chat home, cropped at the fold. Recommendation: B, with the signature moment moving to the closing crest. Each option keeps the nav, copy, CTAs and officer strip identical so only the visual is being judged.",
+      "color": "blue"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Phone.dc.html",
+    "System.dc.html",
+    "Spec.dc.html",
+    "Motion.dc.html",
+    "HeroB.dc.html",
+    "HeroC.dc.html",
+    "HeroD.dc.html"
+  ],
+  "pages": [],
+  "title": "frapp.live · crest-editorial landing"
+}
