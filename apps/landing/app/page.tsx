@@ -418,7 +418,7 @@ export default function Home() {
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               Simple chapter pricing
             </p>
-            <p className="mt-4 text-display-lg tabular-nums text-foreground">
+            <p className="mt-4 text-hero tabular-nums text-foreground sm:text-display-lg">
               $149
             </p>
             <p className="text-sm text-muted-foreground">per chapter / month</p>

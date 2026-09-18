@@ -29,11 +29,19 @@
  * sheet's (`spec/ui/landing/reference/canvas/System.dc.html`), restated in
  * `spec/ui/landing/README.md` § Marketing type roles.
  *
- * ONE breakpoint, and the desktop values are the base. 640px is Tailwind's `sm`,
- * which is the boundary the page's own responsive classes already turn on, so
- * the roles and the utilities around them step together. D6 pins the phone board
+ * ONE breakpoint, and the desktop values are the base. D6 pins the phone board
  * at 390 and there is no layout breakpoint between 375 and 390, so a single
- * max-width block covers every phone the board speaks for.
+ * block covers every phone the board speaks for.
+ *
+ * **The boundary is written as the exact complement of Tailwind's `sm`, not as
+ * a max-width in px, and that is load-bearing.** `sm:` compiles to
+ * `(min-width: 40rem)`. A `(max-width: 639px)` block is NOT its complement:
+ * a viewport at 639.5px — reachable through browser zoom and fractional device
+ * pixel ratios — satisfies neither, so the roles would fall back to their
+ * DESKTOP values while every `sm:` utility stayed off, rendering a 72px hero on
+ * a phone-width screen. `not all and (min-width: 40rem)` closes that sliver by
+ * construction: exactly one of the two sides is always active, whatever the
+ * subpixel width.
  */
 @layer base {
   :root {
@@ -52,7 +60,7 @@
     --text-lead-weight: 400;
   }
 
-  @media (max-width: 639px) {
+  @media not all and (min-width: 40rem) {
     :root {
       --text-hero: 40px;
       --text-hero-line: 44px;

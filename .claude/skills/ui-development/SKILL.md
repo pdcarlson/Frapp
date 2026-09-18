@@ -115,30 +115,41 @@ do not restyle it ad hoc: it is staged and owned.
 
 The landing carries three marketing type roles (`--text-hero`, `--text-display-lg`, `--text-lead`)
 above `foundations.md` §7's locked six. They are declared in `apps/landing/app/globals.css` and are
-**landing-only** — using one on a product surface is an off-scale defect. The old text here about
-legacy preset keys mapping to ink /
-moss / bone-era colors) and go with the token cutover
-([#2366](https://github.com/pdcarlson/Frapp/issues/2366)). That reskin **is** tracked now — #2364 is
-the epic, #920 is `apps/web`, #937 is `apps/mobile`, and the Chunk-12 landing issues (#447, #491)
-are pre-Signet copy work superseded by the epic's page-rebuild slice
-([#2367](https://github.com/pdcarlson/Frapp/issues/2367)). The pricing question that #913/#914
-raised is settled for this surface by decision D3. `royal-blue` is **gone** — the #920 slice-9 cutover deleted it outright,
-along with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed).
+**landing-only by decision** (§7's amendment, and `design-system/README.md` §3 rule 4, which names
+two app-local token homes): using one on a product surface is an off-scale defect, and promoting
+them into `packages/theme` would put a 72px marketing headline one import away from every product
+screen.
+
+The legacy brand scale is **gone**, all of it. `royal-blue` went in the #920 slice-9 cutover along
+with `navy`'s numbered steps and the `@repo/theme` TS brand aliases (#917, closed); `navy` and
+`emerald` — the last two, which mapped to ink / moss / bone-era colors and survived for
+`apps/landing` alone — went with the token cutover
+([#2366](https://github.com/pdcarlson/Frapp/issues/2366)), as did the legacy stylesheet and its
+export. The landing reskin **is** tracked — #2364 is the epic, #920 is `apps/web`, #937 is
+`apps/mobile`, and the Chunk-12 landing issues (#447, #491) are pre-Signet copy work superseded by
+the epic's page-rebuild slice ([#2367](https://github.com/pdcarlson/Frapp/issues/2367)). The pricing
+question that #913/#914 raised is settled for this surface by decision D3.
 
 **`packages/theme` is the shared token package for every surface, not a web-only one.** It already
-serves `apps/web` and `apps/landing` (Tailwind preset + CSS variables) and `apps/mobile` — typed
+serves `apps/web` and `apps/landing` (Tailwind preset + the shared `signet.css`) and `apps/mobile` — typed
 Signet tokens via **`@repo/theme/signet`** in 61 files at last count
 (`grep -rl "@repo/theme/signet" apps/mobile | wc -l`), plus `@repo/theme/accent` at **exactly one
 call site**, `apps/mobile/lib/chapter-branding.ts` (`grep -rn "@repo/theme/accent" apps/mobile`).
 That one-site bound is what keeps the accent engine's blast radius auditable: re-run the grep rather
 than trusting this line, and treat a second importer as a change to argue for, not a detail. Mobile
 does not import `@repo/theme/tokens` at all, and nothing outside `packages/theme` does. The Signet
-tokens live in `packages/theme` too (`src/signet.css`, `src/signet.ts`) — as an **additive
-entrypoint**, leaving the legacy exports that landing still consumes untouched. Two things are
-defects:
-Signet values replacing or bleeding into those legacy exports, and Signet tokens duplicated into
-app-local files instead of extending the package. Component ownership and token-extension rules: §3
-of [`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md).
+tokens live in `packages/theme` too (`src/signet.css`, `src/signet.ts`), and since
+[#2366](https://github.com/pdcarlson/Frapp/issues/2366) they are the **only** tokens it ships: the
+legacy `./globals.css` stylesheet and export are deleted, so there is no second system to bleed
+into. `./tokens` survives, but only as an internal dependency — the accent engine's bronze fallback
+and the motion scale — never as a surface's token source.
+
+The remaining defect to watch for is **a Signet token duplicated into an app-local file instead of
+extending the package**. Note the deliberate exception: a role only ONE surface may use belongs to
+that surface, which is why the landing's three marketing type roles are app-local and correct.
+Duplicating a *product* token — anything in `foundations.md`'s locked set — into an app config is
+still the defect. Component ownership and token-extension rules: §3 of
+[`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md).
 
 ### Signet tokens (web work reads these)
 
